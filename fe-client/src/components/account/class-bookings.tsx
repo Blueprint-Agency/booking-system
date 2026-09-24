@@ -415,6 +415,7 @@ function UpcomingCard({
 }
 
 function PastRow({ booking }: { booking: ApiBooking }) {
+  const cancelled = booking.state === "cancelled";
   const attended = booking.check_in_state === "attended";
   const noShow = booking.check_in_state === "no_show" || booking.state === "no_show";
   return (
@@ -432,7 +433,12 @@ function PastRow({ booking }: { booking: ApiBooking }) {
         <p className="text-sm text-ink">{formatDate(booking.starts_at)}</p>
         <p className="text-sm text-muted">{formatClassTime(booking.starts_at)}</p>
       </div>
-      {attended ? (
+      {cancelled ? (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warm px-2.5 py-1 text-xs font-medium text-muted">
+          <X className="w-3.5 h-3.5" />
+          Cancelled
+        </span>
+      ) : attended ? (
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sage/15 px-2.5 py-1 text-xs font-medium text-sage">
           <CheckCircle2 className="w-3.5 h-3.5" />
           Attended

@@ -55,6 +55,17 @@ export type TestApp = {
    * lines a request produced are all present once `app.request()` resolves.
    */
   logs: { lines: () => Array<Record<string, unknown>>; clear: () => void }
+  /**
+   * What time the app thinks it is (`lib/clock`). `set` stands every service
+   * that applies a time window — cancellation policy, package validity, the
+   * scheduled jobs — at one fixed instant until the next `set`; `advance` moves
+   * it on; `reset` puts the wall clock back. `close` resets it too.
+   *
+   * Only the rules read it. Postgres defaults (`created_at`) and the auth
+   * server's session expiry keep real time, so a test can move far from today
+   * without its sign-in going stale.
+   */
+  clock: { set: (at: Date) => void; advance: (ms: number) => void; now: () => Date; reset: () => void }
   close: () => Promise<void>
 }
 
@@ -300,6 +311,18 @@ export async function startTestApp(): Promise<TestApp> {
   const client = postgres(TEST_DATABASE_URL, { max: 1 })
   const db = drizzle(client, { schema })
 
+  // The database is this file's until `close`. The files share fixtures — the
+  // two Tenants, name-matched purges, the row counts a studio delete is checked
+  // against — so two at once (a parallel `npm run check`, or a second checkout
+  // or session running the suite beside this one) fail each other at random.
+  // Taken BEFORE the setup below, not after it: `ensureTenantIsolation` drops
+  // and re-creates every table's policy, and a file setting up while another
+  // runs left that one's writes, for a moment, facing RLS with no policy at all.
+  // Held on this connection, so it goes when the process does even if a file
+  // never reaches `close`. One `startTestApp` per process: a second would wait
+  // on this one forever.
+  await client`select pg_advisory_lock(${HARNESS_FILE_LOCK})`
+
   // `node --test` runs one process per file, and every harness-using file points
   // at the SAME scratch database — so two of them migrate it at the same time.
   // Concurrent DDL does not merely race: one transaction holds the lock on a
@@ -327,15 +350,6 @@ export async function startTestApp(): Promise<TestApp> {
     await client`select pg_advisory_unlock(${HARNESS_SETUP_LOCK})`
   }
 
-  // Then the database is this file's until `close`. The files share fixtures —
-  // the two Tenants, name-matched purges, the row counts a studio delete is
-  // checked against — so two at once (a parallel `npm run check`, or a second
-  // checkout or session running the suite beside this one) fail each other at
-  // random. Held on this connection, so it goes when the process does even if
-  // a file never reaches `close`. One `startTestApp` per process: a second
-  // would wait on this one forever.
-  await client`select pg_advisory_lock(${HARNESS_FILE_LOCK})`
-
   // Before the app is imported, so even its load-time lines are captured.
   const { useLogDestination } = await import('../shared/logger')
   let logged: string[] = []
@@ -350,7 +364,12 @@ export async function startTestApp(): Promise<TestApp> {
 
   const { default: app } = await import('../app')
   const { closeDb } = await import('../db')
+  const { now, setClock } = await import('../lib/clock')
   await mountHarnessRoutes(app)
+  const fixClockAt = (at: Date) => {
+    const fixed = at.getTime()
+    setClock(() => new Date(fixed))
+  }
 
   return {
     app,
@@ -366,7 +385,14 @@ export async function startTestApp(): Promise<TestApp> {
         logged = []
       },
     },
+    clock: {
+      set: fixClockAt,
+      advance: ms => fixClockAt(new Date(now().getTime() + ms)),
+      now,
+      reset: () => setClock(null),
+    },
     close: async () => {
+      setClock(null)
       await closeDb()
       await client.end({ timeout: 5 })
     },

@@ -62,7 +62,9 @@ const patchParam = z.object({
   id: z.string().uuid(),
 })
 const patchBody = z.object({
-  instructor_pay_sgd: z.number().min(0).nullable(),
+  // No `.min(0)` here: a negative amount is refused by `updatePayrollAmount` as
+  // `invalid_amount`, so the admin reads the typed reason rather than a zod dump.
+  instructor_pay_sgd: z.number().nullable(),
   // Targets a specific instructor's pay row when a session has more than one
   // (main + supporting). Omitted → back-compat: writes the session's own pay
   // column. Required for kind='workshop' (no single default-pay column there).

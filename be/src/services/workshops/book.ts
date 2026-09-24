@@ -38,6 +38,25 @@ export function tierEffectivePrice(
 }
 
 /**
+ * A workshop is on sale while it is active and its last day has not ended
+ * (fe-client-features §4.1: a past workshop is "Workshop Ended"). Both the
+ * checkout and the free-register path ask this before anything is charged or
+ * booked; a paid place arriving by webhook does not — its money is already taken.
+ */
+export async function assertWorkshopOnSale(
+  tenantId: string,
+  ws: { id: string; lifecycle: string },
+  now = new Date(),
+): Promise<void> {
+  if (ws.lifecycle !== 'active') throw new BadRequestError('workshop_not_active')
+  const [last] = await db
+    .select({ endsAt: sql<Date | null>`max(${workshopDays.endsAt})` })
+    .from(workshopDays)
+    .where(and(eq(workshopDays.tenantId, tenantId), eq(workshopDays.workshopId, ws.id)))
+  if (last?.endsAt != null && new Date(last.endsAt) <= now) throw new BadRequestError('workshop_ended')
+}
+
+/**
  * Pre-purchase gate for workshop bookings, run BEFORE creating a Stripe
  * Checkout session (no automated refund flow exists yet, so charging for an
  * unbookable spot must be prevented up front):
@@ -275,7 +294,7 @@ export async function bookWorkshopFree(
     .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, args.workshopId)))
     .limit(1)
   if (!ws) throw new NotFoundError('workshop_not_found')
-  if (ws.lifecycle !== 'active') throw new BadRequestError('workshop_not_active')
+  await assertWorkshopOnSale(tenantId, ws)
 
   const promos = await listActivePromotionsFor(tenantId, 'workshop', [args.workshopId])
   const eff = tierEffectivePrice(tier, promos[args.workshopId] ?? [])

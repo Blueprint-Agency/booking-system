@@ -31,7 +31,7 @@ jobs:
       - name: Scenario Inventory traces to tests
         run: node scripts/check-scenarios.mjs
 
-  # The journeys themselves need a deployed stack and run in e2e.yml. Listing
+  # The journeys themselves run in e2e-local.yml and e2e.yml. Listing
   # them needs nothing, and is enough to see what a PR did to them.
   e2e:
     runs-on: ubuntu-latest
@@ -56,7 +56,7 @@ jobs:
       # config's no-skips reporter fails a run — `--list` included — on any
       # `test.skip` / `test.fixme` / `describe.skip`, and CI's forbidOnly on a
       # stray `test.only`. A `test.skip()` inside a journey only shows when it
-      # runs, and fails e2e.yml then.
+      # runs, and fails e2e-local.yml and e2e.yml then.
       - name: No skipped journeys
         env:
           CI: 'true'

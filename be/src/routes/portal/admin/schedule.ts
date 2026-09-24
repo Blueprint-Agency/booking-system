@@ -287,6 +287,7 @@ const app = new Hono()
         check_in_state: a.checkInState,
         code: a.code,
       })),
+      check_in_state: d.checkInState,
       created_at: d.createdAt.toISOString(),
       scheduled_by: d.scheduledBy,
       series_id: d.seriesId,
@@ -319,6 +320,7 @@ const app = new Hono()
         code: cl.code,
         check_in_state: cl.checkInState,
       })),
+      check_in_state: d.checkInState,
     })
   })
   .post('/classes', zValidator('json', createClassSchema), async c => {

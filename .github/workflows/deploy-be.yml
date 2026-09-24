@@ -622,6 +622,9 @@ jobs:
               echo "RESEND_WEBHOOK_SECRET=${{ secrets.RESEND_WEBHOOK_SECRET }}"
               echo "STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}"
               echo "STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}"
+              # STRIPE_API_URL is deliberately never written: a deployment reaches
+              # Stripe itself. It points the pull-request journeys at a stand-in
+              # (e2e-local.yml), and production refuses it at boot.
               # Not a secret — it must match the prefix set on the Stripe account.
               echo "STRIPE_STATEMENT_DESCRIPTOR_PREFIX=${{ vars.STRIPE_STATEMENT_DESCRIPTOR_PREFIX }}"
               # Seals each studio's OWN payment credentials at rest (#100).

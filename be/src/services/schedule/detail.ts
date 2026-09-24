@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
 import {
@@ -17,6 +17,7 @@ import {
 } from '../../db/schema'
 import type { ClassDifficulty, ClientPackageKind } from '../../db/enums'
 import { NotFoundError } from '../../shared/errors'
+import { sessionCheckInState, type SessionCheckInState } from '../bookings/session-check-in'
 
 interface NamedRef {
   id: string
@@ -52,6 +53,7 @@ export interface ClassDetail {
   creditCost: number
   bookedCount: number
   attendees: ClassAttendee[]
+  checkInState: SessionCheckInState
   createdAt: Date
   scheduledBy: NamedRef | null
   /** The Class Series that created this class, if any. */
@@ -107,7 +109,9 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       ),
     )
 
-  // Roster of confirmed attendees (admin-restructure.md §10).
+  // Roster (admin-restructure.md §10): the confirmed attendees and the no-shows.
+  // A no-show is a decision on the roster, not a departure from it — leaving it
+  // off would hide the row it was made on.
   const attendeeRows = await db
     .select({
       bookingId: bookings.id,
@@ -125,7 +129,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       and(
         eq(bookings.tenantId, tenantId),
         eq(bookings.classId, id),
-        eq(bookings.state, 'confirmed'),
+        inArray(bookings.state, ['confirmed', 'no_show']),
       ),
     )
     .orderBy(bookings.bookedAt)
@@ -181,6 +185,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     creditCost: row.creditCost,
     bookedCount: count?.n ?? 0,
     attendees,
+    checkInState: sessionCheckInState(attendees.map(a => a.checkInState)),
     createdAt: row.createdAt,
     scheduledBy:
       row.scheduledById && row.scheduledByName
@@ -216,6 +221,7 @@ export interface PtSessionDetail {
   capacityWaitlist: number
   capacityBuffer: number
   clients: PtSessionAttendee[]
+  checkInState: SessionCheckInState
 }
 
 export async function getPtSessionDetail(
@@ -266,6 +272,13 @@ export async function getPtSessionDetail(
       and(eq(ptSessionClients.tenantId, tenantId), eq(ptSessionClients.ptSessionId, id)),
     )
 
+  const attendees: PtSessionAttendee[] = clientRows.map(c => ({
+    id: c.id,
+    name: c.name,
+    code: c.code ?? null,
+    checkInState: (c.checkInState as PtSessionAttendee['checkInState']) ?? null,
+  }))
+
   const supportingRows = await db
     .select({
       instructorId: ptSessionSupportingInstructors.instructorId,
@@ -306,11 +319,7 @@ export async function getPtSessionDetail(
     capacityOnline: row.capacityOnline,
     capacityWaitlist: row.capacityWaitlist,
     capacityBuffer: row.capacityBuffer,
-    clients: clientRows.map(c => ({
-      id: c.id,
-      name: c.name,
-      code: c.code ?? null,
-      checkInState: (c.checkInState as PtSessionAttendee['checkInState']) ?? null,
-    })),
+    clients: attendees,
+    checkInState: sessionCheckInState(attendees.map(a => a.checkInState)),
   }
 }

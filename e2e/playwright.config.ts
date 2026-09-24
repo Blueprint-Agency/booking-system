@@ -1,9 +1,17 @@
 import { defineConfig, devices, type ReporterDescription } from '@playwright/test'
+import { isLocalStack, localStackServers, localStudioCommand, stubbedStripeBrowser } from './src/local-stack'
 
 /**
- * The three golden paths (#145), run against a deployed stack — staging in CI,
- * the local stack by hand. Which stack is decided by where `E2E_STUDIO_CMD`
- * makes the studio: its URLs come back from that backend's own
+ * The browser journeys, against one of two stacks:
+ *
+ *  - Deployed (the default): staging in CI — the production gate (#145) — or
+ *    any deployed stack by hand. `E2E_STUDIO_CMD` makes the studio there, and
+ *    Stripe is Stripe's own test mode.
+ *  - Local (`E2E_STACK=local`): every pull request (#207), the Playwright
+ *    agents, and a developer. The backend and both frontends run on this
+ *    machine, and Stripe is a stub — see src/local-stack.ts.
+ *
+ * Either way the studio's URLs come back from that backend's own
  * `FRONTEND_URLS`, so nothing here names a host.
  *
  * One worker. The journeys share one studio and a deployed backend, and a
@@ -11,9 +19,16 @@ import { defineConfig, devices, type ReporterDescription } from '@playwright/tes
  */
 const baseReporters: ReporterDescription[] = process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']]
 
+// Read by global setup (src/studio.ts), which runs in this process.
+if (isLocalStack) process.env.E2E_STUDIO_CMD ??= localStudioCommand
+
 export default defineConfig({
   testDir: './journeys',
+  // The agents' seed (journeys/seed.spec.ts) runs where the agents do — the
+  // local stack — and leaves the staging gate the journeys it always had.
+  testIgnore: isLocalStack ? undefined : 'seed.spec.ts',
   globalSetup: './src/global-setup.ts',
+  webServer: isLocalStack ? localStackServers : undefined,
   fullyParallel: false,
   workers: 1,
   // No retries. The journeys change their studio as they go — a class created,
@@ -35,5 +50,6 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    ...(isLocalStack ? stubbedStripeBrowser : {}),
   },
 })

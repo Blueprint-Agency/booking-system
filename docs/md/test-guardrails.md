@@ -8,14 +8,14 @@ make it pass.**
 | Guardrail | Where | What it stops |
 |---|---|---|
 | Committed tests are read-only to agents | `.claude/hooks/protect-tests.mjs` (PreToolUse) | Editing, overwriting, moving or deleting an existing test file |
-| No "done" over a red suite | `.claude/hooks/affected-tests.mjs` (SessionStart + Stop) | An agent finishing with failing tests |
 | No skipped tests | backend `test` job (deploy-be.yml); `e2e/src/no-skips-reporter.ts` | A skip passing as a pass |
 | No lost tests | backend `test` job; `test-guardrails.yml` | A PR with fewer tests than its base branch |
 | Coverage report | backend `test` job → run summary | Untested code going unseen (report only, no % gate) |
 | Scenario Inventory traces | `scripts/check-scenarios.mjs` in `test-guardrails.yml` | A row still marked covered after its test was renamed or deleted (`testing.md`) |
 
-The hooks are registered in `.claude/settings.json`, so every Claude Code session in this repo
-gets them.
+The hook is registered in `.claude/settings.json`, so every Claude Code session in this repo
+gets it. Running the suites is CI's job: every PR runs all of them (`deploy-be.yml`,
+`e2e-local.yml`, `test-guardrails.yml`), so sessions don't run them on stop.
 
 ## Committed tests are read-only to agents
 
@@ -43,40 +43,26 @@ e2e/journeys/*.spec.ts
 Delete the file when the task is done. The agent cannot write it — the hook refuses that too.
 Starting a whole session with `ALLOW_TEST_EDITS=1` in the environment turns the check off.
 
-## No "done" over a red suite
+## Running tests locally
 
-At session start the hook notes the commit the session began on. When the agent stops, it runs
-the suites for every app the session changed — committed or not:
+CI runs every suite on every PR, so a session doesn't have to run the whole backend suite (~25
+minutes) before it stops. When checking a change locally, run just the tests it reaches:
 
-| Changed | Runs |
-|---|---|
-| `be/` | the backend test files the change reaches, serially, as CI does (needs `TEST_DATABASE_URL`; a run that skips the integration tests counts as a failure) |
-| `fe-client/`, `fe-portal/` | `npm run check` |
-| `e2e/` | typecheck + `playwright test --list` (the skip check; the journeys need a deployed stack) |
-| `scripts/`, `.claude/hooks/` | their unit tests |
+```sh
+node .claude/hooks/backend-tests.mjs be src/services/bookings/cancel.ts   # lists them
+cd be && node --import tsx --test --test-concurrency=1 <those files>
+```
 
-Markdown and `.gitignore` changes run nothing. A suite already green for exactly the current
-changes is not run again, so a turn that changed nothing costs nothing. On a failure the stop is
-refused and the failures go back to the agent. If it is sent back, changes nothing and stops again,
-it is let go, and the human sees a warning that it stopped on failing tests.
-
-**Only the backend tests a change reaches.** The whole backend suite is ~25 minutes, which an agent
-paid on every stop; CI still runs all of it on the PR. `.claude/hooks/backend-tests.mjs` picks the
-test files: a changed test itself, every test that imports the change (through any chain of
-imports), and every test that calls the URL of a route the chain reaches. It does not follow imports
-through `app.ts`, the harness or a routes `index.ts`, since through those everything reaches
-everything. A change reaching more than 15 tests keeps the closest ones (its importers, and the
-tests of a route that imports it directly) plus the tenant isolation guards (`isolation`, `rls`,
-`rls-coverage`). If that is still more than 15, it runs the guards alone. A change no test reaches
-runs nothing. To see what a change would run: `node .claude/hooks/backend-tests.mjs be src/services/bookings/cancel.ts`.
+`backend-tests.mjs` picks a changed test itself, every test that imports the change (through any
+chain of imports), and every test that calls the URL of a route the chain reaches. It does not follow
+imports through `app.ts`, the harness or a routes `index.ts`, since through those everything reaches
+everything.
 
 **One test database per worktree.** Two runs on one database fail each other ("tuple concurrently
 updated"). Each checkout's `be/.env` points `TEST_DATABASE_URL` at its own database (e.g.
-`reservetoday-test-staging-7`), so agents in different worktrees never wait on each other. Create
-the database once (`CREATE DATABASE "…"`); the harness migrates it on first use. Inside one
-database, runs still take turns: the hook waits on a per-checkout lock in the temp directory (a lock
-whose holder died is taken over), and the harness holds a Postgres advisory lock for each test file,
-whoever started the run.
+`reservetoday-test-staging-7`), so worktrees never wait on each other. Create the database once
+(`CREATE DATABASE "…"`); the harness migrates it on first use, and holds a Postgres advisory lock
+for each test file.
 
 ## No skipped tests
 
@@ -84,7 +70,8 @@ whoever started the run.
 - **Journeys:** the Playwright config adds `no-skips-reporter`, which fails any run with a
   `test.skip` / `test.fixme` / `describe.skip` journey, or one that calls `test.skip()` as it runs.
   `test-guardrails.yml` lists the journeys on every PR (`playwright test --list`, no stack needed),
-  so a static skip fails the PR; a runtime skip fails the staging run in `e2e.yml`. In CI,
+  so a static skip fails the PR; a runtime skip fails the PR's own run in `e2e-local.yml` and the
+  staging run in `e2e.yml`. In CI,
   `forbidOnly` also fails a stray `test.only`.
 
 A journey that is genuinely broken is a bug to file, not a test to skip.

@@ -9,6 +9,7 @@ import { expireStaleSessions, completeEndedPtSessions } from '../services/pt-ses
 import { expirePackages, sendLapsingAlerts, sendExpiredNotifications } from '../services/packages/expire'
 import { flagExpiredWaivers } from '../services/waiver'
 import { loadFeatureFlags } from '../services/feature-flags'
+import { now } from '../lib/clock'
 
 /**
  * Wrap a cron handler so a thrown error (or rejected promise) is caught and
@@ -56,7 +57,7 @@ function perTenant(
   due?: (tenant: JobTenant, at: Date) => boolean,
 ) {
   return async () => {
-    const at = new Date()
+    const at = now()
     for (const tenant of await listJobTenants()) {
       const tenantId = tenant.id
       try {
@@ -99,48 +100,63 @@ function dailyTenantJob(name: string, localHour: number, fn: () => Promise<unkno
   )
 }
 
-export async function registerJobs() {
-  // Boot: prime feature-flag cache — per tenant, since a flag is a tenant's own
-  // answer and the cache is keyed on it.
-  await perTenant('loadFeatureFlags', loadFeatureFlags)()
-
+/**
+ * Every scheduled job, exactly as a cron tick runs it: the catch-all, the
+ * fan-out across tenants, and for a daily job the "is it this tenant's hour?"
+ * check, all included. Calling one is one tick, at whatever instant
+ * `lib/clock` says — which is how a test fires a job without the scheduler.
+ */
+export const scheduledJobs = {
   // Every 5 min — auto-expire pending PT requests past their window (refunds credits).
   // Note: no SLA escalation in the simplified flow — admin negotiates via WhatsApp,
   // not in-app, so there's nothing to escalate inside the system.
-  cron.schedule('*/5 * * * *', tenantJob('expireStaleSessions', expireStaleSessions))
+  expireStaleSessions: tenantJob('expireStaleSessions', expireStaleSessions),
 
   // No no-show job by design — admin-restructure.md §11: forfeits only fire when
   // admin/instructor manually marks the row `no-show`.
 
   // Every 5 min — advance scheduled PT requests whose session has ended to `attended`
-  cron.schedule('*/5 * * * *', tenantJob('completeEndedPtSessions', completeEndedPtSessions))
+  completeEndedPtSessions: tenantJob('completeEndedPtSessions', completeEndedPtSessions),
 
   // The daily jobs below all ride the same 15-minute grid; the hour named is
   // each tenant's *local* hour, taken from `tenants.timezone`, never from a UTC
   // offset or from the server's (or Postgres's) own clock.
 
   // Daily 01:00 tenant-local — package expiry
-  cron.schedule(SLOT_CRON, dailyTenantJob('expirePackages', 1, expirePackages))
+  expirePackages: dailyTenantJob('expirePackages', 1, expirePackages),
 
   // Daily 08:00 tenant-local — lapsing + expired notifications
-  cron.schedule(SLOT_CRON, dailyTenantJob('sendLapsingAlerts', 8, sendLapsingAlerts))
-  cron.schedule(SLOT_CRON, dailyTenantJob('sendExpiredNotifications', 8, sendExpiredNotifications))
+  sendLapsingAlerts: dailyTenantJob('sendLapsingAlerts', 8, sendLapsingAlerts),
+  sendExpiredNotifications: dailyTenantJob('sendExpiredNotifications', 8, sendExpiredNotifications),
 
   // Daily 02:00 tenant-local — flag clients with stale waiver signature
-  cron.schedule(SLOT_CRON, dailyTenantJob('flagExpiredWaivers', 2, flagExpiredWaivers))
+  flagExpiredWaivers: dailyTenantJob('flagExpiredWaivers', 2, flagExpiredWaivers),
 
   // Nightly, platform-wide — release renamed studios' old slugs whose redirect
   // window has ended. Not per tenant: `former_slugs` is platform data with no
   // `tenant_id`, and an expired row already counts for nothing, so the hour
   // only decides when the dead row is swept.
-  cron.schedule('0 3 * * *', safeJob('releaseExpiredFormerSlugs', releaseExpiredFormerSlugs), {
-    timezone: 'UTC',
-  })
+  releaseExpiredFormerSlugs: safeJob('releaseExpiredFormerSlugs', releaseExpiredFormerSlugs),
 
   // Every 15 min, platform-wide — write `suspended` onto every studio whose Term
   // has ended, on its own clock. Not per tenant: `tenants` is platform data with
   // no policy, and one statement decides every zone. Nothing waits on it — a
   // studio counts as suspended from the moment its Term ends (`effectiveStatus`)
   // — so the grid only decides how soon the stored status catches up.
-  cron.schedule(SLOT_CRON, safeJob('suspendEndedTerms', suspendEndedTerms))
+  suspendEndedTerms: safeJob('suspendEndedTerms', suspendEndedTerms),
+}
+
+export async function registerJobs() {
+  // Boot: prime feature-flag cache — per tenant, since a flag is a tenant's own
+  // answer and the cache is keyed on it.
+  await perTenant('loadFeatureFlags', loadFeatureFlags)()
+
+  cron.schedule('*/5 * * * *', scheduledJobs.expireStaleSessions)
+  cron.schedule('*/5 * * * *', scheduledJobs.completeEndedPtSessions)
+  cron.schedule(SLOT_CRON, scheduledJobs.expirePackages)
+  cron.schedule(SLOT_CRON, scheduledJobs.sendLapsingAlerts)
+  cron.schedule(SLOT_CRON, scheduledJobs.sendExpiredNotifications)
+  cron.schedule(SLOT_CRON, scheduledJobs.flagExpiredWaivers)
+  cron.schedule('0 3 * * *', scheduledJobs.releaseExpiredFormerSlugs, { timezone: 'UTC' })
+  cron.schedule(SLOT_CRON, scheduledJobs.suspendEndedTerms)
 }

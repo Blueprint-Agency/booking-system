@@ -17,6 +17,9 @@ import { tenantId } from '../../../middleware/tenant'
  * mounted here.
  */
 
+/** Headroom over the file limit for the multipart framing around the file. */
+const MULTIPART_ENVELOPE_BYTES = 16 * 1024
+
 const plainDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
 
 const submitSchema = z.object({
@@ -86,11 +89,16 @@ const app = new Hono()
    * bucket needs no CORS. `bodyLimit` stops an oversized body before it is
    * buffered at all; the service re-checks the real byte length, because a
    * content-length header is only a claim.
+   *
+   * The body limit is the FILE limit plus room for the multipart envelope
+   * (boundaries, part headers, filename): the body is always larger than the
+   * file it carries, so capping it at the file limit exactly refused a file
+   * just under the maximum. The exact byte rule stays the service's.
    */
   .post(
     '/:id/document',
     bodyLimit({
-      maxSize: SUPPORTING_DOCUMENT_MAX_BYTES,
+      maxSize: SUPPORTING_DOCUMENT_MAX_BYTES + MULTIPART_ENVELOPE_BYTES,
       onError: c =>
         c.json(
           {

@@ -2,6 +2,7 @@ import { and, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
 import { isUniqueViolation } from '../../db/unique-violation'
+import { now as clockNow } from '../../lib/clock'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { sendPackagePurchaseEmail } from '../notifications/send-purchase-email'
 import { globalPolicy } from '../../db/schema/policy'
@@ -247,7 +248,7 @@ export async function assertPurchasableLocation(
   kind: PackageKind,
   locationId: string | null | undefined,
 ): Promise<void> {
-  const live = kind === 'unlimited' ? await liveUnlimited(tenantId, clientId, new Date()) : []
+  const live = kind === 'unlimited' ? await liveUnlimited(tenantId, clientId, clockNow()) : []
   locationForPurchase(kind, locationId, live.map(r => r.locationId))
 }
 
@@ -329,7 +330,7 @@ export async function quoteCrossLocationAddOn(
   tenantId: string,
   clientId: string,
   clientPackageId: string,
-  now: Date = new Date(),
+  now: Date = clockNow(),
 ): Promise<CrossLocationQuote> {
   const [plan] = await db
     .select()
@@ -453,7 +454,7 @@ export async function grantPackage(
   tenantId: string,
   input: GrantPackageInput,
 ): Promise<{ clientPackageId: string; created: boolean }> {
-  const now = new Date()
+  const now = clockNow()
 
   // Idempotency — if a package was already granted for this sale, return it
   // instead of inserting a duplicate. The webhook and the confirmation-page
@@ -548,7 +549,11 @@ export async function grantPackage(
   }
 
   try {
-    const [row] = await db
+    // In its own savepoint: this runs inside the caller's Tenant transaction,
+    // and the unique violation the catch below turns into an answer would
+    // otherwise abort that transaction — the read that follows fails, and the
+    // request's commit turns the 409 back into a 500.
+    const [row] = await db.transaction(tx => tx
       .insert(clientPackages)
       .values({
         tenantId,
@@ -575,7 +580,7 @@ export async function grantPackage(
         purchaseId: input.purchaseId,
         complimentary: input.complimentary ?? false,
       })
-      .returning({ id: clientPackages.id })
+      .returning({ id: clientPackages.id }))
     return { clientPackageId: row!.id, created: true }
   } catch (err: unknown) {
     // The pre-check above lost a race — the webhook and the confirmation page's

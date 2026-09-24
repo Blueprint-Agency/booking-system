@@ -21,6 +21,7 @@ import { debitCredits } from '../packages/ledger'
 import { activatePackage, sweepExpired } from '../packages/activation'
 import { selectPackage } from '../packages/selection'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { now as clockNow } from '../../lib/clock'
 
 export interface BookClassInput {
   clientId: string
@@ -44,6 +45,10 @@ export async function bookClass(
 ): Promise<BookClassResult> {
   const { clientId, classId } = input
 
+  // One instant for the whole booking: the started check, the expiry sweep,
+  // selection and the Activation stamp all agree on what "now" is.
+  const now = clockNow()
+
   return db.transaction(async tx => {
     // 1. Lock the class row so capacity is evaluated race-free.
     const [cls] = await tx
@@ -61,7 +66,7 @@ export async function bookClass(
       .limit(1)
 
     if (!cls || cls.lifecycle !== 'active') throw new NotFoundError('class_not_found')
-    if (cls.startsAt <= new Date()) throw new BadRequestError('class_already_started')
+    if (cls.startsAt <= now) throw new BadRequestError('class_already_started')
 
     // 2. Already booked? (one confirmed booking per client per class)
     const [existing] = await tx
@@ -93,7 +98,6 @@ export async function bookClass(
     if (confirmedCount >= cls.capacityOnline) throw new ConflictError('class_full')
 
     // 4. Pick a package to pay with (lock the client's rows).
-    const now = new Date()
     // A package whose expiry has passed since the nightly sweep still says
     // `active`, and the one-Activated-per-family index counts it. Sweep the
     // member's own rows first so an ended package can never block the next

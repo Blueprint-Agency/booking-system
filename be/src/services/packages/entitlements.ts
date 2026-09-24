@@ -12,6 +12,7 @@ import {
   type PackageStanding,
 } from './validity'
 import { readCrossLocationRateSgd } from './purchase'
+import { now as clockNow } from '../../lib/clock'
 
 export interface ClientEntitlements {
   trialUsed: boolean
@@ -69,7 +70,7 @@ export async function getClientEntitlements(
   tenantId: string,
   clientId: string,
 ): Promise<ClientEntitlements> {
-  const now = new Date()
+  const now = clockNow()
 
   const rows = await db
     .select({
