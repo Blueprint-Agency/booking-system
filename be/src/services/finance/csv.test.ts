@@ -46,12 +46,12 @@ const lines = (csv: string) => csv.split('\r\n')
     ]),
   )
   const [header, row] = lines(csv)
-  assert.strictEqual(header?.split(',').length, 13)
+  assert.strictEqual(header?.split(',').length, 14)
   assert.ok(row?.includes('"10-Class Pack, 6 months"'))
   assert.ok(row?.includes('"Tan, Wei Ming"'))
   // The quoted fields are one cell each, so the figures still land in the right
   // places — check those rather than counting commas.
-  assert.ok(row?.endsWith('300,Unattributed,30,,270,,,'), row)
+  assert.ok(row?.endsWith('300,Unattributed,30,,270,,,,'), row)
 }
 
 // -- a quote in a variant is doubled, not left to break the field ------------
