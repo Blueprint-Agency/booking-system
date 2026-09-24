@@ -249,6 +249,8 @@ dropped scenario stays, marked `wont-test`, with the reason in its cell.
 | WSP-12 | WSP | member | **Given** a paid tier **When** a member calls the free-register path for it **Then** it is refused and no booking is created _(fe-client-features §4.1)_ | money | integration | `be/src/test/workshops.test.ts` | covered |
 | WSP-13 | WSP | member | **Given** a member already holds a booking for a workshop tier **When** they try to book it again **Then** it is refused as already booked _(fe-client-features §4.1)_ | money | integration | `be/src/test/workshops.test.ts` | covered |
 | WSP-14 | WSP | member | **Given** a workshop that has ended or is not active **When** a member tries to buy it **Then** the purchase is refused _(fe-client-features §4.1)_ | money | integration | `be/src/test/workshops.test.ts` | covered |
+| WSP-15 | WSP | admin | **Given** a Workshop with paid bookings **When** an admin cancels it **Then** every booking is cancelled, nobody is refunded automatically, and each paid booking still offers a Refund on that member's page _(issue #272)_ | money | integration | `be/src/test/workshop-cancel-refund.test.ts` | covered |
+| WSP-16 | WSP | admin | **Given** a paid booking cancelled with its Workshop **When** an admin refunds it **Then** the money is returned and the booking's outcome is recorded as refunded, while other members' bookings stay unrefunded and refundable _(issue #272)_ | money | integration | `be/src/test/workshop-cancel-refund.test.ts` | covered |
 
 ## PT — Private sessions, PT requests, PT entitlement
 

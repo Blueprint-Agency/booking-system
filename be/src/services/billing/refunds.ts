@@ -26,7 +26,7 @@
  * sale never settled. It closes as **abandoned** rather than refunded — money
  * that was never revenue must not be subtracted from Net as though it had been.
  */
-import { and, eq, gt, inArray, ne, sql } from 'drizzle-orm'
+import { and, eq, gt, inArray, ne, or, sql } from 'drizzle-orm'
 import { db, withTenant } from '../../db'
 import { tenantForPaymentIntent } from '../../db/routing'
 import { auditLog, purchases, stripePayments } from '../../db/schema/ledger'
@@ -257,9 +257,14 @@ export async function issueRefund(args: {
  * there is no `client_packages` row for it — so `refundable`/`notice` are
  * computed straight off the one booking rather than via `refundStatesFor`.
  *
- * Only `confirmed` bookings are listed: a refunded workshop booking is flipped
- * to `cancelled` by `unwindRefund`, and a Voided package disappears from the
- * portal the same way — there is nothing left here to hang a second refund on.
+ * Listed: every `confirmed` booking, and every booking cancelled **without its
+ * money going back** whose Purchase still holds some (#272) — which is what
+ * cancelling a Workshop leaves behind. The Workshop's cancel refunds nobody, so
+ * this card is where the admin returns each member's money; hiding the row the
+ * moment the Workshop was cancelled left the provider's dashboard as the only
+ * way to do it. A refunded booking (`stripe_refunded`, its Purchase zeroed)
+ * drops off, as a Voided package does — there is nothing left here to hang a
+ * second refund on.
  */
 export interface WorkshopPurchase {
   bookingId: string
@@ -272,6 +277,8 @@ export interface WorkshopPurchase {
   refundNotice: string | null
   /** How many payments the Refund will return — see `RefundState`. */
   paymentCount: number
+  /** The place is gone — its Workshop was cancelled — and the money has not come back. */
+  cancelled: boolean
 }
 
 export async function listWorkshopPurchases(
@@ -290,6 +297,7 @@ export async function listWorkshopPurchases(
       checkInState: bookings.checkInState,
       purchasePaidSgd: purchases.amountPaidSgd,
       purchaseId: bookings.purchaseId,
+      state: bookings.state,
     })
     .from(bookings)
     .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
@@ -300,7 +308,14 @@ export async function listWorkshopPurchases(
         eq(bookings.tenantId, tenantId),
         eq(bookings.clientId, clientId),
         eq(bookings.kind, 'workshop'),
-        eq(bookings.state, 'confirmed'),
+        or(
+          eq(bookings.state, 'confirmed'),
+          and(
+            eq(bookings.state, 'cancelled'),
+            eq(bookings.refundOutcome, 'n_a'),
+            gt(purchases.amountPaidSgd, '0'),
+          ),
+        ),
       ),
     )
   if (rows.length === 0) return []
@@ -340,6 +355,7 @@ export async function listWorkshopPurchases(
       purchasedAt: r.purchasedAt,
       refundable: holdsMoney(r.purchasePaidSgd),
       refundNotice: attendedNotice(count, r.tierId ? sinceByTier.get(r.tierId) ?? null : null),
+      cancelled: r.state === 'cancelled',
     }
   })
 }
@@ -719,15 +735,26 @@ async function unwindPurchase(tenantId: string, purchaseId: string): Promise<voi
   // `n_a` the class and PT bookings take: that rule is about bookings a voided
   // package paid for, where returning a credit would be meaningless. Here money
   // genuinely went back for this exact booking, which is what the arm is for.
+  //
+  // A booking already cancelled with its Workshop (#272) is caught too: the
+  // Workshop's cancel gives nobody their money back and records `n_a`, and a
+  // Refund issued afterwards is what does — so this is where its outcome
+  // becomes `stripe_refunded`. Its cancel time is the Workshop's, and stays.
   await db
     .update(bookings)
-    .set({ state: 'cancelled', refundOutcome: 'stripe_refunded', cancelledAt: new Date() })
+    .set({
+      state: 'cancelled',
+      refundOutcome: 'stripe_refunded',
+      cancelledAt: sql`coalesce(${bookings.cancelledAt}, now())`,
+    })
     .where(
       and(
         eq(bookings.tenantId, tenantId),
         eq(bookings.purchaseId, purchaseId),
-        eq(bookings.state, 'confirmed'),
-        eq(bookings.checkInState, 'pending'),
+        or(
+          and(eq(bookings.state, 'confirmed'), eq(bookings.checkInState, 'pending')),
+          and(eq(bookings.state, 'cancelled'), eq(bookings.refundOutcome, 'n_a')),
+        ),
       ),
     )
 

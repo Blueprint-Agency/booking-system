@@ -137,6 +137,11 @@ interface ApiBooking {
   code: string;
   booked_at: string;
   cancelled_at: string | null;
+  /**
+   * Backend-composed — what an admin cancel does with the credit ("1 credit goes
+   * back to …"). Null when the booking cannot be cancelled from here.
+   */
+  cancel_notice: string | null;
 }
 
 interface ApiAttendance {
@@ -165,6 +170,8 @@ interface ApiWorkshopPurchase {
   amount_paid_sgd: string;
   list_price_sgd: string;
   purchased_at: string;
+  /** Its Workshop was cancelled and the money has not come back yet (#272). */
+  cancelled: boolean;
   refundable: boolean;
   refund_notice: string | null;
   refund_payment_count: number;
@@ -255,6 +262,9 @@ const REFUSALS: Record<string, string> = {
   client_blocked: "This member is blocked. Unblock them first.",
   name_required: "A name is required.",
   phone_required: "A phone number is required.",
+  booking_attended:
+    "They have already been checked in to this class. Untick them on the roster first if that was a mistake.",
+  not_cancellable: "This booking is no longer booked — it may already have been cancelled.",
 };
 
 /** List Price minus what was paid, as "S$12.34", or null when there's no discount. */
@@ -348,6 +358,7 @@ export default function ClientProfilePage({
   const [emailOpen, setEmailOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [workshopRefundFor, setWorkshopRefundFor] = useState<ApiWorkshopPurchase | null>(null);
+  const [cancelBookingFor, setCancelBookingFor] = useState<ApiBooking | null>(null);
   const [openPurchaseRefundFor, setOpenPurchaseRefundFor] = useState<ApiOpenPurchase | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false);
@@ -407,6 +418,7 @@ export default function ClientProfilePage({
       setBoundInstructorFor(null);
       setRefundFor(null);
       setWorkshopRefundFor(null);
+      setCancelBookingFor(null);
       setGiveOpen(false);
       setRemoveFor(null);
       setEmailOpen(false);
@@ -643,7 +655,11 @@ export default function ClientProfilePage({
                 )}
               </Section>
 
-              <BookingsSection upcoming={profile.upcoming_bookings} past={profile.past_bookings} />
+              <BookingsSection
+                upcoming={profile.upcoming_bookings}
+                past={profile.past_bookings}
+                onCancel={canEdit ? setCancelBookingFor : undefined}
+              />
 
               <PaymentsSection payments={profile.payments} />
 
@@ -857,6 +873,19 @@ export default function ClientProfilePage({
             )
           }
           onClose={() => setWorkshopRefundFor(null)}
+        />
+      )}
+
+      {canEdit && cancelBookingFor && (
+        <CancelBookingDialog
+          booking={cancelBookingFor}
+          onConfirm={() =>
+            runEdit(
+              () => api!.post(`/portal/admin/bookings/${cancelBookingFor.booking_id}/cancel`),
+              "Booking cancelled.",
+            )
+          }
+          onClose={() => setCancelBookingFor(null)}
         />
       )}
 
@@ -1458,6 +1487,7 @@ function WorkshopPurchaseList({
             <div className="font-medium break-words text-ink">{w.workshop_name}</div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <Badge tone="cyan">Workshop</Badge>
+              {w.cancelled && <Badge tone="warning">Cancelled · not refunded</Badge>}
               {w.tier_name && <span className="text-xs text-muted">{w.tier_name}</span>}
             </div>
             <div className="mt-3 text-xs text-muted">
@@ -1778,13 +1808,32 @@ function bookingTitle(b: ApiBooking): string {
   return b.title ?? "Class";
 }
 
+/**
+ * What a cancellation did with what the member paid, read off the booking's
+ * refund outcome (#272). A bare "Cancelled" hid the one thing the front desk is
+ * asked about. `n_a` on a workshop is a place cancelled with its Workshop and
+ * no money back yet; on a class it is an Unlimited plan's, which spent nothing.
+ */
+function cancelledOutcome(b: ApiBooking): { label: string; tone: "warning" | "neutral" } {
+  switch (b.refund_outcome) {
+    case "forfeited":
+      return { label: "Late cancel", tone: "warning" };
+    case "stripe_refunded":
+      return { label: "Cancelled · refunded", tone: "neutral" };
+    case "credit_returned":
+      return { label: "Cancelled · credit back", tone: "neutral" };
+    case "session_returned":
+      return { label: "Cancelled · session back", tone: "neutral" };
+    case "n_a":
+      return b.kind === "workshop"
+        ? { label: "Cancelled · not refunded", tone: "warning" }
+        : { label: "Cancelled · place freed", tone: "neutral" };
+  }
+}
+
 /** How a booking ended, in the words the front desk uses. */
 function bookingOutcome(b: ApiBooking, upcoming: boolean): { label: string; tone: "sage" | "warning" | "error" | "neutral" | "accent" } {
-  if (b.state === "cancelled") {
-    return b.refund_outcome === "forfeited"
-      ? { label: "Late cancel", tone: "warning" }
-      : { label: "Cancelled", tone: "neutral" };
-  }
+  if (b.state === "cancelled") return cancelledOutcome(b);
   if (b.check_in_state === "attended") return { label: "Attended", tone: "sage" };
   if (b.state === "no_show" || b.check_in_state === "no_show") return { label: "No-show", tone: "error" };
   if (upcoming) return { label: "Booked", tone: "accent" };
@@ -1792,7 +1841,16 @@ function bookingOutcome(b: ApiBooking, upcoming: boolean): { label: string; tone
   return { label: "Not checked in", tone: "neutral" };
 }
 
-function BookingRow({ b, upcoming }: { b: ApiBooking; upcoming: boolean }) {
+function BookingRow({
+  b,
+  upcoming,
+  onCancel,
+}: {
+  b: ApiBooking;
+  upcoming: boolean;
+  /** Offered only on an upcoming booking the backend says can be cancelled. */
+  onCancel?: (b: ApiBooking) => void;
+}) {
   const outcome = bookingOutcome(b, upcoming);
   const detail = [b.instructor, b.location, b.package_name ? `on ${b.package_name}` : null]
     .filter(Boolean)
@@ -1818,7 +1876,72 @@ function BookingRow({ b, upcoming }: { b: ApiBooking; upcoming: boolean }) {
         )}
       </div>
       <Badge tone={outcome.tone}>{outcome.label}</Badge>
+      {onCancel && upcoming && b.cancel_notice && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="shrink-0 text-error hover:bg-error/10 hover:text-error"
+          onClick={() => onCancel(b)}
+        >
+          Cancel…
+        </Button>
+      )}
     </li>
+  );
+}
+
+/**
+ * An admin's cancel of one class booking (#272). Always allowed and always
+ * returns what the booking spent — the dialog says which, in the backend's
+ * words, before the admin commits.
+ */
+function CancelBookingDialog({
+  booking,
+  onConfirm,
+  onClose,
+}: {
+  booking: ApiBooking;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const when = booking.starts_at
+    ? ` on ${formatDate(booking.starts_at, "EEE d MMM, h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())}`
+    : "";
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && !busy && onClose()}
+      title={`Cancel ${bookingTitle(booking)}${when}?`}
+      description={`Their place is released. ${booking.cancel_notice ?? ""}`}
+    >
+      <DialogFooter>
+        <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+          Keep booking
+        </Button>
+        <Button
+          type="button"
+          disabled={busy}
+          className="bg-error text-white hover:bg-error/90"
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await onConfirm();
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" /> Cancelling…
+            </>
+          ) : (
+            "Cancel booking"
+          )}
+        </Button>
+      </DialogFooter>
+    </Dialog>
   );
 }
 
@@ -1828,7 +1951,16 @@ function BookingRow({ b, upcoming }: { b: ApiBooking; upcoming: boolean }) {
  * attendance strip in the header counts every one). Cancelled bookings stay in
  * the history — a late cancel is exactly what the front desk looks here for.
  */
-function BookingsSection({ upcoming, past }: { upcoming: ApiBooking[]; past: ApiBooking[] }) {
+function BookingsSection({
+  upcoming,
+  past,
+  onCancel,
+}: {
+  upcoming: ApiBooking[];
+  past: ApiBooking[];
+  /** Absent for a read-only viewer. */
+  onCancel?: (b: ApiBooking) => void;
+}) {
   const [tab, setTab] = useState<"upcoming" | "history">(
     upcoming.length > 0 || past.length === 0 ? "upcoming" : "history",
   );
@@ -1873,7 +2005,7 @@ function BookingsSection({ upcoming, past }: { upcoming: ApiBooking[]; past: Api
         ) : (
           <ul role="tabpanel" className="divide-y divide-border">
             {visible.map((b) => (
-              <BookingRow key={b.booking_id} b={b} upcoming={tab === "upcoming"} />
+              <BookingRow key={b.booking_id} b={b} upcoming={tab === "upcoming"} onCancel={onCancel} />
             ))}
           </ul>
         )}

@@ -102,6 +102,12 @@ export function WorkshopBookings() {
     <div>
       <SectionHeading eyebrow="Workshops" title="Your workshops" />
       <AccountMobileNav />
+      {/* There is no self-serve cancel for a workshop, and a cancelled one is
+          not the same as a refunded one — the studio arranges both (#272). */}
+      <p className="mb-4 text-sm text-muted">
+        Workshop bookings can&apos;t be cancelled in the app. To change or cancel
+        one, or to ask about a refund, contact the studio.
+      </p>
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-muted">
@@ -159,11 +165,19 @@ export function WorkshopBookings() {
               ))}
             </div>
           ) : (
-            <div className="rounded-2xl bg-paper border border-ink/10 divide-y divide-ink/5">
-              {visible.map((b) => (
-                <PastRow key={b.id} booking={b} cancelled={tab === "cancelled"} />
-              ))}
-            </div>
+            <>
+              {tab === "cancelled" && (
+                <p className="mb-3 text-xs text-muted">
+                  A cancelled booking hasn&apos;t necessarily been refunded. Any refund
+                  is arranged by the studio and shows on your card statement.
+                </p>
+              )}
+              <div className="rounded-2xl bg-paper border border-ink/10 divide-y divide-ink/5">
+                {visible.map((b) => (
+                  <PastRow key={b.id} booking={b} cancelled={tab === "cancelled"} />
+                ))}
+              </div>
+            </>
           )}
         </>
       )}

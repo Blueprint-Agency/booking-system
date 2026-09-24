@@ -352,6 +352,10 @@ export default function WorkshopDetailPage() {
                       Review your booking before paying
                     </p>
                   )}
+                  <p className="text-xs text-muted text-center">
+                    Workshop bookings can&apos;t be cancelled in the app. For any
+                    change, contact the studio.
+                  </p>
                 </>
               )}
             </div>

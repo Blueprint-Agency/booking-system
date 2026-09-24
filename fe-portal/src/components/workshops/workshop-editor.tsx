@@ -20,6 +20,7 @@ import {
 } from "@/lib/catalog";
 import { atLocalTime, localDay } from "@/lib/local-day";
 import { scheduleErrorMessage, type Slot } from "@/lib/schedule";
+import { WORKSHOP_CANCEL_CONFIRM } from "@/lib/workshop-cancel";
 import {
   hasPromotionOverlap,
   promotionFromApi,
@@ -498,7 +499,7 @@ export function WorkshopEditor({
 
   async function handleCancelWorkshop() {
     if (!api || !initial) return;
-    if (!confirm("Cancel this workshop? This is irreversible.")) return;
+    if (!confirm(WORKSHOP_CANCEL_CONFIRM)) return;
     try {
       await api.post(`/portal/admin/workshops/${initial.id}/cancel`);
       toast.success("Workshop cancelled.");

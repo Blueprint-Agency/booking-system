@@ -23,6 +23,7 @@ import {
   memberAttendanceSummary,
   type MemberBookingRow,
 } from '../../../services/bookings/member-history'
+import { adminCancelNotice } from '../../../services/bookings/admin-cancel-notice'
 import { listMemberPayments, type MemberPaymentView } from '../../../services/billing/member-payments'
 import {
   adjustBalance,
@@ -276,6 +277,9 @@ function memberBookingView(b: MemberBookingRow) {
     code: b.code,
     booked_at: b.bookedAt,
     cancelled_at: b.cancelledAt,
+    // Null when the portal offers no "Cancel booking" on it; otherwise what the
+    // cancel will do with the credit, for the confirm dialog (#272).
+    cancel_notice: adminCancelNotice(b),
   }
 }
 
@@ -304,6 +308,7 @@ function workshopPurchaseView(w: WorkshopPurchase) {
     amount_paid_sgd: w.amountPaidSgd,
     list_price_sgd: w.listPriceSgd,
     purchased_at: w.purchasedAt,
+    cancelled: w.cancelled,
     refundable: w.refundable,
     refund_notice: w.refundNotice,
     refund_payment_count: w.paymentCount,
