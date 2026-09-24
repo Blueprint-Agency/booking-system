@@ -10,6 +10,7 @@ import {
   createManualPayroll,
   deleteManualPayroll,
   payrollAuditTable,
+  MAX_PAY_SGD,
   type PayrollKind,
 } from '../../../services/payroll/list'
 import {
@@ -71,12 +72,17 @@ const patchBody = z.object({
   instructor_id: z.string().uuid().optional(),
 })
 
+// A Manual Entry says why it exists and when, or it is money out nobody can
+// account for (#242): a label of spaces records nothing, and `Date.parse` would
+// read "1" as a date in 2000.
 const createManualBody = z.object({
   instructor_id: z.string().uuid(),
-  amount_sgd: z.number().min(0),
-  label: z.string().min(1),
-  entry_date: isoDate.optional(),
+  amount_sgd: z.number().min(0).max(MAX_PAY_SGD),
+  label: z.string().trim().min(1),
+  entry_date: z.string().datetime({ offset: true }).optional(),
 })
+
+const manualParam = z.object({ id: z.string().uuid() })
 
 /** The failure response for a pay write — one shape for both handlers. */
 const saveFailure = (c: Context, kind: PayrollKind, reason: PayrollSaveReason) =>
@@ -142,8 +148,8 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'manual_payroll_entries', id: row.id })
     return c.json({ id: row.id }, 201)
   })
-  .delete('/manual/:id', async c => {
-    const id = c.req.param('id')
+  .delete('/manual/:id', zValidator('param', manualParam), async c => {
+    const { id } = c.req.valid('param')
     const res = await deleteManualPayroll(tenantId(c), id)
     if (!res.ok) return saveFailure(c, 'manual', res.reason)
     c.set('auditTarget' as any, { table: 'manual_payroll_entries', id })
