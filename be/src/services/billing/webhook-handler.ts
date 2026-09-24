@@ -15,8 +15,8 @@ import { tenantForClient as routeToTenant, tenantForPaymentIntent } from '../../
 import { stripePayments } from '../../db/schema/ledger'
 import { clients } from '../../db/schema/identity'
 import { and, eq, ne } from 'drizzle-orm'
-import { stripeForProviderAccount } from '../../lib/stripe'
-import { outbound, type RetryPolicy } from '../../lib/outbound'
+import { type RetryPolicy } from '../../lib/outbound'
+import { latestCharge, methodPatch } from './payment-methods'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
 import { unwindRefund } from './refunds'
@@ -32,15 +32,36 @@ import {
 import { reportError } from '../../shared/logger'
 import { NotFoundError } from '../../shared/errors'
 
+/** The provider's own receipt for a payment (§13), off its latest charge. */
+const receiptOf = (charge: Stripe.Charge | null): { receiptUrl?: string } =>
+  // Absent rather than null, so a redelivery that comes back empty leaves the
+  // receipt an earlier delivery already wrote.
+  charge?.receipt_url ? { receiptUrl: charge.receipt_url } : {}
+
 /**
  * The provider's own receipt for a payment (§13). `checkout.session.completed`
  * carries no charge object, so the intent is retrieved with its latest charge
  * expanded — that is the only place the receipt URL exists.
  *
- * Returns null rather than throwing: the confirmation email falls back to the
+ * Empty rather than throwing: the confirmation email falls back to the
  * account page, and a receipt lookup must never fail a delivered purchase.
  */
 export async function receiptUrlPatch(
+  tenantId: string,
+  paymentIntentId: string,
+  providerAccountId: string | null,
+  retry?: RetryPolicy,
+): Promise<{ receiptUrl?: string }> {
+  return receiptOf(await latestCharge(tenantId, paymentIntentId, providerAccountId, retry))
+}
+
+/**
+ * What a succeeded payment learns from its charge: the receipt, and how it was
+ * paid (#282). One retrieve for both — the method is on the same charge the
+ * receipt is — and best-effort for both: a failed retrieve writes neither and
+ * the payment is banked all the same.
+ */
+async function chargePatch(
   tenantId: string,
   paymentIntentId: string,
   /**
@@ -51,24 +72,9 @@ export async function receiptUrlPatch(
    */
   providerAccountId: string | null,
   retry?: RetryPolicy,
-): Promise<{ receiptUrl?: string }> {
-  try {
-    const stripe = await stripeForProviderAccount(tenantId, providerAccountId)
-    const intent = await outbound(
-      'stripe',
-      'paymentIntents.retrieve',
-      () => stripe.paymentIntents.retrieve(paymentIntentId, { expand: ['latest_charge'] }),
-      { retry },
-    )
-    const charge = intent.latest_charge
-    const url = typeof charge === 'object' && charge !== null ? charge.receipt_url : null
-    // Absent rather than null, so a redelivery that comes back empty leaves the
-    // receipt an earlier delivery already wrote.
-    return url ? { receiptUrl: url } : {}
-  } catch (err) {
-    reportError(err, 'receipt url lookup failed', { scope: 'billing-webhook', paymentIntentId })
-    return {}
-  }
+): Promise<Partial<typeof stripePayments.$inferInsert>> {
+  const charge = await latestCharge(tenantId, paymentIntentId, providerAccountId, retry)
+  return { ...receiptOf(charge), ...methodPatch(charge) }
 }
 
 /**
@@ -198,10 +204,11 @@ async function settleAndMayGrant(
   const { settled } = await recomputeBalance(tenantId, purchase, paymentIntentId)
   if (settled) return true
 
+  // Each part of a Part Payment is its own charge, so each keeps its own method.
   await bankPayment(
     tenantId,
     paymentIntentId,
-    await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId),
+    await chargePatch(tenantId, paymentIntentId, providerAccountId),
   )
   return false
 }
@@ -470,10 +477,10 @@ async function dispatchStripeEvent(
       // delivery (webhook AND sync-session both fire in local dev) short-circuits
       // at the `status === 'succeeded'` guard above instead of double-granting.
       // The receipt URL lands in the same write — the column the confirmation
-      // email reads (§13).
+      // email reads (§13) — and so does how it was paid.
       await bankPayment(tenantId, paymentIntentId, {
         clientPackageId: granted.clientPackageId,
-        ...(await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry)),
+        ...(await chargePatch(tenantId, paymentIntentId, providerAccountId, retry)),
       })
 
       // One confirmation per purchase, however many times the provider retries:
@@ -548,7 +555,7 @@ async function dispatchStripeEvent(
 
       await bankPayment(tenantId, paymentIntentId, {
         clientPackageId,
-        ...(await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry)),
+        ...(await chargePatch(tenantId, paymentIntentId, providerAccountId, retry)),
       })
       // No confirmation email: an Add-On grants no package, and §13 names four
       // sending paths, none of them this one.
@@ -604,7 +611,7 @@ async function dispatchStripeEvent(
       await bankPayment(
         tenantId,
         paymentIntentId,
-        await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry),
+        await chargePatch(tenantId, paymentIntentId, providerAccountId, retry),
       )
       return
     }
@@ -679,12 +686,12 @@ async function dispatchStripeEvent(
       })
 
       // Written before the email is composed — it is where `receipt_url` comes
-      // from (§13).
-      const receipt = await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry)
-      if (receipt.receiptUrl) {
+      // from (§13). How it was paid comes off the same charge.
+      const learned = await chargePatch(tenantId, paymentIntentId, providerAccountId, retry)
+      if (Object.keys(learned).length > 0) {
         await db
           .update(stripePayments)
-          .set(receipt)
+          .set(learned)
           .where(
             and(
               eq(stripePayments.tenantId, tenantId),

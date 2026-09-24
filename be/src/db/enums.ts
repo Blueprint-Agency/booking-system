@@ -176,6 +176,20 @@ export const purchaseStatusEnum = pgEnum('purchase_status', [
   'abandoned',
 ])
 
+/**
+ * How money that never reached a payment provider was paid (#282) — a sale made
+ * before the studio came to the platform, migrated. A payment the provider took
+ * records the provider's own method name on its payment row instead, as text,
+ * because the provider's list grows without us.
+ */
+export const offlinePaymentMethodEnum = pgEnum('offline_payment_method', [
+  'cash',
+  'card',
+  'paynow',
+  'bank_transfer',
+  'other',
+])
+
 // Content
 export const emailRecipientKindEnum = pgEnum('email_recipient_kind', ['client', 'staff'])
 // Spec §4j uses `email_log` with a `status` column. The pgEnum is named `email_log_status` per

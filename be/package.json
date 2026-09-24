@@ -18,6 +18,7 @@
     "db:seed": "tsx src/db/seed/run.ts",
     "test:db": "node scripts/test-db.mjs",
     "e2e:studio": "tsx src/e2e/cli.ts",
+    "billing:backfill-methods": "tsx src/services/billing/method-backfill-cli.ts",
     "mindbody": "tsx tools/mindbody/transform/cli.ts",
     "mindbody:download": "tsx tools/mindbody/download/cli.ts"
   },

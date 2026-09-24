@@ -5,6 +5,7 @@ import { getFinance, UNATTRIBUTED } from '../../../services/finance/list'
 import { getFinanceOverview } from '../../../services/finance/overview'
 import { financeCsv } from '../../../services/finance/csv'
 import { MONEY_EVENT_TYPES } from '../../../services/finance/events'
+import { METHOD_CATEGORIES } from '../../../services/finance/methods'
 import {
   updatePayrollAmount,
   createManualPayroll,
@@ -52,6 +53,8 @@ const listQuery = z.object({
   // A Location id, or the Unattributed bucket — the rows that record no Location.
   location: z.union([z.string().uuid(), z.literal(UNATTRIBUTED)]).optional(),
   needs_pay: z.enum(['true', 'false']).optional(),
+  /** How it was paid, by category. Money out is never paid any way, so it drops out. */
+  method: z.enum(METHOD_CATEGORIES).optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
 })
@@ -95,6 +98,7 @@ const filterFrom = (q: z.infer<typeof listQuery>) => ({
   q: q.q,
   location: q.location,
   needsPayOnly: q.needs_pay === 'true',
+  methods: q.method ? [q.method] : undefined,
   from: q.from ? new Date(q.from) : undefined,
   to: q.to ? new Date(q.to) : undefined,
 })

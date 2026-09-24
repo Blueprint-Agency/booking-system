@@ -6,6 +6,7 @@ import { clientPackages } from './packages'
 import { bookings } from './bookings'
 import {
   auditActorTypeEnum,
+  offlinePaymentMethodEnum,
   purchaseKindEnum,
   purchaseStatusEnum,
   stripePaymentKindEnum,
@@ -92,6 +93,17 @@ export const purchases = pgTable(
      * instead. Null on every Purchase the platform took money for.
      */
     refundedAt: timestamp('refunded_at', { withTimezone: true }),
+    /**
+     * How a Purchase with **no payment behind it** was paid (#282): a sale made
+     * before the studio came to the platform, migrated with the method its old
+     * system recorded. Null on every Purchase the platform took money for — the
+     * payment rows say how those were paid, each on its own.
+     */
+    offlineMethod: offlinePaymentMethodEnum('offline_method'),
+    /** The old system's own name for the method ("Visa/MC", "PayNow QR"), kept as it said it. */
+    offlineMethodLabel: text('offline_method_label'),
+    /** The old system's id for the sale, so a migrated Purchase can be traced back to it. */
+    sourceSaleId: text('source_sale_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
@@ -206,6 +218,22 @@ export const stripePayments = pgTable(
      */
     providerAccountId: text('provider_account_id'),
     receiptUrl: text('receipt_url'),
+    /**
+     * How this payment was paid, copied off the provider's charge when it
+     * succeeds (#282). Best-effort, like the receipt: null means "not read",
+     * never "no method".
+     *
+     * `method` is the provider's own name for the method type — `card`,
+     * `paynow`, `grabpay` — kept as text so a method a studio switches on later
+     * is recorded without a code change. Finance groups the names into its
+     * categories (`services/finance/methods.ts`).
+     */
+    method: text('method'),
+    /** For a card: the brand as the provider names it (`visa`, `mastercard`). */
+    cardBrand: text('card_brand'),
+    cardLast4: text('card_last4'),
+    /** For a card that came through a wallet: which one (`apple_pay`, `google_pay`). */
+    wallet: text('wallet'),
     refundedAt: timestamp('refunded_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
