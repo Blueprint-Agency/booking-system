@@ -24,10 +24,11 @@ import { fileURLToPath } from 'node:url'
 export const INVENTORY = 'docs/md/test-scenarios.md'
 
 /**
- * Where product tests live; each is searched recursively. Not `scripts/`: its
- * tests prove tooling, and this script's own test names example IDs.
+ * Where tests that can prove a row live; each is searched recursively. `be/tools`
+ * holds the Mindbody import, whose tests prove what an imported studio can do.
+ * Not `scripts/`: this script's own test names example IDs.
  */
-const TEST_ROOTS = ['be/src', 'fe-client/src', 'fe-portal/src', 'e2e']
+const TEST_ROOTS = ['be/src', 'be/tools', 'fe-client/src', 'fe-portal/src', 'e2e']
 const TEST_FILE = /\.(test|spec)\.(ts|tsx|mjs|js)$/
 const SKIP_DIRS = new Set(['node_modules', '.next', 'test-results', 'playwright-report'])
 
