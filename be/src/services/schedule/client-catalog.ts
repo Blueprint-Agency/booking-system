@@ -6,6 +6,7 @@ import { bookings } from '../../db/schema/bookings'
 import { classes, classSupportingInstructors } from '../../db/schema/schedule'
 import { classTypes, instructors, locations, rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
+import { classDifficultyEnum } from '../../db/enums'
 import { NotFoundError } from '../../shared/errors'
 import { readRosters, type Tx } from './roster'
 import { lineupsOf } from './lineup'
@@ -23,7 +24,7 @@ export interface LocationLite {
 
 export interface ClassCardPayload {
   id: string
-  class_type: { id: string; name: string }
+  class_type: { id: string; name: string; difficulty: ClassLevel }
   instructor: { id: string; name: string }
   main_instructor_id: string
   supporting_instructor_ids: string[]
@@ -41,10 +42,12 @@ export interface ClassCardPayload {
 }
 
 export interface ClassDetailPayload extends ClassCardPayload {
-  class_type: { id: string; name: string; description: string | null }
+  class_type: { id: string; name: string; difficulty: ClassLevel; description: string | null }
   location: { id: string; name: string; address: string | null; gmaps_url: string | null } | null
   supporting_instructors: { id: string; name: string }[]
 }
+
+export type ClassLevel = (typeof classDifficultyEnum.enumValues)[number]
 
 export interface ClassListFilters {
   from?: Date
@@ -52,12 +55,14 @@ export interface ClassListFilters {
   locationId?: string
   instructorId?: string
   classTypeId?: string
+  level?: ClassLevel
 }
 
 export const classFiltersSchema = z.object({
   location_id: z.string().uuid().optional(),
   instructor_id: z.string().uuid().optional(),
   class_type_id: z.string().uuid().optional(),
+  level: z.enum(classDifficultyEnum.enumValues).optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
 })
@@ -68,6 +73,7 @@ export function parseClassFilters(raw: Record<string, string>): ClassListFilters
     locationId: q.location_id,
     instructorId: q.instructor_id,
     classTypeId: q.class_type_id,
+    level: q.level,
     from: q.from ? new Date(q.from) : undefined,
     to: q.to ? new Date(q.to) : undefined,
   }
@@ -120,12 +126,14 @@ export async function listClassCards(
   if (filters.locationId) conds.push(eq(classes.locationId, filters.locationId))
   if (filters.instructorId) conds.push(eq(classes.mainInstructorId, filters.instructorId))
   if (filters.classTypeId) conds.push(eq(classes.classTypeId, filters.classTypeId))
+  if (filters.level) conds.push(eq(classTypes.difficulty, filters.level))
 
   const rows = await db
     .select({
       id: classes.id,
       classTypeId: classes.classTypeId,
       className: classTypes.name,
+      classDifficulty: classTypes.difficulty,
       instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
       locationId: classes.locationId,
@@ -172,7 +180,7 @@ export async function listClassCards(
     const supporting = supportingByClass.get(r.id) ?? []
     return {
       id: r.id,
-      class_type: { id: r.classTypeId, name: r.className },
+      class_type: { id: r.classTypeId, name: r.className, difficulty: r.classDifficulty },
       instructor: { id: r.instructorId, name: r.instructorName || 'Instructor' },
       main_instructor_id: r.instructorId,
       supporting_instructor_ids: supporting,
@@ -213,6 +221,7 @@ export async function getClassDetail(
       id: classes.id,
       classTypeId: classes.classTypeId,
       className: classTypes.name,
+      classDifficulty: classTypes.difficulty,
       classDescription: classTypes.description,
       instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
@@ -269,7 +278,7 @@ export async function getClassDetail(
 
   return {
     id: r.id,
-    class_type: { id: r.classTypeId, name: r.className, description: r.classDescription },
+    class_type: { id: r.classTypeId, name: r.className, difficulty: r.classDifficulty, description: r.classDescription },
     instructor: { id: r.instructorId, name: r.instructorName || 'Instructor' },
     main_instructor_id: r.instructorId,
     supporting_instructor_ids: supportingIds,

@@ -17,7 +17,9 @@ const listQuery = z.object({
   location_id: z.string().uuid().optional(),
 })
 
-const createSchema = z.object({
+// No create: a corporate session only comes from scheduling a Corporate
+// Request (admin-restructure §7c), so the client name is the member's.
+const updateSchema = z.object({
   corporate_package_id: z.string().uuid(),
   client_name: z.string().min(1).max(160),
   main_instructor_id: z.string().uuid(),
@@ -26,9 +28,7 @@ const createSchema = z.object({
   room_id: z.string().uuid(),
   starts_at: isoDate,
   ends_at: isoDate,
-})
-
-const updateSchema = createSchema.partial()
+}).partial()
 
 function serialize(r: svc.CorporateSessionRow) {
   return {
@@ -83,31 +83,6 @@ const app = new Hono()
     const row = await svc.getCorporateSession(tenantId(c), id)
     if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     return c.json({ corporate_session: serializeHydrated(row) })
-  })
-  .post('/', zValidator('json', createSchema), async c => {
-    const body = c.req.valid('json')
-    const actor = c.get('staffUserId') as string
-
-    const startsAt = new Date(body.starts_at)
-    const endsAt = new Date(body.ends_at)
-
-    const result = await svc.createCorporateSession(tenantId(c), {
-      corporatePackageId: body.corporate_package_id,
-      clientName: body.client_name,
-      mainInstructorId: body.main_instructor_id,
-      supportingInstructorIds: body.supporting_instructor_ids,
-      locationId: body.location_id,
-      roomId: body.room_id,
-      startsAt,
-      endsAt,
-      createdByStaffId: actor,
-    })
-
-    if (!result.ok) {
-      return c.json({ error: result.error }, statusFor(result.error))
-    }
-    c.set('auditTarget' as any, { table: 'corporate_sessions', id: result.session.id })
-    return c.json({ corporate_session: serialize(result.session) }, 201)
   })
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
     const { id } = c.req.valid('param')
