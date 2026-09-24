@@ -19,7 +19,7 @@ These show up in many features. Understanding them up front makes the rest read 
 - **Credit** = currency for **group classes only**. Earned by purchasing a Bundle, or held implicitly by an Unlimited package.
 - A user can hold a Bundle **OR** Unlimited at a time, **never both** at the same time.
 - A class booking deducts **1 credit** at the moment of confirmation.
-- Cancelling within the policy window returns the credit; outside the window it is forfeited (or fee charged — per the studio's own cancellation policy, configured in admin).
+- Cancelling before the studio's window returns the credit while the member is under the cancellation cap, and loses it once they are over; inside the window a member cannot cancel (§0.6).
 - Workshops do **not** consume credits — they're paid directly per workshop.
 
 ### 0.2 Session entitlement (private training)
@@ -55,12 +55,18 @@ These show up in many features. Understanding them up front makes the rest read 
 
 ### 0.6 Cancellation policy (set in admin)
 
-| Booking type | Inside window | Outside window |
-|---|---|---|
-| Class | Credit returned | Credit forfeited / fee |
-| Workshop | Refund initiated | Policy penalty |
-| Private (unconfirmed) | Free | Free |
-| Private (confirmed) | Session returned | Session forfeited / fee |
+The studio sets a class window, a PT window, and a cap: how many cancellations a member may make per cycle (class and PT share one count). The **window** is a deadline: a member may cancel up to that many hours before the session starts, and not after — inside it the server refuses (`422 cancellation_window_passed`) and the member has to contact the studio. The **cap** decides what comes back.
+
+| Booking type | Cancelled in time, under the cap | Cancelled in time, over the cap | Inside the window |
+|---|---|---|---|
+| Class (credit-paid) | Credit returned | Cancelled, credit lost | Refused |
+| Class (Unlimited) | Place freed, nothing to return | Place freed, nothing to return | Refused |
+| Private (pending) | Sessions returned | Sessions returned | Sessions returned |
+| Private (scheduled) | Session returned | Cancelled, session lost | Refused |
+
+Workshops are not cancelled by members (non-refundable). Unlimited cancellations still count toward the cap.
+
+fe-client reads the numbers from `GET /public/cancellation-policy` — none are compiled in — and states them on the schedule before a member books, in the cancel dialogs, and in the PT footnote. Member-facing copy never says "refund" for a credit or session coming back; a refund is money. Copy lives in `fe-client/src/lib/cancellation-copy.ts`.
 
 Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 
@@ -377,6 +383,7 @@ Fields, in order:
   4. **VIP Private Sessions** — 1-on-1 or 2-on-1 packs with a session count.
 - A user holding a Bundle cannot purchase Unlimited (and vice versa) until the existing one expires or is exhausted. UI flags this and blocks purchase with copy. Trial Pass and VIP are independent and can co-exist with any other holding.
 - Trial sits at the top of the page above the Credits / Unlimited toggle. VIP sits as an independent fourth section.
+- Who may buy a trial, and what happens if they turn out not to qualify, is **studio policy** and so studio data: `tenant_settings.copy->>'trial.terms'` (plain text). When set, it shows above the trial cards and in an acknowledgement dialog before checkout, whose checkbox reads `trial.acknowledgement` (a neutral "I have read and accept these terms." when unset). When `trial.terms` is unset there is no notice and no dialog.
 
 **Promotions (best-price-wins)**
 - Any package may carry one or more **promotions** configured in admin (percent off or explicit special price, with start/end windows).
@@ -674,8 +681,9 @@ These are the in-app and channel touchpoints triggered by booking and payment ev
 | Trigger | Surface | Copy |
 |---|---|---|
 | Class reserved | Modal dialog | "Your booking is confirmed! Please arrive 15 minutes before class." + CTA "I will attend on time" |
-| Class cancelled by user (in-window) | Toast | "Booking cancelled · 1 credit returned" |
-| Class cancelled by user (out-of-window) | Toast | "Booking cancelled · credit forfeited per cancellation policy" |
+| Class cancelled by user (in time, under the cap) | Banner | "Booking cancelled · 1 credit returned." |
+| Class cancelled by user (in time, over the cap) | Banner | "Booking cancelled · the credit wasn't returned, because you've used up your cancellations this cycle." |
+| Class cancel refused (inside the window) | Banner | "This class starts within [window], so it can no longer be cancelled in the app. Please contact the studio." |
 | Workshop purchased | Confirmation page | "You're registered for [workshop]. We've emailed your receipt." |
 | Package purchased | Confirmation page | "[Package name] is now active. Start booking from /classes." |
 | Private session requested | Confirmation page | "Your request is pending. We will update you within 12 hours." |

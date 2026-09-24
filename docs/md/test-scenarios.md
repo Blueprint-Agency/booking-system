@@ -173,6 +173,7 @@ dropped scenario stays, marked `wont-test`, with the reason in its cell.
 | CXL-32 | CXL | admin | **Given** an admin is cancelling a class **When** a member books that class at the same moment **Then** the booking either lands first and is refunded by the cancel, or is refused because the class is no longer active; none is left confirmed on a cancelled class _(class-booking-lifecycle §3.4)_ | money | integration | `be/src/test/cancellation-policy.test.ts` | covered |
 | CXL-33 | CXL | admin | **Not built.** **Given** a workshop with paying attendees **When** an Admin cancels it **Then** a Stripe money refund is issued to every attendee immediately with no manual step _(admin-restructure §7a)_ | money | integration |  | uncovered |
 | CXL-34 | CXL | admin | **Given** a confirmed booking that spent 1 credit, after which the class's credit cost was edited to 3 **When** an Admin cancels the class **Then** exactly the 1 credit the booking spent returns to the package that paid, not the new cost _(class-booking-lifecycle §3.4; spec-credit-ledger-payroll §User Stories 2)_ | money | integration |  | uncovered |
+| CXL-35 | CXL | member | **Given** an Admin has saved the studio's class window, PT window, cap count and cycle length **When** the member app reads the studio's cancellation policy **Then** it gets those saved values for that studio and never another studio's _(fe-client-features §0.6)_ | UX | integration | `be/src/test/cancellation-policy-read.test.ts` | covered |
 
 ## CHK — Check-in & per-booking QR
 

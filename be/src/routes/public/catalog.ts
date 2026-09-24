@@ -11,6 +11,7 @@ import {
 import * as workshopsSvc from '../../services/workshops/catalog'
 import * as merchSvc from '../../services/catalog/merch'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
+import { readCancellationPolicy } from '../../services/policy/evaluate-cancellation'
 import { tenantId } from '../../middleware/tenant'
 
 function serializeClassPackage(
@@ -120,6 +121,19 @@ const app = new Hono()
         const ps = ptPromos[r.id] ?? []
         return serializePtPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps))
       }),
+    })
+  })
+  // The studio's cancellation rules, stated to a member before they book and
+  // when they cancel. Public because the schedule is: the rules are part of
+  // what a member is agreeing to, signed in or not. Not cached — an admin who
+  // changes the window should see members told the new one straight away.
+  .get('/cancellation-policy', async c => {
+    const p = await readCancellationPolicy(tenantId(c))
+    return c.json({
+      class_window_hours: p.classWindowHours,
+      pt_window_hours: p.ptWindowHours,
+      cancel_cap_count: p.cancelCapCount,
+      cancel_cap_cycle_days: p.cancelCapCycleDays,
     })
   })
   // Corporate catalogue for signed-out browsing (no promotions, no entitlements).

@@ -6,10 +6,25 @@ import { CalendarX, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QrBadge } from "@/components/account/qr-badge";
-import { usePtSessionsApi, type RawPtRequest } from "@/lib/pt-sessions";
+import {
+  usePtSessionsApi,
+  type CancelPtRequestResult,
+  type RawPtRequest,
+} from "@/lib/pt-sessions";
 import { useClientPackages } from "@/lib/use-client-packages";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
+import { ApiError } from "@/lib/api";
+import { ERROR_CODES } from "@/lib/error-codes";
+import { useCancellationPolicy, type CancellationPolicy } from "@/lib/cancellation-policy";
+import {
+  cancelClosed,
+  canStillCancel,
+  ptCancelPrompt,
+  ptCancelResult,
+  ptPolicyNote,
+  windowRefusal,
+} from "@/lib/cancellation-copy";
 
 // Slot times arrive as HH:MM:SS (Postgres time) — trim to HH:MM for display.
 const hhmm = (t: string) => t.slice(0, 5);
@@ -56,13 +71,13 @@ function statusBadge(status: PtStatus, refundOutcome?: RefundOutcome) {
     case "attended":
       return { label: "Attended", tone: "bg-sage/15 text-sage", icon: CheckCircle2 };
     case "cancelled_before_scheduled":
-      return { label: "Cancelled · refunded", tone: "bg-warm text-muted", icon: XCircle };
+      return { label: "Cancelled · session returned", tone: "bg-warm text-muted", icon: XCircle };
     case "cancelled_after_scheduled":
       if (refundOutcome === "session_returned") {
-        return { label: "Cancelled · refunded", tone: "bg-warm text-muted", icon: XCircle };
+        return { label: "Cancelled · session returned", tone: "bg-warm text-muted", icon: XCircle };
       }
       if (refundOutcome === "forfeited") {
-        return { label: "Cancelled · forfeited", tone: "bg-error/15 text-error", icon: XCircle };
+        return { label: "Cancelled · session lost", tone: "bg-error/15 text-error", icon: XCircle };
       }
       return { label: "Cancelled", tone: "bg-warm text-muted", icon: XCircle };
   }
@@ -81,6 +96,10 @@ function Inner() {
   const justSubmitted = params.get("submitted") === "1";
   const ptApi = usePtSessionsApi();
   const { refetch: refetchPackages } = useClientPackages();
+  const policy = useCancellationPolicy();
+  // What the last cancel did — shown at the top, because the card itself moves
+  // to the Cancelled tab the moment the list reloads.
+  const [notice, setNotice] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
 
   const [requests, setRequests] = useState<RawPtRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,6 +143,18 @@ function Inner() {
         {justSubmitted && (
           <div className="mt-4 rounded-xl border border-sage/30 bg-sage/10 p-4 text-sm text-ink">
             Your request is in. We&apos;ll reach you on WhatsApp shortly to confirm the time.
+          </div>
+        )}
+
+        {notice && (
+          <div
+            role="status"
+            className={cn(
+              "mt-4 rounded-xl border p-4 text-sm text-ink",
+              notice.tone === "ok" ? "border-sage/30 bg-sage/10" : "border-warm bg-warm",
+            )}
+          >
+            {notice.text}
           </div>
         )}
 
@@ -171,7 +202,9 @@ function Inner() {
                     <RequestCard
                       key={r.id}
                       request={r}
-                      onCancelled={async () => {
+                      policy={policy}
+                      onCancelled={async (result) => {
+                        setNotice(ptCancelResult(result.refundOutcome, result.refundedSessions));
                         await load();
                         await refetchPackages();
                       }}
@@ -184,7 +217,7 @@ function Inner() {
         )}
 
         <p className="text-xs text-muted mt-10 leading-relaxed">
-          Pending requests refund their session credits when cancelled. A scheduled session can be cancelled up until the cancellation window before it starts — cancel in time and your credits are returned; inside the window it can no longer be cancelled in-app, so please contact the studio.
+          {ptPolicyNote(policy)}
         </p>
       </div>
     </>
@@ -202,10 +235,12 @@ function emptyTitle(tab: Tab): string {
 
 function RequestCard({
   request: r,
+  policy,
   onCancelled,
 }: {
   request: RawPtRequest;
-  onCancelled: () => Promise<void>;
+  policy: CancellationPolicy | null;
+  onCancelled: (result: CancelPtRequestResult) => Promise<void>;
 }) {
   const status = r.status as PtStatus;
   const badge = statusBadge(status, r.refund_outcome);
@@ -218,13 +253,17 @@ function RequestCard({
     : r.co_client_name
       ? `Partner: ${r.co_client_name}`
       : null;
-  // Only the requester (who owns the debited credits) can cancel.
-  const canCancel = !isPartner && (r.status === "pending" || r.status === "scheduled");
-  const refundPrompt =
-    r.status === "pending"
-      ? "Cancel and refund credits?"
-      : "Cancel this session? Refund depends on the cancellation policy.";
   const scheduled = r.session ?? null;
+  // Only the requester (who owns the debited credits) can cancel. A scheduled
+  // session closes to members at the studio's PT window — the server refuses
+  // after that, so the button goes before it would.
+  const windowClosed =
+    r.status === "scheduled" &&
+    !!scheduled &&
+    !!policy &&
+    !canStillCancel(scheduled.starts_at, policy.pt_window_hours);
+  const canCancel = !isPartner && (r.status === "pending" || r.status === "scheduled");
+  const cancelPrompt = ptCancelPrompt(r.status === "pending" ? "pending" : "scheduled", policy);
 
   return (
     <li className="rounded-2xl border border-ink/10 bg-card p-5">
@@ -297,21 +336,48 @@ function RequestCard({
 
       {canCancel && (
         <div className="mt-4 flex justify-end">
-          <CancelButton requestId={r.id} prompt={refundPrompt} onCancelled={onCancelled} />
+          {windowClosed && policy ? (
+            <span className="text-xs text-muted">{cancelClosed(policy.pt_window_hours)}</span>
+          ) : (
+            <CancelButton
+              requestId={r.id}
+              prompt={cancelPrompt}
+              windowHours={policy?.pt_window_hours ?? null}
+              onCancelled={onCancelled}
+            />
+          )}
         </div>
       )}
     </li>
   );
 }
 
+/** Why a PT cancel was refused, in words the member can act on. */
+function cancelFailure(err: unknown, windowHours: number | null): string {
+  const body =
+    err instanceof ApiError && err.body && typeof err.body === "object"
+      ? (err.body as Record<string, unknown>)
+      : {};
+  if (body.error === ERROR_CODES.cancellation_window_passed) {
+    // The window the server refused under is the one that applied.
+    const hours = typeof body.window_hours === "number" ? body.window_hours : windowHours;
+    return hours !== null
+      ? windowRefusal("session", hours)
+      : "This session can no longer be cancelled in the app. Please contact the studio.";
+  }
+  return "Couldn't cancel. Please check your connection and try again.";
+}
+
 function CancelButton({
   requestId,
   prompt,
+  windowHours,
   onCancelled,
 }: {
   requestId: string;
   prompt: string;
-  onCancelled: () => Promise<void>;
+  windowHours: number | null;
+  onCancelled: (result: CancelPtRequestResult) => Promise<void>;
 }) {
   const ptApi = usePtSessionsApi();
   const [confirming, setConfirming] = useState(false);
@@ -321,14 +387,16 @@ function CancelButton({
   async function handleCancel() {
     setCancelling(true);
     setCancelError(null);
+    let result: CancelPtRequestResult;
     try {
-      await ptApi.cancelRequest(requestId);
-      await onCancelled();
-    } catch {
-      setCancelError("Cancel failed. Please try again.");
+      result = await ptApi.cancelRequest(requestId);
+    } catch (err) {
+      setCancelError(cancelFailure(err, windowHours));
       setCancelling(false);
       setConfirming(false);
+      return;
     }
+    await onCancelled(result);
   }
 
   if (cancelError) {
