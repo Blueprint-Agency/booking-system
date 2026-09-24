@@ -186,16 +186,17 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
     const member = await memberAt(one, admin.headers, at('cross-studio'))
     const { grant } = await impersonate(admin.headers, member.id)
 
-    // The same person, a member at studio two, impersonated there too: same
-    // subject, so only the grant's studio can tell the two apart.
+    // The same person, a member at studio two, impersonated there too. They have
+    // a login at each studio (#231), so the grant names a different subject from
+    // studio two's session, and is refused on that before its studio is asked.
     const atTwo = await memberAt(two, adminTwo.headers, member.email)
-    assert.equal(atTwo.authUserId, member.authUserId, 'one auth user, two rows')
+    assert.notEqual(atTwo.authUserId, member.authUserId, 'two rows, on two logins')
     const there = await impersonate(adminTwo.headers, atTwo.id)
 
     await expectStatus(
       await send('/api/v1/me', { headers: memberApp(two, there.token, grant) }),
       401,
-      'impersonation_tenant_mismatch',
+      'impersonation_subject_mismatch',
     )
   })
 

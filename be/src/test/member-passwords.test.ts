@@ -94,7 +94,11 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
   /** A member added by an admin: a `clients` row and an auth user with no password — as the import writes. */
   const memberWithoutPassword = async (tenant: { id: string; slug: string }, email: string) => {
     const { ensureAuthUser } = await import('../services/auth/auth-users')
-    const authUserId = await ensureAuthUser(harness.db, 'client', { email, name: 'Imported Member' })
+    const authUserId = await ensureAuthUser(harness.db, 'client', {
+      tenantId: tenant.id,
+      email,
+      name: 'Imported Member',
+    })
     const [row] = await harness.db
       .insert(schema.clients)
       .values({ tenantId: tenant.id, authUserId, email, name: 'Imported Member', phone: '+6590000000', status: 'active' })
@@ -197,8 +201,8 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     const headers = bearerAt(one, body.token as string)
     const profile = await expectStatus(await me(headers), 200)
     assert.equal(profile.email, email)
-    // The session carries this studio's claim, so it is refused at another.
-    await expectStatus(await me({ ...headers, ...memberHeaders(two) }), 403, 'tenant_mismatch')
+    // The session is this studio's, so another studio cannot even see it (#231).
+    await expectStatus(await me({ ...headers, ...memberHeaders(two) }), 401, 'invalid_token')
   })
 
   test('AUTH-05 once set, the email step asks for the password, and a wrong one is refused and recorded', async () => {

@@ -13,8 +13,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ApiError, publicApi } from "@/lib/api";
 import { memberAuthMessage } from "@/lib/auth-messages";
-import { fetchApi } from "@/lib/api-url";
-import { adoptMemberSession, signOutMember } from "@/lib/member-auth";
+import { adoptMemberSession } from "@/lib/member-auth";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 
@@ -58,14 +57,9 @@ function SetPasswordContent() {
           token,
           password,
         });
+        // A link is its studio's own: another studio's is refused as
+        // `invalid_token` before anything is set, so a success is a member here.
         adoptMemberSession(signedIn.token);
-        // The link is the member's own, but it may be opened on another studio's app.
-        const me = await fetchApi("/me", { headers: { Authorization: `Bearer ${signedIn.token}` } });
-        if (me.status === 404) {
-          await signOutMember();
-          setError("Your password is set, but you don't have an account at this studio.");
-          return;
-        }
         router.replace("/");
       } catch (err) {
         if (err instanceof ApiError) {

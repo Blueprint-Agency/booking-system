@@ -1,8 +1,8 @@
 import type { BookingCoder } from './booking-codes'
 import { ConfigError, type StudioConfig } from './config'
 import { fold, roomFor, type ConfigLookups } from './lookups'
-import { ptAppointmentRows, ptClients } from './pt'
-import type { PayRateRow, RosterRow, ScheduledClassRow } from './readers'
+import { ptAppointmentRows, ptClients, ptRates } from './pt'
+import type { HoldingRow, PayRateRow, PayrollRow, RosterRow, ScheduledClassRow } from './readers'
 import {
   dayNumber,
   isoClock,
@@ -10,6 +10,7 @@ import {
   isoWeekday,
   money,
   normaliseClassName,
+  normaliseOptionName,
   normaliseStaffName,
   zonedToInstant,
   type CalendarDate,
@@ -49,6 +50,8 @@ export function mapSchedule(input: {
   schedule: ScheduledClassRow[]
   roster: RosterRow[]
   payRates: PayRateRow[]
+  /** What each teacher was paid, and on what rate: where a future PT session's rate comes from. */
+  payroll: PayrollRow[]
   config: StudioConfig
   tenantId: string
   id: (kind: string, key: string) => string
@@ -64,8 +67,12 @@ export function mapSchedule(input: {
   /** Those of them who already have an instructor profile. */
   instructorIds: Set<string>
   ownerId: string
-  /** The `client_packages` rows already mapped: a booking is paid by the member's running one. */
+  /** The `client_packages` rows already mapped: a booking is paid by the member's running one, or the one waiting behind it. */
   clientPackages: Row[]
+  /** What members hold in Mindbody, to say whether a seat nothing here pays for was unpaid there too. */
+  holdings: HoldingRow[]
+  /** The `pt_packages` rows already mapped: how many sessions a PT package's price bought. */
+  ptPackages: Row[]
   /** The archive's one booking coder, shared with the workshop import so that no two bookings take one code. */
   codes: BookingCoder
 }): MappedSchedule {
@@ -80,6 +87,21 @@ export function mapSchedule(input: {
 
   const { offSite, locations, types, workshopCategories, ptNames } = input.lookups
   const payPerClass = new Map(input.payRates.map(p => [normaliseStaffName(p.staff), p.perClass]))
+  const payPerHead = new Map(input.payRates.map(p => [normaliseStaffName(p.staff), p]))
+  const ptRateOf = ptRates(input.payroll)
+  const ptCatalogue = new Map(input.ptPackages.map(p => [String(p.id), { sessions: Number(p.num_sessions), price: Number(p.price_sgd) }]))
+  /**
+   * The sessions a member's PT package paid for. Usually the catalogue's count;
+   * but a holding Mindbody combined and the register could not split back
+   * (`./packages.ts`) carries the price of every pack in it, so its sessions
+   * are the catalogue's count times the packs its price amounts to.
+   */
+  const sessionsBought = (pkg: Row) => {
+    const entry = ptCatalogue.get(String(pkg.source_pt_package_id))
+    if (!entry?.sessions) return undefined
+    const packs = entry.price > 0 ? Math.max(1, Math.round(Number(pkg.amount_paid_sgd) / entry.price)) : 1
+    return entry.sessions * packs
+  }
 
   /** Leading something imported makes a staff member an instructor, if they were not one already. */
   const extraInstructors = new Set<string>()
@@ -120,6 +142,8 @@ export function mapSchedule(input: {
   const unknownLocations = new Map<string, number>()
   const unknownTeachers = new Map<string, number>()
   const needCapacity = new Map<string, number>()
+  /** Future classes, by teacher, whose teacher Mindbody also pays per head. */
+  const perHeadClasses = new Map<string, number>()
 
   for (const r of input.schedule) {
     const startsAt = instant(r.date, r.start)
@@ -154,6 +178,7 @@ export function mapSchedule(input: {
     }
     teaches(teacherId)
     const pay = payPerClass.get(staffKey)
+    if (payPerHead.get(staffKey)?.perClient != null) count(perHeadClasses, staffKey)
     const row: Row = {
       id: id('class', key),
       tenant_id: tenantId,
@@ -168,7 +193,8 @@ export function mapSchedule(input: {
       capacity_buffer: 0,
       credit_cost: 1,
       // No per-class rate for this teacher: Unpriced, for an admin to settle.
-      instructor_pay_sgd: pay ? money(pay) : null,
+      // A rate of 0 is a rate: the teacher really is paid nothing.
+      instructor_pay_sgd: pay == null ? null : money(pay),
       lifecycle: 'active',
       series_id: null,
       created_at: asOf.toISOString(),
@@ -201,36 +227,83 @@ export function mapSchedule(input: {
   )
   listed(needCapacity, (w, n) => `classTypes: "${w}" is held off-site ${n} time(s), so its Class Type needs a capacity`)
 
+  // A pay rule the platform has no place for: a class here pays one fixed
+  // figure, whoever comes. So the per-head part of a teacher's pay is named,
+  // with what their classes came across carrying instead.
+  for (const [staffKey, n] of [...perHeadClasses].sort(([a], [b]) => a.localeCompare(b))) {
+    const rate = payPerHead.get(staffKey)!
+    notes.push(
+      `pay: ${rate.staff} is paid ${money(rate.perClient!)} per client in Mindbody, which the platform has no pay rule for — ` +
+        (rate.perClass == null
+          ? `${n} future class(es) came across Unpriced; set their pay in the portal`
+          : `${n} future class(es) came across paying only the per-class ${money(rate.perClass)}`),
+    )
+  }
+
   /* ── Who is already booked ─────────────────────────────────────────────── */
 
   /**
-   * The member's running package in a Family: the one a booking made today
-   * would be paid by. A package that runs out before the session cannot pay
-   * for it — the platform refuses exactly that (`plan_expires_before_class`) —
-   * so a seat whose only package ends first is imported unpaid and listed,
-   * rather than pinned to a package the studio could never charge.
+   * The package that pays for a member's session: the one running in its
+   * Family, where it lasts until then; else the first one waiting behind it
+   * that will still be running then — it starts when the running one ends (or
+   * today, where none runs) and lasts its whole validity. A package that runs
+   * out before the session cannot pay for it — the platform refuses exactly that
+   * (`plan_expires_before_class`) — so a seat nothing can pay for is imported
+   * unpaid and listed, rather than pinned to a package the studio could never charge.
    */
-  const runningPackage = (clientId: string, family: 'class' | 'pt', startsAt: Date) =>
-    input.clientPackages.find(
-      p =>
-        p.client_id === ids.clients![clientId] &&
-        p.active === true &&
-        p.expires_at != null &&
-        String(p.expires_at) >= startsAt.toISOString() &&
-        (p.kind === 'pt') === (family === 'pt'),
+  const payingPackage = (clientId: string, family: 'class' | 'pt', startsAt: Date) => {
+    const mine = input.clientPackages.filter(
+      p => p.client_id === ids.clients![clientId] && p.active === true && (p.kind === 'pt') === (family === 'pt'),
     )
+    const running = mine.find(p => p.expires_at != null)
+    if (running && String(running.expires_at) >= startsAt.toISOString()) return running
+    // The waiting ones run one after another, in the order they queue.
+    let until = running ? new Date(String(running.expires_at)) : asOf
+    for (const p of mine.filter(p => p.expires_at == null)) {
+      const from = until
+      until = new Date(from)
+      if (p.duration_months != null) until.setUTCMonth(until.getUTCMonth() + Number(p.duration_months))
+      else until.setTime(until.getTime() + Number(p.validity_days) * 86_400_000)
+      if (startsAt > from && startsAt <= until) return p
+    }
+    return undefined
+  }
+
+  /**
+   * Whether anything the member holds in Mindbody would have paid for the
+   * session: something left, not expired by then, in that Family. What cannot
+   * be paid for here was unpaid in Mindbody too, or else it is unmatched — a
+   * holding that did not come across as a package that lasts.
+   */
+  const entryOf = new Map(config.catalogue.flatMap(e => e.mindbodyNames.map(s => [normaliseOptionName(s), e] as const)))
+  const heldInMindbody = (clientId: string, family: 'class' | 'pt', on: CalendarDate) =>
+    input.holdings.some(h => {
+      if (h.clientId !== clientId) return false
+      const entry = entryOf.get(normaliseOptionName(h.option))
+      if (!entry || entry.migrate === 'skip' || entry.kind === 'access_pass') return false
+      const left = h.remaining !== null && (h.remaining.unlimited || h.remaining.count > 0)
+      return left && (entry.kind === 'pt') === (family === 'pt') && (h.lastExpiration === null || dayNumber(h.lastExpiration) >= dayNumber(on))
+    })
+  const unpaid = { mindbody: 0, unmatched: 0 }
 
   // `??=`, never `=`: the history import fills the same three maps, and
   // whichever of the two runs second must add to them rather than empty them.
   ids.classes ??= {}
   ids.bookings ??= {}
   const bookings: Row[] = []
-  const booking = (key: string, clientId: string, target: Row, family: 'class' | 'pt', label: string, startsAt: Date): void => {
-    const pkg = runningPackage(clientId, family, startsAt)
+  const booking = (key: string, clientId: string, target: Row, family: 'class' | 'pt', label: string, startsAt: Date, on: CalendarDate): void => {
+    const pkg = payingPackage(clientId, family, startsAt)
     if (!pkg) {
       const what = family === 'pt' ? 'PT' : 'class'
       const who = `${clientId} ${memberNames.get(clientId)}`
-      notes.push(`${who}: booked into ${label} with no ${what} package that lasts until then to pay for it`)
+      const held = heldInMindbody(clientId, family, on)
+      unpaid[held ? 'unmatched' : 'mindbody']++
+      notes.push(
+        `${who}: booked into ${label} with no ${what} package to pay for it — ` +
+          (held
+            ? 'unmatched: Mindbody has something to pay for it that did not come across as a package lasting until then'
+            : 'unpaid in Mindbody too: nothing they hold there lasts until then'),
+      )
     }
     const made = input.codes(key)
     const row: Row = {
@@ -314,7 +387,7 @@ export function mapSchedule(input: {
       continue
     }
     seats.add(r.clientId)
-    booking(`${cls.id}/${r.clientId}`, r.clientId, { class_id: cls.id }, 'class', label, instant(cls.date, cls.start))
+    booking(`${cls.id}/${r.clientId}`, r.clientId, { class_id: cls.id }, 'class', label, instant(cls.date, cls.start), cls.date)
   }
   for (const cls of classes.values()) {
     ids.classes[cls.label] = cls.id
@@ -328,6 +401,35 @@ export function mapSchedule(input: {
   const ptSessions: Row[] = []
   const ptSessionClients: Row[] = []
   ids.pt_sessions ??= {}
+
+  const ptUnrated = new Map<string, number>()
+  const ptUnvalued = new Map<string, number>()
+  /**
+   * What a future PT session pays its trainer, on the rate Payroll last paid
+   * them for PT: flat, or their percentage of what one session of each member's
+   * package is worth (what was paid for it over the sessions it bought), as
+   * Mindbody's "Rev. per Session" works it out. Unpriced where no rate is known,
+   * or a member on it has no package to value the session by.
+   */
+  const ptPay = (staff: string, clients: string[], startsAt: Date): string | null => {
+    const rate = ptRateOf.get(normaliseStaffName(staff))
+    if (!rate) {
+      count(ptUnrated, staff)
+      return null
+    }
+    if (rate.flat !== undefined) return money(rate.flat)
+    const worth = clients.map(clientId => {
+      const pkg = payingPackage(clientId, 'pt', startsAt)
+      const sessions = pkg ? sessionsBought(pkg) : undefined
+      return pkg && sessions ? Number(pkg.amount_paid_sgd) / sessions : null
+    })
+    if (worth.some(w => w === null)) {
+      count(ptUnvalued, `${staff} (PT ${rate.percent}%)`)
+      return null
+    }
+    const earned = (rate.percent / 100) * worth.reduce<number>((sum, w) => sum + w!, 0)
+    return money(Math.round(earned * 100) / 100)
+  }
 
   for (const key of [...appointments.keys()].sort()) {
     const a = appointments.get(key)!
@@ -352,6 +454,7 @@ export function mapSchedule(input: {
     const end = a.end ? instant(a.date, a.end) : startsAt
     const endsAt = end > startsAt ? end : new Date(startsAt.getTime() + 3_600_000)
     const sessionId = id('pt-session', key)
+    const pay = ptPay(a.staff, ptClients({ requesterId: requester!, partnerId: partner ?? null }), startsAt)
     const rows = ptAppointmentRows({
       tenantId,
       requestId: id('pt-request', key),
@@ -367,9 +470,10 @@ export function mapSchedule(input: {
       // Still to come, so it is a session the studio has scheduled and nothing
       // has yet become of.
       status: 'scheduled',
-      debitedClientPackageId: (runningPackage(requester!, 'pt', startsAt)?.id as string | undefined) ?? null,
+      debitedClientPackageId: (payingPackage(requester!, 'pt', startsAt)?.id as string | undefined) ?? null,
       ownerId: input.ownerId,
       settledAt: asOf.toISOString(),
+      instructorPaySgd: pay,
     })
     ptRequests.push(rows.request)
     ptSessions.push(rows.session)
@@ -378,9 +482,20 @@ export function mapSchedule(input: {
     // Each of two members sharing a session was charged from their own package
     // in Mindbody, so each booking gives its own session back if cancelled.
     for (const clientId of ptClients({ requesterId: requester!, partnerId: partner ?? null })) {
-      booking(`${sessionId}/${clientId}`, clientId, { pt_session_id: sessionId }, 'pt', label, startsAt)
+      booking(`${sessionId}/${clientId}`, clientId, { pt_session_id: sessionId }, 'pt', label, startsAt, a.date)
     }
   }
+  if (unpaid.mindbody + unpaid.unmatched > 0) {
+    notes.push(`future bookings with no package: ${unpaid.mindbody} unpaid in Mindbody too, ${unpaid.unmatched} unmatched — each is listed above`)
+  }
+
+  const tallied = (tally: Map<string, number>, say: (what: string, n: number) => string) =>
+    [...tally].sort(([a], [b]) => a.localeCompare(b)).forEach(([what, n]) => notes.push(say(what, n)))
+  tallied(ptUnrated, (w, n) => `pay: ${w} has ${n} future PT session(s) and no PT rate in Payroll, so they are Unpriced`)
+  tallied(
+    ptUnvalued,
+    (w, n) => `pay: ${w} has ${n} future PT session(s) with a member holding no PT package to value them by, so they are Unpriced`,
+  )
 
   if (problems.length > 0) throw new ConfigError(problems)
 
@@ -394,23 +509,33 @@ export function mapSchedule(input: {
     const type = types.get(normaliseClassName(s.className))!
     const room = roomFor(input.lookups, s.room, type.id)!
     const teacherId = staffIds.get(normaliseStaffName(s.teacher))!
+    const inSlot = (c: { typeId?: string; roomId?: string | null; date: CalendarDate; start: ClockTime; end: ClockTime }) =>
+      c.typeId === type.id &&
+      c.roomId === room.id &&
+      isoWeekday(c.date) === s.weekday &&
+      isoClock(c.start) === s.startTime &&
+      isoClock(c.end) === s.endTime
     const mine = [...classes.values()]
-      .filter(
-        c =>
-          c.typeId === type.id &&
-          c.roomId === room.id &&
-          isoWeekday(c.date) === s.weekday &&
-          isoClock(c.start) === s.startTime &&
-          isoClock(c.end) === s.endTime &&
-          c.row.series_id === null,
-      )
+      .filter(c => inSlot(c) && c.row.series_id === null)
       .sort((a, b) => dayNumber(a.date) - dayNumber(b.date))
-    if (mine.length === 0) {
-      notes.push(`series ${label}: no future class matches it, so there is nothing to continue — create it in the portal instead`)
+    // The published timetable runs only days past the download, so a weekly
+    // class often has nothing still to come. It is written all the same, ending
+    // on its last class before the download: launch day's extend carries it on.
+    const dates = mine.length > 0
+      ? mine.map(c => c.date)
+      : input.schedule
+          .filter(r => instant(r.date, r.start) <= asOf)
+          .filter(r => inSlot({ ...r, typeId: types.get(normaliseClassName(r.description))?.id, roomId: roomFor(input.lookups, r.room, type.id)?.id }))
+          .map(r => r.date)
+          .sort((a, b) => dayNumber(a) - dayNumber(b))
+          .slice(-1)
+    if (dates.length === 0) {
+      notes.push(`series ${label}: no class on the timetable matches it, so there is nothing to continue — create it in the portal instead`)
       continue
     }
-    const [first, last] = [mine[0]!.date, mine.at(-1)!.date]
-    const held = new Set(mine.map(c => dayNumber(c.date)))
+    const [first, last] = [dates[0]!, dates.at(-1)!]
+    if (mine.length === 0) notes.push(`series ${label}: no class of it is on the timetable after the download, so it ends on ${isoDay(last)} — extend it on launch day`)
+    const held = new Set(dates.map(dayNumber))
     const excluded: string[] = []
     for (let d = dayNumber(first); d <= dayNumber(last); d += 7) {
       if (!held.has(d)) excluded.push(new Date(d * 86_400_000).toISOString().slice(0, 10))
@@ -419,16 +544,19 @@ export function mapSchedule(input: {
     const seriesId = id('class-series', key)
     teaches(teacherId)
     const pay = payPerClass.get(normaliseStaffName(s.teacher))
-    // A series must carry a pay figure, so there is no Unpriced to fall back on.
-    if (!pay) {
-      notes.push(`series ${label}: ${s.teacher} has no per-class rate, so the series pays 0.00 — set it in the portal before extending`)
+    // No known rate is Unpriced, never 0: so are the classes it links and
+    // every class it extends to, until an admin sets the series' pay.
+    if (pay == null) {
+      notes.push(
+        `series ${label}: ${s.teacher} has no per-class rate, so the series is Unpriced — its classes, and every class an extend adds, need their pay set in Finance`,
+      )
     }
     classSeries.push({
       id: seriesId,
       tenant_id: tenantId,
       class_type_id: type.id,
       main_instructor_id: teacherId,
-      instructor_pay_sgd: money(pay ?? 0),
+      instructor_pay_sgd: pay == null ? null : money(pay),
       location_id: ids.locations![room.location],
       room_id: room.id,
       weekday: s.weekday,

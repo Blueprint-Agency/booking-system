@@ -117,13 +117,11 @@ test('the sweep reaches the whole schema but tenant_settings', options, async ()
   assert.ok(names.includes('tenant_settings'), 'tenant_settings is tenant-scoped')
 })
 
-test('the auth pool tables carry no tenant_id and the sweep leaves them alone', options, async () => {
-  // A staff member of two studios is ONE auth user, so the Better Auth tables
-  // carry no `tenant_id` — and the session's Tenant claim is deliberately named
-  // something else. Were either to change, the sweep below would fence the
-  // sessions table: every super-portal session would vanish, and signing a
-  // person out everywhere would reach only the studio in context. See
-  // db/schema/auth.ts.
+test('the studio pools\' auth tables are policed, and the platform pool\'s are not', options, async () => {
+  // Logins are per studio (#231, ADR 0006): the `staff` and `client` tables carry
+  // a `tenant_id` and the sweep fences them like any studio row. The `platform`
+  // pool's must not: the super portal has no Tenant, so a policy there would hide
+  // every operator's login and session. See db/schema/auth.ts.
   const auth = await harness.db.execute<{ table_name: string; scoped: boolean; secured: boolean }>(sql`
     SELECT c.relname AS table_name,
            EXISTS (
@@ -141,8 +139,13 @@ test('the auth pool tables carry no tenant_id and the sweep leaves them alone', 
   `)
 
   assert.equal(auth.length, 14, `expected the three pools' tables, saw ${auth.map(r => r.table_name)}`)
-  assert.deepEqual(auth.filter(r => r.scoped).map(r => r.table_name), [], 'an auth table grew a tenant_id')
-  assert.deepEqual(auth.filter(r => r.secured).map(r => r.table_name), [], 'an auth table carries a policy')
+  const studio = auth.filter(r => !r.table_name.startsWith('platform_'))
+  const platform = auth.filter(r => r.table_name.startsWith('platform_'))
+  assert.equal(studio.length, 9, 'five staff tables and four client tables')
+  assert.deepEqual(studio.filter(r => !r.scoped).map(r => r.table_name), [], 'a studio auth table has no tenant_id')
+  assert.deepEqual(studio.filter(r => !r.secured).map(r => r.table_name), [], 'a studio auth table is not policed')
+  assert.deepEqual(platform.filter(r => r.scoped).map(r => r.table_name), [], 'a platform auth table grew a tenant_id')
+  assert.deepEqual(platform.filter(r => r.secured).map(r => r.table_name), [], 'a platform auth table carries a policy')
 })
 
 test('a null tenant_id is allowed only where the platform owns rows, and policed as such', options, async () => {

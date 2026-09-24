@@ -127,7 +127,7 @@ describe('better auth pools', { skip: integrationTestsEnabled ? false : SKIP_REA
     const { forgetCachedMailIdentity } = await import('../services/tenants/mail-identity')
     forgetCachedMailIdentity()
 
-    await ensureAuthUser(harness.db, 'staff', { email: STAFF, name: 'Probe Staff' })
+    await ensureAuthUser(harness.db, 'staff', { tenantId: tenant.id, email: STAFF, name: 'Probe Staff' })
     await ensureAuthUser(harness.db, 'platform', { email: PLATFORM, name: 'Probe Operator' })
   })
 

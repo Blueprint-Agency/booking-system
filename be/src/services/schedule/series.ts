@@ -51,7 +51,8 @@ export const MAX_RANGE_DAYS = 366
 export interface SeriesTemplate {
   classTypeId: string
   mainInstructorId: string
-  instructorPaySgd: number
+  /** Null only on a series imported with no known rate: its classes are Unpriced. */
+  instructorPaySgd: number | null
   supportingInstructors: { instructorId: string; paySgd: number }[]
   locationId: string
   roomId: string
@@ -127,7 +128,7 @@ export async function createSeries(
         tenantId,
         classTypeId: input.classTypeId,
         mainInstructorId: input.mainInstructorId,
-        instructorPaySgd: input.instructorPaySgd.toFixed(2),
+        instructorPaySgd: input.instructorPaySgd?.toFixed(2) ?? null,
         locationId: input.locationId,
         roomId: input.roomId,
         weekday: input.weekday,
@@ -409,7 +410,7 @@ async function loadSeries(tenantId: string, seriesId: string, tx?: Tx): Promise<
     id: row.id,
     classTypeId: row.classTypeId,
     mainInstructorId: row.mainInstructorId,
-    instructorPaySgd: Number(row.instructorPaySgd),
+    instructorPaySgd: row.instructorPaySgd == null ? null : Number(row.instructorPaySgd),
     supportingInstructors: supporting
       .map(s => ({ instructorId: s.instructorId, paySgd: Number(s.paySgd) }))
       .sort((a, b) => a.instructorId.localeCompare(b.instructorId)),
@@ -498,7 +499,7 @@ async function createClasses(
         capacityWaitlist: template.capacityWaitlist,
         capacityBuffer: template.capacityBuffer,
         creditCost: template.creditCost,
-        instructorPaySgd: template.instructorPaySgd.toFixed(2),
+        instructorPaySgd: template.instructorPaySgd?.toFixed(2) ?? null,
         createdByStaffId,
       })),
     )

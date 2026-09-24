@@ -24,7 +24,7 @@ The tables and what deletion does to each are one list, `MEMBER_TABLES` in `be/s
 | The staff audit trail about them: actions on their profile, actions whose path runs through their profile (their packages, bookings, refunds), actions taken while impersonating them | `audit_log` |
 | Their sign-ins and staff acts on their account, at this studio | `auth_events` |
 | Their sessions at this studio | `client_auth_sessions` with this studio's claim |
-| Their sign-in account — **only if no other studio still has them** | `client_auth_users`, with its sessions and credentials |
+| Their login at this studio — a login at another studio is that studio's (ADR 0006) | `client_auth_users`, with its sessions and credentials |
 | Who they are at the payment provider, and so the cards they saved | `payment_customers` — **and the Customer itself, at the provider** |
 
 **The one thing deletion does outside this database.** Since saved cards (#185) a member is also a Customer at the payment provider, with cards kept against them, and neither is a row this studio owns. Deleting the Customer takes its saved cards with it. It happens **before** the rows go, because the rows are how the Customer is found: once `payment_customers` is empty nothing knows the member was ever a Customer, and their cards would sit at the provider with no way to reach them. A studio that has moved onto its own payment account (#100) has one row per account it has ever sold on, and every one of them is dealt with.
@@ -55,7 +55,7 @@ These are not the member's, so they stay; only the reference to the member goes.
 
 ## Across studios
 
-One person is one sign-in account at every studio they have joined; each studio holds its own `clients` row. A studio deletes **its** record of the member and nothing at another studio. The sign-in account is deleted only when no studio still has a member row for it — the check is `client_auth_user_is_member` (migration `0060`), which answers yes or no across studios without telling the asking studio which. The response does not say whether the account went either, for the same reason.
+Each studio has its own sign-in account for a member, beside its own `clients` row (ADR 0006). A studio deletes **its** record of the member, and its sign-in account for them, and nothing at another studio. No cross-studio question is asked: the member's account at another studio is a different row, which this studio's context cannot see.
 
 ## What records the deletion
 

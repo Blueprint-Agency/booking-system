@@ -71,7 +71,12 @@ export type MemberListRow = {
   firstName: string
   lastName: string
   email: string | null
+  /** Read the one way every report's phone is, which is how a past sale is told apart by phone (`./register.ts`). */
   phone: string
+  /** The Mobile phone cell as written: the mapper formats it with `country`. */
+  mobile: string
+  /** Where the member lives, as an ISO code (`SG`); empty where the report has no Country. */
+  country: string
 }
 
 /** `.` and `,` are what a surname field holds when nobody typed one. */
@@ -93,7 +98,31 @@ export function readMemberList(html: string): MemberListRow[] {
       lastName: surname(cell(row, columns, 'Last name')),
       email: cleanEmail(cell(row, columns, 'Email')),
       phone: cleanPhone(cell(row, columns, 'Mobile phone')),
+      mobile: tidy(cell(row, columns, 'Mobile phone')),
+      country: tidy(cell(row, columns, 'Country')).toUpperCase(),
     })
+  }
+  return out
+}
+
+/* ── 01 Membership — New Version Detail: the Location a membership is held at ─ */
+
+export type MembershipRow = {
+  id: string
+  /** `Active`, `Expired`, … */
+  status: string
+  /** The Location's name, as the timetable spells it. */
+  location: string
+}
+
+/** Takes a workbook already read into rows (`./xlsx.ts`): one row per member who has held a membership. */
+export function readMembership(rows: TableRow[]): MembershipRow[] {
+  const { at, columns } = header(rows, 'Membership (New Version Detail)', ['BarcodeID', 'Status', 'Location'])
+  const out: MembershipRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const id = clientId(row, columns, 'BarcodeID')
+    if (!id) continue
+    out.push({ id, status: tidy(cell(row, columns, 'Status')), location: tidy(cell(row, columns, 'Location')) })
   }
   return out
 }
@@ -273,6 +302,8 @@ export function readPricingOptionRegister(html: string): OptionSaleRow[] {
 /* ── 19 Big Spenders — Detail (accrual): every sale line ──────────────────── */
 
 export type SaleRow = {
+  /** The client whose block the line is in, from the block header's link. Null where the header has no link. */
+  clientId: string | null
   saleId: string
   soldAt: LocalDateTime
   description: string
@@ -287,22 +318,68 @@ export type SaleRow = {
  * client (and again at each page break), a section row, the lines, subtotals
  * and a total — and a line is the one row whose first cell is a sale number and
  * whose second is a date. The one report whose dates are M/D.
+ *
+ * The header's first cell is the client's name, linked to their
+ * `/clients/<id>/purchases` page: that id is who every line under it belongs
+ * to, until the next header.
  */
 export function readSales(html: string): SaleRow[] {
   const rows = readHtmlTable(html)
   const { at, columns } = header(rows, 'Big Spenders (detail)', ['Sale Date', 'Description', 'Quantity', 'Sales Total'])
   const out: SaleRow[] = []
-  for (const row of dataRows(rows, at)) {
+  let client: string | null = null
+  for (const row of rows.slice(at)) {
+    if (row.cells.some(c => c.toLowerCase() === 'sale date')) {
+      client = clientId(row, {}, '')
+      continue
+    }
     const saleId = row.cells[0] ?? ''
     const soldAt = parseMindbodyDate(cell(row, columns, 'Sale Date'), 'MD')
     if (!/^\d+$/.test(saleId) || !soldAt) continue
     out.push({
+      clientId: client,
       saleId,
       soldAt,
       description: tidy(cell(row, columns, 'Description')),
       location: tidy(cell(row, columns, 'Location')),
       quantity: parseMoney(cell(row, columns, 'Quantity')) ?? 0,
       total: parseMoney(cell(row, columns, 'Sales Total')) ?? 0,
+    })
+  }
+  return out
+}
+
+/* ── 23 Promotions — Detail: every sale a promotion took money off ─────────── */
+
+export type PromotionRow = {
+  /** The same sale number as Big Spenders', which is how the two are joined: this report has no client id. */
+  saleId: string
+  soldAt: LocalDateTime
+  /** The promotion's own name, as the studio set it up. */
+  promotion: string
+  item: string
+  /** Dollars taken off the line. */
+  discount: number
+  /** Dollars paid for the line, after the discount. */
+  total: number
+}
+
+/** One row per discounted line, and a totals row with no sale number at the end. D/M, like most of Mindbody. */
+export function readPromotions(html: string): PromotionRow[] {
+  const rows = readHtmlTable(html)
+  const { at, columns } = header(rows, 'Promotions (detail)', ['Date', 'Sale ID', 'Promotion', 'Item', 'Discount', 'Total'])
+  const out: PromotionRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const saleId = tidy(cell(row, columns, 'Sale ID'))
+    const soldAt = parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
+    if (!/^\d+$/.test(saleId) || !soldAt) continue
+    out.push({
+      saleId,
+      soldAt,
+      promotion: tidy(cell(row, columns, 'Promotion')),
+      item: tidy(cell(row, columns, 'Item')),
+      discount: parseMoney(cell(row, columns, 'Discount')) ?? 0,
+      total: parseMoney(cell(row, columns, 'Total')) ?? 0,
     })
   }
   return out
@@ -420,6 +497,10 @@ export type RosterRow = {
   clientId: string
   /** `Reserved`, `Signed in`, `Late Cancel`, … */
   status: string
+  /** What was written on the appointment (`Appointment Notes`). Not `Notes`, which may be the member's own account notes. */
+  notes: string
+  /** Who booked it: a member of staff (`First Last`), `Client` for the member themselves, or a system user. */
+  scheduledBy: string
 }
 
 /**
@@ -445,6 +526,8 @@ export function readRoster(rows: TableRow[]): RosterRow[] {
       location: tidy(cell(row, columns, 'Location')),
       clientId: id,
       status: tidy(cell(row, columns, 'Status')),
+      notes: tidy(cell(row, columns, 'Appointment Notes')),
+      scheduledBy: tidy(cell(row, columns, 'Scheduled by')),
     })
   }
   return out
@@ -455,15 +538,21 @@ export function readRoster(rows: TableRow[]): RosterRow[] {
 export type PayRateRow = {
   /** `Last, First`. */
   staff: string
-  /** Dollars per class, or null where the teacher has no per-class rate (paid per head, or not at all). */
+  /**
+   * Dollars per class; 0 where every slot is 0 (the teacher really is paid
+   * nothing); null where they have no per-class rate but are paid per head.
+   */
   perClass: number | null
+  /** Dollars per client on the class, or null where there is no such rate. */
+  perClient: number | null
 }
 
 /**
  * Takes a workbook already read into rows. A block per teacher: a row naming
  * them and the rate slots, then a `Rate` row of amounts under those slots, then
  * bonus and tier rows nobody uses. The per-class rate is the first amount above
- * zero in a slot whose name says "Per Class".
+ * zero in a slot whose name says "Per Class", and the per-head rate the same
+ * under "Per Client".
  */
 export function readPayRates(rows: TableRow[]): PayRateRow[] {
   const out: PayRateRow[] = []
@@ -476,9 +565,12 @@ export function readPayRates(rows: TableRow[]): PayRateRow[] {
     }
     if (block && /^rate$/i.test(second)) {
       const slots = block.slots
-      const amounts = rest.map((c, i) => ({ slot: slots[i] ?? '', amount: parseMoney(c) ?? 0 }))
-      const perClass = amounts.find(a => /per class/i.test(a.slot) && a.amount > 0)?.amount ?? null
-      out.push({ staff: block.staff, perClass })
+      const amounts = rest.map((c, i) => ({ slot: slots[i] ?? '', amount: parseMoney(c) }))
+      const first = (slot: RegExp) => amounts.find(a => slot.test(a.slot) && a.amount !== null && a.amount > 0)?.amount ?? null
+      const perClient = first(/per client/i)
+      // A real 0 only where every slot says $0.00: a blank or a percentage says nothing about per-class pay.
+      const perClass = first(/per class/i) ?? (amounts.length > 0 && amounts.every(a => a.amount === 0) ? 0 : null)
+      out.push({ staff: block.staff, perClass, perClient })
       block = null
     }
   }
@@ -501,24 +593,38 @@ export type AttendanceRow = {
   status: string
   /** The pricing option the visit was taken from, as written. Blank where Mindbody recorded none. */
   option: string
+  /** Where that option was sold: a Location's name, or `Online Store`. Empty where the report has no such column. */
+  saleLocation: string
+  /**
+   * The status was read from the Yes/No flags, where "neither" cannot tell a
+   * visit from a seat nobody marked: the roster's Status says which.
+   */
+  fromFlags?: boolean
+  /**
+   * Whether the visit counted towards the teacher's pay (`Staff Paid`). False
+   * too on a roster-shaped row whose Status is `Unpaid`; null (or absent) where
+   * the report does not say.
+   */
+  staffPaid?: boolean | null
 }
 
 /** The columns of Attendance without Revenue's detail views, which say how a visit ended in three flags rather than a Status. */
 const ATTENDANCE_FLAGS = ['Date', 'Time', 'Type', 'Staff', 'Client ID', 'Pricing Option', 'Staff Paid', 'Late Cancel', 'No-show'] as const
 
 /**
- * A visit's Status, from the three Yes/No flags the Attendance without Revenue
- * report writes instead of one. Late cancel and no-show are what the flags say;
- * a visit that is neither and counted towards the teacher's pay is one the
- * member came to; anything else is a seat nobody marked (the report's own
- * "upcoming" rows, on the day of the download).
+ * A visit's Status, from the Yes/No flags the Attendance without Revenue report
+ * writes instead of one. Late cancel and no-show are what the flags say; a
+ * visit that is neither is one the member came to. `Staff Paid` is not read:
+ * it says whether the visit counted towards the teacher's pay, and a visit that
+ * did not was still attended. The report's own "upcoming" rows, on the day of
+ * the download, are neither too — the roster's Status tells those apart, which
+ * is the mapper's to join (`./history.ts`).
  */
 function statusFromFlags(row: TableRow, columns: Columns): string {
   const yes = (name: string) => /^yes$/i.test(cell(row, columns, name).trim())
   if (yes('Late Cancel')) return 'Late Cancel'
   if (yes('No-show')) return 'No Show'
-  if (yes('Staff Paid')) return 'Signed in'
-  return 'Reserved'
+  return 'Signed in'
 }
 
 /**
@@ -552,6 +658,7 @@ export function readAttendance(rows: TableRow[]): AttendanceRow[] {
     if (!id || !date || !start) continue
     // `n/a` is how this report writes "no pricing option".
     const option = tidy(cell(row, columns, 'Pricing option'))
+    const status = flagged ? statusFromFlags(row, columns) : tidy(cell(row, columns, 'Status'))
     out.push({
       date: { year: date.year, month: date.month, day: date.day },
       start,
@@ -561,8 +668,11 @@ export function readAttendance(rows: TableRow[]): AttendanceRow[] {
       room: flagged ? '' : tidy(cell(row, columns, 'Room')),
       location: tidy(cell(row, columns, flagged ? 'Visit Location' : 'Location')),
       clientId: id,
-      status: flagged ? statusFromFlags(row, columns) : tidy(cell(row, columns, 'Status')),
+      status,
       option: /^n\/a$/i.test(option) ? '' : option,
+      saleLocation: tidy(cell(row, columns, 'Sale Location')),
+      ...(flagged ? { fromFlags: true } : {}),
+      staffPaid: flagged ? /^yes$/i.test(cell(row, columns, 'Staff Paid').trim()) : /^unpaid\b/i.test(status) ? false : null,
     })
   }
   return out
@@ -592,22 +702,60 @@ export type CancellationRow = {
  */
 export function readCancellations(html: string): CancellationRow[] {
   const rows = readHtmlTable(html)
-  const { at, columns } = header(rows, 'Cancellations', ['Cancel Date/Time', 'Cancelled By', 'Date', 'Time', 'Client', 'Method'])
-  const out: CancellationRow[] = []
+  const { at, columns } = header(rows, 'Cancellations', CANCELLATION_COLUMNS)
+  return dataRows(rows, at).flatMap(row => cancellationLine(row, columns) ?? [])
+}
+
+const CANCELLATION_COLUMNS = ['Cancel Date/Time', 'Cancelled By', 'Date', 'Time', 'Client', 'Method']
+
+/** One cancelled reservation, as both views of the report write it; null for any other row. */
+function cancellationLine(row: TableRow, columns: Columns): CancellationRow | null {
+  const cancelledAt = parseMindbodyDate(cell(row, columns, 'Cancel Date/Time'), 'DM')
+  const date = parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
+  if (!cancelledAt || !date) return null
+  return {
+    cancelledAt,
+    cancelledBy: tidy(cell(row, columns, 'Cancelled By')),
+    date: { year: date.year, month: date.month, day: date.day },
+    // `h:mm am`, now and then with seconds; `TBD` on an appointment.
+    start: parseClock(cell(row, columns, 'Time').trim().replace(/^(\d{1,2}:\d{2}):\d{2}(\s*[ap]m)$/i, '$1$2')),
+    description: tidy(cell(row, columns, 'Type')),
+    client: tidy(cell(row, columns, 'Client')),
+    method: tidy(cell(row, columns, 'Method')).toLowerCase(),
+  }
+}
+
+/* ── 08 Cancellations — Group cancellations: the classes the studio called off ─ */
+
+export type GroupCancellationRow = CancellationRow & {
+  /** Mindbody's id for the group: one per class cancelled, from the block's "restore group" link. */
+  group: string
+  location: string
+  /** The class's teacher, cut to 20 characters by Mindbody. */
+  teacher: string
+}
+
+/**
+ * The same columns as the Individual records, in blocks: a `Group
+ * Cancellation:` row per class the studio cancelled, then a line per member
+ * whose reservation went with it. A class nobody was booked on has no line,
+ * so it is not in this report at all.
+ */
+export function readGroupCancellations(html: string): GroupCancellationRow[] {
+  const rows = readHtmlTable(html)
+  const { at, columns } = header(rows, 'Group cancellations', [...CANCELLATION_COLUMNS, 'Teacher'])
+  const out: GroupCancellationRow[] = []
+  let group: string | null = null
+  let blocks = 0
   for (const row of dataRows(rows, at)) {
-    const cancelledAt = parseMindbodyDate(cell(row, columns, 'Cancel Date/Time'), 'DM')
-    const date = parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
-    if (!cancelledAt || !date) continue
-    out.push({
-      cancelledAt,
-      cancelledBy: tidy(cell(row, columns, 'Cancelled By')),
-      date: { year: date.year, month: date.month, day: date.day },
-      // `h:mm am`, now and then with seconds; `TBD` on an appointment.
-      start: parseClock(cell(row, columns, 'Time').trim().replace(/^(\d{1,2}:\d{2}):\d{2}(\s*[ap]m)$/i, '$1$2')),
-      description: tidy(cell(row, columns, 'Type')),
-      client: tidy(cell(row, columns, 'Client')),
-      method: tidy(cell(row, columns, 'Method')).toLowerCase(),
-    })
+    if (row.cells.some(c => /^group cancellation:?$/i.test(c))) {
+      blocks++
+      group = row.links.map(link => link?.match(/[?&]id=(\d+)/)?.[1]).find(Boolean) ?? `#${blocks}`
+      continue
+    }
+    const line = group === null ? null : cancellationLine(row, columns)
+    if (!line) continue
+    out.push({ ...line, group: group!, location: tidy(cell(row, columns, 'Location')), teacher: tidy(cell(row, columns, 'Teacher')) })
   }
   return out
 }
@@ -629,10 +777,29 @@ export type PayrollRow = {
    * (a percentage-rate class: one line per client) or `appointment` (PT).
    */
   table: 'class' | 'class_per_client' | 'appointment'
+  /**
+   * The pay rate named above the line's table — `Per Class Rate`, `PT (50%)`,
+   * `Percentage Rate (30%)`, a flat `PT` — or null where the report names none.
+   */
+  rate: PayrollRate | null
+  /** The `Base Pay` column: on a flat rate, what one class or appointment pays. Null where the table has none. */
+  basePay: number | null
+}
+
+/** A pay rate as Payroll names it: `PT (50%)` is `{ name: 'PT', percent: 50 }`. */
+export type PayrollRate = { name: string; percent: number | null }
+
+/** `Pay rate: PT (50%)` → `{ name: 'PT', percent: 50 }`; null where the text names no rate. */
+function payrollRate(text: string): PayrollRate | null {
+  const rate = tidy(text).replace(/^pay rate:\s*/i, '')
+  if (!rate) return null
+  const percent = /^(.*?)\s*\((\d+(?:\.\d+)?)\s*%\)$/.exec(rate)
+  return percent ? { name: percent[1]!, percent: Number(percent[2]) } : { name: rate, percent: null }
 }
 
 /** A lone-cell heading that is the studio's own furniture rather than a teacher's name. */
 const NOT_A_TEACHER = /^(pay rate|rate|total|subtotal|grand total|payroll|earnings)\b/i
+const RATE_HEADING = /^pay rate:/i
 
 /**
  * Read top to bottom, because the two things that identify a block — the
@@ -643,23 +810,32 @@ const NOT_A_TEACHER = /^(pay rate|rate|total|subtotal|grand total|payroll|earnin
  * the header at every page break.
  *
  * A heading is a row with exactly one filled cell. It names the teacher unless
- * it is a rate or a total.
+ * it is a rate or a total; a `Pay Rate: …` heading is the rate the tables
+ * under it were paid on.
  */
 export function readPayroll(html: string): PayrollRow[] {
-  // Mindbody's own layout names each teacher in a `staffName` span *between*
-  // the tables, where no table row can see it: so the file is cut at every
-  // teacher and each piece read with its teacher already known.
+  // Mindbody's own layout names each teacher in a `staffName` span, and each
+  // table's rate in a `payscale` span, *between* the tables, where no table row
+  // can see them: so the file is cut at every teacher, and each teacher's piece
+  // at every rate, and each is read with its teacher and rate already known.
   const STAFF_HEADER = /<div[^>]*class\s*=\s*["']staffHeader["'][^>]*>/i
+  const RATE_HEADER = /<div[^>]*class\s*=\s*["']payscaleHeader["'][^>]*>/i
+  const span = (piece: string, name: string) => {
+    const found = new RegExp(`<span[^>]*class\\s*=\\s*["']${name}["'][^>]*>([\\s\\S]*?)<\\/span>`, 'i').exec(piece)
+    return found ? tidy(decodeEntities(found[1]!.replace(/<[^>]*>/g, ' '))) : ''
+  }
   if (STAFF_HEADER.test(html)) {
     const out: PayrollRow[] = []
     for (const piece of html.split(STAFF_HEADER).slice(1)) {
-      const name = /<span[^>]*class\s*=\s*["']staffName["'][^>]*>([\s\S]*?)<\/span>/i.exec(piece)
-      const staff = name ? tidy(decodeEntities(name[1]!.replace(/<[^>]*>/g, ' '))) : ''
-      if (staff) out.push(...payrollLines(readHtmlTable(piece), staff))
+      const staff = span(piece, 'staffName')
+      if (!staff) continue
+      const [before, ...rated] = piece.split(RATE_HEADER)
+      out.push(...payrollLines(readHtmlTable(before!), staff, null))
+      for (const part of rated) out.push(...payrollLines(readHtmlTable(part), staff, payrollRate(span(part, 'payscale'))))
     }
     return out
   }
-  return payrollLines(readHtmlTable(html), null)
+  return payrollLines(readHtmlTable(html), null, null)
 }
 
 /** The first of these column names a header row has. */
@@ -674,16 +850,25 @@ const PAYROLL_CLASS = ['class', 'class name']
  * percentage and appointment tables each lay their columns out differently. A
  * percentage-rate class is a line per client; the lines of one class add up.
  */
-function payrollLines(rows: TableRow[], staff: string | null): PayrollRow[] {
+function payrollLines(rows: TableRow[], staff: string | null, rated: PayrollRate | null): PayrollRow[] {
   const out: PayrollRow[] = []
   let teacher = staff
+  let rate = rated
   let columns: Columns | null = null
   const pick = (names: string[]) => names.find(n => columns && n in columns) ?? names[0]!
   for (const row of rows) {
     const filled = row.cells.filter(c => c !== '')
+    if (filled.length === 1 && RATE_HEADING.test(tidy(filled[0]!))) {
+      rate = payrollRate(filled[0]!)
+      continue
+    }
     if (staff === null && filled.length === 1) {
       const text = tidy(filled[0]!)
-      if (text && !NOT_A_TEACHER.test(text)) teacher = text
+      if (text && !NOT_A_TEACHER.test(text)) {
+        // A new teacher: whatever rate the last one was on is not theirs.
+        teacher = text
+        rate = null
+      }
       continue
     }
     const has = (names: string[]) => row.cells.some(c => names.includes(c.toLowerCase()))
@@ -712,7 +897,54 @@ function payrollLines(rows: TableRow[], staff: string | null): PayrollRow[] {
     // A line at no set time (`TBD`) is still money paid: kept, for the mapper to place or report.
     if (!date || (!start && !/^tbd$/i.test(rawTime.trim())) || earnings === null) continue
     const table = 'appointment date' in columns ? 'appointment' : 'client name' in columns ? 'class_per_client' : 'class'
-    out.push({ staff: teacher, date, start, description: tidy(cell(row, columns, pick(PAYROLL_CLASS))), earnings, table })
+    out.push({
+      staff: teacher,
+      date,
+      start,
+      description: tidy(cell(row, columns, pick(PAYROLL_CLASS))),
+      earnings,
+      table,
+      rate,
+      basePay: 'base pay' in columns ? parseMoney(cell(row, columns, 'Base Pay')) : null,
+    })
   }
   return out
+}
+
+/* ── 43 Autopay Detail (Payment Processing): the autopays still to run ────── */
+
+export type AutopayRow = {
+  /** When it is next due, as the page prints it. Only listed for a person, so not read as a date. */
+  date: string
+  /** From the client link, where the page gives one. */
+  clientId: string | null
+  client: string
+  email: string
+  location: string
+  /** The pricing option or contract the autopay charges for. */
+  item: string
+  status: string
+}
+
+/**
+ * One row per autopay run due. Nothing here is imported: each is an autopay
+ * someone must stop in Mindbody and re-sign on the platform. A studio with none
+ * gets the page's "No autopay transactions found" line, one cell wide.
+ */
+export function readAutopayDetail(html: string): AutopayRow[] {
+  const rows = readHtmlTable(html)
+  const { at, columns } = header(rows, 'Autopay Detail', ['Date', 'Client', 'Item', 'Status'])
+  return dataRows(rows, at).flatMap(row => {
+    const client = tidy(cell(row, columns, 'Client'))
+    if (row.cells.length < 2 || !client) return []
+    return [{
+      date: tidy(cell(row, columns, 'Date')),
+      clientId: clientId(row, columns, 'Client'),
+      client,
+      email: tidy(cell(row, columns, 'Email')),
+      location: tidy(cell(row, columns, 'Location')),
+      item: tidy(cell(row, columns, 'Item')),
+      status: tidy(cell(row, columns, 'Status')),
+    }]
+  })
 }

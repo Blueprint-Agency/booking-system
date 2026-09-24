@@ -6,17 +6,21 @@ import type { StudioConfig } from './config'
 import { idsFor, secretToken } from './ids'
 import { mapHistory, type MappedHistory } from './history'
 import { configLookups } from './lookups'
-import { mapPackages, type AccountBalance, type NotMigrated } from './packages'
+import { mapPackages, memberHomes, type AccountBalance, type NotMigrated } from './packages'
 import type {
   AccountBalanceRow,
   AttendanceRow,
+  AutopayRow,
   CancellationRow,
+  GroupCancellationRow,
   HoldingRow,
   MemberListRow,
+  MembershipRow,
   OptionSaleRow,
   PayRateRow,
   PayrollRow,
   PhoneBookRow,
+  PromotionRow,
   ReferralRow,
   RetentionRow,
   RosterRow,
@@ -24,8 +28,18 @@ import type {
   ScheduledClassRow,
 } from './readers'
 import { bookingCoder } from './booking-codes'
+import { joinSales } from './sales'
 import { mapSchedule } from './schedule'
-import { normaliseClassName, normaliseStaffName, zonedToInstant, type LocalDateTime } from './values'
+import {
+  dayNumber,
+  formatPhone,
+  localDateOf,
+  normaliseClassName,
+  normaliseStaffName,
+  zonedToInstant,
+  type CalendarDate,
+  type LocalDateTime,
+} from './values'
 import { mapWorkshops, workshopOptionKeys } from './workshops'
 
 /**
@@ -44,12 +58,17 @@ export type MindbodyReports = {
   members: MemberListRow[]
   referrals: ReferralRow[]
   retention: RetentionRow[]
+  /** Where each membership is held (Membership, New Version Detail). Empty where not downloaded. */
+  membership: MembershipRow[]
   phoneBook: PhoneBookRow[]
   /** What every client holds of every pricing option. */
   holdings: HoldingRow[]
-  /** Every pricing option sold, and every sale line: read only to propose the catalogue. */
+  /** Every pricing option sold: what each purchase became (activation, expiry, what is left), by name and phone. */
   optionSales: OptionSaleRow[]
+  /** Every sale line and return, by client id: the studio's takings (`./sales.ts`). */
   sales: SaleRow[]
+  /** What a promotion took off each sale, by sale number. Empty where the report was not downloaded. */
+  promotions: PromotionRow[]
   /** Money on account, either way. Empty where the report was not downloaded. */
   balances: AccountBalanceRow[]
   /** The timetable, past and to come, empty classes included. */
@@ -63,6 +82,10 @@ export type MindbodyReports = {
   payroll: PayrollRow[]
   /** When each booking was cancelled and by whom (Cancellations, Individual records). Empty where not downloaded. */
   cancellations: CancellationRow[]
+  /** The classes the studio called off, a line per member on each (Cancellations, Group cancellations). Empty where not downloaded. */
+  groupCancellations: GroupCancellationRow[]
+  /** The autopays still to run (Autopay Detail): none is imported. Empty where not downloaded. */
+  autopay: AutopayRow[]
 }
 
 export type Preflight = {
@@ -87,6 +110,10 @@ export type Preflight = {
     keeper: { id: string; name: string }
     others: { id: string; name: string; placeholder: string }[]
   }[]
+  /** Members' phones that could not be formatted for their country: imported with none. */
+  badPhones: { id: string; name: string; phone: string; country: string }[]
+  /** Autopays still live in Mindbody. The platform charges none of them: each is stopped there and re-signed here. */
+  autopays: LiveAutopay[]
 }
 
 /** Mindbody key → platform id, per table: how any imported row is traced back to its source. */
@@ -114,6 +141,8 @@ const noHistory = (): MappedHistory => ({
   ptSessions: [],
   ptSessionClients: [],
   clientPackages: [],
+  purchases: [],
+  manualPayrollEntries: [],
   instructors: [],
   notes: [],
 })
@@ -192,10 +221,12 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     {
       tenant_id: tenantId,
       display_name: config.studio.displayName,
-      mail_from_name: config.studio.displayName,
+      // Mindbody holds no branding, so none is said: the importer keeps the
+      // logo, theme, copy and mail-from the super portal gave the Tenant.
+      mail_from_name: null,
       mail_reply_to: config.studio.mailReplyTo,
-      copy: {},
-      theme: {},
+      copy: null,
+      theme: null,
     },
   ]
 
@@ -219,7 +250,17 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     if (m.email) holders.set(m.email, [...(holders.get(m.email) ?? []), m])
   }
 
-  const preflight: Preflight = { noEmail: [], sharedEmails: [], notMigrated: [], balances: [], schedule: [], staffWithoutLogin: [] }
+  const preflight: Preflight = {
+    noEmail: [],
+    sharedEmails: [],
+    badPhones: [],
+    notMigrated: [],
+    balances: [],
+    schedule: [],
+    staffWithoutLogin: [],
+    autopays: liveAutopays(reports.autopay),
+  }
+  const lastVisits = lastVisitOf(reports.attendance, localDateOf(asOf, tz))
   const emailOf = new Map<string, string>()
   for (const m of reports.members) {
     if (!m.email) {
@@ -233,7 +274,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
       emailOf.set(group[0]!.id, email)
       continue
     }
-    const keeper = keeperOf(email, group, config.sharedEmailKeepers[email], retention, created)
+    const keeper = keeperOf(email, group, config.sharedEmailKeepers[email], lastVisits, retention, created)
     emailOf.set(keeper.id, email)
     const others = group
       .filter(m => m !== keeper)
@@ -247,6 +288,10 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
 
   const clients: Row[] = reports.members.map(m => {
     const joined = created.get(m.id) ?? retention.get(m.id)?.memberSince ?? null
+    // Dialled from the country the member lives in; one that cannot be is none, and listed.
+    const country = m.country || config.defaultCountry.toUpperCase()
+    const phone = formatPhone(m.mobile, country)
+    if (!phone.ok) preflight.badPhones.push({ id: m.id, name: memberName(m), phone: m.mobile, country })
     const row = {
       id: id('client', m.id),
       tenant_id: tenantId,
@@ -254,7 +299,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
       auth_user_id: null,
       email: emailOf.get(m.id),
       name: memberName(m),
-      phone: m.phone,
+      phone: phone.phone,
       gender: retention.get(m.id)?.gender ?? null,
       status: 'active',
       joined_at: joined ? instant(joined) : asOf.toISOString(),
@@ -369,6 +414,10 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   const memberNames = new Map(reports.members.map(m => [m.id, memberName(m)]))
   // The pricing options that buy a place on a workshop: a booking, never a package.
   const workshopOptions = workshopOptionKeys(config)
+  // Every sale, joined to the register row it created and the return that
+  // reversed it: the live packages leave a refunded purchase out, and history
+  // rebuilds the past from it.
+  const sales = joinSales({ sales: reports.sales, optionSales: reports.optionSales, promotions: reports.promotions, members: reports.members })
   const packages = mapPackages({
     holdings: reports.holdings,
     balances: reports.balances,
@@ -380,6 +429,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     workshopOptions,
     optionSales: reports.optionSales,
     members: reports.members,
+    sales,
+    homes: memberHomes(config, reports),
   })
   preflight.notMigrated = packages.notMigrated
   preflight.balances = packages.balances
@@ -404,7 +455,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   const ensurePtType = () => {
     if (!ptTypeId) {
       ptTypeId = id('class-type', ptTypeKey)
-      ptClassTypes.push({ id: ptTypeId, tenant_id: tenantId, name: config.ptClassType })
+      ptClassTypes.push({ id: ptTypeId, tenant_id: tenantId, name: config.ptClassType, archived_at: null })
       ids.class_types![config.ptClassType] = ptTypeId
     }
     return ptTypeId
@@ -414,6 +465,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     schedule: reports.schedule,
     roster: reports.roster,
     payRates: reports.payRates,
+    payroll: reports.payroll,
     config,
     tenantId,
     id,
@@ -423,6 +475,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     instructorIds,
     ownerId,
     clientPackages: packages.clientPackages,
+    holdings: reports.holdings,
+    ptPackages: packages.ptPackages,
     codes,
     lookups,
     ensurePtType,
@@ -452,11 +506,15 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   }
   schedule.notes.push(...packages.notes)
 
-  /* ── Workshops and retreats to come, and who has paid (`./workshops.ts`) ── */
+  /* ── Workshops and retreats, to come and held, and who has a place (`./workshops.ts`) ── */
 
   const workshops = mapWorkshops({
     schedule: reports.schedule,
     holdings: reports.holdings,
+    attendance: reports.attendance,
+    payroll: reports.payroll,
+    sales,
+    history: config.history,
     config,
     tenantId,
     id,
@@ -477,8 +535,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
         attendance: reports.attendance,
         payroll: reports.payroll,
         cancellations: reports.cancellations,
-        optionSales: reports.optionSales,
-        members: reports.members,
+        groupCancellations: reports.groupCancellations,
+        sales,
         config,
         tenantId,
         id,
@@ -492,11 +550,27 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
         clientPackages: packages.clientPackages,
         packageRuns: packages.runs,
         workshopOptions,
+        workshopSales: workshops.placedSales,
+        workshopPayroll: workshops.placedPayroll,
         codes,
       })
     : noHistory()
 
   preflight.schedule = [...schedule.notes, ...workshops.notes, ...history.notes]
+
+  // A Class Type nothing is scheduled under from launch — no future class, no
+  // Class Series to extend — is kept for the history that names it, archived so
+  // it does not clutter the catalogue. The PT focus stays: every new PT request is for it.
+  const inUse = new Set([...schedule.classes, ...schedule.classSeries].map(r => String(r.class_type_id)))
+  let archivedTypes = 0
+  for (const t of classTypes) {
+    const used = inUse.has(String(t.id)) || t.id === ptTypeId
+    t.archived_at = used ? null : asOf.toISOString()
+    if (!used) archivedTypes++
+  }
+  if (archivedTypes > 0) {
+    preflight.schedule.push(`classTypes: ${archivedTypes} Class Type(s) have no future class and no Class Series, so they came across archived`)
+  }
 
   /* ── The archive ───────────────────────────────────────────────────────── */
 
@@ -517,6 +591,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     instructors: [...instructors, ...extraInstructors.values()],
     staff_invitations: invitations,
     clients,
+    // Provider-less, and only a past sale that was returned: the Refund hangs from it.
+    purchases: history.purchases,
     class_packages: packages.classPackages,
     pt_packages: packages.ptPackages,
     client_packages: [...packages.clientPackages, ...history.clientPackages],
@@ -534,8 +610,9 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     // After `bookings`, which they point at. The importer sorts the tables it
     // writes by the schema's own foreign keys, so this order is for a person
     // reading the zip; it costs nothing to have it read the way it must be written.
-    check_ins: history.checkIns,
+    check_ins: [...history.checkIns, ...workshops.checkIns],
     cancellations: history.cancellations,
+    manual_payroll_entries: history.manualPayrollEntries,
     global_policy: globalPolicy,
     pt_booking_config: ptBookingConfig,
     email_templates: emailTemplates,
@@ -599,17 +676,36 @@ function restoreBookedAhead(
 }
 
 /**
+ * Each member's last visit in the attendance history, up to the download: a
+ * class or appointment they came to. A no-show, a cancel or a seat still only
+ * reserved is no visit.
+ */
+function lastVisitOf(attendance: AttendanceRow[], today: CalendarDate): Map<string, LocalDateTime> {
+  const last = new Map<string, LocalDateTime>()
+  const stamp = (d: LocalDateTime) => Date.UTC(d.year, d.month - 1, d.day, d.hour, d.minute)
+  for (const v of attendance) {
+    if (dayNumber(v.date) > dayNumber(today) || /cancel|absent|no[ -]?show|reserved|booked/i.test(v.status)) continue
+    const at = { ...v.date, ...v.start, second: 0 }
+    const had = last.get(v.clientId)
+    if (!had || stamp(at) > stamp(had)) last.set(v.clientId, at)
+  }
+  return last
+}
+
+/**
  * Who keeps an email several members share.
  *
  * The config decides where it names someone. Otherwise the member with the most
  * recent visit keeps it — the one most likely to be the person reading that
- * inbox — then the most recently created profile, then the lowest id, so the
- * answer never depends on report order.
+ * inbox — by the attendance history, or by Retention Management's last visit
+ * for a member it has none for; then the most recently created profile, then
+ * the lowest id, so the answer never depends on report order.
  */
 function keeperOf(
   email: string,
   group: MemberListRow[],
   named: string | undefined,
+  lastVisits: Map<string, LocalDateTime>,
   retention: Map<string, RetentionRow>,
   created: Map<string, LocalDateTime>,
 ): MemberListRow {
@@ -620,11 +716,9 @@ function keeperOf(
   }
   const stamp = (d: LocalDateTime | null | undefined) =>
     d ? Date.UTC(d.year, d.month - 1, d.day, d.hour, d.minute, d.second) : -Infinity
+  const visited = (id: string) => stamp(lastVisits.get(id) ?? retention.get(id)?.lastVisit)
   return [...group].sort(
-    (a, b) =>
-      stamp(retention.get(b.id)?.lastVisit) - stamp(retention.get(a.id)?.lastVisit) ||
-      stamp(created.get(b.id)) - stamp(created.get(a.id)) ||
-      a.id.localeCompare(b.id),
+    (a, b) => visited(b.id) - visited(a.id) || stamp(created.get(b.id)) - stamp(created.get(a.id)) || a.id.localeCompare(b.id),
   )[0]!
 }
 
@@ -635,11 +729,14 @@ export function renderPreflight(p: Preflight): string {
   lines.push('Imported under a placeholder address nobody receives. Add a real email in Mindbody before the final download, or have an admin set it after launch.', '')
   for (const m of p.noEmail) lines.push(`- ${m.id} ${m.name} → ${m.placeholder}`)
   lines.push('', `## Emails shared by more than one member (${p.sharedEmails.length})`, '')
-  lines.push('One member keeps the address (named in `sharedEmailKeepers`, or else the most recent visitor); the others get placeholders.', '')
+  lines.push('One member keeps the address (named in `sharedEmailKeepers`, or else the one whose last visit in the attendance history is latest); the others get placeholders.', '')
   for (const s of p.sharedEmails) {
     lines.push(`- ${s.email}: kept by ${s.keeper.id} ${s.keeper.name}`)
     for (const o of s.others) lines.push(`  - ${o.id} ${o.name} → ${o.placeholder}`)
   }
+  lines.push('', `## Phones that could not be formatted (${p.badPhones.length})`, '')
+  lines.push("Imported with no phone. Each is formatted with the member's Country in the Mailing List (or `defaultCountry`): fix the number or the Country in Mindbody, or have an admin set it after launch.", '')
+  for (const b of p.badPhones) lines.push(`- ${b.id} ${b.name}: "${b.phone}" (${b.country})`)
   lines.push('', `## Staff with no email: imported by name, with no login (${p.staffWithoutLogin.length})`, '')
   lines.push('They teach, are paid and appear on the timetable; nobody can sign in as them until they have a real email.', '')
   for (const s of p.staffWithoutLogin) lines.push(`- ${s.name} → ${s.placeholder}`)
@@ -654,5 +751,31 @@ export function renderPreflight(p: Preflight): string {
   lines.push('', `## The timetable and bookings (${p.schedule.length})`, '')
   lines.push('Imported as far as it could be; each line is something for a person to look at.', '')
   for (const note of p.schedule) lines.push(`- ${note}`)
+  lines.push('', `## Autopays still live in Mindbody (${p.autopays.length})`, '')
+  lines.push('Mindbody will keep charging these after launch. Stop each in Mindbody, and have the member sign up again on the platform.')
+  for (const a of p.autopays) {
+    lines.push(
+      `- ${a.clientId ?? '(no id)'} ${a.client}${a.email ? ` <${a.email}>` : ''}: ${a.item}, next due ${a.next}` +
+        `${a.location ? ` at ${a.location}` : ''} (${a.status}; ${a.runs} run${a.runs === 1 ? '' : 's'} scheduled)`,
+    )
+  }
   return `${lines.join('\n')}\n`
+}
+
+export type LiveAutopay = Omit<AutopayRow, 'date'> & { next: string; runs: number }
+
+/**
+ * Autopay Detail lists every run due in the next 12 months, so a monthly
+ * autopay is twelve rows: one autopay per member and item, at its first run,
+ * with how many are scheduled.
+ */
+function liveAutopays(rows: AutopayRow[]): LiveAutopay[] {
+  const byKey = new Map<string, LiveAutopay>()
+  for (const { date, ...a } of rows) {
+    const key = `${a.clientId ?? a.client}\u0000${a.item}`
+    const had = byKey.get(key)
+    if (had) had.runs++
+    else byKey.set(key, { ...a, next: date, runs: 1 })
+  }
+  return [...byKey.values()]
 }

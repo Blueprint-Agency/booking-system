@@ -5,6 +5,7 @@ import { REPORTS as TRANSFORM_READS } from '../transform/transform'
 import { writeXlsx } from './xlsx-write'
 import { readXlsxTable } from '../transform/xlsx'
 import {
+  asOfStamp,
   describePlan,
   exportDir,
   exportStamp,
@@ -62,6 +63,24 @@ test('every download goes into a fresh folder named for when it started', () => 
   assert.equal(exportDir(path.join('x', 'exports'), started), path.join('x', 'exports', '2026-09-17 0205'))
 })
 
+test('the as-of moment is written on the studio\'s clock, whatever timezone this machine is set to', () => {
+  const finished = new Date(Date.UTC(2026, 8, 16, 18, 7, 42)) // 02:07 on the 17th in Singapore
+  const before = process.env.TZ
+  try {
+    const stamps = ['UTC', 'America/New_York', 'Asia/Tokyo'].map(tz => {
+      process.env.TZ = tz
+      return asOfStamp(finished, 'Asia/Singapore')
+    })
+    assert.deepEqual(stamps, Array(3).fill('2026-09-17T02:07:00+08:00'))
+  } finally {
+    if (before === undefined) delete process.env.TZ
+    else process.env.TZ = before
+  }
+  assert.equal(asOfStamp(finished, 'America/New_York'), '2026-09-16T14:07:00-04:00', 'a studio west of Greenwich')
+  assert.equal(Date.parse(asOfStamp(finished, 'Asia/Kolkata')), Date.UTC(2026, 8, 16, 18, 7), 'the same instant, to the minute')
+  assert.throws(() => asOfStamp(finished, 'Not/AZone'), /MB_TIMEZONE/)
+})
+
 test('the dry run lists every cutover file under <export>/reports, with the run date\'s ranges', () => {
   const started = new Date(2026, 8, 17, 2, 5)
   const folder = exportDir('exports', started)
@@ -69,7 +88,13 @@ test('the dry run lists every cutover file under <export>/reports, with the run 
   assert.ok(lines.includes(`Reports: ${path.join(folder, 'reports')}`))
   assert.ok(lines.some(l => l.includes('reports/Clients/02 Mailing Lists/02 Mailing Lists - Mailing List.xls')))
   assert.ok(lines.some(l => l.includes('reports/Staff/34 Staff Schedule/34 Staff Schedule - ALL - Scheduled.xls')))
+  assert.ok(lines.some(l => l.endsWith('reports/Clients/23 Promotions/23 Promotions - Detail.xls')), 'Promotions: what each past sale was discounted')
   assert.ok(lines.some(l => l.includes('requiredtxtDateStart=1/1/2023 requiredtxtDateEnd=17/9/2027')), 'Schedule at a Glance runs 12 months ahead')
+  // The classes the studio called off: one file over the whole range, beside the Individual records.
+  const group = lines.findIndex(l => l.endsWith('reports/Clients/08 Cancellations/08 Cancellations - Group cancellations.xls'))
+  assert.ok(group >= 0, 'Group cancellations is downloaded')
+  assert.ok(lines[group + 1]!.includes('requiredtxtDateStart=1/1/2023 requiredtxtDateEnd=17/9/2026'), 'from the history cutoff to today')
+  assert.ok(lines[group + 1]!.includes('transform reads it as groupCancellations, single file'))
   for (const m of manifest) assert.ok(lines.some(l => l.endsWith(`/${m.file}`)), m.file)
 })
 

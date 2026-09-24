@@ -168,7 +168,7 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
   test('AUTH-14 signing a member out at one studio leaves their session at another', async () => {
     const member = await memberAt(one, owner.headers, at('two-studios'))
     const elsewhere = await memberAt(two, adminTwo.headers, at('two-studios'))
-    assert.equal(elsewhere.authUserId, member.authUserId, 'one auth user, two rows')
+    assert.notEqual(elsewhere.authUserId, member.authUserId, 'two rows, on two logins (#231)')
 
     await expectStatus(
       await send(`/api/v1/portal/admin/clients/${member.id}/sessions/revoke`, { body: {}, headers: owner.headers }),

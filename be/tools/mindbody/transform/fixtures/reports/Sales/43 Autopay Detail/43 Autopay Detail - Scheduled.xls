@@ -1,0 +1,31 @@
+<!-- Invented fixture: no real studio or person. Header layout follows Mindbody's Autopay Detail (Payment Processing) export; the one autopay row is shaped like its header. -->
+<html>
+<body>
+<table id="main-content" class="mainText" width="100%" cellspacing="0">
+  <tr>
+    <td><strong>Date</strong></td>
+    <td><strong>Client</strong></td>
+    <td><strong>Email</strong></td>
+    <td><strong>Phone #</strong></td>
+    <td><strong>Location</strong></td>
+    <td><strong>Item</strong></td>
+    <td><strong>Contract Associated</strong></td>
+    <td><strong>Billing Information</strong></td>
+    <td><strong></td>
+    <td align="left"><strong>Status</strong></td>
+  </tr>
+  <tr>
+    <td>1/10/2026</td>
+    <td><a href="/app/clients/100000001/profile">Doe, Jane</a></td>
+    <td>jane.doe@example.test</td>
+    <td>91234567</td>
+    <td>Main Hall</td>
+    <td>Unlimited Monthly</td>
+    <td>Unlimited Monthly Contract</td>
+    <td>Visa ending 4242</td>
+    <td>&nbsp;</td>
+    <td>Scheduled</td>
+  </tr>
+</table>
+</body>
+</html>

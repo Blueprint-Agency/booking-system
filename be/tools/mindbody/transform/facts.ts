@@ -1,5 +1,6 @@
 import { proposeCatalogue } from './catalogue'
 import type { MindbodyReports } from './mapper'
+import type { CancellationRow } from './readers'
 import { dayNumber, normaliseClassName, normaliseOptionName, normaliseStaffName, type CalendarDate } from './values'
 
 /**
@@ -27,6 +28,49 @@ export type ReportFacts = {
   roomless: Record<string, { held: number; alsoInRooms: number }>
   /** Every pricing option ever sold, proposed like the catalogue: past purchases need an entry each. */
   everySold: ReturnType<typeof proposeCatalogue>
+  /** The class cancellation window the members' own cancels show, or null where they show none. */
+  classWindow: CancellationWindow | null
+}
+
+export type CancellationWindow = {
+  /** Cancelled fewer than this many hours before the class, a member's cancel is late. */
+  hours: number
+  /** The members' own early and late cancels it was read from. */
+  early: number
+  late: number
+  /** Of those, the ones on the wrong side of it (a changed rule, a class moved after the cancel). */
+  misfits: number
+}
+
+/** The longest window looked for: a week. */
+const MAX_WINDOW_HOURS = 168
+
+/**
+ * The studio's late-cancel cut-off, from the lead time of each member's own
+ * cancel (`Cancelled By` is the client) and whether Mindbody called it early or
+ * late: the smallest whole hour that puts the fewest on the wrong side. A cancel
+ * made by staff or by an app says nothing of the rule a member meets. Null
+ * without both kinds, since a cut-off only shows between them.
+ */
+export function cancellationWindow(rows: CancellationRow[]): CancellationWindow | null {
+  const lead: { minutes: number; late: boolean }[] = []
+  for (const c of rows) {
+    if (!c.start || (c.method !== 'early' && c.method !== 'late')) continue
+    if (normaliseStaffName(c.cancelledBy) !== normaliseStaffName(c.client)) continue
+    const at = c.cancelledAt
+    const minutes =
+      (dayNumber(c.date) - dayNumber(at)) * 1440 + c.start.hour * 60 + c.start.minute - (at.hour * 60 + at.minute + at.second / 60)
+    lead.push({ minutes, late: c.method === 'late' })
+  }
+  const late = lead.filter(l => l.late).length
+  const early = lead.length - late
+  if (late === 0 || early === 0) return null
+  let best = { hours: 0, misfits: Infinity }
+  for (let hours = 0; hours <= MAX_WINDOW_HOURS; hours++) {
+    const misfits = lead.filter(l => l.late !== l.minutes < hours * 60).length
+    if (misfits < best.misfits) best = { hours, misfits }
+  }
+  return { hours: best.hours, early, late, misfits: best.misfits }
 }
 
 export function reportFacts(
@@ -92,7 +136,7 @@ export function reportFacts(
   for (const k of Object.keys(roomless)) if (roomless[k]!.held === 0) delete roomless[k]
 
   const everySold = proposeCatalogue(r, asOf, { everySold: true })
-  return { classTypes, categories, ptNames, maxByRoom, sold, roomless, everySold }
+  return { classTypes, categories, ptNames, maxByRoom, sold, roomless, everySold, classWindow: cancellationWindow(r.cancellations) }
 }
 
 export type StaffFact = {

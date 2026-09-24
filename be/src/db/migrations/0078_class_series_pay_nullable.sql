@@ -1,0 +1,1 @@
+ALTER TABLE "class_series" ALTER COLUMN "instructor_pay_sgd" DROP NOT NULL;

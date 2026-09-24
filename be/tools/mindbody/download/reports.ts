@@ -84,6 +84,9 @@ export type ProfileEntry = Report & {
   optional?: boolean
 }
 
+/** Big Spenders lists at most this many clients, biggest first: the ones past it are simply not in the file. */
+export const BIG_SPENDERS_CAP = 10_000
+
 const DETAIL_SUMMARY: Variant[] = [{ label: 'Detail', set: { View: 'Detail' } }, { label: 'Summary', set: { View: 'Summary' } }]
 const DATES: FieldSet = { requiredtxtDateStart: '$START', requiredtxtDateEnd: '$TODAY' }
 const MVC_DATES: FieldSet = { Start: '$START', End: '$TODAY' }
@@ -162,7 +165,9 @@ const CLIENTS: Draft[] = [
     variants: [{ label: 'Detail', set: { optSummary: '1' } }, { label: 'Summary', set: { optSummary: '0' } }] },
   { name: 'Big Spenders', path: '/ASP/adm/adm_rpt_big_spenders.asp', type: 'legacy',
     set: { ...DATES, optProdServ: '2', optTG: '0', optSaleLoc: '0', optNewClientOnly: '0', optMinValue: '0.00',
-      optTopNum: '10000' }, // "Top N" clients: above any studio's client count; the Summary view errors (HTTP 500) at 100000
+      // "Top N" clients: a client past it loses every sale. The Summary view errors (HTTP 500) at 100000, so it
+      // cannot simply be huge; the cutover download checks it against the Members instead (`./sales-cap.ts`).
+      optTopNum: String(BIG_SPENDERS_CAP) },
     variants: [
       { label: 'Detail Accrual', set: { optSummary: '0', optBasis: '0' } },
       { label: 'Detail Cash', set: { optSummary: '0', optBasis: '1' } },
@@ -263,11 +268,16 @@ export const CUTOVER: ProfileEntry[] = [
   // One file per referrer group; the Summary group is downloaded too and ignored by the transform.
   pick('Referral Types', { kind: 'referrals' }),
   pick('Retention Management', { kind: 'retention' }),
+  // Where each membership is held: an Unlimited Plan's Home Location where Retention Management has none.
+  // Also who is on an autopay, to stop in Mindbody and re-sign on the platform.
+  pick('Membership', { kind: 'membership', only: ['New Version Detail'], optional: true }),
   pick('Account Balances', { kind: 'balances', only: ['All balances'] }),
   // What they hold: the live packages and the catalogue proposal.
   pick('Visits Remaining', { kind: 'holdings', only: ['Detail'] }),
   pick('Pricing Option Expirations', { kind: 'optionSales' }),
   pick('Big Spenders', { kind: 'sales', only: ['Detail Accrual'] }),
+  // What a promotion took off each of those sales, by sale number: a past sale's List Price.
+  pick('Promotions', { kind: 'promotions', only: ['Detail'] }),
   // Their past visits (history): Date view only — the other views are the same rows re-sorted.
   pick('Attendance without Revenue', { kind: 'attendance', loop: { match: /^date$/i, label: 'Date' }, split: 'year' }),
   // Who is booked into what, past and to come: from the history cutoff to 12 months ahead, one file per year.
@@ -277,18 +287,21 @@ export const CUTOVER: ProfileEntry[] = [
   pick('Staff Schedule', { kind: 'schedule', loop: { match: /^all$/i, label: 'ALL' }, only: ['Scheduled'] }),
   pick('Pay Rates', { kind: 'payRates' }),
   pick('Payroll', { kind: 'payroll', only: ['Detail'], split: 'year' }),
-  // When each late cancel really happened, and who did it. Individual records only (Group repeats them);
-  // one file per month from the start, since a whole year is refused.
+  // When each late cancel really happened, and who did it. One file per month from the start, since a
+  // whole year is refused.
   pick('Cancellations', { kind: 'cancellations', only: ['Individual records'], split: 'month' }),
-  // Not read by the transform: who is on an autopay, to stop in Mindbody and re-sign on the platform.
-  pick('Membership', { only: ['New Version Detail'], optional: true }),
+  // Which past classes the studio called off, so they arrive cancelled rather than live and Unpriced.
+  // Its lines repeat some Individual records, grouped by class; it is small enough for one file.
+  pick('Cancellations', { kind: 'groupCancellations', only: ['Group cancellations'] }),
   {
     // Reports -> Payment Processing -> Autopay Detail (Mindbody has no "AutoPay Schedule" report): every
     // autopay run due from today to 12 months ahead, POS-charged ones included. The other two filters
     // narrow ("Only account autopays", "Only auto-renewing"), so they stay off. Read only: the page's
     // Run / Delete buttons set frmDelEFT or a run flag, which this export never does.
     // A studio with no autopays gets the page's "No autopay transactions found" table.
-    name: 'Autopay Detail', cat: 'Sales', num: 43, optional: true, type: 'legacy',
+    // The transform lists each in the preflight, and imports none; optional, so it can be added to a
+    // cutover folder afterwards without moving its as-of moment.
+    name: 'Autopay Detail', kind: 'autopay', cat: 'Sales', num: 43, optional: true, type: 'legacy',
     path: '/ASP/adm/adm_eft_det.asp',
     set: { requiredtxtDateStart: '$TODAY', requiredtxtDateEnd: '$FUTURE1Y', optEFTLocation: '-1', optPayMeth: '',
       pos_sales: true, optAccountAutoPay: false, optAutoRenewing: false, optFilterTagged: false,

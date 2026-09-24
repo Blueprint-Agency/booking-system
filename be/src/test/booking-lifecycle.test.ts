@@ -400,12 +400,13 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
     await expectStatus(await book(kim, classAtOne), 404)
     assert.equal((await bookingsOf(kim, classAtOne)).length, 0)
 
-    // Studio two's session carried to studio one's hostname is refused outright.
+    // Studio two's session carried to studio one's hostname is refused outright:
+    // logins are per studio (#231), so studio one cannot even see it.
     const kimAtOne = {
       ...kim,
       headers: { ...kim.headers, 'X-Tenant-Slug': one.slug, Origin: frontendOrigin('client', one) },
     }
-    await expectStatus(await cancel(kimAtOne, bookingId), 403)
+    await expectStatus(await cancel(kimAtOne, bookingId), 401)
 
     const row = await bookingRow(bookingId)
     assert.equal(row.state, 'confirmed')

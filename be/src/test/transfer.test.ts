@@ -326,16 +326,20 @@ test('a studio copies into a second one beside it', options, async () => {
     assert.ok(!originals.has(row.id), 'a copied row must not reuse the original row s id')
   }
 
-  // The account a member signs in with is not a row of the studio: it passes
-  // through untouched, uuid-shaped as it is, so the same person signs in to the
-  // copy with the same account — one person, a record at each studio.
-  const accounts = await harness.db.execute<{ auth_user_id: string }>(
-    sql`SELECT auth_user_id FROM clients WHERE tenant_id = ${target} ORDER BY auth_user_id`,
-  )
-  assert.deepEqual(
-    accounts.map(r => r.auth_user_id),
-    archive.rows.clients!.map(r => String(r.auth_user_id)).sort(),
-  )
+  // The login a member signs in with never travels in an archive (#229): each
+  // copied member names the login their email has in the client pool at the
+  // copy — logins are per studio (#231) — not the id the archive carried.
+  const accounts = await harness.db.execute<{ email: string; auth_user_id: string; login_id: string | null }>(sql`
+    SELECT c.email, c.auth_user_id, u.id AS login_id
+    FROM clients c LEFT JOIN client_auth_users u ON u.email = lower(c.email) AND u.tenant_id = c.tenant_id
+    WHERE c.tenant_id = ${target}
+  `)
+  assert.equal(accounts.length, originals.size)
+  const archived = new Set(archive.rows.clients!.map(r => String(r.auth_user_id)))
+  for (const row of accounts) {
+    assert.equal(row.auth_user_id, row.login_id, `${row.email} names the login for their email`)
+    assert.ok(!archived.has(row.auth_user_id), `${row.email} does not keep the archive's login id`)
+  }
 
   // Rewritten consistently: the referral still points at the member who made
   // it, and at the *copy* of them rather than the original.

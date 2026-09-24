@@ -12,8 +12,9 @@ import type { StripeFake } from './stripe-fake'
  * The fixture is the export test's (`member-fixtures.ts`): a row in every table
  * `MEMBER_TABLES` lists, for the member, for another member of the same studio,
  * and for the same person as a member of the second studio. Two members are
- * deleted: one who belongs to both studios, whose sign-in account has to
- * survive, and one who belongs to this studio alone, whose account has to go.
+ * deleted: one who belongs to both studios, and one who belongs to this studio
+ * alone. Logins are per studio (#231), so each loses this studio's login, and
+ * the first keeps the separate login they have at the second studio.
  */
 describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
@@ -85,7 +86,7 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
     })
     member = await join(one, admin, 'member')
     elsewhere = await join(two, adminTwo, 'member')
-    assert.equal(elsewhere.authUserId, member.authUserId)
+    assert.notEqual(elsewhere.authUserId, member.authUserId, 'a login at each studio')
     solo = await join(one, admin, 'solo')
     neighbour = await join(one, admin, 'neighbour')
 
@@ -205,7 +206,7 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
       assert.deepEqual(await rowsNaming(two, elsewhere), before.elsewhere)
     })
 
-    test('their sessions here end; their account stays, and still signs in at the other studio', async () => {
+    test('their sessions and login here end; their login at the other studio still signs in', async () => {
       const here = await harness.db
         .select()
         .from(schema.clientAuthSessions)
@@ -213,8 +214,10 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
       assert.deepEqual(here, [])
       assert.equal((await harness.app.request('/api/v1/me', { headers: member.headers })).status, 401)
 
-      const [account] = await harness.db.select().from(schema.clientAuthUsers).where(eq(schema.clientAuthUsers.id, member.authUserId))
-      assert.ok(account, 'the auth user was deleted while another studio still has them')
+      const loginHere = await harness.db.select().from(schema.clientAuthUsers).where(eq(schema.clientAuthUsers.id, member.authUserId))
+      assert.deepEqual(loginHere, [], "this studio's login for them is deleted")
+      const [loginThere] = await harness.db.select().from(schema.clientAuthUsers).where(eq(schema.clientAuthUsers.id, elsewhere.authUserId))
+      assert.ok(loginThere, "the other studio's login is untouched")
       assert.equal((await harness.app.request('/api/v1/me', { headers: elsewhere.headers })).status, 200)
       const again = await harness.signInAs('client', elsewhere.email, two)
       assert.equal((await harness.app.request('/api/v1/me', { headers: again })).status, 200)

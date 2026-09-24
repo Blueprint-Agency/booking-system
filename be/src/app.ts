@@ -18,6 +18,7 @@ import {
   type AuthPool,
   type AuthPoolHandler,
 } from './services/auth/better-auth'
+import { resetLinkRedirect } from './services/auth/reset-link'
 
 import publicRoutes from './routes/public'
 import clientRoutes from './routes/client'
@@ -121,9 +122,9 @@ app.use('/api/v1/platform/*', authedLimiter)
 //     `requirePlatformAdmin`, which reads no tenant at all. Its auth pool is
 //     exempt for the same reason: the super portal signs in on no studio.
 //   - a staff or member password-reset link. It is opened from an inbox, so it
-//     carries no `X-Tenant-Slug` and no `Origin`; it only checks the token and
-//     redirects to the page that sets the password, which does run inside a
-//     context. The mail was sent from inside one when it was asked for.
+//     carries no `X-Tenant-Slug` and no `Origin`; it reads nothing, only hands
+//     the token to the page that sets the password (below), which does run
+//     inside a context. The mail was sent from inside one when it was asked for.
 const TENANT_CONTEXT_EXEMPT = (path: string) =>
   path === '/api/v1/healthz' ||
   path === '/api/v1/webhooks/stripe' ||
@@ -175,6 +176,17 @@ app.route('/api/v1/me', clientRoutes)
 app.route('/api/v1/portal', portalRoutes)
 app.route('/api/v1/platform', platformRoutes)
 app.route('/api/v1/webhooks', webhookRoutes)
+
+// A staff or member set-password link opened from an inbox (#230), answered
+// ahead of the pool's own GET — which looks the token up, outside any Tenant
+// context, where the pool's tables show it nothing. See `resetLinkRedirect`.
+for (const pool of ['staff', 'client'] as const) {
+  app.get(`${AUTH_BASE_PATH[pool]}/reset-password/:token`, c => {
+    const to = resetLinkRedirect(c.req.param('token'), c.req.query('callbackURL'))
+    if (!to) return c.json({ error: ERROR_CODES.origin_not_allowed }, 403)
+    return c.redirect(to, 302)
+  })
+}
 
 // The three Better Auth pools (services/auth/better-auth.ts), each answering on
 // its own base path, mounted the way Better Auth's Hono integration describes.

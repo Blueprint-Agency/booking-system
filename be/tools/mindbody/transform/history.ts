@@ -2,13 +2,12 @@ import type { BookingCoder } from './booking-codes'
 import type { CatalogueEntry, StudioConfig } from './config'
 import { fold, roomFor, type ConfigLookups } from './lookups'
 import { ptAppointmentRows, ptClients } from './pt'
-import { planHome } from './packages'
-import { personKey, registerMatcher } from './register'
+import { personKey } from './register'
+import { pastPackages, type JoinedSale, type JoinedSales } from './sales'
 import type {
   AttendanceRow,
   CancellationRow,
-  MemberListRow,
-  OptionSaleRow,
+  GroupCancellationRow,
   PayrollRow,
   RosterRow,
   ScheduledClassRow,
@@ -62,6 +61,10 @@ export type MappedHistory = {
   ptSessionClients: Row[]
   /** Packages bought and used up before launch. Empty unless `history.purchases`. */
   clientPackages: Row[]
+  /** A provider-less Purchase per past package that was returned, closed as refunded. Empty unless `history.purchases`. */
+  purchases: Row[]
+  /** Payroll that fits no class or PT session that came across: a workshop, a retreat share, a PT line with no session. */
+  manualPayrollEntries: Row[]
   /** Staff who taught something in history and had no instructor profile yet. */
   instructors: Row[]
   /** What a person should look at: a class that could not be placed, a visit with no class, a purchase with no member. */
@@ -69,14 +72,17 @@ export type MappedHistory = {
 }
 
 /** What Mindbody wrote in a visit's Status column, as the platform understands it. */
-type Outcome = 'attended' | 'absent' | 'late_cancel' | 'early_cancel' | 'booked'
+export type Outcome = 'attended' | 'absent' | 'late_cancel' | 'early_cancel' | 'booked'
 
-const ATTENDED = /^(signed in|attended|completed|checked in)\b/i
-const ABSENT = /^(absent|no[ -]?show|unpaid)\b/i
+// Mindbody's "unpaid" is a visit nothing paid for, not one nobody came to:
+// attended, and with no package (`UNPAID`).
+const ATTENDED = /^(signed in|attended|completed|checked in|unpaid)\b/i
+const ABSENT = /^(absent|no[ -]?show)\b/i
+const UNPAID = /^unpaid\b/i
 const LATE_CANCEL = /late\s*cancel/i
 const EARLY_CANCEL = /cancel/i
 
-function outcomeOf(status: string): Outcome {
+export function outcomeOf(status: string): Outcome {
   if (ATTENDED.test(status)) return 'attended'
   if (ABSENT.test(status)) return 'absent'
   if (LATE_CANCEL.test(status)) return 'late_cancel'
@@ -89,7 +95,7 @@ function outcomeOf(status: string): Outcome {
 }
 
 /** What a booking looks like once it has ended that way. */
-const SETTLEMENT = {
+export const SETTLEMENT = {
   attended: { state: 'confirmed', check_in_state: 'attended', refund_outcome: 'n_a' },
   absent: { state: 'no_show', check_in_state: 'no_show', refund_outcome: 'forfeited' },
   late_cancel: { state: 'cancelled', check_in_state: 'n_a', refund_outcome: 'forfeited' },
@@ -106,9 +112,10 @@ export function mapHistory(input: {
   payroll: PayrollRow[]
   /** When each booking was cancelled, and by whom. Empty where the report was not downloaded. */
   cancellations: CancellationRow[]
-  /** The pricing-option register: every option ever sold, for past purchases. */
-  optionSales: OptionSaleRow[]
-  members: MemberListRow[]
+  /** The classes the studio called off. Empty where the report was not downloaded. */
+  groupCancellations: GroupCancellationRow[]
+  /** Every sale line, joined to what it became and what reversed it (`./sales.ts`), for past purchases. */
+  sales: JoinedSales
   config: StudioConfig
   tenantId: string
   id: (kind: string, key: string) => string
@@ -125,6 +132,10 @@ export function mapHistory(input: {
   packageRuns?: Map<string, { from: number; to: number }>
   /** The pricing options that buy a place on a workshop: never a package. */
   workshopOptions: Set<string>
+  /** Sale lines already on a workshop place (`./workshops.ts`): not a past package, and not unplaced either. */
+  workshopSales?: Set<JoinedSale>
+  /** Payroll lines already a past Workshop's pay (`./workshops.ts`): no class takes them, and no Manual Entry is made of them. */
+  workshopPayroll?: Set<PayrollRow>
   codes: BookingCoder
 }): MappedHistory {
   const { config, tenantId, id, ids, memberNames, staffIds, lookups } = input
@@ -161,7 +172,6 @@ export function mapHistory(input: {
 
   const entryOf = new Map<string, CatalogueEntry>()
   for (const e of config.catalogue) for (const s of e.mindbodyNames) entryOf.set(normaliseOptionName(s), e)
-  const catalogueIds = { ...ids.class_packages, ...ids.pt_packages }
 
   const clientPackages: Row[] = []
   /**
@@ -185,107 +195,31 @@ export function mapHistory(input: {
     packagesByOption.set(slotKey, slot)
   }
 
+  const purchases: Row[] = []
   if (input.history.purchases) {
-    const whoBought = registerMatcher(input.members)
-    const unmatched = new Map<string, number>()
-    const ambiguous = new Map<string, number>()
-    const unlisted = new Map<string, number>()
-    const trialsPaidFor = new Map<string, number>()
-    const taken = new Set<string>()
-
-    // Oldest first, so the ids a rerun writes never depend on report order.
-    const sales = [...input.optionSales].sort(
-      (a, b) =>
-        dayNumber(a.activation) - dayNumber(b.activation) ||
-        a.client.localeCompare(b.client) ||
-        a.option.localeCompare(b.option),
-    )
-    for (const sale of sales) {
-      if (isoDay(sale.activation) < from) continue
-      // Still live at the download, by the same test the live packages use
-      // (`./catalogue.ts`): something left *and* not expired. Those already came
-      // across as running packages. A purchase that is merely unexpired and
-      // spent is not one of them, and would otherwise reach neither path.
-      const left = sale.remaining !== null && (sale.remaining.unlimited || sale.remaining.count > 0)
-      if (left && dayNumber(sale.expiration) >= dayNumber(today)) continue
-      const optionKey = normaliseOptionName(sale.option)
-      if (input.workshopOptions.has(optionKey)) continue
-      const entry = entryOf.get(optionKey)
-      if (!entry) {
-        count(unlisted, sale.option)
-        continue
-      }
-      if (entry.migrate === 'skip' || entry.kind === 'access_pass') continue
-      // A member has one trial, ever — the platform holds them to it with a
-      // unique key, and `./packages.ts` has already written the spent one for
-      // anybody who used theirs. A second row for the same trial is the same
-      // trial twice, so history does not write one; the money it took is named
-      // instead, rather than quietly missing from Finance.
-      if (entry.kind === 'trial') {
-        if (sale.paid > 0) count(trialsPaidFor, `${sale.client} — ${sale.option}, ${money(sale.paid)}`)
-        continue
-      }
-
-      const match = whoBought(sale)
-      if (match.outcome !== 'matched') {
-        count(match.outcome === 'ambiguous' ? ambiguous : unmatched, `${sale.client} — ${sale.option}`)
-        continue
-      }
-      const clientId = match.clientId
-
-      // One key per purchase. Two of one option activated on one day is a real
-      // thing (a member buying two packs at the till), so the repeat is counted
-      // rather than folded into the first and lost.
-      let key = `past/${clientId}/${isoDay(sale.activation)}/${entry.name}`
-      for (let n = 2; taken.has(key); n++) key = `past/${clientId}/${isoDay(sale.activation)}/${entry.name}#${n}`
-      taken.add(key)
-
-      const catalogueId = catalogueIds[entry.name] ?? null
-      const length =
-        entry.kind === 'unlimited'
-          ? { duration_months: entry.durationMonths, validity_days: null }
-          : { duration_months: null, validity_days: entry.validityDays }
-      const row: Row = {
-        id: id('client-package', key),
-        tenant_id: tenantId,
-        client_id: ids.clients![clientId],
-        kind: entry.kind,
-        source_class_package_id: entry.kind === 'pt' ? null : catalogueId,
-        source_pt_package_id: entry.kind === 'pt' ? catalogueId : null,
-        // A plan has a Home Location, past or present: the platform requires it.
-        location_id: entry.kind === 'unlimited' ? ids.locations![planHome(config, entry)] : null,
-        ...length,
-        cross_location_paid_sgd: null,
-        // Used up, which is why it is history rather than a live holding.
-        credits_or_sessions_remaining: entry.kind === 'unlimited' ? null : 0,
-        expires_at: endOfDay(sale.expiration),
-        active: false,
-        purchased_at: zonedToInstant(sale.activation, tz).toISOString(),
-        amount_paid_sgd: money(sale.paid),
-        list_price_sgd: money(Math.max(entry.priceSgd ?? 0, sale.paid)),
-        purchase_id: null,
-        complimentary: false,
-      }
-      clientPackages.push(row)
-      ids.client_packages![key] = row.id as string
-
-      const slot = optionSlot(clientId, entry)
-      const held = packagesByOption.get(slot) ?? []
-      held.push({ id: row.id as string, kind: entry.kind, from: dayNumber(sale.activation), to: dayNumber(sale.expiration) })
-      packagesByOption.set(slot, held)
+    // Sale by sale, on the member whose id is on the sale (`./sales.ts`).
+    const barcodeOf = new Map(Object.entries(ids.clients ?? {}).map(([barcode, clientId]) => [clientId, barcode]))
+    const past = pastPackages({
+      joined: input.sales,
+      from,
+      today,
+      config,
+      tenantId,
+      id,
+      ids,
+      memberNames,
+      lookups,
+      workshopOptions: input.workshopOptions,
+      onWorkshops: input.workshopSales ?? new Set(),
+      hasTrial: new Set(input.clientPackages.filter(p => p.kind === 'trial').map(p => barcodeOf.get(String(p.client_id))!)),
+    })
+    clientPackages.push(...past.clientPackages)
+    purchases.push(...past.purchases)
+    notes.push(...past.notes)
+    for (const s of past.slots) {
+      const slot = optionSlot(s.clientId, s.entry)
+      packagesByOption.set(slot, [...(packagesByOption.get(slot) ?? []), { id: s.id, kind: s.kind, from: s.from, to: s.to }])
     }
-
-    listed(unmatched, (w, n) => `history purchases: ${w} — ${n} purchase(s) match no member by name and phone, so they were not imported`)
-    listed(
-      ambiguous,
-      (w, n) => `history purchases: ${w} — ${n} purchase(s) name more than one member and the phone does not tell them apart, so they were not imported`,
-    )
-    listed(unlisted, (w, n) => `history purchases: "${w}" was sold ${n} time(s) in the window and is in no catalogue entry, so it was not imported`)
-    listed(
-      trialsPaidFor,
-      (w, n) =>
-        `history purchases: ${w} — ${n} trial(s) a member has already come across holding, so the money is not in Finance; a member may hold only one trial ever`,
-    )
   }
 
   /**
@@ -317,6 +251,10 @@ export function mapHistory(input: {
     start: ClockTime
     label: string
     capacity: number
+    /** The class name as the report wrote it, for matching against a Group cancellation's cut-down one. */
+    description: string
+    /** Whether a payroll line paid for it: a class somebody was paid for ran. */
+    paid: boolean
   }
   const classes = new Map<string, Class>()
   /** Every session already looked at, placed or not. */
@@ -341,8 +279,9 @@ export function mapHistory(input: {
    */
   const payOf = new Map<string, number>()
   const payKey = (d: CalendarDate, t: ClockTime, staff: string) => `${isoDay(d)} ${isoClock(t)} ${normaliseStaffName(staff)}`
+  const onWorkshops = input.workshopPayroll ?? new Set<PayrollRow>()
   for (const p of input.payroll) {
-    if (!p.start || isoDay(p.date) < from) continue
+    if (!p.start || isoDay(p.date) < from || onWorkshops.has(p)) continue
     const key = payKey(p.date, p.start, p.staff)
     payOf.set(key, (payOf.get(key) ?? 0) + p.earnings)
   }
@@ -363,7 +302,14 @@ export function mapHistory(input: {
     staff: string
     room: string
     location: string
+    /** The schedule report's `***`: `staff` is the substitute who taught it. */
+    substitute?: boolean
   }
+  /**
+   * Classes a substitute taught. The class already names the teacher who taught
+   * it; the platform has no field to say a substitute stood in, so they are counted.
+   */
+  let substituted = 0
 
   const place = (s: Session): void => {
     const name = normaliseClassName(s.description)
@@ -415,6 +361,8 @@ export function mapHistory(input: {
       // Pay is the studio's own figure and not a rate applied after the fact.
       instructor_pay_sgd: earned === undefined ? null : money(earned),
       lifecycle: 'active',
+      cancelled_at: null,
+      cancelled_by_staff_id: null,
       series_id: null,
       created_at: asOf.toISOString(),
       created_by_staff_id: input.ownerId,
@@ -426,7 +374,10 @@ export function mapHistory(input: {
       start: s.start,
       label: `${s.description} on ${isoDay(s.date)} at ${isoClock(s.start)}`,
       capacity,
+      description: s.description,
+      paid: earned !== undefined,
     }
+    if (s.substitute) substituted++
     classes.set(key, cls)
     byTime.set(timeKey, byTime.has(timeKey) ? null : cls)
   }
@@ -461,6 +412,11 @@ export function mapHistory(input: {
     (w, n) => `history: ${w} taught ${n} past class(es) and is not coming across — migrate them as archived staff to keep that history`,
   )
   listed(unknownLocations, (w, n) => `history: "${w}" held ${n} past class(es) and no Location is called that — they were filed under ${config.defaultLocation}`)
+  if (substituted > 0) {
+    notes.push(
+      `history: ${substituted} past class(es) were taught by a substitute (*** in Mindbody); each names the teacher who taught it, and the platform has no field to mark the substitution`,
+    )
+  }
 
   /* ── Past bookings, check-ins and late cancels ─────────────────────────── */
 
@@ -494,7 +450,7 @@ export function mapHistory(input: {
    * themselves, or ClassPass on their behalf, is `client`; anyone else — a
    * member of staff, a front-desk login — is the studio's, `admin`.
    */
-  const lateCancels = new Map<string, { at: Date; by: 'client' | 'admin' }>()
+  const lateCancels = new Map<string, { at: Date; by: 'client' | 'admin'; staffId: string | null }>()
   for (const c of input.cancellations) {
     if (c.method !== 'late' || !c.start) continue
     const key = `${personKey(c.client)} ${instant(c.date, c.start).toISOString()}`
@@ -503,9 +459,23 @@ export function mapHistory(input: {
     const at = zonedToInstant(c.cancelledAt, tz)
     const had = lateCancels.get(key)
     // Cancelled, rebooked and cancelled again: the last one is the one that stands.
-    if (!had || had.at < at) lateCancels.set(key, { at, by })
+    if (!had || had.at < at) lateCancels.set(key, { at, by, staffId: self ? null : (staffIds.get(normaliseStaffName(c.cancelledBy)) ?? null) })
   }
+  const lateCancelOf = (clientId: string, startsAt: Date) => lateCancels.get(`${personKey(memberNames.get(clientId) ?? '')} ${startsAt.toISOString()}`)
   let cancelTimesFound = 0
+
+  /**
+   * What the roster says of each visit, by day, time and member. The attendance
+   * report says a visit ended in a late cancel or a no-show; for anything else
+   * the roster's Status is what tells a visit the studio marked from a seat
+   * nobody ever marked (the report's own rows on the day of the download).
+   */
+  const rosterStatus = new Map<string, string>()
+  for (const r of input.roster) if (r.status) rosterStatus.set(`${isoDay(r.date)} ${isoClock(r.start)} ${r.clientId}`, r.status)
+  const statusOf = (v: AttendanceRow) =>
+    v.fromFlags && outcomeOf(v.status) === 'attended'
+      ? (rosterStatus.get(`${isoDay(v.date)} ${isoClock(v.start)} ${v.clientId}`) ?? v.status)
+      : v.status
 
   const settle = (args: {
     key: string
@@ -521,10 +491,7 @@ export function mapHistory(input: {
     const made = input.codes(args.key)
     const settlement = SETTLEMENT[args.outcome]
     const at = args.startsAt.toISOString()
-    const cancel =
-      args.outcome === 'late_cancel'
-        ? lateCancels.get(`${personKey(memberNames.get(args.clientId) ?? '')} ${at}`)
-        : undefined
+    const cancel = args.outcome === 'late_cancel' ? lateCancelOf(args.clientId, args.startsAt) : undefined
     if (cancel) cancelTimesFound++
     const cancelledAt = cancel ? cancel.at.toISOString() : at
     // A seat cannot be given up before it was taken: where the cancel came
@@ -588,8 +555,8 @@ export function mapHistory(input: {
     staff: string
     location: string
     room: string
-    /** Client id → how their visit ended, and what paid for it. */
-    clients: Map<string, { outcome: Exclude<Outcome, 'early_cancel'>; option: string }>
+    /** Client id → how their visit ended, what paid for it, and whether it counted towards the trainer's pay. */
+    clients: Map<string, { outcome: Exclude<Outcome, 'early_cancel'>; option: string; staffPaid: boolean | null }>
   }
   const appointments = new Map<string, Appointment>()
 
@@ -600,13 +567,19 @@ export function mapHistory(input: {
    * fall away behind it.
    */
   const strength = { attended: 0, booked: 1, absent: 2, late_cancel: 3, early_cancel: 4 } as const
-  const visits = [...input.attendance].sort(
-    (a, b) =>
-      dayNumber(a.date) - dayNumber(b.date) ||
-      isoClock(a.start).localeCompare(isoClock(b.start)) ||
-      a.clientId.localeCompare(b.clientId) ||
-      strength[outcomeOf(a.status)] - strength[outcomeOf(b.status)],
-  )
+  const visits = input.attendance
+    .map(v => {
+      const status = statusOf(v)
+      // Nothing paid for it, so it names no package, whatever option the report wrote.
+      return UNPAID.test(status) ? { ...v, status, option: '' } : { ...v, status }
+    })
+    .sort(
+      (a, b) =>
+        dayNumber(a.date) - dayNumber(b.date) ||
+        isoClock(a.start).localeCompare(isoClock(b.start)) ||
+        a.clientId.localeCompare(b.clientId) ||
+        strength[outcomeOf(a.status)] - strength[outcomeOf(b.status)],
+    )
   for (const v of visits) {
     if (!inWindow(v.date, v.start)) continue
     const outcome = outcomeOf(v.status)
@@ -632,7 +605,9 @@ export function mapHistory(input: {
         room: v.room,
         clients: new Map(),
       }
-      if (!appointment.clients.has(v.clientId)) appointment.clients.set(v.clientId, { outcome, option: v.option })
+      if (!appointment.clients.has(v.clientId)) {
+        appointment.clients.set(v.clientId, { outcome, option: v.option, staffPaid: v.staffPaid ?? null })
+      }
       appointments.set(key, appointment)
       continue
     }
@@ -666,17 +641,78 @@ export function mapHistory(input: {
     (w, n) => `history: ${n} seat(s) on a class that has been and gone are still "${w}" in Mindbody, so they came across booked and never checked in`,
   )
 
+  /* ── Past classes the studio called off ────────────────────────────────── */
+
+  /**
+   * A class in the timetable that nobody came to, cancelled or not, and that
+   * payroll paid nobody for, is one of two things: a class that ran empty, or
+   * one the studio called off. The Group cancellations report tells them apart —
+   * a block per class called off, with the members it sent home — so a class it
+   * names is cancelled, as the portal cancels one: at the time it was called
+   * off, by the member of staff who did it where they are coming across. A
+   * class the report names that did have a visit or a payroll line ran, and
+   * stays as it is.
+   */
+  const calledOff = new Map<string, { name: string; at: Date; by: string }[]>()
+  for (const g of input.groupCancellations) {
+    if (!g.start) continue
+    const key = `${isoDay(g.date)} ${isoClock(g.start)}`
+    const at = zonedToInstant(g.cancelledAt, tz)
+    const name = normaliseClassName(g.description)
+    const same = (calledOff.get(key) ?? []).find(c => c.name === name)
+    if (same) {
+      if (at < same.at) Object.assign(same, { at, by: g.cancelledBy })
+    } else calledOff.set(key, [...(calledOff.get(key) ?? []), { name, at, by: g.cancelledBy }])
+  }
+  let cancelledClasses = 0
+  let emptyClasses = 0
+  for (const cls of classes.values()) {
+    if (cls.paid || seated.has(cls.id)) continue
+    const name = normaliseClassName(cls.description)
+    // Mindbody cuts the class name in this report to 14 characters.
+    const off = calledOff.get(`${isoDay(cls.date)} ${isoClock(cls.start)}`)?.find(c => c.name && name.startsWith(c.name))
+    if (!off) {
+      emptyClasses++
+      continue
+    }
+    cancelledClasses++
+    Object.assign(cls.row, {
+      lifecycle: 'cancelled',
+      cancelled_at: off.at.toISOString(),
+      cancelled_by_staff_id: staffIds.get(normaliseStaffName(off.by)) ?? null,
+    })
+  }
+  if (cancelledClasses > 0) {
+    notes.push(`history: ${cancelledClasses} past class(es) the studio called off (Group cancellations) came across cancelled`)
+  }
+  if (emptyClasses > 0) {
+    notes.push(
+      `history: ${emptyClasses} past class(es) had nobody on them, no payroll line and no group cancellation, so they came across as classes that ran — and Unpriced`,
+    )
+  }
+
   for (const cls of classes.values()) ids.classes[cls.label] = cls.id
 
   /* ── Past PT ───────────────────────────────────────────────────────────── */
 
-  const rosterPtRoom = new Map<string, string>()
+  /**
+   * The roster's line for each appointment, one per member on it: the
+   * attendance report has no Room, and its flagged form no end time, no notes
+   * and nobody who booked it — the roster has all four.
+   */
+  const rosterPt = new Map<string, RosterRow[]>()
   for (const r of input.roster) {
-    if (r.room && lookups.ptNames.has(normaliseClassName(r.description))) {
-      rosterPtRoom.set(`${isoDay(r.date)} ${isoClock(r.start)} ${normaliseStaffName(r.staff)}`, r.room)
-    }
+    if (!lookups.ptNames.has(normaliseClassName(r.description))) continue
+    const key = `${isoDay(r.date)} ${isoClock(r.start)} ${normaliseStaffName(r.staff)}`
+    rosterPt.set(key, [...(rosterPt.get(key) ?? []), r])
   }
+  const rosterPtRoom = (key: string) => rosterPt.get(key)?.find(r => r.room)?.room
   let ptRoomsFilled = 0
+  let ptHourGuessed = 0
+  let ptPaidButCancelled = 0
+  /** Past PT the owner is recorded as booking, by who Mindbody says booked it. */
+  const bookedByOwner = new Map<string, number>()
+  let bookerUnknown = 0
   const ptRequests: Row[] = []
   const ptSessions: Row[] = []
   const ptSessionClients: Row[] = []
@@ -690,28 +726,50 @@ export function mapHistory(input: {
       notes.push(`history: ${a.staff} took ${label} and is not coming across, so it stayed behind`)
       continue
     }
-    const [requester, partner, ...others] = [...a.clients.keys()].sort()
+    // The requester is whoever's visit says most about the session — the one who
+    // came, before one who did not — so the request and the session tell the
+    // same story. Only where every member late-cancelled is the session cancelled.
+    const [requester, partner, ...others] = [...a.clients.keys()].sort(
+      (x, y) => strength[a.clients.get(x)!.outcome] - strength[a.clients.get(y)!.outcome] || x.localeCompare(y),
+    )
     for (const extra of others) {
       notes.push(`${extra} ${memberNames.get(extra)}: a third member on ${label} — a PT session here seats two, so this seat was not imported`)
     }
 
     const ptTypeId = input.ensurePtType()
     teaches(instructorId)
-    // The attendance report has no Room; the roster does, for the same appointment.
-    const room = roomFor(lookups, a.room || rosterPtRoom.get(key) || '', ptTypeId)
+    const lines = rosterPt.get(key) ?? []
+    const line = lines.find(r => r.clientId === requester) ?? lines[0]
+    const room = roomFor(lookups, a.room || rosterPtRoom(key) || '', ptTypeId)
     if (room) ptRoomsFilled++
     const location = room?.location ?? lookups.locations.get(fold(a.location)) ?? config.defaultLocation
     const startsAt = instant(a.date, a.start)
     const pay = paid(a.date, a.start, a.staff)
-    const end = a.end ? instant(a.date, a.end) : startsAt
+    // The roster's end is the appointment as booked; an hour only where no report has one.
+    const endClock = lines.find(r => r.end)?.end ?? a.end
+    const end = endClock ? instant(a.date, endClock) : startsAt
     const endsAt = end > startsAt ? end : new Date(startsAt.getTime() + 3_600_000)
+    if (end <= startsAt) ptHourGuessed++
     const sessionId = id('pt-session', key)
     const mine = a.clients.get(requester!)!
-    // The request is the requester's own story: they came, or they gave the
-    // slot up after it was scheduled. Anything else is a slot the studio never
-    // marked either way, which is still a scheduled session that has passed.
+    // The request is the requester's own story, ending where the platform's
+    // own would: `attended` once the session is over — a no-show too, whose
+    // booking is what says nobody came, so the end-of-session job has nothing
+    // left to move — or cancelled after it was scheduled. A slot the studio
+    // never marked either way is still a scheduled session that has passed.
     const status =
-      mine.outcome === 'attended' ? 'attended' : mine.outcome === 'late_cancel' ? 'cancelled_after_scheduled' : 'scheduled'
+      mine.outcome === 'attended' || mine.outcome === 'absent'
+        ? 'attended'
+        : mine.outcome === 'late_cancel'
+          ? 'cancelled_after_scheduled'
+          : 'scheduled'
+    const cancel = mine.outcome === 'late_cancel' ? lateCancelOf(requester!, startsAt) : undefined
+    if (mine.outcome === 'late_cancel' && pay !== undefined) ptPaidButCancelled++
+
+    // Who booked it: a member of staff coming across, or else the owner, counted.
+    const booker = line ? staffIds.get(normaliseStaffName(line.scheduledBy)) : undefined
+    if (!line) bookerUnknown++
+    else if (!booker) count(bookedByOwner, line.scheduledBy || '(blank)')
 
     const rows = ptAppointmentRows({
       tenantId,
@@ -728,9 +786,23 @@ export function mapHistory(input: {
       status,
       debitedClientPackageId: paidBy(requester!, mine.option, a.date)?.id ?? null,
       ownerId: input.ownerId,
+      scheduledById: booker ?? null,
       // Settled when it happened, not at the download: it is the studio's past.
       settledAt: startsAt.toISOString(),
-      instructorPaySgd: pay === undefined ? null : money(pay),
+      // No payroll line, and Mindbody marked every visit on it as not counting
+      // towards the trainer's pay (an unpaid no-show): the trainer was paid
+      // nothing, which is $0 and not something for an admin to price.
+      instructorPaySgd:
+        pay !== undefined ? money(pay) : [...a.clients.values()].every(v => v.staffPaid === false) ? money(0) : null,
+      message: line?.notes,
+      twoPerson: [...a.clients.values()].some(c => {
+        const entry = entryOf.get(normaliseOptionName(c.option))
+        return entry !== undefined && entry.migrate !== 'skip' && entry.kind === 'pt' && entry.sessionType === '2on1'
+      }),
+      cancelled:
+        mine.outcome === 'late_cancel'
+          ? { at: (cancel?.at ?? startsAt).toISOString(), byStaffId: cancel?.staffId ?? null }
+          : null,
     })
     ptRequests.push(rows.request)
     ptSessions.push(rows.session)
@@ -751,10 +823,25 @@ export function mapHistory(input: {
       })
     }
   }
-  const ptRoomless = [...appointments.keys()].filter(k => rosterPtRoom.has(k) && !lookups.rooms.has(fold(rosterPtRoom.get(k)!)))
+  const ptRoomless = [...appointments.keys()].filter(k => rosterPtRoom(k) && !lookups.rooms.has(fold(rosterPtRoom(k)!)))
   if (ptRoomless.length > 0) {
-    const spellings = [...new Set(ptRoomless.map(k => rosterPtRoom.get(k)!))].sort().join('", "')
+    const spellings = [...new Set(ptRoomless.map(k => rosterPtRoom(k)!))].sort().join('", "')
     notes.push(`history: ${ptRoomless.length} past PT session(s) were held in "${spellings}", which is no Room, so they came across with none (${ptRoomsFilled} got theirs from the roster)`)
+  }
+  if (ptHourGuessed > 0) {
+    notes.push(`history: ${ptHourGuessed} past PT session(s) have no end time in the roster or the attendance report, so they are one hour long`)
+  }
+  if (ptPaidButCancelled > 0) {
+    notes.push(
+      `history: ${ptPaidButCancelled} late-cancelled past PT session(s) were paid for in payroll; they came across cancelled, so that pay is not in Finance's Instructor Pay`,
+    )
+  }
+  listed(
+    bookedByOwner,
+    (w, n) => `history: ${n} past PT session(s) were booked by "${w}", who is not staff coming across, so the owner is recorded as scheduling them`,
+  )
+  if (bookerUnknown > 0) {
+    notes.push(`history: ${bookerUnknown} past PT session(s) have no roster line to say who booked them, so the owner is recorded as scheduling them`)
   }
 
   if (cancellations.length > 0) {
@@ -765,34 +852,85 @@ export function mapHistory(input: {
     )
   }
 
-  /* ── Payroll that found nothing to belong to ───────────────────────────── */
+  /* ── Payroll that found nothing to belong to: Manual Payroll Entries ───── */
 
-  // Summed per teacher and kind of line, so the studio can see where every
-  // dollar of payroll went: onto a class, onto a PT session, or nowhere here.
-  const leftover = new Map<string, number>()
+  /**
+   * A payroll line no class or PT session took — a workshop's per-client lines,
+   * a retreat's revenue share at no set time, a PT line with no session — is
+   * still money the studio paid, so it becomes a Manual Payroll Entry for the
+   * teacher on its own date: that is what keeps Finance's historical Instructor
+   * Pay equal to Mindbody's Payroll total. The lines of one class, or one
+   * appointment, on one rate are one entry, as they are one payment.
+   */
+  type Entry = { staffId: string; date: CalendarDate; start: ClockTime | null; label: string; amount: number }
+  const entries = new Map<string, Entry>()
+  const notComing = new Map<string, number>()
   let payrollTotal = 0
   let payrollPlaced = 0
+  let payrollWorkshops = 0
   for (const p of input.payroll) {
     if (isoDay(p.date) < from) continue
     payrollTotal += p.earnings
+    if (onWorkshops.has(p)) {
+      payrollWorkshops += p.earnings
+      continue
+    }
     if (p.start && payUsed.has(payKey(p.date, p.start, p.staff))) {
       payrollPlaced += p.earnings
       continue
     }
-    const why = !p.start
-      ? 'paid at no set time (TBD — a revenue share on a retreat or course)'
-      : p.table === 'appointment'
-        ? 'for a PT appointment that did not come across'
-        : `for a class that did not come across (a workshop or retreat day, or a class left behind)${p.description ? '' : ' — a per-client line with no class name'}`
-    const key = `${p.staff} — ${why}`
-    leftover.set(key, (leftover.get(key) ?? 0) + p.earnings)
+    const staffId = staffIds.get(normaliseStaffName(p.staff))
+    if (!staffId) {
+      notComing.set(p.staff, (notComing.get(p.staff) ?? 0) + p.earnings)
+      continue
+    }
+    const kind = p.table === 'appointment' ? 'PT appointment' : p.table === 'class_per_client' ? 'class paid per client' : 'class'
+    const when = p.start ? ` at ${isoClock(p.start)}` : ', no set time'
+    const rate = p.rate ? ` (${p.rate.name}${p.rate.percent === null ? '' : ` ${p.rate.percent}%`})` : ''
+    const label = `Mindbody payroll: ${p.description || kind}${when}${rate}`
+    const key = `${staffId} ${isoDay(p.date)} ${p.start ? isoClock(p.start) : 'TBD'} ${label}`
+    const entry = entries.get(key) ?? { staffId, date: p.date, start: p.start, label, amount: 0 }
+    entry.amount += p.earnings
+    entries.set(key, entry)
   }
+
+  ids.manual_payroll_entries ??= {}
+  const manualPayrollEntries: Row[] = []
+  let payrollManual = 0
+  for (const [key, e] of [...entries].sort(([a], [b]) => a.localeCompare(b))) {
+    const amount = Math.round(e.amount * 100) / 100
+    if (amount === 0) continue
+    teaches(e.staffId)
+    const row: Row = {
+      id: id('manual-payroll-entry', key),
+      tenant_id: tenantId,
+      instructor_id: e.staffId,
+      amount_sgd: money(amount),
+      label: e.label,
+      // At its own time, or — a line at no set time — the start of its day.
+      entry_date: (e.start ? instant(e.date, e.start) : zonedToInstant({ ...e.date, hour: 0, minute: 0, second: 0 }, tz)).toISOString(),
+      created_by_staff_id: input.ownerId,
+      created_at: asOf.toISOString(),
+    }
+    manualPayrollEntries.push(row)
+    ids.manual_payroll_entries[key] = row.id as string
+    payrollManual += amount
+    // Kept, or the totals would not be Mindbody's; but the portal edits an entry only at 0 or more.
+    if (amount < 0) {
+      notes.push(`history payroll: "${e.label}" on ${isoDay(e.date)} nets to ${money(amount)} (a reversal) — imported as it is; the portal cannot edit a negative entry`)
+    }
+  }
+
   if (input.payroll.length > 0) {
+    // To the cent, and never "-0.00": thousands of lines in floating point leave dust behind.
+    const cents = (n: number) => money(Math.round(n * 100) / 100 + 0)
     notes.push(
-      `history payroll: ${money(payrollTotal)} paid from ${from}; ${money(payrollPlaced)} is on the classes and PT sessions that came across, ${money(payrollTotal - payrollPlaced)} is not`,
+      `history payroll: ${cents(payrollTotal)} paid from ${from}; ${cents(payrollPlaced)} is on the classes and PT sessions that came across, ` +
+        (payrollWorkshops !== 0 ? `${cents(payrollWorkshops)} on past Workshops, ` : '') +
+        `${cents(payrollManual)} on ${manualPayrollEntries.length} Manual Payroll Entries, ${cents(payrollTotal - payrollPlaced - payrollWorkshops - payrollManual)} is not`,
     )
-    for (const [what, amount] of [...leftover].sort(([a], [b]) => a.localeCompare(b))) {
-      if (amount !== 0) notes.push(`history payroll: ${money(amount)} ${what}`)
+    for (const [staff, amount] of [...notComing].sort(([a], [b]) => a.localeCompare(b))) {
+      if (amount !== 0) notes.push(`history payroll: ${money(amount)} ${staff} — is not coming across, so it was not imported`)
     }
   }
 
@@ -805,6 +943,8 @@ export function mapHistory(input: {
     ptSessions,
     ptSessionClients,
     clientPackages,
+    purchases,
+    manualPayrollEntries,
     instructors: [...extraInstructors].sort().map(staffId => ({ staff_user_id: staffId, tenant_id: tenantId })),
     notes,
   }

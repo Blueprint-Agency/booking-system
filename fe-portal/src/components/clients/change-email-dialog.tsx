@@ -31,7 +31,7 @@ export function ChangeEmailDialog({
       open
       onOpenChange={(o) => !o && onClose()}
       title={`Change email — ${memberName}`}
-      description="The member signs in with the new address and keeps every package and booking. Their current sessions end, and the old address no longer reaches them here. Unless they already have an account at the new address, their first sign-in there mails them a link to set a password. Nothing is sent by this change itself."
+      description="The member signs in with the new address and keeps every package and booking. Their current sessions end, and the old address no longer reaches them here. Their first sign-in at the new address mails them a link to set a password. Nothing is sent by this change itself."
     >
       <form
         className="space-y-4"

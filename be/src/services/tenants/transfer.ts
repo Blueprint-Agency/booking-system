@@ -2,8 +2,10 @@ import { sql } from 'drizzle-orm'
 import { db, withTenant } from '../../db'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { ensureAuthUser } from '../auth/auth-users'
+import { INVITE_TTL_MS } from '../auth/invitations'
 import { buildIdentityMap, remapRow } from './transfer-identity'
 import { orderTables, type ForeignKey } from './transfer-order'
+import { studioTables } from './transfer-tables'
 import { ARCHIVE_VERSION, type TenantArchive, type TenantManifest } from './transfer-shape'
 import { loadTenantById } from './tenants'
 import { ConflictError, NotFoundError } from '../../shared/errors'
@@ -41,31 +43,25 @@ export type { TenantArchive, TenantManifest } from './transfer-shape'
 /**
  * The tables that belong to a studio, in an order they can be written back in.
  *
- * `tenants` and `tenant_settings` are excluded for the same reason 0033 excludes
- * them: the first has no `tenant_id` and the second is read before any Tenant
- * context exists. The studio's identity and branding travel in the manifest and
- * in `tenant_settings` handled separately, not as ordinary rows.
- *
- * `tenant_imports` is excluded because it is the platform's record of restoring
- * this studio, not part of the studio: exporting it would put one environment's
- * job history into an archive, and counting it would make every studio with an
- * import in flight look non-empty to that same import. It goes with the studio
- * on delete by `ON DELETE CASCADE` instead (migration 0073).
+ * `tenants` has no `tenant_id`. `tenant_settings`, `tenant_imports` and the
+ * login tables have one, or will, and are set aside by name — see
+ * `transfer-tables.ts` for why each is not a studio row.
  */
 export async function tenantTableOrder() {
-  const tables = (
-    await db.execute<{ table_name: string }>(sql`
-      SELECT c.table_name
-      FROM information_schema.columns c
-      JOIN information_schema.tables t
-        ON t.table_schema = c.table_schema AND t.table_name = c.table_name
-      WHERE c.table_schema = 'public'
-        AND c.column_name = 'tenant_id'
-        AND t.table_type = 'BASE TABLE'
-        AND c.table_name NOT IN ('tenant_settings', 'tenant_imports')
-      ORDER BY c.table_name
-    `)
-  ).map(r => r.table_name)
+  const tables = studioTables(
+    (
+      await db.execute<{ table_name: string }>(sql`
+        SELECT c.table_name
+        FROM information_schema.columns c
+        JOIN information_schema.tables t
+          ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+        WHERE c.table_schema = 'public'
+          AND c.column_name = 'tenant_id'
+          AND t.table_type = 'BASE TABLE'
+        ORDER BY c.table_name
+      `)
+    ).map(r => r.table_name),
+  )
 
   const foreignKeys = (
     await db.execute<{ child: string; parent: string; column: string; required: boolean }>(sql`
@@ -281,20 +277,21 @@ export async function importTenant(
     )
   }
 
-  // Before anything is written: a person with no account could never sign in,
-  // and the column is NOT NULL — refused by name rather than by constraint.
-  // Unless the archive asks for its accounts to be ensured, in which case every
-  // row gets one below, whatever it carried.
-  const ensureAccounts = archive.manifest.ensureAccounts === true
-  // Such an archive was built for one studio: its email links and placeholder
-  // addresses name that studio's slug. Written into any other, every link it
-  // mails would point at the wrong address — so it is refused, not copied.
-  if (ensureAccounts && archive.manifest.tenant.slug !== target.slug) {
+  // An archive built outside the platform (the Mindbody transform) says so, and
+  // was built for one studio: its email links and placeholder addresses name
+  // that studio's slug. Written into any other, every link it mails would point
+  // at the wrong address — so it is refused, not copied.
+  const builtOutside = archive.manifest.ensureAccounts === true
+  if (builtOutside && archive.manifest.tenant.slug !== target.slug) {
     throw new Error(
       `this archive was built for ${archive.manifest.tenant.slug}, not ${target.slug} — rebuild it with the target's slug`,
     )
   }
-  for (const table of ensureAccounts ? [] : Object.keys(ACCOUNT_TABLES)) {
+  // An export names each person's login on their row, and has since the user
+  // import (#120). A row that names none is from an archive older than that, and
+  // is refused by name before anything is written, as it always was — even
+  // though the id it would have named is replaced below.
+  for (const table of builtOutside ? [] : Object.keys(ACCOUNT_TABLES)) {
     const unlinked = (archive.rows[table] ?? []).filter(row => row.auth_user_id == null).length
     if (unlinked > 0) {
       throw importRefused(
@@ -322,9 +319,7 @@ export async function importTenant(
   // One count across every step below, so a listener can draw a single bar that
   // only moves forward: the accounts ensured, every row written, every row pass
   // two revisits, and the settings.
-  const accountRows = ensureAccounts
-    ? Object.keys(ACCOUNT_TABLES).reduce((n, table) => n + (rows[table]?.length ?? 0), 0)
-    : 0
+  const accountRows = Object.keys(ACCOUNT_TABLES).reduce((n, table) => n + (rows[table]?.length ?? 0), 0)
   const rowCount = order.reduce((n, table) => n + (rows[table]?.length ?? 0), 0)
   const deferredRows = Object.keys(deferred).reduce((n, table) => n + (rows[table]?.length ?? 0), 0)
   const total = accountRows + rowCount + deferredRows + (settings ? 1 : 0)
@@ -347,28 +342,30 @@ export async function importTenant(
       }
     }
 
-    // An archive built outside the platform names no accounts: its people have
-    // never signed in here. Each one's account is created, or found when the
-    // email already has one in that pool — the same person a member of another
-    // studio, say — through the helper every other way in uses.
+    // Logins never travel in an archive (`LOGIN_TABLES`), so the id a row names
+    // is one from the platform it came from — or none, when it was built
+    // outside one. Either way it is not copied: each person gets a login made
+    // from their email, with no password, and signs in through the email-first
+    // step, which mails them a Set-password link (#229). The login is the
+    // target studio's own (#231), through the helper every other way in uses;
+    // the same person at another studio has a login there, untouched.
     //
     // Inside this transaction, before any row: a failed import leaves neither
-    // the rows nor the accounts made for them. An account that already existed
-    // is only read, so a rollback cannot take it.
-    if (ensureAccounts) {
-      step('accounts')
-      for (const [table, pool] of Object.entries(ACCOUNT_TABLES)) {
-        const linked: Record<string, unknown>[] = []
-        for (const row of rows[table] ?? []) {
-          if (typeof row.email !== 'string' || !row.email.trim()) {
-            throw new Error(`a ${table} row in this archive has no email, so no account can be ensured for it`)
-          }
-          const name = typeof row.name === 'string' && row.name ? row.name : row.email
-          linked.push({ ...row, auth_user_id: await ensureAuthUser(db, pool, { email: row.email, name }) })
-          step('accounts', 1)
+    // the rows nor the logins made for them. A login that already existed is
+    // only read, so a rollback cannot take it.
+    step('accounts')
+    for (const [table, pool] of Object.entries(ACCOUNT_TABLES)) {
+      const linked: Record<string, unknown>[] = []
+      for (const row of rows[table] ?? []) {
+        if (typeof row.email !== 'string' || !row.email.trim()) {
+          throw new Error(`a ${table} row in this archive has no email, so no account can be ensured for it`)
         }
-        rows[table] = linked
+        const name = typeof row.name === 'string' && row.name ? row.name : row.email
+        const authUserId = await ensureAuthUser(db, pool, { tenantId: targetTenantId, email: row.email, name })
+        linked.push({ ...row, auth_user_id: authUserId })
+        step('accounts', 1)
       }
+      rows[table] = linked
     }
 
     // Pass one: every row, with the references no ordering can satisfy left
@@ -390,6 +387,14 @@ export async function importTenant(
           values.role = RETIRED_STAFF_ROLES[values.role] ?? values.role
         }
         values.tenant_id = targetTenantId
+        // An archive built outside the platform was written when its reports
+        // were downloaded, maybe days ago. Its invitations were sent by nobody
+        // yet: they are good for the usual week from now, when they arrive.
+        if (builtOutside && table === 'staff_invitations' && values.status === 'pending') {
+          const week = Date.now() + INVITE_TTL_MS
+          const written = Date.parse(String(values.expires_at))
+          if (!(written >= week)) values.expires_at = new Date(week).toISOString()
+        }
         for (const column of hold) values[column] = null
         return values
       })
@@ -444,21 +449,31 @@ export async function importTenant(
     // and none of its identity — no branding, no mail-from, no waiver — and the
     // import could not be run again to fix it, because the emptiness check above
     // now refuses a studio that has rows.
+    //
+    // What the archive leaves null the Tenant keeps. An archive built outside
+    // the platform knows nothing of the logo, theme or mail-from the super
+    // portal gave the studio while it waited, and null there is "not said",
+    // not "take it away".
     if (settings) {
       step('settings')
+      // A platform export is the whole truth about a studio, nulls included, and is written as it is.
+      const [current] = builtOutside
+        ? await db.execute<Record<string, unknown>>(sql`SELECT * FROM current_tenant_settings()`)
+        : []
+      const kept = (column: string) => settings[column] ?? current?.[column] ?? null
       await db.execute(sql`
         SELECT write_current_tenant_settings(
-          ${settings.display_name ?? null},
-          ${settings.logo_url ?? null},
-          ${settings.favicon_url ?? null},
-          ${settings.og_image_url ?? null},
-          ${settings.tagline ?? null},
-          ${asJsonb(settings.copy)}::jsonb,
-          ${asJsonb(settings.theme)}::jsonb,
-          ${settings.mail_from_name ?? null},
-          ${settings.mail_from_email ?? null},
-          ${settings.mail_reply_to ?? null},
-          ${settings.waiver_text ?? null}
+          ${kept('display_name')},
+          ${kept('logo_url')},
+          ${kept('favicon_url')},
+          ${kept('og_image_url')},
+          ${kept('tagline')},
+          ${asJsonb(kept('copy'))}::jsonb,
+          ${asJsonb(kept('theme'))}::jsonb,
+          ${kept('mail_from_name')},
+          ${kept('mail_from_email')},
+          ${kept('mail_reply_to')},
+          ${kept('waiver_text')}
         )
       `)
       written.tenant_settings = 1

@@ -65,8 +65,12 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
     return row ?? null
   }
 
-  const authUser = async (email: string) => {
-    const [row] = await harness.db.select().from(schema.staffAuthUsers).where(eq(schema.staffAuthUsers.email, email))
+  /** The person's login at `tenantId` (studio one unless named): logins are per studio (#231). */
+  const authUser = async (email: string, tenantId: string = one.id) => {
+    const [row] = await harness.db
+      .select()
+      .from(schema.staffAuthUsers)
+      .where(and(eq(schema.staffAuthUsers.tenantId, tenantId), eq(schema.staffAuthUsers.email, email)))
     return row ?? null
   }
 
@@ -281,8 +285,10 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
   test('archiving a staff member ends their sessions at that studio and no other', async () => {
     const email = at('archived')
     const atOne = await harness.signInAs('staff', email, one)
-    const user = await authUser(email)
+    const atTwo = await harness.signInAs('staff', email, two)
+    // Staff at both studios, on a login at each (#231).
     for (const tenant of [one, two]) {
+      const user = await authUser(email, tenant.id)
       await harness.db.insert(schema.staffUsers).values({
         tenantId: tenant.id,
         email,
@@ -292,7 +298,6 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
         authUserId: user!.id,
       })
     }
-    const atTwo = await harness.signInAs('staff', email, two)
     await expectStatus(await me(atOne), 200)
 
     const row = await staffRow(one.id, email)

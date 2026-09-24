@@ -206,7 +206,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     await expectStatus(await me(headers), 200)
   })
 
-  test('TEN-13 one person joins a second studio as a second record, on the same auth user', async () => {
+  test('TEN-13 one person joins a second studio as a second record, on a login of its own', async () => {
     const email = at('two-studios')
     const atOne = await registered(one, email)
     const atTwo = await registered(two, email)
@@ -215,12 +215,13 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     const rowTwo = await clientRow(two.id, email)
     assert.ok(rowOne && rowTwo)
     assert.notEqual(rowOne.id, rowTwo.id)
-    assert.equal(rowOne.authUserId, rowTwo.authUserId)
+    assert.notEqual(rowOne.authUserId, rowTwo.authUserId, 'logins are per studio (#231)')
 
-    // Each session reaches only the studio it was signed in on.
+    // Each session reaches only the studio it was signed in on; the other
+    // studio cannot even see it.
     await expectStatus(await me(atOne), 200)
     await expectStatus(await me(atTwo), 200)
-    await expectStatus(await me({ ...atOne, ...memberHeaders(two) }), 403, 'tenant_mismatch')
+    await expectStatus(await me({ ...atOne, ...memberHeaders(two) }), 401, 'invalid_token')
   })
 
   test('AUTH-06 an admin adding a member writes a Better Auth user, and that member sets a password through the link', async () => {

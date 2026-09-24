@@ -205,6 +205,71 @@ export function cleanPhone(raw: string): string {
   return digits.length <= 15 ? `+${digits}` : ''
 }
 
+/**
+ * Calling code, and the lengths a national number (trunk prefix dropped) can
+ * have, by ISO country code — as Mindbody's Mailing List writes a member's
+ * Country. Where the lengths are not listed, any length from 6 to 12 is taken.
+ * Grown as studios need it: a country missing here is a number listed in the
+ * preflight, never one guessed at.
+ */
+const CALLING: Record<string, { code: string; lengths?: number[] }> = {
+  SG: { code: '65', lengths: [8] },
+  MY: { code: '60', lengths: [9, 10] },
+  ID: { code: '62', lengths: [9, 10, 11, 12] },
+  TH: { code: '66', lengths: [8, 9] },
+  PH: { code: '63', lengths: [10] },
+  VN: { code: '84', lengths: [9, 10] },
+  HK: { code: '852', lengths: [8] },
+  MO: { code: '853', lengths: [8] },
+  TW: { code: '886', lengths: [8, 9] },
+  CN: { code: '86', lengths: [11] },
+  JP: { code: '81', lengths: [9, 10] },
+  KR: { code: '82', lengths: [9, 10] },
+  IN: { code: '91', lengths: [10] },
+  AU: { code: '61', lengths: [9] },
+  NZ: { code: '64', lengths: [8, 9, 10] },
+  US: { code: '1', lengths: [10] },
+  CA: { code: '1', lengths: [10] },
+  GB: { code: '44', lengths: [10] },
+  IE: { code: '353', lengths: [9] },
+  FR: { code: '33', lengths: [9] },
+  DE: { code: '49' },
+  NL: { code: '31', lengths: [9] },
+  CH: { code: '41', lengths: [9] },
+  IT: { code: '39' },
+  ES: { code: '34', lengths: [9] },
+  AE: { code: '971', lengths: [8, 9] },
+}
+
+/**
+ * A member's phone as the platform keeps it (E.164, as sign-up writes it),
+ * formatted with the country the member lives in. `ok: false` is a number that
+ * cannot be formatted — for the preflight, never imported half-right. Mindbody's
+ * dummy (`1` and ten zeros) is no phone at all, which is fine.
+ *
+ * A number written with `+` or `00` names its own country. Otherwise the
+ * country's code is put in front, after dropping the trunk `0` a national
+ * number is dialled with — unless the number already starts with that code
+ * and is too long to be a national number without it.
+ */
+export function formatPhone(raw: string, country: string): { phone: string; ok: boolean } {
+  const trimmed = raw.trim()
+  const digits = trimmed.replace(/[^\d]/g, '')
+  if (!digits || digits === PLACEHOLDER_PHONE) return { phone: '', ok: true }
+  const international = trimmed.startsWith('+') ? digits : digits.startsWith('00') ? digits.slice(2) : null
+  if (international !== null) {
+    return international.length >= 8 && international.length <= 15 ? { phone: `+${international}`, ok: true } : { phone: '', ok: false }
+  }
+  const calling = CALLING[country.trim().toUpperCase()]
+  if (!calling) return { phone: '', ok: false }
+  const fits = (n: number) => (calling.lengths ? calling.lengths.includes(n) : n >= 6 && n <= 12)
+  const national =
+    digits.startsWith(calling.code) && !fits(digits.length) && fits(digits.length - calling.code.length)
+      ? digits.slice(calling.code.length)
+      : digits.replace(/^0/, '')
+  return fits(national.length) ? { phone: `+${calling.code}${national}`, ok: true } : { phone: '', ok: false }
+}
+
 /** Shallow on purpose, like the platform's own check: a bounce is the authority on deliverability. */
 export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 

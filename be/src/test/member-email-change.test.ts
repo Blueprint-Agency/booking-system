@@ -244,14 +244,14 @@ describe('member email change', { skip: integrationTestsEnabled ? false : SKIP_R
       'every package came with them',
     )
 
-    // The old address still has an account — it may be this person at another
-    // studio — but it is nobody's membership here any more.
-    const orphan = await signIn(member.email)
-    assert.equal(
-      (await send('/api/v1/me', { headers: orphan })).status,
-      404,
-      'the old email reaches no member of this studio',
-    )
+    // The old address's login was this studio's own (#231), and went with the
+    // change: it signs in to nothing here any more.
+    const orphan = await send('/api/v1/auth/client/sign-in/email', {
+      body: { email: member.email, password: PASSWORD },
+      headers: memberHeaders(harness.tenants.one),
+    })
+    assert.equal(orphan.status, 401, 'the old email reaches no member of this studio')
+    assert.equal(orphan.headers.get('set-auth-token'), null)
   })
 
   test('an address another member of this studio uses is refused', async () => {

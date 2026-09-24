@@ -1020,10 +1020,10 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
 
 - **Three pools.** `client` (members, email + password, first password through a mailed link — `docs/adr/0005-member-passwords.md`), `staff` (studio portals, email + password + second factor), `platform` (the super portal). Each is its own Better Auth instance over its own tables (`db/schema/auth.ts`) on its own base path `/api/v1/auth/{pool}` — enforces §15b "staff and client spaces are independent." One `BETTER_AUTH_SECRET` signs all three.
 - **Bearer, not cookies.** A session travels as `Authorization: Bearer <token>`, returned in the `set-auth-token` header and held per origin by the frontend.
-- **The session carries its Tenant.** A `client` or `staff` session is stamped at sign-in with `claimed_tenant_id`; `clientAuth` / `staffAuth` refuse it at any other studio. The auth user tables carry no `tenant_id` — one person is one auth user with a row per studio.
+- **The session carries its Tenant.** A `client` or `staff` session is stamped at sign-in with `claimed_tenant_id`; `clientAuth` / `staffAuth` refuse it at any other studio. The `staff` and `client` auth tables carry a `tenant_id` (defaulting to the Tenant context) and are fenced by Row-Level Security: the same email at two studios is two accounts (ADR 0006). The `platform` pool's do not.
 - **Identity glue.** `clients.auth_user_id` and `staff_users.auth_user_id` (both `NOT NULL`) link our rows to pool users. We own profile + role + relationships; the pool owns credentials, sessions and 2FA.
 - **No sign-up for staff, no webhooks.** A staff account exists because an invitation (`services/auth/invitations.ts`) or a seed wrote it, together with its `staff_users` row; the invitee sets a password through our own token link. A member's account and `clients` row are written together at registration (`services/clients/register.ts`).
-- **Force-logout on archive** (§15c) — archiving deletes the person's sessions at that studio (`endStaffSessionsAt` / `endClientSessionsAt`); the same account stays signed in at any other studio.
+- **Force-logout on archive** (§15c) — archiving deletes the person's sessions at that studio (`endStaffSessionsAt` / `endClientSessionsAt`); their login at any other studio is another account (ADR 0006), and stays signed in.
 - **Pre-booking verification gate.** `fe-client-features.md` requires `phone_verified` AND `email_verified` before booking. Not built: the emailed-code sign-in already proves the email; phone verification has no source yet.
 
 ### 6b. Stripe
