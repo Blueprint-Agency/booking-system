@@ -34,6 +34,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../shared/erro
 import { sendTemplatedEmail } from '../notifications/send'
 import { splitName, joinName } from '../../lib/name'
 import { sgFormat } from '../../lib/time'
+import { now as clockNow } from '../../lib/clock'
 import { withLeaveFigures } from '../leave/requests'
 import {
   ensureAuthUser,
@@ -114,7 +115,7 @@ export async function writePendingStaff(
   input: PendingStaffInput,
 ): Promise<{ staff: StaffUserRow; invitation: StaffInvitationRow }> {
   const email = input.email.trim().toLowerCase()
-  const now = new Date()
+  const now = clockNow()
   const { firstName, lastName } = splitName(input.name)
 
   const authUserId = await ensureAuthUser(tx, 'staff', { tenantId: input.tenantId, email, name: input.name })
@@ -263,7 +264,7 @@ async function findInvitation(tenantId: string, token: string) {
   if (inv.status === 'revoked') return { inv, status: 'revoked' as const }
   // pending (or a legacy 'expired' status) — treat a past-due invite as expired
   // by comparison, without mutating the row.
-  if (inv.status === 'expired' || inv.expiresAt.getTime() < Date.now()) {
+  if (inv.status === 'expired' || inv.expiresAt.getTime() < clockNow().getTime()) {
     return { inv, status: 'expired' as const }
   }
   return { inv, status: 'valid' as const }
@@ -335,7 +336,7 @@ export async function acceptInvitation(input: {
       : []
     if (!staff) throw new NotFoundError('invitation_not_found')
 
-    const now = new Date()
+    const now = clockNow()
     const [claimed] = await tx
       .update(staffInvitations)
       .set({ status: 'accepted', acceptedAt: now })
@@ -408,7 +409,7 @@ export async function acceptInvitationOnPasswordReset(tenantId: string, authUser
       .limit(1)
     if (!staff) return false
 
-    const now = new Date()
+    const now = clockNow()
     const claimed = await tx
       .update(staffInvitations)
       .set({ status: 'accepted', acceptedAt: now })
@@ -595,7 +596,7 @@ export async function revokeInvitation(
       return inv
     }
 
-    const now = new Date()
+    const now = clockNow()
     const [updated] = await tx
       .update(staffInvitations)
       .set({ status: 'revoked', revokedAt: now })
@@ -643,7 +644,7 @@ export async function resendInvitation(
     throw new ConflictError('invitation_not_pending', { status: inv.status })
   }
 
-  const now = new Date()
+  const now = clockNow()
   const expiresAt = new Date(now.getTime() + INVITE_TTL_MS)
 
   // Before the extension, for the reason `inviteAdmin` gives: an invitation
