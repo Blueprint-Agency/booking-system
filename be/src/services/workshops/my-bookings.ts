@@ -19,6 +19,8 @@ export interface MyWorkshopBooking {
   check_in_state: string
   booked_at: Date
   cancelled_at: Date | null
+  /** Whether a cancelled place's money went back (fe-client-features §8.4). */
+  refund_outcome: string
   code: string
   qr_token: string
   location: { id: string; name: string; address: string | null } | null
@@ -46,6 +48,7 @@ export async function listMyWorkshopBookings(
       checkInState: bookings.checkInState,
       bookedAt: bookings.bookedAt,
       cancelledAt: bookings.cancelledAt,
+      refundOutcome: bookings.refundOutcome,
       code: bookings.code,
       qrToken: bookings.qrToken,
       // Workshop money is frozen on the booking itself (§15), so it is read
@@ -126,6 +129,7 @@ export async function listMyWorkshopBookings(
       check_in_state: r.checkInState,
       booked_at: r.bookedAt,
       cancelled_at: r.cancelledAt,
+      refund_outcome: r.refundOutcome,
       code: r.code,
       qr_token: r.qrToken,
       location: r.workshopLocationId ? locationById.get(r.workshopLocationId) ?? null : null,

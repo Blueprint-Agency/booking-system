@@ -2,11 +2,13 @@
  * Client-facing read of a member's own class bookings. See be-client.md §3.
  *
  *   - upcoming: state='confirmed' AND class.starts_at >= now  (cancel + QR affordances)
- *   - past:     class.starts_at < now AND state IN ('confirmed','no_show')  (check-in badge)
+ *   - past:     class.starts_at < now, any state  (outcome badge)
  *
- * Cancelled bookings are terminal and not surfaced in either tab (spec §8.3: Upcoming/Past).
+ * The Past tab is an audit, so every outcome is on it — attended, no-show and
+ * cancelled (fe-client-features §8.3). A cancelled booking is listed once its
+ * class time has passed, not before: until then it is neither upcoming nor past.
  */
-import { and, asc, desc, eq, gte, inArray, lt } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, lt } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
 import { classes } from '../../db/schema/schedule'
@@ -123,7 +125,6 @@ export async function listClassBookings(
           eq(bookings.tenantId, tenantId),
           eq(bookings.clientId, clientId),
           eq(bookings.kind, 'class'),
-          inArray(bookings.state, ['confirmed', 'no_show']),
           lt(classes.startsAt, now),
         )
 

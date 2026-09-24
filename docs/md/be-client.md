@@ -105,7 +105,7 @@ Same shape as `routes/public/catalog.ts` but adds:
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/bookings/upcoming` | `bookings WHERE client_id=me AND state='confirmed' AND session.starts_at >= now()`, joined to session detail |
-| GET | `/bookings/past` | Same but `starts_at < now()`, includes `check_in_state` |
+| GET | `/bookings/past` | `bookings WHERE client_id=me AND session.starts_at < now()`, any `state` — attended, no-show and cancelled all appear, each with its `state` and `check_in_state` (fe-client-features §8.3) |
 | GET | `/bookings/:id` | Detail incl. `qr_token` + `code`. The app draws the QR from the token itself; there is no server-rendered QR image (#192) |
 | POST | `/bookings/class` | `{ class_id, use_credits? }` — see §4a class booking flow. The server picks the package; `use_credits: true` is the one exception (spec §2), asking to pay with credits for a class the member's Unlimited Plan does not cover. |
 | POST | `/bookings/workshop` | `{ workshop_id, workshop_tier_id }` — initiates Stripe checkout; see §4b |

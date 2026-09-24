@@ -738,12 +738,15 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.deepEqual(
       past.map(b => `${new Date(b.starts_at as string).toISOString()} ${b.name} ${b.state}/${b.check_in_state}`).sort(),
       [
+        // The Past tab shows every outcome (fe-client-features §8.3): the late
+        // cancel is on it, as a cancellation — never as a class she went to.
+        '2026-07-06T11:00:00.000Z Hatha cancelled/n_a',
         '2026-08-24T11:00:00.000Z Hatha confirmed/attended',
         '2026-08-31T11:00:00.000Z Hatha no_show/no_show',
         // Only the roster knew this class ran, and her visit to it came across all the same.
         '2026-09-10T11:00:00.000Z Hatha confirmed/attended',
       ],
-      'a late cancel is not a class she went to, and an early cancel never happened at all',
+      'a late cancel reads back cancelled, not attended, and an early cancel never happened at all',
     )
 
     // The late cancel is a cancellation of its own, and the studio's rather
