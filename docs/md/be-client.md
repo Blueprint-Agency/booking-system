@@ -37,7 +37,7 @@ Unauthenticated. Cache-friendly (HTTP `Cache-Control: public, max-age=60` where 
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/locations` | List active locations |
-| GET | `/classes` | List `classes` rows where `lifecycle='active'` AND `starts_at >= now()`. Filters: `?location_id`, `?class_type_id`, `?from`, `?to`, `?instructor_id`. Includes `event_state` and structured capacity (`capacity_online`, current booked count) computed at read. |
+| GET | `/classes` | List `classes` rows where `lifecycle='active'` AND `starts_at >= now()`. Filters: `?location_id`, `?class_type_id`, `?level` (the class type's difficulty: `general`, `beginner`, `intermediate`, `advanced`), `?from`, `?to`, `?instructor_id`. Each card's `class_type` carries its `difficulty`. Includes `event_state` and structured capacity (`capacity_online`, current booked count) computed at read. |
 | GET | `/classes/:id` | Detail incl. instructor mini-profile, location, structured capacity, booked count |
 | GET | `/workshops` | List multi-day workshops. Each row carries: `days[]` (one per `workshop_days` with starts_at, ends_at, derived `seats_left = capacity_online - booked_via_tier`), `tiers[]` (with **derived** `seats_left = min(seats_left for day in tier.day_ids)`), and resolved promotion fields (see below). |
 | GET | `/workshops/:id` | Detail incl. tiers (each with derived seats-left + effective price), `tier_days{}` (which tier covers which days), images (presigned R2 URLs), instructors, description. |

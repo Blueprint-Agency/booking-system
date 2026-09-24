@@ -95,8 +95,13 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
     await harness.db.execute(sql`DELETE FROM workshop_instructors WHERE workshop_id IN (SELECT id FROM workshops WHERE name LIKE ${pattern})`)
     await harness.db.execute(sql`DELETE FROM workshops WHERE name LIKE ${pattern}`)
     // Sessions before rooms: a corporate session may sit in this run's room,
-    // and rooms.id is ON DELETE restrict.
+    // and rooms.id is ON DELETE restrict. A scheduled request and its session
+    // point at each other; untie them before deleting either.
+    const requests = sql`SELECT id FROM corporate_requests WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${`%@${DOMAIN}`})`
+    await harness.db.execute(sql`UPDATE corporate_requests SET scheduled_corporate_session_id = NULL WHERE id IN (${requests})`)
+    await harness.db.execute(sql`UPDATE corporate_sessions SET corporate_request_id = NULL WHERE client_name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM corporate_sessions WHERE client_name LIKE ${pattern}`)
+    await harness.db.execute(sql`DELETE FROM corporate_requests WHERE id IN (${requests})`)
     await harness.db.execute(sql`DELETE FROM corporate_packages WHERE name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM rooms WHERE name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM locations WHERE name LIKE ${pattern}`)
@@ -187,7 +192,7 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(row?.lifecycle, 'cancelled', JSON.stringify(cancelled))
   })
 
-  test('an admin books a corporate session', async () => {
+  test('an admin books a corporate session by scheduling a member request', async () => {
     const [room] = await harness.db
       .select({ id: schema.rooms.id })
       .from(schema.rooms)
@@ -197,13 +202,27 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
       .limit(1)
     assert.ok(room, 'the seeded location has a room')
     const pkg = await ok(await send('/corporate-packages', admin.headers, 'POST', { name: `${TAG} Offsite`, price_sgd: '900.00' }))
+
+    // A corporate session only comes from a member's Corporate Request (admin-restructure §7c).
+    const email = at('corporate-client')
+    const memberHeaders = await harness.signInAs('client', email, one)
+    const [authUser] = await harness.db.select().from(schema.clientAuthUsers).where(eq(schema.clientAuthUsers.email, email))
+    await harness.db
+      .insert(schema.clients)
+      .values({ tenantId: one.id, email, name: `${TAG} Client`, phone: '+6591234570', authUserId: authUser!.id })
+    const requested = await ok(
+      await harness.app.request('/api/v1/me/corporate-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...memberHeaders },
+        body: JSON.stringify({ package_id: pkg.corporatePackage.id, preferred_location: 'the studio' }),
+      }),
+    )
+
     // Far out and at a random hour, so no fixture class holds the room or the instructor.
     const startsAt = new Date(Date.now() + (400 + Math.floor(Math.random() * 300)) * 24 * 3600_000)
     startsAt.setUTCHours(Math.floor(Math.random() * 20), 0, 0, 0)
     await ok(
-      await send('/corporate-sessions', admin.headers, 'POST', {
-        corporate_package_id: pkg.corporatePackage.id,
-        client_name: `${TAG} Client`,
+      await send(`/corporate-requests/${requested.corporate_request_id}/schedule`, admin.headers, 'POST', {
         main_instructor_id: instructor.row.id,
         location_id: location.id,
         room_id: room.id,
