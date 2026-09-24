@@ -1,7 +1,10 @@
-import { and, eq, isNull, or, gt, inArray, sql } from 'drizzle-orm'
+import { and, eq, exists, isNull, or, gt, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { locations } from '../../db/schema/catalog'
-import { classes, workshops, ptSessions } from '../../db/schema/schedule'
+import { classes, workshops, workshopDays, ptSessions } from '../../db/schema/schedule'
+import { clientPackages } from '../../db/schema/packages'
+import { now as clockNow } from '../../lib/clock'
+import { countLiveUnlimitedAtLocation } from '../packages/purchase'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export type LocationRow = typeof locations.$inferSelect
@@ -85,7 +88,7 @@ export async function updateLocation(
 export async function archiveLocation(tenantId: string, id: string): Promise<LocationRow> {
   const existing = await getLocation(tenantId, id)
   if (existing.deletedAt) throw new NotFoundError('location_not_found')
-  const now = new Date()
+  const now = clockNow()
 
   const activeClasses = await db
     .select({ id: classes.id })
@@ -99,6 +102,8 @@ export async function archiveLocation(tenantId: string, id: string): Promise<Loc
       ),
     )
 
+  // A workshop has no end of its own: it is upcoming or ongoing while any of
+  // its days has yet to end.
   const activeWorkshops = await db
     .select({ id: workshops.id })
     .from(workshops)
@@ -107,6 +112,18 @@ export async function archiveLocation(tenantId: string, id: string): Promise<Loc
         eq(workshops.tenantId, tenantId),
         eq(workshops.locationId, id),
         eq(workshops.lifecycle, 'active'),
+        exists(
+          db
+            .select({ id: workshopDays.id })
+            .from(workshopDays)
+            .where(
+              and(
+                eq(workshopDays.tenantId, tenantId),
+                eq(workshopDays.workshopId, workshops.id),
+                gt(workshopDays.endsAt, now),
+              ),
+            ),
+        ),
       ),
     )
 
@@ -152,14 +169,36 @@ export async function unarchiveLocation(tenantId: string, id: string): Promise<L
 }
 
 /**
+ * How many live Unlimited Plans call this Location home — what archiving it
+ * would strand. Another tenant's Location is `location_not_found`, like every
+ * other read of one.
+ */
+export async function liveUnlimitedCount(tenantId: string, id: string): Promise<number> {
+  await getLocation(tenantId, id)
+  return countLiveUnlimitedAtLocation(tenantId, id, clockNow())
+}
+
+/**
  * Soft-delete: row must be currently archived AND not already deleted.
  * Sets deleted_at = now(). The row stays in DB so historical references
  * (audit trail, FKs) keep resolving.
+ *
+ * Refused while any Unlimited Plan, live or ended, calls it home
+ * (spec-pre-launch-batch §1, §7): the plan's Location is a fact of what the
+ * member bought, and a deleted one would leave it pointing at nothing. The
+ * foreign key refuses the hard delete; this refuses the soft one.
  */
 export async function softDeleteLocation(tenantId: string, id: string): Promise<void> {
   const existing = await getLocation(tenantId, id)
   if (existing.archivedAt === null) {
     throw new BadRequestError('location_not_archived')
+  }
+  const homePlans = await db
+    .select({ id: clientPackages.id })
+    .from(clientPackages)
+    .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.locationId, id)))
+  if (homePlans.length) {
+    throw new ConflictError('location_in_use', { client_package_ids: homePlans.map(p => p.id) })
   }
   await db
     .update(locations)

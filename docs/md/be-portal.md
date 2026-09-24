@@ -57,8 +57,9 @@ All endpoints are prefixed with `/api/v1/portal/admin`. Verbs and bodies are sum
 | POST | `/locations` | `{ name, address, gmaps_url?, phone? }` | Insert |
 | PATCH | `/locations/:id` | partial | Update |
 | GET | `/locations/:id/live-unlimited-count` | — | `{ count }` — live Unlimited Plans whose Home Location is this one (§6's reading of live: active, and Dormant or unexpired). Informational: the archive confirmation names it, it never blocks. |
-| POST | `/locations/:id/archive` | — | Set `archived_at = now()`. **Blocks** if any `classes` / `workshops` / `pt_sessions` reference this location AND have `lifecycle='active'` AND `ends_at > now()`. Returns `409 location_in_use` with the offending session list. |
+| POST | `/locations/:id/archive` | — | Set `archived_at = now()`. **Blocks** if any `classes` / `workshops` / `pt_sessions` reference this location AND have `lifecycle='active'` AND `ends_at > now()` (a workshop: any of its days). Returns `409 location_in_use` with the offending session list. |
 | POST | `/locations/:id/unarchive` | — | Clear `archived_at` |
+| DELETE | `/locations/:id` | — | Soft delete (`deleted_at`) of an archived location; `400 location_not_archived` otherwise. **Blocks** while any Unlimited Plan, live or ended, calls it home: `409 location_in_use` with `client_package_ids`. |
 
 ### `rooms.ts`
 Physical spaces, location-scoped. Building block under "Building Blocks" in fe-portal.

@@ -17,6 +17,7 @@ import {
 } from '../../db/schema'
 import { computeEventState, type EventState } from '../policy/event-state'
 import { combinedInstructorIds } from './lineup'
+import { now as clockNow } from '../../lib/clock'
 
 export type ScheduleKind = 'class' | 'workshop' | 'pt' | 'corporate'
 
@@ -66,7 +67,7 @@ export async function listSchedule(
   tenantId: string,
   opts: ListScheduleOptions,
 ): Promise<ScheduleEntryRow[]> {
-  const now = new Date()
+  const now = clockNow()
   const out: ScheduleEntryRow[] = []
   const wantClass = !opts.type || opts.type === 'class'
   // Workshops no longer carry a class type, so a class-type filter excludes them entirely.

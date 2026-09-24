@@ -14,6 +14,7 @@
  */
 import { and, count, countDistinct, eq, gte, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
+import { now } from '../../lib/clock'
 import { clientPackages } from '../../db/schema/packages'
 import { clients } from '../../db/schema/identity'
 import { bookings } from '../../db/schema/bookings'
@@ -232,10 +233,11 @@ async function memberCounts(tenantId: string, filter: FinanceFilter): Promise<Me
         eq(clientPackages.active, true),
         isNull(clients.deletedAt),
         // Expiry flips `active` on a nightly sweep, so between the expiry and
-        // 01:00 SGT the flag is stale. The bound closes that window.
+        // 01:00 SGT the flag is stale. The bound closes that window — against
+        // the app's clock, not the database's, like every rule on "now".
         // A Dormant Unlimited Plan has no expiry yet (its clock starts at
         // Activation). It is an entitlement the member holds, so it counts.
-        or(isNull(clientPackages.expiresAt), gte(clientPackages.expiresAt, sql`now()`)),
+        or(isNull(clientPackages.expiresAt), gte(clientPackages.expiresAt, now())),
       ),
     )
 

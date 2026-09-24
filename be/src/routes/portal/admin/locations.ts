@@ -3,7 +3,6 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/catalog/locations'
 import { tenantId } from '../../../middleware/tenant'
-import { countLiveUnlimitedAtLocation } from '../../../services/packages/purchase'
 
 const createSchema = z.object({
   name: z.string().min(1).max(120),
@@ -70,7 +69,7 @@ const app = new Hono()
   })
   .get('/:id/live-unlimited-count', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    return c.json({ count: await countLiveUnlimitedAtLocation(tenantId(c), id, new Date()) })
+    return c.json({ count: await svc.liveUnlimitedCount(tenantId(c), id) })
   })
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')

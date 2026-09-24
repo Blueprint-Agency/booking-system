@@ -30,6 +30,7 @@ import { classTypes } from '../../db/schema/catalog'
 import { bookings } from '../../db/schema/bookings'
 import { loadTenantById } from '../tenants/tenants'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { now as clockNow } from '../../lib/clock'
 import { assertRoomInLocation } from './room-conflicts'
 import { findClash, type SubjectClash } from './occupancy'
 import { ensureInstructors, exec, replaceRoster, type Tx } from './roster'
@@ -105,7 +106,7 @@ export interface SeriesCommit {
 export async function previewSeries(
   tenantId: string,
   input: CreateSeriesInput,
-  now = new Date(),
+  now = clockNow(),
 ): Promise<PreviewDate[]> {
   return withClashes(tenantId, input, await planCreate(tenantId, input, now))
 }
@@ -113,7 +114,7 @@ export async function previewSeries(
 export async function createSeries(
   tenantId: string,
   input: CreateSeriesInput & { createdByStaffId: string },
-  now = new Date(),
+  now = clockNow(),
 ): Promise<SeriesCommit> {
   const occurrences = await planCreate(tenantId, input, now)
   const created = await db.transaction(async tx => {
@@ -199,7 +200,7 @@ export async function previewExtend(
   tenantId: string,
   seriesId: string,
   input: ExtendSeriesInput,
-  now = new Date(),
+  now = clockNow(),
 ): Promise<PreviewDate[]> {
   const plan = await planExtend(tenantId, seriesId, input, now)
   return withClashes(tenantId, plan.template, plan.occurrences)
@@ -209,7 +210,7 @@ export async function extendSeries(
   tenantId: string,
   seriesId: string,
   input: ExtendSeriesInput & { actorStaffId: string },
-  now = new Date(),
+  now = clockNow(),
 ): Promise<SeriesCommit> {
   const classIds = await db.transaction(async tx => {
     // The series row is the lock: two extends of one series queue here, and the
@@ -315,7 +316,7 @@ export async function endSeries(
   tenantId: string,
   seriesId: string,
   input: { fromDate: PlainDate; actorStaffId: string },
-  now = new Date(),
+  now = clockNow(),
 ): Promise<EndSeriesResult> {
   const timezone = await tenantTimezone(tenantId)
   return db.transaction(async tx => {
