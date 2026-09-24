@@ -37,7 +37,7 @@ import {
 } from '../../db/schema/schedule'
 import { classTypes, locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
-import { readRoster, readRosters, setInstructorPay, type RosterEventKind } from '../schedule/roster'
+import { ensureInstructors, readRoster, readRosters, setInstructorPay, type RosterEventKind } from '../schedule/roster'
 import { summarizePayroll, type PayrollSummary } from './totals'
 import { payrollSaveFailed, type PayrollSaveResult } from './save-reasons'
 
@@ -272,8 +272,10 @@ export async function listPayroll(
         instructorName: staffUsers.name,
         label: workshops.name,
         instructorPaySgd: workshopInstructors.paySgd,
-        startsAt: sql<Date>`min(${workshopDays.startsAt})`,
-        endsAt: sql<Date>`max(${workshopDays.endsAt})`,
+        // mapWith, or the driver hands the aggregate back as a string and every
+        // caller that treats it as the Date it is typed as throws.
+        startsAt: sql<Date>`min(${workshopDays.startsAt})`.mapWith(workshopDays.startsAt),
+        endsAt: sql<Date>`max(${workshopDays.endsAt})`.mapWith(workshopDays.endsAt),
         locationId: workshops.locationId,
         locationName: locations.name,
       })
@@ -371,6 +373,12 @@ const rosterKind: Record<Exclude<PayrollKind, 'manual'>, RosterEventKind> = {
 }
 
 /**
+ * The most any one pay figure can be: every pay column is `numeric(10,2)`, and a
+ * larger amount is refused here rather than overflowing the column as a 500.
+ */
+export const MAX_PAY_SGD = 99_999_999.99
+
+/**
  * Set (or clear, when amount is null) the pay for one (session, instructor) pair.
  * A failure comes back as a reason, never a bare false — see ./save-reasons.ts
  * for why, and for which status each reason earns.
@@ -395,7 +403,7 @@ export async function updatePayrollAmount(
   // has no `.min(0)`, so a negative reaches here and is refused as the typed
   // `invalid_amount`. It is also the trust boundary for every other caller — a
   // NaN reaching toFixed() writes garbage money.
-  if (amount != null && (!Number.isFinite(amount) || amount < 0)) {
+  if (amount != null && (!Number.isFinite(amount) || amount < 0 || amount > MAX_PAY_SGD)) {
     return payrollSaveFailed('invalid_amount')
   }
 
@@ -446,6 +454,10 @@ export async function createManualPayroll(
   input: CreateManualPayrollInput,
   actorStaffId: string,
 ) {
+  // The same gate a class's roster passes: an instructor of THIS studio. Without
+  // it the foreign key alone decides, which admits another studio's staff (a row
+  // no studio's Finance then shows, #255) and answers an unknown id with a 500.
+  await ensureInstructors(tenantId, [input.instructorId])
   const rows = await db
     .insert(manualPayrollEntries)
     .values({
