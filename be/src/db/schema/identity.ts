@@ -49,9 +49,6 @@ export const clients = pgTable(
   },
   table => ({
     referredByClientIdFkIdx: index('clients_referred_by_client_id_fk_idx').on(table.referredByClientId),
-    // For `client_auth_user_is_member` (migration 0060), which nothing calls
-    // since logins became per studio (#231) and is dropped in a later step.
-    authUserIdx: index('clients_auth_user_id_idx').on(table.authUserId),
     tenantAuthUserUnique: unique('clients_tenant_auth_user_unique').on(
       table.tenantId,
       table.authUserId,
@@ -100,8 +97,6 @@ export const staffUsers = pgTable(
   },
   table => ({
     archivedByStaffIdFkIdx: index('staff_users_archived_by_staff_id_fk_idx').on(table.archivedByStaffId),
-    // `staff_auth_user_is_staff` (migration 0072), as for clients above.
-    authUserIdx: index('staff_users_auth_user_id_idx').on(table.authUserId),
     tenantAuthUserUnique: unique('staff_users_tenant_auth_user_unique').on(
       table.tenantId,
       table.authUserId,
