@@ -554,6 +554,13 @@
       "when": 1790189074691,
       "tag": "0078_class_series_pay_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1790270183184,
+      "tag": "0079_drop_cross_studio_login_checks",
+      "breakpoints": true
     }
   ]
 }
