@@ -137,15 +137,18 @@ function CustomersList() {
   // top of the page-4 one the admin has already moved to.
   const requestSeq = useRef(0);
 
+  // Anything but a page move starts again at page one — page 12 of a search
+  // that now has two pages is an empty screen.
   const update = useCallback((patch: Partial<ListState>) => {
-    setState((s) => {
-      // Anything but a page move starts again at page one — page 12 of a
-      // search that now has two pages is an empty screen.
-      const next = { ...s, ...patch, page: patch.page ?? 1 };
-      writeState(next);
-      return next;
-    });
+    setState((s) => ({ ...s, ...patch, page: patch.page ?? 1 }));
   }, []);
+
+  // Mirror the position into the address bar after commit, not inside the
+  // updater: Next patches `replaceState` to update its Router, and updaters
+  // run during render.
+  useEffect(() => {
+    writeState(state);
+  }, [state]);
 
   // Debounce the search box into the list state.
   useEffect(() => {
