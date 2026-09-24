@@ -5,6 +5,8 @@
  *   - Cannot archive the studio's last active admin — that is the lockout the
  *     guards exist to prevent. Any admin may archive a peer, because a studio
  *     with two of them has a way back in either way.
+ *   - Cannot archive someone still teaching an upcoming or ongoing class,
+ *     workshop or PT session — the instructor profile's rule (#249).
  *   - Already-archived target is a no-op (idempotent).
  *
  * These used to be keyed on a deploy-time email variable: one address, seeded into the
@@ -24,7 +26,9 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
 import { instructors } from '../../db/schema/catalog'
+import { now as clockNow } from '../../lib/clock'
 import { joinName } from '../../lib/name'
+import { assertInstructorUnassigned } from '../catalog/instructor-assignments'
 import {
   BadRequestError,
   ConflictError,
@@ -141,6 +145,10 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
     'cannot_archive_last_admin',
     'This is the only admin left. Promote someone else to admin before archiving this account.',
   )
+  // The instructor profile's rule too (#249): archiving signs them out, so a
+  // teacher still on the timetable would leave members booked with nobody able
+  // to run the session. Refused here the same way, naming what to reassign.
+  await assertInstructorUnassigned(tenantId, targetStaffId, clockNow())
 
   const now = new Date()
   const [updated] = await db

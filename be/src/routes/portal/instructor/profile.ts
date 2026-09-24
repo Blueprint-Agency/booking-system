@@ -17,6 +17,10 @@ import { tenantId } from '../../../middleware/tenant'
 const patchSchema = z.object({
   bio: z.string().max(2000).nullable().optional(),
   phone: z.string().max(40).nullable().optional(),
+  // A role is an admin's to change. Carrying one refuses the request rather
+  // than being dropped with the other unknown keys, as the staff service does
+  // for the same field: a silent 200 reads as "promoted".
+  role: z.never().optional(),
 })
 
 function serialize(v: InstructorView, role: string, email: string) {

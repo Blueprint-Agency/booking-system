@@ -1,5 +1,6 @@
 import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
+import { now as clockNow } from '../../lib/clock'
 import { staffInvitations, staffUsers } from '../../db/schema/identity'
 import { AppError } from '../../shared/errors'
 import { requireTenantUrl } from '../tenants/urls'
@@ -75,7 +76,7 @@ export async function staffSignInStep(input: {
               eq(staffInvitations.tenantId, input.tenantId),
               eq(staffInvitations.staffUserId, staff.id),
               eq(staffInvitations.status, 'pending'),
-              gt(staffInvitations.expiresAt, new Date()),
+              gt(staffInvitations.expiresAt, clockNow()),
             ),
           )
           .limit(1)

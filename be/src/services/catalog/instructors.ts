@@ -1,13 +1,13 @@
-import { and, eq, gt, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
 import { instructors } from '../../db/schema/catalog'
-import { classes, ptSessions, workshops, workshopInstructors } from '../../db/schema/schedule'
 import { ConflictError, NotFoundError, BadRequestError } from '../../shared/errors'
 import { assertOwnObjectKeys } from '../../lib/object-key'
 import { inviterNameFor, mailInvitation, writePendingStaff } from '../auth/invitations'
 import { endStaffSessionsAt } from '../auth/auth-users'
 import { requireTenantUrl } from '../tenants/urls'
+import { assertInstructorUnassigned } from './instructor-assignments'
 
 export type StaffRow = typeof staffUsers.$inferSelect
 export type InstructorProfile = typeof instructors.$inferSelect
@@ -223,49 +223,7 @@ export async function archiveInstructor(tenantId: string, id: string): Promise<I
   }
   const now = new Date()
 
-  const futureClasses = await db
-    .select({ id: classes.id })
-    .from(classes)
-    .where(
-      and(
-        eq(classes.tenantId, tenantId),
-        eq(classes.mainInstructorId, id),
-        eq(classes.lifecycle, 'active'),
-        gt(classes.endsAt, now),
-      ),
-    )
-
-  const futurePtSessions = await db
-    .select({ id: ptSessions.id })
-    .from(ptSessions)
-    .where(
-      and(
-        eq(ptSessions.tenantId, tenantId),
-        eq(ptSessions.instructorId, id),
-        eq(ptSessions.lifecycle, 'active'),
-        gt(ptSessions.endsAt, now),
-      ),
-    )
-
-  const futureWorkshops = await db
-    .select({ id: workshops.id })
-    .from(workshops)
-    .innerJoin(workshopInstructors, eq(workshopInstructors.workshopId, workshops.id))
-    .where(
-      and(
-        eq(workshops.tenantId, tenantId),
-        eq(workshopInstructors.instructorId, id),
-        eq(workshops.lifecycle, 'active'),
-      ),
-    )
-
-  if (futureClasses.length || futurePtSessions.length || futureWorkshops.length) {
-    throw new ConflictError('instructor_in_use', {
-      class_ids: futureClasses.map(r => r.id),
-      pt_session_ids: futurePtSessions.map(r => r.id),
-      workshop_ids: futureWorkshops.map(r => r.id),
-    })
-  }
+  await assertInstructorUnassigned(tenantId, id, now)
 
   const [archived] = await db
     .update(staffUsers)
