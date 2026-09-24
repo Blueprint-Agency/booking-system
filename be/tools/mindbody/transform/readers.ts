@@ -385,6 +385,49 @@ export function readPromotions(html: string): PromotionRow[] {
   return out
 }
 
+/* ── 44 Sales — Detail (accrual): how each sale was paid ──────────────────── */
+
+export type SaleMethodRow = {
+  /**
+   * The full sale number. Big Spenders shows only its last four digits, and has
+   * the full one in its Sale ID link (`saleno=`): join on that.
+   */
+  saleId: string
+  /** Mindbody's own name for the method, as the report writes it: `Cash`, `Credit card (<card>-Keyed)`, `Misc. (<method>)`. */
+  methodLabel: string
+  /** Dollars paid this way on this sale; negative on a return. */
+  amount: number
+}
+
+/**
+ * One row per sale × method. The workbook has a line per item × payment: a sale
+ * paid two ways repeats each item line, "Item Total" the whole line and "Total
+ * Paid w/ Payment Method" the part paid that way. Those parts are added up per
+ * method, so two items on one card, or two payments by one method, are one row.
+ * A line is a row whose Sale ID is a number, which drops any heading, blank or
+ * total row. A return that moved no money has no method and is dropped; a paid
+ * line with no method is refused, since any method given it would be a guess.
+ */
+export function readSaleMethods(rows: TableRow[]): SaleMethodRow[] {
+  const { at, columns } = header(rows, 'Sales (detail)', ['Sale ID', 'Total Paid w/ Payment Method', 'Payment Method'])
+  const out = new Map<string, SaleMethodRow>()
+  for (const row of dataRows(rows, at)) {
+    const saleId = tidy(cell(row, columns, 'Sale ID'))
+    if (!/^\d+$/.test(saleId)) continue
+    const methodLabel = tidy(cell(row, columns, 'Payment Method'))
+    const amount = parseMoney(cell(row, columns, 'Total Paid w/ Payment Method')) ?? 0
+    if (!methodLabel) {
+      if (amount === 0) continue
+      throw new Error(`Sales (detail): sale ${saleId} paid ${amount} with no payment method`)
+    }
+    const key = `${saleId}\n${methodLabel}`
+    const seen = out.get(key)
+    if (seen) seen.amount = Math.round((seen.amount + amount) * 100) / 100
+    else out.set(key, { saleId, methodLabel, amount })
+  }
+  return [...out.values()]
+}
+
 /* ── 04 Account Balances — All balances: money on account, either way ─────── */
 
 export type AccountBalanceRow = {

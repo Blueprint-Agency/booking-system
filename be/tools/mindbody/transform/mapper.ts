@@ -24,6 +24,7 @@ import type {
   ReferralRow,
   RetentionRow,
   RosterRow,
+  SaleMethodRow,
   SaleRow,
   ScheduledClassRow,
 } from './readers'
@@ -86,6 +87,8 @@ export type MindbodyReports = {
   groupCancellations: GroupCancellationRow[]
   /** The autopays still to run (Autopay Detail): none is imported. Empty where not downloaded. */
   autopay: AutopayRow[]
+  /** How each sale was paid, a row per sale × method (Sales, Detail Accrual). Not imported yet. Empty where not downloaded. */
+  saleMethods: SaleMethodRow[]
 }
 
 export type Preflight = {

@@ -130,10 +130,50 @@ date range is computed from the run date:
 | Staff Schedule (ALL, "Scheduled") | history cutoff → today + 5 years |
 | Membership (New Version Detail) | optional, as of the download |
 | Autopay Detail ("Scheduled"; Reports → Payment Processing — Mindbody has no "AutoPay Schedule" report) | optional, today → today + 12 months: every autopay still to run is a preflight line, to stop in Mindbody; none is imported |
+| Sales (Detail, Accrual; Reports → Sales), one `.xlsx` | history cutoff → today: each sale's payment method |
 
 Birthdays, addresses, emergency contacts, client notes and waiver status are in **no** Mindbody
 report: they come, if at all, from a client data export requested from Mindbody, by hand. The
 transform does not read them.
+
+**Sales: how each sale was paid.** None of the Clients or Staff reports records a sale's payment
+method. Reports → Sales → **Sales** (`/Report/Sales/Sales`) does, and the download fetches it as
+`reports/Sales/44 Sales/44 Sales - Detail Accrual.xlsx` (`download/reports.ts`, the `saleMethods`
+entry):
+
+- **View and filters.** View: Detail. Accounting basis: Accrual, the same as Big Spenders.
+  "Accrual & cash combined" (under More) stays **off**: Mindbody warns that it can count a sale
+  twice. Every Sale location, Client home studio, Payment Method and Revenue Category is
+  selected, and Entered by, Sales rep and Autopays are left at "all" and "Include Autopays".
+  Dates are the history cutoff to today.
+- **How it is fetched.** The page's Export to Excel button takes longer than a click will wait
+  over the whole range, so the download posts the page's Excel endpoint directly (type `post`), as
+  it does for Schedule at a Glance. The answer is the same workbook the button gives.
+- **Columns.** Sale Date (a workbook date), Client ID, Client, Sale ID, Item name, Batch #, Sales
+  Notes, Location, Notes, Color, Size, Item price (excluding tax), Quantity, Subtotal (excluding
+  tax), Discount %, Discount amount, Tax, Item Total, **Total Paid w/ Payment Method**,
+  **Payment Method**. The method is Mindbody's own label, shaped `Cash`, `Credit card
+  (<card>-Keyed)` or `Misc. (<method>)`. A studio's list of labels depends on its own payment
+  set-up, and goes in its private answers, not here.
+- **Split tender.** A row is one item line × one payment. A sale paid two ways repeats the line,
+  with the whole line in Item Total each time and that payment's part in Total Paid w/ Payment
+  Method. The parts add up to the line: no row pays more than its line, and a sale's parts add
+  up to its Big Spenders total. A sale of several items split two ways has not been seen yet.
+  Two payments by the same method repeat the line in the same way. A return is its own sale (quantity −1, negative amounts, the refund's method). A
+  return that moved no money has no method.
+- **Caps.** None seen. The whole history came back as one workbook, with no total row and no
+  "not all results" notice. It is read as a single file, so a refused or failed request fails the
+  cutover download instead of being split.
+- **Joining it to Big Spenders.** Join on the **sale number**. The Sales report has the full
+  number. Big Spenders' Sale ID cell shows only its **last four digits** (sale `12046` shows as
+  `2046`), and has the full number only in the cell's link (`adm_tlbx_voidedit.asp?saleno=12046`).
+  Join on the link, never the text: the text repeats every 10,000 sales. On a real export every
+  Big Spenders sale, by its linked number, had a Sales row. `readSales` still takes the text
+  today, so the join has to move it to the link first. Promotions (Detail) shows the same
+  shortened number, with no link.
+- **Read as** one row per sale × method, `{ saleId, methodLabel, amount }` (`readSaleMethods`).
+  Lines are added up per method, so a split sale gives two rows. The transform does not import it
+  yet.
 
 What the profile is built to:
 
@@ -407,7 +447,8 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   visits and every past class Unpriced. Cancellations (Individual records, one file per month)
   is optional too: with it a past late cancel carries the time it really happened and who made
   it (the member or ClassPass → `client`, anyone else → `admin`); without it the cancel is dated
-  at the class's start.
+  at the class's start. Sales (Detail Accrual, optional) is read for each sale's payment method,
+  and not imported yet.
 - Payroll pays past PT as well as classes: a past PT session's Instructor Pay is what payroll
   paid for that appointment. One with no payroll line whose visits Mindbody marked **not staff
   paid** (an unpaid no-show) is $0, not Unpriced. Payroll lines with nothing to belong to — a

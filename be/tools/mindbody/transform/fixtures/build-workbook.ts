@@ -7,7 +7,7 @@
  * read and reviewed; this writes them the way Mindbody writes a workbook — one
  * sheet, shared strings, numbers as numbers, and no cell at all where a value
  * is empty. Visits Remaining keeps its dates as text, as Mindbody does. The
- * roster's and the attendance report's are real workbook values, so a
+ * roster's, the attendance report's and Sales' are real workbook values, so a
  * `YYYY-MM-DD` there is written as a day count and an `HH:MM` as a fraction of a
  * day. `readers.test.ts` holds the workbooks and the rows to each other.
  */
@@ -22,6 +22,7 @@ const WORKBOOKS = [
   { rows: 'roster.rows.json', sheet: 'Schedule at a Glance', out: ['Clients', '17 Schedule at a Glance', '17 Schedule at a Glance - 2090.xlsx'], typed: true },
   { rows: 'pay-rates.rows.json', sheet: 'Pay Rates', out: ['Staff', '38 Pay Rates', '38 Pay Rates.xlsx'], typed: false },
   { rows: 'attendance.rows.json', sheet: 'Attendance', out: ['Clients', '16 Attendance', '16 Attendance - Date - 2026.xlsx'], typed: true },
+  { rows: 'sale-methods.rows.json', sheet: 'Sales', out: ['Sales', '44 Sales', '44 Sales - Detail Accrual.xlsx'], typed: true },
 ]
 
 const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
