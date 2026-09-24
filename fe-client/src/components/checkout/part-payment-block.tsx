@@ -61,8 +61,8 @@ export function PartPaymentBlock({
             Pay part of this now
           </span>
           <span className="mt-0.5 block text-xs text-muted">
-            If your card has a daily limit below {formatCurrency(totalSgd)}, split it
-            across two cards.
+            If your card has a daily limit below {formatCurrency(totalSgd)}, make a
+            part payment now and pay the rest with another card.
           </span>
         </span>
       </label>
@@ -90,15 +90,16 @@ export function PartPaymentBlock({
           {remainder > 0 && (
             <p className="text-xs text-muted">
               {formatCurrency(remainder)} left to pay. It will be waiting on your
-              account page — unfinished purchases never expire.
+              account page, and stays open until it&apos;s paid in full or refunded
+              by the studio.
             </p>
           )}
 
           <div className="flex items-start gap-2 rounded-xl border border-ink/10 bg-warm px-3 py-2.5 text-xs text-ink">
             <CreditCard className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
             <span>
-              Part payments are <span className="font-medium">card only</span> —
-              PayNow and the other methods are not available on a split purchase.
+              A part payment means you can only pay{" "}
+              <span className="font-medium">by card</span> this time.
             </span>
           </div>
 

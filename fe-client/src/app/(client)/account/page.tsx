@@ -21,6 +21,7 @@ import { reportError } from "@/lib/report-error";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
 import type { ApiBooking } from "@/components/account/class-bookings";
 import { OpenPurchases } from "@/components/account/open-purchases";
+import { CancelledBanner } from "@/components/checkout/cancelled-banner";
 import { usePartPaymentOptions, useOpenPurchases } from "@/lib/open-purchases";
 
 const PAGE_SIZE = 5;
@@ -95,6 +96,10 @@ export default function AccountOverview() {
         eyebrow={`Welcome back, ${firstName}`}
         title="Here's your practice"
       />
+
+      {/* Back from a payment page the member left — a standalone Add-On, or
+          paying more towards an unfinished purchase (#274). */}
+      <CancelledBanner className="mb-6" />
 
       {/* The class running now or next, with its check-in QR one tap away (#192). */}
       <MyNextClass />

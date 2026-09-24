@@ -9,6 +9,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getMemberToken, useMemberSession } from "@/lib/member-auth";
 import { fetchApi } from "@/lib/api-url";
 import { ERROR_CODES } from "@/lib/error-codes";
+import { checkoutErrorMessage } from "@/lib/checkout-messages";
+import { cancelledNotice } from "@/lib/checkout-return";
 import { useInstructors, useLocations } from "@/lib/classes";
 import { CrossLocationBlock } from "@/components/checkout/cross-location-block";
 import { AddOnCheckout } from "@/components/checkout/add-on-checkout";
@@ -52,7 +54,7 @@ function CheckoutContent() {
   const packageKind = (searchParams.get("kind") ?? "class") as "class" | "pt";
   const workshopId = searchParams.get("workshop");
   const tierId = searchParams.get("tier");
-  const cancelled = searchParams.get("cancelled") === "1";
+  const cancelled = cancelledNotice(searchParams);
   // The standalone Add-On purchase is this same page, entered with the target
   // plan's id (§12). Entered without one — a member who holds no plan followed
   // the link anyway — the block states the precondition rather than 404ing.
@@ -251,7 +253,7 @@ function CheckoutContent() {
           // it is the only side that knows the balance — so print it rather
           // than deriving a second, quieter version of the same rule.
           setCheckoutError(
-            data.message ?? data.error ?? "Could not start checkout. Please try again.",
+            checkoutErrorMessage(data, "Could not start checkout. Please try again."),
           );
         }
         setRedirecting(false);
@@ -299,7 +301,7 @@ function CheckoutContent() {
       <BookingSurface maxWidth="lg" padding="default">
         <EmptyState
           icon={ShoppingCart}
-          title="Your cart is empty"
+          title="Nothing to check out"
           description={pkgError ?? "Pick a package or workshop to get started."}
           cta={{ href: mode === "workshop" ? "/workshops" : "/packages", label: mode === "workshop" ? "Browse workshops" : "Browse packages" }}
         />
@@ -321,7 +323,9 @@ function CheckoutContent() {
           </div>
           <h1 className="text-2xl font-serif text-ink mb-2">Please log in to continue</h1>
           <p className="text-sm text-muted mb-6 leading-relaxed">
-            You need an account before you can purchase a package. Log in, or create one in under a minute.
+            You need an account before you can{" "}
+            {mode === "workshop" ? "book a workshop" : mode === "add_on" ? "buy an add-on" : "buy a package"}.
+            Log in, or create one in under a minute.
           </p>
           <div className="flex flex-col sm:flex-row gap-2.5 justify-center">
             <a href={loginHref} className="flex-1 inline-flex items-center justify-center px-5 py-2.5 text-sm font-bold text-inverse bg-accent rounded-md hover:bg-accent-deep transition-colors">
@@ -389,13 +393,13 @@ function CheckoutContent() {
           {cancelled && (
             <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink">
               <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-              <span>Payment was cancelled. You can try again below.</span>
+              <span>{cancelled} You can try again below.</span>
             </div>
           )}
 
-          {/* Order summary card */}
+          {/* Purchase summary card */}
           <div className="rounded-2xl border border-ink/10 bg-paper p-6">
-            <p className="text-xs uppercase tracking-wider text-muted mb-4">Order summary</p>
+            <p className="text-xs uppercase tracking-wider text-muted mb-4">Purchase summary</p>
 
             <div className="flex gap-3 items-start pb-4 border-b border-ink/5">
               <div className="h-12 w-12 rounded-lg bg-warm shrink-0" />

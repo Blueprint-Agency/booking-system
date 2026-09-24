@@ -41,7 +41,8 @@ export function SavedCardsCard() {
           </h2>
           <p className="mt-1 text-sm text-muted">
             Cards you chose to keep while paying. They are stored by our payment
-            provider — we only ever see the last four digits.
+            provider — we only ever see the last four digits — and work only at
+            this studio.
           </p>
         </div>
       </div>

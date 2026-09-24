@@ -8,6 +8,7 @@ import { useAuthGate } from "@/components/auth/auth-gate";
 import { fetchApi } from "@/lib/api-url";
 import { cn } from "@/lib/utils";
 import { reportError } from "@/lib/report-error";
+import { checkoutErrorMessage } from "@/lib/checkout-messages";
 
 type BuyTarget =
   | { kind: "package"; packageKind: "class" | "pt"; packageId: string }
@@ -89,7 +90,7 @@ export function BuyButton({
           status: res.status,
           body: data,
         });
-        setError(data.error ?? "Could not start checkout. Please try again.");
+        setError(checkoutErrorMessage(data, "Could not start checkout. Please try again."));
         setBusy(false);
         return;
       }

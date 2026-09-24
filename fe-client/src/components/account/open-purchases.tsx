@@ -4,7 +4,8 @@
  * Unfinished purchases on the member's account page (#93).
  *
  * The list is the promise the checkout page made: a balance left outstanding
- * does not expire, and the member can come back to it whenever they like. So
+ * stays open until it is paid in full or the studio refunds it, and the member
+ * can come back to it whenever they like. So
  * this renders above the packages, not below them — it is the one thing on the
  * page that is waiting on the member rather than the other way round.
  *
@@ -23,6 +24,7 @@ import {
   type PartPaymentOptions,
 } from "@/lib/open-purchases";
 import { SaveCardBlock } from "@/components/checkout/save-card-block";
+import { checkoutErrorMessage, type CheckoutErrorBody } from "@/lib/checkout-messages";
 
 export function OpenPurchases({
   purchases,
@@ -99,8 +101,8 @@ function OpenPurchaseCard({
       await resumePurchase(api, purchase.id, amountSgd, saveCard);
     } catch (err) {
       reportError(err, { scope: "resume-purchase" });
-      const body = (err as { body?: { message?: string } })?.body;
-      setError(body?.message ?? "Could not start the payment. Please try again.");
+      const body = (err as { body?: CheckoutErrorBody })?.body;
+      setError(checkoutErrorMessage(body, "Could not start the payment. Please try again."));
       setBusy(false);
     }
   }
@@ -126,7 +128,7 @@ function OpenPurchaseCard({
         <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
         <span>
           Nothing has been added to your account yet, and no place is held. This
-          purchase is waiting for you — it never expires.
+          purchase stays open until it&apos;s paid in full or refunded by the studio.
         </span>
       </div>
 

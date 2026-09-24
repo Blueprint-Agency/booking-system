@@ -231,7 +231,7 @@ Paying one Purchase with more than one card, in amounts the member chooses, beca
 _Avoid_: split payment, instalment, deposit, partial payment, payment plan, down payment
 
 **Open Purchase**:
-A Purchase with a Balance still outstanding, and so with nothing granted against it: no plan, no credits, no workshop place. It does not expire — the member returns to it from their account page whenever they like and a fresh checkout session is minted for whatever is still owed. What has been paid into one is money the studio is holding, and it is reported as that and never as revenue: a Purchase enters the finance figures once, at its frozen total, at the moment it closes. It is not an unpaid invoice and not a debt; nobody is chasing the member for it.
+A Purchase with a Balance still outstanding, and so with nothing granted against it: no plan, no credits, no workshop place. It does not expire — it closes when it is paid in full, or when the studio refunds it — and until then the member returns to it from their account page whenever they like and a fresh checkout session is minted for whatever is still owed. What has been paid into one is money the studio is holding, and it is reported as that and never as revenue: a Purchase enters the finance figures once, at its frozen total, at the moment it closes. It is not an unpaid invoice and not a debt; nobody is chasing the member for it.
 _Avoid_: pending purchase, unpaid order, outstanding invoice, abandoned cart, arrears
 
 **Abandoned Purchase**:
