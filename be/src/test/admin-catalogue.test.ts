@@ -782,7 +782,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
 
   /* ── Feature flags ──────────────────────────────────────────────────── */
 
-  test('TEN-18 a feature flag an admin turns on is on for that studio only', async () => {
+  test('TEN-25 a feature flag an admin turns on is on for that studio only', async () => {
     const key = `${FLAG}_reports`
     const on = await send('PATCH', `/feature-flags/${key}`, one.admin, { enabled: true })
     assert.equal(on.status, 200, JSON.stringify(on.body))

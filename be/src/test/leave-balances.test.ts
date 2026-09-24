@@ -860,8 +860,8 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
       'X-Tenant-Slug': two.slug,
     }
     const res = await call(elsewhere, 'GET', '/api/v1/portal/instructor/leave')
-    // Signed in on the first studio: the session's Tenant claim does not match.
-    assert.equal(res.status, 403, JSON.stringify(res.body))
-    assert.equal(res.body.error, 'tenant_mismatch')
+    // Signed in on the first studio: logins are per studio, so the other one cannot see the session.
+    assert.equal(res.status, 401, JSON.stringify(res.body))
+    assert.equal(res.body.error, 'invalid_token')
   })
 })

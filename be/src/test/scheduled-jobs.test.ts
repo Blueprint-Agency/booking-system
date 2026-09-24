@@ -68,7 +68,7 @@ describe('scheduled jobs', { skip: integrationTestsEnabled ? false : SKIP_REASON
   /** A member of `at` holding a 10-credit bundle that ends at `expiresAt`. */
   async function memberWithBundle(at: Studio, expiresAt: Date): Promise<Member> {
     const email = `member-${made++}-${at.slug}@${DOMAIN}`
-    const authUserId = await ensureAuthUser(harness.db, 'client', { email, name: `Member ${made}` })
+    const authUserId = await ensureAuthUser(harness.db, 'client', { email, name: `Member ${made}`, tenantId: at.id })
     const [client] = await harness.db
       .insert(schema.clients)
       .values({ tenantId: at.id, email, name: `Member ${made}`, phone: '+6580000000', authUserId })
@@ -135,7 +135,7 @@ describe('scheduled jobs', { skip: integrationTestsEnabled ? false : SKIP_REASON
     await harness.close()
   })
 
-  test("PKG-20, TEN-17 the expiry job ends a studio's lapsed packages at that studio's own 01:00, and no other studio's", async () => {
+  test("PKG-20, TEN-24 the expiry job ends a studio's lapsed packages at that studio's own 01:00, and no other studio's", async () => {
     const oneAt0100 = slotFor(one, 1, aWeekOut())
     const twoAt0100 = slotFor(two, 1, oneAt0100)
     // Ended before either studio's tick.
@@ -166,7 +166,7 @@ describe('scheduled jobs', { skip: integrationTestsEnabled ? false : SKIP_REASON
     }
   })
 
-  test("NTF-17, TEN-17 the expiry reminder emails each member once, at their own studio's 08:00, and no other studio's members", async () => {
+  test("NTF-17, TEN-24 the expiry reminder emails each member once, at their own studio's 08:00, and no other studio's members", async () => {
     const oneAt0800 = slotFor(one, 8, aWeekOut())
     const twoAt0800 = slotFor(two, 8, oneAt0800)
     // The reminder looks 6.5–7.5 days ahead. Studio two's bundle ends where

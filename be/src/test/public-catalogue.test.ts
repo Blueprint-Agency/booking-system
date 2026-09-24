@@ -76,7 +76,7 @@ describe('public catalogue over HTTP', { skip: integrationTestsEnabled ? false :
   async function staff(tenant: { id: string }, name: string): Promise<string> {
     const email = `${name}@${DOMAIN}`
     const { ensureAuthUser } = await import('../services/auth/auth-users')
-    const authUserId = await ensureAuthUser(harness.db, 'staff', { email, name })
+    const authUserId = await ensureAuthUser(harness.db, 'staff', { email, name, tenantId: tenant.id })
     const [row] = await harness.db
       .insert(schema.staffUsers)
       .values({ tenantId: tenant.id, email, name: `${name} ${run}`, role: 'instructor', status: 'active', authUserId })

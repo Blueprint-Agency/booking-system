@@ -798,14 +798,15 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
     }
     assert.equal((await ok(get('/me', nat.headers))).id, nat.clientId)
 
-    // Their session carried to this studio's hostname is refused outright.
+    // Their session carried to this studio's hostname is refused outright: logins
+    // are per studio, so this studio cannot see it.
     const crossed = { ...nat.headers, 'X-Tenant-Slug': one.slug, Origin: frontendOrigin('client', one) }
     for (const path of MEMBER_READS) {
-      assert.equal((await get(path, crossed)).status, 403, path)
+      assert.equal((await get(path, crossed)).status, 401, path)
     }
-    assert.equal((await send('/me', crossed, 'PATCH', { name: 'Crossed' })).status, 403)
+    assert.equal((await send('/me', crossed, 'PATCH', { name: 'Crossed' })).status, 401)
     // Nor can they pay towards her unfinished purchase, from either studio.
-    assert.equal((await send(`/me/purchases/${owed!.id}/resume`, crossed, 'POST', {})).status, 403)
+    assert.equal((await send(`/me/purchases/${owed!.id}/resume`, crossed, 'POST', {})).status, 401)
     assert.equal((await send(`/me/purchases/${owed!.id}/resume`, nat.headers, 'POST', {})).status, 404)
     assert.equal((await harness.db.select().from(schema.purchases).where(eq(schema.purchases.id, owed!.id)))[0]!.checkoutSessionId, null)
     const [row] = await harness.db.select().from(schema.clients).where(eq(schema.clients.id, nat.clientId))

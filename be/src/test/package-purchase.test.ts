@@ -863,7 +863,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     const asked = sessionsAsked()
     // Mia's session, presented on studio two's hostname.
     const elsewhere = { ...mia, headers: { ...mia.headers, 'X-Tenant-Slug': two.slug, Origin: `http://${two.slug}.localhost:3000` } }
-    await expectStatus(await buyClass(elsewhere, two.bundleId), 403)
+    await expectStatus(await buyClass(elsewhere, two.bundleId), 401)
     // A staff member's session is not a member's.
     const staff = { ...mia, headers: one.admin.headers }
     await expectStatus(await buyClass(staff, one.bundleId), 401)

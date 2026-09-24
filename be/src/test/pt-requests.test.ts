@@ -1342,12 +1342,12 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       ...hex,
       headers: { ...hex.headers, 'X-Tenant-Slug': one.slug, Origin: frontendOrigin('client', one) },
     }
-    await expectStatus(await memberCancel(hexAtOne, requestId), 403)
+    await expectStatus(await memberCancel(hexAtOne, requestId), 401)
     const adminTwoAtOne = {
       ...adminAtTwo,
       headers: { ...adminAtTwo.headers, 'X-Tenant-Slug': one.slug, Origin: frontendOrigin('staff', one) },
     }
-    await expectStatus(await adminCancel(adminTwoAtOne, requestId), 403)
+    await expectStatus(await adminCancel(adminTwoAtOne, requestId), 401)
 
     assert.equal((await requestRow(requestId)).status, 'pending')
     assert.equal((await sessionsFor(requestId)).length, 0)

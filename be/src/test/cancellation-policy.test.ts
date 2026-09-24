@@ -1121,7 +1121,7 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
       await expectStatus(await patchPolicy(bea.headers, { cancel_cap_count: 0 }), 401)
       // Studio two's admin, naming studio one from studio one's portal.
       const asOne = { ...two.admin.headers, 'X-Tenant-Slug': one.slug, Origin: `http://${one.slug}.portal.localhost:3001` }
-      await expectStatus(await patchPolicy(asOne, { cancel_cap_count: 0 }), 403)
+      await expectStatus(await patchPolicy(asOne, { cancel_cap_count: 0 }), 401)
       await expectStatus(await patchPolicy(two.admin.headers, { cancel_cap_count: seeded.cancelCapCount + 1 }), 200)
       assert.equal((await policyOf(one)).cancelCapCount, seeded.cancelCapCount)
       assert.equal((await policyOf(two)).cancelCapCount, seeded.cancelCapCount + 1)
