@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Check, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { ApiError, type Api } from "@/lib/api";
@@ -45,18 +45,33 @@ export function PaymentCredentialsDialog({
   const [webhookSecret, setWebhookSecret] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [clearing, setClearing] = useState(false);
-  /** Shown after a save: the URL that has to be registered on the studio's own
-   *  account, without which its deliveries never arrive. */
-  const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
+  /** The server's refusal of the key, shown under the field it is about. */
+  const [keyError, setKeyError] = useState<string | null>(null);
 
+  const setup = tenant?.payments.setup;
+  // Said as soon as it is typed, but the backend is what enforces it.
+  const wrongMode = Boolean(
+    setup && secretKey.trim() && !secretKey.trim().startsWith(setup.key_prefix),
+  );
   const busy = submitting || clearing;
-  const canSubmit = Boolean(!busy && tenant && secretKey.trim() && webhookSecret.trim());
+  const canSubmit = Boolean(
+    !busy && tenant && secretKey.trim() && webhookSecret.trim() && !wrongMode,
+  );
+
+  function wrongModeMessage(prefix: string): string {
+    return prefix === "sk_live_"
+      ? "This is production: only live keys (sk_live_…) are accepted. A test key would take no real money."
+      : "This environment accepts only test keys (sk_test_…). A live key would take real money.";
+  }
+
+  function codeOf(err: unknown): string | undefined {
+    return err instanceof ApiError && err.body && typeof err.body === "object"
+      ? (err.body as { error?: string }).error
+      : undefined;
+  }
 
   function messageFor(err: unknown, fallback: string): string {
-    const code =
-      err instanceof ApiError && err.body && typeof err.body === "object"
-        ? (err.body as { error?: string }).error
-        : undefined;
+    const code = codeOf(err);
     if (code === "provider_key_rejected") {
       return "The payment provider refused that secret key. Check it was copied whole, and from the right account.";
     }
@@ -71,6 +86,7 @@ export function PaymentCredentialsDialog({
     if (!canSubmit || !tenant) return;
 
     setSubmitting(true);
+    setKeyError(null);
     try {
       const result = await setPaymentCredentials(api, tenant.id, {
         secret_key: secretKey.trim(),
@@ -80,12 +96,16 @@ export function PaymentCredentialsDialog({
       // screen, and this dialog can be left open.
       setSecretKey("");
       setWebhookSecret("");
-      setWebhookUrl(result.webhook_url);
       toast.success(
         `${tenant.name} now charges on ${result.tenant.payments.account_id}.`,
       );
       onSaved();
     } catch (err) {
+      if (codeOf(err) === "provider_key_wrong_mode") {
+        const expected = (err as ApiError).body as { expected_prefix?: string };
+        setKeyError(wrongModeMessage(expected.expected_prefix ?? tenant.payments.setup.key_prefix));
+        return;
+      }
       toast.error(messageFor(err, `Could not save credentials for ${tenant.name}.`));
     } finally {
       setSubmitting(false);
@@ -105,7 +125,6 @@ export function PaymentCredentialsDialog({
     setClearing(true);
     try {
       await clearPaymentCredentials(api, tenant.id);
-      setWebhookUrl(null);
       toast.success(`${tenant.name} is back on the platform account.`);
       onSaved();
     } catch (err) {
@@ -129,6 +148,24 @@ export function PaymentCredentialsDialog({
       }
     >
       <form className="flex flex-col gap-4" onSubmit={submit}>
+        {setup && (
+          <div className="rounded-md border border-border bg-surface p-3">
+            <p className="text-sm font-medium text-ink">
+              First, add a webhook endpoint on the studio’s own account
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              Its signing secret is what the form below asks for. Until the endpoint exists,
+              the studio’s purchases are charged but nothing is granted.
+            </p>
+            <p className="mt-3 text-xs font-medium text-ink">Endpoint URL</p>
+            <CopyLine value={setup.webhook_url} label="webhook URL" />
+            <p className="mt-2 text-xs font-medium text-ink">Events to send</p>
+            {setup.webhook_events.map(event => (
+              <CopyLine key={event} value={event} label={`event ${event}`} />
+            ))}
+          </div>
+        )}
+
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="payment-secret-key">Secret key</Label>
           <Input
@@ -136,15 +173,26 @@ export function PaymentCredentialsDialog({
             type="password"
             autoComplete="off"
             value={secretKey}
-            onChange={e => setSecretKey(e.target.value)}
-            placeholder="sk_live_…"
+            onChange={e => {
+              setSecretKey(e.target.value);
+              setKeyError(null);
+            }}
+            placeholder={`${setup?.key_prefix ?? "sk_"}…`}
+            aria-invalid={wrongMode || Boolean(keyError)}
+            aria-describedby="payment-secret-key-help"
             autoFocus
             required
           />
-          <p className="text-xs text-muted">
-            Checked against the provider before it is stored, so a wrong key is caught here
-            rather than at a member’s checkout.
-          </p>
+          {setup && (wrongMode || keyError) ? (
+            <p id="payment-secret-key-help" className="text-xs text-error" role="alert">
+              {keyError ?? wrongModeMessage(setup.key_prefix)}
+            </p>
+          ) : (
+            <p id="payment-secret-key-help" className="text-xs text-muted">
+              Checked against the provider before it is stored, so a wrong key is caught here
+              rather than at a member’s checkout.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -164,16 +212,10 @@ export function PaymentCredentialsDialog({
           </p>
         </div>
 
-        {webhookUrl && (
-          <div className="rounded-md border border-border bg-surface p-3">
-            <p className="text-sm font-medium text-ink">Point the studio’s webhook here</p>
-            <code className="mt-1 block break-all text-xs text-muted">{webhookUrl}</code>
-            <p className="mt-2 text-xs text-muted">
-              Until this endpoint exists on the studio’s account, its purchases are charged but
-              nothing is granted.
-            </p>
-          </div>
-        )}
+        <p className="text-xs text-muted">
+          Saved keys can’t be viewed again, by anyone. To change them, enter new ones here;
+          to undo them, put the studio back on the platform account.
+        </p>
 
         <DialogFooter>
           {tenant?.payments.configured && (
@@ -192,5 +234,37 @@ export function PaymentCredentialsDialog({
         </DialogFooter>
       </form>
     </Dialog>
+  );
+}
+
+/** One value the operator has to paste into the provider's dashboard, with a copy button. */
+function CopyLine({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Could not copy — select the text and copy it by hand.");
+    }
+  }
+
+  return (
+    <div className="mt-1 flex items-center gap-2">
+      <code className="min-w-0 flex-1 break-all rounded-md border border-border bg-paper px-2 py-1 font-mono text-xs text-ink">
+        {value}
+      </code>
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={() => void copy()}
+        aria-label={`Copy ${label}`}
+        title={`Copy ${label}`}
+      >
+        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+      </Button>
+    </div>
   );
 }

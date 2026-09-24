@@ -232,6 +232,7 @@ export const ERROR_CODES = {
   promo_code_text_invalid: 'promo_code_text_invalid',
   promo_code_text_taken: 'promo_code_text_taken',
   provider_key_rejected: 'provider_key_rejected',
+  provider_key_wrong_mode: 'provider_key_wrong_mode',
   pt_booking_config_not_seeded: 'pt_booking_config_not_seeded',
   pt_bound_requires_instructor: 'pt_bound_requires_instructor',
   pt_package_already_archived: 'pt_package_already_archived',

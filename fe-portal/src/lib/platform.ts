@@ -37,7 +37,21 @@ export interface PlatformTenant {
    * The secret key and the signing secret are never returned by any route, so
    * there is nothing to mask, truncate or accidentally render.
    */
-  payments: { configured: boolean; account_id: string | null };
+  payments: {
+    configured: boolean;
+    account_id: string | null;
+    /**
+     * What moving the studio onto its own account takes, known before anything
+     * is saved: the HTTPS URL its account must deliver webhooks to, the events
+     * to subscribe to, and the key prefix this environment accepts
+     * (`sk_test_` off production, `sk_live_` on it).
+     */
+    setup: {
+      webhook_url: string;
+      webhook_events: string[];
+      key_prefix: "sk_test_" | "sk_live_";
+    };
+  };
   /**
    * The stretch of time the studio has paid for, as calendar dates (YYYY-MM-DD)
    * on its own clock. `end_date` is the first day it is no longer paid for;

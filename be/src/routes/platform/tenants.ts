@@ -27,6 +27,12 @@ import {
   ProviderOnboardingError,
   type ConfiguredAccount,
 } from '../../services/billing/provider-onboarding'
+import {
+  expectedKeyPrefix,
+  PROVIDER_WEBHOOK_EVENTS,
+  providerWebhookUrl,
+} from '../../services/billing/provider-setup'
+import { env } from '../../env'
 import { logger } from '../../shared/logger'
 
 /**
@@ -73,11 +79,24 @@ function serialize(
     payments: {
       configured: payments.configured,
       account_id: payments.accountId,
+      // What setting the studio up on its own account takes (#276), sent
+      // before anything is saved: the signing secret the form asks for only
+      // exists once an endpoint at this URL has been created on the studio's
+      // account, so the URL cannot wait for the save.
+      setup: paymentSetupFor(tenant.slug),
     },
     urls: {
       client: tenantOrigin('client', tenant.slug),
       portal: tenantOrigin('portal', tenant.slug),
     },
+  }
+}
+
+function paymentSetupFor(slug: string) {
+  return {
+    webhook_url: providerWebhookUrl(env.BETTER_AUTH_URL, slug, env.APP_ENV),
+    webhook_events: PROVIDER_WEBHOOK_EVENTS,
+    key_prefix: expectedKeyPrefix(env.APP_ENV),
   }
 }
 
@@ -143,9 +162,10 @@ const firstAdminBody = z.object({
  *
  * Both are trimmed, because a key pasted out of a dashboard carries whitespace
  * often enough that the alternative is a validation failure nobody can see the
- * cause of. Neither is pattern-matched beyond being non-empty: the provider is
- * the authority on whether a key is real, and it is asked directly a few lines
- * later, so a regex here could only ever refuse a key that in fact works.
+ * cause of. Neither is pattern-matched here beyond being non-empty: the provider
+ * is the authority on whether a key is real, and it is asked directly a few
+ * lines later. The one shape rule — test keys off production, live keys on it —
+ * is the environment's, and lives in the onboarding service.
  */
 const credentialsBody = z.object({
   secret_key: z.string().trim().min(1),
@@ -403,9 +423,16 @@ const app = new Hono()
       })
     } catch (err) {
       if (!(err instanceof ProviderOnboardingError)) throw err
-      return err.reason === 'storage_unavailable'
-        ? c.json({ error: ERROR_CODES.secret_storage_unavailable }, 503)
-        : c.json({ error: ERROR_CODES.provider_key_rejected }, 400)
+      if (err.reason === 'storage_unavailable') {
+        return c.json({ error: ERROR_CODES.secret_storage_unavailable }, 503)
+      }
+      if (err.reason === 'key_wrong_mode') {
+        return c.json(
+          { error: ERROR_CODES.provider_key_wrong_mode, expected_prefix: expectedKeyPrefix(env.APP_ENV) },
+          400,
+        )
+      }
+      return c.json({ error: ERROR_CODES.provider_key_rejected }, 400)
     }
 
     // The account, never the key. This line is the audit trail for "who moved
@@ -422,12 +449,9 @@ const app = new Hono()
 
     return c.json({
       tenant: serialize(tenant, await staffCountFor(id.data), payments),
-      // Where the studio has to point the webhook on its own account. Built
-      // from the address this request actually arrived on rather than from
-      // configuration, so it cannot name an environment other than the one
-      // being configured — the commonest way to wire a studio's live account to
-      // a staging server.
-      webhook_url: `${new URL(c.req.url).origin}/api/v1/webhooks/stripe/${tenant.slug}`,
+      // Where the studio has to point the webhook on its own account — also on
+      // `tenant.payments.setup`, repeated here for the confirmation.
+      webhook_url: paymentSetupFor(tenant.slug).webhook_url,
     })
   })
 

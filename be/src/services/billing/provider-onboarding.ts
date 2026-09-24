@@ -2,6 +2,7 @@ import { currentEnv } from '../../env'
 import { providerAccountForKey } from '../../lib/stripe'
 import { secretKeyProblem } from '../../lib/secret-box'
 import { logger } from '../../shared/logger'
+import { expectedKeyPrefix, keyModeMatches } from './provider-setup'
 import {
   clearProviderCredentials,
   saveProviderCredentials,
@@ -23,13 +24,15 @@ import {
  */
 
 /**
- * Why a studio could not be moved onto its own account, in the two kinds a
- * caller has to tell apart.
+ * Why a studio could not be moved onto its own account, in the kinds a caller
+ * has to tell apart.
  *
  * `storage_unavailable` is the operator's environment — nothing was attempted,
- * and nothing is wrong with what they typed. `key_rejected` is the input.
+ * and nothing is wrong with what they typed. `key_wrong_mode` is a key of the
+ * wrong kind for this environment (a live key on staging, a test key on
+ * production). `key_rejected` is a key the provider refused.
  */
-export type OnboardingFailure = 'storage_unavailable' | 'key_rejected'
+export type OnboardingFailure = 'storage_unavailable' | 'key_wrong_mode' | 'key_rejected'
 
 export class ProviderOnboardingError extends Error {
   constructor(readonly reason: OnboardingFailure, message: string) {
@@ -64,6 +67,18 @@ export async function configureProviderAccount(
   if (problem) {
     logger.error({ tenantId }, `payment credentials cannot be stored — ${problem}`)
     throw new ProviderOnboardingError('storage_unavailable', problem)
+  }
+
+  // Before the provider is asked and before anything is stored. The provider
+  // would accept either kind of key — this is the environment's rule, not the
+  // provider's: a live key on staging takes testers' real money, and a test key
+  // on production takes members' "payments" that never arrive.
+  if (!keyModeMatches(input.secretKey, env.APP_ENV)) {
+    logger.warn({ tenantId, appEnv: env.APP_ENV }, 'payment credentials refused — wrong key mode')
+    throw new ProviderOnboardingError(
+      'key_wrong_mode',
+      `this environment accepts only ${expectedKeyPrefix(env.APP_ENV)} keys`,
+    )
   }
 
   let accountId: string
