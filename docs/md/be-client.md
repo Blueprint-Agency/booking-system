@@ -491,8 +491,8 @@ The client then tracks the request on `/account/corporate` (`fe-client-features.
 
 Members sign in with email and password through the Better Auth `client` pool (#173, `docs/adr/0005-member-passwords.md`). The emailed one-time code only proves an address at sign-up. No webhook and no provisioning on first request: the account and the studio's row are written together.
 
-1. fe-client `/register` collects `{ first_name, last_name, email, phone, password }` (password 8–128 characters) and asks the pool for a code: `POST /api/v1/auth/client/email-otp/send-verification-otp` `{ email, type: 'sign-in' }`.
-2. It sends the code with the details to **`POST /api/v1/public/members/register`** `{ email, otp, first_name, last_name, phone, password }` (`services/clients/register.ts`):
+1. fe-client `/register` collects `{ first_name, last_name, email, phone, gender, password }` (password 8–128 characters, confirmed on the page; gender optional to the API, any `client_gender` value, stored on the `clients` row) and asks the pool for a code: `POST /api/v1/auth/client/email-otp/send-verification-otp` `{ email, type: 'sign-in' }`.
+2. It sends the code with the details to **`POST /api/v1/public/members/register`** `{ email, otp, first_name, last_name, phone, gender?, password }` (`services/clients/register.ts`):
    - 409 `already_member` if this studio already has a `clients` row for the address — sign in instead.
    - The code is checked; a wrong one is 400 `invalid_otp` / `otp_expired` (403 `too_many_attempts`) and writes nothing but the attempt.
    - Then, in one savepoint: this studio's `client_auth_users` row (a member of another studio has a separate login there, untouched — ADR 0006), its password (replacing any — the code just proved the email), the `clients` row with `auth_user_id`, the code spent, and the session — signed in through the pool's own `/sign-in/email`, so it meets the same origin check, rate limits, audit row and Tenant stamp as any sign-in.

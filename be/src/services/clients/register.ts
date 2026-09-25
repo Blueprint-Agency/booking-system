@@ -1,11 +1,14 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { isUniqueViolation } from '../../db/unique-violation'
+import { clientGenderEnum } from '../../db/enums'
 import { clients } from '../../db/schema/identity'
 import { ensureAuthUser, setMemberPassword } from '../auth/auth-users'
 import { checkMemberCode, signInMemberWithPassword, spendMemberCode } from '../auth/better-auth'
 import { memberAuthError } from '../auth/member-passwords'
 import { BadRequestError, ConflictError, ForbiddenError } from '../../shared/errors'
+
+type ClientGender = (typeof clientGenderEnum.enumValues)[number]
 
 export interface RegisterMemberInput {
   tenantId: string
@@ -14,6 +17,8 @@ export interface RegisterMemberInput {
   firstName: string
   lastName: string
   phone: string
+  /** The member's own answer; left unset when they gave none. */
+  gender?: ClientGender
   password: string
   /** The member's own request headers — their `Origin` and address go with the sign-in. */
   headers: Headers
@@ -64,6 +69,7 @@ export async function registerMember(input: RegisterMemberInput): Promise<{ toke
         email,
         name,
         phone,
+        gender: input.gender ?? null,
         status: 'active',
       })
       await setMemberPassword(tx, authUserId, input.password)

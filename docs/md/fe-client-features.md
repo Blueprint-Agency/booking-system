@@ -76,7 +76,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 
 ### 1.1 Register `/register`
 
-> **As built (#117, #173):** Register takes first name, last name, email, phone and a password (8 characters or more), emails a 6-digit code, and the code proves the email before the account and the studio's member record are created together (`POST /public/members/register`, `be-client.md` §4f). Login is email first, then the password, or "check your email" when the address has no password yet and a set-password link goes out (§1.4). The fuller journey below (phone OTP, T&C, referral, Google) is not built yet.
+> **As built (#117, #173):** Register takes first name, last name, email, phone, gender (Female / Male / Prefer not to say) and a password (8 characters or more, typed twice and matched on the page), emails a 6-digit code, and the code proves the email before the account and the studio's member record are created together (`POST /public/members/register`, `be-client.md` §4f). Login is email first, then the password, or "check your email" when the address has no password yet and a set-password link goes out (§1.4). The fuller journey below (phone OTP, T&C, referral, Google) is not built yet.
 
 **Business logic**
 - Required fields: First name, phone, email, password (≥8), confirm password, T&C accepted.

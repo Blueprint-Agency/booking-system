@@ -1,6 +1,7 @@
 "use client";
 /**
- * Member registration (#117, #173): details, an email and a password, then the
+ * Member registration (#117, #173): details (gender included), an email and a
+ * password typed twice, then the
  * one-time code mailed to the email, which proves it.
  *
  * The code is asked of the `client` Better Auth pool, and spent by the backend's
@@ -29,6 +30,14 @@ const labelClass =
 const primaryBtnClass =
   "w-full rounded-full bg-ink text-paper py-3 text-sm font-medium hover:bg-ink/90 mt-2 disabled:opacity-50";
 
+type Gender = "female" | "male" | "prefer_not_to_say";
+
+const GENDERS: { value: Gender; label: string }[] = [
+  { value: "female", label: "Female" },
+  { value: "male", label: "Male" },
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
+];
+
 const IMAGE_KEY = "hero-pilates-01";
 const QUOTE = "Every student begins with a single breath.";
 
@@ -45,7 +54,9 @@ function RegisterContent() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState<string | undefined>(undefined);
+  const [gender, setGender] = useState<Gender | "">("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [code, setCode] = useState("");
 
   const [error, setError] = useState<string | null>(null);
@@ -96,8 +107,16 @@ function RegisterContent() {
       setError("Please enter a valid phone number.");
       return;
     }
+    if (!gender) {
+      setError("Please choose a gender, or “Prefer not to say”.");
+      return;
+    }
     if (password.length < MIN_PASSWORD_LENGTH) {
       setError(`Choose a password of at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("The passwords don't match.");
       return;
     }
     void run(async () => {
@@ -117,6 +136,7 @@ function RegisterContent() {
           first_name: firstName.trim(),
           last_name: lastName.trim(),
           phone,
+          gender,
           password,
         });
         adoptMemberSession(token);
@@ -225,10 +245,25 @@ function RegisterContent() {
           />
         </div>
         <div>
+          <label htmlFor="gender" className={labelClass}>Gender</label>
+          <select id="gender" className={inputClass} value={gender}
+            onChange={(ev) => setGender(ev.target.value as Gender | "")}>
+            <option value="" disabled>Select…</option>
+            {GENDERS.map((g) => (
+              <option key={g.value} value={g.value}>{g.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
           <label htmlFor="password" className={labelClass}>Password</label>
           <input id="password" type="password" autoComplete="new-password" className={inputClass}
             value={password} onChange={(ev) => setPassword(ev.target.value)} />
           <p className="mt-1 text-xs text-muted">At least {MIN_PASSWORD_LENGTH} characters.</p>
+        </div>
+        <div>
+          <label htmlFor="confirmPassword" className={labelClass}>Confirm password</label>
+          <input id="confirmPassword" type="password" autoComplete="new-password" className={inputClass}
+            value={confirmPassword} onChange={(ev) => setConfirmPassword(ev.target.value)} />
         </div>
 
         {errorNote}

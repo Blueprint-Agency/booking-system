@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
+import { clientGenderEnum } from '../../db/enums'
 import { tenantId } from '../../middleware/tenant'
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../../services/auth/auth-users'
 import { nextSignInStep, requestMemberPasswordLink, setPasswordFromLink } from '../../services/auth/member-passwords'
@@ -10,7 +11,7 @@ import { registerMember } from '../../services/clients/register'
  * Member self-registration and the member sign-in steps that are not Better
  * Auth's own endpoints, on the studio's own member app (#117, #173).
  *
- * POST /api/v1/public/members/register { email, otp, first_name, last_name, phone, password }
+ * POST /api/v1/public/members/register { email, otp, first_name, last_name, phone, gender?, password }
  *   → { token }
  *
  *   The page first asks the client pool for a code
@@ -53,6 +54,7 @@ const registerSchema = z.object({
   first_name: z.string().trim().min(1).max(100),
   last_name: z.string().trim().min(1).max(100),
   phone: z.string().trim().min(1).max(40),
+  gender: z.enum(clientGenderEnum.enumValues).optional(),
   password,
 })
 
@@ -71,6 +73,7 @@ const app = new Hono()
       firstName: body.first_name,
       lastName: body.last_name,
       phone: body.phone,
+      gender: body.gender,
       password: body.password,
       headers: c.req.raw.headers,
     })
