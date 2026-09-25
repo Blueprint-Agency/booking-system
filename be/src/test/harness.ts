@@ -1,9 +1,8 @@
-// Load `.env` here, not incidentally via the app import below: `TEST_DATABASE_URL`
-// is read at module load, and without this a developer who set it in `be/.env`
-// (as `.env.example` documents) would silently get a skipped integration suite
-// and a green `npm run check`.
-import 'dotenv/config'
+// First, before anything that could import `src/env.ts` or `src/db`: the test
+// environment has to be in place when they are evaluated. See ./environment.
+import { APP_ROLE_NAME, APP_ROLE_TEST_PASSWORD, stubEnvironment, TEST_DATABASE_URL, SKIP_REASON } from './environment'
 import { randomUUID } from 'node:crypto'
+import { after } from 'node:test'
 import path from 'node:path'
 import { and, eq } from 'drizzle-orm'
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js'
@@ -30,10 +29,7 @@ import type { AuthPool } from '../services/auth/better-auth'
  * about — the harness migrates it and writes to it). Without it the
  * integration tests skip, so `npm run check` still runs everywhere.
  */
-export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL
-export const integrationTestsEnabled = Boolean(TEST_DATABASE_URL)
-export const SKIP_REASON =
-  'set TEST_DATABASE_URL to a scratch Postgres database to run the integration tests'
+export { appRoleUrl, integrationTestsEnabled, SKIP_REASON, TEST_DATABASE_URL } from './environment'
 
 export type TestApp = {
   app: Hono
@@ -88,10 +84,13 @@ let harnessRoutesMounted = false
 async function mountHarnessRoutes(app: Hono): Promise<void> {
   if (harnessRoutesMounted) return
   harnessRoutesMounted = true
-  const { logger } = await import('../shared/logger')
+  // The module, not its `logger`: that binding is replaced per file
+  // (`useLogDestination`), and a copy taken here would write to the first
+  // file's `logs` for the rest of the run.
+  const logging = await import('../shared/logger')
   // The shape of a service: a plain function that logs with the root logger and
   // is handed nothing about the request.
-  const service = () => logger.info(HARNESS_SERVICE_LOG_MESSAGE)
+  const service = () => logging.logger.info(HARNESS_SERVICE_LOG_MESSAGE)
   app.get(HARNESS_ROUTES.throw, () => {
     throw new Error('harness: deliberately unhandled')
   })
@@ -202,22 +201,6 @@ async function ensureCredential(
     .values({ id: randomUUID(), accountId: userId, providerId: 'credential', userId, password, tenantId })
 }
 
-/**
- * `src/env.ts` validates the whole environment at import time, and importing
- * the app imports it. Fill in throwaway values for anything the tests don't
- * exercise — real values (a real `DATABASE_URL` above all) still win.
- */
-const APP_ROLE_TEST_PASSWORD = 'booking_app_test'
-
-/**
- * The same scratch database, reached as the application role.
- *
- * The harness itself keeps the owner connection — it has to migrate, and its
- * fixtures deliberately write across both tenants — while the app under test
- * gets the role that Row-Level Security actually applies to. Pointing both at
- * the owner is the one mistake that would make every isolation test pass
- * vacuously, so the two URLs are built apart here rather than shared.
- */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function tenantNamedBy(arg: unknown): string | null {
@@ -266,72 +249,76 @@ export function inTenantContext<T extends object>(module: T): T {
   })
 }
 
-export function appRoleUrl(ownerUrl: string): string {
-  const url = new URL(ownerUrl)
-  url.username = APP_ROLE
-  url.password = APP_ROLE_TEST_PASSWORD
-  return url.toString()
-}
-
-function stubEnvironment() {
-  process.env.DATABASE_URL = TEST_DATABASE_URL
-  process.env.DATABASE_APP_URL = appRoleUrl(TEST_DATABASE_URL!)
-  // Forced, not defaulted: `.env` (loaded above) says `development`, and this
-  // is the one flag the mailer reads to stay off Resend — see
-  // lib/mailer.ts. With `??=` every templated email a test triggered went out
-  // for real and bounced back into the platform inbox.
-  process.env.NODE_ENV = 'test'
-  // Never 'production': that is what gates the second tenant, and a one-tenant
-  // fixture would let every isolation test pass vacuously.
-  process.env.APP_ENV = 'development'
-  process.env.IMPERSONATION_SECRET ??= 'test-harness-impersonation-secret-key'
-  process.env.BETTER_AUTH_SECRET ??= 'test-harness-better-auth-secret-key-0123456789'
-  process.env.BETTER_AUTH_URL ??= 'http://localhost:4000'
-  // The tenant subdomain shape the local frontends use, so a test can send a
-  // real `Origin` and have it name a tenant — which is the whole of the
-  // validation on public routes. The two exact origins are the bare local
-  // hosts, which name no tenant and fall back to tenant #1.
-  process.env.FRONTEND_URLS ??=
-    'http://*.localhost:3000,http://*.portal.localhost:3001,http://localhost:3000,http://localhost:3001'
-  process.env.RESEND_API_KEY ??= 're_test_harness'
+type Shared = {
+  client: postgres.Sql
+  db: PostgresJsDatabase<typeof schema>
+  app: Hono
+  closeDb: () => Promise<void>
+  now: () => Date
+  setClock: (next: (() => Date) | null) => void
+  useLogDestination: (destination: { write: (line: string) => void }) => void
+  /** Put back the in-process memos, seams and kept mail a fresh process would start with. */
+  forgetCaches: () => void
 }
 
 /**
- * Migrate + seed the scratch database, then hand back the app.
+ * The run's one owner connection and app, shared by every file in it.
  *
- * The app builds its own connection pool from `DATABASE_URL`, so the
- * environment is stubbed *before* it is imported — hence the dynamic import.
- * Anything else that reaches the database (services, seeds) must be imported
- * the same way, after this resolves.
+ * When every test file runs in one process (`--test-isolation=none`),
+ * migrating, seeding and importing the app per file would repeat the expensive
+ * part of a run seventy times over. The first `startTestApp` does it;
+ * the rest get the same app back. A promise, so two callers racing the first
+ * setup share it rather than running it twice.
  */
-export async function startTestApp(): Promise<TestApp> {
-  if (!TEST_DATABASE_URL) throw new Error(SKIP_REASON)
+let shared: Promise<Shared> | null = null
+let appLoads = 0
+
+/** How many times this process imported the app: one, however many files ran. */
+export function harnessAppLoads(): number {
+  return appLoads
+}
+
+/**
+ * Where the root logger writes between files, and after the last one: errors
+ * still reach the terminal, everything else goes nowhere. A file's `logs` stops
+ * collecting when the file closes, so it never holds the next file's lines.
+ */
+const betweenFiles = {
+  write: (line: string) => {
+    if (line.includes('"level":"error"')) process.stderr.write(line)
+  },
+}
+
+async function setUp(): Promise<Shared> {
+  if (APP_ROLE_NAME !== APP_ROLE) {
+    throw new Error(`test/environment.ts names the app role ${APP_ROLE_NAME}, db/roles.ts ${APP_ROLE}: make them agree`)
+  }
   stubEnvironment()
 
-  const client = postgres(TEST_DATABASE_URL, { max: 1 })
+  const client = postgres(TEST_DATABASE_URL!, { max: 1 })
   const db = drizzle(client, { schema })
 
-  // The database is this file's until `close`. The files share fixtures — the
-  // two Tenants, name-matched purges, the row counts a studio delete is checked
-  // against — so two at once (a parallel `npm run check`, or a second checkout
-  // or session running the suite beside this one) fail each other at random.
-  // Taken BEFORE the setup below, not after it: `ensureTenantIsolation` drops
-  // and re-creates every table's policy, and a file setting up while another
-  // runs left that one's writes, for a moment, facing RLS with no policy at all.
-  // Held on this connection, so it goes when the process does even if a file
-  // never reaches `close`. One `startTestApp` per process: a second would wait
-  // on this one forever.
-  await client`select pg_advisory_lock(${HARNESS_FILE_LOCK})`
+  // The database is this run's until its last file has finished. The files
+  // share fixtures — the two Tenants, name-matched purges, the row counts a
+  // studio delete is checked against — so two runs at once on one database (a
+  // second session running tests in the same checkout) fail each other at
+  // random. Taken BEFORE the setup below, not after it: `ensureTenantIsolation`
+  // drops and re-creates every table's policy, and a run setting up while
+  // another ran left that one's writes, for a moment, facing RLS with no policy
+  // at all. Held on this connection, so it goes when the process does even if
+  // the run never reaches its teardown.
+  //
+  // Per run, not per file: the app is loaded once, and releasing the database
+  // between files would let another run re-create the policies under this
+  // one's next file. `npm run test:db` gives each checkout its own database, so
+  // two checkouts never meet here.
+  await client`select pg_advisory_lock(${HARNESS_RUN_LOCK})`
 
-  // `node --test` runs one process per file, and every harness-using file points
-  // at the SAME scratch database — so two of them migrate it at the same time.
-  // Concurrent DDL does not merely race: one transaction holds the lock on a
-  // type the other is creating, the loser's migration rolls back, its `before`
-  // throws, and the whole file's tests are cancelled with the runner hanging on
-  // the dead child. Serialising migrate-and-seed behind one advisory lock is
-  // what makes `npm run check` finish with `TEST_DATABASE_URL` set; the second
-  // holder finds the migrations applied and the seeds idempotent, so it is a
-  // wait, not a second run.
+  // Serialises migrate-and-seed across processes on one database. Concurrent
+  // DDL does not merely race: one transaction holds the lock on a type the
+  // other is creating, the loser's migration rolls back, and every test behind
+  // it is cancelled. The second holder finds the migrations applied and the
+  // seeds idempotent, so it is a wait, not a second run.
   await client`select pg_advisory_lock(${HARNESS_SETUP_LOCK})`
   try {
     // Same folder `npm run db:migrate` uses, and the same assumption: run from
@@ -350,10 +337,97 @@ export async function startTestApp(): Promise<TestApp> {
     await client`select pg_advisory_unlock(${HARNESS_SETUP_LOCK})`
   }
 
-  // Before the app is imported, so even its load-time lines are captured.
+  // The logger was pointed at the first file's `logs` before this ran, so
+  // the app's load-time lines land there, as they did with a process per file.
   const { useLogDestination } = await import('../shared/logger')
+  const { default: app } = await import('../app')
+  appLoads++
+  const { closeDb } = await import('../db')
+  const { now, setClock } = await import('../lib/clock')
+  const { forgetCachedTenants } = await import('../services/tenants/tenants')
+  const { forgetCachedMailIdentity } = await import('../services/tenants/mail-identity')
+  const { setProviderCredentialsLoader } = await import('../services/billing/provider-credentials')
+  const { setStripeFactory } = await import('../lib/stripe')
+  const { discardedMail } = await import('../lib/mailer')
+  await mountHarnessRoutes(app)
+
+  return {
+    client,
+    db,
+    app,
+    closeDb,
+    now,
+    setClock,
+    useLogDestination,
+    forgetCaches: () => {
+      forgetCachedTenants()
+      forgetCachedMailIdentity()
+      // Both put the real one back and clear their memo.
+      setProviderCredentialsLoader(null)
+      setStripeFactory(null)
+      // The mail the null transport kept. It is capped, so once a run has sent
+      // that much its length stops growing, and a file counting "mail sent
+      // since" by index would see none of its own.
+      discardedMail.length = 0
+    },
+  }
+}
+
+/** Files that have started and not yet closed. */
+let openFiles = 0
+/** Set once the run's root `after` has fired: the next last `close` ends it. */
+let runOver = false
+
+/** End both pools, which releases the run lock with the connection holding it. */
+async function tearDown(): Promise<void> {
+  if (!shared) return
+  const pending = shared
+  shared = null
+  const { client, closeDb, setClock } = await pending
+  setClock(null)
+  await closeDb()
+  await client.end({ timeout: 5 })
+}
+
+/**
+ * The end of the run: on the root test, so in a one-process run it fires once,
+ * after the last file, and with a process per file at the end of each.
+ *
+ * Reference-counted against `close`: this hook was registered when the harness
+ * was first imported, so it runs before any root-level `after` a file
+ * registered itself, and that hook may still clean up through `harness.db`
+ * before it closes. So a file still open here keeps the pools, and its own
+ * `close` ends them.
+ */
+after(async () => {
+  runOver = true
+  if (openFiles === 0) await tearDown()
+})
+
+/**
+ * Migrate + seed the scratch database, then hand back the app.
+ *
+ * Once per run: the first call does the work, and every later one (the next
+ * file, in a one-process run) gets the same app, database and connection back.
+ * What belongs to a file is fresh per call: its `logs`, a clock on the wall, and
+ * the in-process memos and seams (tenant lookups, mail identities, payment
+ * credentials, the Stripe client, the mail the null transport kept) a process
+ * of its own would have started with.
+ *
+ * The app builds its own connection pool from `DATABASE_URL`, so the
+ * environment is stubbed *before* it is imported — hence the dynamic import.
+ * Anything else that reaches the database (services, seeds) must be imported
+ * the same way, after this resolves.
+ */
+export async function startTestApp(): Promise<TestApp> {
+  if (!TEST_DATABASE_URL) throw new Error(SKIP_REASON)
+
+  // This file's lines from here on, the app's load-time lines included when
+  // this is the call that loads it. The logger module reads the environment
+  // `./environment` has already stubbed, so it is safe to load first.
   let logged: string[] = []
-  useLogDestination({
+  const { useLogDestination: collectInto } = await import('../shared/logger')
+  collectInto({
     write: (line: string) => {
       logged.push(line)
       // An unhandled error still reaches the terminal, or a test failing on a
@@ -362,14 +436,28 @@ export async function startTestApp(): Promise<TestApp> {
     },
   })
 
-  const { default: app } = await import('../app')
-  const { closeDb } = await import('../db')
-  const { now, setClock } = await import('../lib/clock')
-  await mountHarnessRoutes(app)
+  shared ??= setUp()
+  const pending = shared
+  let run: Shared
+  try {
+    run = await pending
+  } catch (err) {
+    // A failed setup is not kept: the next file tries again, and fails on its
+    // own account rather than on this one's stale rejection.
+    if (shared === pending) shared = null
+    throw err
+  }
+  const { app, db, now, setClock, useLogDestination, forgetCaches } = run
+
+  openFiles++
+  setClock(null)
+  forgetCaches()
+
   const fixClockAt = (at: Date) => {
     const fixed = at.getTime()
     setClock(() => new Date(fixed))
   }
+  let closed = false
 
   return {
     app,
@@ -391,10 +479,15 @@ export async function startTestApp(): Promise<TestApp> {
       now,
       reset: () => setClock(null),
     },
+    // The file is done with the app; the run may not be. The pools stay open
+    // for the next file, and end with the run (the root `after` above).
     close: async () => {
+      if (closed) return
+      closed = true
+      openFiles--
       setClock(null)
-      await closeDb()
-      await client.end({ timeout: 5 })
+      useLogDestination(betweenFiles)
+      if (runOver && openFiles === 0) await tearDown()
     },
   }
 }
@@ -402,8 +495,8 @@ export async function startTestApp(): Promise<TestApp> {
 /** Arbitrary, but fixed: every harness process has to pick the same number for
  *  the lock to mean anything. */
 const HARNESS_SETUP_LOCK = 4_120_931
-/** Held from setup to `close`: one harness-using file at a time. */
-const HARNESS_FILE_LOCK = 4_120_932
+/** Held from the first `startTestApp` to the end of the run: one run per database. */
+const HARNESS_RUN_LOCK = 4_120_932
 
 async function seedAll(db: PostgresJsDatabase<typeof schema>): Promise<void> {
   // Dynamic: the seed validates `env.APP_ENV`, so it must not be imported

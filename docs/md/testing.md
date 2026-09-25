@@ -12,6 +12,38 @@ themselves are in `deployment.md` § Tests gate the backend deploy.
 | Browser journeys (Playwright) | `e2e/journeys/*.spec.ts` | `npm test` in `e2e/` |
 | Repo scripts | `scripts/*.test.mjs` | `node --test scripts/<name>.test.mjs` |
 
+## Running the backend tests
+
+**CI runs the whole suite on every PR. Locally, run the files your change reaches:**
+
+```sh
+node .claude/hooks/backend-tests.mjs be src/services/bookings/cancel.ts   # lists them
+cd be && node --import tsx --test --test-concurrency=1 --test-force-exit <those files>
+```
+
+**One test database per checkout.** In a new checkout or worktree, run `npm run test:db` in `be/`
+once. It creates `reservetoday-test-<checkout folder>` on the local Postgres named by `be/.env`,
+and fills in `TEST_DATABASE_URL` there if it is blank. The harness migrates and seeds that database
+on first use. Without `TEST_DATABASE_URL` the integration tests skip, and CI fails on any skip.
+
+**What a run costs.** The harness (`be/src/test/harness.ts`) migrates, seeds and imports the app
+once per process, and every later `startTestApp()` in that process gets the same app back. It holds
+a Postgres advisory lock on the test database from its first `startTestApp()` to the end of the
+process, so a second run on the same database waits for the first one. With a database per
+checkout, only two runs in the same checkout ever wait on each other.
+
+**One process for the whole suite (not yet).** `node --test` starts a process per file, so the
+suite pays the app import and setup once per harness-using file. That is most of CI's test time. The
+harness already supports one process (`--test-isolation=none`, with
+`--import ./src/test/environment.ts` so the test environment is in place before any file loads).
+The suite cannot switch until the files that only pass in their own process are fixed. In one
+process, every file's top level runs before any test does, and a hook outside a `describe` hooks
+the whole run. So a new backend test file must not:
+
+- call `before`, `after`, `beforeEach` or `afterEach` outside a `describe`;
+- set `process.env` at its top level, or depend on being the first file to import a module that
+  reads the environment at load (`src/env.ts`, `src/lib/r2.ts`, the platform-admin allowlist).
+
 ## Time
 
 A rule that turns on the current instant — a cancellation window, a package's expiry, a daily

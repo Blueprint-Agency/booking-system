@@ -60,9 +60,9 @@ everything.
 
 **One test database per worktree.** Two runs on one database fail each other ("tuple concurrently
 updated"). Each checkout's `be/.env` points `TEST_DATABASE_URL` at its own database (e.g.
-`reservetoday-test-staging-7`), so worktrees never wait on each other. Create the database once
-(`CREATE DATABASE "…"`); the harness migrates it on first use, and holds a Postgres advisory lock
-for each test file.
+`reservetoday-test-staging-7`), so worktrees never wait on each other. `npm run test:db` in `be/`
+creates it and fills in `TEST_DATABASE_URL`; the harness migrates it on first use, and holds a
+Postgres advisory lock on it for the whole run. See `testing.md` § Running the backend tests.
 
 ## No skipped tests
 

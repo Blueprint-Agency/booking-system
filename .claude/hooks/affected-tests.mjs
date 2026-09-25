@@ -153,7 +153,7 @@ function fingerprint(projectDir, base, suite, untracked) {
 // ("tuple concurrently updated") — which reads as red tests nobody broke. Each
 // worktree points `TEST_DATABASE_URL` at its own database, so a lock across
 // them only made every agent on the machine wait in one line. (The harness
-// also holds a per-database lock for each file, whoever started the run.)
+// also holds a per-database lock for each run, whoever started it.)
 function dbLock(projectDir) {
   const id = createHash('sha256').update(projectDir.toLowerCase()).digest('hex').slice(0, 12)
   return join(tmpdir(), `reservetoday-test-db-${id}.lock`)
