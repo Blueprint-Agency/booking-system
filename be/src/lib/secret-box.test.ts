@@ -1,36 +1,41 @@
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { afterEach, before, beforeEach, describe, test } from 'node:test'
+import { withEnv } from '../test/with-env'
 
 const KEY = randomBytes(32).toString('base64')
 const OTHER_KEY = randomBytes(32).toString('base64')
-
-// Set before `env` is read, which happens the moment `secret-box` is imported —
-// so the module under test is pulled in dynamically, below.
-process.env.PAYMENT_CREDENTIALS_KEY = KEY
 
 let seal: typeof import('./secret-box').seal
 let open: typeof import('./secret-box').open
 let secretKeyProblem: typeof import('./secret-box').secretKeyProblem
 
 /**
- * `env` is parsed once at import, so a test that needs a different key has to
- * put it there — this writes into the object the module actually reads.
+ * `secret-box` reads `PAYMENT_CREDENTIALS_KEY` on every seal and open, so a test
+ * that needs a different key sets it in the environment. Undefined unsets it.
  */
-let useKey: (value: string | undefined) => void
+function useKey(value: string | undefined): void {
+  if (value === undefined) delete process.env.PAYMENT_CREDENTIALS_KEY
+  else process.env.PAYMENT_CREDENTIALS_KEY = value
+}
 
-before(async () => {
-  const [box, environment] = await Promise.all([import('./secret-box'), import('../env')])
-  ;({ seal, open, secretKeyProblem } = box)
-  useKey = value => {
-    ;(environment.env as { PAYMENT_CREDENTIALS_KEY?: string }).PAYMENT_CREDENTIALS_KEY = value
-  }
-})
-
-beforeEach(() => useKey(KEY))
-afterEach(() => useKey(KEY))
+/**
+ * Inside each `describe`, not at the top level: every backend test file shares
+ * one process, where a top-level hook would run around every other file's tests
+ * too. `withEnv` puts back the key the process had.
+ */
+function withKey(): void {
+  withEnv({ PAYMENT_CREDENTIALS_KEY: KEY })
+  before(async () => {
+    ;({ seal, open, secretKeyProblem } = await import('./secret-box'))
+  })
+  beforeEach(() => useKey(KEY))
+  afterEach(() => useKey(KEY))
+}
 
 describe('sealing a secret the platform holds for somebody else', () => {
+  withKey()
+
   test('what is sealed comes back exactly', () => {
     assert.equal(open(seal('sk_live_a_studios_own_key')), 'sk_live_a_studios_own_key')
   })
@@ -68,6 +73,8 @@ describe('sealing a secret the platform holds for somebody else', () => {
 })
 
 describe('the key the environment has to supply', () => {
+  withKey()
+
   test('unset is a problem, and it says how to make one', () => {
     const problem = secretKeyProblem(undefined)
     assert.ok(problem)

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { and, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { env } from '../../env'
+import { publicObjectUrl } from '../../lib/r2'
 import { bookings } from '../../db/schema/bookings'
 import { classes, classSupportingInstructors } from '../../db/schema/schedule'
 import { classTypes, instructors, locations, rooms } from '../../db/schema/catalog'
@@ -10,11 +10,6 @@ import { classDifficultyEnum } from '../../db/enums'
 import { NotFoundError } from '../../shared/errors'
 import { readRosters, type Tx } from './roster'
 import { lineupsOf } from './lineup'
-
-function r2Url(key: string | null | undefined): string | null {
-  if (!key || !env.R2_PUBLIC_URL) return null
-  return `${env.R2_PUBLIC_URL.replace(/\/$/, '')}/${key.replace(/^\//, '')}`
-}
 
 export interface LocationLite {
   id: string
@@ -394,7 +389,7 @@ export async function listActiveInstructors(
     id: r.staffUserId,
     name: r.name || 'Instructor',
     bio: r.bio,
-    avatar_url: r2Url(r.photoR2Key),
+    avatar_url: publicObjectUrl(r.photoR2Key),
   }))
 }
 

@@ -4,16 +4,11 @@ import { after, before, describe, test } from 'node:test'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { memberFixtures } from './member-fixtures'
+import { withEnv } from './with-env'
 
 const run = Date.now().toString(36)
 const DOMAIN = `delete-${run}.test`
 const OPERATOR = `operator@${DOMAIN}`
-
-// Read once when the platform gate is first imported, so it is set before the app is.
-process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
-// No object storage under test: the delete must not reach a real bucket, and
-// with no bucket configured it skips that step and says so (`objects: null`).
-process.env.R2_BUCKET_NAME = ''
 
 /**
  * Deleting a studio from the super portal: refused while it is active, and once
@@ -26,6 +21,13 @@ process.env.R2_BUCKET_NAME = ''
  * the owner, which sees every studio's rows at once.
  */
 describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  withEnv({
+    PLATFORM_ADMIN_EMAIL: OPERATOR,
+    // No object storage under test: the delete must not reach a real bucket, and
+    // with no bucket configured it skips that step and says so (`objects: null`).
+    R2_BUCKET_NAME: '',
+  })
+
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')

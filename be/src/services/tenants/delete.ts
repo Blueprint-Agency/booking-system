@@ -51,7 +51,7 @@ import {
   staffAuthVerifications,
 } from '../../db/schema/auth'
 import { tenantImports, tenants, tenantSettings } from '../../db/schema/tenancy'
-import { deleteObjectsUnder, R2_BUCKET } from '../../lib/r2'
+import { deleteObjectsUnder, r2Bucket } from '../../lib/r2'
 import { tenantKey } from '../../lib/object-key'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
@@ -189,7 +189,7 @@ const LOGINS = {
  * that no longer exists — so a failure here is logged, not thrown.
  */
 async function purgeObjects(tenantId: string): Promise<number | null> {
-  if (!R2_BUCKET) return null
+  if (!r2Bucket()) return null
   try {
     return await deleteObjectsUnder(tenantKey(tenantId, ''))
   } catch (err) {

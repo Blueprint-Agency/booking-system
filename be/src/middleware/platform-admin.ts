@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono'
 import { readPoolSession } from '../services/auth/better-auth'
-import { env } from '../env'
+import { currentEnv } from '../env'
 import { isPlatformAdmin, parsePlatformAdmins } from '../services/tenants/platform-admin'
 import { ERROR_CODES } from '../shared/error-codes'
 import { logger, setLogContext } from '../shared/logger'
@@ -12,7 +12,7 @@ declare module 'hono' {
 }
 
 /**
- * The allowlist, read once at boot.
+ * The allowlist, read on every request.
  *
  * `PLATFORM_ADMIN_EMAIL` alone — no studio's staff account is folded in. One
  * used to be, as a bootstrap convenience so that an environment setting nothing
@@ -22,14 +22,21 @@ declare module 'hono' {
  * The platform operator is a level above any
  * studio, so it is named explicitly or not at all.
  *
+ * Read when used rather than at import, so a test can name its own operator
+ * (`currentEnv` in `src/env.ts`). A server's environment does not change after
+ * boot, so there it is the same list every time.
+ */
+function platformAdmins(): string[] {
+  return parsePlatformAdmins(currentEnv('PLATFORM_ADMIN_EMAIL'))
+}
+
+/*
  * Empty is allowed and means a super portal nobody can reach. That is the safe
  * failure for a missing environment variable — refusing everyone is recoverable,
  * admitting a studio's admin to the whole platform is not — and it is
  * announced at boot rather than discovered at the door.
  */
-const PLATFORM_ADMINS = parsePlatformAdmins(env.PLATFORM_ADMIN_EMAIL)
-
-if (PLATFORM_ADMINS.length === 0) {
+if (platformAdmins().length === 0) {
   logger.warn(
     'PLATFORM_ADMIN_EMAIL is unset — the super portal has no administrators and will refuse everyone.',
   )
@@ -63,7 +70,7 @@ export const requirePlatformAdmin: MiddlewareHandler = async (c, next) => {
   if (!session) return c.json({ error: ERROR_CODES.not_found }, 404)
   setLogContext({ actorId: session.userId, pool: 'platform' })
 
-  if (!isPlatformAdmin(session.email, PLATFORM_ADMINS)) {
+  if (!isPlatformAdmin(session.email, platformAdmins())) {
     logger.warn({ userId: session.userId, path: c.req.path }, 'platform-admin: refused')
     return c.json({ error: ERROR_CODES.not_found }, 404)
   }

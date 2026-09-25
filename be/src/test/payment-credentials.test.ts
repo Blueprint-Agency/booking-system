@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
 import { startTestApp, integrationTestsEnabled, SKIP_REASON, type TestApp } from './harness'
+import { withEnv } from './with-env'
 
 /**
  * A Tenant's own payment-provider credentials, against a real Postgres (#100).
@@ -19,9 +20,6 @@ const SECRET_KEY = 'sk_live_a_studios_own_key_9f2c'
 const WEBHOOK_SECRET = 'whsec_a_studios_own_signing_secret'
 const ACCOUNT_ID = 'acct_a_studios_own_account'
 
-// Before the app — and therefore `env` — is imported by the harness.
-process.env.PAYMENT_CREDENTIALS_KEY ??= randomBytes(32).toString('base64')
-
 type Subject = {
   loadProviderCredentials: typeof import('../services/billing/provider-credentials').loadProviderCredentials
   saveProviderCredentials: typeof import('../services/billing/provider-credentials').saveProviderCredentials
@@ -36,6 +34,9 @@ let harness: TestApp
 let subject: Subject
 
 describe('a Tenant supplies its own payment-provider credentials', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  // A key of this file's own to seal with, read by `secret-box` on every use.
+  withEnv({ PAYMENT_CREDENTIALS_KEY: randomBytes(32).toString('base64') })
+
   before(async () => {
     harness = await startTestApp()
     const [credentials, stripe, db, schema] = await Promise.all([

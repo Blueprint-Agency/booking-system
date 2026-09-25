@@ -99,6 +99,11 @@ jobs:
     services:
       postgres:
         image: postgres:16
+        # No durability. The database dies with the job, so a commit need not
+        # wait for fsync — Postgres documents these settings for a database that
+        # can be "thrown away and recreated":
+        # https://www.postgresql.org/docs/16/non-durability.html
+        command: -c fsync=off -c synchronous_commit=off -c full_page_writes=off
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -169,10 +174,30 @@ jobs:
           node --test scripts/check-error-codes.test.mjs
           node scripts/check-error-codes.mjs
 
+      # Proves the service container took `command:` above; a runner that
+      # dropped it would still pass the suite, only slower. No dependencies, so
+      # it runs before the install.
+      - name: Postgres runs without fsync
+        shell: bash
+        run: |
+          fsync=$(psql "$DATABASE_URL" -tAc 'SHOW fsync')
+          echo "fsync=$fsync"
+          if [ "$fsync" != "off" ]; then
+            echo "::error::The test Postgres has fsync=$fsync; the service's command: was not applied."
+            exit 1
+          fi
+
       - run: npm ci
 
-      # Serially, on purpose. The suite is green serially and flaky in parallel:
-      # the RLS coverage test's probe table races the transfer test's table count.
+      # Serially, in one process, on purpose. Serially because the suite is flaky
+      # in parallel: the RLS coverage test's probe table races the transfer test's
+      # table count. In one process (--experimental-test-isolation=none, Node 22's
+      # spelling) because a process per file imports the app and sets up the
+      # database once per file, which was most of this step's time. Running
+      # one process also runs one test at a time, so --test-concurrency is
+      # not needed. The --import of src/test/environment.ts puts the test
+      # environment in place before any file loads (docs/md/testing.md
+      # § Running the backend tests).
       #
       # The integration tests skip themselves when TEST_DATABASE_URL is missing,
       # and a skipped test is a passing one — so a broken env here would turn the
@@ -188,7 +213,8 @@ jobs:
       - name: Backend tests (serial)
         shell: bash
         run: |
-          node --import tsx --test --test-concurrency=1 --test-force-exit \
+          node --import tsx --import ./src/test/environment.ts --test \
+            --experimental-test-isolation=none --test-force-exit \
             --experimental-test-coverage --test-coverage-include='src/**' \
             --test-coverage-exclude='src/**/*.test.ts' --test-coverage-exclude='src/test/**' \
             --test-reporter=tap --test-reporter-destination=stdout \

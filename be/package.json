@@ -6,13 +6,14 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc --noEmit",
-    "check": "node --import tsx --test \"src/**/*.test.ts\" \"tools/**/*.test.ts\"",
+    "check": "node --import tsx --import ./src/test/environment.ts --test --experimental-test-isolation=none --test-force-exit \"src/**/*.test.ts\" \"tools/**/*.test.ts\"",
     "start": "tsx src/server.ts",
     "predb:generate": "tsx src/db/migrations/check-journal.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/db/seed/run.ts",
+    "test:db": "node scripts/test-db.mjs",
     "e2e:studio": "tsx src/e2e/cli.ts",
     "mindbody": "tsx tools/mindbody/transform/cli.ts",
     "mindbody:download": "tsx tools/mindbody/download/cli.ts"

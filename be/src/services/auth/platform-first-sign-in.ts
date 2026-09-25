@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../../db'
 import * as schema from '../../db/schema'
-import { env } from '../../env'
+import { currentEnv } from '../../env'
 import { isPlatformAdmin, parsePlatformAdmins } from '../tenants/platform-admin'
 import { hasPassword } from './auth-users'
 import { mailPlatformSetPasswordLink } from './better-auth'
@@ -31,8 +31,6 @@ export type FirstSignInStep =
 
 export const RESEND_COOLDOWN_MS = 60_000
 
-const PLATFORM_ADMINS = parsePlatformAdmins(env.PLATFORM_ADMIN_EMAIL)
-
 /** When each address was last mailed a link. One process serves the API, so memory is enough. */
 const lastSent = new Map<string, number>()
 
@@ -43,7 +41,9 @@ export async function platformSignInStep(input: {
   now?: number
 }): Promise<FirstSignInStep> {
   const email = input.email.trim().toLowerCase()
-  if (!isPlatformAdmin(email, PLATFORM_ADMINS)) return { step: 'password' }
+  // Read on every call, like the gate in middleware/platform-admin.ts.
+  const admins = parsePlatformAdmins(currentEnv('PLATFORM_ADMIN_EMAIL'))
+  if (!isPlatformAdmin(email, admins)) return { step: 'password' }
 
   const [user] = await db
     .select({ id: schema.platformAuthUsers.id })

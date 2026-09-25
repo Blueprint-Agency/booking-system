@@ -3,12 +3,10 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { withEnv } from './with-env'
 
 const run = Date.now().toString(36)
 const OPERATOR = `operator@import-jobs-${run}.test`
-
-// Read once when the platform gate is first imported, so it is set before the app is.
-process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
 
 /**
  * The super portal's import as a job: started, sent its file, and read back —
@@ -20,6 +18,8 @@ process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
  * through another studio's URL or context.
  */
 describe('importing a studio archive as a job', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  withEnv({ PLATFORM_ADMIN_EMAIL: OPERATOR })
+
   let harness!: TestApp
   let operator!: Record<string, string>
   let schema!: typeof import('../db/schema')

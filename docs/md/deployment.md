@@ -108,9 +108,14 @@ backend suite means no image is built and neither stack is touched.
   service container, with `TEST_DATABASE_URL` pointing at it and the same stub environment the
   integration harness (`be/src/test/harness.ts`) fills in — `src/env.ts` validates at import, so
   unit tests need it too.
-- **Serially** (`--test-concurrency=1`). The suite is green serially and flaky in parallel: the RLS
+- **No durability.** That container runs with `fsync`, `synchronous_commit` and `full_page_writes`
+  off, safe for a database the job throws away ([Non-Durable Settings](https://www.postgresql.org/docs/16/non-durability.html)).
+- **Serially, in one process** (`--experimental-test-isolation=none`, with
+  `--import ./src/test/environment.ts`). The suite is green serially and flaky in parallel: the RLS
   coverage test's probe table races the transfer test's table count. Serial is the gate; fixing the
-  flake is separate work.
+  flake is separate work. One process means the app is imported and the test database set up once
+  for the whole run instead of once per file. A run in this mode is serial anyway. What that asks
+  of a test file is in `testing.md` § Running the backend tests.
 - **Skips fail the job.** The integration tests skip themselves when `TEST_DATABASE_URL` is unset,
   and a skipped test counts as a pass. Nothing else in the suite skips, so the job fails unless the
   TAP summary reads `# skipped 0` — a broken CI env cannot turn the gate green by testing nothing.

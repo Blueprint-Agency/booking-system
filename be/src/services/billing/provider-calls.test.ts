@@ -11,14 +11,7 @@
  */
 import assert from 'node:assert/strict'
 import { before, afterEach, describe, test } from 'node:test'
-
-// Set before anything imports `env` or `../../db`: both read the environment at
-// module load, so the modules under test are pulled in dynamically below.
-process.env.STRIPE_STATEMENT_DESCRIPTOR_PREFIX = 'RSVT'
-process.env.STRIPE_WEBHOOK_SECRET = 'whsec_provider_calls_test'
-// A placeholder, never dialled: postgres-js connects lazily and nothing in this
-// file reaches the database.
-process.env.DATABASE_APP_URL ||= 'postgres://booking_app:none@127.0.0.1:5432/none'
+import { withEnv } from '../../test/with-env'
 
 const TENANT = '11111111-1111-4111-8111-111111111111'
 const CLIENT = '33333333-3333-4333-8333-333333333333'
@@ -36,35 +29,50 @@ type Billing = {
 
 let billing: Billing
 
-before(async () => {
-  const [checkout, refunds, webhook, fake, lib, route, credentials] = await Promise.all([
-    import('./checkout-session'),
-    import('./refunds'),
-    import('./webhook-handler'),
-    import('../../test/stripe-fake'),
-    import('../../lib/stripe'),
-    import('../../routes/webhooks/stripe'),
-    import('./provider-credentials'),
-  ])
-  billing = {
-    checkoutSessionParams: checkout.checkoutSessionParams,
-    refundAtProvider: refunds.refundAtProvider,
-    receiptUrlPatch: webhook.receiptUrlPatch,
-    refuseWrongTenant: webhook.refuseWrongTenant,
-    installStripeFake: fake.installStripeFake,
-    setStripeFactory: lib.setStripeFactory,
-    setProviderCredentialsLoader: credentials.setProviderCredentialsLoader,
-    webhookRoute: route.default,
-  }
-})
+/**
+ * The environment this file charges under, and the modules under test. Called
+ * inside each `describe`, not at the top level: every backend test file shares
+ * one process, where a top-level hook would run around every other file's tests
+ * too, and would reset their Stripe fake. What the environment held before is
+ * put back afterwards.
+ */
+function setUp(): void {
+  withEnv({ STRIPE_STATEMENT_DESCRIPTOR_PREFIX: 'RSVT', STRIPE_WEBHOOK_SECRET: 'whsec_provider_calls_test' })
 
-// Both halves of the seam. Since #100 the accessor asks which account a call is
-// on before it makes one, and leaving that on the real lookup would send this
-// file — which deliberately has no database — to Postgres.
-afterEach(() => {
-  billing.setStripeFactory(null)
-  billing.setProviderCredentialsLoader(null)
-})
+  before(async () => {
+    // Before anything imports `env` or `../../db`, which read the environment at
+    // module load, hence the dynamic imports. A placeholder, never dialled:
+    // postgres-js connects lazily and nothing in this file reaches the database.
+    process.env.DATABASE_APP_URL ||= 'postgres://booking_app:none@127.0.0.1:5432/none'
+    const [checkout, refunds, webhook, fake, lib, route, credentials] = await Promise.all([
+      import('./checkout-session'),
+      import('./refunds'),
+      import('./webhook-handler'),
+      import('../../test/stripe-fake'),
+      import('../../lib/stripe'),
+      import('../../routes/webhooks/stripe'),
+      import('./provider-credentials'),
+    ])
+    billing = {
+      checkoutSessionParams: checkout.checkoutSessionParams,
+      refundAtProvider: refunds.refundAtProvider,
+      receiptUrlPatch: webhook.receiptUrlPatch,
+      refuseWrongTenant: webhook.refuseWrongTenant,
+      installStripeFake: fake.installStripeFake,
+      setStripeFactory: lib.setStripeFactory,
+      setProviderCredentialsLoader: credentials.setProviderCredentialsLoader,
+      webhookRoute: route.default,
+    }
+  })
+
+  // Both halves of the seam. Since #100 the accessor asks which account a call is
+  // on before it makes one, and leaving that on the real lookup would send this
+  // file — which deliberately has no database — to Postgres.
+  afterEach(() => {
+    billing.setStripeFactory(null)
+    billing.setProviderCredentialsLoader(null)
+  })
+}
 
 const input = (over: Partial<Parameters<Billing['checkoutSessionParams']>[0]> = {}) => ({
   tenantId: TENANT,
@@ -78,6 +86,8 @@ const input = (over: Partial<Parameters<Billing['checkoutSessionParams']>[0]> = 
 })
 
 describe('the checkout session a purchase asks for', () => {
+  setUp()
+
   test('the studio is stamped on the session AND on the intent', () => {
     const params = billing.checkoutSessionParams(input(), 'Acme Yoga')
     assert.equal(params.metadata?.tenant_id, TENANT)
@@ -142,6 +152,8 @@ describe('the checkout session a purchase asks for', () => {
 })
 
 describe('the refund call', () => {
+  setUp()
+
   test('the intent is refunded whole, on the platform account when that is where it was taken', async () => {
     const fake = billing.installStripeFake()
     fake.reply('refunds.create', {})
@@ -246,6 +258,8 @@ describe('the refund call', () => {
 })
 
 describe("the webhook's receipt lookup", () => {
+  setUp()
+
   test('the receipt is read off the latest charge, which must be expanded', async () => {
     const fake = billing.installStripeFake()
     fake.reply('paymentIntents.retrieve', {
@@ -277,6 +291,8 @@ describe("the webhook's receipt lookup", () => {
 })
 
 describe('an event that arrived on one studio’s endpoint and names another', () => {
+  setUp()
+
   const OTHER = '44444444-4444-4444-8444-444444444444'
   const refuse = (named: string | null, expected?: string) =>
     billing.refuseWrongTenant(named, expected, { eventType: 'charge.refunded' })
@@ -307,6 +323,8 @@ describe('an event that arrived on one studio’s endpoint and names another', (
 })
 
 describe("the webhook's signature check", () => {
+  setUp()
+
   const post = (body: string, signature?: string) =>
     billing.webhookRoute.request('/stripe', {
       method: 'POST',

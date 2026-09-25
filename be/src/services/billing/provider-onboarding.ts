@@ -1,4 +1,4 @@
-import { env } from '../../env'
+import { currentEnv } from '../../env'
 import { providerAccountForKey } from '../../lib/stripe'
 import { secretKeyProblem } from '../../lib/secret-box'
 import { logger } from '../../shared/logger'
@@ -60,7 +60,7 @@ export async function configureProviderAccount(
   // Said before anything is attempted, because the failure is the operator's
   // environment and not their input — and because the alternative is a studio's
   // live key travelling to a server that cannot seal it.
-  const problem = secretKeyProblem(env.PAYMENT_CREDENTIALS_KEY)
+  const problem = secretKeyProblem(currentEnv('PAYMENT_CREDENTIALS_KEY'))
   if (problem) {
     logger.error({ tenantId }, `payment credentials cannot be stored — ${problem}`)
     throw new ProviderOnboardingError('storage_unavailable', problem)

@@ -12,10 +12,6 @@ import { createHmac } from 'node:crypto'
 import { before, afterEach, describe, test } from 'node:test'
 import Stripe from 'stripe'
 
-// Set before anything imports `env` or `../../db`: both read the environment at
-// module load, so the modules under test are pulled in dynamically below.
-process.env.DATABASE_APP_URL ||= 'postgres://booking_app:none@127.0.0.1:5432/none'
-
 const STUDIO_A = '11111111-1111-4111-8111-111111111111'
 const STUDIO_B = '22222222-2222-4222-8222-222222222222'
 const SECRET_A = 'whsec_studio_a_signing_secret'
@@ -27,17 +23,6 @@ type Subject = {
 }
 
 let subject: Subject
-
-before(async () => {
-  const [verification, fake] = await Promise.all([
-    import('./webhook-verification'),
-    import('../../test/stripe-fake'),
-  ])
-  subject = {
-    verifyTenantDelivery: verification.verifyTenantDelivery,
-    installStripeFake: fake.installStripeFake,
-  }
-})
 
 let fake: ReturnType<Subject['installStripeFake']>
 
@@ -56,8 +41,6 @@ function install() {
   return fake
 }
 
-afterEach(() => fake?.restore())
-
 /** A delivery signed the way the provider signs one. */
 function signed(body: string, secret: string): string {
   const timestamp = Math.floor(Date.now() / 1000)
@@ -68,6 +51,22 @@ function signed(body: string, secret: string): string {
 const BODY = JSON.stringify({ id: 'evt_1', type: 'payment_intent.created' })
 
 describe("a delivery on a studio's own endpoint", () => {
+  before(async () => {
+    // Before anything imports `env` or `../../db`, which read the environment at
+    // module load, hence the dynamic imports.
+    process.env.DATABASE_APP_URL ||= 'postgres://booking_app:none@127.0.0.1:5432/none'
+    const [verification, fake] = await Promise.all([
+      import('./webhook-verification'),
+      import('../../test/stripe-fake'),
+    ])
+    subject = {
+      verifyTenantDelivery: verification.verifyTenantDelivery,
+      installStripeFake: fake.installStripeFake,
+    }
+  })
+
+  afterEach(() => fake?.restore())
+
   test("it verifies against that studio's own signing secret", async () => {
     const fake = install()
     fake.credentials(STUDIO_A, { accountId: 'acct_a', webhookSecret: SECRET_A })

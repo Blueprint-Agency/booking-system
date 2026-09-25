@@ -12,7 +12,7 @@ import { stripeEndpoint } from './lib/stripe-endpoint'
  * Anything not in this slice (Stripe, R2) is *optional* — the relevant lib
  * will fail at use-site if missing rather than blocking boot.
  */
-const schema = z.object({
+const fields = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   // Deployment environment NAME — separate from NODE_ENV (which stays
   // 'production' on any server). 'staging' now; 'production' once that server
@@ -134,7 +134,9 @@ const schema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET_NAME: z.string().optional(),
   R2_PUBLIC_URL: z.string().optional(),
-}).superRefine((e, ctx) => {
+})
+
+const schema = fields.superRefine((e, ctx) => {
   try {
     stripeEndpoint(e.STRIPE_API_URL, e.APP_ENV)
   } catch (err) {
@@ -152,6 +154,22 @@ if (!parsed.success) {
 
 export const env = parsed.data
 export type Env = typeof env
+
+/**
+ * One setting as the environment holds it *now*, validated by that field's own
+ * rule in the schema above (not the cross-field checks, which boot has run).
+ *
+ * `env` is a snapshot taken at boot. A handful of settings are read through this
+ * instead, at the moment they are used: the platform-admin allowlist, the R2
+ * bucket and its public host and keys, the statement descriptor prefix and the
+ * credentials key. On a server the two are the same value, since nothing writes
+ * the environment after boot. A test run is different: every backend test file
+ * shares one process, the app is imported once, and a file that needs its own
+ * value for one of these sets it in its `before` and restores it in its `after`.
+ */
+export function currentEnv<K extends keyof Env>(name: K): Env[K] {
+  return fields.shape[name].parse(process.env[name]) as Env[K]
+}
 
 /*
  * `CLIENT_URL` used to live here — "the one place any link mailed or redirected

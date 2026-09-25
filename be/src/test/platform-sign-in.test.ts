@@ -10,13 +10,11 @@ import {
   startTestApp,
   type TestApp,
 } from './harness'
+import { withEnv } from './with-env'
 
 const run = Date.now().toString(36)
 const OPERATOR = `operator-${run}@platform.test`
 const FIRST_TIMER = `first-timer-${run}@platform.test`
-
-// Read once when the platform gate is first imported, so it is set before the app is.
-process.env.PLATFORM_ADMIN_EMAIL = `${OPERATOR},${FIRST_TIMER}`
 
 /**
  * The super portal signs in through its own pool (#116).
@@ -27,6 +25,8 @@ process.env.PLATFORM_ADMIN_EMAIL = `${OPERATOR},${FIRST_TIMER}`
  * gate, keyed on the session's email on every request.
  */
 describe('super portal sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  withEnv({ PLATFORM_ADMIN_EMAIL: `${OPERATOR},${FIRST_TIMER}` })
+
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
 

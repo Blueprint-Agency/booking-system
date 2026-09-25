@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { and, eq, lte, sql } from 'drizzle-orm'
 import { frontendOrigin, integrationTestsEnabled, SKIP_REASON, startTestApp, inTenantContext, type TestApp } from '../../../src/test/harness'
+import { withEnv } from '../../../src/test/with-env'
 
 const OPERATOR = 'mindbody-operator@platform.test'
-process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
 
 /**
  * The Mindbody migration's first slice, end to end, at the one seam that
@@ -19,6 +19,8 @@ process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
  * The fixture studio and its people are invented (`fixtures/` beside this file).
  */
 describe('a Mindbody studio, transformed and imported', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  withEnv({ PLATFORM_ADMIN_EMAIL: OPERATOR })
+
   let harness!: TestApp
   let schema!: typeof import('../../../src/db/schema')
   let provision!: typeof import('../../../src/services/tenants/provision')
