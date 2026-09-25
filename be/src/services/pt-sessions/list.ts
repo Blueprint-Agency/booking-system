@@ -9,8 +9,9 @@ import { clientPackages } from '../../db/schema/packages'
 
 export interface ClientPtRequestView {
   id: string
-  classTypeId: string
-  className: string
+  /** Preferred class type; both null when the member asked for "any". */
+  classTypeId: string | null
+  className: string | null
   locationId: string
   locationName: string
   sessionType: '1on1' | '2on1'
@@ -23,7 +24,8 @@ export interface ClientPtRequestView {
   coClientName: string | null
   createdAt: Date
   expiresAt: Date
-  slots: { proposedDate: string; startTime: string; endTime: string }[]
+  /** `endTime` is null on requests made since members propose start times only. */
+  slots: { proposedDate: string; startTime: string; endTime: string | null }[]
   /** Populated once the request is scheduled — the final session details. */
   session: {
     startsAt: Date
@@ -143,7 +145,7 @@ export async function listClientPtRequests(
     return {
       id: r.id,
       classTypeId: r.classTypeId,
-      className: r.className ?? 'Class',
+      className: r.classTypeId ? (r.className ?? 'Class') : null,
       locationId: r.locationId,
       locationName: r.locationName ?? 'Studio',
       sessionType: r.sessionType as '1on1' | '2on1',
@@ -190,7 +192,8 @@ export interface AdminPtRequestView {
   expiresAt: Date
   resolvedAt: Date | null
   client: { id: string; name: string; email: string }
-  classType: { id: string; name: string }
+  /** Preferred class type; null when the member asked for "any". */
+  classType: { id: string; name: string } | null
   location: { id: string; name: string }
   /** Resolved partner for 2on1: a member (with clientId) OR a not-yet-member (clientId null). */
   coClient: { clientId: string | null; name: string | null; email: string | null } | null
@@ -201,7 +204,8 @@ export interface AdminPtRequestView {
    * requests they may take, because the queue hides the rest.
    */
   boundInstructor: { id: string; name: string } | null
-  slots: { proposedDate: string; startTime: string; endTime: string }[]
+  /** `endTime` is null on requests made since members propose start times only. */
+  slots: { proposedDate: string; startTime: string; endTime: string | null }[]
   /** Populated once scheduled (else null). */
   session: {
     id: string
@@ -337,7 +341,7 @@ async function hydrateAdminRows(
       expiresAt: r.expiresAt,
       resolvedAt: r.resolvedAt,
       client: { id: r.clientId, name: r.clientName, email: r.clientEmail },
-      classType: { id: r.classTypeId, name: r.className ?? 'Class' },
+      classType: r.classTypeId ? { id: r.classTypeId, name: r.className ?? 'Class' } : null,
       location: { id: r.locationId, name: r.locationName ?? 'Studio' },
       coClient,
       boundInstructor: r.boundInstructorId

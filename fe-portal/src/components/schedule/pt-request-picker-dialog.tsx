@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Button, Dialog, Pagination, usePaged } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
-import type { ApiPtRequest } from "@/lib/pt-requests";
+import { type ApiPtRequest, ptClassTypeName, ptSlotTime } from "@/lib/pt-requests";
 import type { Slot } from "@/lib/schedule";
 
 export function PtRequestPickerDialog({
@@ -93,9 +93,9 @@ export function PtRequestPickerDialog({
                   >
                     <div className="text-sm font-medium text-ink">{r.client.name}</div>
                     <div className="text-xs text-muted">
-                      {r.session_type.toUpperCase()} · {r.class_type.name}
+                      {r.session_type.toUpperCase()} · {ptClassTypeName(r.class_type)}
                       {first
-                        ? ` · ${first.proposed_date} ${first.start_time}–${first.end_time}`
+                        ? ` · ${first.proposed_date} ${ptSlotTime(first)}`
                         : ""}
                     </div>
                   </button>

@@ -589,6 +589,13 @@
       "when": 1790366209432,
       "tag": "0083_part_payment_default_on",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790367707859,
+      "tag": "0084_pt_request_any_class_start_only",
+      "breakpoints": true
     }
   ]
 }

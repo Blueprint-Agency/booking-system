@@ -16,7 +16,7 @@ import {
   InstructorOption,
   useInstructorsOnLeave,
 } from "@/components/schedule/instructor-leave";
-import type { ApiPtRequest } from "@/lib/pt-requests";
+import { type ApiPtRequest, ptSlotEnd, ptSlotStart, ptSlotTime } from "@/lib/pt-requests";
 
 // Codes only this dialog raises. A room or instructor clash is NOT here — it
 // arrives as `schedule_conflict` carrying the specific sentence, which
@@ -63,16 +63,13 @@ export function ScheduleFromRequestDialog({
   const [linkedRequest, setLinkedRequest] = useState<ApiPtRequest | null>(null);
   const currentRequest = linkedRequest ?? request;
 
-  // Postgres `time` columns serialise as HH:MM:SS; <input type="time"> and our
-  // datetime construction expect HH:MM, so normalise.
-  const hhmm = (t: string) => t.slice(0, 5);
   const first = request.slots[0];
   const [date, setDate] = useState(slot?.date ?? first?.proposed_date ?? todayIso());
   const [startTime, setStartTime] = useState(
-    slot?.start ?? (first ? hhmm(first.start_time) : "09:00"),
+    slot?.start ?? (first ? ptSlotStart(first) : "09:00"),
   );
   const [endTime, setEndTime] = useState(
-    slot?.end ?? (first ? hhmm(first.end_time) : "10:00"),
+    slot?.end ?? (first ? ptSlotEnd(first) : "10:00"),
   );
 
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
@@ -262,12 +259,12 @@ export function ScheduleFromRequestDialog({
                 type="button"
                 onClick={() => {
                   setDate(s.proposed_date);
-                  setStartTime(hhmm(s.start_time));
-                  setEndTime(hhmm(s.end_time));
+                  setStartTime(ptSlotStart(s));
+                  setEndTime(ptSlotEnd(s));
                 }}
                 className="rounded-full border border-border bg-card px-2.5 py-1 text-xs hover:border-accent/40"
               >
-                {s.proposed_date} · {s.start_time}–{s.end_time}
+                {s.proposed_date} · {ptSlotTime(s)}
               </button>
             ))}
           </div>

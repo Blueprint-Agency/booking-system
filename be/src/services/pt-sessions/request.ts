@@ -24,8 +24,11 @@ export interface PtRequestSlotInput {
   proposedDate: string
   /** HH:mm 24h, local. */
   startTime: string
-  /** HH:mm 24h, local. Must be after startTime. */
-  endTime: string
+  /**
+   * HH:mm 24h, local. Retired — members now propose a start time only — but
+   * still stored when an older app sends it. Must be after startTime.
+   */
+  endTime?: string
 }
 
 /** Identity for the 2on1 partner. Required when sessionType='2on1', omitted otherwise. */
@@ -36,8 +39,8 @@ export type PtRequestPartner =
 
 export interface PtRequestInput {
   clientId: string
-  /** Class type the client wants the session focused on. FK to class_types. */
-  classTypeId: string
+  /** Preferred class type, FK to class_types. Null or absent means "any". */
+  classTypeId?: string | null
   /** Studio location the client wants the session at. FK to locations. */
   locationId: string
   sessionType: '1on1' | '2on1'
@@ -57,7 +60,7 @@ export async function submitPtRequest(
 ): Promise<{ ptRequestId: string }> {
   if (input.slots.length === 0) throw new BadRequestError('no_slots')
   for (const s of input.slots) {
-    if (s.endTime <= s.startTime) throw new BadRequestError('slot_end_before_start')
+    if (s.endTime !== undefined && s.endTime <= s.startTime) throw new BadRequestError('slot_end_before_start')
   }
   if (input.sessionType === '2on1' && !input.partner) throw new BadRequestError('partner_required')
   if (input.sessionType === '1on1' && input.partner) throw new BadRequestError('partner_not_allowed')
@@ -153,7 +156,7 @@ export async function submitPtRequest(
       .values({
         tenantId,
         clientId: input.clientId,
-        classTypeId: input.classTypeId,
+        classTypeId: input.classTypeId ?? null,
         locationId: input.locationId,
         sessionType: input.sessionType,
         coClientId: input.partner?.kind === 'existing' ? input.partner.coClientId : null,
@@ -171,7 +174,7 @@ export async function submitPtRequest(
         ptRequestId: req!.id,
         proposedDate: s.proposedDate,
         startTime: s.startTime,
-        endTime: s.endTime,
+        endTime: s.endTime ?? null,
       })),
     )
 

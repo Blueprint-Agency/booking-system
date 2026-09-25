@@ -172,6 +172,9 @@ export async function listPayroll(
     .where(and(...classSupportingConds))
 
   // -- main PT pay --------------------------------------------------------
+  // A PT line is labelled with the member's preferred class type, or generically
+  // when they asked for "any".
+  const ptLabel = sql<string>`coalesce(${classTypes.name}, 'Private session')`
   const ptConds = [
     eq(ptSessions.tenantId, tenantId),
     eq(ptSessions.lifecycle, 'active'),
@@ -188,7 +191,7 @@ export async function listPayroll(
       instructorId: ptSessions.instructorId,
       instructorName: staffUsers.name,
       classTypeId: ptRequests.classTypeId,
-      label: classTypes.name,
+      label: ptLabel,
       sessionType: ptSessions.sessionType,
       startsAt: ptSessions.startsAt,
       endsAt: ptSessions.endsAt,
@@ -199,7 +202,8 @@ export async function listPayroll(
     .from(ptSessions)
     .innerJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
     .innerJoin(ptRequests, eq(ptRequests.id, ptSessions.ptRequestId))
-    .innerJoin(classTypes, eq(classTypes.id, ptRequests.classTypeId))
+    // Left: a request for "any" class type has none, and is still paid.
+    .leftJoin(classTypes, eq(classTypes.id, ptRequests.classTypeId))
     .innerJoin(locations, eq(locations.id, ptSessions.locationId))
     .where(and(...ptConds))
 
@@ -221,7 +225,7 @@ export async function listPayroll(
       instructorId: ptSessionSupportingInstructors.instructorId,
       instructorName: staffUsers.name,
       classTypeId: ptRequests.classTypeId,
-      label: classTypes.name,
+      label: ptLabel,
       sessionType: ptSessions.sessionType,
       startsAt: ptSessions.startsAt,
       endsAt: ptSessions.endsAt,
@@ -233,7 +237,8 @@ export async function listPayroll(
     .innerJoin(ptSessions, eq(ptSessions.id, ptSessionSupportingInstructors.ptSessionId))
     .innerJoin(staffUsers, eq(staffUsers.id, ptSessionSupportingInstructors.instructorId))
     .innerJoin(ptRequests, eq(ptRequests.id, ptSessions.ptRequestId))
-    .innerJoin(classTypes, eq(classTypes.id, ptRequests.classTypeId))
+    // Left: a request for "any" class type has none, and is still paid.
+    .leftJoin(classTypes, eq(classTypes.id, ptRequests.classTypeId))
     .innerJoin(locations, eq(locations.id, ptSessions.locationId))
     .where(and(...ptSupportingConds))
 

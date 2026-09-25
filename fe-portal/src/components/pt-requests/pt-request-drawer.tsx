@@ -8,6 +8,8 @@ import {
   ptPartnerDisplay,
   ptRefundLabel,
   ptStatusLabel,
+  ptClassTypeName,
+  ptSlotTime,
 } from "@/lib/pt-requests";
 
 export function PtRequestDrawer({
@@ -48,7 +50,7 @@ export function PtRequestDrawer({
           <Row label="Format">
             {request.session_type === "1on1" ? "1-on-1" : "2-on-1"}
           </Row>
-          <Row label="Class type">{request.class_type.name}</Row>
+          <Row label="Preferred class type">{ptClassTypeName(request.class_type)}</Row>
           <Row label="Location">{request.location.name}</Row>
           <Row label="Bound instructor">
             {request.bound_instructor ? (
@@ -69,7 +71,7 @@ export function PtRequestDrawer({
             <ul className="space-y-0.5">
               {request.slots.map((s, i) => (
                 <li key={i} className="text-ink">
-                  {s.proposed_date} · {s.start_time}–{s.end_time}
+                  {s.proposed_date} · {ptSlotTime(s)}
                 </li>
               ))}
             </ul>

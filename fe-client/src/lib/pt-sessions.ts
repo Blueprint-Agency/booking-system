@@ -12,8 +12,7 @@ import { useApi, type Api } from "./api";
 
 export interface PtSlot {
   proposedDate: string; // "YYYY-MM-DD"
-  startTime: string;    // "HH:mm"
-  endTime: string;      // "HH:mm"
+  startTime: string;    // "HH:mm", on the hour or half hour
 }
 
 export interface PtPartner {
@@ -24,7 +23,8 @@ export interface PtPartner {
 }
 
 export interface SubmitPtRequestPayload {
-  classTypeId: string;
+  /** Preferred class type; null means "any". */
+  classTypeId: string | null;
   locationId: string;
   sessionType: "1on1" | "2on1";
   clientPackageId: string;
@@ -43,7 +43,8 @@ export interface SubmitPtRequestResult {
 export interface RawPtSlot {
   proposed_date: string;
   start_time: string;
-  end_time: string;
+  /** Null on requests made since members propose a start time only. */
+  end_time: string | null;
 }
 
 export interface RawPtRequest {
@@ -55,8 +56,9 @@ export interface RawPtRequest {
   role?: "requester" | "partner";
   // The requester's name — shown on partner cards ("hosted by …").
   host_name?: string | null;
-  class_type_id?: string;
-  class_name?: string;
+  // Both null when the member asked for "any" class type.
+  class_type_id?: string | null;
+  class_name?: string | null;
   location_id?: string;
   location_name?: string;
   slots: RawPtSlot[];
@@ -96,6 +98,26 @@ export interface PartnerLookupResult {
   found: boolean;
   client_id?: string;
   name?: string;
+}
+
+// ── Slot times ───────────────────────────────────────────────────────────────
+
+/** Every start a member can propose: the hour and half hour, "00:00"…"23:30". */
+export const HALF_HOUR_TIMES: string[] = Array.from({ length: 48 }, (_, i) =>
+  `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`,
+);
+
+/** "HH:mm" or "HH:mm:ss" → "9:30 am", the way class times read elsewhere. */
+export function formatSlotTime(t: string): string {
+  const [h, m] = t.split(":").map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
+}
+
+/** A proposed slot's time: its start, and its end on requests that had one. */
+export function formatSlotRange(slot: RawPtSlot): string {
+  return slot.end_time
+    ? `${formatSlotTime(slot.start_time)}–${formatSlotTime(slot.end_time)}`
+    : formatSlotTime(slot.start_time);
 }
 
 // ── API helpers (take an Api instance from useApi()) ─────────────────────────

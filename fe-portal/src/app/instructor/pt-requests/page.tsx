@@ -7,12 +7,14 @@ import { ApiError } from "@/lib/api";
 import { formatRelative } from "@/lib/formatters";
 import { scheduleErrorMessage } from "@/lib/schedule";
 import { toast } from "sonner";
+import {
+  type PtProposedSlot,
+  ptClassTypeName,
+  ptSlotEnd,
+  ptSlotStart,
+  ptSlotTime,
+} from "@/lib/pt-requests";
 
-interface PtSlot {
-  proposed_date: string;
-  start_time: string;
-  end_time: string;
-}
 interface InstructorPtRequest {
   id: string;
   status: string;
@@ -21,7 +23,7 @@ interface InstructorPtRequest {
   created_at: string;
   expires_at: string;
   client: { id: string; name: string; email: string };
-  class_type: { id: string; name: string };
+  class_type: { id: string; name: string } | null;
   location: { id: string; name: string };
   co_client: { clientId: string | null; name: string | null; email: string | null } | null;
   /**
@@ -30,7 +32,7 @@ interface InstructorPtRequest {
    * you" — somebody else's bound request never arrives.
    */
   bound_instructor: { id: string; name: string } | null;
-  slots: PtSlot[];
+  slots: PtProposedSlot[];
 }
 interface ApiRoom {
   id: string;
@@ -114,7 +116,7 @@ export default function InstructorPtRequestsPage() {
                     </div>
                     <div className="text-xs text-muted">
                       {r.session_type === "2on1" ? "2-on-1" : "1-on-1"} ·{" "}
-                      {r.class_type.name} · {r.location.name}
+                      {ptClassTypeName(r.class_type)} · {r.location.name}
                       {r.co_client
                         ? ` · partner: ${r.co_client.name ?? r.co_client.email ?? "needs account"}`
                         : ""}
@@ -126,7 +128,7 @@ export default function InstructorPtRequestsPage() {
                       <div className="mt-1 text-xs text-muted">
                         Prefers:{" "}
                         {r.slots
-                          .map((s) => `${s.proposed_date} ${s.start_time}–${s.end_time}`)
+                          .map((s) => `${s.proposed_date} ${ptSlotTime(s)}`)
                           .join(", ")}
                       </div>
                     )}
@@ -178,8 +180,8 @@ function ScheduleForm({
   const first = request.slots[0];
   const [roomId, setRoomId] = useState("");
   const [date, setDate] = useState(first?.proposed_date ?? "");
-  const [startTime, setStartTime] = useState(first?.start_time?.slice(0, 5) ?? "");
-  const [endTime, setEndTime] = useState(first?.end_time?.slice(0, 5) ?? "");
+  const [startTime, setStartTime] = useState(first ? ptSlotStart(first) : "");
+  const [endTime, setEndTime] = useState(first ? ptSlotEnd(first) : "");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 

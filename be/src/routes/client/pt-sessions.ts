@@ -9,11 +9,14 @@ import { tenantId } from '../../middleware/tenant'
 const slotSchema = z.object({
   proposedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
-  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+  // Retired: members propose a start time only. Still accepted so an app
+  // loaded before the change can submit.
+  endTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
 })
 
 const requestSchema = z.object({
-  classTypeId: z.string().uuid(),
+  // Null or absent means "any class type".
+  classTypeId: z.string().uuid().nullish(),
   locationId: z.string().uuid(),
   sessionType: z.enum(['1on1', '2on1']),
   clientPackageId: z.string().uuid(),

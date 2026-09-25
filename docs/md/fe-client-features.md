@@ -343,8 +343,8 @@ The form deliberately collects **only what the studio needs to start the WhatsAp
 Fields, in order:
 1. **Location** — dropdown of the studio's active locations (from `/public/locations`), required. Routes the request to the right workspace queue in the portal; the studio defaults the scheduled session to this location (and can still change it at scheduling time).
 2. **Session type** — 1-on-1 or 2-on-1. Gated by which PT package(s) the client owns; if they hold only one type, that option is auto-selected and the radio is hidden.
-3. **Class type** — dropdown of all active class types (yoga style focus, e.g. Hatha, Vinyasa). Drives which instructor the admin assigns.
-4. **Proposed slots** — 1..N rows of `{ date, start_time, end_time }`. Date picked via calendar; time as a HH:mm window per row. "Add another slot" button below the last row. Multiple slots maximise the chance the studio can schedule one of them.
+3. **Preferred class type** — **Any** (the default) or **Selected**. Choosing Selected opens an overlay (a bottom sheet on a phone, a dialog from `sm` up) listing the active class types; the pick shows under the toggle with a "Change" button. Any sends no `class_type_id`. Helps the admin pick an instructor.
+4. **Proposed slots** — 1..N rows of `{ date, start_time }`: a start time only, no end — the session's length is settled when the studio schedules it. Date picked via calendar; start time from a list on the hour and half hour (`00` / `30`). "Add another slot" button below the last row. Multiple slots maximise the chance the studio can schedule one of them.
 5. **Note** — optional free-form message to the studio.
 6. **Partner (2-on-1 only)** — email field with exact-match autocomplete against existing members:
    - If the typed email matches a member → row collapses to "Partner: {name}" with the resolved `co_client_id`.
@@ -359,7 +359,7 @@ Fields, in order:
 
 **User journey**
 1. From `/private-sessions`, tap "Request a Private Session".
-2. Fill the form: location, session type, class type, one or more proposed slots, optional note, partner (if 2-on-1).
+2. Fill the form: location, session type, preferred class type, one or more proposed start times, optional note, partner (if 2-on-1).
 3. Submit → confirmation toast: *"Your request is in. We'll reach you on WhatsApp shortly to confirm the time."* Page redirects to `/account/private-sessions` with the new request highlighted in the **Pending** group.
 4. Studio takes over on WhatsApp, then schedules in `/admin/pt-requests` → the client receives an email confirming the final time + venue, and the row moves to **Confirmed** on `/account/private-sessions`.
 5. If the studio can't accommodate any proposed slot and the WhatsApp negotiation fails, either side can **cancel** the request from their UI. While `pending`, cancel refunds credits.

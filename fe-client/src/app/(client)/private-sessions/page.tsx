@@ -10,12 +10,13 @@ import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useLocations, useClassTypes } from "@/lib/classes";
-import { usePtSessionsApi } from "@/lib/pt-sessions";
+import { PreferredClassType } from "@/components/booking/preferred-class-type";
+import { usePtSessionsApi, HALF_HOUR_TIMES, formatSlotTime } from "@/lib/pt-sessions";
 import { ApiError } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { formatDate } from "@/lib/utils";
 
-type Slot = { proposedDate: string; startTime: string; endTime: string };
+type Slot = { proposedDate: string; startTime: string };
 
 function apiErrorCode(err: unknown): string | null {
   if (!(err instanceof ApiError)) return null;
@@ -24,18 +25,13 @@ function apiErrorCode(err: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
-// Current local hour as `HH:mm` with minutes pinned to `00`, optionally offset
-// by whole hours. Seeds empty time inputs so the native picker defaults to the
-// top of the hour instead of the current wall-clock minute.
-function currentHourTime(offsetHours = 0) {
-  const d = new Date();
-  d.setMinutes(0, 0, 0);
-  d.setHours(d.getHours() + offsetHours);
-  return `${String(d.getHours()).padStart(2, "0")}:00`;
+// The next hour as `HH:00`, so a new slot starts on a time the picker offers.
+function nextHourTime() {
+  return `${String((new Date().getHours() + 1) % 24).padStart(2, "0")}:00`;
 }
 
 function emptySlot(): Slot {
-  return { proposedDate: "", startTime: currentHourTime(), endTime: currentHourTime(1) };
+  return { proposedDate: "", startTime: nextHourTime() };
 }
 
 function todayIso() {
@@ -52,7 +48,8 @@ export default function PrivateSessionsPage() {
   const ptPackages = useMemo(() => packages.filter((p) => p.kind === "pt"), [packages]);
 
   const [sessionType, setSessionType] = useState<"1on1" | "2on1">("1on1");
-  const [classTypeId, setClassTypeId] = useState<string>("");
+  // Null is "Any" — the default; the member may narrow it to one class type.
+  const [classTypeId, setClassTypeId] = useState<string | null>(null);
   const [locationId, setLocationId] = useState<string>("");
   const [slots, setSlots] = useState<Slot[]>([emptySlot()]);
   const [message, setMessage] = useState<string>("");
@@ -67,13 +64,6 @@ export default function PrivateSessionsPage() {
       setLocationId(locations[0].id);
     }
   }, [locations, locationId]);
-
-  // Default to the first class type once the public list loads.
-  useEffect(() => {
-    if (!classTypeId && classTypes && classTypes.length > 0) {
-      setClassTypeId(classTypes[0].id);
-    }
-  }, [classTypes, classTypeId]);
 
   // Partner state (2on1 only).
   const [partnerEmail, setPartnerEmail] = useState<string>("");
@@ -119,11 +109,9 @@ export default function PrivateSessionsPage() {
   function validate(): string[] {
     const errs: string[] = [];
     if (!locationId) errs.push("Pick a location.");
-    if (!classTypeId) errs.push("Pick a class type.");
     if (slots.length === 0) errs.push("Add at least one proposed slot.");
     slots.forEach((s, i) => {
-      if (!s.proposedDate || !s.startTime || !s.endTime) errs.push(`Slot ${i + 1}: complete date, start and end time.`);
-      else if (s.endTime <= s.startTime) errs.push(`Slot ${i + 1}: end time must be after start time.`);
+      if (!s.proposedDate || !s.startTime) errs.push(`Slot ${i + 1}: pick a date and start time.`);
     });
     if (sessionType === "2on1") {
       if (!partnerEmail.trim()) errs.push("Partner email is required for a 2-on-1.");
@@ -155,7 +143,7 @@ export default function PrivateSessionsPage() {
         locationId,
         sessionType: computedSessionType,
         clientPackageId: matchingPackage.id,
-        slots: slots.map((s) => ({ proposedDate: s.proposedDate, startTime: s.startTime, endTime: s.endTime })),
+        slots: slots.map((s) => ({ proposedDate: s.proposedDate, startTime: s.startTime })),
         message: message.trim() || undefined,
         partner: buildPartner() ?? undefined,
       });
@@ -345,23 +333,11 @@ export default function PrivateSessionsPage() {
             </select>
           </div>
 
-          <div>
-            <label className="text-sm font-medium text-ink mb-1.5 block" htmlFor="class-type">
-              Class type
-            </label>
-            <select
-              id="class-type"
-              value={classTypeId}
-              onChange={(e) => setClassTypeId(e.target.value)}
-              className="w-full min-h-[44px] rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
-            >
-              {(classTypes ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <PreferredClassType
+            classTypes={classTypes ?? []}
+            value={classTypeId}
+            onChange={setClassTypeId}
+          />
 
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -376,10 +352,10 @@ export default function PrivateSessionsPage() {
                   key={i}
                   className="rounded-xl border border-ink/10 bg-card p-3"
                 >
-                  {/* Date across the full width and the two times side by side
-                      on a phone; one row from sm. */}
-                  <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
-                    <div className="col-span-2 sm:col-span-1">
+                  {/* Date and start time side by side; the remove button under
+                      them on a phone, beside them from sm. */}
+                  <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                    <div>
                       <label
                         htmlFor={`slot-${i}-date`}
                         className="text-xs text-muted mb-1 block"
@@ -402,28 +378,20 @@ export default function PrivateSessionsPage() {
                       >
                         Start time
                       </label>
-                      <input
+                      {/* On the hour or half hour only — a native time input
+                          would offer every minute. */}
+                      <select
                         id={`slot-${i}-start`}
-                        type="time"
                         value={s.startTime}
                         onChange={(e) => setSlot(i, { startTime: e.target.value })}
                         className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
-                      />
-                    </div>
-                    <div>
-                      <label
-                        htmlFor={`slot-${i}-end`}
-                        className="text-xs text-muted mb-1 block"
                       >
-                        End time
-                      </label>
-                      <input
-                        id={`slot-${i}-end`}
-                        type="time"
-                        value={s.endTime}
-                        onChange={(e) => setSlot(i, { endTime: e.target.value })}
-                        className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
-                      />
+                        {HALF_HOUR_TIMES.map((t) => (
+                          <option key={t} value={t}>
+                            {formatSlotTime(t)}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     {/* A lone slot has nothing to remove, so no button. */}
                     {slots.length > 1 && (

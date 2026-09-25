@@ -457,9 +457,8 @@ export const ptRequests = pgTable(
     clientId: uuid('client_id')
       .notNull()
       .references(() => clients.id, { onDelete: 'restrict' }),
-    classTypeId: uuid('class_type_id')
-      .notNull()
-      .references(() => classTypes.id, { onDelete: 'restrict' }),
+    // The member's preferred class type. NULL means "any" — left to the studio.
+    classTypeId: uuid('class_type_id').references(() => classTypes.id, { onDelete: 'restrict' }),
     // Location the client wants the session at. Captured at request time (the
     // portal filters pending requests by the staff's active workspace location).
     locationId: uuid('location_id')
@@ -525,14 +524,16 @@ export const ptRequestSlots = pgTable(
       .references(() => ptRequests.id, { onDelete: 'cascade' }),
     proposedDate: date('proposed_date').notNull(),
     startTime: time('start_time').notNull(),
-    endTime: time('end_time').notNull(),
+    // Members propose a start time only; the session's length is settled when
+    // it is scheduled. Older requests keep the end time they were made with.
+    endTime: time('end_time'),
   },
   table => ({
     ptRequestIdFkIdx: index('pt_request_slots_pt_request_id_fk_idx').on(table.ptRequestId),
     requestIdx: index('pt_request_slots_request_idx').on(table.tenantId, table.ptRequestId),
     endAfterStart: check(
       'pt_request_slots_end_after_start',
-      sql`${table.endTime} > ${table.startTime}`,
+      sql`${table.endTime} IS NULL OR ${table.endTime} > ${table.startTime}`,
     ),
   }),
 )

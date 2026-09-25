@@ -9,6 +9,45 @@ export type PtStatus =
   | "attended";
 export type PtRefundOutcome = "session_returned" | "forfeited" | "n_a" | null;
 
+/**
+ * A slot the member proposed. Members propose a start time only, so `end_time`
+ * is null on new requests; older ones carry the end they were made with.
+ * Times are Postgres `time`, HH:MM:SS.
+ */
+export interface PtProposedSlot {
+  proposed_date: string;
+  start_time: string;
+  end_time: string | null;
+}
+
+const hhmm = (t: string) => t.slice(0, 5);
+
+/** "09:00", or "09:00–10:00" on an older request that proposed an end. */
+export function ptSlotTime(s: PtProposedSlot): string {
+  return s.end_time ? `${hhmm(s.start_time)}–${hhmm(s.end_time)}` : hhmm(s.start_time);
+}
+
+/** Start as HH:MM, for prefilling a scheduling form. */
+export function ptSlotStart(s: PtProposedSlot): string {
+  return hhmm(s.start_time);
+}
+
+/**
+ * End as HH:MM, for prefilling a scheduling form: the proposed end where there
+ * is one, else an hour after the start for staff to adjust.
+ */
+export function ptSlotEnd(s: PtProposedSlot): string {
+  if (s.end_time) return hhmm(s.end_time);
+  const [h, m] = s.start_time.split(":").map(Number);
+  const end = Math.min(h * 60 + m + 60, 23 * 60 + 59);
+  return `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`;
+}
+
+/** The preferred class type's name, or "Any class type". */
+export function ptClassTypeName(classType: { name: string } | null): string {
+  return classType?.name ?? "Any class type";
+}
+
 export interface ApiPtRequest {
   id: string;
   status: PtStatus;
@@ -19,14 +58,15 @@ export interface ApiPtRequest {
   resolved_at: string | null;
   refund_outcome: PtRefundOutcome;
   client: { id: string; name: string; email: string };
-  class_type: { id: string; name: string };
+  // The member's preferred class type; null when they asked for "any".
+  class_type: { id: string; name: string } | null;
   location: { id: string; name: string };
   // Only present for 2on1. clientId is null when the partner isn't a member yet.
   co_client: { clientId: string | null; name: string | null; email: string | null } | null;
   // The instructor the member bought these sessions with. Null means the
   // package is open to any of them.
   bound_instructor: { id: string; name: string } | null;
-  slots: { proposed_date: string; start_time: string; end_time: string }[];
+  slots: PtProposedSlot[];
   session: {
     id: string;
     starts_at: string;

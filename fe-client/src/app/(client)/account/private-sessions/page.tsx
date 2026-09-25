@@ -12,6 +12,7 @@ import { QrBadge } from "@/components/account/qr-badge";
 import { DateStub } from "@/components/account/date-stub";
 import {
   usePtSessionsApi,
+  formatSlotRange,
   type CancelPtRequestResult,
   type RawPtRequest,
 } from "@/lib/pt-sessions";
@@ -29,9 +30,6 @@ import {
   ptPolicyNote,
   windowRefusal,
 } from "@/lib/cancellation-copy";
-
-// Slot times arrive as HH:MM:SS (Postgres time) — trim to HH:MM for display.
-const hhmm = (t: string) => t.slice(0, 5);
 
 type Tab = "pending" | "confirmed" | "past" | "cancelled";
 
@@ -280,7 +278,7 @@ function RequestCard({
       <div className="flex items-start justify-between gap-3">
         <p className="min-w-0 pt-1 text-xs font-semibold text-muted">
           {r.session_type === "1on1" ? "1-on-1" : "2-on-1"}
-          {r.class_name ? ` · ${r.class_name}` : ""}
+          {` · ${r.class_name ?? "Any class type"}`}
           {r.location_name ? ` · ${r.location_name}` : ""}
         </p>
         <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${badge.tone}`}>
@@ -307,7 +305,7 @@ function RequestCard({
             </>
           ) : slot0 ? (
             <p className="font-semibold text-ink">
-              {hhmm(slot0.start_time)}–{hhmm(slot0.end_time)}
+              {formatSlotRange(slot0)}
               {r.slots.length > 1 ? (
                 <span className="text-sm font-normal text-muted ml-2">+{r.slots.length - 1} more</span>
               ) : null}
@@ -344,7 +342,7 @@ function RequestCard({
           <ul className="mt-2 space-y-1 text-xs text-muted">
             {r.slots.slice(1).map((s, i) => (
               <li key={i}>
-                {formatDate(s.proposed_date)} · {hhmm(s.start_time)}–{hhmm(s.end_time)}
+                {formatDate(s.proposed_date)} · {formatSlotRange(s)}
               </li>
             ))}
           </ul>

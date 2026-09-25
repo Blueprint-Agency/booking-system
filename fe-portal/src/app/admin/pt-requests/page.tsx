@@ -13,6 +13,8 @@ import {
   PT_STATUS_SHORT,
   ptInFilter,
   ptStatusLabel,
+  ptClassTypeName,
+  ptSlotTime,
 } from "@/lib/pt-requests";
 
 export default function PtRequestsPage() {
@@ -162,9 +164,9 @@ export default function PtRequestsPage() {
                       <div className="min-w-0 flex-1">
                         <div className="font-medium text-ink">{r.client.name}</div>
                         <div className="text-xs text-muted">
-                          {r.session_type.toUpperCase()} · {r.class_type.name}
+                          {r.session_type.toUpperCase()} · {ptClassTypeName(r.class_type)}
                           {first
-                            ? ` · ${first.proposed_date} ${first.start_time}–${first.end_time}`
+                            ? ` · ${first.proposed_date} ${ptSlotTime(first)}`
                             : ""}
                           {more > 0 ? ` +${more} more` : ""}
                           {partnerHint}
