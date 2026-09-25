@@ -44,7 +44,9 @@ BE layout: routes split by audience (`routes/portal/{admin,instructor}/`, `route
 - **Never special-case inputs.** No branch that recognises a test's values (`if (email === 'member@northwind.test')`), no hard-coded return shaped to one assertion. Fix the general behaviour.
 - **Never weaken a test to make it pass.** No skipping, loosening an assertion, rewriting an expected value to match what the code does, catching the error it checks for, or deleting the test. If you believe a test is wrong, stop and say so.
 
-Guardrails back this up (`docs/md/test-guardrails.md`): a hook refuses edits to committed test files unless a human lists them in `.claude/test-edits.allow`; CI runs every suite on each PR, and fails on a skipped test and on a PR with fewer tests than its base. There is no need to run the full backend suite locally before stopping — CI does it.
+Guardrails back this up (`docs/md/test-guardrails.md`): a hook refuses edits to committed test files unless a human lists them in `.claude/test-edits.allow`; CI runs every suite on each PR, and fails on a skipped test and on a PR with fewer tests than its base.
+
+**Leave the full backend suite to GitHub CI.** Don't run it locally (it takes ~25 minutes). Locally, run only what the change touches: the test files for the code you changed, a typecheck (`npx tsc --noEmit`), and the frontend `npm run check` where a frontend changed. CI runs everything on the PR.
 
 ## Agent skills
 
