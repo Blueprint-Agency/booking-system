@@ -64,9 +64,6 @@ export function appRoleUrl(ownerUrl: string): string {
  * (`./with-env.ts`).
  */
 export const REAL_SERVICE_SETTINGS = [
-  'STRIPE_SECRET_KEY',
-  'STRIPE_WEBHOOK_SECRET',
-  'STRIPE_STATEMENT_DESCRIPTOR_PREFIX',
   'STRIPE_API_URL',
   'PAYMENT_CREDENTIALS_KEY',
   'RESEND_WEBHOOK_SECRET',

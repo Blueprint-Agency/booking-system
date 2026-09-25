@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
 import { harnessAddress, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from '../test/harness'
+import { withEnv } from '../test/with-env'
 
 /**
  * The throwaway studio the browser journeys run in (#145).
@@ -105,6 +106,54 @@ describe('e2e studio', { skip: integrationTestsEnabled ? false : SKIP_REASON }, 
     } finally {
       await studio.removeE2eStudio({ db: harness.db, slug: made.slug })
     }
+  })
+
+  describe('given a payment account', () => {
+    withEnv({ PAYMENT_CREDENTIALS_KEY: Buffer.alloc(32, 7).toString('base64') })
+
+    test('the studio takes online payments on it — the buy journey is not refused at checkout (#293)', async () => {
+      const { installStripeFake } = await import('../test/stripe-fake')
+      const fake = installStripeFake()
+      fake.issueKey('sk_test_e2e_studio', 'acct_e2e_studio')
+      let made: import('./studio').E2eStudio | undefined
+      try {
+        made = await studio.createE2eStudio({
+          app: harness.app,
+          db: harness.db,
+          payments: { secretKey: 'sk_test_e2e_studio' },
+        })
+      } finally {
+        // The real lookup from here on: what was stored, opened with the key.
+        fake.restore()
+      }
+      try {
+        assert.equal(fake.callsTo('accounts.retrieve').length, 1, 'the key was proved before it was stored')
+        assert.deepEqual(
+          fake.webhookEndpoints('acct_e2e_studio').map(endpoint => endpoint.url),
+          [`http://localhost:4000/api/v1/webhooks/stripe/${made!.slug}`],
+          "the studio's webhook endpoint was made on its own account",
+        )
+        const res = await harness.app.request('/api/v1/public/online-payments', {
+          headers: { 'X-Tenant-Slug': made.slug },
+        })
+        assert.equal(res.status, 200, await res.clone().text())
+        assert.deepEqual(await res.json(), { online_payments: true })
+      } finally {
+        await studio.removeE2eStudio({ db: harness.db, slug: made.slug })
+      }
+    })
+
+    test('without one it takes none, as every studio starts', async () => {
+      const made = await studio.createE2eStudio({ app: harness.app, db: harness.db })
+      try {
+        const res = await harness.app.request('/api/v1/public/online-payments', {
+          headers: { 'X-Tenant-Slug': made.slug },
+        })
+        assert.deepEqual(await res.json(), { online_payments: false })
+      } finally {
+        await studio.removeE2eStudio({ db: harness.db, slug: made.slug })
+      }
+    })
   })
 
   test('removing a studio removes all of it and nothing of any other studio', async () => {

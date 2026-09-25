@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { exec, execSync } from 'node:child_process'
 import type { Page } from '@playwright/test'
 
 /**
@@ -58,8 +58,28 @@ function markedLine(output: string, marker: string): string {
   return line.slice(marker.length + 1)
 }
 
-export function createStudio(): Studio {
-  return JSON.parse(markedLine(studioCommand('setup'), 'E2E_STUDIO')) as Studio
+/**
+ * Without blocking this process, unlike teardown: on the local stack the setup
+ * sets the studio's payment account up against the Stripe stub, which is served
+ * from this same process (./stripe-stub.ts) and answers nothing while it waits.
+ */
+export function createStudio(): Promise<Studio> {
+  const command = process.env.E2E_STUDIO_CMD
+  if (!command) throw new Error('E2E_STUDIO_CMD is not set — see e2e/src/studio.ts')
+  return new Promise((resolve, reject) => {
+    const child = exec(`${command} setup`, { encoding: 'utf8', timeout: 180_000 }, (err, stdout) => {
+      if (err) reject(err)
+      else {
+        try {
+          resolve(JSON.parse(markedLine(stdout, 'E2E_STUDIO')) as Studio)
+        } catch (parseErr) {
+          reject(parseErr)
+        }
+      }
+    })
+    // The app's own logging, as the synchronous command lets it through.
+    child.stderr?.pipe(process.stderr)
+  })
 }
 
 export function removeStudio(slug: string): void {

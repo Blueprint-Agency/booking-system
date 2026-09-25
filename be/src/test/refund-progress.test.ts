@@ -3,7 +3,7 @@ import { after, before, beforeEach, describe, test } from 'node:test'
 import { eq, inArray, like } from 'drizzle-orm'
 import { startTestApp, integrationTestsEnabled, inTenantContext, SKIP_REASON, type TestApp } from './harness'
 import { memberFixtures } from './member-fixtures'
-import type { StripeFake } from './stripe-fake'
+import { ownAccountId, type StripeFake } from './stripe-fake'
 
 /**
  * What the portal's Refund screens are told (#275).
@@ -57,6 +57,7 @@ describe('the state of a Refund between the button and the webhook', { skip: int
         kind: 'class_package',
         clientId: client!.id,
         status: 'succeeded',
+        providerAccountId: ownAccountId(harness.tenants.one),
       })
     }
     const location = extra.crossLocationPaidSgd
@@ -112,6 +113,9 @@ describe('the state of a Refund between the button and the webhook', { skip: int
     fixtures = memberFixtures(harness, schema, DOMAIN)
     const { installStripeFake } = await import('./stripe-fake')
     fake = installStripeFake()
+    // The studio's own account — where every payment here was taken, and the
+    // only account a Refund can be issued on (#293).
+    fake.ownAccount(harness.tenants.one)
     const [staff] = await harness.db
       .insert(schema.staffUsers)
       .values({ tenantId, email: `admin@${DOMAIN}`, name: 'Refund Admin', role: 'admin', status: 'active', authUserId: `auth_rfdp_${run}_admin` })
@@ -260,6 +264,7 @@ describe('the state of a Refund between the button and the webhook', { skip: int
       clientId: later.clientId,
       clientPackageId: later.clientPackageId,
       status: 'succeeded',
+      providerAccountId: ownAccountId(harness.tenants.one),
     })
     const separate = await stateOf(later)
     assert.strictEqual(separate.addOnIncluded, false)

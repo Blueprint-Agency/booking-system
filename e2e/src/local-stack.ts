@@ -23,6 +23,25 @@ const app = (dir: string) => `npm --prefix "${path.join(repo, dir)}"`
 /** The local backend's studio command — see ./studio.ts. */
 export const localStudioCommand = `${app('be')} run -s e2e:studio --`
 
+/**
+ * The run's studio sells on an account of its own, played by the stub: there
+ * is no platform account to fall back to (#293), so a studio without one is
+ * refused at checkout. The studio command sets it up the way the super portal
+ * would — the key proved, a webhook endpoint made on the account, both secrets
+ * sealed with `PAYMENT_CREDENTIALS_KEY` — and the backend opens them with the
+ * same key, so both processes are given it.
+ *
+ * Every value is throwaway: the key seals nothing but the stub's "key", which
+ * only the stub reads, and it reads nothing.
+ */
+export const localStackPayments = {
+  STRIPE_API_URL: STRIPE_STUB_API_URL,
+  // 32 bytes, base64, as the backend requires; a constant, so the studio
+  // command and the backend cannot disagree about it.
+  PAYMENT_CREDENTIALS_KEY: Buffer.from('e2e-local-stack-throwaway-key-32').toString('base64'),
+  E2E_STRIPE_SECRET_KEY: 'sk_test_stripe_stub',
+}
+
 export const localStackServers: NonNullable<PlaywrightTestConfig['webServer']> = [
   {
     name: 'backend',
@@ -31,9 +50,9 @@ export const localStackServers: NonNullable<PlaywrightTestConfig['webServer']> =
     env: {
       // Mail goes nowhere (the null transport), as it does under the backend's own tests.
       NODE_ENV: 'test',
-      STRIPE_API_URL: STRIPE_STUB_API_URL,
-      // Any key: only the stub reads it, and it reads nothing.
-      STRIPE_SECRET_KEY: 'sk_test_stripe_stub',
+      // The stub, and the key the studio's stored credentials open with.
+      STRIPE_API_URL: localStackPayments.STRIPE_API_URL,
+      PAYMENT_CREDENTIALS_KEY: localStackPayments.PAYMENT_CREDENTIALS_KEY,
     },
     // Never someone else's: a backend already on :4000 (`make dev`) reaches
     // real Stripe, and a checkout through it fails in the stub for reasons

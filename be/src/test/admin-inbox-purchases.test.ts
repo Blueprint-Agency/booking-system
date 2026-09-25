@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
-import type { StripeFake } from './stripe-fake'
+import { ownAccountId, stripeWebhookPath, type StripeFake } from './stripe-fake'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.inbox.test`
@@ -12,7 +12,6 @@ const CLASS_TYPE_NAME = `Inbox class type ${run}`
 const BUNDLE_NAME = `Inbox pass ${run}`
 const PT_PACKAGE_NAME = `Inbox PT ${run}`
 const WORKSHOP_NAME = `Inbox workshop ${run}`
-const WEBHOOK_SECRET = 'whsec_inbox_test'
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
@@ -35,7 +34,6 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let fake!: StripeFake
-  let webhookSecretWas: string | undefined
   let classTypesSvc!: typeof import('../services/catalog/class-types')
   let classPackagesSvc!: typeof import('../services/packages/class-packages')
   let ptPackagesSvc!: typeof import('../services/packages/pt-packages')
@@ -319,6 +317,7 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
         kind: 'class_package',
         clientId: who.clientId,
         status: 'succeeded',
+        providerAccountId: ownAccountId(at),
         createdAt: landed,
       })
     }
@@ -330,7 +329,7 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
   const refundPurchase = (by: { headers: Record<string, string> }, purchaseId: string, body: unknown = { reason: 'Member never came back' }) =>
     send(`/portal/admin/purchases/${purchaseId}/refund`, by.headers, 'POST', body)
 
-  /** The provider's `charge.refunded` delivery for one intent. */
+  /** The provider's `charge.refunded` delivery for one intent, on studio one's own endpoint. */
   async function deliverRefund(intent: string, cents: number): Promise<Reply> {
     const event = {
       id: `evt_${randomUUID()}`,
@@ -347,7 +346,7 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
       },
     }
     return reply(
-      await harness.app.request('/api/v1/webhooks/stripe', {
+      await harness.app.request(stripeWebhookPath(one.slug), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'stripe-signature': 't=1,v1=fake' },
         body: JSON.stringify(event),
@@ -375,11 +374,13 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     // The signature is the provider's to check; the fake hands the body back as
     // the event, which is what a valid signature would have produced.
     fake.reply('webhooks.constructEvent', (body: unknown) => JSON.parse(String(body)))
-    webhookSecretWas = process.env.STRIPE_WEBHOOK_SECRET
-    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET
 
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
+    // Each studio sells on an account of its own — the only way a studio sells
+    // at all (#293) — and its deliveries arrive on its own endpoint.
+    fake.ownAccount(one)
+    fake.ownAccount(two)
     adminAtOne = await staff(one, 'owner', 'admin')
     teacherAtOne = await staff(one, 'teacher', 'instructor')
     otherTeacherAtOne = await staff(one, 'cover', 'instructor')
@@ -389,8 +390,6 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
   after(async () => {
     if (!harness) return
     fake?.restore()
-    if (webhookSecretWas === undefined) delete process.env.STRIPE_WEBHOOK_SECRET
-    else process.env.STRIPE_WEBHOOK_SECRET = webhookSecretWas
     const ours = `%@${DOMAIN}`
     const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
     const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
@@ -579,6 +578,7 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
       kind: 'class_package',
       clientId: oli.clientId,
       status: 'succeeded',
+      providerAccountId: ownAccountId(one),
       createdAt: new Date(Date.now() - DAY),
     })
 
@@ -617,6 +617,7 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     assert.ok(res.returned_line)
 
     const calls = fake.callsTo('refunds.create').slice(from)
+    assert.ok(calls.every(c => c.account === ownAccountId(one)), "returned on the studio's own account")
     assert.deepEqual(
       calls.map(c => (c.args[0] as { payment_intent: string; amount?: number })).sort((a, b) => a.payment_intent.localeCompare(b.payment_intent)),
       held.intents.map(payment_intent => ({ payment_intent })).sort((a, b) => a.payment_intent.localeCompare(b.payment_intent)),

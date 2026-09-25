@@ -123,8 +123,9 @@ describe("a delivery on a studio's own endpoint", () => {
   test('a studio with no account of its own accepts nothing here', async () => {
     const fake = install()
 
-    // Its deliveries belong on the platform's shared endpoint. Falling back to
-    // the platform's secret would be the second attempt this must never make.
+    // It takes no online payments (#293), so nothing can be delivered for it.
+    // Falling back to any other secret would be the second attempt this must
+    // never make.
     assert.equal(await subject.verifyTenantDelivery(STUDIO_A, BODY, signed(BODY, SECRET_A)), null)
     assert.equal(fake.callsTo('webhooks.constructEvent').length, 0)
   })

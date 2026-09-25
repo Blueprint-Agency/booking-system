@@ -189,6 +189,10 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
 
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
+    // Each studio sells on an account of its own — the only way a studio sells
+    // at all (#293).
+    stripe.ownAccount(one)
+    stripe.ownAccount(two)
     adminAtOne = await staff(one, 'Ada Admin', 'admin')
     teacherAtOne = await staff(one, 'Tia Teacher', 'instructor')
     adminAtTwo = await staff(two, 'Ada Admin', 'admin')

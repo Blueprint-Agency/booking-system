@@ -2,7 +2,7 @@ import assert from 'node:assert'
 import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
 import { startTestApp, integrationTestsEnabled, inTenantContext, SKIP_REASON, type TestApp } from './harness'
-import type { StripeFake } from './stripe-fake'
+import { ownAccountId, type StripeFake } from './stripe-fake'
 
 /**
  * Cancelling a Workshop refunds nobody, and its paid bookings stay refundable
@@ -80,6 +80,7 @@ describe('refunding a cancelled Workshop', { skip: integrationTestsEnabled ? fal
       kind: 'workshop',
       clientId: client!.id,
       status: 'pending',
+      providerAccountId: ownAccountId(harness.tenants.one),
     })
 
     const booked = await workshopBookSvc.bookWorkshopPaid(tenantId, {
@@ -110,6 +111,9 @@ describe('refunding a cancelled Workshop', { skip: integrationTestsEnabled ? fal
     refundsSvc = inTenantContext(await import('../services/billing/refunds'))
     const { installStripeFake } = await import('./stripe-fake')
     fake = installStripeFake()
+    // The studio's own account — where every payment here was taken, and the
+    // only account a Refund can be issued on (#293).
+    fake.ownAccount(harness.tenants.one)
     fake.reply('refunds.create', {})
 
     const [location] = await harness.db

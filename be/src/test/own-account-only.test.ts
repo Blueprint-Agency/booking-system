@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
-import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { frontendOrigin, integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import type { StripeFake } from './stripe-fake'
 
 const run = Date.now().toString(36)
@@ -221,12 +221,19 @@ describe('payments on the studio’s own account only', { skip: integrationTests
   })
 
   test('PAY-26 the platform account’s shared webhook endpoint is gone', async () => {
+    // Named as a request that does resolve a studio, so the answer is the
+    // router's and not the tenant check's: nothing is mounted there any more.
     const res = await harness.app.request('/api/v1/webhooks/stripe', {
       method: 'POST',
-      headers: { 'stripe-signature': 't=1,v1=00', 'Content-Type': 'application/json' },
+      headers: {
+        'stripe-signature': 't=1,v1=00',
+        'Content-Type': 'application/json',
+        'X-Tenant-Slug': slug,
+        Origin: frontendOrigin('client', { slug }),
+      },
       body: '{}',
     })
-    assert.equal(res.status, 404)
+    assert.equal(res.status, 404, await res.clone().text())
   })
 
   test('PAY-27 a payment recorded against the platform account is refused a Refund, and told where to issue it', async () => {

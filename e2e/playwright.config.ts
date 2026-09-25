@@ -1,5 +1,11 @@
 import { defineConfig, devices, type ReporterDescription } from '@playwright/test'
-import { isLocalStack, localStackServers, localStudioCommand, stubbedStripeBrowser } from './src/local-stack'
+import {
+  isLocalStack,
+  localStackPayments,
+  localStackServers,
+  localStudioCommand,
+  stubbedStripeBrowser,
+} from './src/local-stack'
 
 /**
  * The browser journeys, against one of two stacks:
@@ -19,8 +25,13 @@ import { isLocalStack, localStackServers, localStudioCommand, stubbedStripeBrows
  */
 const baseReporters: ReporterDescription[] = process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']]
 
-// Read by global setup (src/studio.ts), which runs in this process.
-if (isLocalStack) process.env.E2E_STUDIO_CMD ??= localStudioCommand
+// Read by global setup (src/studio.ts), which runs in this process — and the
+// studio command it runs inherits this environment, so the studio is made
+// selling on the stub's account (src/local-stack.ts).
+if (isLocalStack) {
+  process.env.E2E_STUDIO_CMD ??= localStudioCommand
+  for (const [name, value] of Object.entries(localStackPayments)) process.env[name] ??= value
+}
 
 export default defineConfig({
   testDir: './journeys',

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
-import type { StripeFake } from './stripe-fake'
+import { ownAccountId, stripeWebhookPath, type StripeFake } from './stripe-fake'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.refunds.test`
@@ -13,9 +13,6 @@ const BUNDLE_NAME = `Refund pass ${run}`
 const PLAN_NAME = `Refund plan ${run}`
 const PT_PACKAGE_NAME = `Refund PT ${run}`
 const WORKSHOP_NAME = `Refund workshop ${run}`
-const WEBHOOK_SECRET = 'whsec_refunds_test'
-/** The account a studio sells on once it has supplied credentials of its own (#100). */
-const OWN_ACCOUNT = `acct_refunds_${run}`
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
@@ -35,7 +32,6 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let fake!: StripeFake
-  let webhookSecretWas: string | undefined
   let classTypesSvc!: typeof import('../services/catalog/class-types')
   let classPackagesSvc!: typeof import('../services/packages/class-packages')
   let ptPackagesSvc!: typeof import('../services/packages/pt-packages')
@@ -138,15 +134,15 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
 
   /**
    * A paid Purchase of one of the studio's packages, settled by one payment per
-   * entry in `payments` (the provider account each was taken on; null is the
-   * platform's own), and the package it granted — the rows the checkout webhook
-   * leaves behind.
+   * entry in `payments` (the provider account each was taken on — the studio's
+   * own unless a test says otherwise), and the package it granted — the rows the
+   * checkout webhook leaves behind.
    */
   async function buy(
     at: Studio,
     who: Member,
     item: 'bundle' | 'plan' | 'pt',
-    payments: (string | null)[] = [null],
+    payments: (string | null)[] = [ownAccountId(at)],
   ): Promise<Paid> {
     const price = { bundle: 200, plan: 300, pt: 500 }[item]
     const [purchase] = await harness.db
@@ -189,7 +185,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
   }
 
   /** A paid workshop place: the booking IS the purchase, and holds no package. */
-  async function buyWorkshop(at: Studio, who: Member, account: string | null = null) {
+  async function buyWorkshop(at: Studio, who: Member, account: string | null = ownAccountId(at)) {
     const [workshop] = await harness.db
       .insert(schema.workshops)
       .values({ tenantId: at.id, name: WORKSHOP_NAME, locationId: at.locationId, createdByStaffId: adminAtOne.staffId })
@@ -285,12 +281,13 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
   /**
    * The provider's `charge.refunded` delivery, as its dashboard or our own
    * refund call triggers it. `refunded` below `captured` is a part-refund.
+   * Delivered to studio one's own endpoint unless a test names another (#293).
    */
   async function deliverRefund(
     intent: string,
     opts: { captured?: number; refunded?: number; endpoint?: string } = {},
   ): Promise<Reply> {
-    const { captured = 20000, endpoint = '/api/v1/webhooks/stripe' } = opts
+    const { captured = 20000, endpoint = stripeWebhookPath(one.slug) } = opts
     const refunded = opts.refunded ?? captured
     const event = {
       id: `evt_${randomUUID()}`,
@@ -317,10 +314,10 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
 
   /**
    * Each refund the fake was asked for since `from`, delivered back as the
-   * provider would — after checking it was asked on `account` (null: the
-   * platform's own, where every studio here sells unless a test says otherwise).
+   * provider would — after checking it was asked on `account` (studio one's
+   * own, where every refund here is made unless a test says otherwise).
    */
-  async function settle(from: number, account: string | null = null): Promise<void> {
+  async function settle(from: number, account: string | null = ownAccountId(one)): Promise<void> {
     const calls = fake.callsTo('refunds.create').slice(from)
     assert.ok(calls.length > 0, 'the button called the provider')
     for (const call of calls) {
@@ -333,12 +330,8 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
 
   const refundCalls = () => fake.callsTo('refunds.create')
 
-  /**
-   * Put a studio back on the platform's account. The fake has no way to take
-   * credentials away, and an empty account id is what it records as the
-   * platform's own (`account?.accountId || null`).
-   */
-  const backOnPlatform = (tenantId: string) => fake.credentials(tenantId, { accountId: '' })
+  /** Put a studio back on the account every test here gives it. */
+  const backOnOwnAccount = (at: Studio) => fake.ownAccount(at)
 
   async function purchaseRow(id: string) {
     const [row] = await harness.db.select().from(schema.purchases).where(eq(schema.purchases.id, id))
@@ -405,11 +398,13 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     // The signature is the provider's to check; the fake hands the body back as
     // the event, which is what a valid signature would have produced.
     fake.reply('webhooks.constructEvent', (body: unknown) => JSON.parse(String(body)))
-    webhookSecretWas = process.env.STRIPE_WEBHOOK_SECRET
-    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET
 
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
+    // Each studio sells on an account of its own — the only way a studio sells
+    // at all (#293) — and a refund goes back on it.
+    backOnOwnAccount(one)
+    backOnOwnAccount(two)
     adminAtOne = await staff(one, 'owner', 'admin')
     teacherAtOne = await staff(one, 'teacher', 'instructor')
     adminAtTwo = await staff(two, 'owner', 'admin')
@@ -418,8 +413,6 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
   after(async () => {
     if (!harness) return
     fake?.restore()
-    if (webhookSecretWas === undefined) delete process.env.STRIPE_WEBHOOK_SECRET
-    else process.env.STRIPE_WEBHOOK_SECRET = webhookSecretWas
     const ours = `%@${DOMAIN}`
     const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
     const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
@@ -451,7 +444,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     await harness.close()
   })
 
-  test('RFD-01 a package refund returns the whole amount on the platform account: no amount is ever sent', async () => {
+  test("RFD-01 a package refund returns the whole amount on the studio's own account: no amount is ever sent", async () => {
     const ana = await member(one, 'Ana Whole')
     const paid = await buy(one, ana, 'bundle')
     const from = refundCalls().length
@@ -462,7 +455,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(res.status, 200, JSON.stringify(res.body))
     const calls = refundCalls().slice(from)
     assert.equal(calls.length, 1)
-    assert.equal(calls[0]!.account, null, "the studio sells on the platform's account")
+    assert.equal(calls[0]!.account, ownAccountId(one), "the studio sells on its own account")
     assert.deepEqual(calls[0]!.args[0], { payment_intent: paid.intents[0] }, 'the whole intent, no amount')
     assert.deepEqual(calls[0]!.args[1], { idempotencyKey: `refund:${paid.intents[0]}` })
 
@@ -487,7 +480,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(res.status, 200, JSON.stringify(res.body))
     const calls = refundCalls().slice(from)
     assert.equal(calls.length, 1)
-    assert.equal(calls[0]!.account, null)
+    assert.equal(calls[0]!.account, ownAccountId(one))
     assert.deepEqual(calls[0]!.args[0], { payment_intent: bought.intent })
     await settle(from)
 
@@ -510,12 +503,14 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(untouched.purchase.status, 'paid')
   })
 
-  test("RFD-01 a Purchase paid on two accounts is returned on each, and voided only once both are back", async () => {
-    // A studio that moved onto its own account after the first card (#97, #100).
-    fake.credentials(one.id, { accountId: OWN_ACCOUNT })
+  test("RFD-01 a Purchase paid in two payments is returned on each, and voided only once both are back", async () => {
+    // Two cards on one Purchase (a Part Payment and its balance, say). A payment
+    // on the platform account refuses the whole Refund instead (#293) — see
+    // own-account-only.test.ts, PAY-27.
+    const own = ownAccountId(one)
     try {
       const di = await member(one, 'Di Split')
-      const paid = await buy(one, di, 'bundle', [null, OWN_ACCOUNT])
+      const paid = await buy(one, di, 'bundle', [own, own])
       const from = refundCalls().length
 
       const res = await refundPackage(adminAtOne, di, paid)
@@ -525,8 +520,8 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
       assert.deepEqual(
         calls.map(c => [c.account, (c.args[0] as { payment_intent: string }).payment_intent]),
         [
-          [null, paid.intents[0]],
-          [OWN_ACCOUNT, paid.intents[1]],
+          [own, paid.intents[0]],
+          [own, paid.intents[1]],
         ],
         'each payment goes back on the account it came in on',
       )
@@ -540,7 +535,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
       await assertRefunded(paid.purchaseId)
       assert.equal((await packageRow(paid.clientPackageId)).active, false)
     } finally {
-      backOnPlatform(one.id)
+      backOnOwnAccount(one)
     }
   })
 
@@ -794,12 +789,12 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
       const paid = await buy(one, ned, 'bundle')
       const untouched = await state(paid)
 
-      const res = await deliverRefund(paid.intents[0]!, { endpoint: `/api/v1/webhooks/stripe/${two.slug}` })
+      const res = await deliverRefund(paid.intents[0]!, { endpoint: stripeWebhookPath(two.slug) })
 
       assert.ok(res.status >= 400, JSON.stringify(res.body))
       assert.deepEqual(await state(paid), untouched)
     } finally {
-      backOnPlatform(two.id)
+      backOnOwnAccount(two)
     }
   })
 

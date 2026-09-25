@@ -11,7 +11,6 @@
  */
 import assert from 'node:assert/strict'
 import { before, afterEach, describe, test } from 'node:test'
-import { withEnv } from '../../test/with-env'
 
 const TENANT = '11111111-1111-4111-8111-111111111111'
 const CLIENT = '33333333-3333-4333-8333-333333333333'
@@ -23,34 +22,34 @@ type Billing = {
   installStripeFake: typeof import('../../test/stripe-fake').installStripeFake
   setStripeFactory: typeof import('../../lib/stripe').setStripeFactory
   setProviderCredentialsLoader: typeof import('./provider-credentials').setProviderCredentialsLoader
-  webhookRoute: typeof import('../../routes/webhooks/stripe').default
+  verifyTenantDelivery: typeof import('./webhook-verification').verifyTenantDelivery
   refuseWrongTenant: typeof import('./webhook-handler').refuseWrongTenant
 }
 
 let billing: Billing
 
 /**
- * The environment this file charges under, and the modules under test. Called
- * inside each `describe`, not at the top level: every backend test file shares
- * one process, where a top-level hook would run around every other file's tests
- * too, and would reset their Stripe fake. What the environment held before is
- * put back afterwards.
+ * The modules under test. Called inside each `describe`, not at the top level:
+ * every backend test file shares one process, where a top-level hook would run
+ * around every other file's tests too, and would reset their Stripe fake.
+ *
+ * No environment is set: since #293 there is no platform key, signing secret or
+ * descriptor prefix to set. A studio's own account is all a call is made on,
+ * and each test gives its studio one through the fake.
  */
 function setUp(): void {
-  withEnv({ STRIPE_STATEMENT_DESCRIPTOR_PREFIX: 'RSVT', STRIPE_WEBHOOK_SECRET: 'whsec_provider_calls_test' })
-
   before(async () => {
     // Before anything imports `env` or `../../db`, which read the environment at
     // module load, hence the dynamic imports. A placeholder, never dialled:
     // postgres-js connects lazily and nothing in this file reaches the database.
     process.env.DATABASE_APP_URL ||= 'postgres://booking_app:none@127.0.0.1:5432/none'
-    const [checkout, refunds, webhook, fake, lib, route, credentials] = await Promise.all([
+    const [checkout, refunds, webhook, fake, lib, verification, credentials] = await Promise.all([
       import('./checkout-session'),
       import('./refunds'),
       import('./webhook-handler'),
       import('../../test/stripe-fake'),
       import('../../lib/stripe'),
-      import('../../routes/webhooks/stripe'),
+      import('./webhook-verification'),
       import('./provider-credentials'),
     ])
     billing = {
@@ -61,7 +60,7 @@ function setUp(): void {
       installStripeFake: fake.installStripeFake,
       setStripeFactory: lib.setStripeFactory,
       setProviderCredentialsLoader: credentials.setProviderCredentialsLoader,
-      webhookRoute: route.default,
+      verifyTenantDelivery: verification.verifyTenantDelivery,
     }
   })
 
@@ -89,7 +88,7 @@ describe('the checkout session a purchase asks for', () => {
   setUp()
 
   test('the studio is stamped on the session AND on the intent', () => {
-    const params = billing.checkoutSessionParams(input(), 'Acme Yoga')
+    const params = billing.checkoutSessionParams(input())
     assert.equal(params.metadata?.tenant_id, TENANT)
     // The intent is what a refund, a dispute and a bank statement point at, so
     // the studio has to be readable from it without the session.
@@ -99,25 +98,15 @@ describe('the checkout session a purchase asks for', () => {
     })
   })
 
-  test("the studio's name rides on the card statement", () => {
-    const params = billing.checkoutSessionParams(input(), 'Acme Yoga')
-    assert.equal(params.payment_intent_data?.statement_descriptor_suffix, 'Acme Yoga')
-  })
-
-  test("a studio charging on its own account sends no suffix at all", () => {
+  test('every studio charges on its own account, so no suffix is ever sent', () => {
     // The statement already says the studio's name, and the 22-character limit
     // is measured against that account's own prefix — which this platform does
     // not know. A refused charge costs the sale; a missing suffix costs a
     // nicety.
-    const params = billing.checkoutSessionParams(input(), 'Acme Yoga', true)
+    const params = billing.checkoutSessionParams(input())
     assert.ok(!('statement_descriptor_suffix' in (params.payment_intent_data ?? {})))
     // Still stamped with the studio, because a refund and a dispute point here.
     assert.equal(params.payment_intent_data?.metadata?.tenant_id, TENANT)
-  })
-
-  test('a name that cannot be sent safely is left off rather than refused', () => {
-    const params = billing.checkoutSessionParams(input(), '***')
-    assert.ok(!('statement_descriptor_suffix' in (params.payment_intent_data ?? {})))
   })
 
   test('every line is one quantity of its own price, in the platform currency', () => {
@@ -128,7 +117,6 @@ describe('the checkout session a purchase asks for', () => {
           { name: 'Cross-Location Add-On', description: 'Acme Yoga', amountCents: 9000 },
         ],
       }),
-      'Acme Yoga',
     )
     assert.deepEqual(
       params.line_items?.map(item => [item.price_data?.unit_amount, item.quantity]),
@@ -142,27 +130,28 @@ describe('the checkout session a purchase asks for', () => {
 
   test("a capped Promo Code's Hold expires the session with it", () => {
     const expiresAt = new Date('2026-09-07T12:00:00Z')
-    const params = billing.checkoutSessionParams(input({ expiresAt }), 'Acme Yoga')
+    const params = billing.checkoutSessionParams(input({ expiresAt }))
     assert.equal(params.expires_at, Math.floor(expiresAt.getTime() / 1000))
   })
 
   test("no Hold leaves Stripe's own expiry alone", () => {
-    assert.ok(!('expires_at' in billing.checkoutSessionParams(input(), 'Acme Yoga')))
+    assert.ok(!('expires_at' in billing.checkoutSessionParams(input())))
   })
 })
 
 describe('the refund call', () => {
   setUp()
 
-  test('the intent is refunded whole, on the platform account when that is where it was taken', async () => {
+  test('the intent is refunded whole, on the account it was taken on', async () => {
     const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
     fake.reply('refunds.create', {})
 
-    await billing.refundAtProvider(TENANT, 'pi_123', null)
+    await billing.refundAtProvider(TENANT, 'pi_123', 'acct_studio')
 
     const [call] = fake.callsTo('refunds.create')
     assert.deepEqual(call?.args[0], { payment_intent: 'pi_123' })
-    assert.equal(call?.account, null)
+    assert.equal(call?.account, 'acct_studio')
   })
 
   test("a payment taken on the studio's own account is returned there", async () => {
@@ -176,36 +165,38 @@ describe('the refund call', () => {
   })
 
   /**
-   * The migration, in one assertion (#97). The studio is on its own account
-   * now; this payment was taken before it moved. Reading the studio's *current*
-   * credentials would send the refund to an account where the intent does not
-   * exist — the member gets nothing back and the error names an id that looks
-   * right.
+   * The migration (#97, #293). The studio is on its own account now; this
+   * payment was taken on the platform's before it moved. Reading the studio's
+   * *current* credentials would send the refund to an account where the intent
+   * does not exist — the member gets nothing back and the error names an id
+   * that looks right. And there is no platform key left to send it on, so it
+   * is refused, naming where it can be refunded.
    */
-  test('a payment taken before the studio moved is still returned on the platform account', async () => {
+  test("a payment taken on the platform account is refused, not sent on the studio's key", async () => {
     const fake = billing.installStripeFake()
     fake.credentials(TENANT, { accountId: 'acct_studio' })
     fake.reply('refunds.create', {})
 
-    await billing.refundAtProvider(TENANT, 'pi_old', null)
+    await assert.rejects(() => billing.refundAtProvider(TENANT, 'pi_old', null), {
+      code: 'payment_on_platform_account',
+    })
 
-    assert.equal(fake.callsTo('refunds.create')[0]?.account, null)
+    assert.deepEqual(fake.callsTo('refunds.create'), [])
   })
 
-  test('one Purchase straddling the move returns each payment where it came in', async () => {
+  test("one Purchase straddling the move: only the payment on the studio's own account is returned here", async () => {
     const fake = billing.installStripeFake()
     fake.credentials(TENANT, { accountId: 'acct_studio' })
     fake.reply('refunds.create', {})
 
-    await billing.refundAtProvider(TENANT, 'pi_before', null)
+    await assert.rejects(() => billing.refundAtProvider(TENANT, 'pi_before', null), {
+      code: 'payment_on_platform_account',
+    })
     await billing.refundAtProvider(TENANT, 'pi_after', 'acct_studio')
 
     assert.deepEqual(
       fake.callsTo('refunds.create').map(call => [call.account, call.args[0]]),
-      [
-        [null, { payment_intent: 'pi_before' }],
-        ['acct_studio', { payment_intent: 'pi_after' }],
-      ],
+      [['acct_studio', { payment_intent: 'pi_after' }]],
     )
   })
 
@@ -223,10 +214,11 @@ describe('the refund call', () => {
 
   test('the intent is the idempotency key — a double-click cannot refund twice', async () => {
     const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
     fake.reply('refunds.create', {})
 
-    await billing.refundAtProvider(TENANT, 'pi_123', null)
-    await billing.refundAtProvider(TENANT, 'pi_123', null)
+    await billing.refundAtProvider(TENANT, 'pi_123', 'acct_studio')
+    await billing.refundAtProvider(TENANT, 'pi_123', 'acct_studio')
 
     const keys = fake.callsTo('refunds.create').map(call => call.args[1])
     assert.deepEqual(keys, [
@@ -251,9 +243,10 @@ describe('the refund call', () => {
 
   test('a provider refusal reaches the caller — the audit row must not be written', async () => {
     const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
     fake.reply('refunds.create', new Error('charge_already_refunded'))
 
-    await assert.rejects(() => billing.refundAtProvider(TENANT, 'pi_123', null), /already_refunded/)
+    await assert.rejects(() => billing.refundAtProvider(TENANT, 'pi_123', 'acct_studio'), /already_refunded/)
   })
 })
 
@@ -262,31 +255,33 @@ describe("the webhook's receipt lookup", () => {
 
   test('the receipt is read off the latest charge, which must be expanded', async () => {
     const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
     fake.reply('paymentIntents.retrieve', {
       latest_charge: { receipt_url: 'https://pay.example.test/r/1' },
     })
 
-    const patch = await billing.receiptUrlPatch(TENANT, 'pi_123', null)
+    const patch = await billing.receiptUrlPatch(TENANT, 'pi_123', 'acct_studio')
 
     assert.deepEqual(patch, { receiptUrl: 'https://pay.example.test/r/1' })
-    assert.deepEqual(fake.callsTo('paymentIntents.retrieve')[0]?.args, [
-      'pi_123',
-      { expand: ['latest_charge'] },
-    ])
+    const [call] = fake.callsTo('paymentIntents.retrieve')
+    assert.deepEqual(call?.args, ['pi_123', { expand: ['latest_charge'] }])
+    assert.equal(call?.account, 'acct_studio')
   })
 
   test('an unexpanded charge leaves the column absent, not blanked', async () => {
     const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
     fake.reply('paymentIntents.retrieve', { latest_charge: 'ch_123' })
 
-    assert.deepEqual(await billing.receiptUrlPatch(TENANT, 'pi_123', null), {})
+    assert.deepEqual(await billing.receiptUrlPatch(TENANT, 'pi_123', 'acct_studio'), {})
   })
 
   test('a provider failure never fails a purchase that was already delivered', async () => {
     const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
     fake.reply('paymentIntents.retrieve', new Error('provider down'))
 
-    assert.deepEqual(await billing.receiptUrlPatch(TENANT, 'pi_123', null), {})
+    assert.deepEqual(await billing.receiptUrlPatch(TENANT, 'pi_123', 'acct_studio'), {})
   })
 })
 
@@ -308,12 +303,6 @@ describe('an event that arrived on one studio’s endpoint and names another', (
     assert.doesNotThrow(() => refuse(TENANT, TENANT))
   })
 
-  test('the shared platform endpoint expects no studio, and constrains none', () => {
-    // A studio that has supplied no credentials still sells there, and the body
-    // is the only thing that names a studio at all.
-    assert.doesNotThrow(() => refuse(OTHER, undefined))
-  })
-
   test('an event this system cannot place is not a mismatch', () => {
     // The handlers already treat an unplaceable event as a silent no-op or a
     // loud `client_not_found`; refusing here would only change which error a
@@ -322,47 +311,57 @@ describe('an event that arrived on one studio’s endpoint and names another', (
   })
 })
 
+/**
+ * The signature check on a studio's own endpoint (#100, #293), below the route:
+ * the route's first step is a database lookup of the slug, and this file has no
+ * database. Over HTTP, on `/api/v1/webhooks/stripe/:slug`, a forged signature is
+ * refused in `src/test/package-purchase.test.ts` (PAY-17).
+ */
 describe("the webhook's signature check", () => {
   setUp()
 
-  const post = (body: string, signature?: string) =>
-    billing.webhookRoute.request('/stripe', {
-      method: 'POST',
-      body,
-      headers: signature ? { 'stripe-signature': signature } : {},
-    })
+  const verify = (body: string, signature: string) => billing.verifyTenantDelivery(TENANT, body, signature)
 
-  test('the signature is checked on the platform, before anything names a studio', async () => {
+  test("the signature is checked against the studio's own signing secret, and only that one", async () => {
     const fake = billing.installStripeFake()
-    // Refused, so the handler below is never reached and no database is needed.
+    fake.credentials(TENANT, { accountId: 'acct_studio', webhookSecret: 'whsec_studio' })
     fake.reply('webhooks.constructEvent', new Error('no signatures found'))
 
-    const response = await post('{"id":"evt_1"}', 't=1,v1=deadbeef')
+    assert.equal(await verify('{"id":"evt_1"}', 't=1,v1=deadbeef'), null)
 
-    assert.equal(response.status, 400)
-    assert.deepEqual(await response.json(), { error: 'invalid_webhook_signature' })
-    const [call] = fake.callsTo('webhooks.constructEvent')
-    assert.equal(call?.account, null)
-    assert.deepEqual(call?.args.slice(0, 2), ['{"id":"evt_1"}', 't=1,v1=deadbeef'])
+    const calls = fake.callsTo('webhooks.constructEvent')
+    assert.equal(calls.length, 1, 'exactly one secret is tried')
+    assert.equal(calls[0]?.account, 'acct_studio')
+    assert.deepEqual(calls[0]?.args, ['{"id":"evt_1"}', 't=1,v1=deadbeef', 'whsec_studio'])
   })
 
   test('a body arriving with no signature at all is refused the same way', async () => {
     const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
     fake.reply('webhooks.constructEvent', new Error('no signatures found'))
 
-    assert.equal((await post('{"id":"evt_1"}')).status, 400)
+    assert.equal(await verify('{"id":"evt_1"}', ''), null)
     assert.equal(fake.callsTo('webhooks.constructEvent')[0]?.args[1], '')
   })
 
-  test('an event the provider vouches for is handed on, and acknowledged', async () => {
+  test('a studio with no account of its own has nothing to verify against, and is refused', async () => {
     const fake = billing.installStripeFake()
-    // A type the handler dispatches on and does nothing with, so the
-    // acknowledgement is asserted without reaching the database.
     fake.reply('webhooks.constructEvent', { id: 'evt_1', type: 'payment_intent.created' })
 
-    const response = await post('{"id":"evt_1"}', 't=1,v1=good')
+    assert.equal(await verify('{"id":"evt_1"}', 't=1,v1=good'), null)
+    assert.deepEqual(fake.calls, [], 'no platform secret is tried in its place')
+  })
 
-    assert.equal(response.status, 200)
-    assert.deepEqual(await response.json(), { received: true })
+  test('an event the provider vouches for is handed on with the account that signed it', async () => {
+    const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
+    fake.reply('webhooks.constructEvent', { id: 'evt_1', type: 'payment_intent.created' })
+
+    const delivery = await verify('{"id":"evt_1"}', 't=1,v1=good')
+
+    assert.deepEqual(delivery, {
+      event: { id: 'evt_1', type: 'payment_intent.created' },
+      accountId: 'acct_studio',
+    })
   })
 })

@@ -110,21 +110,25 @@ describe('log context', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     assert.equal(serviceLines[0]!.actorId, member.authUserId)
   })
 
+  // On the studio's own endpoint, the only one there is (#293). The fake
+  // provider plays the signature check: one signature verifies, any other fails.
   describe('the Stripe webhook', () => {
-    const secret = `whsec_${randomUUID()}`
-    let previous: string | undefined
+    const GOOD_SIGNATURE = 't=1,v1=log-context'
+    let fake!: import('./stripe-fake').StripeFake
+    let webhookPath!: string
 
-    before(() => {
-      previous = process.env.STRIPE_WEBHOOK_SECRET
-      process.env.STRIPE_WEBHOOK_SECRET = secret
+    before(async () => {
+      fake = (await import('./stripe-fake')).installStripeFake()
+      ;({ webhookPath } = fake.ownAccount(one))
+      fake.reply('webhooks.constructEvent', (body: unknown, signature: unknown) => {
+        if (signature !== GOOD_SIGNATURE) throw new Error('No signatures found matching the expected signature for payload')
+        return JSON.parse(String(body))
+      })
     })
-    after(() => {
-      if (previous === undefined) delete process.env.STRIPE_WEBHOOK_SECRET
-      else process.env.STRIPE_WEBHOOK_SECRET = previous
-    })
+    after(() => fake?.restore())
 
     const post = (payload: string, signature: string) =>
-      harness.app.request('/api/v1/webhooks/stripe', {
+      harness.app.request(webhookPath, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'stripe-signature': signature },
         body: payload,
@@ -140,8 +144,6 @@ describe('log context', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     })
 
     test('a handler that throws is a 500 and one error line', async () => {
-      const { stripePlatform } = await import('../lib/stripe')
-      const stripe = stripePlatform()
       // Money captured for a member nobody can place: the handler refuses loudly.
       const payload = JSON.stringify({
         id: `evt_${randomUUID()}`,
@@ -149,7 +151,7 @@ describe('log context', { skip: integrationTestsEnabled ? false : SKIP_REASON },
         type: 'checkout.session.completed',
         data: { object: { id: `cs_${randomUUID()}`, object: 'checkout.session', metadata: { client_id: randomUUID() } } },
       })
-      const res = await post(payload, stripe.webhooks.generateTestHeaderString({ payload, secret }))
+      const res = await post(payload, GOOD_SIGNATURE)
       assert.equal(res.status, 500)
       const errors = lines('error')
       assert.equal(errors.length, 1, JSON.stringify(errors))
