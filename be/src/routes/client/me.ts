@@ -1,9 +1,9 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { eq } from 'drizzle-orm'
-import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
+import { clientGenderEnum } from '../../db/enums'
+import { editOwnProfile } from '../../services/clients/edit-profile'
 import {
   getClientEntitlements,
   listClientPackages,
@@ -39,6 +39,7 @@ function serializeProfile(row: typeof clients.$inferSelect) {
     name: row.name,
     email: row.email,
     phone: row.phone,
+    gender: row.gender,
     joined_at: row.joinedAt,
   }
 }
@@ -74,13 +75,16 @@ function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>
 
 // Editable profile fields. The row is the source of truth for a member's name at
 // this studio; the email is the account's sign-in address and is read-only here.
+// Gender is the member's to give or take back (#281): null clears it. The
+// trimmed length limits are the service's, shared with the admin's edit.
 const patchSchema = z
   .object({
-    name: z.string().min(1).max(160).optional(),
-    phone: z.string().min(1).max(40).optional(),
+    name: z.string().optional(),
+    phone: z.string().optional(),
+    gender: z.enum(clientGenderEnum.enumValues).nullable().optional(),
   })
-  .refine(b => b.name !== undefined || b.phone !== undefined, {
-    message: 'at least one of name/phone is required',
+  .refine(b => b.name !== undefined || b.phone !== undefined || b.gender !== undefined, {
+    message: 'at least one of name/phone/gender is required',
   })
 
 const app = new Hono()
@@ -89,18 +93,9 @@ const app = new Hono()
     return c.json(serializeProfile(c.get('clientRow')))
   })
   .patch('/', zValidator('json', patchSchema), async c => {
-    const clientId = c.get('clientId')
     const body = c.req.valid('json')
-    const [updated] = await db
-      .update(clients)
-      .set({
-        ...(body.name !== undefined ? { name: body.name.trim() } : {}),
-        ...(body.phone !== undefined ? { phone: body.phone.trim() } : {}),
-        updatedAt: new Date(),
-      })
-      .where(eq(clients.id, clientId))
-      .returning()
-    return c.json(serializeProfile(updated!))
+    const updated = await editOwnProfile(tenantId(c), c.get('clientId'), body)
+    return c.json(serializeProfile(updated))
   })
   .get('/dashboard', c => c.json({ todo: 'next-up + balances' }, 501))
   .get('/packages', async c => {

@@ -27,6 +27,8 @@ export function financeCsv(summary: FinanceSummary): string {
     'discount_sgd',
     'promo_code',
     'money_in_sgd',
+    // How the money in was paid (#282), worded as the screen words it.
+    'method',
     'money_out_sgd',
     'refunded',
     // A comp reads as a $0 line against a real List Price, which in a
@@ -52,6 +54,7 @@ export function financeCsv(summary: FinanceSummary): string {
       r.discount_sgd,
       r.promo_code,
       r.paid_sgd,
+      r.method_label,
       r.pay_sgd,
       r.refunded ? 'yes' : '',
       r.complimentary ? 'yes' : '',

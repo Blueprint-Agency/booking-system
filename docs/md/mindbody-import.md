@@ -49,7 +49,7 @@ the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be
 | 14 | Unlimited Home Location | Location for a member no report places | Retention Management's location, then Membership's, then where their visits were sold, then the plan's name, then the main Location — the preflight counts each |
 | 15 | Workshops and retreats, to come and past | Which to migrate (one `migrate` covers a category's days to come and its past runs inside `history`); tier (room type) prices; which days a tier grants, where not all; how instalments count | All with paid attendees; price = amount paid; every tier grants every day |
 | 16 | Teacher pay | Use the pay-rate report's per-class amount for future classes; what to pay a per-head teacher's classes | Per-class rate, else Unpriced; PT at the trainer's Payroll PT rate |
-| 17 | History | How far back; whether past purchases appear in Finance | None on a quick rehearsal; classes and bookings from opening, purchases off |
+| 17 | History | How far back; whether past purchases appear in Finance; with purchases, how each of Mindbody's payment methods is filed here (`paymentMethods`) | None on a quick rehearsal; classes and bookings from opening, purchases off |
 | 18 | Not migrated | How to track live mat storage, lone access passes and corporate balances by hand | Listed in the preflight report |
 | 19 | Class Series | Which weekly classes repeat, and the term end date to extend to | Proposed from the last 4 weeks |
 | 20 | Cutover timing | Freeze start, launch date, the date Mindbody may be cancelled | — (required) |
@@ -130,10 +130,50 @@ date range is computed from the run date:
 | Staff Schedule (ALL, "Scheduled") | history cutoff → today + 5 years |
 | Membership (New Version Detail) | optional, as of the download |
 | Autopay Detail ("Scheduled"; Reports → Payment Processing — Mindbody has no "AutoPay Schedule" report) | optional, today → today + 12 months: every autopay still to run is a preflight line, to stop in Mindbody; none is imported |
+| Sales (Detail, Accrual; Reports → Sales), one `.xlsx` | history cutoff → today: each sale's payment method |
 
 Birthdays, addresses, emergency contacts, client notes and waiver status are in **no** Mindbody
 report: they come, if at all, from a client data export requested from Mindbody, by hand. The
 transform does not read them.
+
+**Sales: how each sale was paid.** None of the Clients or Staff reports records a sale's payment
+method. Reports → Sales → **Sales** (`/Report/Sales/Sales`) does, and the download fetches it as
+`reports/Sales/44 Sales/44 Sales - Detail Accrual.xlsx` (`download/reports.ts`, the `saleMethods`
+entry):
+
+- **View and filters.** View: Detail. Accounting basis: Accrual, the same as Big Spenders.
+  "Accrual & cash combined" (under More) stays **off**: Mindbody warns that it can count a sale
+  twice. Every Sale location, Client home studio, Payment Method and Revenue Category is
+  selected, and Entered by, Sales rep and Autopays are left at "all" and "Include Autopays".
+  Dates are the history cutoff to today.
+- **How it is fetched.** The page's Export to Excel button takes longer than a click will wait
+  over the whole range, so the download posts the page's Excel endpoint directly (type `post`), as
+  it does for Schedule at a Glance. The answer is the same workbook the button gives.
+- **Columns.** Sale Date (a workbook date), Client ID, Client, Sale ID, Item name, Batch #, Sales
+  Notes, Location, Notes, Color, Size, Item price (excluding tax), Quantity, Subtotal (excluding
+  tax), Discount %, Discount amount, Tax, Item Total, **Total Paid w/ Payment Method**,
+  **Payment Method**. The method is Mindbody's own label, shaped `Cash`, `Credit card
+  (<card>-Keyed)` or `Misc. (<method>)`. A studio's list of labels depends on its own payment
+  set-up, and goes in its private answers, not here.
+- **Split tender.** A row is one item line × one payment. A sale paid two ways repeats the line,
+  with the whole line in Item Total each time and that payment's part in Total Paid w/ Payment
+  Method. The parts add up to the line: no row pays more than its line, and a sale's parts add
+  up to its Big Spenders total. A sale of several items split two ways has not been seen yet.
+  Two payments by the same method repeat the line in the same way. A return is its own sale (quantity −1, negative amounts, the refund's method). A
+  return that moved no money has no method.
+- **Caps.** None seen. The whole history came back as one workbook, with no total row and no
+  "not all results" notice. It is read as a single file, so a refused or failed request fails the
+  cutover download instead of being split.
+- **Joining it to Big Spenders.** Join on the **sale number**. The Sales report has the full
+  number. Big Spenders' Sale ID cell shows only its **last four digits** (sale `12046` shows as
+  `2046`), and has the full number only in the cell's link (`adm_tlbx_voidedit.asp?saleno=12046`).
+  Join on the link, never the text: the text repeats every 10,000 sales. On a real export every
+  Big Spenders sale, by its linked number, had a Sales row. `readSales` reads the number from
+  the link. Promotions (Detail) shows the same shortened number, with no link, so it is joined
+  to Big Spenders on the last four digits (and the item).
+- **Read as** one row per sale × method, `{ saleId, methodLabel, amount }` (`readSaleMethods`).
+  Lines are added up per method, so a split sale gives two rows. Each past purchase's Purchase
+  carries the method its sale was paid by (section 3, **Past purchases**).
 
 What the profile is built to:
 
@@ -359,6 +399,36 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   which Finance lists as a Refund; the package is tagged Refunded. A migrated package still has
   no payment row. A return with nothing to reverse is a preflight line. The register row of a
   returned sale is never a live holding. `verify` compares revenue by month and every Refund.
+- **Every past purchase that took money is a Purchase** (#284): provider-less, `paid` (or
+  `refunded`, as above), dated on its sale date, linked from the package it bought
+  (`client_packages.purchase_id`), with `total_sgd` the sale line's total and `source_sale_id`
+  Mindbody's full sale number. Its `amount_paid_sgd` is `0.00`: the column is what the
+  Purchase's payment rows add up to, it has none, and the portal's Refund button offers only money
+  the platform holds. A $0 sale (a comp, a ClassPass visit) gets no Purchase and no method.
+  **Finance still counts each sale once, from the package**: a paid Purchase with no payment is no
+  Money Event of its own, and only lends its package the method. Live packages (still held at the
+  download) get no Purchase, so no method; nor does anything when `history.purchases` is off
+  (decision 17).
+- **How it was paid** comes from the Sales report (section 2): the Purchase's `offline_method` is
+  the platform method the config's `paymentMethods` table files the Mindbody label under, and
+  `offline_method_label` is the label as Mindbody wrote it. Finance shows both ("PayNow (Misc.
+  (PayNow QR))"), and its Method filter finds it. The table is the studio's own, in its private
+  `answers.json` (`paymentMethods`: label → `cash`, `card`, `paynow`, `bank_transfer` or `other`),
+  never in this repository. `fill` copies it into each config, and prints a proposal for every
+  label the Sales report shows money taken by that the answers leave out (also in
+  `report-facts.json`, `paymentMethods`). A proposal is a guess by the label's words, so check it
+  before you add it. `transform` **refuses** a past purchase paid by a label the table does not
+  map, naming every such label, so no sale is imported with a guessed method. A paid sale with no
+  Sales row (or no Sales report at all) comes across with no method, and the preflight counts them.
+- **A sale Mindbody split across methods** (split tender) keeps a single `offline_method`, so no
+  schema change: it is `other`, and its label names every method, largest part first (`Misc.
+  (PayNow QR) + Cash`). Where every part maps to the one method (two cards), it is that method,
+  with both labels. Finance's Method filter files a split sale under `other`, so filtering by
+  cash does not find a Cash + PayNow sale; its label names both. A sale of several items has each item's Purchase carry the whole sale's
+  methods: the Sales report does not say which item which payment paid for. The preflight counts
+  split sales.
+- `verify` compares Purchases by month and by method (`purchasesByMonth`: `cash (Cash)`,
+  `no method`, …), and names a month whose methods changed on the way in.
 - The cutover download checks Big Spenders' client cap against the Member count, and refuses
   the download where the cap could have left somebody out.
 - A past visit points at the package that paid for it only where the attendance report's pricing
@@ -407,7 +477,8 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   visits and every past class Unpriced. Cancellations (Individual records, one file per month)
   is optional too: with it a past late cancel carries the time it really happened and who made
   it (the member or ClassPass → `client`, anyone else → `admin`); without it the cancel is dated
-  at the class's start.
+  at the class's start. Sales (Detail Accrual, optional) is read for each past purchase's payment
+  method.
 - Payroll pays past PT as well as classes: a past PT session's Instructor Pay is what payroll
   paid for that appointment. One with no payroll line whose visits Mindbody marked **not staff
   paid** (an unpaid no-show) is $0, not Unpriced. Payroll lines with nothing to belong to — a

@@ -24,6 +24,20 @@ import {
   type MoneyEventKind,
   type MoneyEventType,
 } from './events'
+import { methodLabel, type MethodCategory } from './methods'
+
+/** One way a Money Event was paid, as the endpoints serialize it. */
+export interface FinanceMethod {
+  category: MethodCategory
+  /** The provider's method name (`card`, `paynow`, `grabpay`), or the offline method. */
+  method: string
+  card_brand: string | null
+  card_last4: string | null
+  /** `apple_pay`, `google_pay` — for a card that came through a wallet. */
+  wallet: string | null
+  /** An offline method's name in the system it came from. */
+  label: string | null
+}
 
 /** A Money Event as the endpoints serialize it (snake_case, JSON-ready). */
 export interface FinanceLine {
@@ -53,6 +67,10 @@ export interface FinanceLine {
   refunded: boolean
   /** Given by an admin at no charge (#176): shown at 0, counted in no total. */
   complimentary: boolean
+  /** How it was paid (#282); empty on money out and wherever none was recorded. */
+  methods: FinanceMethod[]
+  /** The methods as one cell — "Visa ··4242", "Visa ··4242 + PayNow". Null when there are none. */
+  method_label: string | null
   instructor_id: string | null
   instructor_name: string | null
   pay_sgd: number | null
@@ -132,6 +150,15 @@ function serialize(e: MoneyEvent): FinanceLine {
     promo_code: e.promoCode,
     refunded: e.refunded,
     complimentary: e.complimentary,
+    methods: (e.methods ?? []).map(m => ({
+      category: m.category,
+      method: m.method,
+      card_brand: m.cardBrand,
+      card_last4: m.cardLast4,
+      wallet: m.wallet,
+      label: m.label,
+    })),
+    method_label: methodLabel(e.methods ?? []),
     instructor_id: e.instructorId,
     instructor_name: e.instructorName,
     pay_sgd: num(e.paySgd),

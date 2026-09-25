@@ -1,5 +1,6 @@
+import type { OfflineMethod } from './config'
 import type { ReportFacts, StaffFact } from './facts'
-import { normaliseClassName, normaliseStaffName } from './values'
+import { normaliseClassName, normaliseStaffName, paymentMethodKey } from './values'
 
 /**
  * Fill a starter config (`mindbody starter`) with a studio's answers, by rule.
@@ -65,6 +66,13 @@ export type StudioAnswers = {
   }
   /** Decision 17. */
   history: Json | null
+  /**
+   * How each Mindbody payment method label is filed here (`Cash` → `cash`). The
+   * studio's own labels, so they live here and not in the code. A past purchase
+   * paid by a label this leaves out is refused by the transform; `fill` lists
+   * those it sees in the Sales report, with a proposal (`unmappedPaymentMethods`).
+   */
+  paymentMethods?: Record<string, OfflineMethod>
   /** The configs to write: name → what differs (slug, and the environment's origin patterns). */
   outputs: Record<string, { slug: string; originPatterns?: string }>
 }
@@ -220,10 +228,22 @@ export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportF
 
   // 17. History.
   c.history = answers.history
+  // How each Mindbody payment method is filed: the answers' table, as it is.
+  c.paymentMethods = { ...(answers.paymentMethods ?? {}) }
 
   // The class cancellation window: the cut-off the members' own early and late cancels show.
   if (facts.classWindow) c.policy = { ...c.policy, classWindowHours: facts.classWindow.hours }
   return c
+}
+
+/**
+ * The payment method labels the Sales report shows that the answers do not map,
+ * each with the method it looks like (null where it looks like none): the rows
+ * to add to the answers file's `paymentMethods`, once a person has checked them.
+ */
+export function unmappedPaymentMethods(answers: StudioAnswers, facts: ReportFacts): Record<string, OfflineMethod | null> {
+  const mapped = new Set(Object.keys(answers.paymentMethods ?? {}).map(paymentMethodKey))
+  return Object.fromEntries(Object.entries(facts.paymentMethods).filter(([label]) => !mapped.has(paymentMethodKey(label))))
 }
 
 /** Every config the answers ask for, by output name. */

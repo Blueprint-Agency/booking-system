@@ -311,6 +311,11 @@ export function normaliseOptionName(raw: string): string {
   return raw.replace(/[\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
+/** One key for a Mindbody payment method label, as the config's `paymentMethods` table is looked up by. */
+export function paymentMethodKey(label: string): string {
+  return label.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
 /**
  * One key for a staff member's name, however a report writes it.
  *

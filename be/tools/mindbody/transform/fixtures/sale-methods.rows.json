@@ -1,0 +1,16 @@
+[
+  ["Sale Date", "Client ID", "Client", "Sale ID", "Item name", "Batch #", "Sales Notes", "Location", "Notes", "Color", "Size", "Item price (excluding tax)", "Quantity", "Subtotal (excluding tax)", "Discount %", "Discount amount", "Tax", "Item Total", "Total Paid w/ Payment Method", "Payment Method"],
+  ["Main Hall"],
+  ["2090-03-02", "100000001", "Doe, Jane", "15001", "Class Pack - Bundle of 5", "---", "", "Main Hall", "", "---", "---", 120, 1, 120, 0, 0, 0, 120, 120, "Cash"],
+  ["2090-03-02", "100000002", "Roe, Rick", "15002", "Class Pack - Bundle of 5", "---", "", "Main Hall", "", "---", "---", 90, 1, 90, 0, 0, 0, 90, 90, "Credit card (Test Card-Keyed)"],
+  ["2090-03-02", "100000002", "Roe, Rick", "15002", "Mat Rental", "---", "", "Main Hall", "", "---", "---", 30, 1, 30, 0, 0, 0, 30, 30, "Credit card (Test Card-Keyed)"],
+  ["2090-03-03", "100000003", "Poe, Pia", "25003", "Unlimited 3", "---", "", "Main Hall", "", "---", "---", 200, 1, 200, 0, 0, 0, 200, 50, "Cash"],
+  ["2090-03-03", "100000003", "Poe, Pia", "25003", "Unlimited 3", "---", "", "Main Hall", "", "---", "---", 200, 1, 200, 0, 0, 0, 200, 150, "Credit card (Test Card-Keyed)"],
+  ["2090-03-04", "100000004", "Moe, Max", "25004", "Workshop Place", "---", "", "Main Hall", "", "---", "---", 80.5, 1, 80.5, 0, 0, 0, 80.5, 40.25, "Misc. (Test Wallet)"],
+  ["2090-03-04", "100000004", "Moe, Max", "25004", "Workshop Place", "---", "", "Main Hall", "", "---", "---", 80.5, 1, 80.5, 0, 0, 0, 80.5, 40.25, "Misc. (Test Wallet)"],
+  ["2090-03-05", "100000001", "Doe, Jane", "35005", "Class Pack - Bundle of 5", "---", "", "Main Hall", "", "---", "---", -120, -1, -120, 0, 0, 0, -120, -120, "Cash"],
+  ["2090-03-05", "100000002", "Roe, Rick", "35006", "Class Pack - Bundle of 5", "---", "", "Main Hall", "", "---", "---", 0, -1, 0, 0, 0, 0, 0, 0, ""],
+  ["2090-03-06", "100000005", "Loe, Lin", "35007", "Guest Pass", "---", "", "Main Hall", "", "---", "---", 0, 1, 0, 0, 0, 0, 0, 0, "Misc. (Test Comp)"],
+  [],
+  ["Total", "", "", "", "", "", "", "", "", "", "", "", 4, 400.5, "", 0, 0, 400.5, 400.5, ""]
+]

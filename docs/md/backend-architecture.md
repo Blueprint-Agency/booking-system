@@ -831,7 +831,11 @@ UI surfacing is next phase (§19) but the table is populated this phase.
 
 #### `stripe_payments`
 
-id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_package`, `pt_package`, `corporate_package`, `merch`), client_id (FK), booking_id (FK, nullable), client_package_id (FK, nullable), status enum (`pending`, `succeeded`, `refunded`, `failed`), receipt_url (text, nullable — Stripe-hosted receipt; populated by `payment_intent.succeeded` webhook handler from `latest_charge.receipt_url`), refunded_at (nullable), created_at.
+id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_package`, `pt_package`, `corporate_package`, `merch`), client_id (FK), booking_id (FK, nullable), client_package_id (FK, nullable), status enum (`pending`, `succeeded`, `refunded`, `failed`), receipt_url (text, nullable — Stripe-hosted receipt; populated by `payment_intent.succeeded` webhook handler from `latest_charge.receipt_url`), method / card_brand / card_last4 / wallet (text, nullable — how it was paid, copied off the same charge's `payment_method_details` when the payment succeeds (#282); `method` is the provider's own type name, kept as text so a newly enabled method needs no code change; best-effort, so null means "not read"), refunded_at (nullable), created_at.
+
+**Payment method backfill.** Payments taken before #282 have no method. `npm run -s billing:backfill-methods [-- <studio-slug>]` (one-off, run where the database is, like `e2e:studio`) reads each succeeded or refunded payment with none from the account it was taken on, and skips — and counts — any on a provider account the studio no longer supplies.
+
+**Offline method on `purchases`.** A Purchase with no payment behind it (a migrated sale) records how it was paid instead: `offline_method` enum (`cash`, `card`, `paynow`, `bank_transfer`, `other`), `offline_method_label` (the source system's own name for it) and `source_sale_id` (the source system's sale id). Null on every Purchase the platform took money for.
 
 **Merch purchases.** A `kind='merch'` payment records the money and nothing else: no `client_packages` row and no booking — the delivered thing is the `merch_orders` row (§4b) and the item is handed over at the studio. `booking_id` and `client_package_id` stay NULL, so a refund of one unwinds to `stampRefunded` alone.
 

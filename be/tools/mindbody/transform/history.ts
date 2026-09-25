@@ -10,6 +10,7 @@ import type {
   GroupCancellationRow,
   PayrollRow,
   RosterRow,
+  SaleMethodRow,
   ScheduledClassRow,
 } from './readers'
 import {
@@ -116,6 +117,8 @@ export function mapHistory(input: {
   groupCancellations: GroupCancellationRow[]
   /** Every sale line, joined to what it became and what reversed it (`./sales.ts`), for past purchases. */
   sales: JoinedSales
+  /** How each sale was paid (Sales, Detail Accrual), for the past purchases' Purchases. Empty where not downloaded. */
+  saleMethods: SaleMethodRow[]
   config: StudioConfig
   tenantId: string
   id: (kind: string, key: string) => string
@@ -201,6 +204,7 @@ export function mapHistory(input: {
     const barcodeOf = new Map(Object.entries(ids.clients ?? {}).map(([barcode, clientId]) => [clientId, barcode]))
     const past = pastPackages({
       joined: input.sales,
+      saleMethods: input.saleMethods,
       from,
       today,
       config,

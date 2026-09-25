@@ -308,4 +308,20 @@ export const CUTOVER: ProfileEntry[] = [
       noOfRowsToDisplay: '100000' }, // the on-screen page size, set high so no page limit can cut the export
     variants: [{ label: 'Scheduled', set: { optEFTStatus: '1' } }],
   },
+  {
+    // Reports -> Sales -> Sales: the one report with each sale's payment method (none of the Clients or
+    // Staff reports has it). Detail is a row per item line x payment: Sale ID (the full number, which Big
+    // Spenders cuts to its last four digits in the text and keeps whole in its link), Item Total, and the
+    // part of it paid by that method ("Total Paid w/ Payment Method", "Payment Method"). A sale paid two
+    // ways repeats its line once per payment. Accrual, like Big Spenders; "Accrual & cash combined" stays
+    // off (it can list a sale twice), and a post leaves an unchecked box out. Every location, client home
+    // studio, method and revenue category ('*'), autopays included.
+    // The page's Export button outlasts a click's wait over the whole range, so the Excel endpoint is
+    // posted instead. It answers a workbook with no row cap and no total row; a refusal fails the run.
+    name: 'Sales', kind: 'saleMethods', cat: 'Sales', num: 44, type: 'post',
+    path: '/Report/Sales/Sales',
+    set: { ...DATES, optFilterTagged: 'false', optSaleLoc: '*', optHomeStudio: '*', optPayMethod: '*', optCategory: '*',
+      optEmployee: '', optRep: '0', optIncludeAutoRenews: 'Include', optShowSupplier: 'false' },
+    variants: [{ label: 'Detail Accrual', set: { optDisMode: 'Detail', optBasis: 'AccrualBasis' } }],
+  },
 ]

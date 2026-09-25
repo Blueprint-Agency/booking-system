@@ -304,6 +304,10 @@ export function readPricingOptionRegister(html: string): OptionSaleRow[] {
 export type SaleRow = {
   /** The client whose block the line is in, from the block header's link. Null where the header has no link. */
   clientId: string | null
+  /**
+   * The full sale number, from the Sale ID cell's link (`saleno=`). The cell's
+   * text is only its last four digits, which repeat every 10,000 sales.
+   */
   saleId: string
   soldAt: LocalDateTime
   description: string
@@ -333,7 +337,7 @@ export function readSales(html: string): SaleRow[] {
       client = clientId(row, {}, '')
       continue
     }
-    const saleId = row.cells[0] ?? ''
+    const saleId = row.links[0]?.match(/[?&]saleno=(\d+)/i)?.[1] ?? row.cells[0] ?? ''
     const soldAt = parseMindbodyDate(cell(row, columns, 'Sale Date'), 'MD')
     if (!/^\d+$/.test(saleId) || !soldAt) continue
     out.push({
@@ -352,7 +356,11 @@ export function readSales(html: string): SaleRow[] {
 /* ── 23 Promotions — Detail: every sale a promotion took money off ─────────── */
 
 export type PromotionRow = {
-  /** The same sale number as Big Spenders', which is how the two are joined: this report has no client id. */
+  /**
+   * The sale number, shortened to its last four digits as Big Spenders' text
+   * shows it, and with no link to the full one. Joined on those four digits
+   * (`./sales.ts`): this report has no client id.
+   */
   saleId: string
   soldAt: LocalDateTime
   /** The promotion's own name, as the studio set it up. */
@@ -383,6 +391,49 @@ export function readPromotions(html: string): PromotionRow[] {
     })
   }
   return out
+}
+
+/* ── 44 Sales — Detail (accrual): how each sale was paid ──────────────────── */
+
+export type SaleMethodRow = {
+  /**
+   * The full sale number. Big Spenders shows only its last four digits, and has
+   * the full one in its Sale ID link (`saleno=`): join on that.
+   */
+  saleId: string
+  /** Mindbody's own name for the method, as the report writes it: `Cash`, `Credit card (<card>-Keyed)`, `Misc. (<method>)`. */
+  methodLabel: string
+  /** Dollars paid this way on this sale; negative on a return. */
+  amount: number
+}
+
+/**
+ * One row per sale × method. The workbook has a line per item × payment: a sale
+ * paid two ways repeats each item line, "Item Total" the whole line and "Total
+ * Paid w/ Payment Method" the part paid that way. Those parts are added up per
+ * method, so two items on one card, or two payments by one method, are one row.
+ * A line is a row whose Sale ID is a number, which drops any heading, blank or
+ * total row. A return that moved no money has no method and is dropped; a paid
+ * line with no method is refused, since any method given it would be a guess.
+ */
+export function readSaleMethods(rows: TableRow[]): SaleMethodRow[] {
+  const { at, columns } = header(rows, 'Sales (detail)', ['Sale ID', 'Total Paid w/ Payment Method', 'Payment Method'])
+  const out = new Map<string, SaleMethodRow>()
+  for (const row of dataRows(rows, at)) {
+    const saleId = tidy(cell(row, columns, 'Sale ID'))
+    if (!/^\d+$/.test(saleId)) continue
+    const methodLabel = tidy(cell(row, columns, 'Payment Method'))
+    const amount = parseMoney(cell(row, columns, 'Total Paid w/ Payment Method')) ?? 0
+    if (!methodLabel) {
+      if (amount === 0) continue
+      throw new Error(`Sales (detail): sale ${saleId} paid ${amount} with no payment method`)
+    }
+    const key = `${saleId}\n${methodLabel}`
+    const seen = out.get(key)
+    if (seen) seen.amount = Math.round((seen.amount + amount) * 100) / 100
+    else out.set(key, { saleId, methodLabel, amount })
+  }
+  return [...out.values()]
 }
 
 /* ── 04 Account Balances — All balances: money on account, either way ─────── */

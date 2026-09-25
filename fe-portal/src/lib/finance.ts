@@ -76,6 +76,34 @@ export const FINANCE_TYPE_LABEL: Record<FinanceType, string> = {
 
 export const FINANCE_TYPES = Object.keys(FINANCE_TYPE_LABEL) as FinanceType[];
 
+/**
+ * How a row was paid, by category. Mirrors `METHOD_CATEGORIES` in
+ * be/src/services/finance/methods.ts, which files the payment provider's own
+ * method names under these. Insertion order is the filter's order.
+ */
+export type MethodCategory = "card" | "paynow" | "wallet" | "bank_transfer" | "cash" | "other";
+
+export const METHOD_CATEGORY_LABEL: Record<MethodCategory, string> = {
+  card: "Card",
+  paynow: "PayNow",
+  wallet: "Wallet",
+  bank_transfer: "Bank transfer",
+  cash: "Cash",
+  other: "Other",
+};
+
+export const METHOD_CATEGORIES = Object.keys(METHOD_CATEGORY_LABEL) as MethodCategory[];
+
+/** One way a row was paid. Mirrors `FinanceMethod` in be/src/services/finance/totals.ts. */
+export interface FinanceMethod {
+  category: MethodCategory;
+  method: string;
+  card_brand: string | null;
+  card_last4: string | null;
+  wallet: string | null;
+  label: string | null;
+}
+
 /** The Location filter value for rows that record no Location at all. */
 export const UNATTRIBUTED = "unattributed";
 
@@ -103,6 +131,17 @@ export interface FinanceRow {
    * table says so rather than letting the two figures read as a discount.
    */
   complimentary: boolean;
+  /**
+   * Every way it was paid (#282) — two for a Part Payment paid two ways. Empty
+   * on money out. Optional because the portal and the backend deploy apart, and
+   * a backend from before #282 sends neither field: absent reads as "none".
+   */
+  methods?: FinanceMethod[];
+  /**
+   * The methods as the backend words them — "Visa ··4242", "Visa ··4242 +
+   * PayNow" — so the table and the CSV say the same thing. Null when none.
+   */
+  method_label?: string | null;
   instructor_id: string | null;
   instructor_name: string | null;
   pay_sgd: number | null;
@@ -154,6 +193,8 @@ export interface FinanceFilters {
   /** A Location id, or UNATTRIBUTED. Empty means every Location. */
   location?: string;
   needsPay?: boolean;
+  /** One method category, or empty for any. Money out is never paid any way, so it drops out. */
+  method?: string;
   range: DateRange;
 }
 
@@ -164,6 +205,7 @@ const toParams = (f: FinanceFilters) => ({
   location: f.location || undefined,
   needs_pay: f.needsPay ? "true" : undefined,
   ...rangeToParams(f.range),
+  ...(f.method ? { method: f.method } : {}),
 });
 
 export function fetchFinance(api: Api, filters: FinanceFilters): Promise<FinanceResponse> {

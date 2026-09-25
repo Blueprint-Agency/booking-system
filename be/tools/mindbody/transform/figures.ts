@@ -21,7 +21,8 @@ export type RefundFigure = { name: string; cents: number }
 
 /**
  * Which counts arrived with the timetable (#179, #180), history (#181), the
- * money history (#217) and Instructor Pay (#218), and so may be missing from an older file.
+ * money history (#217), Instructor Pay (#218) and payment methods (#284), and so
+ * may be missing from an older file.
  */
 type AddedLater =
   | 'classes'
@@ -34,6 +35,7 @@ type AddedLater =
   | 'revenueByMonth'
   | 'refunds'
   | 'payByMonth'
+  | 'purchasesByMonth'
 
 /**
  * Figures as an `expected.json` on disk may hold them. `figuresOf` always
@@ -85,6 +87,14 @@ export type Figures = {
    * total, so a month that lost pay on the way in is named.
    */
   payByMonth: Record<string, string>
+  /**
+   * Purchases in cents, by the studio's own month they were made (`YYYY-MM`)
+   * and by how they were paid: the offline method with the old system's label
+   * (`cash (Cash)`), or `no method`. Refunded ones too, since a Refund is paid
+   * back the way the sale was paid. A method lost or changed on the way in is
+   * named by its month.
+   */
+  purchasesByMonth: Record<string, Record<string, number>>
 }
 
 const tally = (counts: Record<string, number>, key: string, by = 1) => {
@@ -111,6 +121,7 @@ export function figuresOf(archive: TenantArchive): Figures {
     revenueByMonth: {},
     refunds: {},
     payByMonth: {},
+    purchasesByMonth: {},
   }
   // The studio's own year, not UTC's: a class at 8am in Singapore on 1 January
   // is the new year's, and would otherwise be counted in the old one.
@@ -171,6 +182,12 @@ export function figuresOf(archive: TenantArchive): Figures {
     const day = localDateOf(new Date(String(p.refunded_at)), timeZone)
     const who = names.get(String(p.client_id)) ?? String(p.client_id)
     figures.refunds[String(p.id)] = { name: `the refund to ${who} on ${isoDay(day)}`, cents: cents(p.total_sgd) }
+  }
+
+  for (const p of archive.rows.purchases ?? []) {
+    const method = p.offline_method == null ? 'no method' : String(p.offline_method)
+    const paidBy = p.offline_method_label == null ? method : `${method} (${String(p.offline_method_label)})`
+    tally((figures.purchasesByMonth[monthOf(p.created_at)] ??= {}), paidBy, cents(p.total_sgd))
   }
 
   // Instructor Pay, in cents while adding up, so a hundred lines of x.10 still add to what they say.
@@ -259,6 +276,14 @@ export function compareFigures(expected: StoredFigures, actual: Figures): string
     if (!got) differences.push(`${want!.name}: ${dollars(want!.cents)} in the archive, and no such refund in the studio`)
     else if (!want) differences.push(`${got.name}: ${dollars(got.cents)} in the studio, and no such refund in the archive`)
     else if (want.cents !== got.cents) differences.push(`${want.name}: expected ${dollars(want.cents)}, found ${dollars(got.cents)}`)
+  }
+  // Likewise a file written before methods were: not compared, rather than read as a studio that sold nothing.
+  for (const month of expected.purchasesByMonth ? keys(expected.purchasesByMonth, actual.purchasesByMonth) : []) {
+    const [want, got] = [expected.purchasesByMonth?.[month] ?? {}, actual.purchasesByMonth[month] ?? {}]
+    for (const paidBy of keys(want, got)) {
+      const [w, g] = [want[paidBy] ?? 0, got[paidBy] ?? 0]
+      if (w !== g) differences.push(`${month}: purchases paid by ${paidBy}: expected ${dollars(w)}, found ${dollars(g)}`)
+    }
   }
   // A file written before pay was counted holds no months at all: not compared,
   // rather than read as a studio that paid nobody.

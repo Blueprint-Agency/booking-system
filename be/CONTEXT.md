@@ -219,7 +219,7 @@ _Avoid_: revoke, delete, cancel, withdraw, claw back
 ### Money
 
 **Purchase**:
-One sale, and the thing that owns its money: who bought, what kind of thing they bought, what it costs, and how much has been paid. Every sale opens one — a plan, a workshop, Merch, a standalone Cross-Location Add-On — and a sale paid in full at the first attempt, which is every sale the platform takes today, is simply a Purchase that closes immediately. Its price is frozen when it opens and never recomputed, so what a member owes cannot rise while they are settling it. Nothing it bought is granted until its Balance reaches zero. A payment is not a Purchase: it is evidence of part of one.
+One sale, and the thing that owns its money: who bought, what kind of thing they bought, what it costs, and how much has been paid. Every sale opens one — a plan, a workshop, Merch, a standalone Cross-Location Add-On — and a sale paid in full at the first attempt, which is every sale the platform takes today, is simply a Purchase that closes immediately. Its price is frozen when it opens and never recomputed, so what a member owes cannot rise while they are settling it. Nothing it bought is granted until its Balance reaches zero. A payment is not a Purchase: it is evidence of part of one. A sale made before the studio came to the platform, migrated, is a Purchase too, closed on the day it was sold with no payment behind it: it keeps the old system's sale number and how it was paid, records nothing paid here because no payment row stands behind it, and is counted in Finance once, through the package it bought.
 _Avoid_: order, transaction, cart, checkout, payment, sale record
 
 **Balance**:

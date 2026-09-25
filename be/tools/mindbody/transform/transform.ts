@@ -3,7 +3,7 @@ import path from 'node:path'
 import { packArchive, unpackArchive } from '../../../src/services/tenants/transfer-archive'
 import { validateConfig } from './config'
 import { constraintViolations } from './constraints'
-import { compareFigures, figuresOf, type Figures } from './figures'
+import { compareFigures, figuresOf, type Figures, type StoredFigures } from './figures'
 import { mapStudio, renderPreflight, type MindbodyReports, type Transformed } from './mapper'
 import {
   readAccountBalances,
@@ -21,6 +21,7 @@ import {
   readReferralTypes,
   readRetentionManagement,
   readRoster,
+  readSaleMethods,
   readSales,
   readStaffSchedule,
   readVisitsRemaining,
@@ -73,6 +74,8 @@ export const REPORTS = {
   promotions: { label: 'Promotions — Detail', test: (f: string) => /promotions - detail/i.test(f) },
   // The autopays still to run: listed in the preflight, to stop in Mindbody.
   autopay: { label: 'Autopay Detail', test: (f: string) => /autopay detail/i.test(f) },
+  // How each sale was paid (Reports → Sales → Sales). Anchored: "Big Spenders - Detail Accrual" is another report.
+  saleMethods: { label: 'Sales — Detail Accrual', test: (f: string) => /^\d+ sales - detail accrual\.[a-z]+$/i.test(f) },
 } as const
 
 /**
@@ -100,6 +103,7 @@ export const REPORT_RULES: Record<keyof typeof REPORTS, { single: boolean; requi
   groupCancellations: { single: true, required: false },
   promotions: { single: true, required: false },
   autopay: { single: true, required: false },
+  saleMethods: { single: true, required: false },
 }
 
 async function filesUnder(dir: string): Promise<string[]> {
@@ -166,6 +170,8 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
   // Optional: an Unlimited Plan's Home Location falls back past it to where its visits were sold.
   const membershipFile = optional('membership')
   const autopayFile = optional('autopay')
+  // Optional: a download older than it has no payment methods.
+  const saleMethodsFile = optional('saleMethods')
 
   return {
     members: readMemberList(await one('members')),
@@ -187,6 +193,7 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
     promotions: promotionsFile ? readPromotions(await read(promotionsFile)) : [],
     // Optional: a download older than it lists no autopays, which is not the same as there being none.
     autopay: autopayFile ? readAutopayDetail(await read(autopayFile)) : [],
+    saleMethods: saleMethodsFile ? readSaleMethods(await workbook(saleMethodsFile)) : [],
   }
 }
 
@@ -245,7 +252,7 @@ export async function transformMindbody(input: {
  * the platform's own account of what it now holds. Returns every difference,
  * by member; none means nothing was lost on the way in.
  */
-export async function verifyImport(expected: Figures, exportedZip: Buffer | Uint8Array): Promise<string[]> {
+export async function verifyImport(expected: StoredFigures, exportedZip: Buffer | Uint8Array): Promise<string[]> {
   return compareFigures(expected, figuresOf(await unpackArchive(exportedZip)))
 }
 

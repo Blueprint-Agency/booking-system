@@ -1,6 +1,7 @@
 import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { and, eq, lte, sql } from 'drizzle-orm'
 import { frontendOrigin, integrationTestsEnabled, SKIP_REASON, startTestApp, inTenantContext, type TestApp } from '../../../src/test/harness'
@@ -54,6 +55,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     // Flow", members, bookings) pile up in the shared test database under
     // names another suite's purge may also match.
     await deleteStudios(`mb-${run}-%`)
+    for (const dir of reportCopies) rmSync(dir, { recursive: true, force: true })
     await harness.close()
   })
 
@@ -74,21 +76,41 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
   /** A change to the fixture config, for a studio that wants something else of it. */
   type Edit = (config: Record<string, any>) => void
 
-  /** The fixture, transformed for one Tenant. */
-  async function transformFor(tenant: { id: string; slug: string }, edit?: Edit) {
+  /** The fixture, transformed for one Tenant: from its own reports, or from another folder of them. */
+  async function transformFor(tenant: { id: string; slug: string }, edit?: Edit, reportsDir = path.join(FIXTURES, 'reports')) {
     const config = JSON.parse(readFileSync(path.join(FIXTURES, 'config.json'), 'utf8')) as Record<string, any>
     config.studio.slug = tenant.slug
     // The links in the email copy are this environment's, as they would be on staging.
     config.originPatterns = process.env.TENANT_ORIGIN_PATTERNS
     edit?.(config)
-    return transform.transformMindbody({ reportsDir: path.join(FIXTURES, 'reports'), config, tenantId: tenant.id, local: true })
+    return transform.transformMindbody({ reportsDir, config, tenantId: tenant.id, local: true })
   }
 
   /** A Tenant provisioned the way the runbook says — no first admin — and the fixture transformed for it. */
-  async function transformedStudio(edit?: Edit) {
+  async function transformedStudio(edit?: Edit, reportsDir?: string) {
     const slug = `mb-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({ slug, name: 'Mindbody Fixture Studio' })
-    return { tenant, slug, ...(await transformFor(tenant, edit)) }
+    return { tenant, slug, ...(await transformFor(tenant, edit, reportsDir)) }
+  }
+
+  /**
+   * The fixture's reports, with a Sales (Detail Accrual) workbook saying how
+   * its own Big Spenders sales were paid — the fixture's is invented sales of
+   * its own — as `[sale number, Mindbody's method, amount]`. A folder of its own,
+   * removed when the run ends.
+   */
+  const reportCopies: string[] = []
+  async function reportsPaidBy(payments: [string, string, number][]) {
+    const { writeXlsx } = await import('../download/xlsx-write')
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'mb-sales-'))
+    reportCopies.push(dir)
+    cpSync(path.join(FIXTURES, 'reports'), dir, { recursive: true })
+    const rows = [
+      ['Sale ID', 'Item Total', 'Total Paid w/ Payment Method', 'Payment Method'],
+      ...payments.map(([sale, method, amount]) => [sale, String(amount), String(amount), method]),
+    ]
+    writeFileSync(path.join(dir, 'Sales', '44 Sales', '44 Sales - Detail Accrual.xlsx'), await writeXlsx(rows, 'Sales'))
+    return dir
   }
 
   /** The studio as it is with its past brought across from a cutoff (#181). */
@@ -308,8 +330,8 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
   }
 
   /** A studio imported and open, with what the tests below need to put a class on its timetable. */
-  async function importedStudio(edit?: Edit) {
-    const studio = await transformedStudio(edit)
+  async function importedStudio(edit?: Edit, reportsDir?: string) {
+    const studio = await transformedStudio(edit, reportsDir)
     const imported = await importZip(studio.tenant.id, studio.zip)
     assert.equal(imported.status, 200, JSON.stringify(imported.body))
 
@@ -855,6 +877,79 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     // The Refund belongs to the day it was given, so a period that ends before it has the sale and no Refund.
     const beforeReturn = await finance(`from=${day('2026-07-01', '00:00:00')}&to=${day('2026-07-02', '23:59:59')}`)
     assert.ok(!beforeReturn.rows.some(r => r.kind === 'refund'))
+  })
+
+  test('FIN-56 a past Mindbody sale imports as a Purchase carrying its sale number and method; Finance shows the method and counts each sale once', async () => {
+    const paidBy = await reportsPaidBy([
+      ['7500', 'Cash', 250], // Jane's pack
+      ['7620', 'Credit card (Visa-Keyed)', 250], // Rick's pack, returned
+      ['7700', 'Misc. (PayNow QR)', 150], // Kim's pack, paid two ways
+      ['7700', 'Cash', 100],
+    ])
+    const table = { Cash: 'cash', 'Credit card (Visa-Keyed)': 'card', 'Misc. (PayNow QR)': 'paynow' }
+    const withMethods = (config: Record<string, any>) => {
+      withHistory(true)(config)
+      config.paymentMethods = { ...table }
+    }
+    // Refused before the zip is written while a method it needs is unmapped, naming it.
+    const { tenant } = await provision.provisionTenant({ slug: `mb-${run}-${++studios}`, name: 'Mindbody Fixture Studio' })
+    await assert.rejects(
+      transformFor(tenant, config => (withMethods(config), delete config.paymentMethods['Misc. (PayNow QR)']), paidBy),
+      /"Misc\. \(PayNow QR\)" is on past purchases and is not mapped/,
+    )
+
+    const studio = await importedStudio(withMethods, paidBy)
+    const [jane] = await harness.db
+      .select()
+      .from(schema.purchases)
+      .where(and(eq(schema.purchases.tenantId, studio.tenantId), eq(schema.purchases.sourceSaleId, '7500')))
+    assert.deepEqual(
+      [jane!.status, jane!.totalSgd, jane!.offlineMethod, jane!.offlineMethodLabel],
+      ['paid', '250.00', 'cash', 'Cash'],
+    )
+    const bought = await harness.db
+      .select({ id: schema.clientPackages.id })
+      .from(schema.clientPackages)
+      .where(and(eq(schema.clientPackages.tenantId, studio.tenantId), eq(schema.clientPackages.purchaseId, jane!.id)))
+    assert.equal(bought.length, 1, 'linked from the package it bought')
+
+    const owner = await harness.signInAs('staff', 'owner@example.test', studio)
+    const finance = async (tenantPeriod: string, headers: Record<string, string>) => {
+      const res = await get(`/api/v1/portal/admin/finance?${tenantPeriod}`, headers)
+      assert.equal(res.status, 200, await res.clone().text())
+      return (await res.json()) as { rows: Record<string, any>[]; totals: Record<string, number> }
+    }
+    const period = 'from=2026-06-01&to=2026-07-15'
+    const july = await finance(period, owner)
+    assert.deepEqual(
+      july.rows
+        .filter(r => r.kind === 'purchase' || r.kind === 'refund')
+        .map(r => `${r.user_name} ${r.kind} ${r.paid_sgd} ${r.method_label}`)
+        .sort(),
+      [
+        'Jane Doe purchase 250 Cash',
+        'Kim Lee purchase 250 Other (Misc. (PayNow QR) + Cash)',
+        // A PT pack still held at the download: a live package, which is no past sale.
+        'Mei 林 purchase 1200 null',
+        // A $0 ClassPass is a comp: no Purchase, no method.
+        'Rick Roe purchase 0 null',
+        // The June pack has no row in this Sales report.
+        'Rick Roe purchase 240 null',
+        'Rick Roe purchase 250 Card (Credit card (Visa-Keyed))',
+        'Rick Roe refund -250 Card (Credit card (Visa-Keyed))',
+      ],
+      'each sale once, from its package, and its Refund once',
+    )
+    const cash = await finance(`${period}&method=cash`, owner)
+    assert.deepEqual(cash.rows.map(r => r.user_name).sort(), ['Jane Doe'])
+
+    // The takings are the sales listed above, each once: 2,190.00 sold, 250.00 of it given back.
+    assert.equal(july.totals.gross_sgd! - july.totals.discounts_sgd!, 2190)
+    assert.equal(july.totals.refunds_sgd, 250)
+    // And what the same studio imported with no methods at all shows.
+    const plain = await importedStudio(withHistory(true))
+    const before = await finance(period, await harness.signInAs('staff', 'owner@example.test', plain))
+    assert.deepEqual(july.totals, before.totals)
   })
 
   test('verify compares the studio s past as well as its future, and names the year that lost something', async () => {

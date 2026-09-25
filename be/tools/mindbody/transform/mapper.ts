@@ -24,6 +24,7 @@ import type {
   ReferralRow,
   RetentionRow,
   RosterRow,
+  SaleMethodRow,
   SaleRow,
   ScheduledClassRow,
 } from './readers'
@@ -86,6 +87,8 @@ export type MindbodyReports = {
   groupCancellations: GroupCancellationRow[]
   /** The autopays still to run (Autopay Detail): none is imported. Empty where not downloaded. */
   autopay: AutopayRow[]
+  /** How each sale was paid, a row per sale × method (Sales, Detail Accrual): a past purchase's method. Empty where not downloaded. */
+  saleMethods: SaleMethodRow[]
 }
 
 export type Preflight = {
@@ -112,6 +115,10 @@ export type Preflight = {
   }[]
   /** Members' phones that could not be formatted for their country: imported with none. */
   badPhones: { id: string; name: string; phone: string; country: string }[]
+  /** Members imported with a gender (Retention Management's F or M). The rest come across with none. */
+  membersWithGender: number
+  /** Every member imported, for the count above to be read against. */
+  members: number
   /** Autopays still live in Mindbody. The platform charges none of them: each is stopped there and re-signed here. */
   autopays: LiveAutopay[]
 }
@@ -254,6 +261,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     noEmail: [],
     sharedEmails: [],
     badPhones: [],
+    membersWithGender: 0,
+    members: reports.members.length,
     notMigrated: [],
     balances: [],
     schedule: [],
@@ -300,11 +309,13 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
       email: emailOf.get(m.id),
       name: memberName(m),
       phone: phone.phone,
+      // Female or male where Retention Management has it; none, not a default, otherwise.
       gender: retention.get(m.id)?.gender ?? null,
       status: 'active',
       joined_at: joined ? instant(joined) : asOf.toISOString(),
     }
     ids.clients![m.id] = row.id
+    if (row.gender) preflight.membersWithGender++
     return row
   })
 
@@ -537,6 +548,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
         cancellations: reports.cancellations,
         groupCancellations: reports.groupCancellations,
         sales,
+        saleMethods: reports.saleMethods,
         config,
         tenantId,
         id,
@@ -737,6 +749,8 @@ export function renderPreflight(p: Preflight): string {
   lines.push('', `## Phones that could not be formatted (${p.badPhones.length})`, '')
   lines.push("Imported with no phone. Each is formatted with the member's Country in the Mailing List (or `defaultCountry`): fix the number or the Country in Mindbody, or have an admin set it after launch.", '')
   for (const b of p.badPhones) lines.push(`- ${b.id} ${b.name}: "${b.phone}" (${b.country})`)
+  lines.push('', `## Members imported with a gender (${p.membersWithGender} of ${p.members})`, '')
+  lines.push('From Retention Management, which lists only members with a membership. The rest come across with none; an admin or the member can set it after launch.')
   lines.push('', `## Staff with no email: imported by name, with no login (${p.staffWithoutLogin.length})`, '')
   lines.push('They teach, are paid and appear on the timetable; nobody can sign in as them until they have a real email.', '')
   for (const s of p.staffWithoutLogin) lines.push(`- ${s.name} → ${s.placeholder}`)

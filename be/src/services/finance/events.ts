@@ -9,6 +9,7 @@
  * Money is `numeric(10,2)` — Postgres hands it over as a string, and it stays a
  * string until `summarizeFinance` turns it into cents. Nothing here parses.
  */
+import type { PaymentMethod } from './methods'
 
 /**
  * Money in. Every one of these carries a List Price and an amount paid.
@@ -117,6 +118,13 @@ export interface MoneyEvent {
    * 0", which a $0 catalogue item and a fully discounted sale are too.
    */
   complimentary: boolean
+
+  /**
+   * How it was paid (#282) — every method, so a Part Payment paid two ways
+   * lists both. Absent or empty means none was recorded: always so on money
+   * out and on a Complimentary Package, which nobody paid.
+   */
+  methods?: readonly PaymentMethod[]
 
   // ---- money out ----------------------------------------------------------
   instructorId: string | null

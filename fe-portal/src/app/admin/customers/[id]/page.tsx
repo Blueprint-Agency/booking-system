@@ -5,6 +5,7 @@ import { use, useCallback, useEffect, useRef, useState, type ReactNode } from "r
 import {
   ArrowLeft,
   Mail,
+  Pencil,
   Phone,
   MoreVertical,
   ShieldOff,
@@ -42,6 +43,7 @@ import { RefundDialog } from "@/components/clients/refund-dialog";
 import { GivePackageDialog, type GivePackagePayload } from "@/components/clients/give-package-dialog";
 import { RemovePackageDialog } from "@/components/clients/remove-package-dialog";
 import { ChangeEmailDialog } from "@/components/clients/change-email-dialog";
+import { EditProfileDialog } from "@/components/clients/edit-profile-dialog";
 import { SendSetPasswordButton } from "@/components/access/send-set-password-button";
 import { SessionsPanel } from "@/components/access/sessions-panel";
 import { runsStudio } from "@/lib/staff-role";
@@ -251,6 +253,8 @@ const REFUSALS: Record<string, string> = {
   email_in_use: "Another member of this studio already uses that email.",
   email_unchanged: "That is already this member's email.",
   client_blocked: "This member is blocked. Unblock them first.",
+  name_required: "A name is required.",
+  phone_required: "A phone number is required.",
 };
 
 /** List Price minus what was paid, as "S$12.34", or null when there's no discount. */
@@ -342,6 +346,7 @@ export default function ClientProfilePage({
   const [giveOpen, setGiveOpen] = useState(false);
   const [removeFor, setRemoveFor] = useState<ApiPackage | null>(null);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [workshopRefundFor, setWorkshopRefundFor] = useState<ApiWorkshopPurchase | null>(null);
   const [openPurchaseRefundFor, setOpenPurchaseRefundFor] = useState<ApiOpenPurchase | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -405,15 +410,19 @@ export default function ClientProfilePage({
       setGiveOpen(false);
       setRemoveFor(null);
       setEmailOpen(false);
+      setProfileOpen(false);
       setOpenPurchaseRefundFor(null);
       await load();
     } catch (err) {
-      const code =
-        err instanceof ApiError && err.body && typeof err.body === "object" && "error" in err.body
-          ? String((err.body as { error: unknown }).error)
-          : "";
+      const body =
+        err instanceof ApiError && err.body && typeof err.body === "object"
+          ? (err.body as { error?: unknown; message?: unknown })
+          : {};
+      const code = body.error !== undefined ? String(body.error) : "";
       const msg =
         REFUSALS[code] ??
+        // A refusal the page has no sentence for may carry the server's own.
+        (body.message !== undefined ? String(body.message) : null) ??
         (err instanceof ApiError ? `Update failed (HTTP ${err.status}).` : "Update failed.");
       toast.error(msg);
     }
@@ -557,9 +566,14 @@ export default function ClientProfilePage({
               {/* The address the member signs in with (#176) — beside the one
                   the header shows, because that is the thing being changed. */}
               {canEdit && !blocked && (
-                <Button variant="secondary" size="sm" onClick={() => setEmailOpen(true)}>
-                  <Mail className="h-3.5 w-3.5" /> Change email
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setProfileOpen(true)}>
+                    <Pencil className="h-3.5 w-3.5" /> Edit profile
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => setEmailOpen(true)}>
+                    <Mail className="h-3.5 w-3.5" /> Change email
+                  </Button>
+                </div>
               )}
             </div>
             <AttendanceStrip attendance={profile.attendance} />
@@ -889,6 +903,19 @@ export default function ClientProfilePage({
         />
       )}
 
+      {canEdit && profileOpen && profile && (
+        <EditProfileDialog
+          current={{ name: profile.name, phone: profile.phone, gender: profile.gender }}
+          onSave={(edit) =>
+            runEdit(
+              () => api!.patch(`/portal/admin/clients/${id}/profile`, edit),
+              "Profile saved.",
+            )
+          }
+          onClose={() => setProfileOpen(false)}
+        />
+      )}
+
       {/* An unfinished purchase (#95). Aimed at the Purchase itself, because
           there is no plan and no booking to aim it at. The reply names how many
           payments went back and what they totalled, so an admin can reconcile
@@ -1060,7 +1087,9 @@ function DetailsCard({ profile }: { profile: ApiProfile }) {
   const rows: { label: string; value: ReactNode }[] = [
     { label: "Joined", value: formatDate(profile.joined_at, "d MMM yyyy") },
   ];
-  if (profile.gender && profile.gender !== "prefer_not_to_say") {
+  // Prefer not to say is shown, not hidden: "not said" is an answer, and
+  // hiding it would read as "never asked".
+  if (profile.gender) {
     rows.push({ label: "Gender", value: GENDER_LABEL[profile.gender] });
   }
   if (profile.dob) rows.push({ label: "Born", value: formatDate(profile.dob, "d MMM yyyy") });

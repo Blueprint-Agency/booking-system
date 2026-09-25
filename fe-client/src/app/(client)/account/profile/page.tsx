@@ -13,8 +13,19 @@ interface ApiClientProfile {
   name: string;
   email: string;
   phone: string;
+  gender: Gender | null;
   joined_at: string;
 }
+
+type Gender = "female" | "male" | "non_binary" | "prefer_not_to_say";
+
+// The member's own answer (#281), and theirs to take back: "Not set" clears it.
+const GENDERS: { value: Gender; label: string }[] = [
+  { value: "female", label: "Female" },
+  { value: "male", label: "Male" },
+  { value: "non_binary", label: "Non-binary" },
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
+];
 
 function splitName(full: string): { first: string; last: string } {
   const trimmed = full.trim();
@@ -41,6 +52,7 @@ export default function ProfilePage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+  const [gender, setGender] = useState<Gender | "">("");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -61,6 +73,7 @@ export default function ProfilePage() {
         setFirstName(first);
         setLastName(last);
         setPhone(profile.phone);
+        setGender(profile.gender ?? "");
         setEmail(profile.email);
         setLoading(false);
       })
@@ -94,8 +107,12 @@ export default function ProfilePage() {
     }
     try {
       // The member's row at this studio is the one source of truth for their
-      // name. Phone/email are not editable here.
-      await api.patch<ApiClientProfile>("/me", { name: joinedName });
+      // name and gender. Phone/email are not editable here.
+      const updated = await api.patch<ApiClientProfile>("/me", {
+        name: joinedName,
+        gender: gender || null,
+      });
+      setGender(updated.gender ?? "");
       // The top bar and the account header read the same row; show them the edit.
       await refreshAppUser();
       setSaved(true);
@@ -150,6 +167,28 @@ export default function ProfilePage() {
                   disabled={loading}
                   className={inputClass}
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="gender" className={labelClass}>
+                  Gender
+                </label>
+                <select
+                  id="gender"
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value as Gender | "")}
+                  disabled={loading}
+                  className={inputClass}
+                >
+                  <option value="">Not set</option>
+                  {GENDERS.map((g) => (
+                    <option key={g.value} value={g.value}>
+                      {g.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 

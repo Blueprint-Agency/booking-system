@@ -24,7 +24,9 @@ The **period** control sits with the overview and drives both halves of the page
 
 The table is a general transaction ledger, not a payroll sheet: Date, Time, User, **Type**, **Variant**, Price, Location, Discount, Code, Money in, Money out. Type is what the transaction was in the studio's words (Credit, Unlimited, Trial, PT Package, Add-on, Workshop, Corporate, Merch, Class, PT Session, Manual, Refund); Variant is which one of it ("Bundle of 10"); User is the member who paid *or* the instructor being paid, since a ledger line has one counterparty. Instructor Pay is one Type among many rather than the shape of the whole table.
 
-Ledger filters: Type, User (one search box over members and instructors both), Location, and "Needs pay only". One button exports exactly the filtered rows as CSV.
+Ledger filters: Type, User (one search box over members and instructors both), Location, Method, and "Needs pay only". One button exports exactly the filtered rows as CSV.
+
+**Method** (#282). Every money-in row carries how it was paid: a Stripe-backed row its payments' methods, a package sale its Purchase's payments' methods (or the Purchase's offline method, for a migrated sale), a Refund the method of the payment it returned. Money-out rows and Complimentary Packages carry none. The column reads "Visa ··4242", or "Visa ··4242 + PayNow" for a Part Payment, and the CSV has the same text in a `method` column. The filter offers six categories — card, PayNow, wallet, bank transfer, cash, other — into which `services/finance/methods.ts` files the provider's method names; a row paid two ways matches either.
 
 Instructor Pay becomes required when an **admin** schedules a session and when anyone is added to a roster, so Unpriced sessions become rare. They do not stop entirely: an instructor scheduling their own class or PT session must never see pay rates, so that path still creates the session Unpriced. Those, and the ones that predate the rule, are surfaced through a "Needs pay" filter and cleared by hand.
 

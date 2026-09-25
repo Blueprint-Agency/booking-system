@@ -32,6 +32,8 @@ import { toast } from "sonner";
 import {
   FINANCE_TYPE_LABEL,
   FINANCE_TYPES,
+  METHOD_CATEGORIES,
+  METHOD_CATEGORY_LABEL,
   UNATTRIBUTED,
   createManualEntry,
   deleteManualEntry,
@@ -86,6 +88,7 @@ export default function FinancePage() {
   const [q, setQ] = useState("");
   const [location, setLocation] = useState("");
   const [needsPay, setNeedsPay] = useState(false);
+  const [method, setMethod] = useState("");
 
   const [overview, setOverview] = useState<FinanceOverview | null>(null);
   const [data, setData] = useState<FinanceResponse | null>(null);
@@ -100,8 +103,8 @@ export default function FinancePage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const filters: FinanceFilters = useMemo(
-    () => ({ type, q, location, needsPay, range }),
-    [type, q, location, needsPay, range],
+    () => ({ type, q, location, needsPay, method, range }),
+    [type, q, location, needsPay, method, range],
   );
 
   useEffect(() => {
@@ -326,6 +329,15 @@ export default function FinancePage() {
             { val: UNATTRIBUTED, label: "Unattributed" },
           ]}
         />
+        {/* One payout channel at a time, for reconciling against the bank or
+            the card statement. A Part Payment paid two ways matches either. */}
+        <FilterSelect
+          label="Method"
+          value={method}
+          onChange={setMethod}
+          allLabel="All methods"
+          options={METHOD_CATEGORIES.map((m) => ({ val: m, label: METHOD_CATEGORY_LABEL[m] }))}
+        />
         <label className="flex h-9 items-center gap-2 text-xs font-medium text-muted">
           <input
             type="checkbox"
@@ -370,8 +382,8 @@ export default function FinancePage() {
           <div className="overflow-x-auto">
             {/* min-w makes the wrapper's overflow-x-auto actually do something:
                 a plain w-full table shrinks to the phone instead of scrolling,
-                and eleven columns then wrap one character per line. */}
-            <table className="w-full min-w-[980px] text-sm">
+                and twelve columns then wrap one character per line. */}
+            <table className="w-full min-w-[1080px] text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs text-muted">
                   <th className="px-3 py-2.5 font-medium">Date</th>
@@ -384,6 +396,7 @@ export default function FinancePage() {
                   <th className="px-3 py-2.5 text-right font-medium">Discount</th>
                   <th className="px-3 py-2.5 font-medium">Code</th>
                   <th className="px-3 py-2.5 text-right font-medium">Money in</th>
+                  <th className="px-3 py-2.5 font-medium">Method</th>
                   <th className="px-3 py-2.5 text-right font-medium">Money out</th>
                 </tr>
               </thead>
@@ -461,6 +474,9 @@ export default function FinancePage() {
                             {formatSgd(row.paid_sgd)}
                           </span>
                         )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-muted">
+                        {row.method_label ?? "—"}
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         {row.editable ? (

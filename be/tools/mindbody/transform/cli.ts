@@ -34,7 +34,7 @@ import { config as loadEnv } from 'dotenv'
 import { ConfigError, starterConfig } from './config'
 import { reportFacts, staffFacts } from './facts'
 import type { Figures } from './figures'
-import { fillConfigs, type StudioAnswers } from './fill'
+import { fillConfigs, unmappedPaymentMethods, type StudioAnswers } from './fill'
 import { companionPaths, readReports, transformMindbody, verifyImport } from './transform'
 import { isoDay, localDateOf } from './values'
 
@@ -145,6 +145,15 @@ async function main() {
             `${w.misfits ? ` (${w.misfits} on the wrong side of it)` : ''}.`
         : 'Class cancellation window: the Cancellations report shows no cut-off, so the config keeps its own.',
     )
+    // Proposed, not written: a method is the studio's to confirm before any sale is imported with it.
+    const unmapped = unmappedPaymentMethods(answers, facts)
+    if (Object.keys(unmapped).length > 0) {
+      console.log(
+        `Payment methods: ${Object.keys(unmapped).length} Mindbody label(s) are not in the answers' paymentMethods. ` +
+          'A past purchase paid by one is refused. Check this proposal and add it (null: nothing matched):',
+      )
+      console.log(json(unmapped).trimEnd())
+    }
     console.log(`Facts as of ${isoDay(asOf)} in ${path.join(outDir, 'report-facts.json')} and staff-facts.json.`)
     return
   }

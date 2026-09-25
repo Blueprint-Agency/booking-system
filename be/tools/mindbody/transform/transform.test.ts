@@ -852,6 +852,8 @@ test('verify: the archive adds up to its own expected figures, and an altered ba
       refunds: undefined,
       // Three Hatha at 35.00 and Olive's PT at 60.00; her per-head classes are Unpriced.
       payByMonth: { '2090-01': '165.00' },
+      // No history is asked for, so no past sale is a Purchase.
+      purchasesByMonth: {},
     },
   )
   // No history is asked for, so every class the studio has is still to come.
@@ -1142,7 +1144,8 @@ test('a sale and its return are one past purchase with one Refund, on a Purchase
   )!
   assert.equal(returned.active, false, 'a refunded purchase is not a live package')
   assert.ok(returned.purchase_id)
-  assert.deepEqual(archive.rows.purchases, [
+  // Every paid past sale is a Purchase now (#284); the return closes this one as refunded.
+  assert.deepEqual(archive.rows.purchases!.filter(p => p.status === 'refunded'), [
     {
       id: returned.purchase_id,
       tenant_id: TENANT,
@@ -1155,10 +1158,14 @@ test('a sale and its return are one past purchase with one Refund, on a Purchase
       // 3 July, the day of the return, at the studio.
       refunded_at: '2026-07-02T16:00:00.000Z',
       created_at: '2026-06-30T16:00:00.000Z',
+      source_sale_id: '7620',
+      // The fixture's Sales report has no row for this sale.
+      offline_method: null,
+      offline_method_label: null,
     },
   ])
-  // No second package for the return, and none for the purchases around it.
-  assert.equal(archive.rows.client_packages!.filter(p => p.purchase_id != null).length, 1)
+  // No second package for the return: the one it reverses is the only one on its Purchase.
+  assert.equal(archive.rows.client_packages!.filter(p => p.purchase_id === returned.purchase_id).length, 1)
   assert.ok(preflight.schedule.includes('history purchases: 1 return(s) came across as a Refund on the purchase each reverses'), preflight.schedule.join(' | '))
   // A return with nothing in the window to reverse is named, not guessed onto another sale.
   assert.ok(

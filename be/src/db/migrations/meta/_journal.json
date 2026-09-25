@@ -561,6 +561,13 @@
       "when": 1790270183184,
       "tag": "0079_drop_cross_studio_login_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1790275548228,
+      "tag": "0080_payment_method",
+      "breakpoints": true
     }
   ]
 }

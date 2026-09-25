@@ -19,7 +19,7 @@
  * There is no finance_events table and there should not be one: these rows ARE
  * the ledger, and a copy of them would be a second thing to keep true.
  */
-import { and, eq, gte, inArray, isNotNull, lte, notExists, notInArray } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, isNotNull, lte, notExists, notInArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages, promoCodes } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
@@ -30,6 +30,7 @@ import { clients } from '../../db/schema/identity'
 import { listPayroll, type PayrollRow } from '../payroll/list'
 import { summarizeFinance, type FinanceSummary } from './totals'
 import type { MoneyEvent, MoneyEventType } from './events'
+import { offlineMethod, providerMethod, type MethodCategory, type PaymentMethod } from './methods'
 
 /**
  * The Location filter. A Location id narrows to that studio; the literal
@@ -53,6 +54,11 @@ export interface FinanceFilter {
   types?: readonly MoneyEventType[]
   /** Case-insensitive substring of the member's or the instructor's name. */
   q?: string
+  /**
+   * Narrow to events paid any of these ways. An event paid two ways matches
+   * either; an event with no recorded method — every money-out row — matches none.
+   */
+  methods?: readonly MethodCategory[]
 }
 
 const base = {
@@ -335,6 +341,8 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
   const purchaseRefunded = (purchaseId: string | null) =>
     purchaseId != null && refundedPurchases.has(purchaseId)
 
+  const paidWith = await paymentMethods(tenantId)
+
   const events: MoneyEvent[] = []
 
   for (const r of packageRows) {
@@ -355,6 +363,9 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       promoCode: r.promoCode,
       refunded: purchaseRefunded(r.purchaseId),
       complimentary: r.complimentary,
+      // A comp has no Purchase, so this is empty for it anyway; said outright
+      // because nobody paid for one, whatever a row might claim.
+      methods: r.complimentary ? [] : paidWith.forPurchase(r.purchaseId),
     })
     // The Add-On's own line. The column IS what the member paid for it, and it
     // is not part of the plan's List Price, so it is its own Money Event with
@@ -375,6 +386,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
         // An Add-On given with a comped plan was given too, at $0. It totals to
         // nothing either way; saying so keeps the two lines telling one story.
         complimentary: r.complimentary,
+        methods: r.complimentary ? [] : paidWith.forAddOn(r.id, r.purchaseId),
       })
     }
   }
@@ -394,6 +406,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       paidSgd: r.amountPaidSgd,
       promoCode: r.promoCode,
       refunded: purchaseRefunded(r.purchaseId),
+      methods: paidWith.forPurchase(r.purchaseId),
     })
   }
 
@@ -410,6 +423,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       listPriceSgd: r.amountSgd,
       paidSgd: r.amountSgd,
       refunded: isRefunded(r.paymentIntentId),
+      methods: paidWith.forPayment(r.id),
     })
   }
 
@@ -426,6 +440,8 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       listPriceSgd: r.amountSgd,
       paidSgd: r.amountSgd,
       refunded: isRefunded(r.paymentIntentId),
+      // A free item never reached the provider, and has no intent to look up.
+      methods: paidWith.forIntent(r.paymentIntentId),
     })
   }
 
@@ -440,6 +456,8 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       party: r.clientName,
       paidSgd: `-${r.amountSgd}`,
       refunded: true,
+      // Where the money went back: the payment it returned.
+      methods: paidWith.forPayment(r.id),
     })
   }
 
@@ -454,10 +472,91 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       // The whole sale back. A refunded Purchase holds nothing, so its total is what went back.
       paidSgd: `-${r.totalSgd}`,
       refunded: true,
+      methods: paidWith.forPurchase(r.id),
     })
   }
 
   return events
+}
+
+/**
+ * How every paid thing in the studio was paid, keyed every way a Money Event
+ * names its money: by Purchase, by payment, by intent, by plan.
+ *
+ * ponytail: read over the studio's whole history rather than the filtered
+ * window, like the refund tags above — a Money Event's date and its payments'
+ * dates are not the same date (a Part Payment finished a week later), and the
+ * whole history of a studio this size is a few thousand small rows. Push the
+ * events' own ids into the query if it ever shows up.
+ */
+async function paymentMethods(tenantId: string) {
+  const payments = await db
+    .select({
+      id: stripePayments.id,
+      purchaseId: stripePayments.purchaseId,
+      intent: stripePayments.paymentIntentId,
+      clientPackageId: stripePayments.clientPackageId,
+      method: stripePayments.method,
+      cardBrand: stripePayments.cardBrand,
+      cardLast4: stripePayments.cardLast4,
+      wallet: stripePayments.wallet,
+    })
+    .from(stripePayments)
+    .where(
+      and(
+        eq(stripePayments.tenantId, tenantId),
+        // Money that was taken; a refunded payment was taken first.
+        inArray(stripePayments.status, ['succeeded', 'refunded']),
+        isNotNull(stripePayments.method),
+      ),
+    )
+    // Oldest first, so a Part Payment lists its methods in the order they were paid.
+    .orderBy(asc(stripePayments.createdAt))
+
+  const offline = await db
+    .select({ id: purchases.id, method: purchases.offlineMethod, label: purchases.offlineMethodLabel })
+    .from(purchases)
+    .where(and(eq(purchases.tenantId, tenantId), isNotNull(purchases.offlineMethod)))
+
+  const byPurchase = new Map<string, PaymentMethod[]>()
+  const byPayment = new Map<string, PaymentMethod>()
+  const byIntent = new Map<string, PaymentMethod>()
+  const byPlan = new Map<string, { purchaseId: string; method: PaymentMethod }[]>()
+  for (const p of payments) {
+    const m = providerMethod(p)
+    if (!m) continue
+    byPurchase.set(p.purchaseId, [...(byPurchase.get(p.purchaseId) ?? []), m])
+    byPayment.set(p.id, m)
+    byIntent.set(p.intent, m)
+    if (p.clientPackageId) {
+      byPlan.set(p.clientPackageId, [...(byPlan.get(p.clientPackageId) ?? []), { purchaseId: p.purchaseId, method: m }])
+    }
+  }
+  const offlineByPurchase = new Map<string, PaymentMethod>()
+  for (const o of offline) {
+    const m = offlineMethod(o.method, o.label)
+    if (m) offlineByPurchase.set(o.id, m)
+  }
+
+  const one = (m: PaymentMethod | undefined) => (m ? [m] : [])
+  /** A Purchase's payments' methods, or — for a sale no provider took — its offline method. */
+  const forPurchase = (purchaseId: string | null): PaymentMethod[] =>
+    purchaseId == null ? [] : (byPurchase.get(purchaseId) ?? one(offlineByPurchase.get(purchaseId)))
+
+  return {
+    forPurchase,
+    forPayment: (id: string) => one(byPayment.get(id)),
+    forIntent: (intent: string | null) => (intent == null ? [] : one(byIntent.get(intent))),
+    /**
+     * A Cross-Location Add-On's. Bought on its own it is a sale of its own,
+     * whose payment names the plan (§5); bought with the plan it is part of the
+     * plan's sale and was paid the same way.
+     */
+    forAddOn: (planId: string, planPurchaseId: string | null): PaymentMethod[] => {
+      const own = (byPlan.get(planId) ?? []).filter(p => p.purchaseId !== planPurchaseId)
+      return own.length > 0 ? own.map(p => p.method) : forPurchase(planPurchaseId)
+    },
+  }
 }
 
 /**
@@ -504,6 +603,11 @@ export async function getFinance(
     events = events.filter(e =>
       `${e.party ?? ''} ${e.instructorName ?? ''}`.toLowerCase().includes(needle),
     )
+  }
+
+  if (filter.methods?.length) {
+    const wanted = new Set<string>(filter.methods)
+    events = events.filter(e => (e.methods ?? []).some(m => wanted.has(m.category)))
   }
 
   // "Needs pay" is the backlog of sessions priced before pay was required.

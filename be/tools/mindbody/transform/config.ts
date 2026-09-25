@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
+import { offlinePaymentMethodEnum } from '../../../src/db/enums'
 import { proposeCatalogue } from './catalogue'
 import type { MindbodyReports } from './mapper'
 import { proposeSchedule } from './schedule-proposal'
@@ -18,6 +19,10 @@ import { EMAIL, dateOfIso, dayNumber, normaliseClassName, normaliseOptionName, n
  */
 
 const open = <T extends z.ZodTypeAny>(schema: T) => schema.nullable()
+
+/** The platform's offline payment methods, as the database's enum lists them. */
+export const OFFLINE_METHODS = offlinePaymentMethodEnum.enumValues
+export type OfflineMethod = (typeof OFFLINE_METHODS)[number]
 
 const locationSchema = z.object({
   /** How rooms and the default refer to this Location in the config. */
@@ -314,6 +319,15 @@ export const studioConfigSchema = z.object({
    * transform refuses a live holding whose option is not listed here.
    */
   catalogue: z.array(catalogueSchema).default([]),
+  /**
+   * How each of Mindbody's payment method labels (the Sales report's, `Cash`,
+   * `Credit card (<card>-Keyed)`, `Misc. (<method>)`) is filed here: one of the
+   * platform's offline methods. A past purchase is written with the method its
+   * sale was paid by, so a label one of them needs and this does not map
+   * refuses the transform, naming every such label: no sale is imported with a
+   * guessed method. `fill` writes it from the answers file and proposes the rest.
+   */
+  paymentMethods: z.record(z.string(), z.enum(OFFLINE_METHODS)).default({}),
 })
 
 export type StudioConfigInput = z.input<typeof studioConfigSchema>
@@ -384,6 +398,7 @@ export type StudioConfig = {
   staffOnboarding: 'invite' | 'active'
   sharedEmailKeepers: Record<string, string>
   catalogue: CatalogueEntry[]
+  paymentMethods: Record<string, OfflineMethod>
 }
 
 type CatalogueCommon = { name: string; mindbodyNames: string[]; priceSgd: number | null }
