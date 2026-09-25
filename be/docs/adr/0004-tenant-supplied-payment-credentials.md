@@ -1,6 +1,6 @@
 # A Tenant supplies its own payment-provider credentials
 
-**Status**: accepted (2026-09-07) — replaces the Stripe Connect plan recorded in `docs/md/multi-tenancy-plan.md`, which is overturned rather than deferred.
+**Status**: accepted (2026-09-07) — replaces the Stripe Connect plan recorded in `docs/md/multi-tenancy-plan.md`, which is overturned rather than deferred. **Partly superseded** by `0007-every-studio-sells-on-its-own-account.md` (2026-09-25): the platform-account fallback, the shared webhook endpoint and the statement descriptor suffix are gone. **Amended** by #294 (2026-09-25): the studio supplies only its secret key, and the platform creates its webhook endpoint and keeps the signing secret Stripe returns. The rest stands.
 
 Every studio on this platform charges on the platform operator's own payment account. That was always meant to be temporary: each studio would open a **connected account** through Stripe Connect, the platform would take an application fee, and money would land in the studio's own bank.
 
@@ -16,6 +16,8 @@ An account is therefore a **key**, not a header. That is the whole difference fr
 
 ## A Tenant with no credentials still charges on the platform account
 
+> **Superseded** by `0007-every-studio-sells-on-its-own-account.md`: a Tenant with no credentials now takes no online payments at all.
+
 `providerAccountForTenant` answers `null` for a studio that has supplied nothing, and `null` means the platform's account — where every studio sold before this and where every studio still sells until it is moved.
 
 This is not a fallback bolted on for safety; it is what makes the change deployable. Studios are onboarded one at a time, each one an independent act, and the studios behind it are not waiting on anything. The first studio's credentials are configurable from the day this ships and its selling is unchanged until somebody sets them.
@@ -30,6 +32,8 @@ Holding a connected-account id is bookkeeping. Holding a studio's live payment k
 - **Not serialisable.** The secrets are non-enumerable properties on the object the accessor hands out, so `JSON.stringify` skips them, a log line skips them, and a Sentry event's serialiser skips them. The ordinary accidents — `logger.info({ credentials })` while debugging, an exception carrying the object, a route spreading it into a response — cannot disclose them. Reading one requires naming the property, which somebody has to mean.
 - **Returned by nothing.** There is no read-back route, not masked and not last-four. The super portal shows that credentials exist and which account they name, and that is the whole of it. Credentials that need checking are replaced; credentials that were wrong are cleared.
 - **Validated when set.** The key is checked against the provider before it is stored, and the account id is taken from the provider's answer rather than from whoever pasted it. So a typo is a message on that form, and not a member's checkout failing weeks later against a key nobody can look at.
+
+> **Amended** by #294: the signing secret below is no longer entered, so there is nothing to validate. The platform creates the endpoint with the studio's key and stores the secret Stripe returns at creation.
 
 The signing secret is deliberately *not* validated, because the provider offers no way to ask. It is proved by the first delivery that verifies against it.
 
@@ -60,5 +64,7 @@ Every refusal on that endpoint is the same flat 400 — an unknown slug, a studi
 **The platform's revenue is a bill, not a fee.** Nothing is deducted in flight any more, so charging studios for the platform is a commercial process that does not exist yet. That is the real price of this decision and it is the company's to pay; the alternative was a Singapore entity.
 
 **Two webhook endpoints exist at once,** and will for as long as any studio is still on the platform account. The shared one is not deprecated — it is what an un-moved studio uses, correctly.
+
+> **Amended** by #294: a studio can no longer be half-configured. Saving the key creates the endpoint, a save that cannot create it stores nothing, and the manual URL instructions are gone from the super portal.
 
 **A studio can be half-configured.** Credentials set and the webhook endpoint not yet registered on its account means purchases are charged and nothing is granted. The super portal shows the URL immediately after a save for exactly this reason, but nothing on this platform can detect the omission — only the studio's own account can say whether the endpoint exists.

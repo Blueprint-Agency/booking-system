@@ -8,7 +8,7 @@ Staff identity is `admin` or `instructor` — a studio's portal has exactly thes
 
 | Role | Authority |
 |---|---|
-| **Admin** | Runs the studio. Global catalog + policy owner: creates locations, edits class types, configures all packages and their promotions, promo codes, Global Policy, Waiver, Notifications, Marketing and feature flags. Manages Staff (including other admins), Clients, Workshops and Rooms with full read/write — nothing is read-only — and can impersonate a member. Sees every active location of the studio. |
+| **Admin** | Runs the studio. Global catalog + policy owner: creates locations, edits class types, configures all packages and their promotions, promo codes, Global Policy, Waiver, Marketing and feature flags. Manages Staff (including other admins), Clients, Workshops and Rooms with full read/write — nothing is read-only — and can impersonate a member. Sees every active location of the studio. |
 | **Instructor** | Teaching staff. Uses the instructor portal (`/instructor/*`; routes in `be-portal.md` §4) scoped to their own sessions. Cannot reach any `/admin/*` surface. |
 
 - There are no location grants: an admin's accessible locations are all of the studio's active locations.
@@ -21,8 +21,8 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 | Tier | Surfaces |
 |---|---|
-| **Global (admin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Workshops, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Notifications, Waiver, Staff |
-| **Workspace-scoped** | Schedule, Check-in, Inbox, PT Requests (clients pick a `location_id` at request time — see §9) |
+| **Global (admin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Workshops, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Waiver, Staff |
+| **Workspace-scoped** | Schedule, Check-in, PT Requests (clients pick a `location_id` at request time — see §9) |
 | **Cross-workspace (global)** | Clients — cross-location credits mean a client record spans workspaces; admin sees and manages every client (kebab actions, expiry edits, set-balance, manual adjustments, block/unblock) |
 
 > **Workshops are a global package surface.** Like Classes and Private Sessions, Packages → Workshops is **not** filtered by the topbar workspace switcher — it lists every workshop across all locations. Each workshop still carries a `location_id` chosen in the editor (its days' rooms come from that location); the surface is simply not workspace-scoped.
@@ -30,7 +30,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 ### Workspace switcher (topbar)
 
 - The admin shell topbar carries a `<WorkspaceSwitcher />` dropdown listing the studio's active locations. The sidebar **no longer has a "Locations" entry** — moved into this dropdown's "Manage locations" modal.
-- The active location is global state, persisted in localStorage under `rt.activeLocationId`. All workspace-scoped pages (Schedule, Rooms, Check-in, Inbox) read it directly — there are **no per-page LocationFilterChips** and **no CheckinLocationPill**. (Workshops is **not** workspace-scoped — see the Workshops note above.)
+- The active location is global state, persisted in localStorage under `rt.activeLocationId`. All workspace-scoped pages (Schedule, Rooms, Check-in, PT Requests) read it directly — there are **no per-page LocationFilterChips** and **no CheckinLocationPill**. (Workshops is **not** workspace-scoped — see the Workshops note above.)
 - Dropdown contents:
   - List of the studio's active locations (current marked).
   - "+ Add location" and "Manage locations" (modal CRUD reusing `LocationFormDialog`).
@@ -47,8 +47,8 @@ Locations are workspaces. Surfaces are partitioned as follows:
 - **Config**: Class Types, Promo Codes. **A Promo Code sits in Config, not Packages**: it crosses products, so it belongs with the building blocks rather than inside any one catalogue (contrast a Promotion, which belongs to exactly one product and is edited there).
 - **Packages**: Classes, Workshops, Private Sessions, Corporate, Merch (global, shared across locations). Merch is shop-floor stock (mats, props, apparel) rather than catalogue governance, but like the rest of Packages it is managed by admins.
 - **People**: Customers, Corporate Requests, Staff, Leave (members + staff accounts). **Corporate Requests sits here, not in the workspace zone** — a request records no `location_id` until it is scheduled, so there is nothing for the switcher to filter it by; it is a person asking, which is what People is.
-- **Settings**: Global Policy, Notifications, Waiver (location-independent policy + config). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
-- **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, Inbox, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
+- **Settings**: Global Policy, Waiver (location-independent policy + config). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
+- **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
 
 `NavItem.workspaceScoped` marks the workspace-zone items; it is distinct from `NavItem.scope`, which only governs role visibility (admin vs instructor). The build-order below is the recommended *setup* sequence, not the visual order.
 
@@ -90,7 +90,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 **Completed this phase:**
 - 14. Roles & Invitations
 - 15. Clients (list, profile, credit balance, history, manual adjustments)
-- 16. Notifications (email template management)
+- 16. Notifications (email template management) — built against fixture templates, then hidden (#277); see §16
 - 17. Waivers
 
 **Next phase (see §19):**
@@ -109,7 +109,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 **Surface:** Topbar `<WorkspaceSwitcher />` dropdown → "Manage locations" modal. **Admin-only.** There is no sidebar entry for Locations.
 
-Locations are the workspace boundary — every scoped surface (Schedule, Workshops, Check-in, Inbox) reads `rt.activeLocationId` from localStorage and renders only data tied to it.
+Locations are the workspace boundary — every scoped surface (Schedule, Rooms, Check-in, PT Requests) reads `rt.activeLocationId` from localStorage and renders only data tied to it.
 
 **Fields per location:**
 - Name
@@ -515,7 +515,7 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 **Workshop detail page additions:**
 - Per-tier breakdown (which tier each attendee bought)
 - No check-in (workshops are not check-in tracked)
-- Cancel workshop action (admin) → triggers automatic Stripe refund + Inbox notification
+- Cancel workshop action (admin) → cancels its bookings; nobody is refunded automatically. Each paid booking stays refundable from the member's Workshop purchases card (#272)
 
 **PT detail page additions:**
 - Single client (1-on-1) or two clients (2-on-1)
@@ -597,6 +597,8 @@ Consolidated reference for all cancellation paths.
 ---
 
 ## 13. Inbox
+
+> **Hidden (#277).** The Inbox screen read fixture data and described cancellations as refunds they are not (a Workshop cancel refunds nobody; a class cancel returns credits, not money). It has been removed from the portal until it is wired to real data — a separate ticket. The design below is the target for that work, not a description of the shipped portal.
 
 Single workspace-scoped inbox at `/admin/inbox`. Filter tabs by notification type. One sidebar item with total unread count for the active workspace.
 
@@ -769,6 +771,8 @@ The actions on a client's active-package kebab, all written into the same immuta
 
 ## 16. Notifications (Email Templates)
 
+> **Hidden (#277).** The Notifications screen listed fixture templates, including `admin_cancel_*` emails no backend code sends, and omitted `purchase_refunded`, which it does send. It has been removed from the portal and its nav entry until the list can be read from the emails the backend actually sends — a separate ticket. The design below is the target for that work, not a description of the shipped portal.
+
 ### 16a. Overview
 
 - Every trigger event always fires its email — no per-template enable/disable toggle.
@@ -931,7 +935,7 @@ The following sections are out of scope for this phase and will be defined in th
 
 | Section | Description |
 |---|---|
-| **Dashboard** | Admin landing page — key metrics (bookings, revenue, attendance), unread inbox count, pending check-in alerts, upcoming sessions snapshot. |
+| **Dashboard** | Admin landing page — key metrics (bookings, revenue, attendance), pending check-in alerts, upcoming sessions snapshot. |
 | **Reports** | Aggregate analytics across instructors, class types, and locations — attendance rates, cancellation rates. *(Partly shipped: the money half and class popularity now live on Finance §20.)* |
 | **Audit log** | Immutable system-wide log of all admin actions — credit adjustments, cancellations, invites, status changes, role changes. Referenced throughout this doc as the record-keeping layer. |
 | **Referrals** | Referral program mechanics — reward type, trigger (registration vs. first purchase), admin-configurable reward amount, referral link or code generation. |

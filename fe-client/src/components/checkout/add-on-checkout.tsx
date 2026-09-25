@@ -9,6 +9,8 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { fetchApi } from "@/lib/api-url";
 import { ERROR_CODES } from "@/lib/error-codes";
+import { checkoutErrorMessage } from "@/lib/checkout-messages";
+import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { useLocations } from "@/lib/classes";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
 import { roundsUpAPartMonth } from "@/lib/add-on-months";
@@ -116,7 +118,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
       });
       const data = await res.json();
       if (!res.ok || !data.url) {
-        setError("Could not start checkout. Please try again.");
+        setError(checkoutErrorMessage(res.ok ? null : data, "Could not start checkout. Please try again."));
         setRedirecting(false);
         return;
       }
@@ -127,6 +129,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
     }
   }
 
+  const onlinePayments = useOnlinePayments();
   const plan: LivePackage | null = packages.find((p) => p.id === planId) ?? null;
   const otherLocations = (locations ?? [])
     .filter((l) => l.id !== plan?.location?.id)
@@ -150,7 +153,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
         <div className="max-w-lg mx-auto space-y-6">
 
           <div className="rounded-2xl border border-ink/10 bg-paper p-6">
-            <p className="text-xs uppercase tracking-wider text-muted">Order summary</p>
+            <p className="text-xs uppercase tracking-wider text-muted">Purchase summary</p>
             {/* The page is entered with a plan's id, so name the plan the
                 Add-On attaches to — the block says "expires with the plan it's
                 attached to" without saying which one. */}
@@ -180,7 +183,10 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
             </div>
           )}
 
-          {quote ? (
+          {quote && blockedByPayments(onlinePayments, quote.price_sgd) ? (
+            // A studio that takes no online payments (#293): a sentence, not a Pay button.
+            <p className="text-sm text-muted text-center">{NO_ONLINE_PAYMENTS}</p>
+          ) : quote ? (
             <>
               <PayButton
                 onClick={handleProceed}

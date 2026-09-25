@@ -26,17 +26,23 @@
  * sale never settled. It closes as **abandoned** rather than refunded — money
  * that was never revenue must not be subtracted from Net as though it had been.
  */
-import { and, eq, gt, inArray, ne, sql } from 'drizzle-orm'
+import { and, eq, gt, inArray, ne, or, sql } from 'drizzle-orm'
 import { db, withTenant } from '../../db'
 import { tenantForPaymentIntent } from '../../db/routing'
 import { auditLog, purchases, stripePayments } from '../../db/schema/ledger'
 import { bookings } from '../../db/schema/bookings'
-import { classPackages, clientPackages, ptPackages } from '../../db/schema/packages'
+import {
+  classPackages,
+  clientPackages,
+  promoCodeRedemptions,
+  promoCodes,
+  ptPackages,
+} from '../../db/schema/packages'
 import { classes, ptSessions, workshops, workshopTiers, workshopTierDays, workshopDays } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { clients } from '../../db/schema/identity'
 import { requireTenantUrl } from '../tenants/urls'
-import { stripeForProviderAccount } from '../../lib/stripe'
+import { paymentOnPlatformAccount, stripeForProviderAccount } from '../../lib/stripe'
 import { outbound } from '../../lib/outbound'
 import { reportError } from '../../shared/logger'
 import { toCents } from '../../shared/money'
@@ -44,7 +50,13 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../shared/erro
 import { cancelBooking } from '../bookings/cancel'
 import { refundPromoCodeRedemption } from '../packages/promo-redemption'
 import { sendTemplatedEmail } from '../notifications/send'
-import { heldPayments } from './balance'
+import {
+  heldPayments,
+  REFUND_IN_FLIGHT_MS,
+  refundInFlight,
+  refundProgress,
+  type RefundProgress,
+} from './balance'
 import {
   markPurchaseAbandoned,
   markPurchaseRefunded,
@@ -101,6 +113,21 @@ export interface RefundState {
    * unexplained line on a statement is a phone call.
    */
   paymentCount: number
+  /** Whether a Refund is already on its way — see `RefundProgress`. */
+  progress: RefundProgress
+  /** What the Refund gives back: the whole Purchase, however many cards it came in on. */
+  amountSgd: string
+  /**
+   * Whether the Cross-Location Add-On goes back with it (#275). True when it was
+   * bought with the plan, in the same charge; false when it was bought later on
+   * a Purchase of its own, which dies with the plan and is not returned; null
+   * when the plan has none.
+   */
+  addOnIncluded: boolean | null
+  /** Classes and sessions still ahead on this package — every one is cancelled. */
+  upcomingBookingCount: number
+  /** The Promo Code the Refund hands back, or null when none was used. */
+  promoCode: string | null
 }
 
 /**
@@ -128,6 +155,7 @@ export async function refundStatesFor(
       id: clientPackages.id,
       purchaseId: clientPackages.purchaseId,
       amountPaidSgd: purchases.amountPaidSgd,
+      crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
       count: sql<number>`count(${bookings.id})::int`,
       since: sql<string | null>`min(coalesce(${classes.startsAt}, ${ptSessions.startsAt}))`,
     })
@@ -143,25 +171,51 @@ export async function refundStatesFor(
     .leftJoin(classes, eq(classes.id, bookings.classId))
     .leftJoin(ptSessions, eq(ptSessions.id, bookings.ptSessionId))
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.clientId, clientId)))
-    .groupBy(clientPackages.id, clientPackages.purchaseId, purchases.amountPaidSgd)
+    .groupBy(
+      clientPackages.id,
+      clientPackages.purchaseId,
+      clientPackages.crossLocationPaidSgd,
+      purchases.amountPaidSgd,
+    )
 
-  const held = await heldPaymentCounts(tenantId, rows.map(r => r.purchaseId))
+  const pkgIds = rows.map(r => r.id)
+  const purchaseIds = rows.map(r => r.purchaseId)
+  const [held, promos, upcoming, separateAddOns] = await Promise.all([
+    heldPaymentsFor(tenantId, purchaseIds),
+    promoCodesFor(tenantId, purchaseIds),
+    upcomingBookingCounts(tenantId, pkgIds),
+    separatelyBoughtAddOns(tenantId, pkgIds),
+  ])
 
   const out: Record<string, RefundState> = {}
   for (const r of rows) {
     const count = Number(r.count ?? 0)
+    const h = r.purchaseId ? held.get(r.purchaseId) : undefined
     out[r.id] = {
       refundable: holdsMoney(r.amountPaidSgd),
       attendedCount: count,
       notice: attendedNotice(count, r.since ? new Date(r.since) : null),
-      paymentCount: (r.purchaseId && held.get(r.purchaseId)) || 0,
+      paymentCount: h?.count ?? 0,
+      progress: h?.progress ?? 'none',
+      amountSgd: r.amountPaidSgd ?? '0.00',
+      addOnIncluded: r.crossLocationPaidSgd == null ? null : !separateAddOns.has(r.id),
+      upcomingBookingCount: upcoming.get(r.id) ?? 0,
+      promoCode: (r.purchaseId && promos.get(r.purchaseId)) || null,
     }
   }
   return out
 }
 
+/** What a Purchase still has at the provider, as the Refund screens need it. */
+export interface HeldPayments {
+  /** How many payments a Refund will return — one line each on the statement. */
+  count: number
+  progress: RefundProgress
+}
+
 /**
- * How many payments each of these Purchases still has at the provider.
+ * The payments each of these Purchases still has at the provider, and how many
+ * of them a Refund has already asked for.
  *
  * The **held** set — `succeeded` and `pending` both — because that is exactly
  * what `issueRefund` will call the provider about, and a dialog that promised a
@@ -171,27 +225,120 @@ export async function refundStatesFor(
  * One query for the whole page, keyed by Purchase, because the client detail
  * page reads every row at once.
  */
-export async function heldPaymentCounts(
+export async function heldPaymentsFor(
   tenantId: string,
   purchaseIds: (string | null)[],
-): Promise<Map<string, number>> {
+): Promise<Map<string, HeldPayments>> {
   const ids = purchaseIds.filter((id): id is string => id != null)
   if (ids.length === 0) return new Map()
+  // A string, not a Date: a raw `sql` parameter is not run through the column's
+  // mapper, and postgres-js will not serialise a bare Date there.
+  const inFlightSince = new Date(Date.now() - REFUND_IN_FLIGHT_MS).toISOString()
+  const held = sql`${stripePayments.status} in ('succeeded', 'pending')`
   const rows = await db
     .select({
       purchaseId: stripePayments.purchaseId,
-      n: sql<number>`count(*)::int`,
+      held: sql<number>`count(*) filter (where ${held})::int`,
+      heldRequested: sql<number>`count(*) filter (where ${held} and ${stripePayments.refundRequestedAt} > ${inFlightSince})::int`,
+      refunded: sql<number>`count(*) filter (where ${stripePayments.status} = 'refunded')::int`,
     })
     .from(stripePayments)
     .where(
       and(
         eq(stripePayments.tenantId, tenantId),
         inArray(stripePayments.purchaseId, ids),
-        inArray(stripePayments.status, ['succeeded', 'pending']),
+        inArray(stripePayments.status, ['succeeded', 'pending', 'refunded']),
       ),
     )
     .groupBy(stripePayments.purchaseId)
-  return new Map(rows.map(r => [r.purchaseId, Number(r.n ?? 0)]))
+  return new Map(
+    rows.map(r => {
+      const counts = {
+        held: Number(r.held ?? 0),
+        heldRequested: Number(r.heldRequested ?? 0),
+        refunded: Number(r.refunded ?? 0),
+      }
+      return [r.purchaseId, { count: counts.held, progress: refundProgress(counts) }]
+    }),
+  )
+}
+
+/**
+ * The Promo Code each Purchase used, which its Refund hands back
+ * (`refundPromoCodeRedemption`). Held against the payment that consumed it, so
+ * it is found through the Purchase's payments.
+ */
+async function promoCodesFor(
+  tenantId: string,
+  purchaseIds: (string | null)[],
+): Promise<Map<string, string>> {
+  const ids = purchaseIds.filter((id): id is string => id != null)
+  if (ids.length === 0) return new Map()
+  const rows = await db
+    .select({ purchaseId: stripePayments.purchaseId, code: promoCodes.code })
+    .from(stripePayments)
+    .innerJoin(
+      promoCodeRedemptions,
+      and(
+        eq(promoCodeRedemptions.tenantId, stripePayments.tenantId),
+        eq(promoCodeRedemptions.stripePaymentIntentId, stripePayments.paymentIntentId),
+        eq(promoCodeRedemptions.status, 'consumed'),
+      ),
+    )
+    .innerJoin(promoCodes, eq(promoCodes.id, promoCodeRedemptions.promoCodeId))
+    .where(and(eq(stripePayments.tenantId, tenantId), inArray(stripePayments.purchaseId, ids)))
+  return new Map(rows.map(r => [r.purchaseId, r.code]))
+}
+
+/**
+ * The bookings still ahead on each package — what `cancelFutureBookings` will
+ * cancel when its Refund lands, and on the same terms.
+ */
+async function upcomingBookingCounts(
+  tenantId: string,
+  clientPackageIds: string[],
+): Promise<Map<string, number>> {
+  if (clientPackageIds.length === 0) return new Map()
+  const rows = await db
+    .select({ id: bookings.clientPackageId, n: sql<number>`count(*)::int` })
+    .from(bookings)
+    .leftJoin(classes, eq(classes.id, bookings.classId))
+    .leftJoin(ptSessions, eq(ptSessions.id, bookings.ptSessionId))
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        inArray(bookings.clientPackageId, clientPackageIds),
+        eq(bookings.state, 'confirmed'),
+        eq(bookings.checkInState, 'pending'),
+        sql`coalesce(${classes.startsAt}, ${ptSessions.startsAt}) > now()`,
+      ),
+    )
+    .groupBy(bookings.clientPackageId)
+  return new Map(rows.filter(r => r.id != null).map(r => [r.id!, Number(r.n ?? 0)]))
+}
+
+/**
+ * The plans whose Cross-Location Add-On was bought later, on a Purchase of its
+ * own. That payment points at the plan, not through its `purchase_id`, so the
+ * plan's Refund never returns it — the Add-On simply ends with the plan.
+ */
+async function separatelyBoughtAddOns(
+  tenantId: string,
+  clientPackageIds: string[],
+): Promise<Set<string>> {
+  if (clientPackageIds.length === 0) return new Set()
+  const rows = await db
+    .select({ id: stripePayments.clientPackageId })
+    .from(stripePayments)
+    .innerJoin(purchases, eq(purchases.id, stripePayments.purchaseId))
+    .where(
+      and(
+        eq(stripePayments.tenantId, tenantId),
+        inArray(stripePayments.clientPackageId, clientPackageIds),
+        eq(purchases.kind, 'cross_location_add_on'),
+      ),
+    )
+  return new Set(rows.map(r => r.id).filter((id): id is string => id != null))
 }
 
 /**
@@ -214,12 +361,7 @@ export async function issueRefund(args: {
   clientPackageId: string
   reason: string
   actorStaffId: string
-}): Promise<{
-  purchaseId: string
-  paymentIntentIds: string[]
-  attendedCount: number
-  override: boolean
-}> {
+}): Promise<IssuedPurchaseRefund> {
   const [pkg] = await db
     .select({
       id: clientPackages.id,
@@ -257,9 +399,14 @@ export async function issueRefund(args: {
  * there is no `client_packages` row for it — so `refundable`/`notice` are
  * computed straight off the one booking rather than via `refundStatesFor`.
  *
- * Only `confirmed` bookings are listed: a refunded workshop booking is flipped
- * to `cancelled` by `unwindRefund`, and a Voided package disappears from the
- * portal the same way — there is nothing left here to hang a second refund on.
+ * Listed: every `confirmed` booking, and every booking cancelled **without its
+ * money going back** whose Purchase still holds some (#272) — which is what
+ * cancelling a Workshop leaves behind. The Workshop's cancel refunds nobody, so
+ * this card is where the admin returns each member's money; hiding the row the
+ * moment the Workshop was cancelled left the provider's dashboard as the only
+ * way to do it. A refunded booking (`stripe_refunded`, its Purchase zeroed)
+ * drops off, as a Voided package does — there is nothing left here to hang a
+ * second refund on.
  */
 export interface WorkshopPurchase {
   bookingId: string
@@ -268,10 +415,18 @@ export interface WorkshopPurchase {
   amountPaidSgd: string
   listPriceSgd: string
   purchasedAt: Date
+  /** The place is gone — its Workshop was cancelled — and the money has not come back. */
+  cancelled: boolean
   refundable: boolean
   refundNotice: string | null
   /** How many payments the Refund will return — see `RefundState`. */
   paymentCount: number
+  /** Whether a Refund is already on its way — see `RefundProgress`. */
+  progress: RefundProgress
+  /** What the Refund gives back: the whole Purchase. */
+  refundAmountSgd: string
+  /** The Promo Code the Refund hands back, or null when none was used. */
+  promoCode: string | null
 }
 
 export async function listWorkshopPurchases(
@@ -287,6 +442,7 @@ export async function listWorkshopPurchases(
       amountPaidSgd: bookings.amountPaidSgd,
       listPriceSgd: bookings.listPriceSgd,
       purchasedAt: bookings.bookedAt,
+      state: bookings.state,
       checkInState: bookings.checkInState,
       purchasePaidSgd: purchases.amountPaidSgd,
       purchaseId: bookings.purchaseId,
@@ -300,7 +456,14 @@ export async function listWorkshopPurchases(
         eq(bookings.tenantId, tenantId),
         eq(bookings.clientId, clientId),
         eq(bookings.kind, 'workshop'),
-        eq(bookings.state, 'confirmed'),
+        or(
+          eq(bookings.state, 'confirmed'),
+          and(
+            eq(bookings.state, 'cancelled'),
+            eq(bookings.refundOutcome, 'n_a'),
+            gt(purchases.amountPaidSgd, '0'),
+          ),
+        ),
       ),
     )
   if (rows.length === 0) return []
@@ -326,18 +489,26 @@ export async function listWorkshopPurchases(
     }
   }
 
-  const held = await heldPaymentCounts(tenantId, rows.map(r => r.purchaseId))
+  const [held, promos] = await Promise.all([
+    heldPaymentsFor(tenantId, rows.map(r => r.purchaseId)),
+    promoCodesFor(tenantId, rows.map(r => r.purchaseId)),
+  ])
 
   return rows.map(r => {
     const count = r.checkInState === 'attended' || r.checkInState === 'no_show' ? 1 : 0
+    const h = r.purchaseId ? held.get(r.purchaseId) : undefined
     return {
-      paymentCount: (r.purchaseId && held.get(r.purchaseId)) || 0,
+      paymentCount: h?.count ?? 0,
+      progress: h?.progress ?? 'none',
+      refundAmountSgd: r.purchasePaidSgd ?? '0.00',
+      promoCode: (r.purchaseId && promos.get(r.purchaseId)) || null,
       bookingId: r.bookingId,
       workshopName: r.workshopName,
       tierName: r.tierName,
       amountPaidSgd: r.amountPaidSgd ?? '0.00',
       listPriceSgd: r.listPriceSgd ?? '0.00',
       purchasedAt: r.purchasedAt,
+      cancelled: r.state === 'cancelled',
       refundable: holdsMoney(r.purchasePaidSgd),
       refundNotice: attendedNotice(count, r.tierId ? sinceByTier.get(r.tierId) ?? null : null),
     }
@@ -357,12 +528,7 @@ export async function issueWorkshopRefund(args: {
   bookingId: string
   reason: string
   actorStaffId: string
-}): Promise<{
-  purchaseId: string
-  paymentIntentIds: string[]
-  attendedCount: number
-  override: boolean
-}> {
+}): Promise<IssuedPurchaseRefund> {
   const [booking] = await db
     .select({
       id: bookings.id,
@@ -397,12 +563,11 @@ export async function issueWorkshopRefund(args: {
 /**
  * The provider call itself, **on the account the money came in on** (#97).
  *
- * Not the account the studio sells on today. A studio that moves onto its own
- * credentials leaves its history on the platform's account — no provider hands
- * a payment intent across accounts — so its old sales stay there, refundable,
- * indefinitely, and a Purchase straddling the move holds payments on both. The
- * account therefore comes off the payment row rather than off the Tenant, and
- * `null` is the platform's own.
+ * Not the account the studio sells on today — no provider hands a payment
+ * intent across accounts — so the account comes off the payment row rather than
+ * off the Tenant. `null` there is the platform's own account, which this app no
+ * longer holds a key for (#293): such a payment is refused as
+ * `payment_on_platform_account` and returned from the Stripe dashboard instead.
  *
  * Keyed on the payment intent, which is the money path's only real guard — the
  * caller's `already_refunded` check reads a status the webhook flips
@@ -427,19 +592,92 @@ export async function refundAtProvider(
 }
 
 /**
- * Give back every payment a Purchase is still holding, each on its own account.
+ * What one press of a Refund button did at the provider (#275).
  *
- * In sequence, because they are one decision and the audit row below covers
- * them together. A call that fails part-way leaves some payments returned and
- * some not, which the unwind refuses to treat as a finished Refund — it reports
- * it and waits, and the admin who pressed the button sees the error.
+ * `complete` is false when the provider refused a payment after taking an
+ * earlier one: the Refund is half-issued, and the admin has to be told so
+ * rather than shown an error that reads as though nothing happened. It is a
+ * result and not a thrown error on purpose — the request runs in one
+ * transaction, and throwing would roll back the very stamps that record which
+ * payments did go back.
+ */
+export interface IssuedRefund {
+  purchaseId: string
+  /** The payments this press asked the provider to return. */
+  paymentIntentIds: string[]
+  /** Every payment the Refund covers — held ones and any already back. */
+  paymentCount: number
+  /**
+   * How many of those are back or asked for — this press, earlier presses, or
+   * the provider's own dashboard. Asked for, not landed: the money is back only
+   * when `charge.refunded` says so.
+   */
+  requestedCount: number
+  complete: boolean
+}
+
+/** A Refund aimed at a plan or a booking, which carries the studio-rule override. */
+export type IssuedPurchaseRefund = IssuedRefund & { attendedCount: number; override: boolean }
+
+/**
+ * Give back every payment a Purchase is still holding, each on its own account,
+ * and stamp each one as asked for the moment the provider takes it.
+ *
+ * In sequence, because they are one decision and one audit row covers them. A
+ * payment already asked for is skipped — its Refund is on its way, and the
+ * webhook will land it — so pressing again after an incomplete Refund returns
+ * only the rest. When there is nothing left to ask for, the Refund is refused
+ * as `refund_processing`: the provider is not asked twice for the same money.
+ * An ask older than `REFUND_IN_FLIGHT_MS` is no longer believed, so a Refund the
+ * provider failed after accepting it can be issued again rather than stranded.
+ *
+ * A call that fails while none of the Purchase's money is back or asked for is
+ * thrown as it was — nothing happened. One that fails after some did (on this
+ * press, an earlier one, or the provider's dashboard) is reported and returned
+ * as an incomplete Refund, which the unwind refuses to treat as finished until
+ * the rest is returned.
  */
 async function returnEveryPayment(
   tenantId: string,
-  toReturn: readonly PurchasePayment[],
-): Promise<void> {
+  purchaseId: string,
+  payments: readonly PurchasePayment[],
+): Promise<IssuedRefund> {
+  const held = heldPayments([...payments])
+  const toReturn = held.filter(p => !refundInFlight(p.refundRequestedAt))
+  if (toReturn.length === 0) throw new ConflictError('refund_processing')
+
+  // Before any of them goes back: a payment recorded against the platform
+  // account (#293) cannot be returned from here, and finding that out on the
+  // second payment would leave the first already returned — a Refund half-done
+  // on purpose. The admin is told where it can be issued instead.
+  if (toReturn.some(p => p.providerAccountId == null)) throw paymentOnPlatformAccount()
+
+  const covered = held.length + payments.filter(p => p.status === 'refunded').length
+  const alreadyAsked = covered - toReturn.length
+  const paymentIntentIds: string[] = []
   for (const payment of toReturn) {
-    await refundAtProvider(tenantId, payment.paymentIntentId, payment.providerAccountId)
+    try {
+      await refundAtProvider(tenantId, payment.paymentIntentId, payment.providerAccountId)
+    } catch (err) {
+      if (alreadyAsked + paymentIntentIds.length === 0) throw err
+      reportError(err, 'refund stopped part-way — some payments returned, some not', {
+        scope: 'refunds',
+        purchaseId,
+        failedIntent: payment.paymentIntentId,
+      })
+      break
+    }
+    await stampRefundRequested(tenantId, payment.paymentIntentId)
+    paymentIntentIds.push(payment.paymentIntentId)
+  }
+
+  const requestedCount = alreadyAsked + paymentIntentIds.length
+  return {
+    purchaseId,
+    paymentIntentIds,
+    paymentCount: covered,
+    requestedCount,
+    complete: requestedCount === covered,
   }
 }
 
@@ -451,8 +689,8 @@ async function returnEveryPayment(
  * The provider calls run in sequence and one audit row covers them, because
  * they are one decision. A call that fails part-way through leaves a Purchase
  * with some payments returned and some not, which the unwind refuses to treat
- * as a finished Refund — it reports it and waits, and the admin who pressed the
- * button sees the error.
+ * as a finished Refund — it reports it and waits, and the result tells the
+ * admin who pressed the button (see `IssuedRefund`).
  *
  * The audit row is written after the provider has taken it, so the log records
  * refunds that actually happened. The generic audit middleware records the
@@ -468,12 +706,7 @@ async function refundPurchaseAndAudit(args: {
   actorStaffId: string
   reason: string
   attendedCount: number
-}): Promise<{
-  purchaseId: string
-  paymentIntentIds: string[]
-  attendedCount: number
-  override: boolean
-}> {
+}): Promise<IssuedPurchaseRefund> {
   // A comp grant, a $0 trial, a free workshop place or a Promo Code that took
   // the total to zero never reached the payment provider, so there is no money
   // to give back. Corporate is out of scope for the same reason from the other
@@ -481,8 +714,8 @@ async function refundPurchaseAndAudit(args: {
   if (!args.purchaseId) throw new BadRequestError('purchase_not_refundable')
 
   const payments = await paymentsForPurchase(args.tenantId, args.purchaseId)
-  const toReturn = heldPayments(payments)
-  if (toReturn.length === 0) {
+  const held = heldPayments(payments)
+  if (held.length === 0) {
     // Nothing held. Told apart so an admin double-clicking a button reads
     // "already refunded" rather than "not refundable", which is the difference
     // between a race they can ignore and a purchase they should look at.
@@ -491,8 +724,9 @@ async function refundPurchaseAndAudit(args: {
   }
 
   const override = !isUntouched(args.attendedCount)
-  const paymentIntentIds = toReturn.map(p => p.paymentIntentId)
-  await returnEveryPayment(args.tenantId, toReturn)
+  const issued = await returnEveryPayment(args.tenantId, args.purchaseId, payments)
+  const { paymentIntentIds } = issued
+  if (paymentIntentIds.length === 0) return { ...issued, attendedCount: args.attendedCount, override }
 
   try {
     await db.insert(auditLog).values({
@@ -508,6 +742,7 @@ async function refundPurchaseAndAudit(args: {
         attendedCount: args.attendedCount,
         purchaseId: args.purchaseId,
         paymentIntentIds,
+        complete: issued.complete,
       },
     })
   } catch (err) {
@@ -519,7 +754,7 @@ async function refundPurchaseAndAudit(args: {
     })
   }
 
-  return { purchaseId: args.purchaseId, paymentIntentIds, attendedCount: args.attendedCount, override }
+  return { ...issued, attendedCount: args.attendedCount, override }
 }
 
 /**
@@ -544,7 +779,7 @@ export async function issueOpenPurchaseRefund(args: {
   purchaseId: string
   reason: string
   actorStaffId: string
-}): Promise<{ purchaseId: string; paymentIntentIds: string[]; returnedSgd: string }> {
+}): Promise<IssuedRefund & { returnedSgd: string }> {
   const purchase = await purchaseById(args.tenantId, args.purchaseId)
   if (!purchase) throw new NotFoundError('purchase_not_found')
   // Only an ungranted Purchase comes through here. A `paid` one delivered
@@ -557,17 +792,18 @@ export async function issueOpenPurchaseRefund(args: {
   }
 
   const payments = await paymentsForPurchase(args.tenantId, args.purchaseId)
-  const toReturn = heldPayments(payments)
+  const held = heldPayments(payments)
   // An `open` Purchase with nothing against it is an abandoned click, not money
   // the studio is holding — the member owes nothing on it and does not remember
   // making it. There is nothing to give back.
-  if (toReturn.length === 0) throw new BadRequestError('purchase_not_refundable')
+  if (held.length === 0) throw new BadRequestError('purchase_not_refundable')
 
   const returnedSgd = purchase.amountPaidSgd
-  const paymentIntentIds = toReturn.map(p => p.paymentIntentId)
   // A part-paid Purchase is exactly the shape that can straddle a studio's move
   // onto its own account, so each payment goes back where it came in (#97).
-  await returnEveryPayment(args.tenantId, toReturn)
+  const issued = await returnEveryPayment(args.tenantId, args.purchaseId, payments)
+  const { paymentIntentIds } = issued
+  if (paymentIntentIds.length === 0) return { ...issued, returnedSgd }
 
   // Written after the provider has taken it, and reported rather than thrown if
   // it fails — the money has already moved, and an admin whose refund went
@@ -586,6 +822,7 @@ export async function issueOpenPurchaseRefund(args: {
         purchaseId: args.purchaseId,
         paymentIntentIds,
         returnedSgd,
+        complete: issued.complete,
       },
     })
   } catch (err) {
@@ -596,7 +833,7 @@ export async function issueOpenPurchaseRefund(args: {
     })
   }
 
-  return { purchaseId: args.purchaseId, paymentIntentIds, returnedSgd }
+  return { ...issued, returnedSgd }
 }
 
 /**
@@ -719,15 +956,26 @@ async function unwindPurchase(tenantId: string, purchaseId: string): Promise<voi
   // `n_a` the class and PT bookings take: that rule is about bookings a voided
   // package paid for, where returning a credit would be meaningless. Here money
   // genuinely went back for this exact booking, which is what the arm is for.
+  //
+  // A booking already cancelled with its Workshop (#272) is caught too: the
+  // Workshop's cancel gives nobody their money back and records `n_a`, and a
+  // Refund issued afterwards is what does — so this is where its outcome
+  // becomes `stripe_refunded`. Its cancel time is the Workshop's, and stays.
   await db
     .update(bookings)
-    .set({ state: 'cancelled', refundOutcome: 'stripe_refunded', cancelledAt: new Date() })
+    .set({
+      state: 'cancelled',
+      refundOutcome: 'stripe_refunded',
+      cancelledAt: sql`coalesce(${bookings.cancelledAt}, now())`,
+    })
     .where(
       and(
         eq(bookings.tenantId, tenantId),
         eq(bookings.purchaseId, purchaseId),
-        eq(bookings.state, 'confirmed'),
-        eq(bookings.checkInState, 'pending'),
+        or(
+          and(eq(bookings.state, 'confirmed'), eq(bookings.checkInState, 'pending')),
+          and(eq(bookings.state, 'cancelled'), eq(bookings.refundOutcome, 'n_a')),
+        ),
       ),
     )
 
@@ -873,6 +1121,24 @@ async function stampPaymentRefunded(tenantId: string, paymentIntentId: string): 
   await db
     .update(stripePayments)
     .set({ status: 'refunded', refundedAt: new Date() })
+    .where(
+      and(
+        eq(stripePayments.tenantId, tenantId),
+        eq(stripePayments.paymentIntentId, paymentIntentId),
+        ne(stripePayments.status, 'refunded'),
+      ),
+    )
+}
+
+/**
+ * Record that the provider has taken a Refund for this payment and it is on
+ * its way (#275). Only ever reached for a payment with no ask in flight, so it
+ * overwrites a stale one — the ask being timed is the one just made.
+ */
+async function stampRefundRequested(tenantId: string, paymentIntentId: string): Promise<void> {
+  await db
+    .update(stripePayments)
+    .set({ refundRequestedAt: new Date() })
     .where(
       and(
         eq(stripePayments.tenantId, tenantId),

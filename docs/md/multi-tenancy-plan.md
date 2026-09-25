@@ -419,9 +419,11 @@ retired.**
 ### Phase 4 — Payments
 - [x] Each Tenant supplies its own payment-provider credentials, held encrypted; every provider
       call is made against that studio's own account, and its webhook deliveries arrive on its
-      own endpoint and are verified against its own signing secret. A Tenant that has supplied
-      none still charges on the platform account. See
+      own endpoint and are verified against its own signing secret. See
       `be/docs/adr/0004-tenant-supplied-payment-credentials.md`.
+- [x] The platform account is no longer used: a Tenant that has supplied no credentials takes
+      no online payments, and the shared webhook endpoint and platform Stripe env vars are gone
+      (#293). See `be/docs/adr/0007-every-studio-sells-on-its-own-account.md`.
 
 > **Ordering note:** Phase 4 is the deepest unknown and blocks nothing else — v1 can ship with
 > all tenants on the platform Stripe account. Consider running it last, after Phase 6, and

@@ -6,9 +6,12 @@ import { inboxItems } from '../../db/schema/inbox'
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 
 /**
- * Cancel a workshop and all confirmed workshop bookings. Automated Stripe
- * refunds are not implemented yet, so affected bookings are marked cancelled
- * with refund_outcome='n_a' instead of falsely claiming stripe_refunded.
+ * Cancel a workshop and all confirmed workshop bookings. **Nobody is refunded
+ * automatically** (#272): each booking is marked cancelled with
+ * refund_outcome='n_a' rather than falsely claiming stripe_refunded, and the
+ * admin decides, one member at a time, from that member's page — where a paid
+ * booking cancelled here stays listed with its Refund action
+ * (`listWorkshopPurchases`). Refunding it later is what records it refunded.
  *
  * Write permission is checked HERE rather than by a path prefix at the router,
  * because this action is mounted under two paths (/workshops/:id/cancel and

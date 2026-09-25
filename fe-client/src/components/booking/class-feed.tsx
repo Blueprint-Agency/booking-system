@@ -10,6 +10,8 @@ import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MyNextClass } from "@/components/account/next-class-card";
 import { useBrand } from "@/components/brand/brand-provider";
+import { useCancellationPolicy } from "@/lib/cancellation-policy";
+import { classBookingPolicy } from "@/lib/cancellation-copy";
 
 const WINDOW_DAYS = 30;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -57,6 +59,7 @@ export function ClassFeed() {
   const locations = useMemo(() => locationData ?? [], [locationData]);
   const { isSignedIn } = useMemberSession();
   const brand = useBrand();
+  const policy = useCancellationPolicy();
 
   // The studio and its own premises — both per Tenant, so a second studio's
   // members never read the first studio's name or the first studio's addresses.
@@ -112,6 +115,14 @@ export function ClassFeed() {
         />
         <FilterSelect value={instructor} onChange={setInstructor} options={instructorOptions} placeholder="All instructors" />
       </div>
+
+      {/* The rules a member agrees to by booking, stated before they do. Left
+          out rather than guessed while the studio's policy is still loading. */}
+      {policy && (
+        <p className="-mt-3 mb-6 text-xs text-muted leading-relaxed">
+          {classBookingPolicy(policy)}
+        </p>
+      )}
 
       {loading ? (
         <div className="flex flex-col gap-3" aria-label="Loading schedule">

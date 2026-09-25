@@ -86,9 +86,6 @@ const fields = z.object({
     .string()
     .min(1, 'FRONTEND_URLS is required — e.g. https://*.example.app,https://*.portal.example.app'),
 
-  // Optional / deferred — accept anything (or empty string)
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
   /**
    * A stand-in for Stripe's API, as an origin — `http://127.0.0.1:12111` — for
    * the browser journeys a pull request runs on the CI runner (#207), so they
@@ -97,23 +94,19 @@ const fields = z.object({
    */
   STRIPE_API_URL: z.string().optional(),
   /**
-   * The fixed half of the card statement descriptor, as set on the Stripe
-   * account. Not a secret and not per-tenant: it names the platform, and the
-   * studio's name is appended per charge in the 22 characters left after it
-   * (`lib/stripe.ts`). Unset means no suffix is sent at all — Stripe refuses one
-   * without a prefix — so every studio charges under the account's own name.
-   */
-  STRIPE_STATEMENT_DESCRIPTOR_PREFIX: z.string().optional(),
-  /**
    * The key that seals a Tenant's own payment-provider credentials (#100).
    *
+   * Every studio takes payments on its own account and only there (#293), so
+   * this is what online payments rest on: without it no studio's credentials
+   * can be stored or opened, and no studio can sell. Every deployed environment
+   * sets it (`deploy-be.yml`).
+   *
    * Base64, decoding to exactly 32 bytes — `openssl rand -base64 32`. It is not
-   * validated here beyond being a string, because an environment that never
-   * onboards a studio onto its own account needs none, and a boot failure for a
-   * feature nobody has turned on is the wrong trade. The shape is checked at the
-   * one moment it matters — when the super portal tries to save a studio's
-   * credentials, which refuses rather than storing them in the clear
-   * (`lib/secret-box.ts`).
+   * required here, because a local environment that never takes a payment needs
+   * none, and a boot failure for a feature nobody has turned on is the wrong
+   * trade. The shape is checked at the one moment it matters — when the super
+   * portal tries to save a studio's credentials, which refuses rather than
+   * storing them in the clear (`lib/secret-box.ts`).
    *
    * Rotating it orphans every sealed value, so a rotation means re-entering
    * each studio's credentials. There is deliberately no second key to fall back

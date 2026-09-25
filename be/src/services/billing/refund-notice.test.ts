@@ -33,12 +33,12 @@ const SINCE = new Date('2026-06-11T16:00:00Z')
   assert.strictEqual(isUntouched(1), false, 'one attended or no-showed class ends Untouched')
   assert.strictEqual(
     attendedNotice(1, SINCE),
-    '1 class attended since 12 Jun 2026',
+    '1 class used (attended or no-show) since 12 Jun 2026',
     'the singular is spelled out, not pluralised by a rule',
   )
   assert.strictEqual(
     attendedNotice(3, SINCE),
-    '3 classes attended since 12 Jun 2026',
+    '3 classes used (attended or no-show) since 12 Jun 2026',
     'the notice is the spec sentence verbatim',
   )
 }
@@ -48,7 +48,7 @@ const SINCE = new Date('2026-06-11T16:00:00Z')
 {
   assert.strictEqual(
     attendedNotice(2, null),
-    '2 classes attended on this purchase',
+    '2 classes used (attended or no-show) on this purchase',
     'no date still produces a whole sentence',
   )
 }

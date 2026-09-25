@@ -1096,6 +1096,8 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
 
     const stripe = (await import('./stripe-fake')).installStripeFake()
     try {
+      // Paid on the studio's own account — the only way a studio sells (#293).
+      stripe.ownAccount(one)
       stripe.reply('customers.create', { id: `cus_${run}` })
       stripe.reply('checkout.sessions.create', { id: `cs_${run}`, url: `https://checkout.test/${run}` })
       const res = await expectStatus(

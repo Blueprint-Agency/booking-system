@@ -398,14 +398,15 @@ export default function PlatformPage() {
                   {termLine(tenant)}
                 </p>
                 {/* Whose account this studio's money lands in. Worth a line of
-                    its own rather than a badge: "the platform's" is a correct,
-                    ordinary state — every studio starts there — and the account
-                    id is the only thing anyone can ever see about a studio's own
+                    its own rather than a badge: "not set up" is an ordinary
+                    state — every studio starts there, and takes no online
+                    payments until it leaves it (#293) — and the account id is
+                    the only thing anyone can ever see about a studio's own
                     credentials, so it is the only way to spot the wrong ones. */}
                 <p className="mt-0.5 truncate text-sm text-muted">
                   {tenant.payments.configured
                     ? `Charges on its own account · ${tenant.payments.account_id}`
-                    : "Charges on the platform account"}
+                    : "Payments not set up"}
                 </p>
                 <ImportProgress
                   studioName={tenant.name}

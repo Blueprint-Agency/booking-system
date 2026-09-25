@@ -13,7 +13,7 @@ import { createStudio, removeStudio } from './studio'
  */
 export default async function globalSetup() {
   const stripe = isLocalStack ? await startStripeStub() : null
-  const made = createStudio()
+  const made = await createStudio()
   process.env.E2E_STUDIO = JSON.stringify(made)
   console.log(`[e2e] studio ${made.slug}: ${made.urls.client} · ${made.urls.portal}`)
 

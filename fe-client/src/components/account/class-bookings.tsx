@@ -25,12 +25,13 @@ import { ApiError, useApi } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
-import { CLASS_CANCELLATION_HOURS } from "@/data/policy";
-
-/** A member may self-cancel only up to this many hours before the class starts. */
-function canCancel(startsAt: string): boolean {
-  return new Date(startsAt).getTime() - Date.now() >= CLASS_CANCELLATION_HOURS * 3600_000;
-}
+import { useCancellationPolicy, type CancellationPolicy } from "@/lib/cancellation-policy";
+import {
+  cancelClosed,
+  canStillCancel,
+  classCancelNotice,
+  windowRefusal,
+} from "@/lib/cancellation-copy";
 
 export interface ApiBooking {
   booking_id: string;
@@ -63,6 +64,15 @@ const TAB_LABEL: Record<Tab, string> = {
   past: "Past",
 };
 
+/** A number the refusal body carried, e.g. the window it was refused under. */
+function errNumber(err: unknown, key: string): number | null {
+  if (err instanceof ApiError && err.body && typeof err.body === "object") {
+    const v = (err.body as Record<string, unknown>)[key];
+    if (typeof v === "number") return v;
+  }
+  return null;
+}
+
 function errCode(err: unknown): string {
   if (
     err instanceof ApiError &&
@@ -78,6 +88,7 @@ function errCode(err: unknown): string {
 export function ClassBookings() {
   const api = useApi();
   const { refetch: refetchPackages } = useClientPackages();
+  const policy = useCancellationPolicy();
 
   const [upcoming, setUpcoming] = useState<ApiBooking[]>([]);
   const [past, setPast] = useState<ApiBooking[]>([]);
@@ -130,7 +141,7 @@ export function ClassBookings() {
       } else if (res.refund_outcome === "forfeited") {
         setBanner({
           tone: "warn",
-          text: "Booking cancelled · credit forfeited per cancellation policy.",
+          text: "Booking cancelled · the credit wasn't returned, because you've used up your cancellations this cycle.",
         });
       } else {
         setBanner({ tone: "ok", text: "Booking cancelled." });
@@ -139,9 +150,14 @@ export function ClassBookings() {
     } catch (err) {
       const code = errCode(err);
       if (code === ERROR_CODES.cancellation_window_passed) {
+        // The window the server refused under — the one that was actually applied.
+        const hours = errNumber(err, "window_hours") ?? policy?.class_window_hours;
         setBanner({
           tone: "error",
-          text: `Classes can't be cancelled within ${CLASS_CANCELLATION_HOURS} hours of the start time.`,
+          text:
+            hours !== undefined
+              ? windowRefusal("class", hours)
+              : "This class can no longer be cancelled in the app. Please contact the studio.",
         });
         await reload();
       } else if (code === ERROR_CODES.not_cancellable) {
@@ -257,6 +273,7 @@ export function ClassBookings() {
                   booking={b}
                   featured={tab === "upcoming" && i === 0}
                   ongoing={tab === "ongoing"}
+                  policy={policy}
                   onCancel={setCancelTarget}
                 />
               ))}
@@ -280,9 +297,7 @@ export function ClassBookings() {
               {formatClassTime(cancelTarget.starts_at)}
             </p>
             <div className="mt-4 rounded-xl border border-ink/10 bg-warm p-3 text-sm text-ink">
-              {cancelTarget.was_unlimited
-                ? "This frees your spot — your unlimited membership is unaffected."
-                : `Your credit will be returned. Classes can only be cancelled at least ${CLASS_CANCELLATION_HOURS} hours before they start.`}
+              {classCancelNotice(policy, cancelTarget.was_unlimited)}
             </div>
             <div className="mt-6 flex gap-3">
               <button
@@ -334,13 +349,21 @@ function UpcomingCard({
   booking,
   featured,
   ongoing = false,
+  policy,
   onCancel,
 }: {
   booking: ApiBooking;
   featured: boolean;
   ongoing?: boolean;
+  policy: CancellationPolicy | null;
   onCancel: (b: ApiBooking) => void;
 }) {
+  // Until the studio's window is known, offer the cancel on anything not yet
+  // started and let the server decide — a guessed number is how members were
+  // told the wrong one before.
+  const open = policy
+    ? canStillCancel(booking.starts_at, policy.class_window_hours)
+    : !ongoing;
   return (
     <div
       className={cn(
@@ -396,7 +419,7 @@ function UpcomingCard({
         />
       </div>
       <div className="mt-3 flex items-center gap-3">
-        {canCancel(booking.starts_at) ? (
+        {open ? (
           <button
             onClick={() => onCancel(booking)}
             className="inline-flex items-center gap-1.5 min-h-[32px] text-xs font-medium text-muted hover:text-error transition-colors"
@@ -406,7 +429,7 @@ function UpcomingCard({
           </button>
         ) : (
           <span className="text-xs text-muted">
-            Cancellation closed · within {CLASS_CANCELLATION_HOURS}h of start
+            {policy ? cancelClosed(policy.class_window_hours) : "Cancellation closed"}
           </span>
         )}
       </div>

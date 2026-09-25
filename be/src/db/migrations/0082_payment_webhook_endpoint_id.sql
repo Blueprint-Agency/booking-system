@@ -1,0 +1,1 @@
+ALTER TABLE "tenant_payment_credentials" ADD COLUMN "webhook_endpoint_id" text;

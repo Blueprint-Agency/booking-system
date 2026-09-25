@@ -164,8 +164,8 @@ export const tenantSettings = pgTable('tenant_settings', {
  * There is no platform account in the middle — Stripe Connect is not available
  * to this platform — so a studio hands over the credentials to its own account
  * and every call on its behalf is made against that account directly. A Tenant
- * with no row here charges on the platform account exactly as before, which is
- * what lets studios be moved across one at a time.
+ * with no row here takes no online payments (#293): there is no platform
+ * account behind it any more.
  *
  * Both secrets are sealed (`lib/secret-box.ts`); `accountId` is not, because it
  * names the account rather than opening it, and naming it is the whole of what
@@ -184,6 +184,13 @@ export const tenantPaymentCredentials = pgTable('tenant_payment_credentials', {
   accountId: text('account_id').notNull(),
   secretKeySealed: text('secret_key_sealed').notNull(),
   webhookSecretSealed: text('webhook_secret_sealed').notNull(),
+  /**
+   * The webhook endpoint the platform created on the studio's account (#294),
+   * so it can be deleted when the key is replaced or removed. Not a secret: it
+   * names the endpoint, and its signing secret is the sealed column above.
+   * Null on rows saved before #294, whose endpoint was made by hand.
+   */
+  webhookEndpointId: text('webhook_endpoint_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })

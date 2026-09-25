@@ -20,7 +20,7 @@ export function LocationGate({ children }: { children: React.ReactNode }) {
           <MapPin className="mb-4 h-8 w-8 text-accent" />
           <h2 className="mb-2 text-lg font-semibold text-ink">Add your first location</h2>
           <p className="mb-6 text-sm text-muted">
-            Workspace-level features (Schedule, Workshops, Check-in, Inbox) need at least
+            Workspace-level features (Schedule, Workshops, Check-in) need at least
             one studio location. Add one to start configuring the rest of the system.
           </p>
           <Button onClick={() => setOpen(true)}>Add location</Button>

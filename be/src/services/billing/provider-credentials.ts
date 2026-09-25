@@ -73,8 +73,8 @@ type SealedRow = {
 }
 
 /**
- * A Tenant's credentials, or null when it has none and therefore sells on the
- * platform account.
+ * A Tenant's credentials, or null when it has none and therefore takes no online
+ * payments (#293).
  *
  * The read goes through `tenant_payment_credentials_for()` (migration 0067) because the
  * callers have no Tenant context to open: a background job has no request, and
@@ -181,6 +181,22 @@ export async function providerAccountStatus(tenantId: string): Promise<ProviderA
 }
 
 /**
+ * The webhook endpoint the platform created on a studio's account (#294), or
+ * null: no credentials, or credentials saved before the platform created
+ * endpoints itself. Read inside `withTenant` rather than through the sealed
+ * lookup, because every caller is acting for a studio it already knows.
+ */
+export async function storedWebhookEndpointId(tenantId: string): Promise<string | null> {
+  const rows = await withTenant(tenantId, () =>
+    db
+      .select({ id: tenantPaymentCredentials.webhookEndpointId })
+      .from(tenantPaymentCredentials)
+      .where(eq(tenantPaymentCredentials.tenantId, tenantId)),
+  )
+  return rows[0]?.id ?? null
+}
+
+/**
  * Save (or replace) a studio's credentials.
  *
  * The write runs inside `withTenant`, so the Row-Level Security policy on the
@@ -191,7 +207,13 @@ export async function providerAccountStatus(tenantId: string): Promise<ProviderA
  */
 export async function saveProviderCredentials(
   tenantId: string,
-  input: { accountId: string; secretKey: string; webhookSecret: string },
+  input: {
+    accountId: string
+    secretKey: string
+    webhookSecret: string
+    /** The endpoint the platform created for this secret (#294), when it did. */
+    webhookEndpointId?: string | null
+  },
 ): Promise<ProviderAccountStatus> {
   const values = {
     tenantId,
@@ -199,6 +221,7 @@ export async function saveProviderCredentials(
     accountId: input.accountId,
     secretKeySealed: seal(input.secretKey),
     webhookSecretSealed: seal(input.webhookSecret),
+    webhookEndpointId: input.webhookEndpointId ?? null,
     updatedAt: new Date(),
   }
 
@@ -212,6 +235,7 @@ export async function saveProviderCredentials(
           accountId: values.accountId,
           secretKeySealed: values.secretKeySealed,
           webhookSecretSealed: values.webhookSecretSealed,
+          webhookEndpointId: values.webhookEndpointId,
           updatedAt: values.updatedAt,
         },
       }),
@@ -226,8 +250,8 @@ export async function saveProviderCredentials(
  *
  * The way out of a mistake, and the only one: credentials that turn out to be
  * the wrong studio's cannot be corrected by looking at them, because nobody can
- * look at them. Afterwards the studio charges on the platform account again,
- * which is where every studio started.
+ * look at them. Afterwards the studio takes no online payments until new ones
+ * are entered (#293) — which is where every studio starts.
  */
 export async function clearProviderCredentials(tenantId: string): Promise<ProviderAccountStatus> {
   // The `where` is redundant under the policy and written anyway: a delete with

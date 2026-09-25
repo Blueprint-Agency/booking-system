@@ -11,7 +11,9 @@ import {
 import * as workshopsSvc from '../../services/workshops/catalog'
 import * as merchSvc from '../../services/catalog/merch'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
+import { readCancellationPolicy } from '../../services/policy/evaluate-cancellation'
 import { tenantId } from '../../middleware/tenant'
+import { takesOnlinePayments } from '../../lib/stripe'
 
 function serializeClassPackage(
   r: classSvc.ClassPackageRow,
@@ -121,6 +123,27 @@ const app = new Hono()
         return serializePtPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps))
       }),
     })
+  })
+  // The studio's cancellation rules, stated to a member before they book and
+  // when they cancel. Public because the schedule is: the rules are part of
+  // what a member is agreeing to, signed in or not. Not cached — an admin who
+  // changes the window should see members told the new one straight away.
+  .get('/cancellation-policy', async c => {
+    const p = await readCancellationPolicy(tenantId(c))
+    return c.json({
+      class_window_hours: p.classWindowHours,
+      pt_window_hours: p.ptWindowHours,
+      cancel_cap_count: p.cancelCapCount,
+      cancel_cap_cycle_days: p.cancelCapCycleDays,
+    })
+  })
+  // Whether this studio takes card payments online at all (#293) — false until
+  // it has supplied its own payment account. Read before a buy button is shown,
+  // so a member is told plainly rather than handed a button that fails. Public
+  // because the catalogue is. Not cached: a studio whose credentials have just
+  // been entered should be able to sell on the next page load.
+  .get('/online-payments', async c => {
+    return c.json({ online_payments: await takesOnlinePayments(tenantId(c)) })
   })
   // Corporate catalogue for signed-out browsing (no promotions, no entitlements).
   .get('/corporate-packages', async c => {

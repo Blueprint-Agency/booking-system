@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
-import type { StripeFake } from './stripe-fake'
+import { ownAccountId, stripeWebhookPath, type StripeFake } from './stripe-fake'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.package-purchase.test`
@@ -11,7 +11,6 @@ const DOMAIN = `${run}.package-purchase.test`
 const NAME = `Purchase ${run}`
 const CLASS_TYPE_NAME = `Purchase class type ${run}`
 const SECOND_LOCATION_NAME = `Purchase second premises ${run}`
-const WEBHOOK_SECRET = 'whsec_package_purchase_test'
 /** The only signature the fake provider accepts; anything else fails the check. */
 const GOOD_SIGNATURE = 't=1,v1=package-purchase'
 const HOUR = 60 * 60 * 1000
@@ -34,7 +33,6 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
   let jobs!: typeof import('../jobs')
   let classTypesSvc!: typeof import('../services/catalog/class-types')
   let fake!: StripeFake
-  let webhookSecretWas: string | undefined
 
   type Staff = { id: string; headers: Record<string, string> }
   type Studio = {
@@ -248,7 +246,9 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
         },
       },
     }
-    return harness.app.request(options.endpoint ?? '/api/v1/webhooks/stripe', {
+    // The studio's own endpoint (#293): the one whose member the session was for.
+    const endpoint = options.endpoint ?? stripeWebhookPath(params.metadata.tenant_id === two.id ? two.slug : one.slug)
+    return harness.app.request(endpoint, {
       method: 'POST',
       headers: { ...json, 'stripe-signature': options.signature ?? GOOD_SIGNATURE },
       body: JSON.stringify(event),
@@ -284,25 +284,34 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal((await packagesOf(who)).length, packagesBefore, 'a package was granted')
   }
 
+  /**
+   * The fake provider, with both studios selling on accounts of their own —
+   * the only way a studio sells at all (#293).
+   */
+  async function installFake(): Promise<StripeFake> {
+    const installed = (await import('./stripe-fake')).installStripeFake()
+    installed.ownAccount(harness.tenants.one)
+    installed.ownAccount(harness.tenants.two)
+    installed.reply('customers.create', () => ({ id: `cus_${randomUUID().slice(0, 8)}` }))
+    installed.reply('checkout.sessions.create', () => {
+      const id = `cs_${randomUUID()}`
+      return { id, url: `https://pay.example.test/${id}` }
+    })
+    installed.reply('webhooks.constructEvent', (body: unknown, signature: unknown) => {
+      if (signature !== GOOD_SIGNATURE) throw new Error('No signatures found matching the expected signature for payload')
+      return JSON.parse(String(body))
+    })
+    installed.reply('paymentIntents.retrieve', (id: unknown) => ({ id, latest_charge: { id: `ch_${String(id)}`, receipt_url: null } }))
+    return installed
+  }
+
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
     jobs = await import('../jobs')
     classTypesSvc = inTenantContext(await import('../services/catalog/class-types'))
 
-    fake = (await import('./stripe-fake')).installStripeFake()
-    fake.reply('customers.create', () => ({ id: `cus_${randomUUID().slice(0, 8)}` }))
-    fake.reply('checkout.sessions.create', () => {
-      const id = `cs_${randomUUID()}`
-      return { id, url: `https://pay.example.test/${id}` }
-    })
-    fake.reply('webhooks.constructEvent', (body: unknown, signature: unknown) => {
-      if (signature !== GOOD_SIGNATURE) throw new Error('No signatures found matching the expected signature for payload')
-      return JSON.parse(String(body))
-    })
-    fake.reply('paymentIntents.retrieve', (id: unknown) => ({ id, latest_charge: { id: `ch_${String(id)}`, receipt_url: null } }))
-    webhookSecretWas = process.env.STRIPE_WEBHOOK_SECRET
-    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET
+    fake = await installFake()
 
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
@@ -311,8 +320,6 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
   after(async () => {
     if (!harness) return
     fake?.restore()
-    if (webhookSecretWas === undefined) delete process.env.STRIPE_WEBHOOK_SECRET
-    else process.env.STRIPE_WEBHOOK_SECRET = webhookSecretWas
     const ours = `%@${DOMAIN}`
     const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
     const staff = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
@@ -379,7 +386,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(payment!.amountSgd, '150.00')
     assert.equal(payment!.status, 'succeeded')
     assert.equal(payment!.purchaseId, sale!.id)
-    assert.equal(payment!.providerAccountId, null, 'on the platform account — this studio has none of its own')
+    assert.equal(payment!.providerAccountId, ownAccountId(one), "on the studio's own account, the one that signed the delivery")
 
     const [granted, ...more] = await packagesOf(mia)
     assert.equal(more.length, 0)
@@ -465,8 +472,8 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
       // Studio two's endpoint, signed with studio two's secret, for studio one's member.
       const mia = await member(one)
       await expectStatus(await buyClass(mia, one.bundleId), 200)
-      assert.equal(lastSession().account, null, 'studio one still sells on the platform account')
-      const refused = await deliver({ endpoint: `/api/v1/webhooks/stripe/${two.slug}` })
+      assert.equal(lastSession().account, ownAccountId(one), 'studio one sells on its own account, not studio two’s')
+      const refused = await deliver({ endpoint: stripeWebhookPath(two.slug) })
       assert.notEqual(refused.status, 200, 'another studio’s delivery was accepted')
       assert.equal((await packagesOf(mia)).length, 0, "studio two's delivery granted studio one's package")
       assert.equal((await paymentsOf(mia)).length, 0)
@@ -474,7 +481,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
       // Studio two's own member, delivered to its own endpoint: granted, and the
       // payment is recorded on the account the money is on.
       await expectStatus(await buyClass(ned, two.bundleId), 200)
-      await expectStatus(await deliver({ endpoint: `/api/v1/webhooks/stripe/${two.slug}` }), 200)
+      await expectStatus(await deliver({ endpoint: stripeWebhookPath(two.slug) }), 200)
       const [granted] = await packagesOf(ned)
       assert.ok(granted, 'the studio’s own delivery granted nothing')
       assert.equal(granted.tenantId, two.id)
@@ -483,17 +490,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
       assert.equal(payment!.tenantId, two.id)
     } finally {
       fake.restore()
-      fake = (await import('./stripe-fake')).installStripeFake()
-      fake.reply('customers.create', () => ({ id: `cus_${randomUUID().slice(0, 8)}` }))
-      fake.reply('checkout.sessions.create', () => {
-        const id = `cs_${randomUUID()}`
-        return { id, url: `https://pay.example.test/${id}` }
-      })
-      fake.reply('webhooks.constructEvent', (body: unknown, signature: unknown) => {
-        if (signature !== GOOD_SIGNATURE) throw new Error('No signatures found matching the expected signature for payload')
-        return JSON.parse(String(body))
-      })
-      fake.reply('paymentIntents.retrieve', (id: unknown) => ({ id, latest_charge: { id: `ch_${String(id)}`, receipt_url: null } }))
+      fake = await installFake()
     }
   })
 

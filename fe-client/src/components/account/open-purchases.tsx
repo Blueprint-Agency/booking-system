@@ -4,7 +4,8 @@
  * Unfinished purchases on the member's account page (#93).
  *
  * The list is the promise the checkout page made: a balance left outstanding
- * does not expire, and the member can come back to it whenever they like. So
+ * stays open until it is paid in full or the studio refunds it, and the member
+ * can come back to it whenever they like. So
  * this renders above the packages, not below them — it is the one thing on the
  * page that is waiting on the member rather than the other way round.
  *
@@ -23,6 +24,8 @@ import {
   type PartPaymentOptions,
 } from "@/lib/open-purchases";
 import { SaveCardBlock } from "@/components/checkout/save-card-block";
+import { checkoutErrorMessage, type CheckoutErrorBody } from "@/lib/checkout-messages";
+import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 
 export function OpenPurchases({
   purchases,
@@ -72,6 +75,7 @@ function OpenPurchaseCard({
   partPayment: PartPaymentOptions;
 }) {
   const api = useApi();
+  const onlinePayments = useOnlinePayments();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Splitting the *remainder* again is only offered where the studio offers
@@ -99,8 +103,8 @@ function OpenPurchaseCard({
       await resumePurchase(api, purchase.id, amountSgd, saveCard);
     } catch (err) {
       reportError(err, { scope: "resume-purchase" });
-      const body = (err as { body?: { message?: string } })?.body;
-      setError(body?.message ?? "Could not start the payment. Please try again.");
+      const body = (err as { body?: CheckoutErrorBody })?.body;
+      setError(checkoutErrorMessage(body, "Could not start the payment. Please try again."));
       setBusy(false);
     }
   }
@@ -126,7 +130,7 @@ function OpenPurchaseCard({
         <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
         <span>
           Nothing has been added to your account yet, and no place is held. This
-          purchase is waiting for you — it never expires.
+          purchase stays open until it&apos;s paid in full or refunded by the studio.
         </span>
       </div>
 
@@ -161,31 +165,37 @@ function OpenPurchaseCard({
 
       {error && <p className="mt-3 text-xs text-error">{error}</p>}
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={busy || blocked}
-          onClick={() => pay(splitting ? typed : null)}
-          className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-colors hover:bg-ink/90 disabled:opacity-50"
-        >
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-          {blocked
-            ? "Enter an amount"
-            : splitting
-              ? "Pay this amount"
-              : `Pay ${formatSgd(purchase.outstanding_sgd)} now`}
-        </button>
-        {canSplit && (
+      {blockedByPayments(onlinePayments, purchase.outstanding_sgd) ? (
+        // The studio has stopped taking online payments (#293): the balance
+        // cannot be paid here, and a Pay button would only be refused.
+        <p className="mt-4 text-sm text-muted">{NO_ONLINE_PAYMENTS}</p>
+      ) : (
+        <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={busy}
-            onClick={() => setSplitting(s => !s)}
-            className="rounded-full border border-ink/10 px-5 py-2.5 text-sm font-medium transition-colors hover:border-accent disabled:opacity-50"
+            disabled={busy || blocked}
+            onClick={() => pay(splitting ? typed : null)}
+            className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-colors hover:bg-ink/90 disabled:opacity-50"
           >
-            {splitting ? "Pay it all instead" : "Pay part of it"}
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            {blocked
+              ? "Enter an amount"
+              : splitting
+                ? "Pay this amount"
+                : `Pay ${formatSgd(purchase.outstanding_sgd)} now`}
           </button>
-        )}
-      </div>
+          {canSplit && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setSplitting(s => !s)}
+              className="rounded-full border border-ink/10 px-5 py-2.5 text-sm font-medium transition-colors hover:border-accent disabled:opacity-50"
+            >
+              {splitting ? "Pay it all instead" : "Pay part of it"}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

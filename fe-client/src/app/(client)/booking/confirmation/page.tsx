@@ -12,6 +12,14 @@ import { usePartPaymentOptions, type OpenPurchase } from "@/lib/open-purchases";
 import { reportError } from "@/lib/report-error";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
+import {
+  confirmationEyebrow,
+  confirmationOutcome,
+  PENDING_BODY,
+  PENDING_HEADING,
+  type ConfirmationOutcome,
+  type SyncResult,
+} from "@/lib/checkout-return";
 
 function Spinner() {
   return (
@@ -22,6 +30,95 @@ function Spinner() {
   );
 }
 
+// ── The sync every paid flow does on landing ─────────────────────────────────
+/**
+ * Record the provider's session now rather than waiting on webhook delivery
+ * (no CLI listener in local dev), and say what it answered (#274).
+ *
+ * Null while it runs. After that, only `confirmed` may be called a payment: a
+ * session the provider has not marked paid, or a sync that failed, is
+ * `pending` — the webhook still records a real payment, so it is never shown as
+ * a failure either — and no session at all is a $0 grant, `free`.
+ */
+function useCheckoutSync(stripeSessionId: string | null): ConfirmationOutcome | null {
+  const getToken = getMemberToken;
+  const [outcome, setOutcome] = useState<ConfirmationOutcome | null>(
+    stripeSessionId ? null : "free",
+  );
+
+  useEffect(() => {
+    if (!stripeSessionId) return;
+    let cancelled = false;
+    (async () => {
+      let sync: SyncResult;
+      try {
+        const token = await getToken();
+        const res = await fetchApi("/me/checkout/sync-session", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ session_id: stripeSessionId }),
+        });
+        sync = { ok: res.ok, body: await res.json().catch(() => null) };
+      } catch (err) {
+        reportError(err, { scope: "checkout-sync" });
+        sync = "failed";
+      }
+      if (!cancelled) setOutcome(confirmationOutcome(stripeSessionId, sync));
+    })();
+    return () => { cancelled = true; };
+  }, [stripeSessionId, getToken]);
+
+  return outcome;
+}
+
+/** The icon, eyebrow and heading every confirmation opens with. */
+function ConfirmationHeader({
+  outcome,
+  syncingHeading,
+  doneHeading,
+}: {
+  outcome: ConfirmationOutcome | null;
+  syncingHeading: string;
+  doneHeading: string;
+}) {
+  return (
+    <div className="text-center mb-6">
+      <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
+        {outcome === null || outcome === "pending" ? <Spinner /> : <Check className="w-8 h-8 text-accent" />}
+      </div>
+      {outcome !== null && (
+        <p className="text-sm uppercase tracking-wider text-muted mb-1">{confirmationEyebrow(outcome)}</p>
+      )}
+      <h1 className="font-serif text-3xl text-ink">
+        {outcome === null ? syncingHeading : outcome === "pending" ? PENDING_HEADING : doneHeading}
+      </h1>
+    </div>
+  );
+}
+
+/** The body of the pending state: what to expect, and where to look. */
+function PendingNotice() {
+  return (
+    <>
+      <p className="text-center text-lg text-muted">{PENDING_BODY}</p>
+      <div className="mt-10 flex justify-center">
+        <Link
+          href="/account"
+          className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+        >
+          View my account
+        </Link>
+      </div>
+    </>
+  );
+}
+
+/** Settled — confirmed or free — as opposed to still syncing or pending. */
+const settled = (outcome: ConfirmationOutcome | null) => outcome === "confirmed" || outcome === "free";
+
 // ── Workshop post-payment success ─────────────────────────────────────────────
 function WorkshopSuccess({
   workshopId,
@@ -30,35 +127,12 @@ function WorkshopSuccess({
   workshopId: string;
   stripeSessionId: string | null;
 }) {
-  const getToken = getMemberToken;
-  const [synced, setSynced] = useState(false);
+  const outcome = useCheckoutSync(stripeSessionId);
   const [workshop, setWorkshop] = useState<{
     name: string;
     starts_at: string | null;
     location: { name: string; address: string | null } | null;
   } | null>(null);
-
-  // Sync the Stripe session server-side so the booking row is created immediately
-  // even if the local Stripe CLI webhook listener isn't running.
-  useEffect(() => {
-    if (!stripeSessionId) { setSynced(true); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getToken();
-        await fetchApi("/me/checkout/sync-session", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ session_id: stripeSessionId }),
-        });
-      } catch { /* non-fatal — webhook delivery still grants the booking */ }
-      if (!cancelled) setSynced(true);
-    })();
-    return () => { cancelled = true; };
-  }, [stripeSessionId, getToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,17 +154,15 @@ function WorkshopSuccess({
   return (
     <div id="summary">
       <BookingSurface maxWidth="md" padding="loose">
-        <div className="text-center mb-6">
-          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
-            {synced ? <Check className="w-8 h-8 text-accent" /> : <Spinner />}
-          </div>
-          <p className="text-sm uppercase tracking-wider text-muted mb-1">Payment successful</p>
-          <h1 className="font-serif text-3xl text-ink">
-            {synced ? "You're booked!" : "Confirming your booking…"}
-          </h1>
-        </div>
+        <ConfirmationHeader
+          outcome={outcome}
+          syncingHeading="Confirming your booking…"
+          doneHeading="You're booked!"
+        />
 
-        {synced && workshop && (
+        {outcome === "pending" && <PendingNotice />}
+
+        {settled(outcome) && workshop && (
           <>
             <SectionHeading eyebrow="Your workshop" title="Booking details" align="center" />
             <div className="text-center">
@@ -126,45 +198,20 @@ function WorkshopSuccess({
 
 // ── Merch post-payment success ────────────────────────────────────────────────
 function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
-  const getToken = getMemberToken;
-  const [synced, setSynced] = useState(false);
-
-  // Same sync as the other flows: record the order immediately rather than
-  // waiting on webhook delivery (no CLI listener in local dev).
-  useEffect(() => {
-    if (!stripeSessionId) { setSynced(true); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getToken();
-        await fetchApi("/me/checkout/sync-session", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ session_id: stripeSessionId }),
-        });
-      } catch { /* non-fatal — webhook delivery still records the order */ }
-      if (!cancelled) setSynced(true);
-    })();
-    return () => { cancelled = true; };
-  }, [stripeSessionId, getToken]);
+  const outcome = useCheckoutSync(stripeSessionId);
 
   return (
     <div id="summary">
       <BookingSurface maxWidth="md" padding="loose">
-        <div className="text-center mb-6">
-          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
-            {synced ? <Check className="w-8 h-8 text-accent" /> : <Spinner />}
-          </div>
-          <p className="text-sm uppercase tracking-wider text-muted mb-1">Payment successful</p>
-          <h1 className="font-serif text-3xl text-ink">
-            {synced ? "Thank you!" : "Recording your order…"}
-          </h1>
-        </div>
+        <ConfirmationHeader
+          outcome={outcome}
+          syncingHeading="Recording your purchase…"
+          doneHeading="Thank you!"
+        />
 
-        {synced && (
+        {outcome === "pending" && <PendingNotice />}
+
+        {settled(outcome) && (
           <>
             <div className="text-center">
               <p className="text-lg text-muted">
@@ -193,6 +240,59 @@ function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
   );
 }
 
+// ── Cross-Location Add-On bought on its own ──────────────────────────────────
+/**
+ * Where the standalone Add-On lands (#274). It used to fall through to
+ * "Nothing to confirm", which reads as the purchase having gone nowhere.
+ */
+function CrossLocationSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
+  const outcome = useCheckoutSync(stripeSessionId);
+  const { refetch } = useClientPackages();
+
+  // The plan card and the class list read the Add-On off the member's packages,
+  // so refresh them once it is recorded rather than on the next page load.
+  useEffect(() => {
+    if (outcome === "confirmed") void refetch();
+  }, [outcome, refetch]);
+
+  return (
+    <div id="summary">
+      <BookingSurface maxWidth="md" padding="loose">
+        <ConfirmationHeader
+          outcome={outcome}
+          syncingHeading="Activating your add-on…"
+          doneHeading="Add-on active"
+        />
+
+        {outcome === "pending" && <PendingNotice />}
+
+        {settled(outcome) && (
+          <>
+            <p className="text-center text-lg text-muted">
+              You can now book at other locations. The add-on ends with the plan it&apos;s
+              attached to.
+            </p>
+            <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center text-center">
+              <Link
+                href="/classes"
+                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+              >
+                Start Booking Classes
+              </Link>
+              <Link
+                href="/account"
+                className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
+              >
+                View my account
+              </Link>
+            </div>
+          </>
+        )}
+      </BookingSurface>
+    </div>
+  );
+}
+
 // ── Part payment: what is still owed ─────────────────────────────────────────
 /**
  * Where a part payment lands (#93).
@@ -211,12 +311,15 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
   const getToken = getMemberToken;
   const { refetch: refetchPackages } = useClientPackages();
   const partPayment = usePartPaymentOptions();
-  // Three states, and the third is the point: what this session left owing, or
-  // null for nothing, or "we could not find out". The last must never be shown
-  // as the first — see the sync below.
+  // What this session left owing, or nothing, or "not confirmed yet" — which
+  // also covers a sync that failed. That last must never be shown as the
+  // second, and never as a payment received (#274) — see the sync below.
   const [outcome, setOutcome] = useState<
-    { kind: "pending" } | { kind: "settled" } | { kind: "owing"; purchase: OpenPurchase } | { kind: "unknown" }
-  >({ kind: "pending" });
+    | { kind: "syncing" }
+    | { kind: "pending" }
+    | { kind: "settled" }
+    | { kind: "owing"; purchase: OpenPurchase }
+  >({ kind: "syncing" });
 
   // The same sync every other flow does — record the payment now rather than
   // waiting on webhook delivery. It answers with **this session's** Purchase,
@@ -224,7 +327,7 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
   // the job: a member may hold a second unfinished purchase for something else
   // entirely, and "does this member owe anything" would answer about that one.
   useEffect(() => {
-    if (!stripeSessionId) { setOutcome({ kind: "unknown" }); return; }
+    if (!stripeSessionId) { setOutcome({ kind: "pending" }); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -238,22 +341,29 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
           body: JSON.stringify({ session_id: stripeSessionId }),
         });
         if (!res.ok) throw new Error(`sync failed: ${res.status}`);
-        const data: { purchase: OpenPurchase | null } = await res.json();
+        const data: { status?: string; purchase?: OpenPurchase | null } = await res.json();
         if (cancelled) return;
-        setOutcome(data.purchase ? { kind: "owing", purchase: data.purchase } : { kind: "settled" });
+        // A session the provider has not marked paid carries no Purchase, and
+        // reading that absence as "nothing owed" told a member it was settled.
+        if (confirmationOutcome(stripeSessionId, { ok: true, body: data }) === "pending") {
+          setOutcome({ kind: "pending" });
+        } else {
+          setOutcome(data.purchase ? { kind: "owing", purchase: data.purchase } : { kind: "settled" });
+        }
       } catch (err) {
         // The money is safe — the webhook records it whatever happens here —
-        // but we do not know what is left, and saying "all set" on a failed
-        // read is how a member who owes half is told they owe nothing.
+        // but we do not know what was taken or what is left. Saying "all set"
+        // on a failed read is how a member who owes half is told they owe
+        // nothing, and "received" claims a payment nobody confirmed (#274).
         reportError(err, { scope: "balance-confirmation" });
-        if (!cancelled) setOutcome({ kind: "unknown" });
+        if (!cancelled) setOutcome({ kind: "pending" });
       }
       if (!cancelled) await refetchPackages();
     })();
     return () => { cancelled = true; };
   }, [stripeSessionId, getToken, refetchPackages]);
 
-  const done = outcome.kind !== "pending";
+  const done = outcome.kind === "settled" || outcome.kind === "owing";
 
   return (
     <div id="summary">
@@ -262,17 +372,23 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
           <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
             {done ? <Check className="w-8 h-8 text-accent" /> : <Spinner />}
           </div>
-          <p className="text-sm uppercase tracking-wider text-muted mb-1">Payment received</p>
+          {outcome.kind !== "syncing" && (
+            <p className="text-sm uppercase tracking-wider text-muted mb-1">
+              {done ? "Part payment received" : confirmationEyebrow("pending")}
+            </p>
+          )}
           <h1 className="font-serif text-3xl text-ink">
-            {outcome.kind === "pending"
+            {outcome.kind === "syncing"
               ? "Recording your payment…"
-              : outcome.kind === "settled"
-                ? "You're all set!"
-                : outcome.kind === "owing"
-                  ? "Thanks — here's what's left"
-                  : "Thanks — your payment went through"}
+              : outcome.kind === "pending"
+                ? PENDING_HEADING
+                : outcome.kind === "settled"
+                  ? "You're all set!"
+                  : "Thanks — here's what's left"}
           </h1>
         </div>
+
+        {outcome.kind === "pending" && <PendingNotice />}
 
         {outcome.kind === "settled" && (
           <>
@@ -294,22 +410,6 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
           <OpenPurchases purchases={[outcome.purchase]} partPayment={partPayment} />
         )}
 
-        {outcome.kind === "unknown" && (
-          <>
-            <p className="text-center text-lg text-muted">
-              We couldn&apos;t check whether anything is still owed on it just now.
-              Your account page has the up-to-date balance.
-            </p>
-            <div className="mt-10 flex justify-center">
-              <Link
-                href="/account"
-                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
-              >
-                View my account
-              </Link>
-            </div>
-          </>
-        )}
       </BookingSurface>
     </div>
   );
@@ -364,37 +464,15 @@ function PackageSuccess({
   packageKind: PackageKind;
   stripeSessionId: string | null;
 }) {
-  const getToken = getMemberToken;
+  const outcome = useCheckoutSync(stripeSessionId);
   const { refetch } = useClientPackages();
-  const [synced, setSynced] = useState(false);
   const [details, setDetails] = useState<PackageDetails | null>(null);
 
-  // Sync the Stripe session server-side so credits are granted immediately
-  // without waiting for the webhook (handles local dev where no CLI listener runs),
-  // then refetch the live packages so the header/account credit + session totals
-  // reflect the purchase without a manual page refresh.
+  // Refetch the live packages once the purchase is recorded, so the
+  // header/account credit + session totals reflect it without a manual refresh.
   useEffect(() => {
-    if (!stripeSessionId) { setSynced(true); void refetch(); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getToken();
-        await fetchApi("/me/checkout/sync-session", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ session_id: stripeSessionId }),
-        });
-      } catch { /* non-fatal — webhook delivery still grants the package */ }
-      if (!cancelled) {
-        setSynced(true);
-        await refetch();
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [stripeSessionId, getToken, refetch]);
+    if (settled(outcome)) void refetch();
+  }, [outcome, refetch]);
 
   // Pull the real catalogue entry so the overlay copy matches what was bought.
   useEffect(() => {
@@ -420,17 +498,15 @@ function PackageSuccess({
   return (
     <div id="summary">
       <BookingSurface maxWidth="md" padding="loose">
-        <div className="text-center mb-6">
-          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
-            {synced ? <Check className="w-8 h-8 text-accent" /> : <Spinner />}
-          </div>
-          <p className="text-sm uppercase tracking-wider text-muted mb-1">Payment successful</p>
-          <h1 className="font-serif text-3xl text-ink">
-            {synced ? "You're all set!" : "Activating your package…"}
-          </h1>
-        </div>
+        <ConfirmationHeader
+          outcome={outcome}
+          syncingHeading="Activating your package…"
+          doneHeading="You're all set!"
+        />
 
-        {synced && (
+        {outcome === "pending" && <PendingNotice />}
+
+        {settled(outcome) && (
           <>
             <SectionHeading eyebrow="Your purchase" title={view.title} align="center" />
             <div className="text-center">
@@ -485,6 +561,12 @@ function ConfirmationContent() {
   //   type=merch [, session_id=cs_...]
   if (type === "merch") {
     return <MerchSuccess stripeSessionId={stripeSessionId} />;
+  }
+
+  // The Cross-Location Add-On bought on its own, against a plan already held:
+  //   type=cross_location, session_id=cs_...
+  if (type === "cross_location") {
+    return <CrossLocationSuccess stripeSessionId={stripeSessionId} />;
   }
 
   // Package success — Stripe success_url redirect (paid) or BuyButton (free trial):

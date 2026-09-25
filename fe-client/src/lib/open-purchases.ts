@@ -4,7 +4,8 @@
  * Unfinished purchases — a balance the member left outstanding (#93).
  *
  * A purchase paid with two cards sits open between the two, and it **does not
- * expire**: the member can come back to it from their account page whenever
+ * expire** — it closes when paid in full, or when the studio refunds it (#274).
+ * The member can come back to it from their account page whenever
  * they like, and the backend mints a fresh checkout session for whatever is
  * still owed at that moment.
  *

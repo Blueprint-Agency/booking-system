@@ -84,6 +84,14 @@ export interface ListPtRequestsResult {
   pt_requests: RawPtRequest[];
 }
 
+/** What a cancel did: whether the sessions it held came back, and how many. */
+export interface CancelPtRequestResult {
+  ok: true;
+  status: "cancelled_before_scheduled" | "cancelled_after_scheduled" | "noop";
+  refundedSessions: number;
+  refundOutcome: "session_returned" | "forfeited" | "n_a";
+}
+
 export interface PartnerLookupResult {
   found: boolean;
   client_id?: string;
@@ -104,7 +112,7 @@ export function makePtSessionsApi(api: Api) {
 
     /** POST /me/pt-sessions/:id/cancel */
     cancelRequest: (id: string) =>
-      api.post<void>(`/me/pt-sessions/${id}/cancel`),
+      api.post<CancelPtRequestResult>(`/me/pt-sessions/${id}/cancel`),
 
     /** GET /me/pt-sessions/partner-lookup?email= */
     partnerLookup: (email: string) =>

@@ -381,7 +381,7 @@ Base path: `/api/v1`
 | Method | Path | Description |
 |---|---|---|
 | POST | `/webhooks/clerk` | Clerk user lifecycle events (user.created, user.updated) — sync to local `users` table |
-| POST | `/webhooks/stripe` | Stripe payment events (payment_intent.succeeded, etc.) |
+| POST | `/webhooks/stripe/:slug` | Stripe payment events from the studio's own account (no shared endpoint since #293) |
 
 ### 4.2 Public (no auth)
 
@@ -643,12 +643,12 @@ r2://reservetoday/
 2. Backend creates Stripe `PaymentIntent` (amount in SGD cents, `metadata: {type, referenceId, clientId}`).
 3. Returns `{clientSecret}` to frontend.
 4. Frontend completes payment using Stripe.js.
-5. Stripe sends `payment_intent.succeeded` webhook to `/api/v1/webhooks/stripe`.
+5. The studio's own Stripe account sends its webhook to `/api/v1/webhooks/stripe/{slug}` (#293).
 6. Backend activates the package or confirms the workshop booking.
 
 ### 8.2 Webhook security
 
-Stripe webhook signature verified via `stripe.webhooks.constructEvent` using `STRIPE_WEBHOOK_SECRET`. Reject all unsigned requests with 400.
+Stripe webhook signature verified via `stripe.webhooks.constructEvent` using the studio's own stored signing secret (sealed with `PAYMENT_CREDENTIALS_KEY`; there is no platform `STRIPE_WEBHOOK_SECRET` since #293). Reject all unsigned requests with 400.
 
 ### 8.3 Refunds (out-of-app)
 
@@ -734,8 +734,7 @@ src/
 DATABASE_URL
 CLERK_SECRET_KEY
 CLERK_WEBHOOK_SECRET
-STRIPE_SECRET_KEY
-STRIPE_WEBHOOK_SECRET
+PAYMENT_CREDENTIALS_KEY
 RESEND_API_KEY
 R2_ACCOUNT_ID
 R2_ACCESS_KEY_ID

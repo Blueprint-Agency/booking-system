@@ -127,12 +127,11 @@ app.use('/api/v1/platform/*', authedLimiter)
 //     inside a context. The mail was sent from inside one when it was asked for.
 const TENANT_CONTEXT_EXEMPT = (path: string) =>
   path === '/api/v1/healthz' ||
-  path === '/api/v1/webhooks/stripe' ||
   path === '/api/v1/webhooks/resend' ||
-  // A studio charging on its own account has its own delivery endpoint, whose
-  // slug is the routing key (#100). It still resolves its own tenant — the slug
-  // selects a signing secret and the signature check is what settles it — so it
-  // is exempt for the same reason the shared endpoint is.
+  // Each studio's own payment account delivers to its own endpoint, whose slug
+  // is the routing key (#100). It resolves its own tenant — the slug selects a
+  // signing secret and the signature check is what settles it — so no header
+  // or Origin is asked to name one first.
   path.startsWith('/api/v1/webhooks/stripe/') ||
   path === '/api/v1/platform' ||
   path.startsWith('/api/v1/platform/') ||

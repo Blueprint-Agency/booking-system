@@ -1,5 +1,11 @@
 import { defineConfig, devices, type ReporterDescription } from '@playwright/test'
-import { isLocalStack, localStackServers, localStudioCommand, stubbedStripeBrowser } from './src/local-stack'
+import {
+  isLocalStack,
+  localStackPayments,
+  localStackServers,
+  localStudioCommand,
+  stubbedStripeBrowser,
+} from './src/local-stack'
 
 /**
  * The browser journeys, against one of two stacks:
@@ -19,14 +25,25 @@ import { isLocalStack, localStackServers, localStudioCommand, stubbedStripeBrows
  */
 const baseReporters: ReporterDescription[] = process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']]
 
-// Read by global setup (src/studio.ts), which runs in this process.
-if (isLocalStack) process.env.E2E_STUDIO_CMD ??= localStudioCommand
+// Read by global setup (src/studio.ts), which runs in this process — and the
+// studio command it runs inherits this environment, so the studio is made
+// selling on the stub's account (src/local-stack.ts).
+if (isLocalStack) {
+  process.env.E2E_STUDIO_CMD ??= localStudioCommand
+  for (const [name, value] of Object.entries(localStackPayments)) process.env[name] ??= value
+}
 
 export default defineConfig({
   testDir: './journeys',
   // The agents' seed (journeys/seed.spec.ts) runs where the agents do — the
   // local stack — and leaves the staging gate the journeys it always had.
-  testIgnore: isLocalStack ? undefined : 'seed.spec.ts',
+  //
+  // The paid journey (buy-and-book) runs only on the local stack too. A studio
+  // takes payments only on its own Stripe account (#293), and a deployed stack
+  // holds no key for the gate's throwaway studio — the only Stripe keys there
+  // are studios' own, and a test must not borrow one. Every pull request still
+  // runs it against the Stripe stub (e2e-local.yml).
+  testIgnore: isLocalStack ? undefined : ['seed.spec.ts', 'buy-and-book.spec.ts'],
   globalSetup: './src/global-setup.ts',
   webServer: isLocalStack ? localStackServers : undefined,
   fullyParallel: false,

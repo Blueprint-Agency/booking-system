@@ -19,6 +19,7 @@ import { checkInErrorMessage } from "@/lib/check-in";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
+import { WORKSHOP_CANCEL_CONFIRM } from "@/lib/workshop-cancel";
 import {
   cancelClass,
   cancelCorporateSession,
@@ -1032,9 +1033,7 @@ function WorkshopDetail({ id }: { id: string }) {
 
   async function handleCancelWorkshop() {
     if (!api || !data) return;
-    if (!confirm("Cancel this workshop? Confirmed workshop bookings will be cancelled.")) {
-      return;
-    }
+    if (!confirm(WORKSHOP_CANCEL_CONFIRM)) return;
     setCancelBusy(true);
     setActionError(null);
     try {

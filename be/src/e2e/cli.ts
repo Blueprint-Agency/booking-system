@@ -13,6 +13,12 @@ import { assertMayRunE2eStudio } from './guard'
  * `E2E_STUDIO={…}`, among whatever the app logs. The e2e package reads that line.
  *
  * Runs as the owner (`DATABASE_URL`), like a seed. Refuses production.
+ *
+ * The studio sells on its own payment account when `E2E_STRIPE_SECRET_KEY` is
+ * set — a test-mode key, set up exactly as the super portal would: its webhook
+ * endpoint created on the account, both secrets sealed with this environment's
+ * `PAYMENT_CREDENTIALS_KEY`. Unset, it takes no online payments (#293), and a
+ * journey that pays is refused at checkout.
  */
 const STALE_AFTER_MS = 2 * 60 * 60 * 1000
 
@@ -40,7 +46,9 @@ async function main() {
       const swept = await studio.removeStaleE2eStudios({ db, olderThanMs: STALE_AFTER_MS })
       if (swept.length) console.error(`[e2e] swept stale studios: ${swept.join(', ')}`)
       const { default: app } = await import('../app')
-      const made = await studio.createE2eStudio({ app, db })
+      const secretKey = process.env.E2E_STRIPE_SECRET_KEY?.trim()
+      const payments = secretKey ? { secretKey } : undefined
+      const made = await studio.createE2eStudio({ app, db, payments })
       console.log(`E2E_STUDIO=${JSON.stringify(made)}`)
     } else if (command === 'teardown' && slug) {
       const removed = await studio.removeE2eStudio({ db, slug })

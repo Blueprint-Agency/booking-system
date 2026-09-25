@@ -27,11 +27,11 @@ import { purchases, stripePayments } from '../../db/schema/ledger'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import { reportError } from '../../shared/logger'
-import { providerAccountForTenant, stripeForTenant } from '../../lib/stripe'
+import { requireProviderAccount, stripeForTenant } from '../../lib/stripe'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { requireTenantUrl } from '../tenants/urls'
 import { partPaymentEnabled } from '../policy/update'
-import { amountPaidCents, outstandingCents } from './balance'
+import { amountPaidCents, outstandingCents, type RefundProgress } from './balance'
 import {
   chargeableCents,
   mustPayInFull,
@@ -39,7 +39,7 @@ import {
   PART_PAYMENT_FLOOR_CENTS,
 } from './part-payment'
 import { attachCheckoutSession, type PurchaseRow } from './purchases'
-import { heldPaymentCounts } from './refunds'
+import { heldPaymentsFor, type HeldPayments } from './refunds'
 import { checkoutSessionParams, type CheckoutLine } from './checkout-session'
 import { createSessionSurvivingStaleCustomer, providerCustomerFor } from './payment-customers'
 import { daysSilent, isSilent, silenceNotice } from './refund-notice'
@@ -64,7 +64,11 @@ export interface OpenPurchaseView {
    * opened and never paid towards, which is why it is not a count of rows.
    */
   paymentCount: number
+  /** Whether a Refund of it is already on its way (#275) — see `RefundProgress`. */
+  refundProgress: RefundProgress
 }
+
+const NOTHING_HELD: HeldPayments = { count: 0, progress: 'none' }
 
 /**
  * The Balance, recomputed from the payment rows rather than read off the
@@ -93,14 +97,11 @@ async function outstandingFor(tenantId: string, purchase: PurchaseRow): Promise<
 
 const sgd = (cents: number) => (cents / 100).toFixed(2)
 
-function view(
-  purchase: PurchaseRow,
-  outstanding: number,
-  paymentCount: number,
-): OpenPurchaseView {
+function view(purchase: PurchaseRow, outstanding: number, held: HeldPayments): OpenPurchaseView {
   const metadata = purchase.metadata as Record<string, string>
   return {
-    paymentCount,
+    paymentCount: held.count,
+    refundProgress: held.progress,
     id: purchase.id,
     kind: purchase.kind,
     itemName: metadata.item_name || 'Purchase',
@@ -147,7 +148,7 @@ export async function listOpenPurchases(
   const ids = rows.map(r => r.id)
   const [paid, held] = await Promise.all([
     paidByPurchase(tenantId, ids),
-    heldPaymentCounts(tenantId, ids),
+    heldPaymentsFor(tenantId, ids),
   ])
 
   const out: OpenPurchaseView[] = []
@@ -155,7 +156,7 @@ export async function listOpenPurchases(
     const outstanding = outstandingCents(toCents(row.totalSgd), paid.get(row.id) ?? 0)
     // Settled at the provider but not yet at the webhook. It owes nothing, so
     // showing it would offer the member a payment there is no room for.
-    if (outstanding > 0) out.push(view(row, outstanding, held.get(row.id) ?? 0))
+    if (outstanding > 0) out.push(view(row, outstanding, held.get(row.id) ?? NOTHING_HELD))
   }
   return out
 }
@@ -223,8 +224,8 @@ export async function openPurchaseById(
   if (!row) return null
   const outstanding = await outstandingFor(tenantId, row)
   if (outstanding <= 0) return null
-  const held = await heldPaymentCounts(tenantId, [row.id])
-  return view(row, outstanding, held.get(row.id) ?? 0)
+  const held = await heldPaymentsFor(tenantId, [row.id])
+  return view(row, outstanding, held.get(row.id) ?? NOTHING_HELD)
 }
 
 /**
@@ -367,6 +368,10 @@ export async function resumePurchaseCheckout(args: {
     refusePartPaymentWhenDisabled(args.requestedCents)
   }
   const charge = chargeableCents(outstanding, args.requestedCents)
+  // Before the predecessor is touched: a studio that has stopped taking online
+  // payments (#293) is told so, not handed `checkout_session_busy` because the
+  // expiry it could not make read like a session still in flight.
+  await requireProviderAccount(args.tenantId)
 
   await expirePredecessor(args.tenantId, purchase)
 
@@ -384,9 +389,8 @@ export async function resumePurchaseCheckout(args: {
     },
   ]
 
-  const [stripe, account, customerId] = await Promise.all([
+  const [stripe, customerId] = await Promise.all([
     stripeForTenant(args.tenantId),
-    providerAccountForTenant(args.tenantId),
     providerCustomerFor({
       tenantId: args.tenantId,
       clientId: args.clientId,
@@ -422,13 +426,6 @@ export async function resumePurchaseCheckout(args: {
             customerId: customer,
             saveCard: args.saveCard,
           },
-          studioName,
-          // The studio's own account suppresses the statement suffix (#100).
-          // This path never passed it, so a studio on its own credentials was
-          // having a suffix appended against a prefix this platform cannot
-          // measure — the very thing `checkoutSessionParams` documents as a
-          // refused charge.
-          account !== null,
         ),
       ),
   )
@@ -526,6 +523,10 @@ export async function listSilentPartPaidPurchases(
     .groupBy(purchases.id, purchases.tenantId, clients.name, clients.email)
     .orderBy(purchases.createdAt)
 
+  // Whether a Refund of each is already on its way (#275) — the same read the
+  // member page makes, so both screens withhold the button on the same terms.
+  const held = await heldPaymentsFor(tenantId, rows.map(r => r.purchase.id))
+
   const out: SilentPurchaseView[] = []
   for (const row of rows) {
     if (!row.lastPaymentAt) continue
@@ -542,7 +543,10 @@ export async function listSilentPartPaidPurchases(
       toCents(row.purchase.amountPaidSgd),
     )
     out.push({
-      ...view(row.purchase, outstanding, Number(row.paymentCount ?? 0)),
+      ...view(row.purchase, outstanding, held.get(row.purchase.id) ?? {
+        count: Number(row.paymentCount ?? 0),
+        progress: 'none',
+      }),
       clientId: row.purchase.clientId,
       clientName: row.clientName,
       clientEmail: row.clientEmail,

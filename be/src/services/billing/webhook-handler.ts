@@ -324,21 +324,18 @@ export function refuseWrongTenant(
 export async function handleStripeEvent(
   event: Stripe.Event,
   /**
-   * The studio whose endpoint this delivery arrived on, when it arrived on one
-   * (#100). A studio charging on its own account has its own webhook URL and
-   * its own signing secret, so by this point the provider has already proved
-   * *whose* delivery this is — and a body that routes to a different studio is
-   * not a delivery this endpoint may act on.
+   * The studio whose endpoint this delivery arrived on (#100) — or, for the
+   * member's confirmation page, whose own key the session was read back with.
+   * Either way the provider has already proved *whose* event this is, and a
+   * body that routes to a different studio is not one this may act on.
    *
-   * Absent for the platform account's shared endpoint, which is what a studio
-   * that has supplied no credentials still uses, and where the body is the only
-   * thing that names a studio.
+   * Required since #293: the platform's shared endpoint, where the body was the
+   * only thing that named a studio, is gone.
    */
-  expectedTenantId?: string,
+  expectedTenantId: string,
   /**
-   * The account that **signed** this delivery, which is the account the money
-   * in it is on (#97). Null is the platform's own, and it is what the shared
-   * endpoint passes.
+   * The account the money in this event is on (#97) — the one that **signed**
+   * the delivery, or the one the confirmation page read the session from.
    *
    * It comes from the signature check rather than from a fresh reading of the
    * studio's credentials, because the signature is where it was proved: the
@@ -347,7 +344,7 @@ export async function handleStripeEvent(
    * already settled, and it would stamp the wrong account on a payment made
    * while credentials were being changed — leaving money nobody can refund.
    */
-  providerAccountId: string | null = null,
+  providerAccountId: string,
   /**
    * `retry` is for vendor calls made while handling the event. The webhook
    * passes one; the member's confirmation page, which reaches here on a
@@ -381,8 +378,8 @@ export async function handleStripeEvent(
 
 async function dispatchStripeEvent(
   event: Stripe.Event,
-  expectedTenantId: string | undefined,
-  providerAccountId: string | null,
+  expectedTenantId: string,
+  providerAccountId: string,
   retry: RetryPolicy | undefined,
 ): Promise<void> {
   if (event.type === 'checkout.session.completed') {

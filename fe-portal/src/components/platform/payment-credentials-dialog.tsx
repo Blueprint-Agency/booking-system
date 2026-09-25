@@ -27,7 +27,14 @@ import {
  * What the operator does see is the account the provider itself says the key
  * belongs to. That is the check that matters: it catches the one mistake this
  * form can make and nothing else would — pasting the wrong studio's key.
+ *
+ * One field (#294). The webhook endpoint on the studio's account is created by
+ * the platform when the key is saved, so there is no URL to register by hand
+ * and no signing secret to copy back.
  */
+/** What a refusal from the credentials route may carry. */
+type RefusalBody = { error?: string; expected_prefix?: string; required_permission?: string };
+
 export interface PaymentCredentialsDialogProps {
   api: Api;
   tenant: PlatformTenant | null;
@@ -42,21 +49,46 @@ export function PaymentCredentialsDialog({
   onSaved,
 }: PaymentCredentialsDialogProps) {
   const [secretKey, setSecretKey] = useState("");
-  const [webhookSecret, setWebhookSecret] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [clearing, setClearing] = useState(false);
-  /** Shown after a save: the URL that has to be registered on the studio's own
-   *  account, without which its deliveries never arrive. */
-  const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
+  /** The server's refusal of the key, shown under the field it is about. */
+  const [keyError, setKeyError] = useState<string | null>(null);
 
+  const setup = tenant?.payments.setup;
+  // Said as soon as it is typed, but the backend is what enforces it. A
+  // restricted key (`rk_…`) of the same mode is accepted too.
+  const wrongMode = Boolean(
+    setup && secretKey.trim() && !keyOfMode(secretKey.trim(), setup.key_prefix),
+  );
   const busy = submitting || clearing;
-  const canSubmit = Boolean(!busy && tenant && secretKey.trim() && webhookSecret.trim());
+  const canSubmit = Boolean(!busy && tenant && secretKey.trim() && !wrongMode);
+
+  function wrongModeMessage(prefix: string): string {
+    return prefix === "sk_live_"
+      ? "This is production: only live keys (sk_live_…) are accepted. A test key would take no real money."
+      : "This environment accepts only test keys (sk_test_…). A live key would take real money.";
+  }
+
+  /** The refusal's JSON body, when the server sent one. */
+  function bodyOf(err: unknown): RefusalBody {
+    return err instanceof ApiError && err.body && typeof err.body === "object"
+      ? (err.body as RefusalBody)
+      : {};
+  }
+
+  function codeOf(err: unknown): string | undefined {
+    return bodyOf(err).error;
+  }
 
   function messageFor(err: unknown, fallback: string): string {
-    const code =
-      err instanceof ApiError && err.body && typeof err.body === "object"
-        ? (err.body as { error?: string }).error
-        : undefined;
+    const code = codeOf(err);
+    if (code === "provider_key_lacks_webhook_permission") {
+      const permission = bodyOf(err).required_permission ?? "Webhook Endpoints: Write";
+      return `This key can't set up the studio's webhook. Give it the "${permission}" permission in Stripe, or use the account's standard secret key.`;
+    }
+    if (code === "provider_webhook_refused") {
+      return "Stripe accepted the key but would not create the studio's webhook endpoint. Stripe only delivers to public HTTPS addresses, so a local development server can't be set up this way.";
+    }
     if (code === "provider_key_rejected") {
       return "The payment provider refused that secret key. Check it was copied whole, and from the right account.";
     }
@@ -71,21 +103,29 @@ export function PaymentCredentialsDialog({
     if (!canSubmit || !tenant) return;
 
     setSubmitting(true);
+    setKeyError(null);
     try {
       const result = await setPaymentCredentials(api, tenant.id, {
         secret_key: secretKey.trim(),
-        webhook_secret: webhookSecret.trim(),
       });
       // Cleared at once. A live key sitting in a form field is a live key on
       // screen, and this dialog can be left open.
       setSecretKey("");
-      setWebhookSecret("");
-      setWebhookUrl(result.webhook_url);
       toast.success(
-        `${tenant.name} now charges on ${result.tenant.payments.account_id}.`,
+        `${tenant.name} now charges on ${result.tenant.payments.account_id}. Its webhook is set up at ${result.webhook.url}.`,
       );
       onSaved();
     } catch (err) {
+      const code = codeOf(err);
+      if (code === "provider_key_wrong_mode") {
+        setKeyError(wrongModeMessage(bodyOf(err).expected_prefix ?? tenant.payments.setup.key_prefix));
+        return;
+      }
+      // About the key itself, so said under the field rather than in a toast.
+      if (code === "provider_key_lacks_webhook_permission") {
+        setKeyError(messageFor(err, ""));
+        return;
+      }
       toast.error(messageFor(err, `Could not save credentials for ${tenant.name}.`));
     } finally {
       setSubmitting(false);
@@ -96,7 +136,7 @@ export function PaymentCredentialsDialog({
     if (!tenant) return;
     if (
       !window.confirm(
-        `Put ${tenant.name} back on the platform account? Its stored credentials are destroyed and cannot be recovered — they would have to be entered again.`,
+        `Remove ${tenant.name}'s payment credentials? It stops taking online payments straight away, and its webhook endpoint is deleted from its Stripe account. Its stored credentials are destroyed and cannot be recovered — they would have to be entered again.`,
       )
     ) {
       return;
@@ -105,8 +145,7 @@ export function PaymentCredentialsDialog({
     setClearing(true);
     try {
       await clearPaymentCredentials(api, tenant.id);
-      setWebhookUrl(null);
-      toast.success(`${tenant.name} is back on the platform account.`);
+      toast.success(`${tenant.name} has stopped taking online payments.`);
       onSaved();
     } catch (err) {
       toast.error(messageFor(err, `Could not clear credentials for ${tenant.name}.`));
@@ -123,8 +162,8 @@ export function PaymentCredentialsDialog({
       description={
         tenant
           ? tenant.payments.configured
-            ? `${tenant.name} charges on its own account (${tenant.payments.account_id}). Entering credentials here replaces them.`
-            : `${tenant.name} charges on the platform account. Entering its own credentials moves its money onto its own account.`
+            ? `${tenant.name} charges on its own account (${tenant.payments.account_id}). Entering a new secret key here replaces it.`
+            : `${tenant.name} isn't taking online payments — its payments are not set up. Entering its Stripe secret key lets it take them, on its own account.`
           : ""
       }
     >
@@ -136,50 +175,39 @@ export function PaymentCredentialsDialog({
             type="password"
             autoComplete="off"
             value={secretKey}
-            onChange={e => setSecretKey(e.target.value)}
-            placeholder="sk_live_…"
+            onChange={e => {
+              setSecretKey(e.target.value);
+              setKeyError(null);
+            }}
+            placeholder={`${setup?.key_prefix ?? "sk_"}…`}
+            aria-invalid={wrongMode || Boolean(keyError)}
+            aria-describedby="payment-secret-key-help"
             autoFocus
             required
           />
-          <p className="text-xs text-muted">
-            Checked against the provider before it is stored, so a wrong key is caught here
-            rather than at a member’s checkout.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="payment-webhook-secret">Webhook signing secret</Label>
-          <Input
-            id="payment-webhook-secret"
-            type="password"
-            autoComplete="off"
-            value={webhookSecret}
-            onChange={e => setWebhookSecret(e.target.value)}
-            placeholder="whsec_…"
-            required
-          />
-          <p className="text-xs text-muted">
-            From the webhook endpoint on the studio’s own account. Nothing can verify it in
-            advance — the first delivery that arrives proves it.
-          </p>
-        </div>
-
-        {webhookUrl && (
-          <div className="rounded-md border border-border bg-surface p-3">
-            <p className="text-sm font-medium text-ink">Point the studio’s webhook here</p>
-            <code className="mt-1 block break-all text-xs text-muted">{webhookUrl}</code>
-            <p className="mt-2 text-xs text-muted">
-              Until this endpoint exists on the studio’s account, its purchases are charged but
-              nothing is granted.
+          {setup && (wrongMode || keyError) ? (
+            <p id="payment-secret-key-help" className="text-xs text-error" role="alert">
+              {keyError ?? wrongModeMessage(setup.key_prefix)}
             </p>
-          </div>
-        )}
+          ) : (
+            <p id="payment-secret-key-help" className="text-xs text-muted">
+              Checked against the provider before it is stored, so a wrong key is caught here
+              rather than at a member’s checkout. Saving it also sets up the studio’s webhook on
+              its Stripe account.
+            </p>
+          )}
+        </div>
+
+        <p className="text-xs text-muted">
+          A saved key can’t be viewed again, by anyone. To change it, enter a new one here;
+          removing it stops the studio taking online payments.
+        </p>
 
         <DialogFooter>
           {tenant?.payments.configured && (
             <Button type="button" variant="secondary" disabled={busy} onClick={() => void clear()}>
               {clearing && <Loader2 className="h-4 w-4 animate-spin" />}
-              Back to platform account
+              Stop online payments
             </Button>
           )}
           <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
@@ -187,10 +215,16 @@ export function PaymentCredentialsDialog({
           </Button>
           <Button type="submit" disabled={!canSubmit}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {tenant?.payments.configured ? "Replace credentials" : "Save credentials"}
+            {tenant?.payments.configured ? "Replace key" : "Save key"}
           </Button>
         </DialogFooter>
       </form>
     </Dialog>
   );
+}
+
+/** Whether a key is of the mode `prefix` names — its `sk_` or restricted `rk_` form. */
+function keyOfMode(key: string, prefix: string): boolean {
+  const mode = prefix.slice("sk_".length);
+  return key.startsWith(`sk_${mode}`) || key.startsWith(`rk_${mode}`);
 }

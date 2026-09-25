@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2, ShoppingBag, Store } from "lucide-react";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { BuyButton } from "@/components/checkout/buy-button";
+import { CancelledBanner } from "@/components/checkout/cancelled-banner";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { publicApi } from "@/lib/api";
 import { formatSgd } from "@/lib/utils";
@@ -34,6 +35,9 @@ export default function MerchPage() {
   return (
     <BookingSurface maxWidth="xl" padding="default">
       <SectionHeading eyebrow="Studio shop" title="Merch" />
+
+      {/* Back from the payment page without paying (#274). */}
+      <CancelledBanner className="mb-6" />
 
       <div className="mb-8 flex items-start gap-3 rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-sm text-ink">
         <Store className="mt-0.5 h-4 w-4 shrink-0 text-accent" />

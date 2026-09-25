@@ -7,6 +7,7 @@ import { useMemberSession } from "@/lib/member-auth";
 import { useRouter } from "next/navigation";
 import { useAuthGate } from "@/components/auth/auth-gate";
 import { BuyButton } from "@/components/checkout/buy-button";
+import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { cn, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
@@ -40,6 +41,16 @@ type PrivateSubTab = "1on1" | "2on1";
 // venue. Display only — nothing is charged in-app; the studio confirms it in the quote.
 const CORPORATE_TRANSPORT_SURCHARGE_SGD = 50;
 
+/**
+ * The studio's own terms for its trial pass — who may buy it and what happens
+ * if they turn out not to qualify — from `tenant_settings.copy`. Studio policy,
+ * so it is the studio's words or none: with no terms set, the trial is sold
+ * without a notice or an acknowledgement step. Plain text; blank lines survive.
+ */
+const TRIAL_TERMS_COPY_KEY = "trial.terms";
+/** The line a member ticks to accept those terms; a neutral one when unset. */
+const TRIAL_ACK_COPY_KEY = "trial.acknowledgement";
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PackagesPage() {
@@ -54,6 +65,11 @@ export default function PackagesPage() {
   const [trialMessage, setTrialMessage] = useState<
     { kind: "ok" | "err"; text: string } | null
   >(null);
+  const trialTerms = useBrandCopy(TRIAL_TERMS_COPY_KEY, "");
+  const trialAck = useBrandCopy(TRIAL_ACK_COPY_KEY, "I have read and accept these terms.");
+  // Terms to accept → the acknowledgement step first; none → straight on.
+  const requestTrial = (pkg: ApiClassPackage) =>
+    trialTerms ? setPendingTrial(pkg) : purchaseTrial(pkg);
 
   useEffect(() => {
     function fromHash(): {
@@ -141,7 +157,7 @@ export default function PackagesPage() {
     { key: "corporate", label: "Corporate" },
   ];
 
-  // Runs only AFTER the client confirms the Singapore-citizen disclaimer modal.
+  // Runs after the member accepts the studio's trial terms, when it has any.
   // A $0 trial is granted immediately; a priced trial returns a Stripe Checkout
   // URL we redirect to.
   async function purchaseTrial(pkg: ApiClassPackage) {
@@ -183,7 +199,9 @@ export default function PackagesPage() {
           ? "You've already used your trial pass."
           : code === ERROR_CODES.trial_not_eligible
             ? "The trial pass is for new members only — it looks like you already have a package."
-            : "Couldn't start the trial purchase. Please try again.";
+            : code === ERROR_CODES.payments_not_configured
+              ? NO_ONLINE_PAYMENTS
+              : "Couldn't start the trial purchase. Please try again.";
       setTrialMessage({ kind: "err", text });
       setClaimingTrialId(null);
     }
@@ -255,7 +273,7 @@ export default function PackagesPage() {
                   trialEligible={trialEligible}
                   claimingTrialId={claimingTrialId}
                   trialBanner={trialMessage}
-                  onRequestTrial={setPendingTrial}
+                  onRequestTrial={requestTrial}
                 />
               )}
 
@@ -277,8 +295,10 @@ export default function PackagesPage() {
       </div>
 
       {pendingTrial && (
-        <TrialDisclaimerModal
+        <TrialTermsModal
           pkg={pendingTrial}
+          terms={trialTerms}
+          acknowledgement={trialAck}
           onCancel={() => setPendingTrial(null)}
           onConfirm={() => purchaseTrial(pendingTrial)}
         />
@@ -447,6 +467,7 @@ function TrialSection({
   banner: { kind: "ok" | "err"; text: string } | null;
   onRequestTrial: (pkg: ApiClassPackage) => void;
 }) {
+  const terms = useBrandCopy(TRIAL_TERMS_COPY_KEY, "");
   if (trials.length === 0) {
     return <EmptyCatalog kind="trial" />;
   }
@@ -461,16 +482,13 @@ function TrialSection({
         First time? Try us once — no commitment. Limited to one per student, ever.
       </p>
 
-      {/* Eligibility disclaimer — shown before purchase, always visible. */}
-      <div className="rounded-xl border border-accent/30 bg-accent/5 text-ink text-xs sm:text-sm px-4 py-3 max-w-xl mx-auto">
-        <p className="font-medium">🇸🇬 Singapore citizens only</p>
-        <p className="text-muted mt-1 leading-relaxed">
-          The trial pass is available to Singapore citizens only. We verify
-          citizenship by checking your ID at the studio. If you purchase a trial
-          pass but cannot verify Singapore citizenship, it is{" "}
-          <span className="font-medium text-ink">non-refundable</span>.
-        </p>
-      </div>
+      {/* The studio's own trial terms, shown before purchase — or nothing. */}
+      {terms && (
+        <div className="rounded-xl border border-accent/30 bg-accent/5 text-ink text-xs sm:text-sm px-4 py-3 max-w-xl mx-auto">
+          <p className="font-medium">Trial pass terms</p>
+          <p className="text-muted mt-1 leading-relaxed whitespace-pre-line">{terms}</p>
+        </div>
+      )}
 
       {banner && (
         <div
@@ -734,6 +752,7 @@ function TrialCard({
   const { requireAuth, gate } = useAuthGate("buy a package");
   const credits = pkg.credits ?? 1;
   const isFree = Number(pkg.effective_price_sgd) === 0;
+  const onlinePayments = useOnlinePayments();
   const validity =
     pkg.validity_days != null ? `${pkg.validity_days} days from your first class` : "redeem anytime";
 
@@ -767,6 +786,9 @@ function TrialCard({
         >
           {disabledReason}
         </button>
+      ) : blockedByPayments(onlinePayments, pkg.effective_price_sgd) ? (
+        // A priced trial at a studio that takes no online payments (#293).
+        <p className="mt-6 text-sm text-muted text-center">{NO_ONLINE_PAYMENTS}</p>
       ) : (
         <>
           <button
@@ -791,14 +813,18 @@ function TrialCard({
   );
 }
 
-// Singapore-citizen eligibility gate shown AFTER the client clicks purchase and
-// BEFORE we hit checkout. Requires an explicit acknowledgement.
-function TrialDisclaimerModal({
+// The studio's trial terms, accepted AFTER the member clicks purchase and BEFORE
+// checkout. Only shown when the studio has written terms (`trial.terms`).
+function TrialTermsModal({
   pkg,
+  terms,
+  acknowledgement,
   onCancel,
   onConfirm,
 }: {
   pkg: ApiClassPackage;
+  terms: string;
+  acknowledgement: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -815,23 +841,14 @@ function TrialDisclaimerModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-serif text-xl text-ink leading-snug">
-          Trial pass — Singapore citizens only
+          Trial pass terms
         </h3>
         <p className="text-sm text-muted mt-2 leading-relaxed">
-          Before you continue, please confirm you understand:
+          Before you continue, please read the studio&apos;s terms:
         </p>
-        <ul className="text-sm text-muted mt-3 space-y-2 leading-relaxed list-disc pl-5">
-          <li>The trial pass is available to Singapore citizens only.</li>
-          <li>
-            We verify Singapore citizenship by checking your ID at the studio on
-            your first visit.
-          </li>
-          <li>
-            If you purchase a trial pass but cannot verify Singapore
-            citizenship, it is{" "}
-            <span className="font-medium text-ink">non-refundable</span>.
-          </li>
-        </ul>
+        <p className="text-sm text-muted mt-3 leading-relaxed whitespace-pre-line">
+          {terms}
+        </p>
 
         <label className="flex items-start gap-2.5 mt-5 text-sm text-ink cursor-pointer">
           <input
@@ -840,10 +857,7 @@ function TrialDisclaimerModal({
             onChange={(e) => setAck(e.target.checked)}
             className="mt-0.5 h-4 w-4 rounded border-ink/30 text-accent focus:ring-accent"
           />
-          <span>
-            I am a Singapore citizen and I understand the trial pass is
-            non-refundable if my citizenship cannot be verified.
-          </span>
+          <span>{acknowledgement}</span>
         </label>
 
         <div className="mt-6 flex flex-col gap-2">

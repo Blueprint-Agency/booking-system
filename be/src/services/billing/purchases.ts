@@ -127,6 +127,11 @@ export interface PurchasePayment {
    * can hold payments on two different accounts.
    */
   providerAccountId: string | null
+  /**
+   * When the portal asked the provider to return it (#275). Set on a held
+   * payment, it means that Refund is on its way and not to be asked for again.
+   */
+  refundRequestedAt: Date | null
 }
 
 /**
@@ -147,6 +152,7 @@ export async function paymentsForPurchase(
       amountSgd: stripePayments.amountSgd,
       status: stripePayments.status,
       providerAccountId: stripePayments.providerAccountId,
+      refundRequestedAt: stripePayments.refundRequestedAt,
     })
     .from(stripePayments)
     .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.purchaseId, purchaseId)))

@@ -8,6 +8,7 @@ import {
   type SilentPurchaseView,
 } from '../../../services/billing/open-purchases'
 import { issueOpenPurchaseRefund } from '../../../services/billing/refunds'
+import { issuedRefundView } from './refund-view'
 import { abandonedReturnLine, SILENT_AFTER_DAYS } from '../../../services/billing/refund-notice'
 
 /**
@@ -50,6 +51,7 @@ function silentView(p: SilentPurchaseView) {
     // notice in the billing surfaces — the portal derives no domain rule.
     silence_notice: p.silenceNotice,
     payment_count: p.paymentCount,
+    refund_progress: p.refundProgress,
     created_at: p.createdAt,
     grants_nothing: true,
   }
@@ -90,6 +92,9 @@ const app = new Hono()
       // of the button becomes one return per payment, and an admin reconciling
       // the month should not have to work that out from the count alone.
       returned_line: abandonedReturnLine(paymentCount, result.returnedSgd),
+      // `complete` false when the provider refused a payment after returning an
+      // earlier one (#275): part of the money went back, and the admin must be told.
+      ...issuedRefundView(result),
     })
   })
 

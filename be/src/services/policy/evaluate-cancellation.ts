@@ -35,9 +35,19 @@ export interface EvaluateResult {
 const HOUR_MS = 3_600_000
 const DAY_MS = 86_400_000
 
-export async function evaluateCancellation(input: EvaluateInput): Promise<EvaluateResult> {
-  const { tenantId, clientId, kind, sessionStartsAt, now } = input
+/** The four numbers a member's cancellation is judged by. */
+export interface CancellationPolicy {
+  cancelCapCount: number
+  cancelCapCycleDays: number
+  classWindowHours: number
+  ptWindowHours: number
+}
 
+/**
+ * This studio's cancellation rules — the same read `evaluateCancellation` makes,
+ * so what a member is told and what the server enforces are one row.
+ */
+export async function readCancellationPolicy(tenantId: string): Promise<CancellationPolicy> {
   const [policy] = await db
     .select({
       cancelCapCount: globalPolicy.cancelCapCount,
@@ -49,6 +59,13 @@ export async function evaluateCancellation(input: EvaluateInput): Promise<Evalua
     .where(eq(globalPolicy.tenantId, tenantId))
     .limit(1)
   if (!policy) throw new NotFoundError('policy_not_seeded')
+  return policy
+}
+
+export async function evaluateCancellation(input: EvaluateInput): Promise<EvaluateResult> {
+  const { tenantId, clientId, kind, sessionStartsAt, now } = input
+
+  const policy = await readCancellationPolicy(tenantId)
 
   // Window: the booking must be cancelled at least N hours before it starts.
   const windowHours = kind === 'class' ? policy.classWindowHours : policy.ptWindowHours

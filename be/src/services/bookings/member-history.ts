@@ -38,6 +38,8 @@ export interface MemberBookingRow {
   creditsUsed: number | null
   /** The package that paid for it, by name; null for a workshop (its own purchase). */
   packageName: string | null
+  /** That package's kind — `unlimited` spends no credit. Null when no package paid. */
+  packageKind: string | null
   code: string
   bookedAt: Date
   cancelledAt: Date | null
@@ -58,6 +60,7 @@ type Raw = {
   refund_outcome: MemberBookingRow['refundOutcome']
   credits_used: number | null
   package_name: string | null
+  package_kind: string | null
   code: string
   booked_at: string | Date
   cancelled_at: string | Date | null
@@ -102,6 +105,7 @@ export async function listMemberBookings(
       b.refund_outcome,
       b.credits_or_sessions_used as credits_used,
       coalesce(cpk.name, ppk.name) as package_name,
+      cp.kind as package_kind,
       b.code,
       b.booked_at,
       b.cancelled_at
@@ -147,6 +151,7 @@ export async function listMemberBookings(
     refundOutcome: r.refund_outcome,
     creditsUsed: r.credits_used,
     packageName: r.package_name,
+    packageKind: r.package_kind,
     code: r.code,
     bookedAt: new Date(r.booked_at),
     cancelledAt: toDate(r.cancelled_at),

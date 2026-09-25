@@ -1,6 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { purchases, stripePayments } from '../../db/schema/ledger'
+import { refundInFlight } from './balance'
 
 /**
  * A member's payments through the payment provider, newest first — the
@@ -22,6 +23,12 @@ export interface MemberPaymentView {
   purchaseStatus: (typeof purchases.$inferSelect)['status']
   receiptUrl: string | null
   refundedAt: Date | null
+  /**
+   * A Refund has been asked of the provider and has not landed (#275). The
+   * status still says `succeeded` until `charge.refunded` arrives, and a row
+   * reading "Paid" beside a Refund the admin has just issued reads as a failure.
+   */
+  refundProcessing: boolean
   createdAt: Date
 }
 
@@ -40,6 +47,7 @@ export async function listMemberPayments(
       status: stripePayments.status,
       receiptUrl: stripePayments.receiptUrl,
       refundedAt: stripePayments.refundedAt,
+      refundRequestedAt: stripePayments.refundRequestedAt,
       createdAt: stripePayments.createdAt,
       metadata: purchases.metadata,
       purchaseStatus: purchases.status,
@@ -59,6 +67,8 @@ export async function listMemberPayments(
     purchaseStatus: r.purchaseStatus,
     receiptUrl: r.receiptUrl,
     refundedAt: r.refundedAt,
+    refundProcessing:
+      refundInFlight(r.refundRequestedAt) && (r.status === 'succeeded' || r.status === 'pending'),
     createdAt: r.createdAt,
   }))
 }

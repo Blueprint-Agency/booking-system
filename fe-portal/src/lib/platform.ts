@@ -30,14 +30,24 @@ export interface PlatformTenant {
   /**
    * Whether the studio takes its own money, and on which account.
    *
-   * `configured: false` means it charges on the platform's account, which is
-   * where every studio started and where every studio not yet moved still
-   * charges. `account_id` names the studio's own account when there is one —
+   * `configured: false` means it takes no online payments: payments are not
+   * set up. `account_id` names the studio's own account when there is one —
    * and it is the *only* thing this app can ever learn about those credentials.
    * The secret key and the signing secret are never returned by any route, so
    * there is nothing to mask, truncate or accidentally render.
    */
-  payments: { configured: boolean; account_id: string | null };
+  payments: {
+    configured: boolean;
+    account_id: string | null;
+    /**
+     * What the form needs before anything is saved: the key prefix this
+     * environment accepts (`sk_test_` off production, `sk_live_` on it). The
+     * webhook endpoint is set up by the platform when the key is saved.
+     */
+    setup: {
+      key_prefix: "sk_test_" | "sk_live_";
+    };
+  };
   /**
    * The stretch of time the studio has paid for, as calendar dates (YYYY-MM-DD)
    * on its own clock. `end_date` is the first day it is no longer paid for;
@@ -218,8 +228,9 @@ export function inviteFirstAdmin(
  * One way only: these go up and never come back. The backend validates the
  * secret key against the provider before storing it — so a typo is a message on
  * the form rather than a member's checkout failing weeks later — and answers
- * with the account the provider says the key belongs to, plus the webhook URL
- * that has to be registered on that account.
+ * with the account the provider says the key belongs to. Saving it also creates
+ * the webhook endpoint on that account, answered as `webhook` for the
+ * confirmation.
  *
  * There is deliberately no "show" or "edit". Credentials that need checking are
  * replaced; credentials that were wrong are cleared.
@@ -227,15 +238,15 @@ export function inviteFirstAdmin(
 export function setPaymentCredentials(
   api: Api,
   id: string,
-  input: { secret_key: string; webhook_secret: string },
+  input: { secret_key: string },
 ) {
-  return api.put<{ tenant: PlatformTenant; webhook_url: string }>(
+  return api.put<{ tenant: PlatformTenant; webhook: { url: string; events: string[] } }>(
     `/platform/tenants/${id}/payment-credentials`,
     input,
   );
 }
 
-/** Put a studio back on the platform's account. */
+/** Stop a studio taking online payments, and delete its webhook endpoint. */
 export function clearPaymentCredentials(api: Api, id: string) {
   return api.del<{ tenant: PlatformTenant }>(`/platform/tenants/${id}/payment-credentials`);
 }

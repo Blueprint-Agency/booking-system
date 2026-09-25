@@ -12,9 +12,10 @@ export type RefundOutcome =
  *
  * NOTE: workshop bookings never reach this function — `cancelBooking` rejects them
  * (`workshop_cancel_unsupported`) and workshop admin-cancel goes through
- * services/workshops/cancel.ts, whose Stripe refund fan-out is still deferred. The
- * `'stripe_refunded'` branch below is therefore reserved for when that lands; today it
- * is unreachable, so no booking is ever falsely labelled refunded.
+ * services/workshops/cancel.ts, which refunds nobody automatically (#272). A
+ * workshop booking is only ever labelled `stripe_refunded` by the refund unwind
+ * (`unwindRefund`), once the money has actually gone back, so the branch below is
+ * unreachable and no booking is ever falsely labelled refunded.
  */
 export function decideOutcome(
   kind: 'class' | 'workshop' | 'pt',

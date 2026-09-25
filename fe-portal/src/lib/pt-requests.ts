@@ -65,14 +65,16 @@ export const PT_STATUS_SHORT: Record<PtStatus, string> = {
 export const PT_STATUS_LABEL: Record<PtStatus, string> = {
   pending: "pending",
   scheduled: "scheduled",
-  cancelled_before_scheduled: "cancelled (refunded)",
+  // A PT request holds sessions, not money — what comes back is the session, and
+  // "refunded" is kept for money going back through Stripe (#275).
+  cancelled_before_scheduled: "cancelled (session returned)",
   cancelled_after_scheduled: "cancelled",
   attended: "attended",
 };
 
 export function ptStatusLabel(r: ApiPtRequest): string {
   if (r.status === "cancelled_after_scheduled") {
-    if (r.refund_outcome === "session_returned") return "cancelled (refunded)";
+    if (r.refund_outcome === "session_returned") return "cancelled (session returned)";
     if (r.refund_outcome === "forfeited") return "cancelled (forfeited)";
   }
   return PT_STATUS_LABEL[r.status];

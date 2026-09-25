@@ -256,8 +256,9 @@ export default function InstructorSchedulePage() {
       >
         <p className="text-sm text-ink">
           {cancelling?.booked_count ?? 0} member
-          {(cancelling?.booked_count ?? 0) === 1 ? "" : "s"} will be refunded
-          their credit. This cannot be undone, and all admins are notified.
+          {(cancelling?.booked_count ?? 0) === 1 ? "" : "s"} will get their credit or
+          session back — members on an Unlimited plan simply lose the place. This cannot be
+          undone, and all admins are notified.
         </p>
         <div className="mt-4 space-y-1.5">
           <Label htmlFor="cancel-reason">Reason (required)</Label>

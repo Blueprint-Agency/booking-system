@@ -9,6 +9,7 @@ import { seedPolicy } from '../db/seed/policy'
 import { tenantOrigin } from '../lib/allowed-origins'
 import { discardedMail, transport } from '../lib/mailer'
 import { ensureAuthUser, setFirstStaffPassword } from '../services/auth/auth-users'
+import { configureProviderAccount } from '../services/billing/provider-onboarding'
 import { createClassType } from '../services/catalog/class-types'
 import { createClassPackage } from '../services/packages/class-packages'
 import { grantPackage } from '../services/packages/purchase'
@@ -102,7 +103,26 @@ function hourFromNow(days: number): Date {
   return at
 }
 
-export async function createE2eStudio({ app, db }: { app: Hono; db: Db }): Promise<E2eStudio> {
+/**
+ * The payment account the studio sells on. Every studio takes card payments on
+ * its own account or not at all (#293), so without this the buy journey's
+ * checkout is refused `payments_not_configured`. Set up the way the super
+ * portal sets up a studio's (#294): the key's mode checked against the
+ * environment, the account id asked of the provider, the studio's webhook
+ * endpoint created on that account, and the key and signing secret sealed with
+ * `PAYMENT_CREDENTIALS_KEY`.
+ */
+export type E2ePayments = { secretKey: string }
+
+export async function createE2eStudio({
+  app,
+  db,
+  payments,
+}: {
+  app: Hono
+  db: Db
+  payments?: E2ePayments
+}): Promise<E2eStudio> {
   if (transport.name !== 'null') {
     throw new Error('createE2eStudio reads sign-in codes from the null mail transport: run it with NODE_ENV=test')
   }
@@ -121,6 +141,7 @@ export async function createE2eStudio({ app, db }: { app: Hono; db: Db }): Promi
   // until a person writes them, and booking mail and cancelling both need them.
   await seedEmailTemplates(db, seeded)
   await seedPolicy(db, seeded)
+  if (payments) await configureProviderAccount(tenant.id, payments)
 
   const [location] = await db
     .insert(schema.locations)

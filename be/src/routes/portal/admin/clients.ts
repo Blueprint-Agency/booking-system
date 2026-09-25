@@ -23,6 +23,8 @@ import {
   memberAttendanceSummary,
   type MemberBookingRow,
 } from '../../../services/bookings/member-history'
+import { adminCancelNotice } from '../../../services/bookings/admin-cancel-notice'
+import { issuedRefundView } from './refund-view'
 import { listMemberPayments, type MemberPaymentView } from '../../../services/billing/member-payments'
 import {
   adjustBalance,
@@ -218,6 +220,13 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
     refund_notice: refund?.notice ?? null,
     // How many returns the Refund will put on the statement (#93).
     refund_payment_count: refund?.paymentCount ?? 0,
+    // What the Refund dialog states before the admin commits (#275): whether one
+    // is already on its way, the amount going back, and what else it undoes.
+    refund_progress: refund?.progress ?? 'none',
+    refund_amount_sgd: refund?.amountSgd ?? '0.00',
+    refund_includes_add_on: refund?.addOnIncluded ?? null,
+    refund_upcoming_booking_count: refund?.upcomingBookingCount ?? 0,
+    refund_promo_code: refund?.promoCode ?? null,
     id: p.id,
     kind: p.kind,
     source_package_id: p.sourcePackageId,
@@ -276,6 +285,9 @@ function memberBookingView(b: MemberBookingRow) {
     code: b.code,
     booked_at: b.bookedAt,
     cancelled_at: b.cancelledAt,
+    // Null when the portal offers no "Cancel booking" on it; otherwise what the
+    // cancel will do with the credit, for the confirm dialog (#272).
+    cancel_notice: adminCancelNotice(b),
   }
 }
 
@@ -289,10 +301,10 @@ function paymentView(p: MemberPaymentView) {
     purchase_status: p.purchaseStatus,
     receipt_url: p.receiptUrl,
     refunded_at: p.refundedAt,
+    refund_processing: p.refundProcessing,
     created_at: p.createdAt,
   }
 }
-
 // A workshop purchase's row on the client detail page, beside the package rows
 // (§14 / issue #36). The booking IS the purchase, so there is no source-package
 // id or expiry to show — only what the Refund button and its notice need.
@@ -304,9 +316,13 @@ function workshopPurchaseView(w: WorkshopPurchase) {
     amount_paid_sgd: w.amountPaidSgd,
     list_price_sgd: w.listPriceSgd,
     purchased_at: w.purchasedAt,
+    cancelled: w.cancelled,
     refundable: w.refundable,
     refund_notice: w.refundNotice,
     refund_payment_count: w.paymentCount,
+    refund_progress: w.progress,
+    refund_amount_sgd: w.refundAmountSgd,
+    refund_promo_code: w.promoCode,
   }
 }
 
@@ -338,6 +354,7 @@ function openPurchaseView(p: OpenPurchaseView) {
     created_at: p.createdAt,
     grants_nothing: true,
     refund_payment_count: p.paymentCount,
+    refund_progress: p.refundProgress,
   }
 }
 
@@ -568,6 +585,7 @@ const app = new Hono()
       refunded: true,
       attended_count: result.attendedCount,
       override: result.override,
+      ...issuedRefundView(result),
     })
   })
   // A Refund on a workshop purchase (§14, issue #36) — the same operation as
@@ -592,6 +610,7 @@ const app = new Hono()
         refunded: true,
         attended_count: result.attendedCount,
         override: result.override,
+        ...issuedRefundView(result),
       })
     },
   )

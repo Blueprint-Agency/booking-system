@@ -13,7 +13,6 @@ import {
   QrCode,
   HandHeart,
   Users,
-  Mail,
   FileText,
   UserCog,
   Wallet,
@@ -37,7 +36,7 @@ export interface NavItem {
    * from `scope`, which is about role visibility.
    */
   workspaceScoped?: boolean;
-  badgeKey?: "inboxUnread" | "ptRequestsPending" | "corporateRequestsPending";
+  badgeKey?: "ptRequestsPending" | "corporateRequestsPending";
 }
 
 export type NavGroup = "Finance" | "Config" | "Packages" | "People" | "Settings";
@@ -94,7 +93,6 @@ export const NAV_ITEMS: NavItem[] = [
 
   // --- Settings (location-independent policy + config) ---
   { group: "Settings", label: "Global Policy", href: "/admin/policy", icon: Shield, scope: "global" },
-  { group: "Settings", label: "Notifications", href: "/admin/notifications", icon: Mail, scope: "global" },
   { group: "Settings", label: "Waiver", href: "/admin/waiver", icon: FileText, scope: "global" },
 ];
 

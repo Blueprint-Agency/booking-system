@@ -13,7 +13,9 @@ import path from 'node:path'
  *
  *  - The backend's Stripe client is pointed here by `STRIPE_API_URL`
  *    (be/src/lib/stripe-endpoint.ts), and is answered the few calls a checkout
- *    makes — a Customer, a session, the session read back, the intent's receipt.
+ *    makes — a Customer, a session, the session read back, the intent's receipt
+ *    — plus the account lookup and webhook endpoint the run's studio is set up
+ *    with when it is given its own account (./local-stack.ts).
  *  - The browser still goes to `https://checkout.stripe.com/…`, but its
  *    resolver maps every Stripe host to the page served here
  *    (`STRIPE_HOST_RULES`), which asks for a card the way Stripe's does — a
@@ -157,6 +159,26 @@ export async function startStripeStub(): Promise<StripeStub> {
     const route = `${req.method} ${url.pathname}`
     let match: RegExpMatchArray | null
 
+    // The studio command sets the studio's account up as the super portal does
+    // (#294): the key proved, the account id this answers with stored, and the
+    // studio's webhook endpoint made there. Nothing is ever delivered to it —
+    // the confirmation page's sync is what grants in a journey.
+    if (route === 'GET /v1/account') {
+      return json(res, 200, { id: 'acct_stripe_stub', object: 'account' })
+    }
+    if (route === 'GET /v1/webhook_endpoints') {
+      return json(res, 200, { object: 'list', data: [], has_more: false, url: '/v1/webhook_endpoints' })
+    }
+    if (route === 'POST /v1/webhook_endpoints') {
+      return json(res, 200, {
+        id: id('we'),
+        object: 'webhook_endpoint',
+        url: form.url,
+        enabled_events: Object.values((form.enabled_events ?? {}) as Form),
+        metadata: form.metadata ?? {},
+        secret: id('whsec'),
+      })
+    }
     if (route === 'POST /v1/customers') {
       return json(res, 200, { id: id('cus'), object: 'customer', email: form.email ?? null, metadata: form.metadata ?? {} })
     }

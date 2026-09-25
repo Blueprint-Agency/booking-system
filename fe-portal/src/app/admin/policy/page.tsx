@@ -372,7 +372,7 @@ export default function PolicyPage() {
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Cancellation windows</h2>
             <p className="mt-0.5 text-xs text-muted">
-              How far in advance customers must cancel for a refund. Cancellation itself is always allowed; the window only gates whether credits/sessions are returned.
+              How far in advance customers must cancel to get their credit or session back. Cancellation itself is always allowed; the window only gates whether credits/sessions are returned.
             </p>
           </header>
           <div className="grid gap-4 sm:grid-cols-2">

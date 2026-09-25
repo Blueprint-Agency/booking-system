@@ -60,7 +60,8 @@ export function SaveCardBlock({
               ? "Pick it on the payment page instead of typing the number again."
               : "Next time you can pick it instead of typing the number again."}{" "}
             Your card is stored by our payment provider, never by us, and you can
-            remove it from your profile whenever you like.
+            remove it from your profile whenever you like. A card saved here works
+            only at this studio.
           </span>
         </span>
       </label>
@@ -79,9 +80,8 @@ export function SaveCardBlock({
         <div className="mt-3 flex items-start gap-2 rounded-xl border border-ink/10 bg-warm px-3 py-2.5 text-xs text-ink">
           <CreditCard className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
           <span>
-            Saving a card makes this payment{" "}
-            <span className="font-medium">card only</span> — PayNow is not
-            available when you keep a card. Untick this to pay with PayNow.
+            Saving a card means you can only pay{" "}
+            <span className="font-medium">by card</span> this time.
           </span>
         </div>
       )}

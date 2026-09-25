@@ -3,13 +3,12 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { eq, inArray, like, or, sql } from 'drizzle-orm'
 import { frontendOrigin, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
-import type { StripeFake } from './stripe-fake'
+import { stripeWebhookPath, type StripeFake } from './stripe-fake'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.promo-merch.test`
 // Not ending in "Flow" / "Bundle": isolation.test.ts purges by those suffixes.
 const NAME = `PromoMerch ${run}`
-const WEBHOOK_SECRET = 'whsec_promo_merch_test'
 const DAY = 24 * 60 * 60 * 1000
 
 /**
@@ -30,7 +29,6 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let fake!: StripeFake
-  let webhookSecretWas: string | undefined
 
   type Headers = Record<string, string>
   type Reply = { status: number; body: any }
@@ -163,7 +161,8 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
       },
     }
     const res = await reply(
-      await harness.app.request('/api/v1/webhooks/stripe', {
+      // The studio's own endpoint: the one whose member the session was for.
+      await harness.app.request(stripeWebhookPath(params.metadata.tenant_id === two.id ? two.slug : one.slug), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'stripe-signature': 't=1,v1=fake' },
         body: JSON.stringify(event),
@@ -200,11 +199,13 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
       return { id: `cs_promo_merch_${sessions}`, url: `https://pay.example.test/cs_promo_merch_${sessions}` }
     })
     fake.reply('webhooks.constructEvent', (body: unknown) => JSON.parse(String(body)))
-    webhookSecretWas = process.env.STRIPE_WEBHOOK_SECRET
-    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET
 
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
+    // Each studio sells on an account of its own — the only way a studio sells
+    // at all (#293) — and its deliveries arrive on its own endpoint.
+    fake.ownAccount(one)
+    fake.ownAccount(two)
 
     bundle = await classPackage(one, {
       name: `${NAME} Pass`,
@@ -231,8 +232,6 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
   after(async () => {
     if (!harness) return
     fake?.restore()
-    if (webhookSecretWas === undefined) delete process.env.STRIPE_WEBHOOK_SECRET
-    else process.env.STRIPE_WEBHOOK_SECRET = webhookSecretWas
 
     try {
       await cleanup()
