@@ -446,6 +446,8 @@ Fields, in order:
 
 The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a real review step, and it is the **only** surface in the member app with a code input anywhere — a Promo Code can be scoped to any product, so the picker's page and the code's page have to be the same page. A package or workshop tier priced above zero keeps its existing auth gate (login modal, return-to-page) and then pushes here; at zero it keeps the old post-and-grant, so a Promotion that drives a package to $0 falls into the free branch for free — the branch is decided by price, not by kind. The Trial card never used the buy button and is untouched.
 
+**A studio that takes no online payments** (#293) — one that has not supplied its own payment account — shows "This studio isn't taking online payments yet." in place of every paid buy button and of the Pay button here, read from `GET /public/online-payments`. A $0 item keeps its button: it never reaches the payment provider. If the read is slow or fails the buttons stay, and the server's `payments_not_configured` refusal reads as the same sentence (`fe-client/src/lib/online-payments-rule.ts`).
+
 **What the page carries, top to bottom** — rows marked *(unlimited)* render only when the item being bought is an Unlimited Plan:
 
 1. **Order summary** — item, validity / event date, price.

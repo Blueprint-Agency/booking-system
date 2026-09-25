@@ -17,7 +17,8 @@ import {
  */
 export type ProviderCall = {
   /**
-   * The account the client was bound to — null is the platform's own.
+   * The account the client was bound to. Always a studio's own since #293;
+   * typed nullable only so a fake set up by hand can still be read back.
    *
    * The id, not the credentials: a test asserts which studio's account the
    * money moved on, and recording the key alongside it would put live-shaped
@@ -41,9 +42,9 @@ export type StripeFake = {
   reply(method: string, value: Reply): void
   /**
    * Give a studio its own provider account (#100), so calls on its behalf are
-   * recorded against that account instead of the platform's. A studio not named
-   * here has none, which is the platform account — the same default the real
-   * lookup gives a studio that has supplied no credentials.
+   * recorded against that account. A studio not named here has none, and so
+   * takes no online payments (#293) — the same answer the real lookup gives a
+   * studio that has supplied no credentials.
    */
   credentials(tenantId: string, account: { accountId: string; secretKey?: string; webhookSecret?: string }): void
   /** Put the real provider back. Always call this from an `after` hook. */

@@ -10,6 +10,7 @@ import { getMemberToken, useMemberSession } from "@/lib/member-auth";
 import { fetchApi } from "@/lib/api-url";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { checkoutErrorMessage } from "@/lib/checkout-messages";
+import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { cancelledNotice } from "@/lib/checkout-return";
 import { useInstructors, useLocations } from "@/lib/classes";
 import { CrossLocationBlock } from "@/components/checkout/cross-location-block";
@@ -94,6 +95,9 @@ function CheckoutContent() {
   // unless the studio offers it. `partAmount` is a string because it is what
   // the member is typing; the server decides whether it is allowed.
   const partPayment = usePartPaymentOptions();
+  // Whether this studio takes card payments online at all (#293). A total above
+  // zero at a studio that takes none gets a sentence instead of a Pay button.
+  const onlinePayments = useOnlinePayments();
   const [partChecked, setPartChecked] = useState(false);
   const [partAmount, setPartAmount] = useState("");
   // "Save this card for next time" (#185) — unticked unless the member says so.
@@ -691,28 +695,32 @@ function CheckoutContent() {
             </p>
           )}
 
-          <PayButton
-            onClick={() => handleProceed(payingNow)}
-            busy={redirecting}
-            disabled={needsHomeStudio || needsInstructor || partBlocked}
-            label={
-              needsHomeStudio
-                ? "Choose your home studio to continue"
-                : needsInstructor
-                  ? "Choose your instructor to continue"
-                  : partBlocked
-                    ? "Enter an amount to pay now"
-                    : // A discount that clears the total skips Stripe entirely, so the
-                      // button names the confirmation rather than a charge of nothing.
-                      totalCents === 0
-                      ? "Confirm your free purchase"
-                      : // The button names the charge, never the price, so a part
-                        // payment cannot be mistaken for settling the whole thing.
-                        `Pay ${formatCurrency(payingNow ?? grandTotal)} with Stripe`
-            }
-          />
+          {blockedByPayments(onlinePayments, grandTotal) ? (
+            <p className="text-sm text-muted text-center">{NO_ONLINE_PAYMENTS}</p>
+          ) : (
+            <PayButton
+              onClick={() => handleProceed(payingNow)}
+              busy={redirecting}
+              disabled={needsHomeStudio || needsInstructor || partBlocked}
+              label={
+                needsHomeStudio
+                  ? "Choose your home studio to continue"
+                  : needsInstructor
+                    ? "Choose your instructor to continue"
+                    : partBlocked
+                      ? "Enter an amount to pay now"
+                      : // A discount that clears the total skips Stripe entirely, so the
+                        // button names the confirmation rather than a charge of nothing.
+                        totalCents === 0
+                        ? "Confirm your free purchase"
+                        : // The button names the charge, never the price, so a part
+                          // payment cannot be mistaken for settling the whole thing.
+                          `Pay ${formatCurrency(payingNow ?? grandTotal)} with Stripe`
+              }
+            />
+          )}
 
-          {totalCents > 0 && <StripeFootnote />}
+          {totalCents > 0 && onlinePayments !== false && <StripeFootnote />}
         </div>
       </BookingSurface>
     </div>

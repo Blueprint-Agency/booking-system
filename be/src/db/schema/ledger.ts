@@ -288,11 +288,12 @@ export const stripePayments = pgTable(
  *
  * That is also what "cards saved at one studio never appear at another" reduces
  * to here: the lookup is `(tenant_id, client_id, account)`, with Row-Level
- * Security as the backstop under it. Two studios on the *same* platform account
- * still get a Customer each, because the Tenant is in the key.
+ * Security as the backstop under it. Two studios that once sold on the *same*
+ * platform account still got a Customer each, because the Tenant is in the key.
  *
  * `provider_account_id` follows the convention `stripe_payments` set: **NULL is
- * the platform's own account**, not "unknown".
+ * the platform's own account**, not "unknown" — history only since #293, when
+ * the platform account stopped being used and every new row names a studio's.
  *
  * Nothing here is a secret and nothing here is money. It is a pointer, and if
  * the whole table were lost the worst that happens is every member is asked to
@@ -328,10 +329,10 @@ export const paymentCustomers = pgTable(
      *
      * `NULLS NOT DISTINCT` is load-bearing, and is written out in the migration
      * because Drizzle cannot express it: Postgres treats NULLs as distinct in a
-     * unique index by default, and the platform account — the common case, and
-     * the only case until a studio supplies credentials of its own — *is* the
-     * NULL. Without it the constraint would hold for exactly the studios that
-     * least need it.
+     * unique index by default, and the platform account — the only case until
+     * studios supplied credentials of their own, and still the case for rows
+     * written before #293 — *is* the NULL. Without it the constraint would not
+     * have held for exactly those rows.
      */
     memberAccountUnique: uniqueIndex('payment_customers_member_account_unique').on(
       table.tenantId,

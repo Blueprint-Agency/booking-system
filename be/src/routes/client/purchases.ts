@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { stripeForTenant } from '../../lib/stripe'
+import { requireProviderAccount, stripeForTenant } from '../../lib/stripe'
 import { outbound, VendorTimeoutError } from '../../lib/outbound'
 import { AppError, NotFoundError } from '../../shared/errors'
 import { ERROR_CODES } from '../../shared/error-codes'
@@ -353,6 +353,7 @@ const app = new Hono()
     const { session_id } = c.req.valid('json')
     const clientId = c.get('clientId')
 
+    const account = await requireProviderAccount(tenantId(c))
     const stripe = await stripeForTenant(tenantId(c))
     let session: Awaited<ReturnType<typeof stripe.checkout.sessions.retrieve>>
     try {
@@ -373,10 +374,19 @@ const app = new Hono()
     }
 
     const { handleStripeEvent } = await import('../../services/billing/webhook-handler')
-    await handleStripeEvent({
-      type: 'checkout.session.completed',
-      data: { object: session },
-    } as any)
+    // With the account the session was just read from (#293). It was retrieved
+    // with this studio's own key, so that is the account the money is on — and
+    // a payment recorded here without it would read as the platform's, which
+    // the app can never refund. Whichever of this and the webhook lands first
+    // writes the row, so both must stamp the same account.
+    await handleStripeEvent(
+      {
+        type: 'checkout.session.completed',
+        data: { object: session },
+      } as any,
+      tenantId(c),
+      account.accountId,
+    )
 
     // What this payment left behind (#93). The confirmation page cannot work it
     // out: a part payment may have cleared the Balance or may have left some of

@@ -9,6 +9,7 @@ import { fetchApi } from "@/lib/api-url";
 import { cn } from "@/lib/utils";
 import { reportError } from "@/lib/report-error";
 import { checkoutErrorMessage } from "@/lib/checkout-messages";
+import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 
 type BuyTarget =
   | { kind: "package"; packageKind: "class" | "pt"; packageId: string }
@@ -26,6 +27,10 @@ type AuthGateContext = "buy a package" | "book a workshop" | "buy merch";
  *
  * `gateHref` is where the login modal sends the user to come back after
  * signing in (the original page they were on).
+ *
+ * A studio that takes no online payments (#293) gets a sentence in place of a
+ * paid button — a button that can only be refused is worse than being told.
+ * A $0 purchase keeps its button: it never reaches the payment provider.
  */
 export function BuyButton({
   target,
@@ -59,6 +64,7 @@ export function BuyButton({
   const { requireAuth, gate } = useAuthGate(context);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const onlinePayments = useOnlinePayments();
 
   async function start() {
     setBusy(true);
@@ -124,6 +130,10 @@ export function BuyButton({
       setError("Network error. Please try again.");
       setBusy(false);
     }
+  }
+
+  if (blockedByPayments(onlinePayments, priceSgd)) {
+    return <p className="text-sm text-muted text-center">{NO_ONLINE_PAYMENTS}</p>;
   }
 
   return (

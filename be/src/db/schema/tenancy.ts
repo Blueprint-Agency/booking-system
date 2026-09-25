@@ -164,8 +164,8 @@ export const tenantSettings = pgTable('tenant_settings', {
  * There is no platform account in the middle — Stripe Connect is not available
  * to this platform — so a studio hands over the credentials to its own account
  * and every call on its behalf is made against that account directly. A Tenant
- * with no row here charges on the platform account exactly as before, which is
- * what lets studios be moved across one at a time.
+ * with no row here takes no online payments (#293): there is no platform
+ * account behind it any more.
  *
  * Both secrets are sealed (`lib/secret-box.ts`); `accountId` is not, because it
  * names the account rather than opening it, and naming it is the whole of what

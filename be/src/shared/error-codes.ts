@@ -216,6 +216,8 @@ export const ERROR_CODES = {
   password_required: 'password_required',
   password_too_long: 'password_too_long',
   password_too_short: 'password_too_short',
+  payment_on_platform_account: 'payment_on_platform_account',
+  payments_not_configured: 'payments_not_configured',
   percent_off_required: 'percent_off_required',
   phone_required: 'phone_required',
   plan_expires_before_class: 'plan_expires_before_class',

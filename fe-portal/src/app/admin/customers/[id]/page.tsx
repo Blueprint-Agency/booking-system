@@ -40,6 +40,7 @@ import { HomeLocationDialog } from "@/components/clients/home-location-dialog";
 import { BoundInstructorDialog } from "@/components/clients/bound-instructor-dialog";
 import { PackageSetBalanceDialog } from "@/components/clients/package-set-balance-dialog";
 import { RefundDialog } from "@/components/clients/refund-dialog";
+import { REFUND_REFUSALS } from "@/lib/refund-refusals";
 import { GivePackageDialog, type GivePackagePayload } from "@/components/clients/give-package-dialog";
 import { RemovePackageDialog } from "@/components/clients/remove-package-dialog";
 import { ChangeEmailDialog } from "@/components/clients/change-email-dialog";
@@ -303,6 +304,7 @@ const REFUSALS: Record<string, string> = {
   booking_attended:
     "They have already been checked in to this class. Untick them on the roster first if that was a mistake.",
   not_cancellable: "This booking is no longer booked — it may already have been cancelled.",
+  ...REFUND_REFUSALS,
 };
 
 /** List Price minus what was paid, as "S$12.34", or null when there's no discount. */

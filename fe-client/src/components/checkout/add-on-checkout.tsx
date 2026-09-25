@@ -10,6 +10,7 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { fetchApi } from "@/lib/api-url";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { checkoutErrorMessage } from "@/lib/checkout-messages";
+import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { useLocations } from "@/lib/classes";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
 import { roundsUpAPartMonth } from "@/lib/add-on-months";
@@ -128,6 +129,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
     }
   }
 
+  const onlinePayments = useOnlinePayments();
   const plan: LivePackage | null = packages.find((p) => p.id === planId) ?? null;
   const otherLocations = (locations ?? [])
     .filter((l) => l.id !== plan?.location?.id)
@@ -181,7 +183,10 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
             </div>
           )}
 
-          {quote ? (
+          {quote && blockedByPayments(onlinePayments, quote.price_sgd) ? (
+            // A studio that takes no online payments (#293): a sentence, not a Pay button.
+            <p className="text-sm text-muted text-center">{NO_ONLINE_PAYMENTS}</p>
+          ) : quote ? (
             <>
               <PayButton
                 onClick={handleProceed}

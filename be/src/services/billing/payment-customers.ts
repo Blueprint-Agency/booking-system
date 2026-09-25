@@ -151,8 +151,11 @@ export async function providerCustomerFor(input: {
 }): Promise<string | null> {
   const { tenantId, clientId } = input
   try {
+    // No account of its own, no online payments (#293) — and so nothing to
+    // make the member a Customer on.
     const account = await providerAccountForTenant(tenantId)
-    const accountId = account?.accountId ?? null
+    if (!account) return null
+    const accountId = account.accountId
 
     const existing = await storedCustomer(tenantId, clientId, accountId)
     if (existing) return existing
@@ -163,9 +166,8 @@ export async function providerCustomerFor(input: {
         email: input.email,
         ...(input.name ? { name: input.name } : {}),
         // The Tenant and the member, on the provider's own record, for the same
-        // reason the payment intent carries them: a dashboard or an export has
-        // no other way to tell one studio's Customers from another's when both
-        // sell on the platform's shared account.
+        // reason the payment intent carries them: a dispute or an export reads
+        // more easily when every record names its studio and member.
         metadata: { tenant_id: tenantId, client_id: clientId },
       }),
     )
@@ -242,8 +244,11 @@ export async function createSessionSurvivingStaleCustomer<T>(
  * the box.
  */
 export async function listSavedCards(tenantId: string, clientId: string): Promise<SavedCard[]> {
+  // A studio taking no online payments (#293) has no cards to offer: any kept
+  // on the platform's former account are out of this app's reach.
   const account = await providerAccountForTenant(tenantId)
-  const customerId = await storedCustomer(tenantId, clientId, account?.accountId ?? null)
+  if (!account) return []
+  const customerId = await storedCustomer(tenantId, clientId, account.accountId)
   if (!customerId) return []
 
   const stripe = await stripeForTenant(tenantId)
@@ -317,7 +322,8 @@ export async function removeSavedCard(input: {
 }): Promise<void> {
   const { tenantId, clientId, paymentMethodId } = input
   const account = await providerAccountForTenant(tenantId)
-  const customerId = await storedCustomer(tenantId, clientId, account?.accountId ?? null)
+  if (!account) throw new NotFoundError('card_not_found')
+  const customerId = await storedCustomer(tenantId, clientId, account.accountId)
   if (!customerId) throw new NotFoundError('card_not_found')
 
   const stripe = await stripeForTenant(tenantId)

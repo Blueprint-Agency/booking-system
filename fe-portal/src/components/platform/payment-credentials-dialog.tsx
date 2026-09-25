@@ -116,7 +116,7 @@ export function PaymentCredentialsDialog({
     if (!tenant) return;
     if (
       !window.confirm(
-        `Put ${tenant.name} back on the platform account? Its stored credentials are destroyed and cannot be recovered — they would have to be entered again.`,
+        `Remove ${tenant.name}'s payment credentials? It stops taking online payments straight away. Its stored credentials are destroyed and cannot be recovered — they would have to be entered again.`,
       )
     ) {
       return;
@@ -125,7 +125,7 @@ export function PaymentCredentialsDialog({
     setClearing(true);
     try {
       await clearPaymentCredentials(api, tenant.id);
-      toast.success(`${tenant.name} is back on the platform account.`);
+      toast.success(`${tenant.name} has stopped taking online payments.`);
       onSaved();
     } catch (err) {
       toast.error(messageFor(err, `Could not clear credentials for ${tenant.name}.`));
@@ -143,7 +143,7 @@ export function PaymentCredentialsDialog({
         tenant
           ? tenant.payments.configured
             ? `${tenant.name} charges on its own account (${tenant.payments.account_id}). Entering credentials here replaces them.`
-            : `${tenant.name} charges on the platform account. Entering its own credentials moves its money onto its own account.`
+            : `${tenant.name} isn't taking online payments — its payments are not set up. Entering its own credentials lets it take them, on its own account.`
           : ""
       }
     >
@@ -214,14 +214,14 @@ export function PaymentCredentialsDialog({
 
         <p className="text-xs text-muted">
           Saved keys can’t be viewed again, by anyone. To change them, enter new ones here;
-          to undo them, put the studio back on the platform account.
+          removing them stops the studio taking online payments.
         </p>
 
         <DialogFooter>
           {tenant?.payments.configured && (
             <Button type="button" variant="secondary" disabled={busy} onClick={() => void clear()}>
               {clearing && <Loader2 className="h-4 w-4 animate-spin" />}
-              Back to platform account
+              Stop online payments
             </Button>
           )}
           <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>

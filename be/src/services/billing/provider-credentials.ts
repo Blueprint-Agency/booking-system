@@ -73,8 +73,8 @@ type SealedRow = {
 }
 
 /**
- * A Tenant's credentials, or null when it has none and therefore sells on the
- * platform account.
+ * A Tenant's credentials, or null when it has none and therefore takes no online
+ * payments (#293).
  *
  * The read goes through `tenant_payment_credentials_for()` (migration 0067) because the
  * callers have no Tenant context to open: a background job has no request, and
@@ -226,8 +226,8 @@ export async function saveProviderCredentials(
  *
  * The way out of a mistake, and the only one: credentials that turn out to be
  * the wrong studio's cannot be corrected by looking at them, because nobody can
- * look at them. Afterwards the studio charges on the platform account again,
- * which is where every studio started.
+ * look at them. Afterwards the studio takes no online payments until new ones
+ * are entered (#293) — which is where every studio starts.
  */
 export async function clearProviderCredentials(tenantId: string): Promise<ProviderAccountStatus> {
   // The `where` is redundant under the policy and written anyway: a delete with

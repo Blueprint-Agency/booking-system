@@ -1,6 +1,6 @@
 # A Tenant supplies its own payment-provider credentials
 
-**Status**: accepted (2026-09-07) — replaces the Stripe Connect plan recorded in `docs/md/multi-tenancy-plan.md`, which is overturned rather than deferred.
+**Status**: accepted (2026-09-07) — replaces the Stripe Connect plan recorded in `docs/md/multi-tenancy-plan.md`, which is overturned rather than deferred. **Partly superseded** by `0007-every-studio-sells-on-its-own-account.md` (2026-09-25): the platform-account fallback, the shared webhook endpoint and the statement descriptor suffix are gone. The rest stands.
 
 Every studio on this platform charges on the platform operator's own payment account. That was always meant to be temporary: each studio would open a **connected account** through Stripe Connect, the platform would take an application fee, and money would land in the studio's own bank.
 
@@ -15,6 +15,8 @@ There is no platform account in the middle. No connected account, no hosted onbo
 An account is therefore a **key**, not a header. That is the whole difference from Connect in one line, and it is why the client is built with the studio's credentials rather than a per-call parameter: a call site cannot half-belong to a studio.
 
 ## A Tenant with no credentials still charges on the platform account
+
+> **Superseded** by `0007-every-studio-sells-on-its-own-account.md`: a Tenant with no credentials now takes no online payments at all.
 
 `providerAccountForTenant` answers `null` for a studio that has supplied nothing, and `null` means the platform's account — where every studio sold before this and where every studio still sells until it is moved.
 

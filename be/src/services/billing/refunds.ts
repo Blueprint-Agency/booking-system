@@ -42,7 +42,7 @@ import { classes, ptSessions, workshops, workshopTiers, workshopTierDays, worksh
 import { classTypes } from '../../db/schema/catalog'
 import { clients } from '../../db/schema/identity'
 import { requireTenantUrl } from '../tenants/urls'
-import { stripeForProviderAccount } from '../../lib/stripe'
+import { paymentOnPlatformAccount, stripeForProviderAccount } from '../../lib/stripe'
 import { outbound } from '../../lib/outbound'
 import { reportError } from '../../shared/logger'
 import { toCents } from '../../shared/money'
@@ -563,12 +563,11 @@ export async function issueWorkshopRefund(args: {
 /**
  * The provider call itself, **on the account the money came in on** (#97).
  *
- * Not the account the studio sells on today. A studio that moves onto its own
- * credentials leaves its history on the platform's account — no provider hands
- * a payment intent across accounts — so its old sales stay there, refundable,
- * indefinitely, and a Purchase straddling the move holds payments on both. The
- * account therefore comes off the payment row rather than off the Tenant, and
- * `null` is the platform's own.
+ * Not the account the studio sells on today — no provider hands a payment
+ * intent across accounts — so the account comes off the payment row rather than
+ * off the Tenant. `null` there is the platform's own account, which this app no
+ * longer holds a key for (#293): such a payment is refused as
+ * `payment_on_platform_account` and returned from the Stripe dashboard instead.
  *
  * Keyed on the payment intent, which is the money path's only real guard — the
  * caller's `already_refunded` check reads a status the webhook flips
@@ -646,6 +645,12 @@ async function returnEveryPayment(
   const held = heldPayments([...payments])
   const toReturn = held.filter(p => !refundInFlight(p.refundRequestedAt))
   if (toReturn.length === 0) throw new ConflictError('refund_processing')
+
+  // Before any of them goes back: a payment recorded against the platform
+  // account (#293) cannot be returned from here, and finding that out on the
+  // second payment would leave the first already returned — a Refund half-done
+  // on purpose. The admin is told where it can be issued instead.
+  if (toReturn.some(p => p.providerAccountId == null)) throw paymentOnPlatformAccount()
 
   const covered = held.length + payments.filter(p => p.status === 'refunded').length
   const alreadyAsked = covered - toReturn.length

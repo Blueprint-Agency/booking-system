@@ -1,4 +1,5 @@
 import { ERROR_CODES, type ErrorCode } from "./error-codes.ts";
+import { NO_ONLINE_PAYMENTS } from "./online-payments-rule.ts";
 
 /**
  * A refused checkout, in words (#274).
@@ -56,6 +57,7 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   [ERROR_CODES.cross_location_nothing_to_charge]: "Your plan has no time left to add other locations to.",
   [ERROR_CODES.client_package_not_found]: "We couldn't find that plan on your account.",
   [ERROR_CODES.promo_code_invalid]: "That code can't be used on this purchase.",
+  [ERROR_CODES.payments_not_configured]: NO_ONLINE_PAYMENTS,
   [ERROR_CODES.vendor_timeout]: "The payment service didn't answer in time. Please try again.",
   [ERROR_CODES.rate_limited]: "Too many attempts. Wait a minute, then try again.",
   [ERROR_CODES.too_many_requests]: "Too many attempts. Wait a minute, then try again.",

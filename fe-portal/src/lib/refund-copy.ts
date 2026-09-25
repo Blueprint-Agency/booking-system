@@ -10,9 +10,15 @@
  * the statement, and the word staff will search their inbox for.
  */
 import { refusalCode } from "./access-refusal";
+import { REFUND_REFUSALS as WHERE_THE_MONEY_IS } from "./refund-refusals";
 
-/** The backend's refusals of a Refund, in words an admin can act on. */
+/**
+ * The backend's refusals of a Refund, in words an admin can act on — the ones
+ * about the purchase here, and the ones about which Stripe account holds the
+ * money (#293) from `refund-refusals`.
+ */
 const REFUND_REFUSALS: Record<string, string> = {
+  ...WHERE_THE_MONEY_IS,
   already_refunded: "This purchase has already been refunded.",
   purchase_not_refundable: "Nothing was paid online for this, so there's nothing to refund.",
   purchase_not_open:

@@ -687,12 +687,20 @@ jobs:
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
             #   env vars:    PORT, FRONTEND_URLS,
             #            PLATFORM_ADMIN_EMAIL,
-            #            (optional) STRIPE_STATEMENT_DESCRIPTOR_PREFIX, LOG_LEVEL
+            #            (optional) LOG_LEVEL
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
             #            IMPERSONATION_SECRET, BETTER_AUTH_SECRET, RESEND_API_KEY, RESEND_WEBHOOK_SECRET,
-            #            STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
-            #            (optional) PAYMENT_CREDENTIALS_KEY,
+            #            PAYMENT_CREDENTIALS_KEY,
             #            R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL
+            # Required (#293): every studio takes payments on its own Stripe
+            # account, and this key is what its credentials are sealed with.
+            # Unset, no studio's credentials can be stored or opened, so no
+            # studio can take an online payment — refused here rather than
+            # discovered at a member's checkout.
+            if [ -z "${{ secrets.PAYMENT_CREDENTIALS_KEY }}" ]; then
+              echo "PAYMENT_CREDENTIALS_KEY is not set in this GitHub Environment; no studio could take an online payment. Set it (openssl rand -base64 32) and redeploy." >&2
+              exit 1
+            fi
             {
               # NODE_ENV stays "production" on ANY server (build flag — enables
               # optimizations + JSON logging). The environment NAME is APP_ENV.
@@ -752,14 +760,12 @@ jobs:
               echo "RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}"
               # Signs Resend's delivery/bounce/complaint webhook (#154).
               echo "RESEND_WEBHOOK_SECRET=${{ secrets.RESEND_WEBHOOK_SECRET }}"
-              echo "STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}"
-              echo "STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}"
               # STRIPE_API_URL is deliberately never written: a deployment reaches
               # Stripe itself. It points the pull-request journeys at a stand-in
               # (e2e-local.yml), and production refuses it at boot.
-              # Not a secret — it must match the prefix set on the Stripe account.
-              echo "STRIPE_STATEMENT_DESCRIPTOR_PREFIX=${{ vars.STRIPE_STATEMENT_DESCRIPTOR_PREFIX }}"
-              # Seals each studio's OWN payment credentials at rest (#100).
+              # Seals each studio's OWN payment credentials at rest (#100) —
+              # the only Stripe setting there is: the platform account's key,
+              # webhook secret and descriptor prefix are gone (#293).
               # Rotating it orphans every stored credential — they have to be
               # re-entered per studio — so it is set once and left alone.
               echo "PAYMENT_CREDENTIALS_KEY=${{ secrets.PAYMENT_CREDENTIALS_KEY }}"

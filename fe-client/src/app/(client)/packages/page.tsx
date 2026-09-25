@@ -7,6 +7,7 @@ import { useMemberSession } from "@/lib/member-auth";
 import { useRouter } from "next/navigation";
 import { useAuthGate } from "@/components/auth/auth-gate";
 import { BuyButton } from "@/components/checkout/buy-button";
+import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { cn, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
@@ -198,7 +199,9 @@ export default function PackagesPage() {
           ? "You've already used your trial pass."
           : code === ERROR_CODES.trial_not_eligible
             ? "The trial pass is for new members only — it looks like you already have a package."
-            : "Couldn't start the trial purchase. Please try again.";
+            : code === ERROR_CODES.payments_not_configured
+              ? NO_ONLINE_PAYMENTS
+              : "Couldn't start the trial purchase. Please try again.";
       setTrialMessage({ kind: "err", text });
       setClaimingTrialId(null);
     }
@@ -749,6 +752,7 @@ function TrialCard({
   const { requireAuth, gate } = useAuthGate("buy a package");
   const credits = pkg.credits ?? 1;
   const isFree = Number(pkg.effective_price_sgd) === 0;
+  const onlinePayments = useOnlinePayments();
   const validity =
     pkg.validity_days != null ? `${pkg.validity_days} days from your first class` : "redeem anytime";
 
@@ -782,6 +786,9 @@ function TrialCard({
         >
           {disabledReason}
         </button>
+      ) : blockedByPayments(onlinePayments, pkg.effective_price_sgd) ? (
+        // A priced trial at a studio that takes no online payments (#293).
+        <p className="mt-6 text-sm text-muted text-center">{NO_ONLINE_PAYMENTS}</p>
       ) : (
         <>
           <button

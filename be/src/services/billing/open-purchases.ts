@@ -27,7 +27,7 @@ import { purchases, stripePayments } from '../../db/schema/ledger'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import { reportError } from '../../shared/logger'
-import { providerAccountForTenant, stripeForTenant } from '../../lib/stripe'
+import { requireProviderAccount, stripeForTenant } from '../../lib/stripe'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { requireTenantUrl } from '../tenants/urls'
 import { partPaymentEnabled } from '../policy/update'
@@ -368,6 +368,10 @@ export async function resumePurchaseCheckout(args: {
     refusePartPaymentWhenDisabled(args.requestedCents)
   }
   const charge = chargeableCents(outstanding, args.requestedCents)
+  // Before the predecessor is touched: a studio that has stopped taking online
+  // payments (#293) is told so, not handed `checkout_session_busy` because the
+  // expiry it could not make read like a session still in flight.
+  await requireProviderAccount(args.tenantId)
 
   await expirePredecessor(args.tenantId, purchase)
 
@@ -385,9 +389,8 @@ export async function resumePurchaseCheckout(args: {
     },
   ]
 
-  const [stripe, account, customerId] = await Promise.all([
+  const [stripe, customerId] = await Promise.all([
     stripeForTenant(args.tenantId),
-    providerAccountForTenant(args.tenantId),
     providerCustomerFor({
       tenantId: args.tenantId,
       clientId: args.clientId,
@@ -423,13 +426,6 @@ export async function resumePurchaseCheckout(args: {
             customerId: customer,
             saveCard: args.saveCard,
           },
-          studioName,
-          // The studio's own account suppresses the statement suffix (#100).
-          // This path never passed it, so a studio on its own credentials was
-          // having a suffix appended against a prefix this platform cannot
-          // measure — the very thing `checkoutSessionParams` documents as a
-          // refused charge.
-          account !== null,
         ),
       ),
   )
