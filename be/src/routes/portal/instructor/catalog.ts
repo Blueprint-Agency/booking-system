@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as classTypesSvc from '../../../services/catalog/class-types'
 import * as roomsSvc from '../../../services/catalog/rooms'
+import { waitlistEnabled } from '../../../services/waitlist/line'
 import { tenantId } from '../../../middleware/tenant'
 
 /**
@@ -20,6 +21,9 @@ const app = new Hono()
       class_types: rows.map(r => ({ id: r.id, name: r.name, difficulty: r.difficulty })),
     })
   })
+  // The studio switches a scheduling form reads: the capacity fields label the
+  // Waitlist input "(waitlists are off)" when the studio has them off.
+  .get('/features', c => c.json({ waitlist_enabled: waitlistEnabled(tenantId(c)) }))
   .get('/rooms', zValidator('query', roomsQuery), async c => {
     const q = c.req.valid('query')
     const rows = await roomsSvc.listRooms(tenantId(c), { locationId: q.location_id, includeArchived: false })

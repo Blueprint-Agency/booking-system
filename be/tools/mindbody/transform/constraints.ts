@@ -89,6 +89,9 @@ export const CHECKS: Record<string, Record<string, Rule>> = {
   rooms: {
     rooms_capacity_positive: r => num(r.capacity, n => n > 0),
   },
+  waitlist_entries: {
+    waitlist_entries_promoted_booking: r => (r.status === 'promoted') === set(r.booking_id),
+  },
   workshop_days: {
     workshop_days_ends_after_starts: r => after(r.ends_at, r.starts_at),
     workshop_days_capacity_online_non_negative: r => num(r.capacity_online, n => n >= 0),

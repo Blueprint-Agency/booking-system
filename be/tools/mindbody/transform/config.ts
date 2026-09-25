@@ -145,6 +145,21 @@ const historySchema = z.object({
   purchases: z.boolean().default(false),
 })
 
+/**
+ * Decision 21: the class waitlist from launch (spec-waitlist.md §8, §12a).
+ * Every class has a waitlist; how long it is, from 0, is a figure staff type
+ * into the portal. So nothing here is open: the switch is on, and a class or
+ * series still to come starts at 0 unless the studio names a figure for it.
+ */
+const waitlistSchema = z.object({
+  /** The studio switch, the `waitlist_enabled` flag: on, so a class's own figure decides. */
+  enabled: z.boolean().default(true),
+  /** How many may wait on a class or series still to come: its `capacity_waitlist`. 0 is no line until staff set one. */
+  capacity: z.number().int().min(0).default(0),
+  /** Class Type name → its own waitlist size, where that is not `capacity`. */
+  classTypes: z.record(z.string(), z.number().int().min(0)).default({}),
+})
+
 const staffSchema = z.object({
   /** The name as the phone book writes it; matched in any word order and case. */
   mindbodyName: z.string().min(1),
@@ -286,6 +301,8 @@ export const studioConfigSchema = z.object({
   series: z.array(seriesSchema).default([]),
   /** How far back to bring the studio's past, or `null` for none. */
   history: historySchema.nullable().default(null),
+  /** Decision 21: how long a class's line may be. Left out: the switch on, every class at 0. */
+  waitlist: waitlistSchema.default({}),
   policy: z
     .object({
       classWindowHours: z.number().int().min(0).default(24),
@@ -381,6 +398,7 @@ export type StudioConfig = {
     migrate: boolean
   }[]
   history: { from: string; purchases: boolean } | null
+  waitlist: { enabled: boolean; capacity: number; classTypes: Record<string, number> }
   policy: Parsed['policy']
   staff: (
     | {
@@ -621,6 +639,10 @@ export function validateConfig(raw: unknown): StudioConfig {
     })
   })
 
+  for (const name of Object.keys(c.waitlist.classTypes)) {
+    if (!typeNames.has(name.trim().toLowerCase())) problems.push(`waitlist.classTypes: "${name}" is no Class Type`)
+  }
+
   const roomSpellings = new Set(c.rooms.flatMap(r => [r.name ?? '', ...r.mindbodyNames]).map(s => s.trim().toLowerCase()))
   const classNames = new Set(c.classTypes.flatMap(t => [t.name ?? '', ...t.mindbodyNames]).map(normaliseClassName))
   c.rooms.forEach((r, i) => {
@@ -717,6 +739,8 @@ export function starterConfig(reports: MindbodyReports, asOf: string | null = nu
     // Nothing behind launch day, because that is the quick rehearsal. A studio
     // that wants its past writes `{ "from": "2019-01-01", "purchases": false }`.
     history: null,
+    // Decision 21: every class has a line, at 0 until staff (or the studio's answers) set a figure.
+    waitlist: { enabled: true, capacity: 0, classTypes: {} },
     policy: { classWindowHours: 24, ptWindowHours: 24, cancelCapCount: 3, cancelCapCycleDays: 30, ptBookInAdvanceDays: 7 },
     staff: reports.phoneBook.map(p => ({
       mindbodyName: p.name,

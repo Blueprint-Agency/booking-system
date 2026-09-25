@@ -6,9 +6,12 @@ import * as classesSvc from '../../../services/schedule/classes'
 import * as seriesSvc from '../../../services/schedule/series'
 import { getClassDetail, getPtSessionDetail } from '../../../services/schedule/detail'
 import { cancelClass } from '../../../services/bookings/cancel-class'
+import { staffBookClass } from '../../../services/bookings/book'
 import { cancelWorkshop } from '../../../services/workshops/cancel'
 import { workshopRow } from './workshops'
 import { tenantId } from '../../../middleware/tenant'
+import { classSeatsJson, seatFields, staffBookingJson, staffBookingSchema } from '../class-seats'
+import { classWaitlistRoutes } from '../class-waitlist'
 
 const isoDate = z
   .string()
@@ -205,6 +208,7 @@ function entryRow(e: timetable.ScheduleEntryRow) {
     ends_at: e.endsAt,
     capacity: e.capacity,
     booked_count: e.bookedCount,
+    ...seatFields(e),
     event_state: e.eventState,
     day_index: e.dayIndex,
     day_count: e.dayCount,
@@ -240,6 +244,8 @@ async function classRow(tenant: string, c: classesSvc.ClassRow) {
 }
 
 const app = new Hono()
+  // The class waitlist: put a member in line, Add to class, Remove (spec-waitlist.md §7).
+  .route('/', classWaitlistRoutes('admin'))
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
     const entries = await timetable.listSchedule(tenantId(c), {
@@ -278,15 +284,7 @@ const app = new Hono()
       capacity_waitlist: d.capacityWaitlist,
       capacity_buffer: d.capacityBuffer,
       credit_cost: d.creditCost,
-      booked_count: d.bookedCount,
-      attendees: d.attendees.map(a => ({
-        booking_id: a.bookingId,
-        client: a.client,
-        package_kind: a.packageKind,
-        credits_used: a.creditsUsed,
-        check_in_state: a.checkInState,
-        code: a.code,
-      })),
+      ...classSeatsJson(d),
       check_in_state: d.checkInState,
       created_at: d.createdAt.toISOString(),
       scheduled_by: d.scheduledBy,
@@ -323,6 +321,26 @@ const app = new Hono()
       check_in_state: d.checkInState,
     })
   })
+  // Book a member onto a class: a buffer seat, or an overbook seat when the
+  // buffer is full and the admin said so (spec-waitlist.md §7).
+  .post(
+    '/classes/:id/bookings',
+    zValidator('param', z.object({ id: z.string().uuid() })),
+    zValidator('json', staffBookingSchema),
+    async c => {
+      const { id } = c.req.valid('param')
+      const body = c.req.valid('json')
+      const res = await staffBookClass(tenantId(c), {
+        classId: id,
+        clientId: body.client_id,
+        role: 'admin',
+        actorStaffId: c.get('staffUserId'),
+        overbook: body.overbook,
+      })
+      c.set('auditTarget' as any, { table: 'bookings', id: res.bookingId })
+      return c.json(staffBookingJson(res), 201)
+    },
+  )
   .post('/classes', zValidator('json', createClassSchema), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')

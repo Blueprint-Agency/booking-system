@@ -142,9 +142,14 @@ Promotions are nested under their parent (class package, PT package, or workshop
 ### `schedule.ts` (workspace-scoped)
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/schedule` | Unified timetable: union of `classes`, `workshop_days` (one tile per day with `Day N/M` chip per `admin-restructure.md` §7c), confirmed `pt_sessions`. **Filtered to the active workspace location.** Query filters: `?instructor_id`, `?class_type_id`, `?from`, `?to`, `?type=class\|workshop\|pt`. Each row carries `event_state` computed at read time per `services/policy/event-state.ts`. |
+| GET | `/schedule` | Unified timetable: union of `classes`, `workshop_days` (one tile per day with `Day N/M` chip per `admin-restructure.md` §7c), confirmed `pt_sessions`. **Filtered to the active workspace location.** Query filters: `?instructor_id`, `?class_type_id`, `?from`, `?to`, `?type=class\|workshop\|pt`. Each row carries `event_state` computed at read time per `services/policy/event-state.ts`. `capacity` is **attendance capacity** (`capacity_online + capacity_buffer`; the waitlist is not a seat — `admin-restructure.md` §7d). Class rows add `attendance_capacity`, `online_used`, `buffer_used`, `overbook_used` and `attending` (every confirmed booking, also `booked_count`), and `waiting` (members in the class's live waitlist; the cell shows "+N waiting"); those six are `null` on every other kind. |
+| GET | `/schedule/classes/:id` | Class detail. Carries the same five seat fields, and each `attendees[]` row its `seat` (`online` \| `buffer` \| `overbook`) and `promoted_from_waitlist` (the booking is some `waitlist_entries.booking_id`). Every count is `services/bookings/seats.ts`. The waitlist (spec-waitlist §10): `waiting`, `waitlist_enabled` (the studio switch — off, the line still lists and can be worked) and `waitlist[]` in queue order `(joined_at, id)`: `{ entry_id, position, client: { id, name }, joined_at, payment_status }`, where `payment_status` is `{ status: 'pending', package_name }` or `{ status: 'cannot_pay', reason }` — package selection run at read time, nothing written. `services/waitlist/staff.ts:waitlistPanel`. |
+| POST | `/schedule/classes/:id/waitlist` | Put a member in a full class's line from Add member's prompt (spec-waitlist §7). Body `{ client_id }`. The member's own join (`services/waitlist/entries.ts:join`) with the same refusals in the same order (`waitlist_disabled`, `waitlist_closed`, `already_booked`, `already_waitlisted`, `class_not_full`, `waitlist_full`, the package-selection codes), plus `404 client_not_found`. `201 { entry_id, position }`; the staff member is the audit record. |
+| POST | `/schedule/classes/:id/waitlist/:entryId/promote` | **Add to class** (spec-waitlist §7). Body `{ overbook?: boolean }`. Books that waiting member whatever the Cancellation Window says: a free **online** seat, else a **buffer** seat, else an **overbook** seat when `overbook: true`. Paid for as any booking; the entry becomes `promoted` with `booking_id` and `resolved_by` = the staff id. The `class_waitlist_promoted` email goes only while the class is still outside the window (its free-cancel promise holds). `201 { booking_id, seat, qr_token, code }`. Refusals: `409 class_full { waitlist_open, waiting, capacity_waitlist }`; the package-selection codes (the member stays `waiting`); `409 already_booked`; `400 class_already_started`; `404 class_not_found` / `waitlist_entry_not_found`. |
+| DELETE | `/schedule/classes/:id/waitlist/:entryId` | **Remove** a waiting member: the entry becomes `removed`, `resolved_by` = the staff id; everyone behind moves up. `204`; `404 waitlist_entry_not_found` when it is no longer waiting. |
+| POST | `/schedule/classes/:id/bookings` | Book a member onto the class (spec-waitlist §7). Body `{ client_id, overbook?: boolean }`. The member's booking in every respect — package selection, debit, Activation, QR — except the seat: a **buffer** seat while one is free, else an **overbook** seat when `overbook: true`. `201 { booking_id, seat, qr_token, code }`. Refusals: `409 class_full { waitlist_open, waiting, capacity_waitlist }` (buffer full and no overbook; with `waitlist_open` the portal offers "Add to waitlist" — `POST …/waitlist` below); `409 already_booked`; the package-selection codes `insufficient_credits` / `location_not_covered` / `plan_expires_before_class`; `400 class_already_started`; `404 class_not_found` / `client_not_found` (a member of another studio, or blocked). |
 | POST | `/schedule/classes` | Create class instance. Body includes `capacity_online`, `capacity_waitlist`, `capacity_buffer` (the structured capacity per `admin-restructure.md` §7d) and optional `instructor_pay_sgd` (pay to the main instructor — see `payroll.ts`). `location_id` must be an active location. |
-| PATCH | `/schedule/classes/:id` | Edit (rejects if any confirmed bookings AND material change, e.g. moving start time more than 15 min) |
+| PATCH | `/schedule/classes/:id` | Edit (rejects if any confirmed bookings AND material change, e.g. moving start time more than 15 min). Lowering `capacity_online` below the **online** seats taken is `409 capacity_below_bookings { confirmed }`; buffer and overbook seats don't count against it. |
 | POST | `/schedule/classes/:id/cancel` | Admin cancellation — see §3b |
 | POST | `/schedule/series/preview` | **Class Series** preview. Body: `class_type_id`, `main_instructor_id`, `instructor_pay_sgd`, `supporting_instructors: [{ instructor_id, pay_sgd }]`, `location_id`, `room_id`, `weekday` (ISO 1 = Mon … 7 = Sun), `start_time` / `end_time` (`HH:MM`, Tenant-local), capacity triple, `credit_cost`, `first_date` / `last_date` (`YYYY-MM-DD`, at most a year apart), `excluded_dates`. Returns `{ dates: [{ date, starts_at, ends_at, clashes }], clash_count }` — `clashes` are `schedule_conflict` payloads (room, instructor, leave). |
 | POST | `/schedule/series` | Commit the same body: re-checks every date in one transaction and creates all classes (each with `series_id`) or none — `409 series_conflict { dates }`. Skipped dates are `excluded_dates`. `201 { series, class_ids }`. |
@@ -369,7 +374,7 @@ Block, unblock and sign-out are **per studio**: a login is one studio's own (ADR
 ### `feature-flags.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/feature-flags` | List rows |
+| GET | `/feature-flags` | List rows. A key with no row is off. Known keys: `waitlist_enabled` (class waitlists, spec-waitlist §8 — members can join a full class's line; off, joins are refused and existing lines still promote and can be worked). The portal's Features screen lists every known key with a one-line description. |
 | PATCH | `/feature-flags/:key` | `{ enabled: bool }`. Updates DB + invalidates `lib/feature-flags-cache.ts` (process-local). Multi-instance deployments require pub/sub trigger — deferred. |
 
 ---
@@ -586,11 +591,22 @@ Scoped to the authenticated instructor. The middleware loads `staff_users` then 
 |---|---|---|
 | GET | `/schedule` | All `classes` + confirmed `pt_sessions` + `workshops` where the instructor is assigned, with `event_state` computed |
 | GET | `/schedule/today` | Same, filtered to today (SGT) |
+| POST | `/schedule/classes/:id/bookings` | Book a member onto a class the caller is the **main** instructor of — the admin route's booking, into a **buffer** seat only. `overbook` in the body is ignored: an instructor never overbooks, so a full buffer is `409 class_full`. Another instructor's class is `403 not_your_session`. |
+| POST | `/schedule/classes/:id/waitlist` | The admin route's staff join, on a class the caller is the main instructor of. `403 not_your_session` otherwise. |
+| POST | `/schedule/classes/:id/waitlist/:entryId/promote` | The admin route's **Add to class**, on the caller's own class: online seat, else buffer, else `409 class_full`. `overbook` in the body is ignored. |
+| DELETE | `/schedule/classes/:id/waitlist/:entryId` | The admin route's **Remove**, on the caller's own class; `resolved_by` = the instructor's staff id. |
 
 ### `roster.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/sessions/:kind/:id/roster` | Rosters for own sessions only — service rejects with `403` if the session's instructor is not `ctx.instructor_id` |
+| GET | `/sessions/class/:id/roster` | A class the caller is the main instructor of: the admin class detail's seat fields, roster (`attendees[].seat` and `promoted_from_waitlist` included) and waitlist (`waiting`, `waitlist_enabled`, `waitlist[]`), without pay, series or scheduling provenance. `403 not_your_session` otherwise. `services/schedule/detail.ts:getOwnClassDetail`. |
+| GET | `/clients?q=` | Members of the studio matching `q` (name, email or phone; 1–100 chars), for Add member: `{ clients: [{ id, name, email }] }`, at most 10, blocked members left out. |
+
+### `catalog.ts`
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/catalog/class-types`, `/catalog/rooms` | The scheduling forms' pick lists, archived rows left out. |
+| GET | `/catalog/features` | `{ waitlist_enabled }` — the studio switch, so the capacity fields can label the Waitlist input "(waitlists are off)" (spec-waitlist §8). |
 
 ### `check-in.ts`
 | Method | Path | Effect |

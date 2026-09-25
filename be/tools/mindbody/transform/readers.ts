@@ -999,3 +999,53 @@ export function readAutopayDetail(html: string): AutopayRow[] {
     }]
   })
 }
+
+/* ── 45 Class Waitlists (scraped): who is waiting for a seat, in queue order ── */
+
+export type WaitlistRow = {
+  /** The class, as the Staff Schedule the download read it from names it. */
+  date: CalendarDate
+  start: ClockTime
+  description: string
+  /** `FIRST LAST`, as the Staff Schedule's section heading writes it. */
+  staff: string
+  /** Empty where the screen showed none (a guest with no profile): named in the preflight, never imported. */
+  clientId: string
+  client: string
+  /** Place in the class's line, 1 at the head, as the Class Sign In screen numbers it. */
+  position: number
+  /** How the screen says the seat would be paid (`Paid`, `Unpaid`, a pricing option): for a person, not read. */
+  paymentStatus: string
+}
+
+const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/
+const CLOCK_24 = /^(\d{1,2}):(\d{2})$/
+
+/**
+ * No Mindbody report has a class's waitlist: the download reads each future
+ * class's Class Sign In screen and writes this workbook itself
+ * (`../download/waitlists.ts`), one row per waiting client in queue order, so
+ * its dates and times are the plain `YYYY-MM-DD` and `HH:MM` it wrote them in.
+ */
+export function readWaitlists(rows: TableRow[]): WaitlistRow[] {
+  const { at, columns } = header(rows, 'Class Waitlists', ['Class date', 'Start', 'Description', 'Staff', 'Client ID', 'Position'])
+  const out: WaitlistRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const id = clientId(row, columns, 'Client ID')
+    const day = ISO_DAY.exec(cell(row, columns, 'Class date'))
+    const clock = CLOCK_24.exec(cell(row, columns, 'Start'))
+    const position = Number(cell(row, columns, 'Position'))
+    if (!day || !clock || !Number.isInteger(position) || position < 1) continue
+    out.push({
+      date: { year: Number(day[1]), month: Number(day[2]), day: Number(day[3]) },
+      start: { hour: Number(clock[1]), minute: Number(clock[2]) },
+      description: tidy(cell(row, columns, 'Description')),
+      staff: tidy(cell(row, columns, 'Staff')),
+      clientId: id ?? '',
+      client: tidy(cell(row, columns, 'Client')),
+      position,
+      paymentStatus: tidy(cell(row, columns, 'Payment status')),
+    })
+  }
+  return out
+}

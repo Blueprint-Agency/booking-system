@@ -1,7 +1,7 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { classes } from '../../db/schema'
-import { bookings } from '../../db/schema/bookings'
+import { countSeats } from '../bookings/seats'
 import { assertRoomAvailable, assertRoomInLocation } from './room-conflicts'
 import { assertInstructorsAvailable, plannedInstructorIds } from './occupancy'
 import { computeEventState } from '../policy/event-state'
@@ -154,21 +154,12 @@ export async function updateClass(
   })
   if (state !== 'scheduled') throw new ConflictError(`class_${state}`)
 
-  // Capacity can't drop below the people already holding a seat.
+  // Online capacity can't drop below the members already holding an online seat.
+  // Buffer and overbook seats are staff's and don't count against it.
   if (patch.capacityOnline !== undefined) {
-    const [seats] = await db
-      .select({ cnt: sql<number>`count(*)::int` })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.tenantId, tenantId),
-          eq(bookings.classId, id),
-          eq(bookings.state, 'confirmed'),
-        ),
-      )
-    const confirmed = Number(seats?.cnt ?? 0)
-    if (patch.capacityOnline < confirmed) {
-      throw new ConflictError('capacity_below_bookings', { confirmed })
+    const { onlineUsed } = await countSeats(db, tenantId, id)
+    if (patch.capacityOnline < onlineUsed) {
+      throw new ConflictError('capacity_below_bookings', { confirmed: onlineUsed })
     }
   }
 

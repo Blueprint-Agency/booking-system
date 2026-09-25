@@ -64,6 +64,20 @@ Unauthenticated. Cache-friendly (HTTP `Cache-Control: public, max-age=60` where 
 
 Resolution is server-side via `services/promotions/resolve.ts:bestPriceFor(parent_type, parent_id)` — best-price-wins, deterministic tie-break on lowest `sort_id` (`fe-client-features.md` §6.1). The client never recomputes prices.
 
+**Waitlist shape** — every class in `/classes`, `/classes/:id` and the authenticated `/me/classes` carries its line (`spec-waitlist.md` §9):
+
+```jsonc
+"waitlist": {
+  "enabled": true,        // the studio's `waitlist_enabled` feature flag; unset is off
+  "capacity": 5,          // capacity_waitlist
+  "waiting": 2,           // live entries: `waiting` on a class that has not started
+  "open": true,           // enabled, class active, before the Cancellation Window, waiting < capacity
+  "my_entry": { "id": "…", "position": 2 } // the signed-in member's own place; always null on the public route
+}
+```
+
+The member app offers "Join waitlist" when `spots_left = 0` and `open`, and shows "On waitlist · #N" when `my_entry` is set.
+
 ### `marketing.ts`
 | Method | Path | Effect |
 |---|---|---|
@@ -112,6 +126,15 @@ Same shape as `routes/public/catalog.ts` but adds:
 | POST | `/bookings/class` | `{ class_id, use_credits? }` — see §4a class booking flow. The server picks the package; `use_credits: true` is the one exception (spec §2), asking to pay with credits for a class the member's Unlimited Plan does not cover. |
 | POST | `/bookings/workshop` | `{ workshop_id, workshop_tier_id }` — initiates Stripe checkout; see §4b |
 | DELETE | `/bookings/:id` | Self-cancel — see §4c |
+
+### `waitlist.ts` (class waitlist, `spec-waitlist.md` §4, §6)
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/waitlist` | The member's live places in line, soonest class first: `{ entries: [{ id, class_id, name, instructor, location, starts_at, ends_at, joined_at, position }] }`. An entry on a class that has started is not listed. |
+| POST | `/waitlist/classes/:classId` | Join a full class's line → `201 { entry_id, position }`. No credit is debited and no package activated; the package is chosen again at promotion. Refusals, in this order, under the class row lock: `409 waitlist_disabled` (studio flag off) · `404 class_not_found` · `409 waitlist_closed { window_hours }` (the class starts within the Cancellation Window) · `409 already_booked` · `409 already_waitlisted` · `409 class_not_full` (a seat is free — book it) · `409 waitlist_full` · `409` with the booking's package-selection reason (`insufficient_credits`, `location_not_covered`, `plan_expires_before_class`). |
+| DELETE | `/waitlist/:entryId` | Leave the line → `204`, entry `withdrawn`. Not a cancellation: no `cancellations` row, no inbox item, nothing against the cap. `404 waitlist_entry_not_found` for an entry that is not the member's, not waiting, or on a class that has started. |
+
+**Promotion** is not a route: `cancelBooking` runs it (§4c step 10). Booking a class by hand while waiting on it (`POST /bookings/class`) closes the member's entry as `withdrawn`.
 
 ### `pt-sessions.ts` (verification gate applies)
 
@@ -297,8 +320,15 @@ tx start
 7. INSERT cancellations: source='client', was_within_window, was_within_cap, refund_fired (boolean per outcome), kind
 8. INSERT inbox_items: type='client_cancellation', payload={ ... }
 9. enqueueEmail per refund_outcome → 'class_cancelled_credit_returned' / 'class_cancelled_forfeited' / 'pt_cancelled_session_returned' / 'pt_cancelled_forfeited'
+10. kind='class' AND booking.seat='online': services/waitlist/promote.ts:promoteFromWaitlist(tx, class_id, now)
+    — outside the Cancellation Window only; fills free online seats from the line in (joined_at, id)
+    order through the same booking path as POST /bookings/class; a member whose package cannot pay
+    stays `waiting`. A buffer or overbook seat promotes nobody.
 tx commit
+11. 'class_waitlist_promoted' email to each promoted member (after commit, best-effort)
 ```
+
+Every cancel of a class booking goes through this service — admin single-cancel, and the Refund and complimentary-removal unwinds (`packageVoided`) — so each promotes the same way.
 
 The cap evaluation (step 4) is the load-bearing call. It reads `cancellations WHERE client_id=me AND source='client' AND cancelled_at >= now() - cycle_days` and counts. The admin path (`be-portal.md` §3b) bypasses this — admins always get full refund and admin cancellations are excluded from cap by the `source='admin'` filter.
 

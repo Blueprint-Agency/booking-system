@@ -10,11 +10,13 @@ import { purchases } from './ledger'
 import {
   bookingKindEnum,
   bookingStateEnum,
+  bookingSeatEnum,
   refundOutcomeEnum,
   checkinStateEnum,
   cancellationKindEnum,
   cancellationSourceEnum,
   checkinMethodEnum,
+  waitlistStatusEnum,
 } from '../enums'
 
 export const bookings = pgTable(
@@ -45,6 +47,10 @@ export const bookings = pgTable(
       onDelete: 'restrict',
     }),
     state: bookingStateEnum('state').notNull().default('confirmed'),
+    // The seat a class booking holds (spec-waitlist.md §2). Counted only by
+    // `services/bookings/seats.ts`. The default is the backfill: every class
+    // booking before this column came through the member route.
+    seat: bookingSeatEnum('seat').notNull().default('online'),
     // Workshop money, frozen at purchase (§15). Required for kind = 'workshop',
     // null for every other kind — class and PT bookings are paid for by a package
     // and their money stays on the client_packages row. A free workshop records a
@@ -164,5 +170,49 @@ export const checkIns = pgTable(
     checkedInByStaffIdFkIdx: index('check_ins_checked_in_by_staff_id_fk_idx').on(table.checkedInByStaffId),
     tenantIdFkIdx: index('check_ins_tenant_id_fk_idx').on(table.tenantId),
     bookingUnique: uniqueIndex('check_ins_booking_unique').on(table.bookingId),
+  }),
+)
+
+/**
+ * A member's place in a class's waitlist (spec-waitlist.md §3). Not a booking:
+ * it holds no seat and has spent nothing. The line is the `waiting` rows of one
+ * class ordered by `(joined_at, id)`; a position is counted at read time and
+ * never stored. `services/waitlist/` is the only writer.
+ */
+export const waitlistEntries = pgTable(
+  'waitlist_entries',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    classId: uuid('class_id')
+      .notNull()
+      .references(() => classes.id, { onDelete: 'restrict' }),
+    status: waitlistStatusEnum('status').notNull().default('waiting'),
+    joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+    /** When the entry left `waiting`. */
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    /** The booking a promotion made. Set only on `promoted`. */
+    bookingId: uuid('booking_id').references(() => bookings.id, { onDelete: 'restrict' }),
+    /** Who resolved it, for the audit trail: `system`, `client`, or a staff id. */
+    resolvedBy: text('resolved_by'),
+  },
+  table => ({
+    bookingIdFkIdx: index('waitlist_entries_booking_id_fk_idx').on(table.bookingId),
+    classIdFkIdx: index('waitlist_entries_class_id_fk_idx').on(table.classId),
+    clientIdFkIdx: index('waitlist_entries_client_id_fk_idx').on(table.clientId),
+    classLineIdx: index('waitlist_entries_class_line_idx').on(table.tenantId, table.classId, table.status, table.joinedAt),
+    clientIdx: index('waitlist_entries_client_idx').on(table.tenantId, table.clientId, table.status),
+    // One place in a class's line per member. Partial: the same member may have
+    // left, been removed or been promoted before and join again.
+    oneWaitingUnique: uniqueIndex('waitlist_entries_one_waiting_unique')
+      .on(table.tenantId, table.classId, table.clientId)
+      .where(sql`${table.status} = 'waiting'`),
+    promotedHasBooking: check(
+      'waitlist_entries_promoted_booking',
+      sql`(${table.status} = 'promoted') = (${table.bookingId} IS NOT NULL)`,
+    ),
   }),
 )

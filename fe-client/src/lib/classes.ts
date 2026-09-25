@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMemberSession } from "./member-auth";
-import { ApiError, publicApi, useApi } from "./api";
+import { ApiError, publicApi, useApi, type Api } from "./api";
+import type { ApiClassWaitlist } from "./waitlist";
 
 export interface ApiClassLocation {
   id: string;
@@ -29,6 +30,8 @@ export interface ApiClassCard {
   spots_left: number;
   lifecycle: string;
   is_booked?: boolean;
+  /** The class's line (spec-waitlist.md §9). `my_entry` is null when signed out. */
+  waitlist: ApiClassWaitlist;
 }
 
 export interface ApiLocationFull {
@@ -47,10 +50,22 @@ export interface ClassFilters {
   to?: string;
 }
 
+function fetchClasses(api: Api, signedIn: boolean, filters: ClassFilters): Promise<ApiClassCard[]> {
+  const query: Record<string, string> = {};
+  for (const [k, v] of Object.entries(filters)) if (v) query[k] = v;
+  return (
+    signedIn
+      ? api.get<{ classes: ApiClassCard[] }>("/me/classes", query)
+      : publicApi.get<{ classes: ApiClassCard[] }>("/public/classes", query)
+  ).then((res) => res.classes);
+}
+
 export function useClasses(filters: ClassFilters): {
   data: ApiClassCard[] | null;
   loading: boolean;
   error: ApiError | Error | null;
+  /** Re-read the feed in place — no loading state, so rows update rather than blink. */
+  refresh: () => Promise<void>;
 } {
   const { isLoaded, isSignedIn } = useMemberSession();
   const api = useApi();
@@ -69,14 +84,10 @@ export function useClasses(filters: ClassFilters): {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const query: Record<string, string> = {};
-    for (const [k, v] of Object.entries(filters)) if (v) query[k] = v;
     (async () => {
       try {
-        const res = signedIn
-          ? await api.get<{ classes: ApiClassCard[] }>("/me/classes", query)
-          : await publicApi.get<{ classes: ApiClassCard[] }>("/public/classes", query);
-        if (!cancelled) setData(res.classes);
+        const classes = await fetchClasses(api, signedIn, filters);
+        if (!cancelled) setData(classes);
       } catch (err) {
         if (!cancelled) setError(err as Error);
       } finally {
@@ -89,7 +100,16 @@ export function useClasses(filters: ClassFilters): {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedIn, api, key]);
 
-  return { data, loading, error };
+  const refresh = useCallback(async () => {
+    try {
+      setData(await fetchClasses(api, signedIn, filters));
+    } catch {
+      // The rows keep what they showed; the next action re-checks with the server.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn, api, key]);
+
+  return { data, loading, error, refresh };
 }
 
 /**

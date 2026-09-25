@@ -3,7 +3,12 @@ import path from 'node:path'
 import type { Download, Page } from 'playwright-core'
 import { dmy, jobBase, manifestPattern, pad2, reportPrefix, reportsDir, resolveTokens, ymd, type PlannedReport, type RunDates } from './plan'
 import type { FieldSet, Report, ReportOverride, StepName } from './reports'
+import { REPORTS as TRANSFORM_READS } from '../transform/transform'
+import { readStaffSchedule } from '../transform/readers'
+import type { TableRow } from '../transform/html-table'
+import { isoClock, isoDay } from '../transform/values'
 import { BASE } from './session'
+import { futureClasses, matchSignInLinks, readWaitlistSection, waitlistSheet, type DayLink, type FutureClass, type WaitingClient } from './waitlists'
 import { writeXlsx } from './xlsx-write'
 
 /**
@@ -38,6 +43,8 @@ export type EngineOptions = {
   timeout: number
   /** Simultaneous date-piece requests: MB_PARALLEL, default 6. */
   parallel: number
+  /** The studio's timezone (MB_TIMEZONE): which classes are still to come. */
+  timeZone: string
 }
 
 export function createEngine(o: EngineOptions) {
@@ -184,6 +191,7 @@ export function createEngine(o: EngineOptions) {
   }
 
   async function runScrape(r: Job, set: FieldSet, base: string): Promise<string> {
+    if (r.perClass) return runClassWaitlists(r, base)
     await load(r.path)
     if (r.set) {
       await setFields(set)
@@ -199,6 +207,75 @@ export function createEngine(o: EngineOptions) {
     if (!tables.length) throw new Error('no tables found to scrape')
     const rows: string[][] = []
     for (const t of tables) rows.push(...t, [])
+    const file = path.join(OUT, `${base}.xlsx`)
+    writeFileSync(file, await writeXlsx(rows, r.name))
+    return file
+  }
+
+  /**
+   * Every future class's Waitlist section (`./waitlists.ts`). The classes are
+   * the Staff Schedule this download already wrote; each day's class list gives
+   * their sign-in links, and each sign-in screen its line. A class whose link
+   * cannot be found, or whose screen has no Waitlist section to read, fails the
+   * report: an unread line is not an empty one.
+   */
+  async function runClassWaitlists(r: Job, base: string): Promise<string> {
+    if (!o.timeZone) throw new Error('MB_TIMEZONE is not set: it says which classes are still to come')
+    const scheduleFile = readdirSync(OUT, { recursive: true, encoding: 'utf8' }).find(f => TRANSFORM_READS.schedule.test(path.basename(f)))
+    if (!scheduleFile) throw new Error('no Staff Schedule (ALL, Scheduled) in this download yet: it is what says which classes to read')
+    const classes = futureClasses(readStaffSchedule(readFileSync(path.join(OUT, scheduleFile), 'utf8')), new Date(), o.timeZone)
+    const byDay = new Map<string, FutureClass[]>()
+    for (const c of classes) byDay.set(isoDay(c.date), [...(byDay.get(isoDay(c.date)) ?? []), c])
+    const named = (c: FutureClass) => `${c.description} ${isoDay(c.date)} ${isoClock(c.start)}`
+    const lines: { cls: FutureClass; waiting: WaitingClient[] }[] = []
+    const unfound: string[] = []
+    let unread = 0
+    let read = 0
+    for (const dayClasses of byDay.values()) {
+      const d = dayClasses[0]!.date
+      await load(`${r.path}?date=${d.month}/${d.day}/${d.year}`)
+      const links: DayLink[] = await page.evaluate(() =>
+        [...document.querySelectorAll('a[href]')].map((a: any) => {
+          const url = new URL(a.getAttribute('href'), location.href)
+          return {
+            href: url.pathname + url.search,
+            rowText: String((a.closest('tr') ?? a.parentElement)?.innerText ?? a.innerText).replace(/\s+/g, ' ').trim(),
+          }
+        }))
+      const { found, missing } = matchSignInLinks(dayClasses, links)
+      unfound.push(...missing.map(c => `${named(c)} (no sign-in link on its day's class list)`))
+      for (const { cls, href } of found) {
+        await load(href)
+        // The section is found by its heading, and read from the first table after it.
+        const section: TableRow[] | null = await page.evaluate(() => {
+          const heading = [...document.querySelectorAll('h1,h2,h3,h4,h5,th,td,div,span,b,strong,legend')]
+            .find((e: any) => /^\s*wait\s*-?\s*list\b/i.test(String(e.innerText ?? '')) && String(e.innerText).length < 60)
+          if (!heading) return null
+          const tables = [...document.querySelectorAll('table')].filter((t: any) =>
+            (heading.compareDocumentPosition(t) & 4) !== 0 && !t.contains(heading) && !t.querySelector('table'))
+          const table: any = tables[0]
+          if (!table) return []
+          return [...table.rows].map((tr: any) => ({
+            cells: [...tr.cells].map((td: any) => String(td.innerText).replace(/\s+/g, ' ').trim()),
+            links: [...tr.cells].map((td: any) => td.querySelector('a[href]')?.getAttribute('href') ?? null),
+          }))
+        })
+        if (section === null) {
+          unfound.push(`${named(cls)} (no Waitlist section on ${href})`)
+          continue
+        }
+        const { waiting, unread: missed } = readWaitlistSection(section)
+        unread += missed
+        read++
+        if (waiting.length) lines.push({ cls, waiting })
+      }
+    }
+    if (unfound.length) {
+      throw new Error(`${unfound.length} of ${classes.length} future classes could not be read: ${unfound.slice(0, 5).join('; ')}${unfound.length > 5 ? '; …' : ''}`)
+    }
+    if (unread) console.log(`   WARNING ${unread} waiting row(s) showed no client id: written with none, and named in the preflight`)
+    const rows = waitlistSheet(lines)
+    console.log(`   ${read} classes read, ${lines.length} with a waitlist, ${rows.length - 1} waiting`)
     const file = path.join(OUT, `${base}.xlsx`)
     writeFileSync(file, await writeXlsx(rows, r.name))
     return file

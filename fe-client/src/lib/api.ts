@@ -34,6 +34,16 @@ export class ApiError extends Error {
   }
 }
 
+/** The `error` code a refusal's body carries, or "" for anything else. */
+export function apiErrorCode(err: unknown): string {
+  return err instanceof ApiError &&
+    err.body &&
+    typeof err.body === "object" &&
+    "error" in err.body
+    ? String((err.body as { error: unknown }).error)
+    : "";
+}
+
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;

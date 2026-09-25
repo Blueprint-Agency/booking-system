@@ -2,7 +2,8 @@ import type { BookingCoder } from './booking-codes'
 import { ConfigError, type StudioConfig } from './config'
 import { fold, roomFor, type ConfigLookups } from './lookups'
 import { ptAppointmentRows, ptClients, ptRates } from './pt'
-import type { HoldingRow, PayRateRow, PayrollRow, RosterRow, ScheduledClassRow } from './readers'
+import type { HoldingRow, PayRateRow, PayrollRow, RosterRow, ScheduledClassRow, WaitlistRow } from './readers'
+import { mapWaitlists } from './waitlists'
 import {
   dayNumber,
   isoClock,
@@ -42,6 +43,8 @@ export type MappedSchedule = {
   ptSessions: Row[]
   ptSessionClients: Row[]
   bookings: Row[]
+  /** The live waitlists: a `waiting` entry per member in each future class's line. */
+  waitlistEntries: Row[]
   /** What a person should look at: a booking with no class, a class over its capacity, a series with nothing to link. */
   notes: string[]
 }
@@ -49,6 +52,8 @@ export type MappedSchedule = {
 export function mapSchedule(input: {
   schedule: ScheduledClassRow[]
   roster: RosterRow[]
+  /** Who is waiting on each future class; null where the download has no such file. */
+  waitlists: WaitlistRow[] | null
   payRates: PayRateRow[]
   /** What each teacher was paid, and on what rate: where a future PT session's rate comes from. */
   payroll: PayrollRow[]
@@ -122,6 +127,7 @@ export function mapSchedule(input: {
     roomId: string | null
     typeId: string
     capacity: number
+    waitlist: number
     label: string
   }
   const classes = new Map<string, Class>()
@@ -189,7 +195,8 @@ export function mapSchedule(input: {
       starts_at: startsAt.toISOString(),
       ends_at: endsAt.toISOString(),
       capacity_online: capacity,
-      capacity_waitlist: 0,
+      // Decision 21: the studio's waitlist size, the Class Type's own where it has one.
+      capacity_waitlist: type.waitlist,
       capacity_buffer: 0,
       credit_cost: 1,
       // No per-class rate for this teacher: Unpriced, for an admin to settle.
@@ -210,6 +217,7 @@ export function mapSchedule(input: {
       roomId: room?.id ?? null,
       typeId: type.id,
       capacity,
+      waitlist: type.waitlist,
       label,
     }
     classes.set(key, cls)
@@ -395,6 +403,25 @@ export function mapSchedule(input: {
     if (booked > cls.capacity) notes.push(`${cls.label}: ${booked} booked into ${cls.capacity} seats — check the capacity in the config`)
   }
 
+  /* ── Who is waiting for a seat (`./waitlists.ts`) ──────────────────────── */
+
+  const timeKeyOf = (r: { date: CalendarDate; start: ClockTime; description: string }) =>
+    `${isoDay(r.date)} ${isoClock(r.start)} ${normaliseClassName(r.description)}`
+  const waitlists = mapWaitlists({
+    waitlists: input.waitlists,
+    asOf,
+    timeZone: tz,
+    tenantId,
+    id,
+    ids,
+    memberNames,
+    classFor: r => classes.get(`${timeKeyOf(r)} ${normaliseStaffName(r.staff)}`) ?? byTime.get(timeKeyOf(r)) ?? undefined,
+    seated: (classId, clientId) => seated.get(classId)?.has(clientId) ?? false,
+    booked: classId => seated.get(classId)?.size ?? 0,
+    isWorkshop: r => workshopTimes.has(timeKeyOf(r)),
+  })
+  notes.push(...waitlists.notes)
+
   /* ── Future PT appointments ────────────────────────────────────────────── */
 
   const ptRequests: Row[] = []
@@ -563,7 +590,8 @@ export function mapSchedule(input: {
       start_time: `${s.startTime}:00`,
       end_time: `${s.endTime}:00`,
       capacity_online: type.capacity ?? room.capacity,
-      capacity_waitlist: 0,
+      // What every class an extend adds will offer, as the imported ones do.
+      capacity_waitlist: type.waitlist,
       capacity_buffer: 0,
       credit_cost: 1,
       first_date: isoDay(first),
@@ -586,6 +614,7 @@ export function mapSchedule(input: {
     ptSessions,
     ptSessionClients,
     bookings,
+    waitlistEntries: waitlists.entries,
     notes,
   }
 }

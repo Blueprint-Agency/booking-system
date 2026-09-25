@@ -17,6 +17,9 @@ import {
 } from '../../db/schema'
 import { computeEventState, type EventState } from '../policy/event-state'
 import { combinedInstructorIds } from './lineup'
+import { attendanceCapacity, countSeatsByClass, seatsOf, type SeatCounts } from '../bookings/seats'
+import { waitingCounts } from '../waitlist/line'
+import { now as clockNow } from '../../lib/clock'
 
 export type ScheduleKind = 'class' | 'workshop' | 'pt' | 'corporate'
 
@@ -38,10 +41,17 @@ export interface ScheduleEntryRow {
   roomId: string | null
   startsAt: string
   endsAt: string
-  /** Null for corporate sessions (no capacity model). */
+  /**
+   * Attendance capacity — online plus buffer seats; the waitlist is not a seat
+   * (spec-waitlist.md §1). Null for corporate sessions (no capacity model).
+   */
   capacity: number | null
-  /** Null for corporate sessions (no attendee roster). */
+  /** Null for corporate sessions (no attendee roster). For a class, every confirmed booking. */
   bookedCount: number | null
+  /** A class's seats by kind, from `services/bookings/seats`. Null for every other kind. */
+  seats: SeatCounts | null
+  /** How many are in a class's waitlist; the timetable shows "+N waiting". Null for every other kind. */
+  waiting: number | null
   eventState: EventState
   dayIndex: number | null
   dayCount: number | null
@@ -113,21 +123,8 @@ export async function listSchedule(
       .where(and(...conds))
 
     const ids = rows.map(r => r.id)
-    const counts = ids.length
-      ? await db
-          .select({ classId: bookings.classId, cnt: sql<number>`count(*)::int` })
-          .from(bookings)
-          .where(
-            and(
-              eq(bookings.tenantId, tenantId),
-              inArray(bookings.classId, ids),
-              eq(bookings.state, 'confirmed'),
-            ),
-          )
-          .groupBy(bookings.classId)
-      : []
-    const bookedByClass = new Map<string, number>()
-    for (const c of counts) if (c.classId) bookedByClass.set(c.classId, Number(c.cnt))
+    const seatsByClass = await countSeatsByClass(db, tenantId, ids)
+    const waitingByClass = await waitingCounts(tenantId, ids, clockNow())
 
     const supportingByClass = new Map<string, string[]>()
     if (ids.length) {
@@ -153,6 +150,7 @@ export async function listSchedule(
 
     for (const r of rows) {
       const supporting = supportingByClass.get(r.id) ?? []
+      const seats = seatsOf(seatsByClass, r.id)
       out.push({
         kind: 'class',
         id: r.id,
@@ -166,8 +164,10 @@ export async function listSchedule(
         roomId: r.roomId,
         startsAt: r.startsAt.toISOString(),
         endsAt: r.endsAt.toISOString(),
-        capacity: r.capacityOnline + r.capacityWaitlist + r.capacityBuffer,
-        bookedCount: bookedByClass.get(r.id) ?? 0,
+        capacity: attendanceCapacity(r),
+        bookedCount: seats.attending,
+        seats,
+        waiting: waitingByClass.get(r.id) ?? 0,
         eventState: computeEventState({
           startsAt: r.startsAt,
           endsAt: r.endsAt,
@@ -289,8 +289,10 @@ export async function listSchedule(
         roomId: r.roomId,
         startsAt: r.startsAt.toISOString(),
         endsAt: r.endsAt.toISOString(),
-        capacity: r.capacityOnline + r.capacityWaitlist + r.capacityBuffer,
+        capacity: attendanceCapacity(r),
         bookedCount: bookedByWorkshop.get(r.workshopId) ?? 0,
+        seats: null,
+        waiting: null,
         eventState: computeEventState({
           startsAt: r.startsAt,
           endsAt: r.endsAt,
@@ -366,8 +368,10 @@ export async function listSchedule(
         roomId: r.roomId,
         startsAt: r.startsAt.toISOString(),
         endsAt: r.endsAt.toISOString(),
-        capacity: r.capacityOnline + r.capacityWaitlist + r.capacityBuffer,
+        capacity: attendanceCapacity(r),
         bookedCount: names.length,
+        seats: null,
+        waiting: null,
         eventState: computeEventState({
           startsAt: r.startsAt,
           endsAt: r.endsAt,
@@ -458,6 +462,8 @@ export async function listSchedule(
         endsAt: r.endsAt.toISOString(),
         capacity: null,
         bookedCount: null,
+        seats: null,
+        waiting: null,
         eventState: computeEventState({
           startsAt: r.startsAt,
           endsAt: r.endsAt,

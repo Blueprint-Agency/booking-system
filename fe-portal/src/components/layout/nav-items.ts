@@ -14,6 +14,7 @@ import {
   HandHeart,
   Users,
   FileText,
+  ToggleRight,
   UserCog,
   Wallet,
   HandCoins,
@@ -94,6 +95,7 @@ export const NAV_ITEMS: NavItem[] = [
   // --- Settings (location-independent policy + config) ---
   { group: "Settings", label: "Global Policy", href: "/admin/policy", icon: Shield, scope: "global" },
   { group: "Settings", label: "Waiver", href: "/admin/waiver", icon: FileText, scope: "global" },
+  { group: "Settings", label: "Features", href: "/admin/feature-flags", icon: ToggleRight, scope: "global" },
 ];
 
 export const NAV_GROUP_ORDER: NavGroup[] = ["Finance", "Config", "Packages", "People", "Settings"];

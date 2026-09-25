@@ -15,6 +15,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatTime, todayIso } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
+import { waitingTag } from "@/lib/class-waitlist";
 
 interface ScheduleEntry {
   kind: "class" | "workshop" | "pt" | "corporate";
@@ -28,6 +29,8 @@ interface ScheduleEntry {
   ends_at: string;
   capacity: number | null;
   booked_count: number | null;
+  /** How many are in a class's waitlist; null for every other kind. */
+  waiting: number | null;
   event_state: string;
 }
 
@@ -120,10 +123,13 @@ export default function InstructorSchedulePage() {
 
   const todayKey = todayIso();
 
+  // A class this instructor leads: its session page (roster, Add member) and
+  // its cancel are theirs. Supporting on someone else's class grants neither.
+  const ownsClass = (e: ScheduleEntry) =>
+    e.kind === "class" && !!currentStaff && e.main_instructor_id === currentStaff.id;
+
   const canCancel = (e: ScheduleEntry) =>
-    e.kind === "class" &&
-    !!currentStaff &&
-    e.main_instructor_id === currentStaff.id &&
+    ownsClass(e) &&
     e.event_state !== "cancelled" &&
     e.event_state !== "completed";
 
@@ -201,7 +207,16 @@ export default function InstructorSchedulePage() {
                     className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium text-ink">{e.label}</div>
+                      {ownsClass(e) ? (
+                        <Link
+                          href={`/instructor/schedule/class/${e.id}`}
+                          className="block truncate font-medium text-ink hover:text-accent"
+                        >
+                          {e.label}
+                        </Link>
+                      ) : (
+                        <div className="truncate font-medium text-ink">{e.label}</div>
+                      )}
                       <div className="text-xs text-muted">
                         {formatTime(e.starts_at)}–{formatTime(e.ends_at)}
                         {e.location_id
@@ -215,6 +230,9 @@ export default function InstructorSchedulePage() {
                         <span className="text-xs tabular-nums text-muted">
                           {e.booked_count ?? 0}/{e.capacity}
                         </span>
+                      )}
+                      {waitingTag(e.waiting) && (
+                        <span className="text-xs tabular-nums text-warning">{waitingTag(e.waiting)}</span>
                       )}
                       <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
                         {KIND_LABEL[e.kind]}

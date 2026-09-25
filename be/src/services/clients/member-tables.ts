@@ -75,6 +75,9 @@ const ACCOUNTS =
 export const MEMBER_TABLES: readonly MemberTable[] = [
   { table: 'clients', columns: ['id'], where: m => sql`id = ${m.clientId}` },
   byClientId('bookings'),
+  // Their places in class waitlists. After `bookings`, which a promoted entry
+  // points at, so deletion reaches it first.
+  byClientId('waitlist_entries'),
   byClientId('cancellations'),
   {
     table: 'check_ins',

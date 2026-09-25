@@ -111,6 +111,16 @@ export const corporateRequestStatusEnum = pgEnum('corporate_request_status', [
 // Bookings
 export const bookingKindEnum = pgEnum('booking_kind', ['class', 'workshop', 'pt'])
 export const bookingStateEnum = pgEnum('booking_state', ['confirmed', 'cancelled', 'no_show'])
+// Which kind of seat a class booking sits in (spec-waitlist.md §2): `online` is
+// one of `capacity_online`, booked by the member (or a waitlist promotion);
+// `buffer` is one of `capacity_buffer`, filled only by staff; `overbook` is an
+// admin's booking past both. Workshop and PT bookings stay `online`, unread.
+export const bookingSeatEnum = pgEnum('booking_seat', ['online', 'buffer', 'overbook'])
+// A class waitlist entry (spec-waitlist.md §3). Only `waiting` is in the line;
+// every other state is how it left: booked into a seat (`promoted`), left by the
+// member (`withdrawn`), taken out by staff or a class cancel (`removed`), or
+// still waiting when the class started (`expired`).
+export const waitlistStatusEnum = pgEnum('waitlist_status', ['waiting', 'promoted', 'withdrawn', 'removed', 'expired'])
 export const refundOutcomeEnum = pgEnum('refund_outcome', [
   'credit_returned',
   'session_returned',
@@ -234,6 +244,8 @@ export type PtRequestStatus = (typeof ptRequestStatusEnum.enumValues)[number]
 export type CorporateRequestStatus = (typeof corporateRequestStatusEnum.enumValues)[number]
 export type BookingKind = (typeof bookingKindEnum.enumValues)[number]
 export type BookingState = (typeof bookingStateEnum.enumValues)[number]
+export type BookingSeat = (typeof bookingSeatEnum.enumValues)[number]
+export type WaitlistStatus = (typeof waitlistStatusEnum.enumValues)[number]
 export type Lifecycle = (typeof lifecycleEnum.enumValues)[number]
 export type LeaveType = (typeof leaveTypeEnum.enumValues)[number]
 export type LeaveStatus = (typeof leaveStatusEnum.enumValues)[number]

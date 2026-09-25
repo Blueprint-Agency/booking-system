@@ -25,6 +25,7 @@ import {
   readSales,
   readStaffSchedule,
   readVisitsRemaining,
+  readWaitlists,
 } from './readers'
 import { readXlsxTable } from './xlsx'
 
@@ -76,6 +77,8 @@ export const REPORTS = {
   autopay: { label: 'Autopay Detail', test: (f: string) => /autopay detail/i.test(f) },
   // How each sale was paid (Reports → Sales → Sales). Anchored: "Big Spenders - Detail Accrual" is another report.
   saleMethods: { label: 'Sales — Detail Accrual', test: (f: string) => /^\d+ sales - detail accrual\.[a-z]+$/i.test(f) },
+  // Who is waiting for a seat on each future class: scraped by the download, since no report has it.
+  waitlists: { label: 'Class Waitlists', test: (f: string) => /class waitlists/i.test(f) },
 } as const
 
 /**
@@ -104,6 +107,8 @@ export const REPORT_RULES: Record<keyof typeof REPORTS, { single: boolean; requi
   promotions: { single: true, required: false },
   autopay: { single: true, required: false },
   saleMethods: { single: true, required: false },
+  // Not required, so a download from before it still transforms; its absence is a preflight line.
+  waitlists: { single: true, required: false },
 }
 
 async function filesUnder(dir: string): Promise<string[]> {
@@ -172,6 +177,8 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
   const autopayFile = optional('autopay')
   // Optional: a download older than it has no payment methods.
   const saleMethodsFile = optional('saleMethods')
+  // Optional: a download older than it says nothing of the queues, which is not the same as there being none.
+  const waitlistsFile = optional('waitlists')
 
   return {
     members: readMemberList(await one('members')),
@@ -194,6 +201,7 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
     // Optional: a download older than it lists no autopays, which is not the same as there being none.
     autopay: autopayFile ? readAutopayDetail(await read(autopayFile)) : [],
     saleMethods: saleMethodsFile ? readSaleMethods(await workbook(saleMethodsFile)) : [],
+    waitlists: waitlistsFile ? readWaitlists(await workbook(waitlistsFile)) : null,
   }
 }
 

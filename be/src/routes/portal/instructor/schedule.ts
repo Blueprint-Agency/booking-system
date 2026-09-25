@@ -4,8 +4,11 @@ import { z } from 'zod'
 import * as timetable from '../../../services/schedule/timetable'
 import * as classesSvc from '../../../services/schedule/classes'
 import { cancelClass } from '../../../services/bookings/cancel-class'
+import { staffBookClass } from '../../../services/bookings/book'
 import { sgDayWindow, sgToday } from '../../../lib/time'
 import { tenantId } from '../../../middleware/tenant'
+import { seatFields, staffBookingJson, staffBookingSchema } from '../class-seats'
+import { classWaitlistRoutes } from '../class-waitlist'
 
 /**
  * Instructor schedule surface.
@@ -18,6 +21,8 @@ import { tenantId } from '../../../middleware/tenant'
  *                           to the acting instructor, there are no supporting
  *                           instructors, and instructor_pay_sgd is left null
  *                           (an admin prices it later from Payroll).
+ *   POST /schedule/classes/:id/bookings — book a member onto a class the caller
+ *                           is the MAIN instructor of, into a buffer seat.
  *   POST /schedule/classes/:id/cancel — cancel a class the caller is the MAIN
  *                           instructor of, with a reason. Same service (and so
  *                           the same member refunds) as the admin path; the
@@ -72,6 +77,7 @@ function entryRow(e: timetable.ScheduleEntryRow) {
     ends_at: e.endsAt,
     capacity: e.capacity,
     booked_count: e.bookedCount,
+    ...seatFields(e),
     event_state: e.eventState,
     day_index: e.dayIndex,
     day_count: e.dayCount,
@@ -79,6 +85,9 @@ function entryRow(e: timetable.ScheduleEntryRow) {
 }
 
 const app = new Hono()
+  // The class waitlist of a class the caller teaches: put a member in line,
+  // Add to class (never an overbook), Remove (spec-waitlist.md §7).
+  .route('/', classWaitlistRoutes('instructor'))
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
     const self = c.get('staffUserId')
@@ -135,6 +144,25 @@ const app = new Hono()
       201,
     )
   })
+  // Book a member onto a class the caller teaches: a buffer seat only. An
+  // instructor never overbooks, so `overbook` in the body changes nothing.
+  .post(
+    '/classes/:id/bookings',
+    zValidator('param', z.object({ id: z.string().uuid() })),
+    zValidator('json', staffBookingSchema),
+    async c => {
+      const { id } = c.req.valid('param')
+      const body = c.req.valid('json')
+      const res = await staffBookClass(tenantId(c), {
+        classId: id,
+        clientId: body.client_id,
+        role: 'instructor',
+        actorStaffId: c.get('staffUserId'), // never from the body
+      })
+      c.set('auditTarget' as any, { table: 'bookings', id: res.bookingId })
+      return c.json(staffBookingJson(res), 201)
+    },
+  )
   .post(
     '/classes/:id/cancel',
     zValidator('param', z.object({ id: z.string().uuid() })),

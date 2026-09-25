@@ -265,6 +265,27 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     { note: 'Credits remaining: <strong>{{credits_remaining}}</strong>.' },
   )
 
+  // Sent when a waitlist promotion books the member in (spec-waitlist.md §11).
+  // Promotion only happens outside the Cancellation Window, so `cancel_by` is
+  // always still ahead of them.
+  const CLASS_WAITLIST_PROMOTED_BODY = body(
+    'A seat opened — you’re booked in',
+    [
+      'Hi {{client_name}},',
+      'A seat came free in a class you were waiting for, and you were next in line, so we have booked you in.',
+      facts([
+        ['Class', '{{class_name}}'],
+        ['Date', '{{date}}'],
+        ['Time', '{{time}}'],
+        ['With', '{{instructor_name}}'],
+        ['Where', '{{location_name}}'],
+      ]),
+      'Your package paid for this class, the same way it does when you book one yourself.',
+      'Can’t make it after all? You can cancel free of charge until <strong>{{cancel_by}}</strong>, and whatever it used goes back to your package.',
+      link(ACCOUNT_URL, 'See your bookings'),
+    ],
+  )
+
   const CLASS_CANCELLED_RETURNED_BODY = body('Your booking is cancelled — credit returned', [
     'Hi {{client_name}},',
     'Your booking for <strong>{{class_name}}</strong> on <strong>{{date}}</strong> has been cancelled.',
@@ -528,6 +549,11 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       slug: 'class_booking_confirmed',
       subject: '{{class_name}} on {{date}} is booked',
       bodyHtml: CLASS_BOOKING_BODY,
+    },
+    {
+      slug: 'class_waitlist_promoted',
+      subject: 'You’re in — {{class_name}}',
+      bodyHtml: CLASS_WAITLIST_PROMOTED_BODY,
     },
     {
       slug: 'pt_request_submitted',

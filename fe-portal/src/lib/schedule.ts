@@ -54,6 +54,8 @@ export function slotFromParams(params: URLSearchParams): Slot | null {
 // context, following `catalog.ts`.
 
 import { ApiError, type Api } from "@/lib/api";
+import type { BookingSeat, ClassSeats } from "@/lib/class-seats";
+import type { ClassWaitlist } from "@/lib/class-waitlist";
 
 export interface NamedRef {
   id: string;
@@ -69,9 +71,12 @@ export interface ScheduleClassAttendee {
   credits_used: number;
   check_in_state: "pending" | "attended" | "no_show" | "n_a";
   code: string;
+  seat: BookingSeat;
+  /** Booked by a waitlist promotion, automatic or by staff. */
+  promoted_from_waitlist: boolean;
 }
 
-export interface ScheduleClassDetail {
+export interface ScheduleClassDetail extends ClassSeats, ClassWaitlist {
   id: string;
   lifecycle: "active" | "cancelled";
   starts_at: string;
@@ -90,6 +95,7 @@ export interface ScheduleClassDetail {
   capacity_waitlist: number;
   capacity_buffer: number;
   credit_cost: number;
+  /** Every confirmed booking — the same number as `attending`. */
   booked_count: number;
   attendees: ScheduleClassAttendee[];
   created_at: string;
@@ -153,6 +159,27 @@ export interface ScheduleCorporatePackageBrief {
 
 export function fetchClassDetail(api: Api, id: string): Promise<ScheduleClassDetail> {
   return api.get<ScheduleClassDetail>(`/portal/admin/schedule/classes/${id}`);
+}
+
+/**
+ * A class the signed-in instructor teaches, as their session page shows it: the
+ * admin's read without pay, series or scheduling provenance. 403
+ * `not_your_session` for anyone else's class.
+ */
+export type InstructorClassDetail = Omit<
+  ScheduleClassDetail,
+  | "main_instructor_id"
+  | "instructor_pay_sgd"
+  | "supporting_instructor_ids"
+  | "supporting_instructors"
+  | "instructor_ids"
+  | "created_at"
+  | "scheduled_by"
+  | "series_id"
+>;
+
+export function fetchInstructorClass(api: Api, id: string): Promise<InstructorClassDetail> {
+  return api.get<InstructorClassDetail>(`/portal/instructor/sessions/class/${id}/roster`);
 }
 
 export function fetchPtDetail(api: Api, id: string): Promise<SchedulePtDetail> {

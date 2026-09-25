@@ -3,6 +3,7 @@ import { db, withTenant } from '../../db'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { ensureAuthUser } from '../auth/auth-users'
 import { INVITE_TTL_MS } from '../auth/invitations'
+import { loadFeatureFlags } from '../feature-flags'
 import { buildIdentityMap, remapRow } from './transfer-identity'
 import { orderTables, type ForeignKey } from './transfer-order'
 import { studioTables } from './transfer-tables'
@@ -483,6 +484,10 @@ export async function importTenant(
     // studio is not instant.
     step('committing')
   })
+
+  // The switches arrived as rows, and are read from this process's cache: load
+  // them now, or an imported studio's waitlist would stay off until a restart.
+  await withTenant(targetTenantId, loadFeatureFlags)
 
   return {
     written,

@@ -541,7 +541,7 @@ lifecycle = 'active' AND now > ends_at         → 'completed'
 | starts_at | timestamptz | not null |
 | ends_at | timestamptz | not null, CHECK ends_at > starts_at |
 | capacity_online | int | not null, CHECK ≥ 0 — slots a client can self-book |
-| capacity_waitlist | int | not null, default 0, CHECK ≥ 0 — waitlist slots offered when `capacity_online` is exhausted (deferred feature, see §8) |
+| capacity_waitlist | int | not null, default 0, CHECK ≥ 0 — how many members may stand in the class's line (`waitlist_entries`) once `capacity_online` is exhausted. Not a seat (`spec-waitlist.md` §1) |
 | capacity_buffer | int | not null, default 0, CHECK ≥ 0 — reserve held back from self-booking (admin manual add / walk-in) |
 | credit_cost | int | not null, CHECK ≥ 0 |
 | lifecycle | enum `lifecycle` | not null, default `'active'` — `active`, `cancelled` |
@@ -550,7 +550,25 @@ lifecycle = 'active' AND now > ends_at         → 'completed'
 | created_at | timestamptz | not null |
 | created_by_staff_id | uuid | FK → staff_users.id |
 
-**Derived:** `max_capacity = capacity_online + capacity_waitlist + capacity_buffer` (per `admin-restructure.md` §7d). Computed at read time, never stored. CHECK that at least one of the three is > 0.
+**Derived:** attendance capacity `= capacity_online + capacity_buffer` (`spec-waitlist.md` §1; the waitlist is not a seat). Computed at read time by `services/bookings/seats.ts`, never stored. CHECK that at least one of the three is > 0.
+
+#### `waitlist_entries`
+
+A member's place in a class's line (`spec-waitlist.md` §3). Not a booking: it holds no seat and has spent nothing. Written only by `services/waitlist/`.
+
+| Column | Type | Notes |
+|---|---|---|
+| tenant_id | uuid | not null; Row-Level Security like every domain table |
+| id | uuid | PK |
+| client_id | uuid | FK → clients.id |
+| class_id | uuid | FK → classes.id |
+| status | enum `waitlist_status` | not null, default `'waiting'` — `waiting`, `promoted`, `withdrawn` (the member left, or booked the class themselves), `removed` (staff removed them or booked them in, or the class was cancelled), `expired` (class started) |
+| joined_at | timestamptz | not null; written as `clock_timestamp()` under the class lock, so the line's order is the order joins committed |
+| resolved_at | timestamptz | when status left `waiting` |
+| booking_id | uuid | FK → bookings.id; set exactly when `promoted` (CHECK) |
+| resolved_by | text | `system`, `client`, or a staff id |
+
+The line is `waiting` rows of one class ordered by `(joined_at, id)`; a position is counted at read time, never stored. A `waiting` row on a class that has started reads as expired before the sweep reaches it. **Indexes:** partial unique `(tenant_id, class_id, client_id) WHERE status = 'waiting'`; `(tenant_id, class_id, status, joined_at)`; `(tenant_id, client_id, status)`.
 
 **Indexes:** `(starts_at)` for timetable range queries, `(instructor_id, starts_at)`, `(location_id, starts_at)`, `(class_type_id)`, `(lifecycle, starts_at)`.
 
@@ -869,6 +887,7 @@ welcome
 client_invite
 password_reset
 class_booking_confirmed
+class_waitlist_promoted                # sent by services/waitlist/promote.ts when a freed online seat books the head of the line
 pt_request_submitted
 pt_session_approved
 pt_session_declined
@@ -1000,6 +1019,8 @@ The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-
 | `pt-request-expiry` | Hourly (`node-cron`) | Find `pt_requests WHERE status='pending' AND expires_at < now()` → update `status='expired'`, set `resolved_at=now()`, `resolved_by_staff_id=NULL`, then `enqueueEmail('pt_request_expired', client.email, …)`. Stale requests must not linger in the admin queue. |
 | `promotion-status` | Not a cron — **query-time derivation**. A `promotions` row is "active right now" iff `status='active' AND now() BETWEEN starts_at AND ends_at`. Computed in `services/promotions/resolve.ts:bestPriceFor(parent_type, parent_id)`. No background sweep needed; the windowed predicate is cheap given the `(parent_type, parent_id, status, starts_at, ends_at)` index. | — |
 | Workshop admin-cancel refunds | Triggered (not scheduled) by admin route | For each booking in workshop: call Stripe Refund API → on success, update booking `state='cancelled'`, `refund_outcome='stripe_refunded'`; emit one inbox item for the workshop. **v1: synchronous.** **Future: BullMQ with idempotency key = booking_id.** |
+| Class waitlist promote | Triggered (not scheduled) — `services/bookings/cancel.ts` calls `services/waitlist/promote.ts:promoteFromWaitlist` inside the cancel transaction, under the class row lock, when a confirmed **online** seat is cancelled outside the Cancellation Window. Books the first member in line whose package can pay (same path as a member booking), skips the rest without dropping them, and sends `class_waitlist_promoted` after commit (`spec-waitlist.md` §5). | — |
+| `expireWaitlists` | Every 5 min, per Tenant (`jobs/index.ts`) | `waitlist_entries` still `waiting` on a class whose `starts_at` has passed → `expired`. Reads already treat them so. |
 | Workshop waitlist promote | **Deferred — not in v1.** Slug `workshop_waitlist_promoted` is seeded so the template editor surfaces it. When waitlist behaviour lands, this becomes a triggered handler on booking-cancel that picks the oldest waitlist row for each affected day and offers it. | — |
 
 ### BullMQ (added when refund durability is required)
@@ -1174,7 +1195,8 @@ Run idempotently on fresh deployment:
 - Referral chain populated AND reward-grant logic wired (see §7 Referral conversion crediting).
 - **Promotions** (admin-published, best-price-wins resolved at purchase) — see §4d `promotions`. **Promo Codes** (typed by the member, crossing products, capped) ship separately in migration `0016` — see `spec-pre-launch-batch.md` §9–§11.
 - **Trial Pass** as a first-class `class_packages.kind` with server-enforced one-per-client.
-- **Multi-day workshops** with derived tier capacity and per-day waitlist scaffolding (waitlist *promotion* behaviour itself remains deferred).
+- **Multi-day workshops** with derived tier capacity and per-day waitlist scaffolding (workshop waitlist *promotion* remains deferred — `spec-waitlist.md` §12).
+- **Class waitlist** (`spec-waitlist.md`, #152): `waitlist_entries`, join / leave / list under `/me/waitlist`, the catalogue's `waitlist` object, automatic promotion on an online-seat cancel outside the Cancellation Window with the `class_waitlist_promoted` email, the `expireWaitlists` sweep, and the studio switch `feature_flags.waitlist_enabled` (unset = off; joins refused, existing lines still promote).
 - **Workspace scoping** — selected-location filter on all workspace-scoped portal reads.
 - `audit_log` table populated; admin-facing read views deferred.
 
@@ -1187,7 +1209,7 @@ Run idempotently on fresh deployment:
 
 **Out of scope for v1 (gated by `feature_flags` if needed):**
 - ~~Typed promo codes at checkout.~~ **Superseded — Promo Codes ship.** See `spec-pre-launch-batch.md` §9–§11 and migration `0016`. The model built is **not** the one sketched here: there is no used-count on the code row (a second source of truth that drifts) and no valid-from window (a code does nothing until someone hands it out; `archived` covers "made, not yet running"). Three tables — `promo_codes`, `promo_code_products` (scope, no FK on `product_id`), `promo_code_redemptions` (the ledger, one row per member per code) — with the rules in `services/packages/promo-codes.ts` and admin CRUD in `services/packages/promo-code-admin.ts`. A Promo Code is typed and crosses products; a **Promotion** (§4d) applies itself to one product inside a window. The two are distinct mechanisms and `be/CONTEXT.md` § Discounts is the glossary. Redeeming a code at checkout is wired separately.
-- **Class waitlist.** `fe-client-features.md` §Booking Rules mentions "Full → Join Waitlist" with seat-available email + time-bound claim CTA. v1 UI shows "Full" with no waitlist CTA. If kept later: add `waitlist_entries (client_id, class_id|workshop_tier_id, joined_at, offered_at, offer_expires_at, status=waiting|offered|claimed|expired|cancelled)`.
+- ~~**Class waitlist.**~~ **Superseded — the class waitlist ships** (see "This phase" above and `spec-waitlist.md`). Promotion books the member directly rather than offering a time-bound claim, so `waitlist_entries` has no offer columns. Workshop and PT waitlists stay out of v1 (`spec-waitlist.md` §12).
 - **WhatsApp / SMS / push notifications.** Email-only in v1.
 - ~~**Multi-tenant SaaS surface.** This backend serves one studio exclusively; no tenant scoping.~~ **Superseded — multi-tenancy shipped.** `tenant_id` on all 55 domain tables, Row-Level Security as the fail-closed backstop, hostname-resolved Tenants, and no studio named anywhere in the repo. See `multi-tenancy-plan.md`, `spec-tenant-resolution.md` and `docs/adr/0002-shared-schema-row-level-security.md`. What is still out of scope is the **plan/billing** layer for studios.
 

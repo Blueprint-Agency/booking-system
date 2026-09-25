@@ -11,7 +11,15 @@ import { isoDay, localDateOf, money } from './values'
  * the operator exports the studio from the super portal and hands over the zip.
  */
 
-export type MemberFigures = { name: string; packages: number; credits: number; sessions: number; bookings: number }
+export type MemberFigures = {
+  name: string
+  packages: number
+  credits: number
+  sessions: number
+  bookings: number
+  /** Places held in a class's waitlist. Said only where there is one, as `Figures.waitlisted` is. */
+  waitlisted?: number
+}
 
 /** A studio's year, the three figures that say whether its past came across whole. */
 export type YearFigures = { classes: number; attended: number; noShows: number }
@@ -58,6 +66,12 @@ export type Figures = {
   workshops: number
   /** Seats held: confirmed bookings, of a class, a PT session or a workshop. */
   bookings: number
+  /**
+   * Members waiting for a seat: `waiting` waitlist entries. Absent where there
+   * are none — a studio with no queue, or a file written before queues came
+   * across — and read as 0, so a queue lost on the way in is still named.
+   */
+  waitlisted?: number
   /** By client id, which the import keeps as the transform wrote it. Only members holding something. */
   perMember: Record<string, MemberFigures>
   /** By class id: what it is, and how many are booked into it. Every class, booked or not. */
@@ -164,6 +178,12 @@ export function figuresOf(archive: TenantArchive): Figures {
     const workshop = b.workshop_id == null ? undefined : figures.perWorkshop[String(b.workshop_id)]
     if (workshop) workshop.booked += 1
   }
+  for (const w of archive.rows.waitlist_entries ?? []) {
+    if (w.status !== 'waiting') continue
+    figures.waitlisted = (figures.waitlisted ?? 0) + 1
+    const mine = member(String(w.client_id))
+    mine.waitlisted = (mine.waitlisted ?? 0) + 1
+  }
 
   const monthOf = (at: unknown) => {
     const d = localDateOf(new Date(String(at)), timeZone)
@@ -255,6 +275,7 @@ export function compareFigures(expected: StoredFigures, actual: Figures): string
   differ('PT sessions', expected.ptSessions ?? 0, actual.ptSessions)
   differ('workshops', expected.workshops ?? 0, actual.workshops)
   differ('bookings, in total', expected.bookings ?? 0, actual.bookings)
+  differ('members waiting on a waitlist, in total', expected.waitlisted ?? 0, actual.waitlisted ?? 0)
   for (const held of keys(expected.byYear ?? {}, actual.byYear)) {
     const want = expected.byYear?.[held] ?? NO_YEAR
     const got = actual.byYear[held] ?? NO_YEAR
@@ -315,6 +336,7 @@ export function compareFigures(expected: StoredFigures, actual: Figures): string
     differ(`${who}: class credits left`, want.credits, got.credits)
     differ(`${who}: PT sessions left`, want.sessions, got.sessions)
     differ(`${who}: bookings`, want.bookings ?? 0, got.bookings)
+    differ(`${who}: waitlist places`, want.waitlisted ?? 0, got.waitlisted ?? 0)
   }
   return differences
 }

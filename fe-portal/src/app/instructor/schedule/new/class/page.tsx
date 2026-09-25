@@ -7,6 +7,7 @@ import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { useWorkspace } from "@/lib/workspace-context";
+import { useWaitlistsOn } from "@/lib/use-waitlists-on";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
 import { scheduleErrorMessage } from "@/lib/schedule";
@@ -25,6 +26,7 @@ interface ApiRoom {
 export default function InstructorNewClassPage() {
   const router = useRouter();
   const { api, activeLocationId } = useWorkspace();
+  const waitlistsOn = useWaitlistsOn("instructor");
 
   const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
@@ -194,7 +196,7 @@ export default function InstructorNewClassPage() {
         <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
           <h2 className="mb-4 text-sm font-semibold text-ink">Capacity & credits</h2>
           <div className="space-y-4">
-            <CapacityFields value={capacity} onChange={setCapacity} />
+            <CapacityFields value={capacity} onChange={setCapacity} waitlistsOn={waitlistsOn} />
             <div className="space-y-1.5">
               <Label htmlFor="credit">Credit cost</Label>
               <Input

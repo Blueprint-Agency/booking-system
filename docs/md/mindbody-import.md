@@ -25,7 +25,7 @@ infrastructure repo, [`docs/backup-restore.md`](https://github.com/Blueprint-Age
 
 ## 1. Before the day: the decisions
 
-Twenty decisions belong to the studio, not to the operator, and every one of them is a field in
+Twenty-one decisions belong to the studio, not to the operator, and every one of them is a field in
 the studio config. `transform` refuses to run while any is open, so the day cannot start until
 they are settled. Walk this table with the studio's admin in a sitting of its own, well before
 the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be done before the
@@ -53,6 +53,7 @@ the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be
 | 18 | Not migrated | How to track live mat storage, lone access passes and corporate balances by hand | Listed in the preflight report |
 | 19 | Class Series | Which weekly classes repeat, and the term end date to extend to | Proposed from the last 4 weeks |
 | 20 | Cutover timing | Freeze start, launch date, the date Mindbody may be cancelled | — (required) |
+| 21 | Waitlists | Every class has a waitlist; its length, from 0, is a figure staff type in the portal. Optionally, a figure for classes still to come (`waitlist.capacity`) and Class Types that take another (`waitlist.classTypes`, by name). `answers.json` `waitlist`, filled into the config by `fill`. Never open: `transform` does not wait on it | Switch on, every class at 0 until staff set a figure |
 
 The studio's own answers — its slug, its Locations, its owner's email — live in the studio's
 private folder outside the repository (`studio/answers.json` and the configs filled from it; see section 2).
@@ -135,6 +136,7 @@ date range is computed from the run date:
 | Membership (New Version Detail) | optional, as of the download |
 | Autopay Detail ("Scheduled"; Reports → Payment Processing — Mindbody has no "AutoPay Schedule" report) | optional, today → today + 12 months: every autopay still to run is a preflight line, to stop in Mindbody; none is imported |
 | Sales (Detail, Accrual; Reports → Sales), one `.xlsx` | history cutoff → today: each sale's payment method |
+| Class Waitlists (scraped: no report has it), one `.xlsx` | every class after the download on the Staff Schedule above: who waits on it, in order |
 
 Birthdays, addresses, emergency contacts, client notes and waiver status are in **no** Mindbody
 report: they come, if at all, from a client data export requested from Mindbody, by hand. The
@@ -178,6 +180,34 @@ entry):
 - **Read as** one row per sale × method, `{ saleId, methodLabel, amount }` (`readSaleMethods`).
   Lines are added up per method, so a split sale gives two rows. Each past purchase's Purchase
   carries the method its sale was paid by (section 3, **Past purchases**).
+
+**Class Waitlists: who is waiting, class by class.** No Mindbody report carries a waitlist.
+Schedule at a Glance holds only `Signed in`, `Completed`, `Late Cancel`, `Absent`, `No-Show` and
+`Reserved`, and Attendance without Revenue `Signed in`, `No Show`, `Late Cancel`; Mindbody's own
+class statuses have nothing for a waiting client. The lines exist only on each class's **Class
+Sign In** screen (the Waitlist section at its foot: queue order, name, payment status), so the
+download reads them there, as `reports/Clients/45 Class Waitlists/45 Class Waitlists.xlsx`
+(`download/reports.ts`, the `waitlists` entry; `download/waitlists.ts`):
+
+- **Which classes.** Every class after the run's start on the Staff Schedule (ALL, "Scheduled")
+  the same download has just written, once each, so it runs after that report.
+- **How each screen is found.** Each day's class list (`path` in the entry, `?date=M/D/YYYY`) is
+  opened, and each class's sign-in link taken from the row showing its start time and name (and
+  teacher, where two rows share both). Its screen's Waitlist section is found by its heading and
+  read from the table below it: the row's own number where it shows one, else its place, and the
+  client id from the cell or the client's link.
+- **What it writes.** One row per waiting client, in queue order: `Class date` (`YYYY-MM-DD`),
+  `Start` (`HH:MM`), `Description`, `Staff`, `Client ID`, `Client`, `Position`, `Payment status`.
+  A class nobody waits on writes nothing; nobody waiting anywhere is a file with only its header.
+- **A class it cannot read fails the report**, naming it — no sign-in link on its day, or no
+  Waitlist section on its screen — because an unread line would arrive as an empty one. It is not
+  optional, so the cutover download then ends `CUTOVER DOWNLOAD INCOMPLETE`. A waiting row with no
+  client id (a guest with no profile) is written with none, the run warns how many, and the
+  transform names each in the preflight.
+- **Mindbody's markup.** The day list's path and the section's layout are Mindbody's, and are
+  confirmed on the staging rehearsal (section 7) before a launch depends on them: if the first
+  real run fails on every class, the path or the heading is what changed.
+- `download verify` prints the file's count: `waiting N on M class(es)`.
 
 What the profile is built to:
 
@@ -252,7 +282,8 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
 - `verify` counts the exported studio the way `transform` counted its own archive — members,
   staff by role, live packages by kind, credits and sessions left in total and per member,
   classes, PT sessions and workshops, bookings in total, per member, per class and per
-  workshop, and — for a studio that brought its past — classes held, visits attended and
+  workshop, members waiting on a waitlist in total and per member (so a lost place fails verify
+  as a lost booking does), and — for a studio that brought its past — classes held, visits attended and
   no-shows per calendar year. It lists every difference by member, by class, by workshop or by
   year, and exits non-zero on any. Run it straight after the import, before anybody books.
 - **The catalogue** (`catalogue` in the config) is one entry per Mindbody pricing option, proposed
@@ -309,6 +340,28 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   worth (what was paid ÷ its sessions), as Mindbody's "Rev. per Session" does. A trainer with no PT
   line in Payroll, or a member with no package to value the session by, leaves it Unpriced, named
   in the preflight.
+- **Waitlists** (decision 21). Every future class and Class Series carries the config's
+  `waitlist.capacity` as its `capacity_waitlist` — its Class Type's own number where
+  `waitlist.classTypes` gives one — so an extend adds classes with the same line; past classes,
+  workshop days and PT sessions stay at 0. The archive carries the studio's switch as a
+  `feature_flags` row (`waitlist_enabled`), on or off; off, the classes keep their number and a
+  full class reads "Full". Each client in Class Waitlists (section 2) is a `waiting` entry on the
+  class they wait for, joined as a roster seat is (date, start, name and teacher, or the lone class
+  at that minute under that name). No screen shows when anyone joined, so the line of L is placed
+  in the L seconds before `asOf`: the head joined L seconds before it, the last 1 second before —
+  Mindbody's order exactly, every place before the freeze. A waiting client who is not in the
+  member list, whose class did not come across (or had begun), who is already Reserved on it, or
+  who is listed twice, is a preflight line and no entry; so is anyone waiting on a workshop day
+  (workshop waitlists are out of v1: offer them a place by hand). A line longer than its class's
+  number comes across whole, with a line saying so (the number only stops new joins); one on a
+  class with free seats is named too, because a seat promotes only when a booking is cancelled —
+  staff Add to class from the waitlist. **Not migrated:** past promotions as `promoted` entries.
+  Each promoted member is already an ordinary booking on the roster, and Contact Logs, which the
+  cutover does not download, is their only record; the preflight says so. A download with no
+  Class Waitlists file transforms, with no queue and a preflight line saying the file is missing.
+  A waiting entry inside the Cancellation Window at `asOf` still comes across; after the import it
+  promotes (or not) as any line does (spec-waitlist.md §5). `<studio>.ids.json` lists each entry
+  under `waitlist_entries`.
 - **Workshops and retreats to come** are one config entry per Mindbody **service category** — a
   workshop, a retreat or a course has one of its own — proposed by `starter` for every workshop
   category on the timetable, past or to come, and for every one members hold a pricing option of
@@ -489,7 +542,8 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   is optional too: with it a past late cancel carries the time it really happened and who made
   it (the member or ClassPass → `client`, anyone else → `admin`); without it the cancel is dated
   at the class's start. Sales (Detail Accrual, optional) is read for each past purchase's payment
-  method.
+  method. Class Waitlists (scraped, optional to the transform, required of a cutover download) is
+  read for who is waiting on each future class.
 - Payroll pays past PT as well as classes: a past PT session's Instructor Pay is what payroll
   paid for that appointment. One with no payroll line whose visits Mindbody marked **not staff
   paid** (an unpaid no-show) is $0, not Unpriced. Payroll lines with nothing to belong to — a
@@ -527,7 +581,8 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   can sign in as them, and the portal never offers to mail that address;
   other migrated staff pending with an invitation to resend from the portal, `archived` teachers
   with a placeholder email — the timetable still to come: Class Series, classes, PT requests
-  and sessions, workshops with their days, tiers and instructors, and every booking on them —
+  and sessions, workshops with their days, tiers and instructors, every booking on them, the
+  live waitlists and the `waitlist_enabled` switch —
   and, where the config asks for history, the studio's past: the classes it held with the pay
   payroll gave them, the bookings on them with their check-ins and late cancellations, its past
   PT, and (on the second opt-in) the packages members bought and used up before launch.
@@ -657,7 +712,8 @@ step 9. Two differences and nothing else:
 - Mindbody is not frozen, so the figures move under you. That is fine: verify compares the
   archive with what was imported, not with Mindbody.
 
-Record, on the rehearsal's ticket: how long the download took, how long the transform took, how
-long the import took, what verify said, and every gap found — a config field nobody could
+Record, on the rehearsal's ticket: how long the download took — and, apart, how long its Class
+Waitlists scrape took, since it opens a screen per future class and grows with the timetable —
+how long the transform took, how long the import took, what verify said, and every gap found — a config field nobody could
 answer, a report that came back capped, a preflight line the studio had not seen. Those timings
 are what the freeze window is budgeted from.

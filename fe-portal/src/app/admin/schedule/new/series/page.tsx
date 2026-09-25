@@ -12,6 +12,7 @@ import {
 import { InstructorOption, useInstructorsOnLeave } from "@/components/schedule/instructor-leave";
 import { SeriesPreviewList, blockingDates } from "@/components/schedule/series-preview";
 import { useWorkspace } from "@/lib/workspace-context";
+import { useWaitlistsOn } from "@/lib/use-waitlists-on";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
 import { slotFromParams } from "@/lib/schedule";
@@ -46,6 +47,7 @@ export default function NewSeriesPage() {
 function NewSeriesForm() {
   const router = useRouter();
   const { api, activeLocationId } = useWorkspace();
+  const waitlistsOn = useWaitlistsOn("admin");
   // A slot picked on the timetable seeds the weekday, the times and the first date.
   const slot = slotFromParams(useSearchParams());
 
@@ -325,7 +327,7 @@ function NewSeriesForm() {
         <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
           <h2 className="mb-4 text-sm font-semibold text-ink">Capacity & price</h2>
           <div className="space-y-4">
-            <CapacityFields value={capacity} onChange={setCapacity} />
+            <CapacityFields value={capacity} onChange={setCapacity} waitlistsOn={waitlistsOn} />
             <div className="space-y-1.5">
               <Label htmlFor="credit">Credit cost</Label>
               <Input

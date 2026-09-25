@@ -83,7 +83,7 @@ const app = new Hono()
   .get('/classes', async c => {
     const clientId = c.get('clientId')
     const filters = classCatalog.parseClassFilters(c.req.query())
-    const cards = await classCatalog.listClassCards(tenantId(c), filters)
+    const cards = await classCatalog.listClassCards(tenantId(c), filters, clientId)
     const bookedIds = await classCatalog.myBookedClassIds(
       tenantId(c),
       clientId,

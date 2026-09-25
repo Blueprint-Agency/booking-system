@@ -67,6 +67,12 @@ export type StudioAnswers = {
   /** Decision 17. */
   history: Json | null
   /**
+   * Decision 21: how many may wait on a class still to come, and Class Types
+   * (by name) that take another number. Every class has a waitlist; left out,
+   * each starts at 0 and staff type a figure in the portal.
+   */
+  waitlist?: { enabled?: boolean; capacity?: number; classTypes?: Record<string, number> }
+  /**
    * How each Mindbody payment method label is filed here (`Cash` → `cash`). The
    * studio's own labels, so they live here and not in the code. A past purchase
    * paid by a label this leaves out is refused by the transform; `fill` lists
@@ -76,6 +82,9 @@ export type StudioAnswers = {
   /** The configs to write: name → what differs (slug, and the environment's origin patterns). */
   outputs: Record<string, { slug: string; originPatterns?: string }>
 }
+
+/** Decision 21 where the answers name no figure: the switch on, every class at 0 until staff set one. */
+export const DEFAULT_WAITLIST = { enabled: true, capacity: 0 } as const
 
 const pattern = (source: string) => new RegExp(source, 'i')
 /** One key per name the way a person reads it: NFKC-folded, single-spaced, case-folded. */
@@ -228,6 +237,8 @@ export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportF
 
   // 17. History.
   c.history = answers.history
+  // 21. Waitlists.
+  c.waitlist = { ...DEFAULT_WAITLIST, ...answers.waitlist, classTypes: { ...answers.waitlist?.classTypes } }
   // How each Mindbody payment method is filed: the answers' table, as it is.
   c.paymentMethods = { ...(answers.paymentMethods ?? {}) }
 

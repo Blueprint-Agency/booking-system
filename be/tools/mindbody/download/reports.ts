@@ -72,6 +72,12 @@ export type Report = {
   requestedName?: string
   check?: string[]
   split?: StepName
+  /**
+   * `scrape` one screen per class still to come, found from the Staff Schedule
+   * this download has already written (`./waitlists.ts`): `path` is the page
+   * that lists a day's classes with their sign-in links.
+   */
+  perClass?: boolean
 }
 
 /** A cutover-profile entry: a report narrowed to what the transform reads. */
@@ -323,5 +329,15 @@ export const CUTOVER: ProfileEntry[] = [
     set: { ...DATES, optFilterTagged: 'false', optSaleLoc: '*', optHomeStudio: '*', optPayMethod: '*', optCategory: '*',
       optEmployee: '', optRep: '0', optIncludeAutoRenews: 'Include', optShowSupplier: 'false' },
     variants: [{ label: 'Detail Accrual', set: { optDisMode: 'Detail', optBasis: 'AccrualBasis' } }],
+  },
+  {
+    // No report has a class's waitlist (Schedule at a Glance and Attendance carry only Reserved, Signed in and
+    // the rest): each line is only on its class's Class Sign In screen. So, after the Staff Schedule above, every
+    // class still to come on it is found on its day's class list (`path?date=M/D/YYYY`, its sign-in link by
+    // start time and name) and its Waitlist section read, into one workbook of our own: a row per waiting
+    // client, in queue order (`./waitlists.ts`). Not optional: a failed scrape would lose every queue quietly.
+    // The day list's path and the section's markup are Mindbody's: the staging rehearsal (runbook §7) confirms them.
+    name: 'Class Waitlists', kind: 'waitlists', cat: 'Clients', num: 45, type: 'scrape', perClass: true,
+    path: '/ASP/adm/home.asp',
   },
 ]

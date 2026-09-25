@@ -48,7 +48,7 @@ export function ClassFeed() {
   const to = useMemo(() => windowEndISO(WINDOW_DAYS), []);
   const nowMs = useMemo(() => Date.now(), []);
 
-  const { data: classes, loading } = useClasses({
+  const { data: classes, loading, refresh } = useClasses({
     from,
     to,
     location_id: selectedLocation || undefined,
@@ -160,6 +160,7 @@ export function ClassFeed() {
                     canBookLoaded={canBookLoaded}
                     isSignedIn={!!isSignedIn}
                     entitlements={entitlements}
+                    onStale={refresh}
                   />
                 ))}
               </div>

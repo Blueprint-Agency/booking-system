@@ -250,6 +250,28 @@ export interface ClientContact {
   referredBy: { id: string; name: string } | null
 }
 
+/**
+ * Members matching `q` by name, email or phone, for the session page's Add
+ * member search (spec-waitlist.md §10). A handful of rows and nothing but the
+ * row: no trial facts, no paging. Blocked (soft-deleted) members are left out,
+ * since they can't be booked.
+ */
+export async function searchClients(tenantId: string, q: string, limit = 10): Promise<ClientRow[]> {
+  const like = `%${q.trim()}%`
+  return db
+    .select()
+    .from(clients)
+    .where(
+      and(
+        eq(clients.tenantId, tenantId),
+        isNull(clients.deletedAt),
+        or(ilike(clients.name, like), ilike(clients.email, like), ilike(clients.phone, like)),
+      ),
+    )
+    .orderBy(asc(sql`lower(${clients.name})`), asc(clients.id))
+    .limit(limit)
+}
+
 export async function getClientContact(tenantId: string, id: string): Promise<ClientContact> {
   const client = await getClientById(tenantId, id)
   const [waiver, referrer] = await Promise.all([

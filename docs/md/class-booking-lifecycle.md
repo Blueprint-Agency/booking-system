@@ -16,7 +16,7 @@ workshops are referenced where they share policy but are not the subject here.
 | Booking-time expiry validation (G1) | ✅ done | `services/bookings/book.ts` |
 | Credit-movement ledger on refund (G8) | ✅ done | writes `manual_adjustments` rows in cancel paths |
 | Inbox notifications (§13) | ✅ done | `services/inbox.ts` + inline `inbox_items` writes in cancel flows |
-| Waitlist seat-free hook / promotion (G7) | ⛔ deferred | per `backend-architecture.md §8` |
+| Waitlist seat-free hook / promotion (G7) | ✅ done | `services/waitlist/promote.ts`, called from `services/bookings/cancel.ts` (`spec-waitlist.md` §5) |
 | Admin bookings list/detail (G9 partial) | ⛔ still 501 | `admin/bookings.ts` `GET /`, `GET /:id` |
 
 No DB migration was required — `cancellations`, `manual_adjustments`, `inbox_items`,
@@ -126,7 +126,8 @@ returns which package pays and why, or a refusal.
 
 - **G7 — Waitlist/buffer unused.** `capacity_waitlist`/`capacity_buffer` are stored but
   booking only checks `capacity_online`; no waitlist booking, no promotion on seat-free.
-  (Promotion is deferred per `backend-architecture.md §8`; the seat-free hook should still exist.)
+  (Resolved: seats by `bookings.seat` (#307) and the class waitlist with promotion on an
+  online-seat cancel (#308) — `spec-waitlist.md`.)
 - **G8 — No audit/credit-ledger writes.** `auditLog`/`manualAdjustments` exist but booking and
   cancel write neither; credit movements are only reconstructable from booking rows.
 - **G9 — No-show flow missing.** Forfeit credit + mark check-in + exclude from cap; all 501.
@@ -158,7 +159,8 @@ returns which package pays and why, or a refusal.
 6. Insert `cancellations` row (`source='client'`, `wasWithinWindow`, `wasWithinCap`,
    `refundFired`).
 7. Update booking: `state='cancelled'`, `refundOutcome`, `cancelledAt=now`.
-8. (G7) Fire seat-free hook (no-op promotion in v1).
+8. (G7) A freed online seat promotes the head of the class's waitlist, in the same
+   transaction, outside the Cancellation Window only (`services/waitlist/promote.ts`).
 9. (G8) Write `auditLog`.
 
 Cancellation is **always allowed**; window/cap only gate the refund, never the action.

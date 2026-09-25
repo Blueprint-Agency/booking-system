@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto'
-import { and, eq, like, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, like, lt, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import type { Hono } from 'hono'
 import { withTenant } from '../db'
 import * as schema from '../db/schema'
+import { env } from '../env'
 import { seedEmailTemplates } from '../db/seed/email-templates'
 import { seedPolicy } from '../db/seed/policy'
 import { tenantOrigin } from '../lib/allowed-origins'
@@ -11,6 +12,7 @@ import { discardedMail, transport } from '../lib/mailer'
 import { ensureAuthUser, setFirstStaffPassword } from '../services/auth/auth-users'
 import { configureProviderAccount } from '../services/billing/provider-onboarding'
 import { createClassType } from '../services/catalog/class-types'
+import { bookClass } from '../services/bookings/book'
 import { createClassPackage } from '../services/packages/class-packages'
 import { grantPackage } from '../services/packages/purchase'
 import { E2E_SLUG_PREFIX } from '../services/tenants/slug'
@@ -43,7 +45,12 @@ type Db = PostgresJsDatabase<typeof schema>
 export type E2eStudio = {
   slug: string
   tenantId: string
-  urls: { client: string; portal: string }
+  /**
+   * `api` is this backend's own base, for what a journey must ask of the
+   * running server rather than the database — a feature flag is cached per
+   * process, so one written here would not reach it.
+   */
+  urls: { client: string; portal: string; api: string }
   staff: {
     /** One password for both staff accounts, made for this run only. */
     password: string
@@ -62,12 +69,23 @@ export type E2eStudio = {
     portalClassType: string
     /** Journey 4's class — starting minutes from now, inside the Check-in Window. */
     checkInClassType: string
+    /** The waitlist journey's class — its one online seat taken, room for three in line. */
+    waitlistClassType: string
+    /**
+     * The staff waitlist journey's class — its one online seat taken, one buffer
+     * seat free, and two members already in line.
+     */
+    staffWaitlistClassType: string
   }
   classes: {
     buy: { id: string; startsAt: string }
     cancel: { id: string; startsAt: string }
     checkIn: { id: string; startsAt: string }
+    waitlist: { id: string; startsAt: string }
+    staffWaitlist: { id: string; startsAt: string }
   }
+  /** The staff waitlist class's line, in order, by the names staff see. */
+  staffWaitlistLine: string[]
   members: {
     /** Signed in, registered, holding no plan. */
     buyer: { email: string; token: string }
@@ -75,6 +93,8 @@ export type E2eStudio = {
     canceller: { email: string; token: string }
     /** Signed in, registered, holding the plan: books the check-in class and is checked in. */
     arriver: { email: string; token: string }
+    /** Signed in, registered, holding the plan: joins the waitlist class's line and leaves it. */
+    waiter: { email: string; token: string }
   }
 }
 
@@ -186,6 +206,8 @@ export async function createE2eStudio({
     cancelClassType: 'E2E cancel class',
     portalClassType: 'E2E portal class',
     checkInClassType: 'E2E check-in class',
+    waitlistClassType: 'E2E waitlist class',
+    staffWaitlistClassType: 'E2E staff waitlist class',
   }
   const { classPackage, classTypes } = await withTenant(tenant.id, async () => ({
     classPackage: await createClassPackage(tenant.id, {
@@ -200,10 +222,16 @@ export async function createE2eStudio({
       cancel: await createClassType(tenant.id, { name: catalogue.cancelClassType }),
       portal: await createClassType(tenant.id, { name: catalogue.portalClassType }),
       checkIn: await createClassType(tenant.id, { name: catalogue.checkInClassType }),
+      waitlist: await createClassType(tenant.id, { name: catalogue.waitlistClassType }),
+      staffWaitlist: await createClassType(tenant.id, { name: catalogue.staffWaitlistClassType }),
     },
   }))
 
-  const addClass = async (classTypeId: string, startsAt: Date) => {
+  const addClass = async (
+    classTypeId: string,
+    startsAt: Date,
+    capacity: { online: number; buffer?: number; waitlist: number } = { online: 10, waitlist: 0 },
+  ) => {
     const [row] = await db
       .insert(schema.classes)
       .values({
@@ -214,7 +242,9 @@ export async function createE2eStudio({
         roomId: room!.id,
         startsAt,
         endsAt: new Date(startsAt.getTime() + HOUR),
-        capacityOnline: 10,
+        capacityOnline: capacity.online,
+        capacityBuffer: capacity.buffer ?? 0,
+        capacityWaitlist: capacity.waitlist,
         creditCost: 1,
         instructorPaySgd: '50.00',
         createdByStaffId: admin.id,
@@ -229,6 +259,10 @@ export async function createE2eStudio({
     // Minutes out: bookable (it has not started) and already inside the
     // seeded Check-in Window, so the desk can check its member in today.
     checkIn: await addClass(classTypes.checkIn.id, new Date(Date.now() + CHECK_IN_CLASS_STARTS_IN)),
+    // Outside the window, so its line is open; one seat, which `seated` takes below.
+    waitlist: await addClass(classTypes.waitlist.id, hourFromNow(2), { online: 1, waitlist: 3 }),
+    // The same, with a buffer seat for staff to add the head of the line into.
+    staffWaitlist: await addClass(classTypes.staffWaitlist.id, hourFromNow(2), { online: 1, buffer: 1, waitlist: 3 }),
   }
 
   const register = async (who: string, lastName: string) => {
@@ -270,12 +304,18 @@ export async function createE2eStudio({
   const buyer = await register('buyer', 'Buyer')
   const canceller = await register('canceller', 'Canceller')
   const arriver = await register('arriver', 'Arriver')
+  const waiter = await register('waiter', 'Waiter')
+  // Not handed to the journeys: they only need the seat taken, and the line filled.
+  const seated = await register('seated', 'Seated')
+  const queued = [await register('queued1', 'Queuer One'), await register('queued2', 'Queuer Two')]
 
-  for (const member of [canceller, arriver]) {
+  const clientIds: Record<string, string> = {}
+  for (const member of [canceller, arriver, waiter, seated, ...queued]) {
     const [row] = await db
       .select({ id: schema.clients.id })
       .from(schema.clients)
       .where(and(eq(schema.clients.tenantId, tenant.id), eq(schema.clients.email, member.email)))
+    clientIds[member.email] = row!.id
     await withTenant(tenant.id, () =>
       grantPackage(tenant.id, {
         clientId: row!.id,
@@ -286,11 +326,38 @@ export async function createE2eStudio({
       }),
     )
   }
+  // The waitlist class's one online seat, booked the way the member would book it.
+  await withTenant(tenant.id, () =>
+    bookClass(tenant.id, { clientId: clientIds[seated.email]!, classId: classes.waitlist.id }),
+  )
+  // The staff waitlist class: its online seat taken the same way, and two
+  // members in its line. Written as rows, not joined through the service: the
+  // studio's waitlist switch is off in this process (the journey turns it on
+  // in the running backend), and a line from before the switch is exactly what
+  // staff can still work. A second apart, so the order is certain.
+  await withTenant(tenant.id, () =>
+    bookClass(tenant.id, { clientId: clientIds[seated.email]!, classId: classes.staffWaitlist.id }),
+  )
+  const joinedAt = Date.now() - 60_000
+  await db.insert(schema.waitlistEntries).values(
+    queued.map((member, i) => ({
+      tenantId: tenant.id,
+      clientId: clientIds[member.email]!,
+      classId: classes.staffWaitlist.id,
+      status: 'waiting' as const,
+      joinedAt: new Date(joinedAt + i * 1000),
+    })),
+  )
+  const queuedNames = await db
+    .select({ email: schema.clients.email, name: schema.clients.name })
+    .from(schema.clients)
+    .where(and(eq(schema.clients.tenantId, tenant.id), inArray(schema.clients.email, queued.map(q => q.email))))
+  const staffWaitlistLine = queued.map(q => queuedNames.find(n => n.email === q.email)!.name)
 
   return {
     slug,
     tenantId: tenant.id,
-    urls: { client, portal },
+    urls: { client, portal, api: `${env.BETTER_AUTH_URL.replace(/\/$/, '')}/api/v1` },
     staff: {
       password,
       admin: { email: admin.email, name: admin.name, role: 'admin' },
@@ -298,7 +365,8 @@ export async function createE2eStudio({
     },
     catalogue,
     classes,
-    members: { buyer, canceller, arriver },
+    staffWaitlistLine,
+    members: { buyer, canceller, arriver, waiter },
   }
 }
 

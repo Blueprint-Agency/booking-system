@@ -11,6 +11,7 @@ export type TemplateSlug =
   | 'welcome'
   | 'password_reset'
   | 'class_booking_confirmed'
+  | 'class_waitlist_promoted'
   | 'pt_request_submitted'
   | 'pt_session_approved'
   | 'pt_session_declined'

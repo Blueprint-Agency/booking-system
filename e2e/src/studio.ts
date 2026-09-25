@@ -1,5 +1,5 @@
 import { exec, execSync } from 'node:child_process'
-import type { Page } from '@playwright/test'
+import type { APIRequestContext, Page } from '@playwright/test'
 
 /**
  * The studio a run happens in, made by the backend's `e2e:studio` command
@@ -18,7 +18,7 @@ import type { Page } from '@playwright/test'
 export type Studio = {
   slug: string
   tenantId: string
-  urls: { client: string; portal: string }
+  urls: { client: string; portal: string; api: string }
   staff: {
     password: string
     admin: { email: string; name: string; role: 'admin' }
@@ -32,16 +32,23 @@ export type Studio = {
     cancelClassType: string
     portalClassType: string
     checkInClassType: string
+    waitlistClassType: string
+    staffWaitlistClassType: string
   }
   classes: {
     buy: { id: string; startsAt: string }
     cancel: { id: string; startsAt: string }
     checkIn: { id: string; startsAt: string }
+    waitlist: { id: string; startsAt: string }
+    staffWaitlist: { id: string; startsAt: string }
   }
+  /** The staff waitlist class's line, in order, by the names staff see. */
+  staffWaitlistLine: string[]
   members: {
     buyer: { email: string; token: string }
     canceller: { email: string; token: string }
     arriver: { email: string; token: string }
+    waiter: { email: string; token: string }
   }
 }
 
@@ -108,6 +115,28 @@ export async function signInMember(page: Page, member: { token: string }): Promi
     },
     [client, member.token] as const,
   )
+}
+
+/**
+ * Switch one of the studio's feature flags as its admin would, through the
+ * running backend's own route. Not written by the studio command: the backend
+ * caches flags per process, so a row written elsewhere would not reach it.
+ */
+export async function setStudioFlag(request: APIRequestContext, key: string, enabled: boolean): Promise<void> {
+  const { slug, urls, staff } = studio()
+  const headers = { Origin: urls.portal, 'X-Tenant-Slug': slug }
+  const signedIn = await request.post(`${urls.api}/auth/staff/sign-in/email`, {
+    headers,
+    data: { email: staff.admin.email, password: staff.password },
+  })
+  if (!signedIn.ok()) throw new Error(`admin sign-in refused (${signedIn.status()}): ${await signedIn.text()}`)
+  const token = signedIn.headers()['set-auth-token']
+  if (!token) throw new Error('admin sign-in returned no session token')
+  const switched = await request.patch(`${urls.api}/portal/admin/feature-flags/${key}`, {
+    headers: { ...headers, Authorization: `Bearer ${token}` },
+    data: { enabled },
+  })
+  if (!switched.ok()) throw new Error(`switching ${key} refused (${switched.status()}): ${await switched.text()}`)
 }
 
 /**

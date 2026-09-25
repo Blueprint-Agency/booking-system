@@ -1,10 +1,12 @@
 "use client";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Ban, Check, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Ban, Loader2, Save } from "lucide-react";
 import { Badge, Button, Input, Label } from "@/components/ui";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { SeriesPanel } from "@/components/schedule/series-panel";
+import { ClassRoster, SeatStats, Stat } from "@/components/schedule/class-roster";
+import { WaitlistPanel } from "@/components/schedule/waitlist-panel";
 import {
   SupportingInstructorsField,
   type SupportingRow,
@@ -15,7 +17,6 @@ import {
 } from "@/components/schedule/instructor-leave";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
-import { checkInErrorMessage } from "@/lib/check-in";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
@@ -32,7 +33,6 @@ import {
   patchCorporateSession,
   patchPtSession,
   scheduleErrorMessage,
-  type ScheduleClassAttendee,
   type ScheduleClassDetail,
   type ClassDifficulty,
   type ScheduleCorporatePackageBrief,
@@ -168,8 +168,6 @@ function ClassDetail({ id }: { id: string }) {
     endsAt: data.ends_at,
     lifecycle: data.lifecycle,
   });
-  const capacity = data.capacity_online + data.capacity_waitlist + data.capacity_buffer;
-
   return (
     <DetailFrame>
       <DetailHeader
@@ -219,14 +217,24 @@ function ClassDetail({ id }: { id: string }) {
         />
       )}
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Booked" value={`${data.booked_count} / ${capacity}`} />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <SeatStats seats={data} />
         <Stat label="Credit cost" value={`${data.credit_cost} credit${data.credit_cost === 1 ? "" : "s"}`} />
-        <Stat label="Capacity split" value={`${data.capacity_online} / ${data.capacity_waitlist} / ${data.capacity_buffer}`} sub="online / waitlist / buffer" />
       </div>
       <ClassRoster
+        role="admin"
+        classId={data.id}
         attendees={data.attendees ?? []}
         cancelled={data.lifecycle === "cancelled"}
+        canAdd={state === "scheduled"}
+        onChanged={load}
+      />
+      <WaitlistPanel
+        role="admin"
+        classId={data.id}
+        data={data}
+        canAct={state === "scheduled"}
+        onChanged={load}
       />
       <ClassEditor
         data={data}
@@ -238,133 +246,6 @@ function ClassDetail({ id }: { id: string }) {
         cancelBusy={cancelBusy}
       />
     </DetailFrame>
-  );
-}
-
-const PACKAGE_KIND_LABEL: Record<NonNullable<ScheduleClassAttendee["package_kind"]>, string> = {
-  credit_bundle: "Credit bundle",
-  unlimited: "Unlimited",
-  trial: "Trial pass",
-  pt: "PT",
-};
-
-function ClassRoster({
-  attendees,
-  cancelled,
-}: {
-  attendees: ScheduleClassAttendee[];
-  cancelled: boolean;
-}) {
-  const { api } = useWorkspace();
-  const [rows, setRows] = useState<ScheduleClassAttendee[]>(attendees);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  // Re-sync when the parent reloads the class.
-  useEffect(() => setRows(attendees), [attendees]);
-
-  // When the tick opens is the studio's Check-in Window, which the server
-  // holds; a tick before it comes back refused with the opening time.
-  const attendedCount = rows.filter((r) => r.check_in_state === "attended").length;
-
-  async function toggle(a: ScheduleClassAttendee) {
-    if (!api || cancelled || busyId) return;
-    const attended = a.check_in_state !== "attended";
-    setBusyId(a.booking_id);
-    setErr(null);
-    try {
-      const res = await api.post<{ check_in_state: ScheduleClassAttendee["check_in_state"] }>(
-        "/portal/admin/check-in/manual",
-        { booking_id: a.booking_id, attended },
-      );
-      setRows((prev) =>
-        prev.map((r) =>
-          r.booking_id === a.booking_id ? { ...r, check_in_state: res.check_in_state } : r,
-        ),
-      );
-    } catch (e) {
-      // The backend words its own refusal (the Check-in Window, a cancelled
-      // booking) — show that rather than guessing from the status.
-      setErr(checkInErrorMessage(e, "Couldn't update attendance"));
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  return (
-    <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-ink">Booked customers ({rows.length})</h2>
-        {rows.length > 0 && (
-          <span className="text-xs text-muted">{attendedCount} checked in</span>
-        )}
-      </div>
-      {err && (
-        <p className="mb-3 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
-          {err}
-        </p>
-      )}
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted">No bookings yet.</p>
-      ) : (
-        <ul className="divide-y divide-border">
-          {rows.map((a) => {
-            const attended = a.check_in_state === "attended";
-            const noShow = a.check_in_state === "no_show";
-            const disabled = cancelled || busyId === a.booking_id;
-            return (
-              <li
-                key={a.booking_id}
-                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2.5 text-sm"
-              >
-                <div className="min-w-0 flex-1">
-                  <Link
-                    href={`/admin/customers/${a.client.id}`}
-                    className="text-ink hover:text-accent"
-                  >
-                    {a.client.name}
-                  </Link>
-                  <div className="text-xs text-muted">
-                    {a.package_kind ? PACKAGE_KIND_LABEL[a.package_kind] : "—"} · {a.code}
-                  </div>
-                </div>
-                <div className="ml-auto flex shrink-0 items-center gap-2">
-                  {noShow && !attended && (
-                    <Badge tone="error">No-show</Badge>
-                  )}
-                  <button
-                    type="button"
-                    role="checkbox"
-                    aria-checked={attended}
-                    aria-label={attended ? "Mark as not attended" : "Mark as attended"}
-                    disabled={disabled}
-                    onClick={() => toggle(a)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                      attended
-                        ? "border-sage/40 bg-sage/15 text-sage"
-                        : "border-border bg-card text-muted hover:border-accent/40 hover:text-ink"
-                    }`}
-                  >
-                    {busyId === a.booking_id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <span
-                        className={`flex h-4 w-4 items-center justify-center rounded border ${
-                          attended ? "border-sage bg-sage text-white" : "border-muted"
-                        }`}
-                      >
-                        {attended && <Check className="h-3 w-3" />}
-                      </span>
-                    )}
-                    {attended ? "Attended" : "Mark attended"}
-                  </button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
   );
 }
 
@@ -1131,7 +1012,8 @@ function WorkshopDetail({ id }: { id: string }) {
                   </div>
                 </div>
                 <div className="text-xs text-muted">
-                  Capacity {d.capacity_online + d.capacity_waitlist + d.capacity_buffer}
+                  Capacity {d.capacity_online + d.capacity_buffer}
+                  {d.capacity_waitlist > 0 && ` · Waitlist ${d.capacity_waitlist}`}
                 </div>
               </li>
             ))}
@@ -1601,16 +1483,6 @@ function DetailHeader({
       <h1 className="text-2xl font-semibold text-ink">{title}</h1>
       {meta.length > 0 && <p className="mt-1 text-sm text-muted">{meta.join(" · ")}</p>}
     </header>
-  );
-}
-
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-1 text-lg font-semibold tabular-nums text-ink">{value}</div>
-      {sub && <div className="text-xs text-muted">{sub}</div>}
-    </div>
   );
 }
 

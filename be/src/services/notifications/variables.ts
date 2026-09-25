@@ -9,6 +9,9 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   welcome: ['client_name'],
   password_reset: ['client_name', 'reset_url'],
   class_booking_confirmed: ['client_name', 'class_name', 'date', 'instructor_name', 'location', 'qr_url', 'code', 'credits_remaining'],
+  // A waitlist promotion booked the member in (spec-waitlist.md §11). `cancel_by`
+  // is the moment the Cancellation Window closes on the class.
+  class_waitlist_promoted: ['client_name', 'class_name', 'date', 'time', 'location_name', 'instructor_name', 'cancel_by'],
   pt_request_submitted: ['client_name', 'instructor_name', 'starts_at'],
   pt_session_approved: ['client_name', 'instructor_name', 'starts_at', 'location', 'qr_url'],
   pt_session_declined: ['client_name', 'instructor_name', 'decline_note'],

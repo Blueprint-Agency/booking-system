@@ -90,8 +90,8 @@ function main() {
 
   if (command === 'verify') {
     if (rest.length !== 1) throw new Error(USAGE)
-    return import('./verify').then(m => {
-      if (m.verifyExport(inRoot(rest[0]!), profileReports(profile)) > 0) process.exitCode = 1
+    return import('./verify').then(async m => {
+      if ((await m.verifyExport(inRoot(rest[0]!), profileReports(profile))) > 0) process.exitCode = 1
     })
   }
 
@@ -177,6 +177,7 @@ async function download(o: {
     force: o.force,
     timeout: Number(process.env.MB_TIMEOUT || 10 * 60_000),
     parallel: Number(process.env.MB_PARALLEL || 6),
+    timeZone: o.timeZone,
   })
   const results: [string, string][] = []
   for (const r of o.reports) results.push(...(await engine.runReport(r)))

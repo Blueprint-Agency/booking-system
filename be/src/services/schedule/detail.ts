@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
 import {
@@ -14,12 +14,16 @@ import {
   clients,
   bookings,
   clientPackages,
+  waitlistEntries,
 } from '../../db/schema'
-import type { ClassDifficulty, ClientPackageKind } from '../../db/enums'
-import { NotFoundError } from '../../shared/errors'
+import type { BookingSeat, ClassDifficulty, ClientPackageKind } from '../../db/enums'
+import { ForbiddenError, NotFoundError } from '../../shared/errors'
 import { sessionCheckInState, type SessionCheckInState } from '../bookings/session-check-in'
+import { attendanceCapacity, countSeats, type SeatCounts } from '../bookings/seats'
+import { waitlistEnabled } from '../waitlist/line'
+import { waitlistPanel, type WaitlistPanelRow } from '../waitlist/staff'
 
-interface NamedRef {
+export interface NamedRef {
   id: string
   name: string
 }
@@ -31,6 +35,10 @@ export interface ClassAttendee {
   creditsUsed: number
   checkInState: 'pending' | 'attended' | 'no_show' | 'n_a'
   code: string
+  /** Which seat the booking holds; the roster tags `buffer` and `overbook`. */
+  seat: BookingSeat
+  /** The booking was made by a waitlist promotion, automatic or by staff. */
+  promotedFromWaitlist: boolean
 }
 
 export interface ClassDetail {
@@ -51,8 +59,16 @@ export interface ClassDetail {
   capacityWaitlist: number
   capacityBuffer: number
   creditCost: number
+  /** Every confirmed booking — the same number as `seats.attending`. */
   bookedCount: number
+  /** Online plus buffer seats; the waitlist is not a seat. */
+  attendanceCapacity: number
+  seats: SeatCounts
   attendees: ClassAttendee[]
+  /** The class's line in queue order, with whether each member could pay now. */
+  waitlist: WaitlistPanelRow[]
+  /** The studio's waitlist switch. Off, the line above still lists and can be worked. */
+  waitlistEnabled: boolean
   checkInState: SessionCheckInState
   createdAt: Date
   scheduledBy: NamedRef | null
@@ -98,16 +114,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     .limit(1)
   if (!row) throw new NotFoundError('class_not_found')
 
-  const [count] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.tenantId, tenantId),
-        eq(bookings.classId, id),
-        eq(bookings.state, 'confirmed'),
-      ),
-    )
+  const seats = await countSeats(db, tenantId, id)
 
   // Roster (admin-restructure.md §10): the confirmed attendees and the no-shows.
   // A no-show is a decision on the roster, not a departure from it — leaving it
@@ -121,10 +128,16 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       creditsUsed: bookings.creditsOrSessionsUsed,
       checkInState: bookings.checkInState,
       code: bookings.code,
+      seat: bookings.seat,
+      promotedEntryId: waitlistEntries.id,
     })
     .from(bookings)
     .innerJoin(clients, eq(clients.id, bookings.clientId))
     .leftJoin(clientPackages, eq(clientPackages.id, bookings.clientPackageId))
+    .leftJoin(
+      waitlistEntries,
+      and(eq(waitlistEntries.tenantId, bookings.tenantId), eq(waitlistEntries.bookingId, bookings.id)),
+    )
     .where(
       and(
         eq(bookings.tenantId, tenantId),
@@ -140,7 +153,16 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     creditsUsed: r.creditsUsed ?? 0,
     checkInState: r.checkInState as ClassAttendee['checkInState'],
     code: r.code,
+    seat: r.seat,
+    promotedFromWaitlist: r.promotedEntryId !== null,
   }))
+
+  const waitlist = await waitlistPanel(tenantId, {
+    id: row.id,
+    locationId: row.locationId,
+    startsAt: row.startsAt,
+    creditCost: row.creditCost,
+  })
 
   const supportingRows = await db
     .select({
@@ -183,8 +205,12 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     capacityWaitlist: row.capacityWaitlist,
     capacityBuffer: row.capacityBuffer,
     creditCost: row.creditCost,
-    bookedCount: count?.n ?? 0,
+    bookedCount: seats.attending,
+    attendanceCapacity: attendanceCapacity(row),
+    seats,
     attendees,
+    waitlist,
+    waitlistEnabled: waitlistEnabled(tenantId),
     checkInState: sessionCheckInState(attendees.map(a => a.checkInState)),
     createdAt: row.createdAt,
     scheduledBy:
@@ -193,6 +219,23 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
         : null,
     seriesId: row.seriesId,
   }
+}
+
+/**
+ * A class's detail for the instructor teaching it — the same read as the
+ * admin's, refused for a class the caller is not the main instructor of (the
+ * ownership rule check-in and class cancellation use).
+ */
+export async function getOwnClassDetail(
+  tenantId: string,
+  id: string,
+  instructorStaffId: string,
+): Promise<ClassDetail> {
+  const detail = await getClassDetail(tenantId, id)
+  if (detail.mainInstructorId !== instructorStaffId) {
+    throw new ForbiddenError('not_your_session', { message: 'This class is not one you are teaching.' })
+  }
+  return detail
 }
 
 export interface PtSessionAttendee {

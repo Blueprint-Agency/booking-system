@@ -21,6 +21,7 @@ import { inboxItems } from '../../db/schema/inbox'
 import { refundCredits } from '../packages/ledger'
 import { decideOutcome, type RefundOutcome } from './refund-outcome'
 import { evaluateCancellation } from '../policy/evaluate-cancellation'
+import { promoteFromWaitlist, sendPromotionEmails } from '../waitlist/promote'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
 
@@ -35,7 +36,7 @@ export interface CancelInput {
   actorStaffId?: string
   /**
    * The package that paid for this booking has been **Voided** by a Refund
-   * (§14). The seat is released as usual (there is no class waitlist to promote yet — #152), but nothing
+   * (§14). The seat is released as usual (and promotes from the waitlist like any other), but nothing
    * is returned: putting a credit back into a package that no longer exists is
    * meaningless, and a `credit_returned` outcome would falsely read as the
    * member being made whole twice on top of their money back. The outcome is
@@ -55,7 +56,7 @@ export async function cancelBooking(
 ): Promise<CancelResult> {
   const { bookingId, source, clientId, actorStaffId, packageVoided } = input
 
-  return db.transaction(async tx => {
+  const { result, promotions } = await db.transaction(async tx => {
     // 1. Lock the booking row.
     const [bk] = await tx
       .select({
@@ -67,6 +68,7 @@ export async function cancelBooking(
         clientPackageId: bookings.clientPackageId,
         state: bookings.state,
         checkInState: bookings.checkInState,
+        seat: bookings.seat,
         used: bookings.creditsOrSessionsUsed,
       })
       .from(bookings)
@@ -202,6 +204,16 @@ export async function cancelBooking(
       },
     })
 
-    return { refundOutcome, refundFired }
+    // 8. A freed online seat goes to the head of the waitlist, in this
+    // transaction and under the class lock taken in step 2 (spec-waitlist.md
+    // §5). A buffer or overbook seat is staff's, not the line's, and promotes
+    // nobody.
+    const promotions =
+      bk.kind === 'class' && bk.seat === 'online' ? await promoteFromWaitlist(tx, tenantId, bk.classId!, now) : []
+
+    return { result: { refundOutcome, refundFired }, promotions }
   })
+
+  await sendPromotionEmails(tenantId, promotions)
+  return result
 }

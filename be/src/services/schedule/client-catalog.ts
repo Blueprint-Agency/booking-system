@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { and, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, lt } from 'drizzle-orm'
 import { db } from '../../db'
 import { publicObjectUrl } from '../../lib/r2'
 import { bookings } from '../../db/schema/bookings'
@@ -9,7 +9,9 @@ import { staffUsers } from '../../db/schema/identity'
 import { classDifficultyEnum } from '../../db/enums'
 import { NotFoundError } from '../../shared/errors'
 import { readRosters, type Tx } from './roster'
+import { countSeats, countSeatsByClass, seatsOf, spotsLeft, type SeatCounts } from '../bookings/seats'
 import { lineupsOf } from './lineup'
+import { waitlistSummaries, type WaitlistSummary } from '../waitlist/line'
 
 export interface LocationLite {
   id: string
@@ -34,6 +36,8 @@ export interface ClassCardPayload {
   booked_count: number
   spots_left: number
   lifecycle: string
+  /** The class's line (spec-waitlist.md §9). `my_entry` is null for a signed-out reader. */
+  waitlist: WaitlistSummary
 }
 
 export interface ClassDetailPayload extends ClassCardPayload {
@@ -86,30 +90,21 @@ export function resolveWindow(from?: Date, to?: Date): { from: Date; to: Date } 
   return { from: start, to: end }
 }
 
-async function bookedCountByClass(
-  tenantId: string,
-  classIds: string[],
-): Promise<Map<string, number>> {
-  const map = new Map<string, number>()
-  if (classIds.length === 0) return map
-  const rows = await db
-    .select({ classId: bookings.classId, cnt: sql<number>`count(*)::int` })
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.tenantId, tenantId),
-        inArray(bookings.classId, classIds),
-        eq(bookings.state, 'confirmed'),
-      ),
-    )
-    .groupBy(bookings.classId)
-  for (const r of rows) if (r.classId) map.set(r.classId, Number(r.cnt))
-  return map
+/**
+ * What a member is shown of a class's seats: online seats only. `booked_count`
+ * is the online seats taken, so it and `spots_left` always add up to
+ * `capacity_online`; buffer and overbook seats are staff's and never shown here
+ * (spec-waitlist.md §2).
+ */
+function memberSeats(counts: SeatCounts, capacityOnline: number) {
+  return { booked_count: counts.onlineUsed, spots_left: spotsLeft(counts, { capacityOnline }) }
 }
 
+/** `clientId` is the signed-in member, whose own place in each line is shown; null on the public route. */
 export async function listClassCards(
   tenantId: string,
   filters: ClassListFilters,
+  clientId: string | null = null,
 ): Promise<ClassCardPayload[]> {
   const { from, to } = resolveWindow(filters.from, filters.to)
   const conds = [
@@ -139,6 +134,7 @@ export async function listClassCards(
       endsAt: classes.endsAt,
       creditCost: classes.creditCost,
       capacityOnline: classes.capacityOnline,
+      capacityWaitlist: classes.capacityWaitlist,
       lifecycle: classes.lifecycle,
     })
     .from(classes)
@@ -148,6 +144,7 @@ export async function listClassCards(
     .innerJoin(locations, eq(classes.locationId, locations.id))
     .where(and(...conds))
     .orderBy(classes.startsAt)
+  const waitlists = await waitlistSummaries(tenantId, rows, clientId)
 
   const roomIds = Array.from(new Set(rows.map(r => r.roomId).filter((v): v is string => !!v)))
   const roomById = new Map<string, { id: string; name: string }>()
@@ -161,7 +158,8 @@ export async function listClassCards(
     for (const r of roomRows) roomById.set(r.id, { id: r.id, name: r.name })
   }
 
-  const booked = await bookedCountByClass(
+  const seats = await countSeatsByClass(
+    db,
     tenantId,
     rows.map(r => r.id),
   )
@@ -171,7 +169,6 @@ export async function listClassCards(
   )
 
   return rows.map(r => {
-    const bookedCount = booked.get(r.id) ?? 0
     const supporting = supportingByClass.get(r.id) ?? []
     return {
       id: r.id,
@@ -186,9 +183,9 @@ export async function listClassCards(
       ends_at: r.endsAt.toISOString(),
       credit_cost: r.creditCost,
       capacity_online: r.capacityOnline,
-      booked_count: bookedCount,
-      spots_left: Math.max(0, r.capacityOnline - bookedCount),
+      ...memberSeats(seatsOf(seats, r.id), r.capacityOnline),
       lifecycle: r.lifecycle,
+      waitlist: waitlists.get(r.id)!,
     }
   })
 }
@@ -229,6 +226,7 @@ export async function getClassDetail(
       endsAt: classes.endsAt,
       creditCost: classes.creditCost,
       capacityOnline: classes.capacityOnline,
+      capacityWaitlist: classes.capacityWaitlist,
       lifecycle: classes.lifecycle,
     })
     .from(classes)
@@ -251,7 +249,7 @@ export async function getClassDetail(
     room = roomRow ?? null
   }
 
-  const booked = (await bookedCountByClass(tenantId, [r.id])).get(r.id) ?? 0
+  const seats = await countSeats(db, tenantId, r.id)
 
   const supportingRows = await db
     .select({
@@ -290,9 +288,10 @@ export async function getClassDetail(
     ends_at: r.endsAt.toISOString(),
     credit_cost: r.creditCost,
     capacity_online: r.capacityOnline,
-    booked_count: booked,
-    spots_left: Math.max(0, r.capacityOnline - booked),
+    ...memberSeats(seats, r.capacityOnline),
     lifecycle: r.lifecycle,
+    // Public route: the line's length, never anyone's place in it.
+    waitlist: (await waitlistSummaries(tenantId, [r], null)).get(r.id)!,
   }
 }
 

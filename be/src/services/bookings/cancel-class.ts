@@ -23,6 +23,7 @@ import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
 import { refundCredits } from '../packages/ledger'
 import { computeEventState } from '../policy/event-state'
+import { removeLineForCancelledClass } from '../waitlist/line'
 import { emailEveryAdmin } from '../notifications/send'
 import { sgFormat } from '../../lib/time'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
@@ -157,6 +158,9 @@ export async function cancelClass(
         })
         .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
     }
+
+    // Nobody is left queued for a class that will not run (spec-waitlist.md §6).
+    await removeLineForCancelledClass(tx, tenantId, classId, actorStaffId, now)
 
     // Inbox notification per §13. The instructor's reason is free text and
     // lives here — the only place a cancellation carries one.

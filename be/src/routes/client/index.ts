@@ -12,6 +12,7 @@ import purchases from './purchases'
 import invoices from './invoices'
 import waiver from './waiver'
 import referral from './referral'
+import waitlist from './waitlist'
 
 const app = new Hono()
   .use('*', clientAuth, requireActiveClient)
@@ -25,5 +26,6 @@ const app = new Hono()
   .route('/invoices', invoices)
   .route('/waiver', waiver)
   .route('/referral', referral)
+  .route('/waitlist', waitlist)
 
 export default app

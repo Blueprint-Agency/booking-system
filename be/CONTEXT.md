@@ -332,6 +332,18 @@ _Avoid_: upgraded, retained, activated, signed up, won
 A weekly repeating class, defined once — Class Type, weekday, start and end time in the Tenant's own timezone, instructors and their pay, Location, Room, capacity, credit cost, a first and a last date, and dates to leave out — that creates an ordinary class for every week in its range. A class created by a series is a class in every respect: it is booked, edited, cancelled and restaffed on its own, and changing one never changes the others. The series only records where the class came from and makes more of them: it is **extended** to a later last date (never creating a second class on a date it already has) and **ended** from a date (its unbooked classes from then on are cancelled; booked ones are left for the admin to cancel, which refunds). Both creating and extending are previewed first — every date with its clash result — and commit all or nothing. Admin only.
 _Avoid_: recurring class, repeating event, template, schedule rule, recurrence
 
+**Online Seat** / **Buffer Seat**:
+A class's two kinds of seat (`bookings.seat`, counted only by `services/bookings/seats.ts`). An Online Seat is one of `capacity_online`, taken by a member booking themselves or by a Promotion. A Buffer Seat is one of `capacity_buffer`, filled only by staff booking a member. **Attendance Capacity** is their sum — the most people the roster holds. An **Overbook** is an admin's booking past both. The waitlist is not a seat.
+_Avoid_: max capacity, total capacity, spots (outside the member app, where `spots_left` means free Online Seats)
+
+**Waitlist**:
+The ordered line of members waiting for an Online Seat on one full class (`waitlist_entries`, `services/waitlist/`), capped at the class's `capacity_waitlist`. Order is join time; a position is counted, never stored. Joining costs nothing — it only checks the member could pay — and is refused once the class is inside its Cancellation Window. Leaving is not a cancellation. The line is **open** when the studio's `waitlist_enabled` switch is on, the class is active and outside the window, and the line has room. Classes only; workshops and PT sessions have none in v1.
+_Avoid_: queue entry as a booking, waitlisted booking, standby
+
+**Promotion** (waitlist):
+Booking the head of a class's Waitlist into a freed Online Seat, automatically, inside the cancel that freed it — only outside the Cancellation Window, so the promoted member can always still cancel free. The package is chosen at that moment, exactly as a booking would; a member whose package cannot pay is skipped and stays in line. The promoted booking is an ordinary booking. A freed Buffer or Overbook seat never promotes. Not to be confused with a **Promotion** in § Discounts (a price offer).
+_Avoid_: offer, claim, auto-book
+
 ### Check-in
 
 **Check-in**:

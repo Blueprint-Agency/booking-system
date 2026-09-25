@@ -380,12 +380,18 @@ Workshops are still *configured* under Packages (§7e) — the scheduler only pi
 
 | Field | Meaning |
 |---|---|
-| `waitlist` | Overflow queue size once `online_booking + buffer` is full |
-| `online_booking` | Bookable seats via the client app |
-| `buffer` | Reserved for staff / walk-ins; not exposed to clients |
-| `max_capacity` (derived) | `waitlist + online_booking + buffer` |
+| `online_booking` | Online seats: members book these themselves in the client app |
+| `buffer` | Buffer seats: only staff fill these, by booking a member from the session page; never shown to members |
+| `waitlist` | How many members may queue once the online seats are gone. **Not a seat.** |
+| `attendance_capacity` (derived) | `online_booking + buffer` — the most people the roster holds without an overbook |
 
-A shared `<CapacityFields />` block appears on every scheduling form. Detail pages render a **Capacity breakdown** strip showing the three slices side-by-side.
+The waitlist is a line, not part of the room, so it is never added into a capacity (`spec-waitlist.md` §1; this replaces the earlier `max_capacity = waitlist + online_booking + buffer`).
+
+A shared `<CapacityFields />` block appears on every scheduling form, reading "Attendance capacity: N · Waitlist: M" under its three inputs.
+
+**Seats.** Every class booking records the seat it holds — `online`, `buffer` or `overbook` — and `services/bookings/seats.ts` is the only place they are counted. A member takes an online seat; staff take a buffer seat; an admin may **overbook** past a full buffer after confirming "No seats left. Overbook?". An instructor is told "No seats left." and cannot overbook. The member catalogue's `spots_left` is online seats only, so a staff booking never changes it.
+
+**Session page** (admin and instructor): **Booked** `attending / attendance capacity` (e.g. 8 / 16); **Seats** `online used / online · buffer used / buffer`, plus "N overbooked" when any; the roster tags each buffer and overbook row; **Add member** searches the studio's members and books one on. The timetable cell reads `attending / attendance capacity`. An instructor reaches this page for the classes they lead.
 
 ### 7e. Workshops are configured under Packages (not Schedule)
 

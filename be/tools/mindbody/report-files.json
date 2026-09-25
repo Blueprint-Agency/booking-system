@@ -19,6 +19,7 @@
     { "kind": "groupCancellations", "file": "08 Cancellations - Group cancellations.xls", "single": true, "required": false },
     { "kind": "promotions", "file": "23 Promotions - Detail.xls", "single": true, "required": false },
     { "kind": "autopay", "file": "43 Autopay Detail - Scheduled.xls", "single": true, "required": false },
-    { "kind": "saleMethods", "file": "44 Sales - Detail Accrual.xlsx", "single": true, "required": false }
+    { "kind": "saleMethods", "file": "44 Sales - Detail Accrual.xlsx", "single": true, "required": false },
+    { "kind": "waitlists", "file": "45 Class Waitlists.xlsx", "single": true, "required": false }
   ]
 }

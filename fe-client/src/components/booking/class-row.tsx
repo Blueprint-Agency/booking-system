@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { Check, UserRound, MapPin, Loader2, Lock } from "lucide-react";
 import { cn, formatSgd } from "@/lib/utils";
 import { Select } from "@/components/ui/select";
-import { ApiError, useApi } from "@/lib/api";
+import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
+import { notCoveredCopy, planRunsOutCopy } from "@/lib/booking-copy";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
@@ -21,6 +22,16 @@ import {
   SHEET_TEXT,
   SHEET_TITLE,
 } from "@/components/ui/styles";
+import {
+  classAction,
+  joinedToast,
+  joinWaitlist,
+  leaveWaitlist,
+  waitlistRefusal,
+  type WaitlistPlace,
+} from "@/lib/waitlist";
+import { toast } from "sonner";
+import { LeaveWaitlistDialog } from "@/components/booking/leave-waitlist-dialog";
 
 const credits = (n: number) => `${n} credit${n === 1 ? "" : "s"}`;
 
@@ -31,6 +42,7 @@ export function ClassRow({
   canBookLoaded,
   isSignedIn,
   entitlements,
+  onStale,
 }: {
   cls: ApiClassCard;
   showLocation: boolean;
@@ -38,18 +50,36 @@ export function ClassRow({
   canBookLoaded: boolean;
   isSignedIn: boolean;
   entitlements: ClassEntitlements | null;
+  /** Re-read the feed: the row's state turned out to be out of date. */
+  onStale?: () => void;
 }) {
   const router = useRouter();
   const api = useApi();
   const [showNoPackage, setShowNoPackage] = useState(false);
   // One state, so the message and its offer can't drift apart. `offersCredit` is
   // set only on the expiry refusal, where credits are the one way through (§3).
+  // `title` is set by a waitlist refusal; unset reads "Couldn't book".
   const [bookError, setBookError] = useState<
-    { msg: string; offersCredit?: boolean } | null
+    { msg: string; offersCredit?: boolean; title?: string } | null
   >(null);
   const [booked, setBooked] = useState(cls.is_booked ?? false);
   const [spotsLeft, setSpotsLeft] = useState(cls.spots_left);
   const [booking, setBooking] = useState(false);
+  const [myEntry, setMyEntry] = useState<WaitlistPlace | null>(cls.waitlist.my_entry);
+  const [waitlistOpen, setWaitlistOpen] = useState(cls.waitlist.open);
+  const [joining, setJoining] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  // A re-read feed hands the row a new card: take what the server now says,
+  // rather than what this row last believed.
+  const [seenCls, setSeenCls] = useState(cls);
+  if (cls !== seenCls) {
+    setSeenCls(cls);
+    setBooked(cls.is_booked ?? false);
+    setSpotsLeft(cls.spots_left);
+    setMyEntry(cls.waitlist.my_entry);
+    setWaitlistOpen(cls.waitlist.open);
+  }
   const noPackageTrapRef = useFocusTrap<HTMLDivElement>(showNoPackage);
   const bookErrorTrapRef = useFocusTrap<HTMLDivElement>(Boolean(bookError));
   useBodyScrollLock(showNoPackage || Boolean(bookError));
@@ -105,13 +135,7 @@ export function ClassRow({
       setBooked(true);
       setSpotsLeft((s) => Math.max(0, s - 1));
     } catch (err) {
-      const code =
-        err instanceof ApiError &&
-        err.body &&
-        typeof err.body === "object" &&
-        "error" in err.body
-          ? String((err.body as { error: unknown }).error)
-          : "";
+      const code = errCode(err);
       if (code === ERROR_CODES.insufficient_credits) {
         setBookError(null);
         setShowNoPackage(true);
@@ -120,18 +144,22 @@ export function ClassRow({
         setBooked(true);
       } else if (code === ERROR_CODES.class_full) {
         setSpotsLeft(0);
-        setBookError({ msg: "This class just filled up." });
+        // The refusal says whether the line is open, so the row can offer it.
+        const open =
+          err instanceof ApiError && err.body && typeof err.body === "object"
+            ? (err.body as { waitlist_open?: unknown }).waitlist_open === true
+            : false;
+        setWaitlistOpen(open);
+        setBookError({
+          msg: open ? "This class just filled up. You can join the waitlist instead." : "This class just filled up.",
+        });
       } else if (code === ERROR_CODES.class_already_started) {
         setBookError({ msg: "This class has already started." });
       } else if (code === ERROR_CODES.location_not_covered) {
         // Genuinely the wrong studio. The lock chip below catches this before
         // the click in the normal case; what lands here is entitlements the
         // client read too early or too late.
-        setBookError({
-          msg: planLocation
-            ? `Your plan covers ${planLocation.name} only.`
-            : "Your plan doesn't cover this studio.",
-        });
+        setBookError({ msg: notCoveredCopy(planLocation?.name ?? null) });
       } else if (code === ERROR_CODES.plan_expires_before_class) {
         // Not a coverage problem: the package does cover this studio, it just
         // runs out first. The Cross-Location Add-On sells Locations, not time,
@@ -139,12 +167,7 @@ export function ClassRow({
         // on the first booking after the current one ends. Credits are offered
         // only when nothing is running yet (a Dormant plan being passed over):
         // while a package runs, nothing behind it can start.
-        setBookError({
-          msg:
-            "Your current package ends before this class starts." +
-            (creditsCanStart ? "" : " Book it once your next package is running."),
-          offersCredit: creditsCanStart,
-        });
+        setBookError({ msg: planRunsOutCopy(creditsCanStart), offersCredit: creditsCanStart });
       } else {
         setBookError({ msg: "Couldn't book this class. Please try again." });
       }
@@ -153,42 +176,134 @@ export function ClassRow({
     }
   };
 
+  /** A refused join or leave, told the way §9 words it; an unknown code gets the generic dialog. */
+  const handleWaitlistRefusal = (err: unknown, title: string) => {
+    const body = err instanceof ApiError ? err.body : null;
+    const out = waitlistRefusal(errCode(err), body, planLocation?.name ?? null);
+    if (!out) {
+      setBookError({ title, msg: "Something went wrong. Please try again." });
+    } else if (out.kind === "no_package") {
+      setShowNoPackage(true);
+    } else if (out.kind === "refresh") {
+      onStale?.();
+    } else {
+      if (out.closed) setWaitlistOpen(false);
+      if (out.refresh) onStale?.();
+      setBookError({ title, msg: out.msg });
+    }
+  };
+
+  const handleJoinClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!isSignedIn) {
+      router.push(`/login?next=${encodeURIComponent("/")}`);
+      return;
+    }
+    if (canBookLoaded && !canBook) {
+      setShowNoPackage(true);
+      return;
+    }
+    if (joining || myEntry) return;
+    setJoining(true);
+    try {
+      const res = await joinWaitlist(api, cls.id);
+      setBookError(null);
+      setMyEntry({ id: res.entry_id, position: res.position });
+      toast.success(joinedToast(res.position));
+    } catch (err) {
+      handleWaitlistRefusal(err, "Couldn't join the waitlist");
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const handleLeave = async () => {
+    if (!myEntry || leaving) return;
+    setLeaving(true);
+    try {
+      await leaveWaitlist(api, myEntry.id);
+      setMyEntry(null);
+      toast.success("Left the waitlist.");
+      // Whether the line is still open (and so whether the row reads "Join
+      // waitlist" or "Full") is the server's to say.
+      onStale?.();
+    } catch (err) {
+      handleWaitlistRefusal(err, "Couldn't leave the waitlist");
+    } finally {
+      setLeaving(false);
+      setConfirmLeave(false);
+    }
+  };
+
+  const action = classAction({ booked, myEntry, spotsLeft, waitlistOpen, notCovered });
+  // Dimmed only when there is nothing to do here; a full class with a line to
+  // join, or the member's own place in it, stays at full strength.
+  const dim = action === "full" || action === "not_covered";
+
   // The time moves into the text block on a phone, so the name, its meta and
   // a compact action all fit on one row at 320px without truncating the name.
   const shape =
     "inline-flex min-h-[40px] items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 text-sm font-semibold";
-  const cta = booked ? (
-    <span className={cn(shape, "bg-sage/15 text-sage")}>
-      <Check className="h-4 w-4" aria-hidden />
-      Booked
-    </span>
-  ) : isFull ? (
-    <span className={cn(shape, "bg-ink/5 text-muted")}>Full</span>
-  ) : notCovered ? (
-    <span className={cn(shape, "bg-ink/5 text-muted")}>
-      <Lock className="h-3.5 w-3.5" aria-hidden />
-      Not in plan
-    </span>
-  ) : (
-    <button
-      onClick={handleBookClick}
-      disabled={booking}
-      className={cn(
-        shape,
-        "bg-ink text-paper hover:bg-ink/90 transition-colors disabled:opacity-70 disabled:cursor-wait",
-      )}
-    >
-      {booking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-      {booking ? "Booking…" : "Book Now"}
-    </button>
-  );
+  const cta =
+    action === "booked" ? (
+      <span className={cn(shape, "bg-sage/15 text-sage")}>
+        <Check className="h-4 w-4" aria-hidden />
+        Booked
+      </span>
+    ) : action === "waitlisted" && myEntry ? (
+      <span className="inline-flex items-center gap-1">
+        <span className={cn(shape, "bg-warning/15 text-ink")}>On waitlist · #{myEntry.position}</span>
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            setConfirmLeave(true);
+          }}
+          disabled={leaving}
+          className="min-h-[40px] px-2 text-xs font-medium text-muted underline underline-offset-2 hover:text-error transition-colors disabled:cursor-wait"
+        >
+          Leave
+        </button>
+      </span>
+    ) : action === "join_waitlist" ? (
+      <button
+        onClick={handleJoinClick}
+        disabled={joining}
+        className={cn(
+          shape,
+          "border border-warning bg-warning/10 text-ink hover:bg-warning/20 transition-colors disabled:opacity-70 disabled:cursor-wait",
+        )}
+      >
+        {joining && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        {joining ? "Joining…" : "Join waitlist"}
+      </button>
+    ) : action === "full" ? (
+      <span className={cn(shape, "bg-ink/5 text-muted")}>Full</span>
+    ) : action === "not_covered" ? (
+      <span className={cn(shape, "bg-ink/5 text-muted")}>
+        <Lock className="h-3.5 w-3.5" aria-hidden />
+        Not in plan
+      </span>
+    ) : (
+      <button
+        onClick={handleBookClick}
+        disabled={booking}
+        className={cn(
+          shape,
+          "bg-ink text-paper hover:bg-ink/90 transition-colors disabled:opacity-70 disabled:cursor-wait",
+        )}
+      >
+        {booking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        {booking ? "Booking…" : "Book Now"}
+      </button>
+    );
   const timeRange = `${formatClassTime(cls.starts_at)} – ${formatClassTime(cls.ends_at)}`;
 
   return (
     <div className="px-4 py-3.5 md:px-5 md:py-4">
       {/* Dim the row only — not the plan nudge below, which is the way
-          through, nor a dialog opened from this row. */}
-      <div className={cn("flex items-center gap-3 md:gap-5", (isFull || notCovered) && "opacity-60")}>
+          through, nor a dialog opened from this row. A full class with a line
+          to join, or the member's own place in it, stays at full strength. */}
+      <div className={cn("flex items-center gap-3 md:gap-5", dim && "opacity-60")}>
         {/* Time — its own column once there is room */}
         <div className="hidden sm:block w-[76px] shrink-0 tabular-nums">
           <div className="text-[15px] font-bold tracking-tight text-ink">
@@ -262,6 +377,17 @@ export function ClassRow({
         </div>
       )}
 
+      {confirmLeave && myEntry && (
+        <LeaveWaitlistDialog
+          classTitle={cls.class_type.name}
+          startsAt={cls.starts_at}
+          position={myEntry.position}
+          leaving={leaving}
+          onConfirm={handleLeave}
+          onClose={() => setConfirmLeave(false)}
+        />
+      )}
+
       {showNoPackage && (
         <div className={SHEET_BACKDROP} onClick={() => setShowNoPackage(false)}>
           <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-labelledby={`no-package-${cls.id}`} tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
@@ -280,7 +406,8 @@ export function ClassRow({
         <div className={SHEET_BACKDROP} onClick={() => setBookError(null)}>
           <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-labelledby={`book-error-${cls.id}`} tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
             <span aria-hidden className={SHEET_HANDLE} />
-            <h3 id={`book-error-${cls.id}`} className={SHEET_TITLE}>Couldn&apos;t book</h3>
+            {/* A waitlist refusal names itself; unset reads "Couldn't book". */}
+            <h3 id={`book-error-${cls.id}`} className={SHEET_TITLE}>{bookError.title ?? "Couldn't book"}</h3>
             <p className={SHEET_TEXT}>{bookError.msg}</p>
             <div className={SHEET_ACTIONS}>
               <button onClick={() => setBookError(null)} className={BTN_SECONDARY}>

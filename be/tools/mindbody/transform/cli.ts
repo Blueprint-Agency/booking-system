@@ -35,6 +35,7 @@ import { ConfigError, starterConfig } from './config'
 import { reportFacts, staffFacts } from './facts'
 import type { Figures } from './figures'
 import { fillConfigs, unmappedPaymentMethods, type StudioAnswers } from './fill'
+import { WAITLIST_FLAG } from './mapper'
 import { companionPaths, readReports, transformMindbody, verifyImport } from './transform'
 import { isoDay, localDateOf } from './values'
 
@@ -177,7 +178,8 @@ async function main() {
     )
     console.log(
       `Timetable: ${counts.classes} classes, ${counts.pt_sessions} PT sessions, ` +
-        `${counts.workshops} workshops over ${counts.workshop_days} days, ${counts.bookings} bookings.`,
+        `${counts.workshops} workshops over ${counts.workshop_days} days, ${counts.bookings} bookings, ` +
+        `${counts.waitlist_entries} waiting (waitlists ${result.archive.rows.feature_flags!.find(f => f.key === WAITLIST_FLAG)?.enabled ? 'on' : 'off'}).`,
     )
     // History, where the config asked for it: the figures the studio will check.
     if (counts.check_ins || counts.cancellations) {

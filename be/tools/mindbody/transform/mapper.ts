@@ -27,6 +27,7 @@ import type {
   SaleMethodRow,
   SaleRow,
   ScheduledClassRow,
+  WaitlistRow,
 } from './readers'
 import { bookingCoder } from './booking-codes'
 import { joinSales } from './sales'
@@ -89,6 +90,11 @@ export type MindbodyReports = {
   autopay: AutopayRow[]
   /** How each sale was paid, a row per sale × method (Sales, Detail Accrual): a past purchase's method. Empty where not downloaded. */
   saleMethods: SaleMethodRow[]
+  /**
+   * Who is waiting on each future class, in queue order (Class Waitlists, scraped). Null or
+   * absent where the download has no such file — which says nothing about whether anyone waits.
+   */
+  waitlists?: WaitlistRow[] | null
 }
 
 export type Preflight = {
@@ -135,6 +141,13 @@ export type Transformed = { archive: TenantArchive; ids: IdMapping; preflight: P
 const PLACEHOLDER_DOMAIN = 'no-email.invalid'
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * The studio's waitlist switch, as `services/waitlist/line.ts` names it. Spelled
+ * here because that module reaches the database, which the transform never
+ * loads; `waitlists.test.ts` holds the two spellings together.
+ */
+export const WAITLIST_FLAG = 'waitlist_enabled'
 
 type Row = Record<string, unknown>
 
@@ -202,6 +215,10 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   ]
   const ptBookingConfig: Row[] = [
     { id: id('policy', 'pt'), tenant_id: tenantId, book_in_advance_days: config.policy.ptBookInAdvanceDays },
+  ]
+  // Decision 21, Mindbody's "Enable Waitlists": the studio's switch, written either way so it is said.
+  const featureFlags: Row[] = [
+    { tenant_id: tenantId, key: WAITLIST_FLAG, enabled: config.waitlist.enabled, updated_at: asOf.toISOString(), updated_by_staff_id: null },
   ]
 
   // The same copy a studio provisioned in the super portal gets, pointing at
@@ -475,6 +492,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   const schedule = mapSchedule({
     schedule: reports.schedule,
     roster: reports.roster,
+    waitlists: reports.waitlists ?? null,
     payRates: reports.payRates,
     payroll: reports.payroll,
     config,
@@ -624,9 +642,12 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     // reading the zip; it costs nothing to have it read the way it must be written.
     check_ins: [...history.checkIns, ...workshops.checkIns],
     cancellations: history.cancellations,
+    // After `classes` and `clients`, which they point at: nobody waiting is a table with no rows.
+    waitlist_entries: schedule.waitlistEntries,
     manual_payroll_entries: history.manualPayrollEntries,
     global_policy: globalPolicy,
     pt_booking_config: ptBookingConfig,
+    feature_flags: featureFlags,
     email_templates: emailTemplates,
     tenant_settings: tenantSettings,
   }

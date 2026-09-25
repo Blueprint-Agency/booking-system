@@ -8,6 +8,7 @@ import { SLOT_CRON, isDailySlot } from './local-time'
 import { expireStaleSessions, completeEndedPtSessions } from '../services/pt-sessions/cancel'
 import { expirePackages, sendLapsingAlerts, sendExpiredNotifications } from '../services/packages/expire'
 import { flagExpiredWaivers } from '../services/waiver'
+import { expireWaitlists } from '../services/waitlist/line'
 import { loadFeatureFlags } from '../services/feature-flags'
 import { now } from '../lib/clock'
 
@@ -118,6 +119,11 @@ export const scheduledJobs = {
   // Every 5 min — advance scheduled PT requests whose session has ended to `attended`
   completeEndedPtSessions: tenantJob('completeEndedPtSessions', completeEndedPtSessions),
 
+  // Every 5 min — a class waitlist entry still `waiting` when its class starts
+  // is `expired` (spec-waitlist.md §6). Reads already treat it so; this makes
+  // the stored status agree.
+  expireWaitlists: tenantJob('expireWaitlists', expireWaitlists),
+
   // The daily jobs below all ride the same 15-minute grid; the hour named is
   // each tenant's *local* hour, taken from `tenants.timezone`, never from a UTC
   // offset or from the server's (or Postgres's) own clock.
@@ -153,6 +159,7 @@ export async function registerJobs() {
 
   cron.schedule('*/5 * * * *', scheduledJobs.expireStaleSessions)
   cron.schedule('*/5 * * * *', scheduledJobs.completeEndedPtSessions)
+  cron.schedule('*/5 * * * *', scheduledJobs.expireWaitlists)
   cron.schedule(SLOT_CRON, scheduledJobs.expirePackages)
   cron.schedule(SLOT_CRON, scheduledJobs.sendLapsingAlerts)
   cron.schedule(SLOT_CRON, scheduledJobs.sendExpiredNotifications)

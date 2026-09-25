@@ -221,17 +221,32 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
   - Logged out: *"Log in to see your credit balance"*
 - Right side: action button (states below).
 
-**Button states (per row)**
+**Button states (per row)** — first match wins; the waitlist rows are `spec-waitlist.md` §9, read from each class's `waitlist { enabled, capacity, waiting, open, my_entry }`.
 | User state | Button |
 |---|---|
-| Logged out | "Book Now" → `/login?next=/booking/confirmation?sessionId=...` |
+| Already booked by user | "Booked" (link → `/account/classes`). A booked class never shows a waitlist control. |
+| In this class's line (`waitlist.my_entry`) | "On waitlist · #N" with a secondary "Leave" → confirm dialog → toast *"Left the waitlist."*; the row then reads "Join waitlist" if the line is still open, else "Full" |
+| Logged out, seat available | "Book Now" → `/login?next=/booking/confirmation?sessionId=...` |
 | Logged in, has credits, seat available | "Book Now" (sage, filled) |
 | Logged in, no credits / exhausted | Grey "Book Now" → popup *"You need a package to book this class"* → "Buy a Package" CTA → `/packages` |
-| Spots open + waitlist enabled (rare on classes — waitlist is more common on workshops) | "Join Waitlist" |
-| Class full + waitlist enabled | "Join Waitlist" (warning, outlined) |
-| Class full, no waitlist | "Full" (muted, disabled) |
+| Online seats full + `waitlist.open` (studio switch on, before the Cancellation Window, room in the line) | "Join waitlist" (warning, outlined). Joining debits nothing; the row becomes "On waitlist · #N" without a reload |
+| Online seats full, waitlist off / closed / full | "Full" (muted, disabled) |
 | Class started/ended | "Ended" (disabled) |
-| Already booked by user | "Booked" (link → `/account/classes`) |
+
+A waitlist is never offered while a seat is free — the member books it. Refused joins, in the member's words:
+
+| Code | Member sees |
+|---|---|
+| `waitlist_closed` | "This class starts within N hours, so the waitlist has closed." (N from the refusal's `window_hours`) |
+| `waitlist_full` | "The waitlist for this class is full." |
+| `waitlist_disabled` | "This studio isn't taking waitlist sign-ups right now." |
+| `class_not_full` | "A spot just opened in this class — you can book it now." (the row is re-read and offers Book Now) |
+| `already_waitlisted` / `already_booked` | Nothing to explain: the row is re-read and shows the member's place or "Booked" |
+| `insufficient_credits` | The "You need a package" popup, as for booking |
+| `location_not_covered` / `plan_expires_before_class` | The booking's own copy for the same refusal |
+| anything else | The generic "Something went wrong. Please try again." dialog |
+
+**My Bookings** (`/account/classes`) lists the member's places in line in a **Waitlisted** group above Upcoming — class, instructor, location, time, "#N in line" and "Leave waitlist" (confirm dialog, then the banner *"Left the waitlist."*). Read from `GET /me/waitlist` in the same load as the bookings. When a seat opens the member is booked automatically and the class moves to Upcoming (`spec-waitlist.md` §5).
 
 **User journey**
 1. User opens `/classes`, defaults to current week, all locations.
@@ -689,7 +704,9 @@ These are the in-app and channel touchpoints triggered by booking and payment ev
 | Workshop purchased | Confirmation page | "You're registered for [workshop]. We've emailed your receipt." |
 | Package purchased | Confirmation page | "[Package name] is now active. Start booking from /classes." |
 | Private session requested | Confirmation page | "Your request is pending. We will update you within 12 hours." |
-| Waitlist join | Toast | "You're on the waitlist. We'll notify you if a seat opens." |
+| Class waitlist join | Toast | "Class is full — you're #N on the waitlist. We'll book you in and email you if a seat opens." No email is sent on join; this toast and My Bookings are the only feedback. |
+| Class waitlist left | Toast (class row) / Banner (My Bookings) | "Left the waitlist." |
+| Workshop waitlist join | Toast | "You're on the waitlist. We'll notify you if a seat opens." _(workshop waitlists are not built — `spec-waitlist.md` §12)_ |
 | Verification successful | Toast | "Email verified ✓" / "Phone verified ✓" |
 | Payment failed | Inline error in checkout | "Payment failed. [reason]. Please try again." |
 
@@ -700,7 +717,8 @@ These are the in-app and channel touchpoints triggered by booking and payment ev
 | Booking confirmation (any) | Email | Includes per-booking QR link |
 | Workshop purchase receipt | Email | PDF invoice attached or linked |
 | Private-session request approved/rejected | Email + in-app | Approval includes QR; rejection may include alt-time suggestion |
-| Waitlist seat available | Email + in-app | Time-bound CTA to claim |
+| Promoted from a class waitlist | Email (`class_waitlist_promoted`) | "You're in — [class]": a seat opened and the member has been booked, with the credit used and the time they can cancel free until. No claim step — promotion books them (`spec-waitlist.md` §5, §11). |
+| Workshop waitlist seat available | Email + in-app | Time-bound CTA to claim _(not built — `spec-waitlist.md` §12)_ |
 | Class cancelled by studio | Email + in-app | Credit auto-returned, banner on dashboard |
 | Membership / package expiry milestones | Email + in-app banner | t-30/15/7/1d/12h/2h gated by package length (see §8.1) |
 | Referral converted | In-app toast on next visit | "[Referee] just joined — S$20 credit added to your account" |

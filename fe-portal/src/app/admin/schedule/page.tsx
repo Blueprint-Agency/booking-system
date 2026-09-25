@@ -35,6 +35,7 @@ import { CorporateRequestPickerDialog } from "@/components/schedule/corporate-re
 import { useWorkspace } from "@/lib/workspace-context";
 import { useSchedule, type ScheduleEntry } from "@/lib/use-schedule";
 import { slotHref, type Slot } from "@/lib/schedule";
+import { waitingTag } from "@/lib/class-waitlist";
 
 type View = "day" | "week" | "month";
 type AddKind = "class" | "series" | "workshop" | "corporate" | "pt";
@@ -1081,6 +1082,11 @@ function EventBlock({
           {entry.capacity !== null && entry.bookedCount !== null && (
             <span className="shrink-0 rounded bg-ink/[0.07] px-1 text-[10px] font-bold tabular-nums text-ink/75">
               {entry.bookedCount}/{entry.capacity}
+            </span>
+          )}
+          {entry.kind === "class" && waitingTag(entry.waiting) && (
+            <span className="shrink-0 text-[10px] font-medium tabular-nums text-warning">
+              {waitingTag(entry.waiting)}
             </span>
           )}
         </div>

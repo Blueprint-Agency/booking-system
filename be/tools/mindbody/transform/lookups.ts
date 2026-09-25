@@ -28,8 +28,8 @@ export type ConfigLookups = {
   offSite: Set<string>
   /** Location spelling → its config key. */
   locations: Map<string, string>
-  /** Class name, normalised → the Class Type it is. */
-  types: Map<string, { id: string; capacity: number | null }>
+  /** Class name, normalised → the Class Type it is, and how many may wait on one of its classes (decision 21). */
+  types: Map<string, { id: string; capacity: number | null; waitlist: number }>
   /** Mindbody service categories left to the workshop import. */
   workshopCategories: Set<string>
   /** Class names that are really a PT appointment. */
@@ -37,9 +37,11 @@ export type ConfigLookups = {
 }
 
 export function configLookups(config: StudioConfig, id: (kind: string, key: string) => string): ConfigLookups {
-  const types = new Map<string, { id: string; capacity: number | null }>()
+  const types = new Map<string, { id: string; capacity: number | null; waitlist: number }>()
+  const waitlistOf = new Map(Object.entries(config.waitlist.classTypes).map(([name, n]) => [name.trim().toLowerCase(), n]))
   for (const t of config.classTypes) {
-    const type = { id: id('class-type', t.name.trim().toLowerCase()), capacity: t.capacity }
+    const key = t.name.trim().toLowerCase()
+    const type = { id: id('class-type', key), capacity: t.capacity, waitlist: waitlistOf.get(key) ?? config.waitlist.capacity }
     for (const s of [t.name, ...t.mindbodyNames]) types.set(normaliseClassName(s), type)
   }
 

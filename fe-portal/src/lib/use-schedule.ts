@@ -22,6 +22,8 @@ export interface ApiScheduleEntry {
   ends_at: string;
   capacity: number | null;
   booked_count: number | null;
+  /** How many are in a class's waitlist; null for every other kind. */
+  waiting?: number | null;
   event_state: EventState;
   day_index: number | null;
   day_count: number | null;
@@ -47,6 +49,8 @@ export type ScheduleEntry =
       endsAt: string;
       capacity: number;
       bookedCount: number;
+      /** Members in the class's waitlist; the cell shows "+N waiting". */
+      waiting: number;
       eventState: EventState;
       raw: { id: string };
       seriesId: string | null;
@@ -122,6 +126,7 @@ function fromApi(e: ApiScheduleEntry): ScheduleEntry {
       endsAt: e.ends_at,
       capacity: e.capacity ?? 0,
       bookedCount: e.booked_count ?? 0,
+      waiting: e.waiting ?? 0,
       eventState: e.event_state,
       raw: { id: e.id },
       seriesId: e.series_id ?? null,
