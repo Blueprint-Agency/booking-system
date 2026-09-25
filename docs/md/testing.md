@@ -18,7 +18,7 @@ themselves are in `deployment.md` § Tests gate the backend deploy.
 
 ```sh
 node .claude/hooks/backend-tests.mjs be src/services/bookings/cancel.ts   # lists them
-cd be && node --import tsx --test --test-concurrency=1 --test-force-exit <those files>
+cd be && node --import tsx --import ./src/test/environment.ts --test --experimental-test-isolation=none --test-force-exit <those files>
 ```
 
 **One test database per checkout.** In a new checkout or worktree, run `npm run test:db` in `be/`
@@ -32,18 +32,21 @@ a Postgres advisory lock on the test database from its first `startTestApp()` to
 process, so a second run on the same database waits for the first one. With a database per
 checkout, only two runs in the same checkout ever wait on each other.
 
-**One process for the whole suite (not yet).** `node --test` starts a process per file, so the
-suite pays the app import and setup once per harness-using file. That is most of CI's test time. The
-harness already supports one process (`--experimental-test-isolation=none`, the spelling Node 22
-and 23 both accept; `--test-isolation` exists only from Node 23.6, with
-`--import ./src/test/environment.ts` so the test environment is in place before any file loads).
-The suite cannot switch until the files that only pass in their own process are fixed. In one
-process, every file's top level runs before any test does, and a hook outside a `describe` hooks
-the whole run. So a new backend test file must not:
+**One process for the whole suite.** `npm run check`, CI and the stop hook all run every file in
+one process (`--experimental-test-isolation=none`, the spelling Node 22 and 23 both accept;
+`--test-isolation` exists only from Node 23.6), so the app import and the database setup happen
+once per run instead of once per file. `--import ./src/test/environment.ts` puts the test
+environment in place before any file loads. In one process, every file's top level runs before
+any test does, and a hook outside a `describe` hooks the whole run. So a backend test file must not:
 
 - call `before`, `after`, `beforeEach` or `afterEach` outside a `describe`;
-- set `process.env` at its top level, or depend on being the first file to import a module that
-  reads the environment at load (`src/env.ts`, `src/lib/r2.ts`, the platform-admin allowlist).
+- set `process.env` at its top level. A file that needs its own value calls `withEnv` (`be/src/test/with-env.ts`)
+  first in its `describe`. It sets the value in a `before` and puts the old one back in an `after`.
+
+That works because the settings a test varies are read when the app uses them, not when their
+module loads (`currentEnv` in `be/src/env.ts`): the platform-admin allowlist, the R2 bucket, public
+host and keys, the statement descriptor prefix and the payment-credentials key. Anything else in
+`env` is read once, at boot, and a test cannot change it.
 
 ## Time
 

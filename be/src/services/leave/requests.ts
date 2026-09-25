@@ -16,7 +16,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../../shared/errors'
-import { R2_BUCKET, putObject, signedObjectUrl } from '../../lib/r2'
+import { r2Bucket, putObject, signedObjectUrl } from '../../lib/r2'
 import { sgFormat } from '../../lib/time'
 import * as rules from './rules'
 
@@ -772,7 +772,7 @@ export const SUPPORTING_DOCUMENT_URL_TTL_SECONDS = 300
 /** The bucket is optional in env (see lib/r2.ts), so both paths say so
  *  plainly rather than failing as an unexplained 500. */
 function requireBucket(): void {
-  if (!R2_BUCKET) {
+  if (!r2Bucket()) {
     throw new AppError(422, 'document_storage_unavailable', {
       message: 'Document storage is not configured. Ask an admin to set it up.',
     })

@@ -45,12 +45,12 @@ Starting a whole session with `ALLOW_TEST_EDITS=1` in the environment turns the 
 
 ## Running tests locally
 
-CI runs every suite on every PR, so a session doesn't have to run the whole backend suite (~25
-minutes) before it stops. When checking a change locally, run just the tests it reaches:
+CI runs every suite on every PR, so a session doesn't have to run the whole backend suite before it
+stops. When checking a change locally, run just the tests it reaches:
 
 ```sh
 node .claude/hooks/backend-tests.mjs be src/services/bookings/cancel.ts   # lists them
-cd be && node --import tsx --test --test-concurrency=1 <those files>
+cd be && node --import tsx --import ./src/test/environment.ts --test --experimental-test-isolation=none --test-force-exit <those files>
 ```
 
 `backend-tests.mjs` picks a changed test itself, every test that imports the change (through any
@@ -102,7 +102,7 @@ Locally:
 
 ```sh
 cd be
-node --import tsx --test --test-concurrency=1 --experimental-test-coverage \
+node --import tsx --import ./src/test/environment.ts --test --experimental-test-isolation=none \n  --test-force-exit --experimental-test-coverage \
   --test-coverage-include='src/**' --test-coverage-exclude='src/**/*.test.ts' --test-coverage-exclude='src/test/**' \
   --test-reporter=spec --test-reporter-destination=stdout \
   --test-reporter=lcov --test-reporter-destination=lcov.info "src/**/*.test.ts"

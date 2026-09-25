@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
-import { env } from '../env'
+import { currentEnv } from '../env'
 
 /**
  * The platform's envelope for a secret it holds on somebody else's behalf.
@@ -55,10 +55,12 @@ export function secretKeyProblem(raw: string | undefined): string | undefined {
   return undefined
 }
 
+/** Read on every seal and open rather than at import, so a test can set its own (`currentEnv`). */
 function key(): Buffer {
-  const problem = secretKeyProblem(env.PAYMENT_CREDENTIALS_KEY)
+  const raw = currentEnv('PAYMENT_CREDENTIALS_KEY')
+  const problem = secretKeyProblem(raw)
   if (problem) throw new Error(problem)
-  return Buffer.from(env.PAYMENT_CREDENTIALS_KEY!.trim(), 'base64')
+  return Buffer.from(raw!.trim(), 'base64')
 }
 
 /**

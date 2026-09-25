@@ -1,4 +1,4 @@
-import test, { before, after } from 'node:test'
+import test, { after, before, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import postgres from 'postgres'
 import { sql } from 'drizzle-orm'
@@ -31,46 +31,47 @@ import { ensureTenantIsolation, PLATFORM_ROWS } from '../db/roles'
 
 let harness: TestApp
 
-before(async () => {
-  if (!integrationTestsEnabled) return
-  harness = await startTestApp()
-})
+describe('row-level security coverage', () => {
+  before(async () => {
+    if (!integrationTestsEnabled) return
+    harness = await startTestApp()
+  })
 
-after(async () => {
-  await harness?.close()
-})
+  after(async () => {
+    await harness?.close()
+  })
 
-const options = { skip: integrationTestsEnabled ? false : SKIP_REASON }
+  const options = { skip: integrationTestsEnabled ? false : SKIP_REASON }
 
-/**
- * A short-lived owner connection.
- *
- * `lock_timeout` matters: every statement here takes ACCESS EXCLUSIVE, and the
- * app's pool is live in the same process. Without it, contention is a hung test
- * run rather than a failing assertion — and a suite that hangs is one people
- * stop running.
- */
-async function asOwner<T>(fn: (sql: postgres.Sql) => Promise<T>): Promise<T> {
-  const owner = postgres(TEST_DATABASE_URL!, { max: 1 })
-  try {
-    await owner.unsafe(`SET lock_timeout = '10s'`)
-    await owner.unsafe(`SET statement_timeout = '30s'`)
-    // `DROP POLICY IF EXISTS` on a table that has never had one is a NOTICE, and
-    // the probe tables below are exactly that case. Silenced here rather than in
-    // `ensureTenantIsolation`, where the same notice on a real deploy would be
-    // worth reading.
-    await owner.unsafe(`SET client_min_messages = warning`)
-    return await fn(owner)
-  } finally {
-    await owner.end({ timeout: 5 })
+  /**
+   * A short-lived owner connection.
+   *
+   * `lock_timeout` matters: every statement here takes ACCESS EXCLUSIVE, and the
+   * app's pool is live in the same process. Without it, contention is a hung test
+   * run rather than a failing assertion — and a suite that hangs is one people
+   * stop running.
+   */
+  async function asOwner<T>(fn: (sql: postgres.Sql) => Promise<T>): Promise<T> {
+    const owner = postgres(TEST_DATABASE_URL!, { max: 1 })
+    try {
+      await owner.unsafe(`SET lock_timeout = '10s'`)
+      await owner.unsafe(`SET statement_timeout = '30s'`)
+      // `DROP POLICY IF EXISTS` on a table that has never had one is a NOTICE, and
+      // the probe tables below are exactly that case. Silenced here rather than in
+      // `ensureTenantIsolation`, where the same notice on a real deploy would be
+      // worth reading.
+      await owner.unsafe(`SET client_min_messages = warning`)
+      return await fn(owner)
+    } finally {
+      await owner.end({ timeout: 5 })
+    }
   }
-}
 
-test('every table with a tenant_id has RLS enabled, forced, and a policy', options, async () => {
-  // Read from `pg_class` and `pg_policies`, never from a list in this file: a
-  // hardcoded expectation is the thing that goes stale the moment someone adds
-  // a table, which is the exact event this test exists to catch.
-  const unprotected = await harness.db.execute<{ table_name: string }>(sql`
+  test('every table with a tenant_id has RLS enabled, forced, and a policy', options, async () => {
+    // Read from `pg_class` and `pg_policies`, never from a list in this file: a
+    // hardcoded expectation is the thing that goes stale the moment someone adds
+    // a table, which is the exact event this test exists to catch.
+    const unprotected = await harness.db.execute<{ table_name: string }>(sql`
     SELECT c.relname AS table_name
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -93,36 +94,36 @@ test('every table with a tenant_id has RLS enabled, forced, and a policy', optio
     ORDER BY c.relname
   `)
 
-  assert.deepEqual(
-    unprotected.map(r => r.table_name),
-    [],
-    'these tables carry a tenant_id and are not policed — the app role could read them across every studio',
-  )
-})
+    assert.deepEqual(
+      unprotected.map(r => r.table_name),
+      [],
+      'these tables carry a tenant_id and are not policed — the app role could read them across every studio',
+    )
+  })
 
-test('the sweep reaches the whole schema but tenant_settings', options, async () => {
-  const scoped = await harness.db.execute<{ table_name: string }>(sql`
+  test('the sweep reaches the whole schema but tenant_settings', options, async () => {
+    const scoped = await harness.db.execute<{ table_name: string }>(sql`
     SELECT table_name
     FROM information_schema.columns
     WHERE table_schema = 'public' AND column_name = 'tenant_id'
     ORDER BY table_name
   `)
-  const names = scoped.map(r => r.table_name)
+    const names = scoped.map(r => r.table_name)
 
-  assert.ok(names.length > 40, `expected the whole schema, saw ${names.length} tenant-scoped tables`)
-  // Excluded on purpose, and the reason is load-bearing: slug resolution reads
-  // this table *before* any Tenant context exists, so a policy keyed on that
-  // context could only refuse the request that establishes it. Column grants
-  // stand in — see `ensureAppRole`.
-  assert.ok(names.includes('tenant_settings'), 'tenant_settings is tenant-scoped')
-})
+    assert.ok(names.length > 40, `expected the whole schema, saw ${names.length} tenant-scoped tables`)
+    // Excluded on purpose, and the reason is load-bearing: slug resolution reads
+    // this table *before* any Tenant context exists, so a policy keyed on that
+    // context could only refuse the request that establishes it. Column grants
+    // stand in — see `ensureAppRole`.
+    assert.ok(names.includes('tenant_settings'), 'tenant_settings is tenant-scoped')
+  })
 
-test('the studio pools\' auth tables are policed, and the platform pool\'s are not', options, async () => {
-  // Logins are per studio (#231, ADR 0006): the `staff` and `client` tables carry
-  // a `tenant_id` and the sweep fences them like any studio row. The `platform`
-  // pool's must not: the super portal has no Tenant, so a policy there would hide
-  // every operator's login and session. See db/schema/auth.ts.
-  const auth = await harness.db.execute<{ table_name: string; scoped: boolean; secured: boolean }>(sql`
+  test('the studio pools\' auth tables are policed, and the platform pool\'s are not', options, async () => {
+    // Logins are per studio (#231, ADR 0006): the `staff` and `client` tables carry
+    // a `tenant_id` and the sweep fences them like any studio row. The `platform`
+    // pool's must not: the super portal has no Tenant, so a policy there would hide
+    // every operator's login and session. See db/schema/auth.ts.
+    const auth = await harness.db.execute<{ table_name: string; scoped: boolean; secured: boolean }>(sql`
     SELECT c.relname AS table_name,
            EXISTS (
              SELECT 1 FROM information_schema.columns col
@@ -138,23 +139,23 @@ test('the studio pools\' auth tables are policed, and the platform pool\'s are n
     ORDER BY c.relname
   `)
 
-  assert.equal(auth.length, 14, `expected the three pools' tables, saw ${auth.map(r => r.table_name)}`)
-  const studio = auth.filter(r => !r.table_name.startsWith('platform_'))
-  const platform = auth.filter(r => r.table_name.startsWith('platform_'))
-  assert.equal(studio.length, 9, 'five staff tables and four client tables')
-  assert.deepEqual(studio.filter(r => !r.scoped).map(r => r.table_name), [], 'a studio auth table has no tenant_id')
-  assert.deepEqual(studio.filter(r => !r.secured).map(r => r.table_name), [], 'a studio auth table is not policed')
-  assert.deepEqual(platform.filter(r => r.scoped).map(r => r.table_name), [], 'a platform auth table grew a tenant_id')
-  assert.deepEqual(platform.filter(r => r.secured).map(r => r.table_name), [], 'a platform auth table carries a policy')
-})
+    assert.equal(auth.length, 14, `expected the three pools' tables, saw ${auth.map(r => r.table_name)}`)
+    const studio = auth.filter(r => !r.table_name.startsWith('platform_'))
+    const platform = auth.filter(r => r.table_name.startsWith('platform_'))
+    assert.equal(studio.length, 9, 'five staff tables and four client tables')
+    assert.deepEqual(studio.filter(r => !r.scoped).map(r => r.table_name), [], 'a studio auth table has no tenant_id')
+    assert.deepEqual(studio.filter(r => !r.secured).map(r => r.table_name), [], 'a studio auth table is not policed')
+    assert.deepEqual(platform.filter(r => r.scoped).map(r => r.table_name), [], 'a platform auth table grew a tenant_id')
+    assert.deepEqual(platform.filter(r => r.secured).map(r => r.table_name), [], 'a platform auth table carries a policy')
+  })
 
-test('a null tenant_id is allowed only where the platform owns rows, and policed as such', options, async () => {
-  // `auth_events` holds the super portal's sign-ins under a null Tenant, and its
-  // policy says so (`IS NOT DISTINCT FROM`). Every other `tenant_id` is NOT NULL
-  // with the strict policy. A column that went nullable without joining
-  // PLATFORM_ROWS would still be strict — its null rows invisible — but it is a
-  // schema change nobody decided on, so it fails here rather than later.
-  const nullable = await harness.db.execute<{ table_name: string; policy: string }>(sql`
+  test('a null tenant_id is allowed only where the platform owns rows, and policed as such', options, async () => {
+    // `auth_events` holds the super portal's sign-ins under a null Tenant, and its
+    // policy says so (`IS NOT DISTINCT FROM`). Every other `tenant_id` is NOT NULL
+    // with the strict policy. A column that went nullable without joining
+    // PLATFORM_ROWS would still be strict — its null rows invisible — but it is a
+    // schema change nobody decided on, so it fails here rather than later.
+    const nullable = await harness.db.execute<{ table_name: string; policy: string }>(sql`
     SELECT col.table_name, coalesce(p.qual, '') AS policy
     FROM information_schema.columns col
     LEFT JOIN pg_policies p
@@ -165,45 +166,45 @@ test('a null tenant_id is allowed only where the platform owns rows, and policed
     ORDER BY col.table_name
   `)
 
-  assert.deepEqual(nullable.map(r => r.table_name), [...PLATFORM_ROWS].sort())
-  for (const row of nullable) {
-    // Postgres deparses `a IS NOT DISTINCT FROM b` as `NOT (a IS DISTINCT FROM b)`.
-    assert.match(row.policy, /NOT \(tenant_id IS DISTINCT FROM/, `${row.table_name} has the strict policy, so its platform rows are unreachable`)
-  }
-})
+    assert.deepEqual(nullable.map(r => r.table_name), [...PLATFORM_ROWS].sort())
+    for (const row of nullable) {
+      // Postgres deparses `a IS NOT DISTINCT FROM b` as `NOT (a IS DISTINCT FROM b)`.
+      assert.match(row.policy, /NOT \(tenant_id IS DISTINCT FROM/, `${row.table_name} has the strict policy, so its platform rows are unreachable`)
+    }
+  })
 
-test('a Tenant-scoped table added later is policed by the next deploy', options, async () => {
-  // The property that actually matters, and the one migration 0033 could not
-  // have: a table that did not exist when the policy loop ran. Rather than
-  // mutating a real table — which fights the live app pool for locks — this
-  // creates its own, which is also a truer model of the failure: someone adds a
-  // table, and the question is what the deploy does about it.
-  const probe = `rls_probe_${Date.now().toString(36)}`
+  test('a Tenant-scoped table added later is policed by the next deploy', options, async () => {
+    // The property that actually matters, and the one migration 0033 could not
+    // have: a table that did not exist when the policy loop ran. Rather than
+    // mutating a real table — which fights the live app pool for locks — this
+    // creates its own, which is also a truer model of the failure: someone adds a
+    // table, and the question is what the deploy does about it.
+    const probe = `rls_probe_${Date.now().toString(36)}`
 
-  await asOwner(async owner => {
-    try {
-      await owner.unsafe(`
+    await asOwner(async owner => {
+      try {
+        await owner.unsafe(`
         CREATE TABLE ${probe} (
           tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
           id uuid PRIMARY KEY DEFAULT gen_random_uuid()
         )
       `)
 
-      // Exactly the state a forgetful migration leaves behind.
-      const [before] = await owner<{ enabled: boolean; policies: number }[]>`
+        // Exactly the state a forgetful migration leaves behind.
+        const [before] = await owner<{ enabled: boolean; policies: number }[]>`
         SELECT c.relrowsecurity AS enabled,
                (SELECT count(*)::int FROM pg_policies p
                  WHERE p.schemaname = 'public' AND p.tablename = ${probe}) AS policies
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public' AND c.relname = ${probe}
       `
-      assert.equal(before!.enabled, false, 'a new table starts with no row security')
-      assert.equal(before!.policies, 0, 'and no policy — this is the gap')
+        assert.equal(before!.enabled, false, 'a new table starts with no row security')
+        assert.equal(before!.policies, 0, 'and no policy — this is the gap')
 
-      const policed = await ensureTenantIsolation(owner)
-      assert.ok(policed.includes(probe), 'the sweep must pick up a table it has never seen')
+        const policed = await ensureTenantIsolation(owner)
+        assert.ok(policed.includes(probe), 'the sweep must pick up a table it has never seen')
 
-      const [after_] = await owner<{ enabled: boolean; forced: boolean; policies: number }[]>`
+        const [after_] = await owner<{ enabled: boolean; forced: boolean; policies: number }[]>`
         SELECT c.relrowsecurity AS enabled,
                c.relforcerowsecurity AS forced,
                (SELECT count(*)::int FROM pg_policies p
@@ -212,61 +213,62 @@ test('a Tenant-scoped table added later is policed by the next deploy', options,
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public' AND c.relname = ${probe}
       `
-      assert.equal(after_!.enabled, true, 'row security must be enabled')
-      // Without FORCE the owner bypasses its own policy, which is how a control
-      // becomes decoration without anything appearing to be wrong.
-      assert.equal(after_!.forced, true, 'row security must be forced')
-      assert.equal(after_!.policies, 1, 'the isolation policy must exist')
+        assert.equal(after_!.enabled, true, 'row security must be enabled')
+        // Without FORCE the owner bypasses its own policy, which is how a control
+        // becomes decoration without anything appearing to be wrong.
+        assert.equal(after_!.forced, true, 'row security must be forced')
+        assert.equal(after_!.policies, 1, 'the isolation policy must exist')
 
-      // Idempotent: a second pass on a healthy table changes nothing and throws
-      // nothing, which is what lets this sit in every deploy.
-      const again = await ensureTenantIsolation(owner)
-      assert.ok(again.includes(probe))
-    } finally {
-      await owner.unsafe(`DROP TABLE IF EXISTS ${probe}`)
-    }
+        // Idempotent: a second pass on a healthy table changes nothing and throws
+        // nothing, which is what lets this sit in every deploy.
+        const again = await ensureTenantIsolation(owner)
+        assert.ok(again.includes(probe))
+      } finally {
+        await owner.unsafe(`DROP TABLE IF EXISTS ${probe}`)
+      }
+    })
   })
-})
 
-test('the policy the sweep writes actually refuses another tenant', options, async () => {
-  // Enabling RLS proves the switch is on; this proves the switch is wired to
-  // something. A policy whose predicate were wrong would satisfy every
-  // catalogue assertion above and isolate nothing.
-  const probe = `rls_probe_${Date.now().toString(36)}x`
-  const { one, two } = harness.tenants
+  test('the policy the sweep writes actually refuses another tenant', options, async () => {
+    // Enabling RLS proves the switch is on; this proves the switch is wired to
+    // something. A policy whose predicate were wrong would satisfy every
+    // catalogue assertion above and isolate nothing.
+    const probe = `rls_probe_${Date.now().toString(36)}x`
+    const { one, two } = harness.tenants
 
-  await asOwner(async owner => {
-    try {
-      await owner.unsafe(`
+    await asOwner(async owner => {
+      try {
+        await owner.unsafe(`
         CREATE TABLE ${probe} (
           tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
           id uuid PRIMARY KEY DEFAULT gen_random_uuid()
         )
       `)
-      await ensureTenantIsolation(owner)
-      await owner.unsafe(`GRANT SELECT, INSERT ON ${probe} TO booking_app`)
-      await owner.unsafe(
-        `INSERT INTO ${probe} (tenant_id) VALUES ('${one.id}'), ('${two.id}')`,
-      )
-
-      // As the app role, inside one tenant's context, exactly as `withTenant` does.
-      const appUrl = TEST_DATABASE_URL!.replace(/\/\/[^@]+@/, `//booking_app:booking_app_test@`)
-      const app = postgres(appUrl, { max: 1 })
-      try {
-        await app.unsafe(`SET statement_timeout = '30s'`)
-        const seen = await app.unsafe(
-          `SELECT set_config('app.tenant_id', '${one.id}', false);
-           SELECT tenant_id::text AS tenant_id FROM ${probe}`,
+        await ensureTenantIsolation(owner)
+        await owner.unsafe(`GRANT SELECT, INSERT ON ${probe} TO booking_app`)
+        await owner.unsafe(
+          `INSERT INTO ${probe} (tenant_id) VALUES ('${one.id}'), ('${two.id}')`,
         )
-        const rows = (Array.isArray(seen) ? seen.flat() : []) as { tenant_id?: string }[]
-        const tenants = rows.filter(r => r.tenant_id).map(r => r.tenant_id)
 
-        assert.deepEqual(tenants, [one.id], 'one tenant in context, one tenant of rows')
+        // As the app role, inside one tenant's context, exactly as `withTenant` does.
+        const appUrl = TEST_DATABASE_URL!.replace(/\/\/[^@]+@/, `//booking_app:booking_app_test@`)
+        const app = postgres(appUrl, { max: 1 })
+        try {
+          await app.unsafe(`SET statement_timeout = '30s'`)
+          const seen = await app.unsafe(
+            `SELECT set_config('app.tenant_id', '${one.id}', false);
+           SELECT tenant_id::text AS tenant_id FROM ${probe}`,
+          )
+          const rows = (Array.isArray(seen) ? seen.flat() : []) as { tenant_id?: string }[]
+          const tenants = rows.filter(r => r.tenant_id).map(r => r.tenant_id)
+
+          assert.deepEqual(tenants, [one.id], 'one tenant in context, one tenant of rows')
+        } finally {
+          await app.end({ timeout: 5 })
+        }
       } finally {
-        await app.end({ timeout: 5 })
+        await owner.unsafe(`DROP TABLE IF EXISTS ${probe}`)
       }
-    } finally {
-      await owner.unsafe(`DROP TABLE IF EXISTS ${probe}`)
-    }
+    })
   })
 })

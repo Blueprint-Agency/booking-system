@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import Stripe from 'stripe'
-import { env } from '../env'
+import { currentEnv, env } from '../env'
 import { logger } from '../shared/logger'
 import { VENDOR_DEADLINE_MS } from './outbound'
 import { stripeEndpoint } from './stripe-endpoint'
@@ -232,7 +232,7 @@ export function statementDescriptorSuffix(studioName: string): string | undefine
   // what the configured prefix is — a value pasted into a GitHub variable with
   // stray whitespace must not pass the check and then eat a character of the
   // suffix's room.
-  return descriptorSuffix(env.STRIPE_STATEMENT_DESCRIPTOR_PREFIX?.trim(), studioName)
+  return descriptorSuffix(currentEnv('STRIPE_STATEMENT_DESCRIPTOR_PREFIX')?.trim(), studioName)
 }
 
 /** The rule itself, with the configured prefix passed in so it can be tested. */

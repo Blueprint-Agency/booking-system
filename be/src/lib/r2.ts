@@ -6,6 +6,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { currentEnv } from '../env'
 import { outbound, VENDOR_DEADLINE_MS } from './outbound'
 
 /**
@@ -29,10 +30,12 @@ export const r2 = new S3Client({
   // SignatureDoesNotMatch. Cloudflare's documented setting for the S3 SDK.
   requestChecksumCalculation: 'WHEN_REQUIRED',
   responseChecksumValidation: 'WHEN_REQUIRED',
-  credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-  },
+  // Read when a request is first signed, not when this module loads, so a test
+  // that brings its own keys has them used. The SDK keeps what this returns.
+  credentials: async () => ({
+    accessKeyId: currentEnv('R2_ACCESS_KEY_ID')!,
+    secretAccessKey: currentEnv('R2_SECRET_ACCESS_KEY')!,
+  }),
 })
 
 /**
@@ -49,24 +52,28 @@ export const r2 = new S3Client({
  * Optional, like the rest of the storage settings — an unconfigured deployment
  * refuses the upload at use-site rather than failing to boot. Callers check
  * this is set before calling either helper below.
+ *
+ * Read when used rather than at import (`currentEnv` in `src/env.ts`), as is
+ * the public host below, so a test can set its own.
  */
-export const R2_BUCKET = process.env.R2_BUCKET_NAME
-
-export const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL!
+export function r2Bucket(): string | undefined {
+  return currentEnv('R2_BUCKET_NAME')
+}
 
 /** The unsigned, public URL of an object — null when there is no key or no
  *  configured public host. Every read path that serialises an R2 key to a
  *  client goes through this. */
 export function publicObjectUrl(key: string | null | undefined): string | null {
-  if (!key || !R2_PUBLIC_URL) return null
-  return `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key.replace(/^\//, '')}`
+  const publicUrl = currentEnv('R2_PUBLIC_URL')
+  if (!key || !publicUrl) return null
+  return `${publicUrl.replace(/\/$/, '')}/${key.replace(/^\//, '')}`
 }
 
 export async function putObject(key: string, body: Uint8Array, contentType: string): Promise<void> {
   await outbound('storage', 'putObject', abortSignal =>
     r2.send(
       new PutObjectCommand({
-        Bucket: R2_BUCKET,
+        Bucket: r2Bucket(),
         Key: key,
         Body: body,
         ContentType: contentType,
@@ -94,7 +101,7 @@ export async function deleteObjectsUnder(prefix: string): Promise<number> {
   do {
     const page = await outbound('storage', 'listObjects', abortSignal =>
       r2.send(
-        new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: prefix, ContinuationToken: token }),
+        new ListObjectsV2Command({ Bucket: r2Bucket(), Prefix: prefix, ContinuationToken: token }),
         { abortSignal },
       ),
     )
@@ -102,7 +109,7 @@ export async function deleteObjectsUnder(prefix: string): Promise<number> {
     if (keys.length > 0) {
       await outbound('storage', 'deleteObjects', abortSignal =>
         r2.send(
-          new DeleteObjectsCommand({ Bucket: R2_BUCKET, Delete: { Objects: keys, Quiet: true } }),
+          new DeleteObjectsCommand({ Bucket: r2Bucket(), Delete: { Objects: keys, Quiet: true } }),
           { abortSignal },
         ),
       )
@@ -116,7 +123,7 @@ export async function deleteObjectsUnder(prefix: string): Promise<number> {
 /** A signed GET, valid for `expiresIn` seconds. Generated per request, never
  *  stored. On a public bucket this is a courtesy, not a boundary — see above. */
 export function signedObjectUrl(key: string, expiresIn: number): Promise<string> {
-  return getSignedUrl(r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }), {
+  return getSignedUrl(r2, new GetObjectCommand({ Bucket: r2Bucket(), Key: key }), {
     expiresIn,
   })
 }

@@ -2,12 +2,10 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, inArray } from 'drizzle-orm'
 import { frontendOrigin, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { withEnv } from './with-env'
 
 const run = Date.now().toString(36)
 const OPERATOR = `operator-${run}@sessions.test`
-
-// Read once when the platform gate is first imported, so it is set before the app is.
-process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
 
 /**
  * Tenant isolation for signed-in callers (#113), over real HTTP.
@@ -20,6 +18,8 @@ process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
  * logins are per studio (#231), studio B cannot even see it: 401.
  */
 describe('tenant isolation for sessions', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  withEnv({ PLATFORM_ADMIN_EMAIL: OPERATOR })
+
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let one!: { id: string; slug: string }

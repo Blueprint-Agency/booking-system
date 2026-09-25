@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
-import { env } from '../../env'
+import { publicObjectUrl } from '../../lib/r2'
 import {
   workshops,
   workshopDays,
@@ -20,12 +20,6 @@ import { readRoster, readRosters } from '../schedule/roster'
 import { lineupOf, lineupsOf, type Lineup } from '../schedule/lineup'
 
 export type WorkshopRow = typeof workshops.$inferSelect
-
-function r2Url(key: string | null | undefined): string | null {
-  if (!key) return null
-  if (!env.R2_PUBLIC_URL) return null
-  return `${env.R2_PUBLIC_URL.replace(/\/$/, '')}/${key.replace(/^\//, '')}`
-}
 
 interface InstructorLite {
   id: string
@@ -204,7 +198,7 @@ async function buildCard(
     description_html: w.descriptionHtml ?? null,
     lifecycle: w.lifecycle,
     location: loc,
-    cover_url: r2Url(w.coverR2Key),
+    cover_url: publicObjectUrl(w.coverR2Key),
     starts_at: startsAt,
     ends_at: endsAt,
     min_price_sgd: min !== null ? min.toFixed(2) : null,
@@ -337,7 +331,7 @@ export async function getWorkshopDetailPayload(
         id: r.id,
         name: r.name || 'Instructor',
         bio: r.bio,
-        avatar_url: r2Url(r.photoR2Key),
+        avatar_url: publicObjectUrl(r.photoR2Key),
       }))
   }
 
@@ -351,7 +345,7 @@ export async function getWorkshopDetailPayload(
 
   return {
     ...card,
-    images: imageRows.map(im => ({ id: im.id, url: r2Url(im.r2Key), ord: im.ord })),
+    images: imageRows.map(im => ({ id: im.id, url: publicObjectUrl(im.r2Key), ord: im.ord })),
     days,
     tiers,
     instructors: instructorPayload,

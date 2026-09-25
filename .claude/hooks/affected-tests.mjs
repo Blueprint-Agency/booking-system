@@ -25,10 +25,10 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { backendTestFiles } from './backend-tests.mjs'
 
-// As CI runs it (deploy-be.yml): serially, which is the only way it is green.
-// But only the test files the change reaches (backend-tests.mjs): the whole
-// suite is ~25 minutes, which an agent paid on every stop. CI runs all of it.
-const SERIAL_BE = 'node --import tsx --test --test-concurrency=1 --test-force-exit --test-reporter=spec'
+// As CI runs it (deploy-be.yml): serially, in one process. But only the test
+// files the change reaches (backend-tests.mjs): CI runs all of it.
+const SERIAL_BE =
+  'node --import tsx --import ./src/test/environment.ts --test --experimental-test-isolation=none --test-force-exit --test-reporter=spec'
 
 /**
  * Suites in the order they run. `dir` is where the command runs and what it

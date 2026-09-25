@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { merch } from '../../db/schema/catalog'
-import { publicObjectUrl, putObject, R2_BUCKET } from '../../lib/r2'
+import { publicObjectUrl, putObject, r2Bucket } from '../../lib/r2'
 import { tenantKey } from '../../lib/object-key'
 import { AppError, BadRequestError, NotFoundError } from '../../shared/errors'
 
@@ -110,7 +110,7 @@ export async function setMerchImage(input: {
       message: `A merch photo can be at most ${IMAGE_MAX_BYTES / (1024 * 1024)}MB.`,
     })
   }
-  if (!R2_BUCKET) {
+  if (!r2Bucket()) {
     throw new AppError(422, 'image_storage_unavailable', {
       message: 'Image storage is not configured. Ask an admin to set it up.',
     })

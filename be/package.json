@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc --noEmit",
-    "check": "node --import tsx --test \"src/**/*.test.ts\" \"tools/**/*.test.ts\"",
+    "check": "node --import tsx --import ./src/test/environment.ts --test --experimental-test-isolation=none --test-force-exit \"src/**/*.test.ts\" \"tools/**/*.test.ts\"",
     "start": "tsx src/server.ts",
     "predb:generate": "tsx src/db/migrations/check-journal.ts",
     "db:generate": "drizzle-kit generate",
