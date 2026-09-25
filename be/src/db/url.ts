@@ -1,5 +1,10 @@
-import 'dotenv/config'
+import { config as loadDotenv } from 'dotenv'
 import { APP_ROLE } from './roles'
+
+// Not in a test run: its whole environment is `src/test/environment.ts`, which
+// sets NODE_ENV=test before this loads, so a developer's real Stripe and R2
+// keys in `.env` never reach a test.
+if (process.env.NODE_ENV !== 'test') loadDotenv()
 
 /**
  * Assemble a Postgres connection string from the POSTGRES_* parts, so local dev

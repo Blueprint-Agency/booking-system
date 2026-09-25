@@ -1,6 +1,6 @@
 // First, before anything that could import `src/env.ts` or `src/db`: the test
 // environment has to be in place when they are evaluated. See ./environment.
-import { APP_ROLE_NAME, APP_ROLE_TEST_PASSWORD, stubEnvironment, TEST_DATABASE_URL, SKIP_REASON } from './environment'
+import { APP_ROLE_NAME, APP_ROLE_TEST_PASSWORD, TEST_DATABASE_URL, SKIP_REASON } from './environment'
 import { randomUUID } from 'node:crypto'
 import { after } from 'node:test'
 import path from 'node:path'
@@ -293,7 +293,6 @@ async function setUp(): Promise<Shared> {
   if (APP_ROLE_NAME !== APP_ROLE) {
     throw new Error(`test/environment.ts names the app role ${APP_ROLE_NAME}, db/roles.ts ${APP_ROLE}: make them agree`)
   }
-  stubEnvironment()
 
   const client = postgres(TEST_DATABASE_URL!, { max: 1 })
   const db = drizzle(client, { schema })

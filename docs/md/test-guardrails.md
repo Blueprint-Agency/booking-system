@@ -50,7 +50,7 @@ stops. When checking a change locally, run just the tests it reaches:
 
 ```sh
 node .claude/hooks/backend-tests.mjs be src/services/bookings/cancel.ts   # lists them
-cd be && node --import tsx --import ./src/test/environment.ts --test --experimental-test-isolation=none --test-force-exit <those files>
+cd be && npm run check -- <those files>
 ```
 
 `backend-tests.mjs` picks a changed test itself, every test that imports the change (through any
@@ -102,9 +102,9 @@ Locally:
 
 ```sh
 cd be
-node --import tsx --import ./src/test/environment.ts --test --experimental-test-isolation=none \n  --test-force-exit --experimental-test-coverage \
+npm run check -- --experimental-test-coverage \
   --test-coverage-include='src/**' --test-coverage-exclude='src/**/*.test.ts' --test-coverage-exclude='src/test/**' \
   --test-reporter=spec --test-reporter-destination=stdout \
-  --test-reporter=lcov --test-reporter-destination=lcov.info "src/**/*.test.ts"
+  --test-reporter=lcov --test-reporter-destination=lcov.info
 node ../scripts/coverage-summary.mjs lcov.info
 ```

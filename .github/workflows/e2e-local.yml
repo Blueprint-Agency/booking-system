@@ -13,10 +13,10 @@ name: E2E Journeys (PR)
 # (e2e.yml) still gates the production deploy, unchanged.
 #
 # Every pull request, whatever it touches: a check that only sometimes reports
-# cannot be made required.
+# cannot be made required. Called by deploy-be.yml as its `journeys-pr` job, so
+# a PR runs one workflow; `github.event` here is that pull request's.
 on:
-  pull_request:
-    branches: [staging, main]
+  workflow_call:
 
 permissions:
   contents: read

@@ -11,6 +11,11 @@
  *
  * The harness migrates and seeds the database on first use; this only makes
  * it exist.
+ *
+ * `npm run test:db -- --reset` drops and recreates it instead, so a full run
+ * starts from the empty database CI starts from, not rows an earlier run left.
+ * It refuses any database not named `reservetoday-test-*`, and the development
+ * one (`POSTGRES_DB`) whatever it is called.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -55,7 +60,21 @@ export function withTestDatabaseUrl(text, url) {
   return `${text}${sep}${line}${eol}`
 }
 
+const TEST_DATABASE_PREFIX = 'reservetoday-test-'
+
+/** Why `--reset` must not drop `database`, or null when it may. */
+export function resetRefusal(database, vars) {
+  if (!database.startsWith(TEST_DATABASE_PREFIX) || database === TEST_DATABASE_PREFIX) {
+    return `--reset drops only a database named ${TEST_DATABASE_PREFIX}*, not ${database}`
+  }
+  if (vars.POSTGRES_DB && database === vars.POSTGRES_DB) {
+    return `${database} is the development database (POSTGRES_DB); --reset drops only a scratch test database`
+  }
+  return null
+}
+
 async function main() {
+  const reset = process.argv.includes('--reset')
   if (!existsSync(envFile)) {
     throw new Error('be/.env does not exist: copy be/.env.example to be/.env and fill in the [required] values first')
   }
@@ -73,11 +92,20 @@ async function main() {
   if (vars.POSTGRES_DB && database === vars.POSTGRES_DB) {
     throw new Error(`TEST_DATABASE_URL points at the development database ${database}; use a scratch database`)
   }
+  if (reset) {
+    const refusal = resetRefusal(database, vars)
+    if (refusal) throw new Error(refusal)
+  }
 
   const server = new URL(url)
   server.pathname = '/postgres'
   const sql = postgres(server.toString(), { max: 1, onnotice: () => {} })
   try {
+    if (reset) {
+      // WITH (FORCE) disconnects a run still holding it (Postgres 13+).
+      await sql`drop database if exists ${sql(database)} with (force)`
+      console.log(`dropped test database ${database} on ${target.host}`)
+    }
     const [found] = await sql`select 1 from pg_database where datname = ${database}`
     if (found) console.log(`test database ${database} already exists on ${target.host}`)
     else {

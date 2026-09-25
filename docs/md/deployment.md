@@ -104,10 +104,10 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 `deploy-be.yml` runs a `test` job before `deploy`, and `deploy` declares `needs: test`. A red
 backend suite means no image is built and neither stack is touched.
 
-- **What runs.** The whole backend suite (`be/src/**/*.test.ts` and `be/tools/**/*.test.ts`) against a throwaway `postgres:16`
-  service container, with `TEST_DATABASE_URL` pointing at it and the same stub environment the
-  integration harness (`be/src/test/harness.ts`) fills in — `src/env.ts` validates at import, so
-  unit tests need it too.
+- **What runs.** `npm run check` (`be/scripts/check.mjs`), the command a local run uses: the whole
+  backend suite (`be/src/**/*.test.ts`, `be/tools/**/*.test.ts` and `be/scripts/**/*.test.mjs`)
+  against a throwaway `postgres:16` service container. The job sets only `TEST_DATABASE_URL`; the
+  rest of the environment comes from `be/src/test/environment.ts`, locally and in CI alike.
 - **No durability.** That container runs with `fsync`, `synchronous_commit` and `full_page_writes`
   off, safe for a database the job throws away ([Non-Durable Settings](https://www.postgresql.org/docs/16/non-durability.html)).
 - **Serially, in one process** (`--experimental-test-isolation=none`, with
@@ -119,12 +119,24 @@ backend suite means no image is built and neither stack is touched.
 - **Skips fail the job.** The integration tests skip themselves when `TEST_DATABASE_URL` is unset,
   and a skipped test counts as a pass. Nothing else in the suite skips, so the job fails unless the
   TAP summary reads `# skipped 0` — a broken CI env cannot turn the gate green by testing nothing.
+- **A push does not re-test a tree its PR already tested.** A green pull-request run uploads an
+  artifact `be-tested-<tree>`, keyed by the merge commit's whole-repository tree and kept 7 days.
+  A push to `staging`/`main` whose commit has that exact tree skips the test steps, records the
+  PR run's test count as its own, and links that run in the job summary. The job still ends green,
+  so `deploy` proceeds. Only runs from this repository count, not forks. A push with no matching
+  marker (`staging` moved between the PR's run and the merge, a direct push, a PR run over a week
+  old) runs the whole suite, and a manual dispatch always does. This relies on branch protection
+  requiring a PR to be up to date with its base before it merges (#302); without that, a merge
+  onto a moved `staging` has a tree no marker names, and so it is tested anyway.
 - **Tests may not quietly disappear.** A pull request whose backend has fewer tests than its base
   branch fails the `test` job. Each `staging`/`main` run records its count (an Actions cache keyed
   by the `be/` tree); a PR compares against the base's. Removing tests on purpose: add the
   `tests-removed` label and re-run the job. The journeys get the same check, and a skipped journey
-  fails, in the `Test Guardrails` workflow (`test-guardrails.yml`, every PR). See
+  fails, in the `guardrails` job (`test-guardrails.yml`, called by `deploy-be.yml` on every PR). See
   `test-guardrails.md`.
+- **One workflow per pull request.** `deploy-be.yml` is the only workflow a PR triggers, on every
+  PR whatever it touches. It calls `test-guardrails.yml` (`guardrails`) and `e2e-local.yml`
+  (`journeys-pr`) as jobs; its `changes` job still decides which app checks a PR needs.
 - **Coverage is reported, not gated.** The suite runs with Node's built-in coverage; the job's
   summary page shows lines/branches/functions per `src/services/<feature>/` folder. No threshold.
 - **Pull requests** into `staging` or `main` run the same tests and never deploy. A push that only
