@@ -188,7 +188,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
    */
   function followSignedUrl(url: string): { key: string; object: { bytes: Uint8Array; contentType: string } | undefined } {
     const u = new URL(url)
-    const bucketName = r2Module.R2_BUCKET!
+    const bucketName = r2Module.r2Bucket()!
     assert.ok(u.searchParams.get('X-Amz-Signature'), 'the URL is signed')
     assert.equal(u.searchParams.get('X-Amz-Expires'), '300', 'the URL is short-lived')
     let path = decodeURIComponent(u.pathname.slice(1))
@@ -252,7 +252,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     r2Module.r2.send = (async (command: { constructor: { name: string }; input: any }) => {
       if (command.constructor.name === 'PutObjectCommand') {
         const { Key, Body, ContentType, Bucket } = command.input
-        assert.equal(Bucket, r2Module.R2_BUCKET)
+        assert.equal(Bucket, r2Module.r2Bucket())
         bucket.set(Key, { bytes: new Uint8Array(Body), contentType: ContentType })
         return {}
       }
