@@ -64,16 +64,18 @@ test('the scraped workbook reads back one row per waiting client; a guest keeps 
 
 const readHtmlLess = (cells: string[][]) => cells.map(c => ({ cells: c, links: c.map(() => null) }))
 
-test('decision 21 is open in the starter config, and the transform refuses until it is settled', async () => {
+test('decision 21 is never open, and a figure for a Class Type that does not exist is refused', async () => {
+  // Every class has a waitlist; with no figure named, it starts at 0 for staff to set.
   const starter = starterConfig(await reports())
-  assert.equal(starter.waitlist, null)
+  assert.deepEqual(starter.waitlist, { enabled: true, capacity: 0, classTypes: {} })
   assert.throws(
     () => validateConfig(starter),
-    (err: unknown) => err instanceof ConfigError && err.problems.includes('waitlist is open'),
+    (err: unknown) => err instanceof ConfigError && !err.problems.some(p => p.startsWith('waitlist')),
+    'the starter is refused for its other open fields, never for the waitlist',
   )
   const unset = fixtureConfig()
   delete unset.waitlist
-  assert.throws(() => validateConfig(unset), (err: unknown) => err instanceof ConfigError && err.problems.includes('waitlist is open'))
+  assert.deepEqual(validateConfig(unset).waitlist, { enabled: true, capacity: 0, classTypes: {} })
 
   const typo = fixtureConfig()
   typo.waitlist.classTypes = { Yin: 4 }

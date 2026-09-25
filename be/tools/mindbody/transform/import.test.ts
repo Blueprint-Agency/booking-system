@@ -213,7 +213,8 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(await count('locations', studio.tenant.id), 2)
     // Hatha and Vinyasa Flow, plus the Personal Training focus the PT import needs.
     assert.equal(await count('class_types', studio.tenant.id), 3)
-    assert.equal(await count('email_templates', studio.tenant.id), 33)
+    // Every template a provisioned studio gets, class_waitlist_promoted (#308) included.
+    assert.equal(await count('email_templates', studio.tenant.id), 34)
     assert.equal(await count('clients', studio.tenant.id), 8)
 
     // A member cancellation reads the policy, and finds the studio's own.
