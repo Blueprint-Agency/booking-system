@@ -3,20 +3,25 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight, UserRound, MapPin, Ticket, Loader2, Lock } from "lucide-react";
+import { Check, ChevronRight, UserRound, MapPin, Loader2, Lock } from "lucide-react";
 import { cn, formatSgd } from "@/lib/utils";
 import { ApiError, useApi } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { formatClassTime, type ApiClassCard, type ClassEntitlements } from "@/lib/classes";
+import {
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  SHEET_ACTIONS,
+  SHEET_BACKDROP,
+  SHEET_HANDLE,
+  SHEET_PANEL,
+  SHEET_TEXT,
+  SHEET_TITLE,
+} from "@/components/ui/styles";
 
-// A bottom sheet on phones — the actions land under the thumb, above the
-// home indicator — and a centred dialog from `sm` up.
-const SHEET_BACKDROP =
-  "fixed inset-0 z-[70] flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center sm:p-4";
-const SHEET_PANEL =
-  "w-full max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-card px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-center shadow-modal outline-none sm:max-w-sm sm:rounded-2xl sm:p-8 animate-fade-up";
+const credits = (n: number) => `${n} credit${n === 1 ? "" : "s"}`;
 
 export function ClassRow({
   cls,
@@ -114,7 +119,7 @@ export function ClassRow({
         setBooked(true);
       } else if (code === ERROR_CODES.class_full) {
         setSpotsLeft(0);
-        setBookError({ msg: "Sorry, this class just filled up." });
+        setBookError({ msg: "This class just filled up." });
       } else if (code === ERROR_CODES.class_already_started) {
         setBookError({ msg: "This class has already started." });
       } else if (code === ERROR_CODES.location_not_covered) {
@@ -135,8 +140,8 @@ export function ClassRow({
         // while a package runs, nothing behind it can start.
         setBookError({
           msg:
-            "Your current package runs out before this class starts, so it can't cover it." +
-            (creditsCanStart ? "" : " Try again once it has ended and your next package is running."),
+            "Your current package ends before this class starts." +
+            (creditsCanStart ? "" : " Book it once your next package is running."),
           offersCredit: creditsCanStart,
         });
       } else {
@@ -147,88 +152,56 @@ export function ClassRow({
     }
   };
 
-  // The action, rendered twice: inline at the end of the row from `sm` up, and
-  // on its own full-width line below it on phones. A 320px row cannot hold the
-  // time, the class name and a pill-shaped button without truncating the name
-  // to nothing, and the name is what the member is scanning for.
-  const cta = (fullWidth: boolean) => {
-    const shape = fullWidth
-      ? "w-full justify-center px-4 min-h-[44px] text-sm"
-      : "px-4 md:px-5 min-h-[36px] text-xs";
-    if (booked)
-      return (
-        <span className={cn("inline-flex items-center justify-center rounded-full bg-sage/20 text-accent-deep font-medium", shape)}>
-          Booked
-        </span>
-      );
-    if (isFull)
-      return (
-        <span className={cn("inline-flex items-center justify-center rounded-full bg-warm text-muted border border-ink/10", shape)}>
-          Full
-        </span>
-      );
-    if (notCovered)
-      return (
-        <span className={cn("inline-flex items-center justify-center gap-1.5 rounded-full bg-warm text-muted border border-ink/10", shape)}>
-          <Lock className="h-3.5 w-3.5 text-ink/40" aria-hidden />
-          Not in your plan
-        </span>
-      );
-    return (
-      <button
-        onClick={handleBookClick}
-        disabled={booking}
-        className={cn(
-          "inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors bg-accent text-white hover:bg-accent-deep disabled:opacity-70 disabled:cursor-wait",
-          shape,
-        )}
-      >
-        {booking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        {booking ? "Booking…" : "Book Now"}
-      </button>
-    );
-  };
-
-  return (
-    <div
+  // The time moves into the text block on a phone, so the name, its meta and
+  // a compact action all fit on one row at 320px without truncating the name.
+  const shape =
+    "inline-flex min-h-[40px] items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 text-sm font-semibold";
+  const cta = booked ? (
+    <span className={cn(shape, "bg-sage/15 text-sage")}>
+      <Check className="h-4 w-4" aria-hidden />
+      Booked
+    </span>
+  ) : isFull ? (
+    <span className={cn(shape, "bg-ink/5 text-muted")}>Full</span>
+  ) : notCovered ? (
+    <span className={cn(shape, "bg-ink/5 text-muted")}>
+      <Lock className="h-3.5 w-3.5" aria-hidden />
+      Not in plan
+    </span>
+  ) : (
+    <button
+      onClick={handleBookClick}
+      disabled={booking}
       className={cn(
-        "rounded-2xl border border-ink/5 bg-card shadow-soft transition-shadow md:hover:border-ink/15 md:hover:shadow-hover",
-        "px-4 py-3.5 md:px-5 md:py-4",
-        // Dim the row and its phone CTA line only — not the plan nudge, which
-        // is the way through, nor a dialog opened from this row.
-        (isFull || notCovered) && "[&>*:nth-child(-n+2)]:opacity-60",
+        shape,
+        "bg-ink text-paper hover:bg-ink/90 transition-colors disabled:opacity-70 disabled:cursor-wait",
       )}
     >
-      <div className="flex items-center gap-3 md:gap-5">
-        {/* Time */}
-        <div className="w-[58px] md:w-[84px] shrink-0">
-          <div
-            className={cn(
-              "text-sm md:text-[15px] font-semibold tracking-tight tabular-nums",
-              isFull ? "text-muted" : "text-ink",
-            )}
-          >
+      {booking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+      {booking ? "Booking…" : "Book Now"}
+    </button>
+  );
+  const timeRange = `${formatClassTime(cls.starts_at)} – ${formatClassTime(cls.ends_at)}`;
+
+  return (
+    <div className="px-4 py-3.5 md:px-5 md:py-4">
+      {/* Dim the row only — not the plan nudge below, which is the way
+          through, nor a dialog opened from this row. */}
+      <div className={cn("flex items-center gap-3 md:gap-5", (isFull || notCovered) && "opacity-60")}>
+        {/* Time — its own column once there is room */}
+        <div className="hidden sm:block w-[76px] shrink-0 tabular-nums">
+          <div className="text-[15px] font-bold tracking-tight text-ink">
             {formatClassTime(cls.starts_at)}
           </div>
-          <div className="text-[11px] text-muted tabular-nums">
-            – {formatClassTime(cls.ends_at)}
-          </div>
+          <div className="text-xs text-muted">{formatClassTime(cls.ends_at)}</div>
         </div>
 
-        {/* Divider */}
-        <div className="hidden md:block h-9 w-px bg-ink/10 shrink-0" aria-hidden />
-
-        {/* Class name + meta */}
         <div className="min-w-0 flex-1">
-          <h4
-            className={cn(
-              "font-serif text-[15px] md:text-base leading-snug truncate",
-              isFull ? "text-muted" : "text-ink",
-            )}
-          >
+          <p className="sm:hidden text-xs font-semibold text-ink/70 tabular-nums">{timeRange}</p>
+          <h3 className="font-semibold text-ink leading-snug break-words">
             {cls.class_type.name}
-          </h4>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
+          </h3>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
             <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
               <UserRound className="h-3.5 w-3.5 shrink-0 text-ink/30" />
               <span className="truncate">{cls.instructor.name}</span>
@@ -250,29 +223,16 @@ export function ClassRow({
                 </span>
               </>
             )}
-            {/* Credit — inline on mobile (chip is shown on the right at sm+) */}
-            <span className="inline-flex items-center gap-1 sm:hidden">
-              <span aria-hidden className="text-ink/20">·</span>
-              {cls.credit_cost} credit{cls.credit_cost === 1 ? "" : "s"}
-            </span>
+            <span aria-hidden className="text-ink/20">·</span>
+            <span className="tabular-nums">{credits(cls.credit_cost)}</span>
           </div>
         </div>
 
-        {/* Credit chip */}
-        <span className="hidden sm:inline-flex items-center gap-1.5 shrink-0 rounded-full bg-warm px-3 py-1 text-[11px] font-medium text-ink/70 tabular-nums">
-          <Ticket className="h-3.5 w-3.5 text-ink/40" />
-          {cls.credit_cost} credit{cls.credit_cost === 1 ? "" : "s"}
-        </span>
-
-        {/* CTA — inline from sm up */}
-        <div className="hidden sm:block shrink-0">{cta(false)}</div>
+        <div className="shrink-0">{cta}</div>
       </div>
 
-      {/* CTA — its own line on phones */}
-      <div className="mt-3 sm:hidden">{cta(true)}</div>
-
       {notCovered && planLocation && (
-        <div className="mt-3 border-t border-ink/10 pt-2.5 text-xs text-muted">
+        <div className="mt-2.5 rounded-lg bg-ink/[0.03] px-3 py-2 text-xs text-muted">
           Your plan covers <span className="font-medium text-ink">{planLocation.name}</span> only.
           {addOn && (
             <>
@@ -294,9 +254,7 @@ export function ClassRow({
                 disabled={booking}
                 className="underline underline-offset-2 hover:text-ink transition-colors disabled:cursor-wait"
               >
-                {booking
-                  ? "Booking…"
-                  : `use ${cls.credit_cost} credit${cls.credit_cost === 1 ? "" : "s"}`}
+                {booking ? "Booking…" : `use ${credits(cls.credit_cost)}`}
               </button>
             </>
           )}
@@ -305,12 +263,13 @@ export function ClassRow({
 
       {showNoPackage && (
         <div className={SHEET_BACKDROP} onClick={() => setShowNoPackage(false)}>
-          <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-label="You need a package to book a class" tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-serif text-xl text-ink leading-snug">You need a package to book a class</h3>
-            <p className="text-sm text-muted mt-2 leading-relaxed">You&apos;re out of credits. Grab a package to keep booking.</p>
-            <div className="mt-6 flex flex-col gap-2">
-              <button onClick={() => router.push("/packages")} className="w-full rounded-full bg-accent text-white py-3 text-sm font-semibold hover:bg-accent-deep transition-colors">Buy a package</button>
-              <button onClick={() => setShowNoPackage(false)} className="w-full rounded-full border border-ink/10 py-2.5 text-sm text-muted hover:text-ink transition-colors">Not now</button>
+          <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-labelledby={`no-package-${cls.id}`} tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
+            <span aria-hidden className={SHEET_HANDLE} />
+            <h3 id={`no-package-${cls.id}`} className={SHEET_TITLE}>You&apos;re out of credits</h3>
+            <p className={SHEET_TEXT}>Buy a package to book this class.</p>
+            <div className={SHEET_ACTIONS}>
+              <button onClick={() => setShowNoPackage(false)} className={BTN_SECONDARY}>Not now</button>
+              <button onClick={() => router.push("/packages")} className={BTN_PRIMARY}>See packages</button>
             </div>
           </div>
         </div>
@@ -318,23 +277,27 @@ export function ClassRow({
 
       {bookError && (
         <div className={SHEET_BACKDROP} onClick={() => setBookError(null)}>
-          <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-label="Couldn't book" tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-serif text-xl text-ink leading-snug">Couldn&apos;t book</h3>
-            <p className="text-sm text-muted mt-2 leading-relaxed">{bookError.msg}</p>
-            {/* Only the expiry refusal offers credits here — the wrong-studio case
-                keeps its offer in the row nudge, per stories 25-27. */}
-            {bookError.offersCredit && (
-              <button
-                onClick={(e) => handleBookClick(e, true)}
-                disabled={booking}
-                className="mt-6 w-full rounded-full bg-accent text-white py-3 text-sm font-semibold hover:bg-accent-deep transition-colors disabled:opacity-70 disabled:cursor-wait"
-              >
-                {booking
-                  ? "Booking…"
-                  : `Use ${cls.credit_cost} credit${cls.credit_cost === 1 ? "" : "s"} instead`}
+          <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-labelledby={`book-error-${cls.id}`} tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
+            <span aria-hidden className={SHEET_HANDLE} />
+            <h3 id={`book-error-${cls.id}`} className={SHEET_TITLE}>Couldn&apos;t book</h3>
+            <p className={SHEET_TEXT}>{bookError.msg}</p>
+            <div className={SHEET_ACTIONS}>
+              <button onClick={() => setBookError(null)} className={BTN_SECONDARY}>
+                {bookError.offersCredit ? "Not now" : "OK"}
               </button>
-            )}
-            <button onClick={() => setBookError(null)} className={cn("w-full rounded-full border border-ink/10 py-2.5 text-sm text-muted hover:text-ink transition-colors", bookError.offersCredit ? "mt-2" : "mt-6")}>{bookError.offersCredit ? "Not now" : "Got it"}</button>
+              {/* Only the expiry refusal offers credits here — the wrong-studio case
+                  keeps its offer in the row nudge, per stories 25-27. */}
+              {bookError.offersCredit && (
+                <button
+                  onClick={(e) => handleBookClick(e, true)}
+                  disabled={booking}
+                  className={BTN_PRIMARY}
+                >
+                  {booking && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {booking ? "Booking…" : `Use ${credits(cls.credit_cost)}`}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

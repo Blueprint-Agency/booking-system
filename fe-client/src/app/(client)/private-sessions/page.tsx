@@ -5,16 +5,17 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
 import { BookingSurface } from "@/components/booking/booking-surface";
-import { SectionHeading } from "@/components/booking/section-heading";
+import { PageHeader } from "@/components/booking/page-header";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BTN_PRIMARY, CARD } from "@/components/ui/styles";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useLocations, useClassTypes } from "@/lib/classes";
 import { PreferredClassType } from "@/components/booking/preferred-class-type";
 import { usePtSessionsApi, HALF_HOUR_TIMES, formatSlotTime } from "@/lib/pt-sessions";
 import { ApiError } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 type Slot = { proposedDate: string; startTime: string };
 
@@ -223,22 +224,24 @@ export default function PrivateSessionsPage() {
     );
 
   return (
-    <BookingSurface maxWidth="md" flush>
+    <BookingSurface>
+      <PageHeader title="Schedule" />
       <ScheduleSegments />
-      <SectionHeading
-        eyebrow="Private sessions"
-        title="Request a session"
-        description="Tell us what you want and when — we'll reach you on WhatsApp shortly to confirm."
-      />
 
       {pkgLoading ? (
-        <div className="space-y-4" aria-busy="true" aria-label="Loading your packages">
+        <div className={cn(CARD, "max-w-2xl p-5 space-y-4")} aria-busy="true" aria-label="Loading your packages">
           <Skeleton className="h-12 rounded-xl" />
           <Skeleton className="h-12 rounded-xl" />
           <Skeleton className="h-28 rounded-xl" />
         </div>
       ) : (
-        <form className="space-y-6" onSubmit={handleSubmit}>
+        <form className={cn(CARD, "max-w-2xl p-4 sm:p-6 space-y-6")} onSubmit={handleSubmit}>
+          <div>
+            <h2 className="text-base font-bold text-ink">Request a private session</h2>
+            <p className="mt-0.5 text-sm text-muted">
+              Suggest a few times. We confirm on WhatsApp.
+            </p>
+          </div>
           {!showSessionTypeChoice && (
             <p className="text-xs text-muted">
               You have {balanceForType(computedSessionType)}{" "}
@@ -340,17 +343,15 @@ export default function PrivateSessionsPage() {
           />
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-ink">
-                Proposed slots
-                <span className="ml-1.5 font-normal text-muted">— more options, faster confirmation</span>
-              </p>
-            </div>
+            <p className="text-sm font-medium text-ink mb-2">
+              Times that suit you
+              <span className="ml-1.5 font-normal text-muted">More options confirm faster</span>
+            </p>
             <div className="space-y-3">
               {slots.map((s, i) => (
                 <div
                   key={i}
-                  className="rounded-xl border border-ink/10 bg-card p-3"
+                  className="rounded-xl bg-ink/[0.03] p-3"
                 >
                   {/* Date and start time side by side; the remove button under
                       them on a phone, beside them from sm. */}
@@ -368,7 +369,7 @@ export default function PrivateSessionsPage() {
                         min={todayIso()}
                         value={s.proposedDate}
                         onChange={(e) => setSlot(i, { proposedDate: e.target.value })}
-                        className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                        className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
                       />
                     </div>
                     <div>
@@ -384,7 +385,7 @@ export default function PrivateSessionsPage() {
                         id={`slot-${i}-start`}
                         value={s.startTime}
                         onChange={(e) => setSlot(i, { startTime: e.target.value })}
-                        className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                        className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
                       >
                         {HALF_HOUR_TIMES.map((t) => (
                           <option key={t} value={t}>
@@ -399,10 +400,10 @@ export default function PrivateSessionsPage() {
                         type="button"
                         onClick={() => removeSlot(i)}
                         className="col-span-2 sm:col-span-1 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-ink/10 px-3 text-sm text-muted hover:text-error hover:border-error/40 transition-colors"
-                        aria-label={`Remove slot ${i + 1}`}
+                        aria-label={`Remove time ${i + 1}`}
                       >
                         <Trash2 size={14} />
-                        <span className="sm:hidden">Remove slot</span>
+                        <span className="sm:hidden">Remove</span>
                       </button>
                     )}
                   </div>
@@ -414,7 +415,7 @@ export default function PrivateSessionsPage() {
               onClick={addSlot}
               className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-ink/20 text-sm font-medium text-accent-deep hover:border-accent hover:bg-accent/5 transition-colors"
             >
-              <Plus size={16} /> Add another slot
+              <Plus size={16} /> Add another time
             </button>
           </div>
 
@@ -481,7 +482,7 @@ export default function PrivateSessionsPage() {
           </div>
 
           {showBuyPrompt && blockedByRunning && runningPt && (
-            <div className="rounded-2xl border border-warning/30 bg-warning/10 p-5 text-sm text-ink">
+            <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink">
               Your {runningPt.name} is running, and only one private session package
               can run at a time. Your next package starts once it ends
               {runningPt.expiresAt ? ` (${formatDate(runningPt.expiresAt)})` : ""} or is
@@ -490,7 +491,7 @@ export default function PrivateSessionsPage() {
           )}
 
           {showBuyPrompt && !blockedByRunning && (
-            <div className="rounded-2xl border border-warning/30 bg-warning/10 p-5 text-sm text-ink">
+            <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink">
               {!hasPackageForType
                 ? `You don't have an active ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} PT package yet.`
                 : `You need ${requestCost} ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} session${requestCost === 1 ? "" : "s"} in one active package to submit this request.`}{" "}
@@ -512,11 +513,11 @@ export default function PrivateSessionsPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full min-h-[48px] rounded-full bg-ink text-paper px-6 py-3 text-sm font-medium hover:bg-ink/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className={cn(BTN_PRIMARY, "w-full")}
           >
             {submitting
-              ? "Submitting…"
-              : `Submit request (uses ${requestCost} session${requestCost === 1 ? "" : "s"})`}
+              ? "Sending…"
+              : `Send request · ${requestCost} session${requestCost === 1 ? "" : "s"}`}
           </button>
         </form>
       )}

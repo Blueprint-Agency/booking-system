@@ -4,12 +4,13 @@ import { useMemo, useState } from "react";
 import { useMemberSession } from "@/lib/member-auth";
 import { useClasses, useLocations, useCanBookClass, toLocalDateStr, type ApiClassCard } from "@/lib/classes";
 import { BookingSurface } from "@/components/booking/booking-surface";
-import { SectionHeading } from "@/components/booking/section-heading";
+import { PageHeader } from "@/components/booking/page-header";
 import { ClassRow, FilterSelect } from "@/components/booking/class-row";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BTN_SECONDARY, CARD } from "@/components/ui/styles";
 import { MyNextClass } from "@/components/account/next-class-card";
-import { useBrand } from "@/components/brand/brand-provider";
+import { cn } from "@/lib/utils";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
 import { classBookingPolicy } from "@/lib/cancellation-copy";
 
@@ -58,16 +59,7 @@ export function ClassFeed() {
   const { data: locationData } = useLocations();
   const locations = useMemo(() => locationData ?? [], [locationData]);
   const { isSignedIn } = useMemberSession();
-  const brand = useBrand();
   const policy = useCancellationPolicy();
-
-  // The studio and its own premises — both per Tenant, so a second studio's
-  // members never read the first studio's name or the first studio's addresses.
-  // The premises are dropped rather than guessed at while they load.
-  const eyebrow = useMemo(() => {
-    const names = locations.map((l) => l.name).filter(Boolean);
-    return names.length ? `${brand.name} · ${names.join(" & ")}` : brand.name;
-  }, [brand.name, locations]);
   const { canBook, loaded: canBookLoaded, entitlements } = useCanBookClass();
 
   const all = useMemo(() => classes ?? [], [classes]);
@@ -100,17 +92,11 @@ export function ClassFeed() {
   };
 
   return (
-    <BookingSurface maxWidth="xl" flush>
+    <BookingSurface>
+      <PageHeader title="Schedule" />
       <ScheduleSegments />
       {/* A signed-in member's soonest class and its check-in QR (#192). */}
       <MyNextClass />
-      <SectionHeading
-        eyebrow={eyebrow}
-        title="Book a class"
-        description={`All upcoming classes across ${
-          locations.length === 1 ? "the studio" : "every studio"
-        } — book your spot.`}
-      />
 
       <div className="grid grid-cols-2 gap-2 mb-3 sm:flex">
         <FilterSelect
@@ -138,44 +124,40 @@ export function ClassFeed() {
       )}
 
       {loading ? (
-        <div className="flex flex-col gap-3" aria-busy="true" aria-label="Loading schedule">
-          <Skeleton className="h-5 w-40 mb-1" />
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[104px] sm:h-[72px] rounded-2xl" />
-          ))}
+        <div className="space-y-2" aria-busy="true" aria-label="Loading schedule">
+          <Skeleton className="h-5 w-32 mb-3" />
+          <div className={cn(CARD, "p-3 space-y-2")}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 rounded-xl" />
+            ))}
+          </div>
         </div>
       ) : groups.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-ink/15 px-6 py-12 text-center">
-          <p className="text-sm font-medium text-ink">
-            {filtered
-              ? "No classes match these filters"
-              : `No upcoming classes in the next ${WINDOW_DAYS} days`}
+        <div className={cn(CARD, "px-6 py-12 text-center")}>
+          <p className="font-semibold text-ink">
+            {filtered ? "No classes match these filters" : "No classes scheduled yet"}
           </p>
           <p className="mt-1 text-sm text-muted">
             {filtered
               ? "Try another location or instructor."
-              : "New classes show up here as soon as the studio schedules them."}
+              : `Classes for the next ${WINDOW_DAYS} days show up here.`}
           </p>
           {filtered && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="mt-5 inline-flex min-h-[44px] items-center rounded-full border border-ink/15 px-5 text-sm font-medium text-ink hover:border-accent transition-colors"
-            >
+            <button type="button" onClick={clearFilters} className={cn(BTN_SECONDARY, "mt-5")}>
               Clear filters
             </button>
           )}
         </div>
       ) : (
-        <div className="flex flex-col gap-6 md:gap-8">
+        <div className="flex flex-col gap-5 md:gap-6">
           {groups.map(({ date, items }) => (
             <section key={date} aria-label={dayHeaderLabel(date)}>
               {/* Pinned under the top bar while its day scrolls past, in the
-                  surface's own colour so rows slide cleanly beneath it. */}
-              <p className="sticky top-16 z-10 -mx-4 mb-2 bg-paper/95 px-4 py-2 font-serif text-base text-ink backdrop-blur-sm sm:-mx-6 sm:px-6 md:mx-0 md:bg-card/95 md:px-0">
+                  page's own colour so rows slide cleanly beneath it. */}
+              <h2 className="sticky top-16 z-10 -mx-4 bg-paper/95 px-4 py-2 text-sm font-bold text-ink backdrop-blur-sm md:mx-0 md:px-0">
                 {dayHeaderLabel(date)}
-              </p>
-              <div className="flex flex-col gap-2.5 md:gap-3">
+              </h2>
+              <div className={cn(CARD, "divide-y divide-ink/5")}>
                 {items.map((c) => (
                   <ClassRow
                     key={c.id}

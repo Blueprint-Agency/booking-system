@@ -3,10 +3,14 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, CalendarDays, GraduationCap, MapPin } from "lucide-react";
-import { BookingSurface, FLUSH_BLEED } from "@/components/booking/booking-surface";
-import { SectionHeading } from "@/components/booking/section-heading";
+import { ChevronRight, GraduationCap, MapPin } from "lucide-react";
+import { BookingSurface } from "@/components/booking/booking-surface";
+import { PageHeader } from "@/components/booking/page-header";
+import { DateStub } from "@/components/account/date-stub";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FilterChips } from "@/components/ui/filter-chips";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CARD } from "@/components/ui/styles";
 import { cn } from "@/lib/utils";
 import {
   type ApiLocationLite,
@@ -20,9 +24,7 @@ import {
 
 export default function WorkshopsPage() {
   const { data, loading, error } = useWorkshops();
-  const [selectedLocation, setSelectedLocation] = useState<string | "all">(
-    "all",
-  );
+  const [selectedLocation, setSelectedLocation] = useState<string>("all");
 
   const workshops = useMemo(() => data ?? [], [data]);
 
@@ -40,109 +42,69 @@ export default function WorkshopsPage() {
   }, [workshops, selectedLocation]);
 
   return (
-    <div id="list">
-      <BookingSurface maxWidth="xl" flush>
-        <SectionHeading eyebrow="Upcoming" title="Scheduled workshops" />
+    <BookingSurface>
+      <PageHeader title="Workshops" />
 
-        {/* One studio has nothing to choose between. */}
-        {locations.length > 1 && (
-          <div className="mb-6">
-            <ApiLocationFilter
-              locations={locations}
-              selected={selectedLocation}
-              onChange={setSelectedLocation}
-            />
-          </div>
-        )}
+      {/* One studio has nothing to choose between. */}
+      {locations.length > 1 && (
+        <FilterChips
+          label="Filter by location"
+          className="mb-5"
+          options={[
+            { value: "all", label: "All locations" },
+            ...locations.map((l) => ({ value: l.id, label: l.name })),
+          ]}
+          value={selectedLocation}
+          onChange={setSelectedLocation}
+        />
+      )}
 
-        {loading && (
-          <div
-            className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
-            aria-busy="true"
-            aria-label="Loading workshops"
-          >
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-72 rounded-2xl" />
-            ))}
-          </div>
-        )}
+      {loading && (
+        <div
+          className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+          aria-busy="true"
+          aria-label="Loading workshops"
+        >
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-72 rounded-2xl" />
+          ))}
+        </div>
+      )}
 
-        {!loading && error && (
-          <div className="mx-auto max-w-md rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
-            We couldn&apos;t load workshops right now. Please refresh in a moment.
-          </div>
-        )}
+      {!loading && error && (
+        <div className={cn(CARD, "p-8 text-center text-sm text-muted")}>
+          Couldn&apos;t load workshops. Refresh to try again.
+        </div>
+      )}
 
-        {!loading && !error && filtered.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-ink/15 px-6 py-14 text-center">
-            <GraduationCap className="mx-auto h-6 w-6 text-muted" aria-hidden />
-            <p className="mt-3 text-sm font-medium text-ink">
-              {selectedLocation === "all"
-                ? "No upcoming workshops at the moment"
-                : "No workshops scheduled at this location"}
-            </p>
-            <p className="mt-1 text-sm text-muted">
-              {selectedLocation === "all"
-                ? "New workshops are listed here as soon as they open. Check back soon."
-                : "Try another studio."}
-            </p>
-          </div>
-        )}
+      {!loading && !error && filtered.length === 0 && (
+        <div className={CARD}>
+          <EmptyState
+            icon={GraduationCap}
+            title={selectedLocation === "all" ? "No workshops scheduled" : "No workshops here"}
+            description={
+              selectedLocation === "all"
+                ? "New workshops show up here when they open."
+                : "Try another location."
+            }
+          />
+        </div>
+      )}
 
-        {!loading && !error && filtered.length > 0 && (
-          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((workshop) => (
-              <li key={workshop.id} className="flex">
-                <WorkshopCard workshop={workshop} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </BookingSurface>
-    </div>
+      {!loading && !error && filtered.length > 0 && (
+        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((workshop) => (
+            <li key={workshop.id} className="flex">
+              <WorkshopCard workshop={workshop} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </BookingSurface>
   );
 }
 
 // ── Components ───────────────────────────────────────────────────────────────
-
-function ApiLocationFilter({
-  locations,
-  selected,
-  onChange,
-}: {
-  locations: ApiLocationLite[];
-  selected: string | "all";
-  onChange: (id: string | "all") => void;
-}) {
-  const options = [{ id: "all", name: "All locations" }, ...locations];
-  // Studio names are the studio's own and can be long, so the chips scroll
-  // sideways on a phone rather than pushing the page wider.
-  return (
-    <div className={cn("overflow-x-auto no-scrollbar", FLUSH_BLEED)}>
-      <div className="flex w-max gap-2" role="group" aria-label="Filter by location">
-        {options.map((loc) => {
-          const active = selected === loc.id;
-          return (
-            <button
-              key={loc.id}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onChange(loc.id)}
-              className={cn(
-                "min-h-[40px] whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors",
-                active
-                  ? "border-ink bg-ink text-paper"
-                  : "border-ink/10 bg-card text-muted hover:text-ink hover:border-ink/20",
-              )}
-            >
-              {loc.name}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 function firstLine(text: string | null): string {
   if (!text) return "";
@@ -159,21 +121,34 @@ function WorkshopCard({ workshop }: { workshop: ApiWorkshopCard }) {
 
   const summary = firstLine(workshop.description_html);
   const dateRange = formatDayRange(workshop.starts_at, workshop.ends_at);
+  const minPrice = workshop.min_price_sgd;
   const priceLabel =
-    workshop.min_price_sgd != null
-      ? workshop.tiers_count > 1
-        ? `From ${formatSgd(workshop.min_price_sgd)}`
-        : formatSgd(workshop.min_price_sgd)
-      : "Price TBA";
+    minPrice == null
+      ? "Price TBA"
+      : Number(minPrice) <= 0 && workshop.tiers_count <= 1
+        ? "Free"
+        : workshop.tiers_count > 1
+          ? `From ${formatSgd(minPrice)}`
+          : formatSgd(minPrice);
   const shape =
-    workshop.days_count > 1
-      ? `${workshop.days_count} sessions`
-      : "Single session";
+    workshop.days_count > 1 ? `${workshop.days_count} sessions` : "1 session";
+
+  // The same date stub a booking carries in the account area: over the cover
+  // when there is one, beside the title when there isn't — an empty picture
+  // frame is a screenful of nothing on a phone.
+  const stub = (className?: string) => (
+    <DateStub iso={workshop.starts_at} tone={isPast ? "muted" : "default"} className={className} />
+  );
+  const ended = isPast && (
+    <span className="shrink-0 rounded-full bg-ink/5 px-2.5 py-1 text-xs font-semibold text-muted">
+      Ended
+    </span>
+  );
 
   const body = (
     <>
-      <div className="relative aspect-[16/9] w-full overflow-hidden bg-warm">
-        {workshop.cover_url ? (
+      {workshop.cover_url && (
+        <div className="relative aspect-[16/9] w-full overflow-hidden bg-warm">
           <Image
             src={workshop.cover_url}
             alt=""
@@ -184,69 +159,59 @@ function WorkshopCard({ workshop }: { workshop: ApiWorkshopCard }) {
               isPast && "grayscale",
             )}
           />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center">
-            <GraduationCap className="h-8 w-8 text-ink/20" aria-hidden />
-          </div>
-        )}
-        {isPast && (
-          <span className="absolute left-3 top-3 rounded-full bg-card/95 px-2.5 py-1 text-[11px] font-semibold text-muted">
-            Ended
-          </span>
-        )}
-      </div>
+          {stub("absolute left-3 top-3 bg-card/95 shadow-soft backdrop-blur-sm")}
+        </div>
+      )}
 
       <div className="flex flex-1 flex-col p-4 sm:p-5">
-        <p className="flex items-center gap-1.5 text-xs font-medium text-accent-deep">
-          <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          {dateRange}
-        </p>
-        <h3 className="mt-1.5 font-serif text-lg leading-snug text-ink">
-          {workshop.name}
-        </h3>
-        {workshop.location && (
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
-            <MapPin className="h-3.5 w-3.5 shrink-0 text-ink/30" aria-hidden />
-            <span className="truncate">{workshop.location.name}</span>
-          </p>
-        )}
+        <div className="flex items-start gap-3">
+          {!workshop.cover_url && stub()}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <h2 className="font-bold leading-snug text-ink">{workshop.name}</h2>
+              {ended}
+            </div>
+            <p className="mt-0.5 text-sm text-muted">{dateRange}</p>
+            {workshop.location && (
+              <p className="mt-0.5 flex items-center gap-1 text-xs text-muted">
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-ink/30" aria-hidden />
+                <span className="truncate">{workshop.location.name}</span>
+              </p>
+            )}
+          </div>
+        </div>
         {summary && (
-          <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted">
-            {summary}
-          </p>
+          <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-ink/70">{summary}</p>
         )}
 
-        <div className="mt-auto flex items-end justify-between gap-3 pt-4">
-          <div className="min-w-0">
-            <p className="text-base font-bold text-ink">{priceLabel}</p>
-            <p className="text-xs text-muted">
+        <div className="mt-auto pt-4" />
+        <div className="flex items-center justify-between gap-3 border-t border-ink/5 pt-3">
+          <p className="min-w-0 text-sm">
+            <span className="font-bold text-ink">{priceLabel}</span>
+            <span className="text-muted">
+              {" · "}
               {shape}
-              {workshop.tiers_count > 1 ? ` · ${workshop.tiers_count} options` : ""}
-            </p>
-          </div>
-          {!isPast && (
-            <span className="inline-flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-full bg-accent px-4 text-sm font-medium text-white transition-colors group-hover:bg-accent-deep">
-              View &amp; book
-              <ArrowRight className="h-4 w-4" aria-hidden />
             </span>
+          </p>
+          {!isPast && (
+            <ChevronRight
+              className="h-5 w-5 shrink-0 text-ink/30 transition-colors group-hover:text-ink"
+              aria-hidden
+            />
           )}
         </div>
       </div>
     </>
   );
 
-  const card =
-    "group flex w-full flex-col overflow-hidden rounded-2xl border border-ink/5 bg-card shadow-soft";
+  const card = cn(CARD, "group flex w-full flex-col overflow-hidden");
 
   // A workshop that has ended has nothing to book, so it isn't a link.
   if (isPast) {
     return <div className={cn(card, "opacity-75")}>{body}</div>;
   }
   return (
-    <Link
-      href={`/workshops/${workshop.id}`}
-      className={cn(card, "transition-shadow md:hover:shadow-hover")}
-    >
+    <Link href={`/workshops/${workshop.id}`} className={cn(card, "transition-shadow md:hover:shadow-hover")}>
       {body}
     </Link>
   );

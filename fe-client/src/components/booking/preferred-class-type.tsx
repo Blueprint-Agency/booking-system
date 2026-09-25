@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronRight, X } from "lucide-react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { SHEET_BACKDROP, SHEET_HANDLE, SHEET_PANEL, SHEET_TITLE } from "@/components/ui/styles";
 
 type ClassTypeOption = { id: string; name: string };
 
@@ -114,21 +115,19 @@ function ClassTypeSheet({
   if (!open || !mounted) return null;
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center sm:p-4 animate-fade-in"
-      onClick={onClose}
-    >
+    <div className={SHEET_BACKDROP} onClick={onClose}>
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="class-type-sheet-title"
         tabIndex={-1}
-        className="w-full max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-card px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-modal outline-none sm:max-w-md sm:rounded-2xl sm:p-8 animate-fade-up"
+        className={SHEET_PANEL}
         onClick={(e) => e.stopPropagation()}
       >
+        <span aria-hidden className={SHEET_HANDLE} />
         <div className="mb-4 flex items-center justify-between">
-          <h3 id="class-type-sheet-title" className="text-lg font-bold text-ink">
+          <h3 id="class-type-sheet-title" className={SHEET_TITLE}>
             Choose a class type
           </h3>
           <button

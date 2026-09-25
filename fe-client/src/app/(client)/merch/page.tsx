@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ShoppingBag, Store } from "lucide-react";
+import { ShoppingBag } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import { BTN_PRIMARY, CARD } from "@/components/ui/styles";
 import { BookingSurface } from "@/components/booking/booking-surface";
+import { PageHeader } from "@/components/booking/page-header";
 import { BuyButton } from "@/components/checkout/buy-button";
 import { CancelledBanner } from "@/components/checkout/cancelled-banner";
-import { SectionHeading } from "@/components/booking/section-heading";
 import { publicApi } from "@/lib/api";
-import { formatSgd } from "@/lib/utils";
+import { cn, formatSgd } from "@/lib/utils";
 
 interface ApiMerch {
   id: string;
@@ -34,55 +36,48 @@ export default function MerchPage() {
   }, []);
 
   return (
-    <BookingSurface maxWidth="xl" flush>
-      <SectionHeading eyebrow="Studio shop" title="Merch" />
+    <BookingSurface>
+      {/* Nothing is shipped: the one thing a buyer must know before paying. */}
+      <PageHeader title="Merch" description="Pay online, collect at the front desk on your next visit." />
 
       {/* Back from the payment page without paying (#274). */}
-      <CancelledBanner className="mb-6" />
-
-      <div className="mb-6 flex items-start gap-3 rounded-xl border border-accent/20 bg-accent/5 px-4 py-3 text-sm text-ink">
-        <Store className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
-        <p>
-          <span className="font-semibold">Pay online, collect at the studio.</span>{" "}
-          We hand your item over at the front desk on your next visit — nothing is shipped.
-        </p>
-      </div>
+      <CancelledBanner className="mb-5" />
 
       {!items && !error && (
         <div
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          className="grid gap-4 grid-cols-2 lg:grid-cols-3"
           aria-busy="true"
           aria-label="Loading merch"
         >
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-80 rounded-2xl" />
+            <Skeleton key={i} className="h-72 rounded-2xl" />
           ))}
         </div>
       )}
 
       {error && (
-        <div className="mx-auto max-w-md rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-center text-sm text-ink">
-          We couldn&apos;t load merch right now. Please refresh in a moment.
+        <div className={cn(CARD, "p-8 text-center text-sm text-muted")}>
+          Couldn&apos;t load merch. Refresh to try again.
         </div>
       )}
 
       {items && items.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-ink/15 px-6 py-14 text-center">
-          <ShoppingBag className="mx-auto h-6 w-6 text-muted" aria-hidden />
-          <p className="mt-3 text-sm font-medium text-ink">Nothing in the shop just yet</p>
-          <p className="mt-1 text-sm text-muted">Check back soon.</p>
+        <div className={CARD}>
+          <EmptyState
+            icon={ShoppingBag}
+            title="Nothing in the shop yet"
+            description="New items show up here when the studio adds them."
+          />
         </div>
       )}
 
       {items && items.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 md:gap-6">
+        // Two across on a phone: an item is a picture, a name and a price, and
+        // one per screen made the shop a long scroll.
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 md:gap-6">
           {items.map((item) => (
-            <article
-              key={item.id}
-              className="flex flex-col overflow-hidden rounded-2xl border border-ink/5 bg-card shadow-soft"
-            >
-              {/* 4:3 on a phone so one item doesn't fill the whole screen. */}
-              <div className="flex aspect-[4/3] items-center justify-center bg-warm sm:aspect-square">
+            <article key={item.id} className={cn(CARD, "flex flex-col overflow-hidden")}>
+              <div className="flex aspect-square items-center justify-center bg-warm">
                 {item.image_url ? (
                   // Plain <img>: R2 hosts are not in next.config remotePatterns.
                   // eslint-disable-next-line @next/next/no-img-element
@@ -92,18 +87,14 @@ export default function MerchPage() {
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <ShoppingBag className="h-8 w-8 text-muted" />
+                  <ShoppingBag className="h-8 w-8 text-ink/20" aria-hidden />
                 )}
               </div>
-              <div className="flex flex-1 flex-col p-4 sm:p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="min-w-0 font-serif text-lg leading-snug text-ink">{item.title}</h3>
-                  <span className="whitespace-nowrap text-base font-bold text-ink">
-                    {formatSgd(item.price_sgd)}
-                  </span>
-                </div>
+              <div className="flex flex-1 flex-col p-3 sm:p-5">
+                <h2 className="font-semibold leading-snug text-ink break-words">{item.title}</h2>
+                <p className="mt-0.5 text-sm font-bold text-ink">{formatSgd(item.price_sgd)}</p>
                 {item.description && (
-                  <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted">
+                  <p className="mt-1.5 line-clamp-3 whitespace-pre-line text-xs leading-relaxed text-muted sm:mt-2 sm:line-clamp-none sm:text-sm">
                     {item.description}
                   </p>
                 )}
@@ -113,7 +104,7 @@ export default function MerchPage() {
                   context="buy merch"
                   gateHref="/merch"
                   priceSgd={item.price_sgd}
-                  className="mt-4 w-full min-h-[44px] rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-deep"
+                  className={cn(BTN_PRIMARY, "mt-3 sm:mt-4 w-full min-h-[44px]")}
                 >
                   Buy
                 </BuyButton>

@@ -2,16 +2,30 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, MessageCircle } from "lucide-react";
+import { Check, Loader2, MessageCircle } from "lucide-react";
 import { useMemberSession } from "@/lib/member-auth";
 import { useRouter } from "next/navigation";
 import { useAuthGate } from "@/components/auth/auth-gate";
 import { BuyButton } from "@/components/checkout/buy-button";
 import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { cn, formatDurationMonths } from "@/lib/utils";
-import { BookingSurface, FLUSH_BLEED } from "@/components/booking/booking-surface";
-import { SectionHeading } from "@/components/booking/section-heading";
+import { BookingSurface } from "@/components/booking/booking-surface";
+import { PageHeader } from "@/components/booking/page-header";
+import { SegmentedTabs } from "@/components/account/segmented-tabs";
+import { FilterChips } from "@/components/ui/filter-chips";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  CARD,
+  NOTE,
+  SHEET_ACTIONS,
+  SHEET_BACKDROP,
+  SHEET_HANDLE,
+  SHEET_PANEL,
+  SHEET_TEXT,
+  SHEET_TITLE,
+} from "@/components/ui/styles";
 import { useApi } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
@@ -52,17 +66,7 @@ const TRIAL_TERMS_COPY_KEY = "trial.terms";
 /** The line a member ticks to accept those terms; a neutral one when unset. */
 const TRIAL_ACK_COPY_KEY = "trial.acknowledgement";
 
-// What a card includes, as a dotted list that stretches to push the button to
-// the card's foot — so buttons line up across a row of cards.
-const FEATURE_LIST =
-  "mt-5 flex-1 space-y-2 text-sm text-muted [&>li]:relative [&>li]:pl-4 [&>li]:before:absolute [&>li]:before:left-0 [&>li]:before:top-[0.6em] [&>li]:before:h-1.5 [&>li]:before:w-1.5 [&>li]:before:rounded-full [&>li]:before:bg-accent/40 [&>li]:before:content-['']";
-
-// A bottom sheet on phones, where the actions land under the thumb; a centred
-// dialog from `sm` up.
-const SHEET_BACKDROP =
-  "fixed inset-0 z-[70] flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center sm:p-4";
-const SHEET_PANEL =
-  "w-full max-h-[90dvh] overflow-y-auto rounded-t-3xl bg-card px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-modal sm:max-w-md sm:rounded-2xl sm:p-8 animate-fade-up";
+const PACKAGE_GRID = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4";
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -194,7 +198,7 @@ export default function PackagesPage() {
       // Free trial → granted immediately.
       setTrialMessage({
         kind: "ok",
-        text: "Trial pass claimed — head to Classes to book.",
+        text: "Trial pass added. Book a class from the schedule.",
       });
       await refresh();
       setClaimingTrialId(null);
@@ -211,10 +215,10 @@ export default function PackagesPage() {
         code === ERROR_CODES.trial_already_used
           ? "You've already used your trial pass."
           : code === ERROR_CODES.trial_not_eligible
-            ? "The trial pass is for new members only — it looks like you already have a package."
+            ? "The trial pass is for new members only."
             : code === ERROR_CODES.payments_not_configured
               ? NO_ONLINE_PAYMENTS
-              : "Couldn't start the trial purchase. Please try again.";
+              : "Couldn't get the trial pass. Try again.";
       setTrialMessage({ kind: "err", text });
       setClaimingTrialId(null);
     }
@@ -222,17 +226,13 @@ export default function PackagesPage() {
 
   return (
     <>
-      <div id="packages">
-        <BookingSurface maxWidth="xl" flush>
-          <SectionHeading
-            eyebrow="Choose your track"
-            title="Group, private or corporate"
-          />
+      <BookingSurface>
+          <PageHeader title="Packages" />
 
           {loading && (
             <div aria-busy="true" aria-label="Loading packages">
-              <Skeleton className="mb-6 h-11 w-full rounded-full sm:mx-auto sm:w-80" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+              <Skeleton className="mb-4 h-12 w-full rounded-full sm:w-80" />
+              <div className={PACKAGE_GRID}>
                 {Array.from({ length: 3 }).map((_, i) => (
                   <Skeleton key={i} className="h-64 rounded-2xl" />
                 ))}
@@ -241,42 +241,19 @@ export default function PackagesPage() {
           )}
 
           {!loading && error && (
-            <div className="mx-auto max-w-md rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3">
-              We couldn't load packages right now. Please refresh in a moment.
+            <div className={cn(CARD, "p-8 text-center text-sm text-muted")}>
+              Couldn&apos;t load packages. Refresh to try again.
             </div>
           )}
 
           {!loading && !error && data && (
             <>
-              {/* ── Main tab strip ──────────────────────────────────── */}
-              {/* Equal thirds across a phone; a hugging pill once there's room. */}
-              <div className="mb-6 sm:flex sm:justify-center">
-                <div
-                  role="tablist"
-                  aria-label="Package family"
-                  className="grid grid-cols-3 gap-1 p-1 rounded-full bg-warm border border-ink/10 sm:inline-grid sm:auto-cols-fr sm:grid-flow-col sm:grid-cols-none"
-                >
-                  {MAIN_TABS.filter((t) => !t.hidden).map((tab) => {
-                    const isActive = activeTab === tab.key;
-                    return (
-                      <button
-                        key={tab.key}
-                        role="tab"
-                        aria-selected={isActive}
-                        onClick={() => setActiveTab(tab.key)}
-                        className={cn(
-                          "relative min-h-[40px] rounded-full px-3 sm:px-6 text-sm font-semibold whitespace-nowrap transition-all duration-200",
-                          isActive
-                            ? "bg-card text-accent-deep shadow-sm"
-                            : "text-muted hover:text-ink",
-                        )}
-                      >
-                        {tab.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <SegmentedTabs
+                label="Package family"
+                tabs={MAIN_TABS.filter((t) => !t.hidden).map((t) => ({ value: t.key, label: t.label }))}
+                value={activeTab}
+                onChange={setActiveTab}
+              />
 
               {/* ── Group tab ───────────────────────────────────────── */}
               {activeTab === "group" && (
@@ -310,8 +287,7 @@ export default function PackagesPage() {
               {activeTab === "corporate" && <CorporateSection items={corporate} />}
             </>
           )}
-        </BookingSurface>
-      </div>
+      </BookingSurface>
 
       {pendingTrial && (
         <TrialTermsModal
@@ -329,10 +305,8 @@ export default function PackagesPage() {
 // ── Sections ──────────────────────────────────────────────────────────────────
 
 const SHARED_BLURBS = {
-  pt1on1:
-    "Fully dedicated time with one of our instructors, tailored entirely to your goals. Private packages are measured in sessions (not credits) — 1 session = 30 mins.",
-  pt2on1:
-    "Train with a partner. Shared cost, shared motivation, same dedicated instructor. Split the price between two people.",
+  pt1on1: "One-to-one time with an instructor. 1 session = 30 min.",
+  pt2on1: "Train with a partner and share the cost. 1 session = 30 min.",
 };
 
 function ClassCreditsSection({
@@ -369,42 +343,13 @@ function ClassCreditsSection({
   ];
 
   return (
-    <div className="space-y-8">
-      {/* Three full-word labels do not fit across a 320px card, so the strip
-          scrolls sideways there and centres itself once it fits. */}
-      <div className={cn("overflow-x-auto no-scrollbar border-b border-ink/10", FLUSH_BLEED)}>
-        <div
-          role="tablist"
-          aria-label="Class credit type"
-          className="flex w-max gap-6 sm:gap-8 md:mx-auto"
-        >
-          {subTabs
-            .filter((t) => !t.hidden)
-            .map((tab) => {
-              const isActive = subTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => setSubTab(tab.key)}
-                  className={cn(
-                    "relative whitespace-nowrap pt-2 pb-3 text-sm font-medium transition-colors",
-                    isActive ? "text-ink" : "text-muted hover:text-ink",
-                  )}
-                >
-                  {tab.label}
-                  <span
-                    className={cn(
-                      "absolute bottom-0 left-0 right-0 h-0.5 rounded-full transition-all",
-                      isActive ? "bg-ink" : "bg-transparent",
-                    )}
-                  />
-                </button>
-              );
-            })}
-        </div>
-      </div>
+    <div className="space-y-4">
+      <FilterChips
+        label="Class package type"
+        options={subTabs.filter((t) => !t.hidden).map((t) => ({ value: t.key, label: t.label }))}
+        value={subTab}
+        onChange={setSubTab}
+      />
 
       {/* Nothing blocks a purchase on top of what the member holds: every
           package waits Dormant and starts on the first booking after the one in
@@ -413,16 +358,15 @@ function ClassCreditsSection({
       {subTab === "bundle" && (
         <>
           {(hasUnlimited || hasBundle) && (
-            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3">
-              You already have a {hasUnlimited ? "class pass" : "Credit Bundle"}. Buy a bundle
-              now and it waits — it starts when you book your first class after your current
-              package ends or is used up.
-            </div>
+            <p className={NOTE}>
+              You already have a {hasUnlimited ? "class pass" : "credit bundle"}. A new bundle
+              starts on your first booking after it ends or runs out.
+            </p>
           )}
           {bundles.length === 0 ? (
             <EmptyCatalog kind="bundle" />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            <div className={PACKAGE_GRID}>
               {bundles.map((p) => (
                 <BundleCard key={p.id} pkg={p} disabled={false} disabledReason="" />
               ))}
@@ -434,21 +378,21 @@ function ClassCreditsSection({
       {subTab === "unlimited" && (
         <>
           {hasBundle && !hasUnlimited && (
-            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3">
-              You still have a Credit Bundle. Buy Unlimited now and it waits — it starts when you
-              book your first class after your credits are used up or expire.
-            </div>
+            <p className={NOTE}>
+              You still have class credits. A new pass starts on your first booking after
+              they run out or expire.
+            </p>
           )}
           {hasUnlimited && (
-            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3">
-              You already have an Unlimited pass. Buy another and it waits — it starts when you book
-              your first class after this one ends, at the same home studio.
-            </div>
+            <p className={NOTE}>
+              You already have an Unlimited pass. A new one starts on your first booking after
+              it ends, at the same home studio.
+            </p>
           )}
           {unlimited.length === 0 ? (
             <EmptyCatalog kind="unlimited" />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            <div className={PACKAGE_GRID}>
               {unlimited.map((p) => (
                 <UnlimitedCard key={p.id} pkg={p} disabled={false} disabledReason="" />
               ))}
@@ -497,38 +441,37 @@ function TrialSection({
     : "New members only";
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted text-center max-w-xl mx-auto">
-        First time? Try us once — no commitment. Limited to one per student, ever.
-      </p>
+      <p className="text-sm text-muted">For first-timers. One per member.</p>
 
       {/* The studio's own trial terms, shown before purchase — or nothing. */}
       {terms && (
-        <div className="rounded-xl border border-accent/30 bg-accent/5 text-ink text-xs sm:text-sm px-4 py-3 max-w-xl mx-auto">
-          <p className="font-medium">Trial pass terms</p>
-          <p className="text-muted mt-1 leading-relaxed whitespace-pre-line">{terms}</p>
+        <div className={NOTE}>
+          <p className="font-semibold">Terms</p>
+          <p className="mt-1 text-muted leading-relaxed whitespace-pre-line">{terms}</p>
         </div>
       )}
 
       {banner && (
         <div
+          role="status"
           className={cn(
-            "rounded-xl border text-ink text-sm px-4 py-3 text-center max-w-xl mx-auto",
+            "rounded-xl border px-4 py-3 text-sm text-ink",
             banner.kind === "ok"
-              ? "border-sage/40 bg-sage/10"
-              : "border-warning/30 bg-warning/10",
+              ? "border-sage/25 bg-sage/10"
+              : "border-error/25 bg-error/10",
           )}
         >
           {banner.text}
         </div>
       )}
       {!trialEligible && !banner && (
-        <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 max-w-xl mx-auto">
+        <p className={NOTE}>
           {trialUsed
-            ? "You've already used your trial pass. Browse our bundles or unlimited options to continue practising."
-            : "The trial pass is for new members only. Since you already have a package, browse our bundles or unlimited options."}
-        </div>
+            ? "You've used your trial pass. See credit bundles or Unlimited to keep booking."
+            : "The trial pass is for new members only. See credit bundles or Unlimited instead."}
+        </p>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mt-6">
+      <div className={PACKAGE_GRID}>
         {trials.map((p) => (
           <TrialCard
             key={p.id}
@@ -561,38 +504,13 @@ function PrivateSection({
   ];
 
   return (
-    <div className="space-y-8">
-      <div className={cn("overflow-x-auto no-scrollbar border-b border-ink/10", FLUSH_BLEED)}>
-        <div
-          role="tablist"
-          aria-label="Private session type"
-          className="flex w-max gap-6 sm:gap-8 md:mx-auto"
-        >
-          {subTabs.map((tab) => {
-            const isActive = subTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => setSubTab(tab.key)}
-                className={cn(
-                  "relative whitespace-nowrap pt-2 pb-3 text-sm font-medium transition-colors",
-                  isActive ? "text-ink" : "text-muted hover:text-ink",
-                )}
-              >
-                {tab.label}
-                <span
-                  className={cn(
-                    "absolute bottom-0 left-0 right-0 h-0.5 rounded-full transition-all",
-                    isActive ? "bg-ink" : "bg-transparent",
-                  )}
-                />
-              </button>
-            );
-          })}
-        </div>
-      </div>
+    <div className="space-y-4">
+      <FilterChips
+        label="Private session type"
+        options={subTabs.map((t) => ({ value: t.key, label: t.label }))}
+        value={subTab}
+        onChange={setSubTab}
+      />
 
       {subTab === "1on1" && <PtSection items={pt1on1} blurb={SHARED_BLURBS.pt1on1} />}
       {subTab === "2on1" && <PtSection items={pt2on1} blurb={SHARED_BLURBS.pt2on1} />}
@@ -606,8 +524,8 @@ function PtSection({ items, blurb }: { items: ApiPtPackage[]; blurb: string }) {
   }
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted text-center max-w-xl mx-auto">{blurb}</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mt-6">
+      <p className="text-sm text-muted">{blurb}</p>
+      <div className={PACKAGE_GRID}>
         {items.map((p) => (
           <PtCard key={p.id} pkg={p} />
         ))}
@@ -618,38 +536,91 @@ function PtSection({ items, blurb }: { items: ApiPtPackage[]; blurb: string }) {
 
 function EmptyCatalog({ kind }: { kind: "bundle" | "unlimited" | "trial" | "pt" }) {
   const copy = {
-    bundle: "No credit bundles are available right now.",
-    unlimited: "No unlimited passes are available right now.",
-    trial: "No trial pass is currently offered.",
-    pt: "No PT packages are available right now.",
+    bundle: "No credit bundles on sale right now.",
+    unlimited: "No Unlimited passes on sale right now.",
+    trial: "No trial pass on offer right now.",
+    pt: "No private session packages on sale right now.",
   } as const;
-  return (
-    <div className="mx-auto max-w-md text-center py-8 text-muted text-sm">
-      {copy[kind]}
-    </div>
-  );
+  return <div className={cn(CARD, "px-6 py-10 text-center text-sm text-muted")}>{copy[kind]}</div>;
 }
 
 // ── Cards ─────────────────────────────────────────────────────────────────────
 
-function PromoTag({ pkg }: { pkg: ApiClassPackage | ApiPtPackage }) {
-  if (!hasDiscount(pkg)) return null;
+/**
+ * Every package card: what it is, the one number that sizes it, the price,
+ * what's included, and the action at the foot — lined up across a row.
+ * Drawn like the account's balance tiles, so a package reads the same before
+ * and after it's bought.
+ */
+function PackageCard({
+  name,
+  headline,
+  sub,
+  badge,
+  price,
+  features,
+  highlight = false,
+  children,
+}: {
+  name: string;
+  headline: string;
+  sub?: string;
+  badge?: string | null;
+  price: React.ReactNode;
+  features?: string[];
+  highlight?: boolean;
+  /** The action. */
+  children: React.ReactNode;
+}) {
   return (
-    <span className="absolute -top-2.5 right-4 text-[10px] font-mono uppercase tracking-wider bg-accent/15 text-accent-deep border border-accent/30 px-2.5 py-0.5 rounded-full">
-      Promo
-    </span>
+    <div className={cn(CARD, "flex flex-col p-5 sm:p-6", highlight && "border-accent/30")}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="min-w-0 text-sm font-semibold leading-5 text-muted">{name}</p>
+        {badge && (
+          <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-accent/10 px-2 text-[11px] font-bold text-accent-deep">
+            {badge}
+          </span>
+        )}
+      </div>
+      <p className="mt-2 text-3xl font-extrabold tracking-tight text-ink leading-none">{headline}</p>
+      {sub && <p className="mt-1.5 text-sm text-muted">{sub}</p>}
+      <div className="mt-4">{price}</div>
+      {features && features.length > 0 && (
+        <ul className="mt-4 space-y-1.5 border-t border-ink/5 pt-4 text-sm text-ink/80">
+          {features.map((f) => (
+            <li key={f} className="flex items-start gap-2">
+              <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
+              {f}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-auto pt-5">{children}</div>
+    </div>
+  );
+}
+
+const promo = (pkg: ApiClassPackage | ApiPtPackage) => (hasDiscount(pkg) ? "Promo" : null);
+
+const CARD_BUTTON = cn(BTN_PRIMARY, "w-full");
+
+function DisabledButton({ children }: { children: React.ReactNode }) {
+  return (
+    <button type="button" disabled className={cn(BTN_PRIMARY, "w-full bg-ink/10 text-muted hover:bg-ink/10")}>
+      {children}
+    </button>
   );
 }
 
 function PriceBlock({ pkg }: { pkg: ApiClassPackage | ApiPtPackage }) {
   const discounted = hasDiscount(pkg);
   return (
-    <div className="flex items-baseline gap-2 mt-4">
-      <p className="text-2xl font-bold">{formatSgd(pkg.effective_price_sgd)}</p>
+    <p className="flex items-baseline gap-2">
+      <span className="text-xl font-bold text-ink">{formatSgd(pkg.effective_price_sgd)}</span>
       {discounted && (
         <span className="text-sm text-muted line-through">{formatSgd(pkg.price_sgd)}</span>
       )}
-    </div>
+    </p>
   );
 }
 
@@ -665,39 +636,29 @@ function BundleCard({
   const credits = pkg.credits ?? 0;
   // The days count from the member's first class, not from purchase (§3).
   const validity =
-    pkg.validity_days != null ? `${pkg.validity_days} days from your first class` : "no expiry";
+    pkg.validity_days != null ? `Valid ${pkg.validity_days} days from your first class` : "No expiry";
   return (
-    <div className="relative rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-7 flex flex-col transition-all md:hover:shadow-hover md:hover:-translate-y-0.5">
-      <PromoTag pkg={pkg} />
-      <div>
-        <p className="text-3xl sm:text-4xl font-extrabold text-ink tracking-tight">
-          {credits} {credits === 1 ? "credit" : "credits"}
-        </p>
-        <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
-        <p className="text-sm text-muted mt-1">Valid for {validity}</p>
-      </div>
-      <PriceBlock pkg={pkg} />
-      <div className="mt-6 flex-1" />
+    <PackageCard
+      name={pkg.name}
+      headline={`${credits} ${credits === 1 ? "credit" : "credits"}`}
+      sub={validity}
+      badge={promo(pkg)}
+      price={<PriceBlock pkg={pkg} />}
+    >
       {disabled ? (
-        <button
-          type="button"
-          disabled
-          className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
-        >
-          {disabledReason}
-        </button>
+        <DisabledButton>{disabledReason}</DisabledButton>
       ) : (
         <BuyButton
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
           gateHref="/packages"
           priceSgd={pkg.effective_price_sgd}
-          className="rounded-full bg-ink text-paper min-h-[44px] px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
+          className={CARD_BUTTON}
         >
           Purchase
         </BuyButton>
       )}
-    </div>
+    </PackageCard>
   );
 }
 
@@ -713,29 +674,18 @@ function UnlimitedCard({
   const months =
     pkg.duration_months != null
       ? formatDurationMonths(pkg.duration_months)
-      : "unlimited";
+      : "Unlimited";
   return (
-    <div className="relative rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-7 flex flex-col transition-all md:hover:shadow-hover md:hover:-translate-y-0.5">
-      <PromoTag pkg={pkg} />
-      <div>
-        <p className="text-3xl sm:text-4xl font-extrabold text-ink tracking-tight">{months}</p>
-        <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
-      </div>
-      <PriceBlock pkg={pkg} />
-      <ul className={FEATURE_LIST}>
-        <li>Unlimited classes for {months}</li>
-        <li>All group classes included</li>
-        <li>No class limit per week</li>
-        <li>Covers one studio — you choose at checkout</li>
-      </ul>
+    <PackageCard
+      name={pkg.name}
+      headline={months}
+      sub="Unlimited group classes"
+      badge={promo(pkg)}
+      price={<PriceBlock pkg={pkg} />}
+      features={["No weekly class limit", "One home studio, chosen at checkout"]}
+    >
       {disabled ? (
-        <button
-          type="button"
-          disabled
-          className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
-        >
-          {disabledReason}
-        </button>
+        <DisabledButton>{disabledReason}</DisabledButton>
       ) : (
         <BuyButton
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
@@ -745,12 +695,12 @@ function UnlimitedCard({
           // A plan has a Home studio to pick, at every price — including one a
           // Promotion took to zero.
           requiresReview
-          className="rounded-full bg-ink text-paper min-h-[44px] px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
+          className={CARD_BUTTON}
         >
           Purchase
         </BuyButton>
       )}
-    </div>
+    </PackageCard>
   );
 }
 
@@ -773,41 +723,25 @@ function TrialCard({
   const isFree = Number(pkg.effective_price_sgd) === 0;
   const onlinePayments = useOnlinePayments();
   const validity =
-    pkg.validity_days != null ? `${pkg.validity_days} days from your first class` : "redeem anytime";
+    pkg.validity_days != null ? `Valid ${pkg.validity_days} days from your first class` : "No expiry";
 
-  const ctaClass = cn(
-    "rounded-full bg-accent text-white px-5 py-3 text-sm font-medium hover:bg-accent/90 mt-6 w-full text-center transition-colors inline-flex items-center justify-center gap-2",
-    isClaiming && "opacity-70 cursor-wait",
-  );
+  const ctaClass = cn(CARD_BUTTON, isClaiming && "opacity-70 cursor-wait");
 
   return (
-    <div className="relative rounded-2xl bg-card border border-accent/40 shadow-soft p-5 sm:p-7 flex flex-col transition-all md:hover:shadow-hover md:hover:-translate-y-0.5">
-      <span className="absolute -top-2.5 left-4 text-[10px] font-mono uppercase tracking-wider bg-accent text-white px-2.5 py-0.5 rounded-full">
-        Trial
-      </span>
-      <div>
-        <p className="text-3xl sm:text-4xl font-extrabold text-ink tracking-tight">
-          {credits} {credits === 1 ? "credit" : "credits"}
-        </p>
-        <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
-      </div>
-      <PriceBlock pkg={pkg} />
-      <ul className={FEATURE_LIST}>
-        <li>One-time only per student</li>
-        <li>Valid for {validity}</li>
-        <li>Any group class, any location</li>
-      </ul>
+    <PackageCard
+      name={pkg.name}
+      headline={`${credits} ${credits === 1 ? "credit" : "credits"}`}
+      sub={validity}
+      badge="Trial"
+      highlight
+      price={<PriceBlock pkg={pkg} />}
+      features={["Any group class, any location"]}
+    >
       {disabled ? (
-        <button
-          type="button"
-          disabled
-          className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
-        >
-          {disabledReason}
-        </button>
+        <DisabledButton>{disabledReason}</DisabledButton>
       ) : blockedByPayments(onlinePayments, pkg.effective_price_sgd) ? (
         // A priced trial at a studio that takes no online payments (#293).
-        <p className="mt-6 text-sm text-muted text-center">{NO_ONLINE_PAYMENTS}</p>
+        <p className="text-sm text-muted text-center">{NO_ONLINE_PAYMENTS}</p>
       ) : (
         <>
           <button
@@ -828,7 +762,7 @@ function TrialCard({
           {gate}
         </>
       )}
-    </div>
+    </PackageCard>
   );
 }
 
@@ -855,48 +789,34 @@ function TrialTermsModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Trial pass terms"
+        aria-labelledby="trial-terms-title"
         className={SHEET_PANEL}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="font-serif text-xl text-ink leading-snug">
+        <span aria-hidden className={SHEET_HANDLE} />
+        <h3 id="trial-terms-title" className={SHEET_TITLE}>
           Trial pass terms
         </h3>
-        <p className="text-sm text-muted mt-2 leading-relaxed">
-          Before you continue, please read the studio&apos;s terms:
-        </p>
-        <p className="text-sm text-muted mt-3 leading-relaxed whitespace-pre-line">
+        <p className={cn(NOTE, "mt-3 max-h-[40dvh] overflow-y-auto leading-relaxed whitespace-pre-line text-ink/80")}>
           {terms}
         </p>
 
-        <label className="flex items-start gap-2.5 mt-5 text-sm text-ink cursor-pointer">
+        <label className="mt-4 flex min-h-[44px] cursor-pointer items-start gap-3 text-sm text-ink">
           <input
             type="checkbox"
             checked={ack}
             onChange={(e) => setAck(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-ink/30 text-accent focus:ring-accent"
+            className="mt-0.5 h-5 w-5 shrink-0 rounded border-ink/30 accent-[var(--color-accent)]"
           />
           <span>{acknowledgement}</span>
         </label>
 
-        <div className="mt-6 flex flex-col gap-2">
-          <button
-            type="button"
-            disabled={!ack}
-            onClick={onConfirm}
-            className={cn(
-              "w-full rounded-full bg-accent text-white py-3 text-sm font-semibold transition-colors",
-              ack ? "hover:bg-accent/90" : "opacity-50 cursor-not-allowed",
-            )}
-          >
-            {isFree ? "Claim trial pass" : "Continue to payment"}
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="w-full rounded-full border border-ink/10 py-2.5 text-sm text-muted hover:text-ink transition-colors"
-          >
+        <div className={SHEET_ACTIONS}>
+          <button type="button" onClick={onCancel} className={BTN_SECONDARY}>
             Cancel
+          </button>
+          <button type="button" disabled={!ack} onClick={onConfirm} className={BTN_PRIMARY}>
+            {isFree ? "Claim trial pass" : "Continue to payment"}
           </button>
         </div>
       </div>
@@ -906,47 +826,37 @@ function TrialTermsModal({
 
 function PtCard({ pkg }: { pkg: ApiPtPackage }) {
   const perSession = Math.round(Number(pkg.effective_price_sgd) / pkg.num_sessions);
-  const partnerLine =
-    pkg.session_type === "2on1"
-      ? "Train with one partner"
-      : `${pkg.num_sessions} personal training sessions`;
   return (
-    <div className="relative rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-7 flex flex-col transition-all md:hover:shadow-hover md:hover:-translate-y-0.5">
-      <PromoTag pkg={pkg} />
-      <div>
-        <p className="text-3xl sm:text-4xl font-extrabold text-ink tracking-tight">
-          {pkg.num_sessions} {pkg.num_sessions === 1 ? "session" : "sessions"}
-        </p>
-        <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
-      </div>
-      <PriceBlock pkg={pkg} />
-      <ul className={FEATURE_LIST}>
-        <li>{partnerLine}</li>
-        <li>{formatSgd(perSession)}/session</li>
-        <li>
-          Valid {pkg.validity_days} {pkg.validity_days === 1 ? "day" : "days"} from your first
-          session request
-        </li>
-        {/* Only an Instructor-Bound package promises one coach. An open package
-            is open to any instructor, so the old unconditional promise was one
-            the studio had not made. */}
-        <li>
-          {pkg.instructor_bound
-            ? "One instructor you choose, for every session"
-            : "Book with any of our instructors"}
-        </li>
-        <li>Valid across both locations</li>
-      </ul>
+    <PackageCard
+      name={pkg.name}
+      headline={`${pkg.num_sessions} ${pkg.num_sessions === 1 ? "session" : "sessions"}`}
+      sub={`Valid ${pkg.validity_days} ${pkg.validity_days === 1 ? "day" : "days"} from your first request`}
+      badge={promo(pkg)}
+      price={
+        <div className="flex items-baseline justify-between gap-2">
+          <PriceBlock pkg={pkg} />
+          <span className="text-xs text-muted">{formatSgd(perSession)}/session</span>
+        </div>
+      }
+      features={[
+        ...(pkg.session_type === "2on1" ? ["For you and one partner"] : []),
+        // Only an Instructor-Bound package promises one coach. An open package
+        // is open to any instructor, so the old unconditional promise was one
+        // the studio had not made.
+        pkg.instructor_bound ? "The same instructor every session" : "Any instructor",
+        "Any location",
+      ]}
+    >
       <BuyButton
         target={{ kind: "package", packageKind: "pt", packageId: pkg.id }}
         context="buy a package"
         gateHref="/packages"
         priceSgd={pkg.effective_price_sgd}
-        className="rounded-full bg-ink text-paper min-h-[44px] px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
+        className={CARD_BUTTON}
       >
         Purchase
       </BuyButton>
-    </div>
+    </PackageCard>
   );
 }
 
@@ -955,18 +865,18 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
 function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
   const whatsapp = corporateContactWhatsappHref(useBrandCopy(WHATSAPP_COPY_KEY, ""));
   return (
-    <div className="space-y-8">
-      <p className="text-sm text-muted text-center max-w-xl mx-auto">
-        Bring mindful movement to your workplace. Request a package below — we
-        arrange the dates, location and instructor with you over WhatsApp.
+    <div className="space-y-4">
+      <p className="text-sm text-muted">
+        Classes at your workplace. Send a request and we&apos;ll arrange dates, venue and
+        instructor with you on WhatsApp.
       </p>
 
       {items.length === 0 ? (
-        <div className="mx-auto max-w-md text-center py-8 text-muted text-sm">
-          No corporate packages are available right now.
+        <div className={cn(CARD, "px-6 py-10 text-center text-sm text-muted")}>
+          No corporate packages on offer right now.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+        <div className={PACKAGE_GRID}>
           {items.map((p) => (
             <CorporateCard key={p.id} pkg={p} />
           ))}
@@ -975,19 +885,20 @@ function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
 
       {/* Only when the studio published a number — see `corporateWhatsappHref`. */}
       {whatsapp && (
-        <div className="mt-10 flex flex-col items-center gap-2 text-center">
+        <div className={cn(CARD, "flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5")}>
+          <div>
+            <p className="font-semibold text-ink">Have a question first?</p>
+            <p className="text-sm text-muted">Message us before you send a request.</p>
+          </div>
           <a
             href={whatsapp}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2 rounded-full border border-ink/15 px-5 py-3 text-sm font-medium text-ink hover:bg-warm transition-colors"
+            className={cn(BTN_SECONDARY, "min-h-[44px] shrink-0")}
           >
-            <MessageCircle className="h-4 w-4" strokeWidth={1.5} />
-            Contact us on WhatsApp
+            <MessageCircle className="h-4 w-4" />
+            WhatsApp us
           </a>
-          <p className="text-xs text-muted">
-            Questions first? Chat with us before you buy.
-          </p>
         </div>
       )}
     </div>
@@ -1026,23 +937,15 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
   }
 
   return (
-    <div className="relative rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-7 flex flex-col transition-all md:hover:shadow-hover md:hover:-translate-y-0.5">
-      <div>
-        <p className="text-base font-medium text-ink">{pkg.name}</p>
-        {pkg.description && (
-          <p className="text-sm text-muted mt-2 leading-relaxed">
-            {pkg.description}
-          </p>
-        )}
-      </div>
-      <div className="flex items-baseline gap-2 mt-4">
-        <p className="text-2xl font-bold">{formatSgd(pkg.price_sgd)}</p>
-      </div>
-      <div className="mt-6 flex-1" />
+    <div className={cn(CARD, "flex flex-col p-5 sm:p-6")}>
+      <p className="font-bold text-ink">{pkg.name}</p>
+      {pkg.description && (
+        <p className="mt-1.5 text-sm leading-relaxed text-muted">{pkg.description}</p>
+      )}
+      <p className="mt-4 text-xl font-bold text-ink">{formatSgd(pkg.price_sgd)}</p>
+      <div className="mt-auto pt-5" />
       {err && (
-        <p className="text-xs text-error mb-2">
-          Couldn&apos;t send your request. Please try again.
-        </p>
+        <p className="mb-2 text-xs text-error">Couldn&apos;t send your request. Try again.</p>
       )}
       <button
         type="button"
@@ -1057,13 +960,10 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
             setFormOpen(true);
           }
         }}
-        className={cn(
-          "rounded-full bg-ink text-paper min-h-[44px] px-5 py-3 text-sm font-medium hover:bg-ink/90 w-full text-center transition-colors inline-flex items-center justify-center gap-2",
-          pending && "opacity-70 cursor-wait",
-        )}
+        className={cn(CARD_BUTTON, pending && "opacity-70 cursor-wait")}
       >
         {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-        {pending ? "Sending…" : "Request this package"}
+        {pending ? "Sending…" : "Request"}
       </button>
       {gate}
 
@@ -1147,24 +1047,21 @@ function CorporateRequestModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`Request ${pkg.name}`}
+        aria-labelledby="corporate-request-title"
         className={SHEET_PANEL}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="font-serif text-xl text-ink leading-snug">
+        <span aria-hidden className={SHEET_HANDLE} />
+        <h3 id="corporate-request-title" className={SHEET_TITLE}>
           Request {pkg.name}
         </h3>
-        <p className="text-sm text-muted mt-2 leading-relaxed">
-          Tell us where you&apos;d like the sessions held and anything we should
-          know. We&apos;ll reach out to you to further confirm the corporate
-          package arrangements.
-        </p>
+        <p className={SHEET_TEXT}>We&apos;ll contact you to confirm the details.</p>
 
         {/* Where */}
-        <div className="mt-5">
-          <label className="block text-sm font-medium text-ink">
-            Where would you like the sessions?
-          </label>
+        <div className="mt-5" role="radiogroup" aria-labelledby="corporate-where-label">
+          <p id="corporate-where-label" className="text-sm font-semibold text-ink">
+            Where
+          </p>
           <div className="mt-2 space-y-2">
             {studioOptions.map((name) => (
               <label
@@ -1191,24 +1088,22 @@ function CorporateRequestModal({
                 onChange={(e) => setWhere(e.target.value)}
                 className="h-4 w-4 border-ink/30 text-accent focus:ring-accent"
               />
-              <span>Another location (our office / venue)</span>
+              <span>Your own venue</span>
             </label>
           </div>
           {isCustom && (
             <>
               <input
                 type="text"
+                aria-label="Venue address"
                 value={customWhere}
                 onChange={(e) => setCustomWhere(e.target.value)}
                 placeholder="Address or venue name"
-                className="mt-2 w-full rounded-xl border border-ink/15 bg-card px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                className="mt-2 w-full min-h-[44px] rounded-xl border border-ink/15 bg-card px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               />
               <p className="mt-2 text-xs text-muted">
-                Sessions at your own venue typically add a{" "}
-                <span className="font-medium text-ink">
-                  {formatSgd(CORPORATE_TRANSPORT_SURCHARGE_SGD)} transport surcharge
-                </span>{" "}
-                for instructor travel — we&apos;ll confirm it in your quote.
+                Usually adds a {formatSgd(CORPORATE_TRANSPORT_SURCHARGE_SGD)} transport fee.
+                We&apos;ll confirm it in your quote.
               </p>
             </>
           )}
@@ -1216,58 +1111,46 @@ function CorporateRequestModal({
 
         {/* Notes */}
         <div className="mt-5">
-          <label className="block text-sm font-medium text-ink">
+          <label htmlFor="corporate-notes" className="block text-sm font-semibold text-ink">
             Notes <span className="font-normal text-muted">(optional)</span>
           </label>
           <textarea
+            id="corporate-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={4}
             maxLength={500}
-            placeholder="Group size, preferred dates/times, focus, or anything else."
+            placeholder="Group size, preferred dates and times, anything else"
             className="mt-2 w-full rounded-xl border border-ink/15 bg-card px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent resize-none"
           />
         </div>
 
         {/* Indicative price — nothing is charged here; the studio confirms the
             final quote when arranging the sessions. */}
-        <dl className="mt-6 space-y-1.5 border-t border-ink/10 pt-4 text-sm">
-          <div className="flex items-center justify-between font-medium text-ink">
+        <dl className="mt-5 space-y-1 border-t border-ink/5 pt-4 text-sm">
+          <div className="flex items-center justify-between font-semibold text-ink">
             <dt>{pkg.name}</dt>
             <dd>{formatSgd(pkg.price_sgd)}</dd>
           </div>
           <p className="text-xs text-muted">
-            No payment now — we&apos;ll confirm the final quote
-            {isCustom ? " (incl. transport)" : ""} when we reach out.
+            Nothing to pay now. We confirm the final quote{isCustom ? ", with transport," : ""} when
+            we contact you.
           </p>
         </dl>
 
         {submitError && (
-          <p className="mt-4 rounded-xl border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
-            Couldn&apos;t send your request. Please try again.
+          <p className="mt-4 rounded-xl border border-error/25 bg-error/10 px-3 py-2 text-sm text-ink">
+            Couldn&apos;t send your request. Try again.
           </p>
         )}
 
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            type="button"
-            disabled={!canSubmit}
-            onClick={handleSubmit}
-            className={cn(
-              "w-full rounded-full bg-ink text-paper py-3 text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2",
-              canSubmit ? "hover:bg-ink/90" : "opacity-50 cursor-not-allowed",
-            )}
-          >
+        <div className={SHEET_ACTIONS}>
+          <button type="button" disabled={pending} onClick={onCancel} className={BTN_SECONDARY}>
+            Cancel
+          </button>
+          <button type="button" disabled={!canSubmit} onClick={handleSubmit} className={BTN_PRIMARY}>
             {pending && <Loader2 className="h-4 w-4 animate-spin" />}
             {pending ? "Sending…" : "Send request"}
-          </button>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={onCancel}
-            className="w-full rounded-full border border-ink/10 py-2.5 text-sm text-muted hover:text-ink transition-colors disabled:opacity-50"
-          >
-            Cancel
           </button>
         </div>
       </div>
