@@ -31,24 +31,83 @@ import {
 } from "@/lib/class-waitlist";
 import type { ScheduleClassAttendee } from "@/lib/schedule";
 
-export function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+export function Stat({
+  label,
+  value,
+  sub,
+  tone = "ink",
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  /** `warning` when the number is past what the room holds. */
+  tone?: "ink" | "warning";
+}) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
+    <div className="min-w-0 rounded-xl border border-border bg-card p-4 shadow-soft">
       <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-1 text-lg font-semibold tabular-nums text-ink">{value}</div>
-      {sub && <div className="text-xs text-muted">{sub}</div>}
+      <div
+        className={`mt-1 whitespace-nowrap text-lg font-semibold tabular-nums ${
+          tone === "warning" ? "text-warning" : "text-ink"
+        }`}
+      >
+        {value}
+      </div>
+      {sub && <div className="truncate text-xs text-muted">{sub}</div>}
     </div>
   );
 }
 
-/** "Booked 8 / 16", the seats by kind, and "Waitlist 3 / 5". */
+/** One kind of seat: its label, used / capacity, and a bar that fills with it. */
+function SeatLine({ label, used, capacity }: { label: string; used: number; capacity: number }) {
+  const over = used > capacity;
+  const pct = capacity > 0 ? Math.min(100, Math.round((used / capacity) * 100)) : used > 0 ? 100 : 0;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2 text-sm">
+        <span className="text-muted">{label}</span>
+        <span className={`font-semibold tabular-nums ${over ? "text-warning" : "text-ink"}`}>
+          {used} / {capacity}
+        </span>
+      </div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-warm" aria-hidden>
+        <div
+          className={`h-full rounded-full ${over ? "bg-warning" : "bg-accent"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "Booked 8 / 16", the seats by kind (online and buffer, each on its own
+ * line so neither wraps mid-number), and the waitlist.
+ */
 export function SeatStats({ seats }: { seats: ClassSeats & Pick<ClassWaitlist, "waiting" | "capacity_waitlist"> }) {
   const s = seatsSummary(seats);
+  const noLine = seats.capacity_waitlist === 0 && seats.waiting === 0;
   return (
     <>
-      <Stat label="Booked" value={s.booked} sub="attendance capacity" />
-      <Stat label="Seats" value={s.seats} sub={s.overbooked ?? undefined} />
-      <Stat label="Waitlist" value={waitlistStat(seats)} sub="waiting" />
+      <Stat
+        label="Booked"
+        value={s.booked}
+        sub="of attendance capacity"
+        tone={seats.attending > seats.attendance_capacity ? "warning" : "ink"}
+      />
+      <div className="min-w-0 rounded-xl border border-border bg-card p-4 shadow-soft">
+        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Seats</div>
+        <div className="space-y-2">
+          <SeatLine label="Online" used={seats.online_used} capacity={seats.capacity_online} />
+          <SeatLine label="Buffer" used={seats.buffer_used} capacity={seats.capacity_buffer} />
+        </div>
+        {s.overbooked && <div className="mt-2 text-xs font-medium text-warning">{s.overbooked}</div>}
+      </div>
+      <Stat
+        label="Waitlist"
+        value={noLine ? "None" : waitlistStat(seats)}
+        sub={noLine ? "no waitlist on this class" : "waiting / places"}
+      />
     </>
   );
 }
@@ -142,24 +201,25 @@ export function ClassRoster({
                 className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2.5 text-sm"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     {role === "admin" ? (
                       <Link
                         href={`/admin/customers/${a.client.id}`}
-                        className="text-ink hover:text-accent"
+                        className="min-w-0 truncate text-ink hover:text-accent"
                       >
                         {a.client.name}
                       </Link>
                     ) : (
-                      <span className="text-ink">{a.client.name}</span>
+                      <span className="min-w-0 truncate text-ink">{a.client.name}</span>
                     )}
+                    {a.promoted_from_waitlist && <Badge tone="cyan">Promoted from waitlist</Badge>}
                     {tag && (
                       <Badge tone={a.seat === "overbook" ? "warning" : "neutral"}>{tag}</Badge>
                     )}
                   </div>
                   <div className="text-xs text-muted">
-                    {a.package_kind ? PACKAGE_KIND_LABEL[a.package_kind] : "—"} · {a.code}
-                    {a.promoted_from_waitlist && " · Promoted from waitlist"}
+                    {a.package_kind ? PACKAGE_KIND_LABEL[a.package_kind] : "—"} ·{" "}
+                    <span className="font-mono">{a.code}</span>
                   </div>
                 </div>
                 <div className="ml-auto flex shrink-0 items-center gap-2">

@@ -17,7 +17,7 @@
  */
 import { and, asc, eq, gte, inArray, lt, ne, or } from 'drizzle-orm'
 import { db } from '../../db'
-import { bookings, checkIns } from '../../db/schema/bookings'
+import { bookings, checkIns, waitlistEntries } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { classTypes, locations, rooms } from '../../db/schema/catalog'
 import { clients, staffUsers } from '../../db/schema/identity'
@@ -25,6 +25,7 @@ import { globalPolicy } from '../../db/schema/policy'
 import { loadTenantById } from '../tenants/tenants'
 import { addDays, localDateOf, zonedInstant } from '../schedule/series-dates'
 import { checkInOpensAt, checkInWindow } from './check-in-window'
+import { listForClasses } from '../waitlist/line'
 import {
   AppError,
   BadRequestError,
@@ -359,6 +360,18 @@ export interface CheckInRosterEntry {
   checkInState: 'pending' | 'attended' | 'no_show' | 'n_a'
   method: CheckInMethod | null
   checkedInAt: Date | null
+  /** The seat a class booking holds (spec-waitlist.md §2); null on a PT booking. */
+  seat: 'online' | 'buffer' | 'overbook' | null
+  /** The booking came from the class's waitlist. */
+  promotedFromWaitlist: boolean
+}
+
+/** A member still waiting for a seat on a class, in queue order (spec-waitlist.md §10). */
+export interface CheckInWaitingEntry {
+  entryId: string
+  clientId: string
+  name: string
+  position: number
 }
 
 export interface CheckInSession {
@@ -372,6 +385,8 @@ export interface CheckInSession {
   room: { id: string; name: string } | null
   instructor: { id: string; name: string } | null
   roster: CheckInRosterEntry[]
+  /** The class's live waitlist, empty for a PT session or a class with no line. */
+  waitlist: CheckInWaitingEntry[]
 }
 
 export interface CheckInDay {
@@ -475,10 +490,16 @@ export async function listCheckInDay(
             checkInState: bookings.checkInState,
             method: checkIns.method,
             checkedInAt: checkIns.checkedInAt,
+            seat: bookings.seat,
+            promotedEntryId: waitlistEntries.id,
           })
           .from(bookings)
           .innerJoin(clients, eq(clients.id, bookings.clientId))
           .leftJoin(checkIns, eq(checkIns.bookingId, bookings.id))
+          .leftJoin(
+            waitlistEntries,
+            and(eq(waitlistEntries.tenantId, bookings.tenantId), eq(waitlistEntries.bookingId, bookings.id)),
+          )
           .where(
             and(
               eq(bookings.tenantId, tenantId),
@@ -503,7 +524,20 @@ export async function listCheckInDay(
         checkInState: r.checkInState,
         method: r.method,
         checkedInAt: r.checkedInAt,
+        seat: r.classId ? r.seat : null,
+        promotedFromWaitlist: r.promotedEntryId !== null,
       }))
+
+  // A line on a class that has started is expired (spec-waitlist.md §6), so a
+  // class already under way shows none.
+  const lines = await listForClasses(tenantId, classIds, now)
+  const waitlistOf = (classId: string): CheckInWaitingEntry[] =>
+    (lines.get(classId) ?? []).map(e => ({
+      entryId: e.id,
+      clientId: e.clientId,
+      name: e.clientName || 'Member',
+      position: e.position,
+    }))
 
   const ref = (id: string | null, name: string | null) => (id && name ? { id, name } : null)
   const sessions: CheckInSession[] = [
@@ -521,6 +555,7 @@ export async function listCheckInDay(
       room: ref(r.roomId, r.roomName),
       instructor: ref(r.instructorId, r.instructorName),
       roster: rosterOf(r.id),
+      waitlist: r.kind === 'class' ? waitlistOf(r.id) : [],
     }))
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
 

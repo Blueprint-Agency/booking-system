@@ -70,6 +70,14 @@ function dayView(d: CheckInDay) {
         check_in_state: r.checkInState,
         method: r.method,
         checked_in_at: r.checkedInAt?.toISOString() ?? null,
+        seat: r.seat,
+        promoted_from_waitlist: r.promotedFromWaitlist,
+      })),
+      waitlist: s.waitlist.map(w => ({
+        entry_id: w.entryId,
+        client_id: w.clientId,
+        name: w.name,
+        position: w.position,
       })),
     })),
   }

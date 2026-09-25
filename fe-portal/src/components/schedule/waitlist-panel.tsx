@@ -28,6 +28,7 @@ export function WaitlistPanel({
   data,
   canAct,
   onChanged,
+  noLineHint,
 }: {
   role: StaffRole;
   classId: string;
@@ -36,14 +37,30 @@ export function WaitlistPanel({
   canAct: boolean;
   /** The line or the roster changed: reload the class. */
   onChanged: () => void;
+  /** What to do about a class with no waitlist — where its size is set, for whoever can set it. */
+  noLineHint?: string;
 }) {
-  if (data.waitlist.length === 0 && data.capacity_waitlist === 0) return null;
+  // A class with no line still says so, rather than leaving staff to wonder
+  // where the waitlist went.
+  if (data.waitlist.length === 0 && data.capacity_waitlist === 0) {
+    return (
+      <section
+        aria-label="Waitlist"
+        className="mt-6 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-xl border border-dashed border-border bg-card px-5 py-4"
+      >
+        <h2 className="text-sm font-semibold text-ink">Waitlist</h2>
+        <p className="text-xs text-muted">
+          No waitlist on this class{noLineHint ? ` — ${noLineHint}` : "."}
+        </p>
+      </section>
+    );
+  }
   return (
     <section
       aria-label="Waitlist"
-      className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft"
+      className="mt-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5"
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink">Waitlist ({data.waitlist.length})</h2>
         <span className="text-xs text-muted">
           {data.waiting} of {data.capacity_waitlist} places taken

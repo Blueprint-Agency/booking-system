@@ -26,7 +26,7 @@ export function CapacityFields({
       <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
         Capacity
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid gap-3 min-[420px]:grid-cols-3">
         <Field
           label={waitlistFieldLabel(waitlistsOn)}
           value={value.waitlist}

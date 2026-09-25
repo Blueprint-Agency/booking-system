@@ -7,6 +7,8 @@ import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { SeriesPanel } from "@/components/schedule/series-panel";
 import { ClassRoster, SeatStats, Stat } from "@/components/schedule/class-roster";
 import { WaitlistPanel } from "@/components/schedule/waitlist-panel";
+import { CapacityFields } from "@/components/schedule/capacity-fields";
+import { useWaitlistsOn } from "@/lib/use-waitlists-on";
 import {
   SupportingInstructorsField,
   type SupportingRow,
@@ -48,7 +50,7 @@ import {
   type CatalogInstructor,
   type CatalogRoom,
 } from "@/lib/catalog";
-import type { EventState } from "@/types";
+import type { Capacity, EventState } from "@/types";
 
 interface ApiWorkshopDay {
   id: string;
@@ -217,7 +219,7 @@ function ClassDetail({ id }: { id: string }) {
         />
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <SeatStats seats={data} />
         <Stat label="Credit cost" value={`${data.credit_cost} credit${data.credit_cost === 1 ? "" : "s"}`} />
       </div>
@@ -235,6 +237,11 @@ function ClassDetail({ id }: { id: string }) {
         data={data}
         canAct={state === "scheduled"}
         onChanged={load}
+        noLineHint={
+          state === "scheduled"
+            ? "set a Waitlist size under Capacity in Edit class to let members queue once it's full."
+            : undefined
+        }
       />
       <ClassEditor
         data={data}
@@ -286,12 +293,15 @@ function ClassEditor({
   const [date, setDate] = useState(localDay(data.starts_at));
   const [startTime, setStartTime] = useState(toHHMM(data.starts_at));
   const [endTime, setEndTime] = useState(toHHMM(data.ends_at));
+  const [capacity, setCapacity] = useState<Capacity>(capacityOf(data));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const onLeave = useInstructorsOnLeave(date);
+  const waitlistsOn = useWaitlistsOn("admin");
 
   // Re-sync when the parent reloads the class.
   useEffect(() => {
+    setCapacity(capacityOf(data));
     setClassTypeId(data.class_type?.id ?? "");
     setMainInstructorId(data.main_instructor_id ?? "");
     setMainPay(data.instructor_pay_sgd == null ? "" : String(data.instructor_pay_sgd));
@@ -318,6 +328,16 @@ function ClassEditor({
       setErr("End time must be after start time.");
       return;
     }
+    // Creating a class refuses all-zero capacity; the update route doesn't, so
+    // hold the same line here rather than save a class nobody can get into.
+    const capacityChanged =
+      capacity.onlineBooking !== data.capacity_online ||
+      capacity.waitlist !== data.capacity_waitlist ||
+      capacity.buffer !== data.capacity_buffer;
+    if (capacityChanged && capacity.onlineBooking + capacity.waitlist + capacity.buffer === 0) {
+      setErr("Give the class at least one online, buffer or waitlist place.");
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -333,6 +353,15 @@ function ClassEditor({
         room_id: roomId,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
+        // Only what changed: an imported class can already hold more online
+        // bookings than its online seats, and resending that number is refused.
+        ...(capacity.onlineBooking !== data.capacity_online
+          ? { capacity_online: capacity.onlineBooking }
+          : {}),
+        ...(capacity.waitlist !== data.capacity_waitlist
+          ? { capacity_waitlist: capacity.waitlist }
+          : {}),
+        ...(capacity.buffer !== data.capacity_buffer ? { capacity_buffer: capacity.buffer } : {}),
       });
       await onSaved();
     } catch (e) {
@@ -343,7 +372,10 @@ function ClassEditor({
   }
 
   return (
-    <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+    <section
+      id="edit-class"
+      className="mt-6 scroll-mt-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5"
+    >
       <h2 className="mb-4 text-sm font-semibold text-ink">Edit class</h2>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
@@ -447,6 +479,9 @@ function ClassEditor({
             onChange={(e) => setEndTime(e.target.value)}
           />
         </div>
+        <fieldset disabled={disabled || saving} className="min-w-0 disabled:opacity-50 sm:col-span-2">
+          <CapacityFields value={capacity} onChange={setCapacity} waitlistsOn={waitlistsOn} />
+        </fieldset>
       </div>
       {err && (
         <p className="mt-3 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
@@ -454,7 +489,7 @@ function ClassEditor({
         </p>
       )}
       {!disabled && (
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
           {onCancelClass && (
             <Button
               type="button"
@@ -1444,6 +1479,11 @@ function CorporateEditor({
       )}
     </section>
   );
+}
+
+/** The class's three capacity figures, as the capacity fields hold them. */
+function capacityOf(c: Pick<ScheduleClassDetail, "capacity_online" | "capacity_waitlist" | "capacity_buffer">): Capacity {
+  return { onlineBooking: c.capacity_online, waitlist: c.capacity_waitlist, buffer: c.capacity_buffer };
 }
 
 function toHHMM(iso: string): string {

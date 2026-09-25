@@ -550,9 +550,9 @@ export default function ClientProfilePage({
           )}
 
           {profile.deleted_at && (
-            <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error/5 px-4 py-3 text-sm">
+            <div className="flex flex-wrap items-start gap-3 rounded-lg border border-error/30 bg-error/5 px-4 py-3 text-sm">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-error" />
-              <div className="flex-1">
+              <div className="min-w-0 flex-1 basis-48">
                 <div className="font-medium text-error">
                   Blocked {formatRelative(profile.deleted_at)}
                 </div>
@@ -643,7 +643,8 @@ export default function ClientProfilePage({
               {/* The address the member signs in with (#176) — beside the one
                   the header shows, because that is the thing being changed. */}
               {canEdit && !blocked && (
-                <div className="flex flex-wrap gap-2">
+                // A full-width pair under the name on a phone; beside it from sm up.
+                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
                   <Button variant="secondary" size="sm" onClick={() => setProfileOpen(true)}>
                     <Pencil className="h-3.5 w-3.5" /> Edit profile
                   </Button>
@@ -696,7 +697,7 @@ export default function ClientProfilePage({
                     <button
                       type="button"
                       onClick={() => setShowPastPackages((v) => !v)}
-                      className="inline-flex items-center gap-1 rounded text-xs font-medium text-muted hover:text-ink"
+                      className="inline-flex min-h-9 items-center gap-1 rounded text-xs font-medium text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       aria-expanded={showPastPackages}
                     >
                       {showPastPackages ? (
@@ -705,7 +706,7 @@ export default function ClientProfilePage({
                         <ChevronRight className="h-3.5 w-3.5" />
                       )}
                       {showPastPackages ? "Hide" : "Show"} past packages ({profile.past_packages.length})
-                      <span className="font-normal">— expired, used up or refunded</span>
+                      <span className="hidden font-normal sm:inline">— expired, used up or refunded</span>
                     </button>
                     {showPastPackages && (
                       <div className="mt-3">
@@ -1356,7 +1357,7 @@ function PackageCard({
             <button
               type="button"
               onClick={() => setMenuOpen((o) => !o)}
-              className="rounded-md p-1.5 text-muted hover:bg-paper hover:text-ink"
+              className="flex h-9 w-9 items-center justify-center rounded-md text-muted hover:bg-paper hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               aria-label={`Actions for ${p.package_name}`}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
@@ -1366,7 +1367,7 @@ function PackageCard({
             {menuOpen && (
               <div
                 role="menu"
-                className="absolute right-0 top-9 z-20 w-56 rounded-lg border border-border bg-card p-1 shadow-soft"
+                className="absolute right-0 top-10 z-20 w-56 max-w-[calc(100vw-2.5rem)] rounded-lg border border-border bg-card p-1 shadow-modal"
               >
                 {actions.map((a) => (
                   <button
@@ -1378,7 +1379,7 @@ function PackageCard({
                       onAction(a.action, p);
                     }}
                     className={cn(
-                      "block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-paper",
+                      "block w-full rounded-md px-3 py-2.5 text-left text-sm hover:bg-paper sm:py-2",
                       (a.action === "refund" || a.action === "remove") && "text-error",
                     )}
                   >
@@ -1683,7 +1684,7 @@ function DeleteClientDialog({
           }
         }}
       >
-        <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-paper px-3 py-2 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md border border-border bg-paper px-3 py-2 text-sm">
           <span className="text-muted">Answering a data request? Download their data first.</span>
           <Button type="button" variant="ghost" size="sm" onClick={onDownload} disabled={exporting || busy}>
             {exporting ? (
@@ -1929,36 +1930,42 @@ function BookingRow({
     .filter(Boolean)
     .join(" · ");
   return (
-    <li className="flex items-center gap-3 px-4 py-3 sm:px-5">
-      <div className="w-24 shrink-0 text-xs tabular-nums text-muted sm:w-28">
-        {b.starts_at ? (
-          <>
-            <div className="font-medium text-ink">{formatDate(b.starts_at, "d MMM yyyy")}</div>
-            <div>{formatDate(b.starts_at, "EEE h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())}</div>
-          </>
-        ) : (
-          "—"
+    // On a phone the outcome and Cancel drop under the title rather than
+    // squeezing it to a few letters; from sm up they sit at the row's end.
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:px-5">
+      <div className="flex min-w-0 flex-1 basis-full items-center gap-3 sm:basis-auto">
+        <div className="w-20 shrink-0 text-xs tabular-nums text-muted sm:w-28">
+          {b.starts_at ? (
+            <>
+              <div className="font-medium text-ink">{formatDate(b.starts_at, "d MMM yyyy")}</div>
+              <div>{formatDate(b.starts_at, "EEE h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())}</div>
+            </>
+          ) : (
+            "—"
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-ink">{bookingTitle(b)}</div>
+          {detail && (
+            <div className="truncate text-xs text-muted" title={detail}>
+              {detail}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="flex w-full items-center justify-end gap-2 pl-[5.75rem] sm:w-auto sm:shrink-0 sm:pl-0">
+        <Badge tone={outcome.tone}>{outcome.label}</Badge>
+        {onCancel && upcoming && b.cancel_notice && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-error hover:bg-error/10 hover:text-error"
+            onClick={() => onCancel(b)}
+          >
+            Cancel…
+          </Button>
         )}
       </div>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-ink">{bookingTitle(b)}</div>
-        {detail && (
-          <div className="truncate text-xs text-muted" title={detail}>
-            {detail}
-          </div>
-        )}
-      </div>
-      <Badge tone={outcome.tone}>{outcome.label}</Badge>
-      {onCancel && upcoming && b.cancel_notice && (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="shrink-0 text-error hover:bg-error/10 hover:text-error"
-          onClick={() => onCancel(b)}
-        >
-          Cancel…
-        </Button>
-      )}
     </li>
   );
 }
@@ -2055,7 +2062,7 @@ function BookingsSection({
               aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                "-mb-px inline-flex items-center gap-1.5 border-b-2 py-2.5 text-sm font-medium transition-colors",
+                "-mb-px inline-flex min-h-11 items-center gap-1.5 border-b-2 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
                 tab === t.id
                   ? "border-accent text-ink"
                   : "border-transparent text-muted hover:text-ink",
@@ -2118,30 +2125,36 @@ function PaymentsSection({ payments }: { payments: ApiPayment[] }) {
                 ? { label: REFUND_PROCESSING_LABEL, tone: "warning" as const }
                 : PAYMENT_STATUS[p.status];
               return (
-                <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 sm:px-5">
-                  <div className="w-24 shrink-0 text-xs tabular-nums text-muted sm:w-28">
-                    {formatDate(p.created_at, "d MMM yyyy")}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-ink">{p.item_name}</div>
-                    {p.refunded_at && (
-                      <div className="text-xs text-muted">
-                        Refunded {formatDate(p.refunded_at, "d MMM yyyy")}
+                <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:px-5">
+                  <div className="flex min-w-0 flex-1 basis-full items-center gap-3 sm:basis-auto">
+                    <div className="w-20 shrink-0 text-xs tabular-nums text-muted sm:w-28">
+                      {formatDate(p.created_at, "d MMM yyyy")}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-ink" title={p.item_name}>
+                        {p.item_name}
                       </div>
+                      {p.refunded_at && (
+                        <div className="text-xs text-muted">
+                          Refunded {formatDate(p.refunded_at, "d MMM yyyy")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex w-full items-center justify-end gap-3 pl-[5.75rem] sm:w-auto sm:shrink-0 sm:pl-0">
+                    <span className="text-sm font-medium tabular-nums text-ink">S${p.amount_sgd}</span>
+                    <Badge tone={s.tone}>{s.label}</Badge>
+                    {p.receipt_url && (
+                      <a
+                        href={p.receipt_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex min-h-8 items-center text-xs text-muted underline underline-offset-2 hover:text-ink"
+                      >
+                        Receipt
+                      </a>
                     )}
                   </div>
-                  <span className="text-sm font-medium tabular-nums text-ink">S${p.amount_sgd}</span>
-                  <Badge tone={s.tone}>{s.label}</Badge>
-                  {p.receipt_url && (
-                    <a
-                      href={p.receipt_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-muted underline underline-offset-2 hover:text-ink"
-                    >
-                      Receipt
-                    </a>
-                  )}
                 </li>
               );
             })}

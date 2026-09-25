@@ -210,7 +210,7 @@ export default function InstructorSchedulePage() {
                       {ownsClass(e) ? (
                         <Link
                           href={`/instructor/schedule/class/${e.id}`}
-                          className="block truncate font-medium text-ink hover:text-accent"
+                          className="block truncate py-0.5 font-medium text-ink hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           {e.label}
                         </Link>
@@ -227,7 +227,10 @@ export default function InstructorSchedulePage() {
                     </div>
                     <div className="ml-auto flex shrink-0 items-center gap-2">
                       {e.capacity != null && (
-                        <span className="text-xs tabular-nums text-muted">
+                        <span
+                          className="text-xs tabular-nums text-muted"
+                          title={`${e.booked_count ?? 0} booked of ${e.capacity} places`}
+                        >
                           {e.booked_count ?? 0}/{e.capacity}
                         </span>
                       )}
@@ -241,7 +244,7 @@ export default function InstructorSchedulePage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-error hover:bg-error/5"
+                          className="h-9 text-error hover:bg-error/5 sm:h-8"
                           onClick={() => {
                             setCancelling(e);
                             setReason("");

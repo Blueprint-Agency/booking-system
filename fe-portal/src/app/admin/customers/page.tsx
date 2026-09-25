@@ -226,10 +226,11 @@ function CustomersList() {
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative w-full flex-1 sm:max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="relative w-full sm:max-w-md sm:flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <Input
+            type="search"
             placeholder="Search by name, email or phone…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -237,36 +238,45 @@ function CustomersList() {
             aria-label="Search customers"
           />
         </div>
-        <div className="flex gap-1.5 text-xs">
+        {/* A thumb-sized row on a phone: scrolls sideways rather than wrapping
+            one chip onto a line of its own. */}
+        <div
+          role="group"
+          aria-label="Filter customers"
+          className="-mx-1 flex max-w-full gap-1.5 overflow-x-auto px-1 text-xs [scrollbar-width:none]"
+        >
           {((isAdmin
             ? ["all", "active", "trials", "blocked"]
             : ["all", "active", "trials"]) as StatusFilter[]).map((s) => (
             <button
               key={s}
               type="button"
+              aria-pressed={status === s}
               onClick={() => update({ status: s })}
-              className={`rounded-full px-3 py-1.5 font-medium capitalize transition ${
+              className={`h-9 shrink-0 rounded-full border px-3.5 font-medium capitalize transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-8 ${
                 status === s
-                  ? "bg-accent text-white"
-                  : "bg-card text-muted hover:bg-paper hover:text-ink"
+                  ? "border-accent bg-accent text-white"
+                  : "border-border bg-card text-muted hover:bg-paper hover:text-ink"
               }`}
             >
               {s}
             </button>
           ))}
         </div>
-        <Select
-          value={state.sort}
-          onChange={(e) => update({ sort: e.target.value as SortKey })}
-          className="h-8 w-auto py-1 text-xs"
-          aria-label="Sort customers"
-        >
-          <option value="joined">Newest first</option>
-          <option value="name">Name A–Z</option>
-        </Select>
-        <span className="ml-auto text-xs tabular-nums text-muted">
-          {result ? `${total.toLocaleString()} customer${total === 1 ? "" : "s"}` : ""}
-        </span>
+        <div className="flex w-full items-center gap-3 sm:ml-auto sm:w-auto">
+          <Select
+            value={state.sort}
+            onChange={(e) => update({ sort: e.target.value as SortKey })}
+            className="h-9 w-auto py-1 text-xs sm:h-8"
+            aria-label="Sort customers"
+          >
+            <option value="joined">Newest first</option>
+            <option value="name">Name A–Z</option>
+          </Select>
+          <span className="ml-auto text-xs tabular-nums text-muted" aria-live="polite">
+            {result ? `${total.toLocaleString()} customer${total === 1 ? "" : "s"}` : ""}
+          </span>
+        </div>
       </div>
 
       {showTrials && result?.funnel && !error && <TrialFunnel funnel={result.funnel} />}
@@ -290,41 +300,44 @@ function CustomersList() {
             {/* Mobile cards */}
             <ul className="divide-y divide-border sm:hidden">
               {rows.map((c) => (
-                <li key={c.id}>
+                <li key={c.id} className="flex items-center gap-2 pr-3 hover:bg-paper">
                   <Link
                     href={`/admin/customers/${c.id}`}
-                    className="flex items-start gap-3 p-4 hover:bg-paper"
+                    className="flex min-w-0 flex-1 items-start gap-3 py-3.5 pl-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                   >
                     <Avatar name={c.name} size={36} />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
                         <span className="truncate font-medium text-ink">{c.name}</span>
-                        <StatusCell client={c} showTrials={showTrials} />
+                        <span className="shrink-0">
+                          <StatusCell client={c} showTrials={showTrials} />
+                        </span>
                       </div>
                       <div className="truncate text-xs text-muted">{c.email}</div>
-                      <div className="mt-2 flex items-center gap-4 text-[11px] text-muted">
-                        <span>{c.phone || "—"}</span>
-                        {showTrials && <span>{c.attended} attended</span>}
-                        <span className="ml-auto">
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
+                        <span className="tabular-nums">{c.phone || "—"}</span>
+                        {showTrials && (
+                          <span className={c.attended === 0 ? "text-warning" : undefined}>
+                            {c.attended} attended
+                          </span>
+                        )}
+                        <span>
                           {showTrials ? trialStarted(c) : formatDate(c.joined_at, "d MMM yyyy")}
                         </span>
                       </div>
                     </div>
-                    {isAdmin && !c.deleted_at && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void accessAsClient(c.id);
-                        }}
-                        className="ml-auto"
-                      >
-                        <KeyRound className="h-3.5 w-3.5" /> Access
-                      </Button>
-                    )}
                   </Link>
+                  {isAdmin && !c.deleted_at && (
+                    <Button
+                      variant="secondary"
+                      size="icon"
+                      onClick={() => void accessAsClient(c.id)}
+                      aria-label={`Access as ${c.name}`}
+                      title="Access as this customer"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -352,17 +365,21 @@ function CustomersList() {
                       <td className="px-5 py-3">
                         <Link
                           href={`/admin/customers/${c.id}`}
-                          className="flex items-center gap-3"
+                          className="flex min-w-0 max-w-[22rem] items-center gap-3 rounded-md hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           <Avatar name={c.name} size={32} />
-                          <div>
-                            <div className="font-medium text-ink">{c.name}</div>
-                            <div className="text-xs text-muted">{c.email}</div>
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-ink">{c.name}</div>
+                            <div className="truncate text-xs text-muted" title={c.email}>
+                              {c.email}
+                            </div>
                           </div>
                         </Link>
                       </td>
-                      <td className="px-5 py-3 text-sm text-muted">{c.phone || "—"}</td>
-                      <td className="px-5 py-3 text-sm text-muted">
+                      <td className="whitespace-nowrap px-5 py-3 text-sm tabular-nums text-muted">
+                        {c.phone || "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-3 text-sm text-muted">
                         {showTrials ? trialStarted(c) : formatDate(c.joined_at, "d MMM yyyy")}
                       </td>
                       {showTrials && (
@@ -401,8 +418,27 @@ function CustomersList() {
               </table>
             </div>
             {rows.length === 0 && (
-              <div className="py-12 text-center text-sm text-muted">
-                {total > 0 ? "Nothing on this page." : "No customers match."}
+              <div className="px-4 py-12 text-center text-sm text-muted">
+                {total > 0 ? (
+                  "Nothing on this page."
+                ) : state.q || status !== "all" ? (
+                  <>
+                    No customers match.
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="ml-1"
+                      onClick={() => {
+                        setQuery("");
+                        update({ q: "", status: "all" });
+                      }}
+                    >
+                      Clear search and filter
+                    </Button>
+                  </>
+                ) : (
+                  "No customers yet. Add one, or they appear here when they sign up."
+                )}
               </div>
             )}
 

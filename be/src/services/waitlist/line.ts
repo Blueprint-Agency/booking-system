@@ -200,6 +200,40 @@ export interface ClassWaitlistEntry {
   position: number
 }
 
+/** Several classes' live lines with who is in them, in queue order — the check-in desk's. A class with no line is absent. */
+export async function listForClasses(
+  tenantId: string,
+  classIds: string[],
+  now: Date = clockNow(),
+): Promise<Map<string, ClassWaitlistEntry[]>> {
+  const out = new Map<string, ClassWaitlistEntry[]>()
+  const waiting = await liveWaiting(db, tenantId, classIds, now)
+  if (waiting.length === 0) return out
+  const names = await db
+    .select({ id: clients.id, name: clients.name })
+    .from(clients)
+    .where(
+      and(
+        eq(clients.tenantId, tenantId),
+        inArray(clients.id, [...new Set(waiting.map(e => e.clientId))]),
+      ),
+    )
+  const nameOf = new Map(names.map(n => [n.id, n.name]))
+  for (const classId of new Set(waiting.map(e => e.classId))) {
+    out.set(
+      classId,
+      inLine(waiting.filter(e => e.classId === classId)).map((e, i) => ({
+        id: e.id,
+        clientId: e.clientId,
+        clientName: nameOf.get(e.clientId) ?? '',
+        joinedAt: e.joinedAt,
+        position: i + 1,
+      })),
+    )
+  }
+  return out
+}
+
 /** A class's live line with who is in it, in queue order — the staff Waitlist panel's rows. */
 export async function listForClass(
   tenantId: string,

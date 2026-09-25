@@ -26,6 +26,18 @@ export interface CheckInRosterRow {
   check_in_state: CheckInState;
   method: CheckInMethod | null;
   checked_in_at: string | null;
+  /** The seat a class booking holds; null on a private session. */
+  seat?: "online" | "buffer" | "overbook" | null;
+  /** The booking came from the class's waitlist. */
+  promoted_from_waitlist?: boolean;
+}
+
+/** A member still waiting for a seat on a class, in queue order. */
+export interface CheckInWaitingRow {
+  entry_id: string;
+  client_id: string;
+  name: string;
+  position: number;
 }
 
 export interface CheckInSession {
@@ -39,6 +51,8 @@ export interface CheckInSession {
   room: { id: string; name: string } | null;
   instructor: { id: string; name: string } | null;
   roster: CheckInRosterRow[];
+  /** The class's live waitlist — empty once the class has started, and on a private session. */
+  waitlist?: CheckInWaitingRow[];
 }
 
 export interface CheckInDay {

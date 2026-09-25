@@ -223,6 +223,10 @@ export interface ClassPatch {
   room_id: string;
   starts_at: string;
   ends_at: string;
+  /** Sent only when changed: online can't drop below the members booked online. */
+  capacity_online?: number;
+  capacity_waitlist?: number;
+  capacity_buffer?: number;
 }
 
 /** PT names the main instructor `instructor_id`, not `main_instructor_id`. */
@@ -305,6 +309,10 @@ const SCHEDULE_ERROR_COPY: Record<string, string> = {
   request_not_found: "Corporate request not found.",
   not_pending: "This request is no longer pending — it may already be scheduled or cancelled.",
   not_found: "Corporate session not found.",
+  capacity_below_bookings:
+    "Online booking can't go below the members already booked online. Cancel a booking first, or add seats as buffer.",
+  class_ongoing: "This class has started, so it can no longer be edited.",
+  class_completed: "This class has ended, so it can no longer be edited.",
 };
 
 /**

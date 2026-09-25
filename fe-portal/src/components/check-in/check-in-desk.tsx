@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   AlertCircle,
   CalendarX,
@@ -423,6 +424,7 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
               />
               {selected && (
                 <Roster
+                  audience={audience}
                   session={selected}
                   phase={sessionPhase(selected, now)}
                   busyBookingId={busyBookingId}
@@ -493,21 +495,27 @@ function SessionPicker({
   onPick: (key: string) => void;
 }) {
   return (
-    <ul className="grid gap-2 sm:grid-cols-2" aria-label="Today's sessions">
+    // A phone swipes through today's sessions in one strip, so the roster sits
+    // right under it instead of below a stack of every class of the day.
+    <ul
+      className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0"
+      aria-label="Today's sessions"
+    >
       {sessions.map((s) => {
         const key = sessionKey(s);
         const phase = PHASE_BADGE[sessionPhase(s, now)];
         const attended = s.roster.filter((r) => r.check_in_state === "attended").length;
+        const waiting = s.waitlist?.length ?? 0;
         const active = key === selectedKey;
         return (
-          <li key={key} className="min-w-0">
+          <li key={key} className="w-[78%] min-w-0 shrink-0 snap-start sm:w-auto">
             <button
               type="button"
               onClick={() => onPick(key)}
               aria-pressed={active}
               data-testid="check-in-session"
               data-session-id={s.id}
-              className={`w-full min-w-0 rounded-xl border bg-card p-3 text-left shadow-soft transition sm:p-4 ${
+              className={`h-full w-full min-w-0 rounded-xl border bg-card p-3 text-left shadow-soft transition sm:p-4 ${
                 active ? "border-accent ring-2 ring-accent/20" : "border-border hover:border-accent/40"
               }`}
             >
@@ -523,6 +531,7 @@ function SessionPicker({
               </div>
               <div className="mt-1 text-xs text-muted">
                 {attended} / {s.roster.length} checked in
+                {waiting > 0 && <span className="font-medium text-warning"> · {waiting} waiting</span>}
               </div>
             </button>
           </li>
@@ -533,12 +542,14 @@ function SessionPicker({
 }
 
 function Roster({
+  audience,
   session,
   phase,
   busyBookingId,
   error,
   onMark,
 }: {
+  audience: CheckInAudience;
   session: CheckInSession;
   phase: SessionPhase;
   busyBookingId: string | null;
@@ -595,7 +606,52 @@ function Roster({
           ))}
         </ul>
       )}
+      <WaitingLine audience={audience} session={session} />
     </section>
+  );
+}
+
+/**
+ * Who is still waiting for a seat, in queue order, so the door can tell a
+ * waitlisted member who turns up that they aren't booked yet. Giving them a
+ * seat is the class page's Add to class, one tap away.
+ */
+function WaitingLine({ audience, session }: { audience: CheckInAudience; session: CheckInSession }) {
+  const line = session.waitlist ?? [];
+  if (session.kind !== "class" || line.length === 0) return null;
+  const classPage =
+    audience === "admin"
+      ? `/admin/schedule/class/${session.id}`
+      : `/instructor/schedule/class/${session.id}`;
+  return (
+    <div
+      className="border-t border-dashed border-border bg-paper/60 px-4 py-3 sm:px-5"
+      aria-label={`Waitlist for ${session.name}`}
+      role="region"
+      data-testid="check-in-waitlist"
+    >
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-warning">
+          Waitlist · {line.length} not booked yet
+        </h4>
+        <Link href={classPage} className="text-xs font-medium text-accent hover:underline">
+          Add to class on the class page
+        </Link>
+      </div>
+      <ol className="space-y-1.5">
+        {line.map((w) => (
+          <li key={w.entry_id} className="flex items-center gap-3 text-sm">
+            <span className="w-6 shrink-0 text-right text-xs font-semibold tabular-nums text-muted">
+              #{w.position}
+            </span>
+            <span className="min-w-0 truncate text-ink">{w.name}</span>
+            <Badge tone="warning" className="ml-auto">
+              Waiting
+            </Badge>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
@@ -624,6 +680,9 @@ function RosterRow({
         <div className="truncate text-sm font-medium text-ink">{row.name}</div>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
           <span className="font-mono">{row.code}</span>
+          {row.promoted_from_waitlist && <Badge tone="cyan">Promoted from waitlist</Badge>}
+          {row.seat === "buffer" && <Badge>Buffer</Badge>}
+          {row.seat === "overbook" && <Badge tone="warning">Overbook</Badge>}
           {state === "attended" && (
             <Badge tone="sage">
               <Check className="mr-1 h-3 w-3" />

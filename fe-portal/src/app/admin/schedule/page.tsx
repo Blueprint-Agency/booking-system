@@ -93,6 +93,12 @@ export default function SchedulePage() {
 
   const [instructorsList, setInstructorsList] = useState<ApiInstructor[]>([]);
 
+  // Seven columns don't fit a phone: open on the day there, where every class
+  // gets the full width. The toggle still offers week and month.
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 639px)").matches) setView("day");
+  }, []);
+
   useEffect(() => {
     if (!api) return;
     let cancelled = false;
@@ -221,7 +227,7 @@ export default function SchedulePage() {
 
       <div className="rounded-xl border border-border bg-card shadow-soft">
         {/* Toolbar */}
-        <div className="flex flex-col gap-3 border-b border-border p-3 sm:flex-row sm:items-center sm:gap-4 sm:p-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-border p-3 sm:flex-nowrap sm:p-4">
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
@@ -234,6 +240,7 @@ export default function SchedulePage() {
             <Button
               variant="secondary"
               size="sm"
+              className="h-9 sm:h-8"
               onClick={() => navigate(0)}
             >
               Today
@@ -248,17 +255,19 @@ export default function SchedulePage() {
             </Button>
           </div>
 
+          {/* On a phone the date takes the row beside the arrows; the view and
+              filter controls drop under both at full width. */}
           <div className="min-w-0 flex-1 truncate text-sm font-semibold text-ink sm:text-base">
             {headingLabel}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <ViewToggle value={view} onChange={setView} />
             <button
               type="button"
               onClick={() => setFiltersOpen((v) => !v)}
               className={cn(
-                "inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium transition-colors",
+                "ml-auto inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:ml-0 sm:h-8",
                 filtersActive
                   ? "border-accent/40 bg-accent/10 text-accent"
                   : "bg-card text-muted hover:text-ink"
@@ -318,24 +327,26 @@ export default function SchedulePage() {
         {addMode && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-accent/30 bg-accent/[0.07] px-3 py-2 text-xs font-medium text-accent">
             <MousePointerClick className="h-3.5 w-3.5 shrink-0" />
-            Click a slot on the grid to place the new{" "}
+            Pick a slot on the grid to place the new{" "}
             {ADD_KINDS.find((k) => k.kind === addMode)?.label.toLowerCase()}.
             <button
               type="button"
               onClick={() => setAddMode(null)}
-              className="ml-auto font-semibold underline underline-offset-2"
+              className="-my-1 ml-auto min-h-8 px-1 font-semibold underline underline-offset-2"
             >
               Cancel
             </button>
           </div>
         )}
 
+        {view === "day" && <WeekStrip day={cursor} onPick={setCursor} />}
+
         {/* Calendar surface — day/week scroll internally so the toolbar and day
             headers stay put across the 6am–12am range. */}
         <div
           className={cn(
             "relative overflow-auto",
-            view !== "month" && "max-h-[calc(100vh-16rem)] min-h-[420px]"
+            view !== "month" && "max-h-[calc(100dvh-16rem)] min-h-[420px]"
           )}
         >
           {error && (
@@ -443,9 +454,10 @@ function ViewToggle({ value, onChange }: { value: View; onChange: (v: View) => v
         <button
           key={o.v}
           type="button"
+          aria-pressed={value === o.v}
           onClick={() => onChange(o.v)}
           className={cn(
-            "h-7 rounded px-3 text-xs font-medium transition-colors",
+            "h-8 rounded px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-7",
             value === o.v
               ? "bg-card text-ink shadow-soft"
               : "text-muted hover:text-ink"
@@ -470,14 +482,14 @@ function FilterPill({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1">
+    <label className="inline-flex h-9 min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 focus-within:ring-2 focus-within:ring-accent sm:h-8">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
         {label}
       </span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-transparent text-xs font-medium text-ink focus:outline-none"
+        className="h-full min-w-0 truncate bg-transparent text-xs font-medium text-ink focus:outline-none"
       >
         {options.map((o) => (
           <option key={o.val} value={o.val}>
@@ -486,6 +498,55 @@ function FilterPill({
         ))}
       </select>
     </label>
+  );
+}
+
+/**
+ * The week around the open day, one tap per day — day view's quick way across
+ * the week, which matters most on a phone where day view is the default.
+ */
+function WeekStrip({ day, onPick }: { day: Date; onPick: (d: Date) => void }) {
+  const start = startOfWeek(day, { weekStartsOn: 1 });
+  const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  return (
+    <div
+      role="group"
+      aria-label="Days this week"
+      className="grid grid-cols-7 gap-1 border-b border-border bg-paper/40 px-2 py-2 sm:px-3"
+    >
+      {days.map((d) => {
+        const selected = isSameDay(d, day);
+        const today = isSameDay(d, TODAY);
+        return (
+          <button
+            key={d.toISOString()}
+            type="button"
+            onClick={() => onPick(d)}
+            aria-pressed={selected}
+            aria-label={format(d, "EEEE d MMMM")}
+            className={cn(
+              "flex min-h-11 flex-col items-center justify-center rounded-lg text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+              selected
+                ? "bg-accent text-white shadow-soft"
+                : today
+                  ? "bg-accent/10 text-accent hover:bg-accent/15"
+                  : "text-ink hover:bg-card",
+            )}
+          >
+            <span
+              className={cn(
+                "text-[10px] font-semibold uppercase tracking-wider",
+                selected ? "text-white/80" : "text-muted",
+              )}
+            >
+              {format(d, "EEEEE")}
+              <span className="hidden sm:inline">{format(d, "EEE").slice(1)}</span>
+            </span>
+            <span className="font-semibold tabular-nums">{format(d, "d")}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -581,16 +642,17 @@ function MonthView({
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
   const days = eachDayOfInterval({ start: gridStart, end: addDays(gridStart, 41) });
   return (
-    // Same min-width as the week view: the enclosing surface already scrolls, and
-    // seven day cells holding event chips don't fit a phone at full width.
-    <div className="min-w-[640px]">
+    // On a phone seven cells can't hold event chips, so each cell shows its date
+    // and a count, and a tap opens the day. From `sm` up the chips come back.
+    <div>
       <div className="grid grid-cols-7 border-b border-border bg-paper/40">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
           <div
             key={d}
-            className="px-2 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted sm:text-xs"
+            className="px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-muted sm:px-2 sm:text-left sm:text-xs"
           >
-            {d}
+            <span className="sm:hidden">{d.slice(0, 1)}</span>
+            <span className="hidden sm:inline">{d}</span>
           </div>
         ))}
       </div>
@@ -607,7 +669,7 @@ function MonthView({
             <div
               key={day.toISOString()}
               className={cn(
-                "relative min-h-[88px] border-b border-r border-border p-1.5 last:border-r-0 sm:min-h-[120px] sm:p-2",
+                "relative min-h-[64px] border-b border-r border-border p-1 last:border-r-0 sm:min-h-[120px] sm:p-2",
                 !inMonth && "bg-paper/30",
                 getDay(day) % 7 === 0 && "border-r-0"
               )}
@@ -636,7 +698,7 @@ function MonthView({
                   className="absolute inset-0 z-0 transition-colors hover:bg-accent/[0.06] focus-visible:bg-accent/10 focus-visible:outline-none"
                 />
               )}
-              <div className="pointer-events-none relative mb-1 flex items-center justify-between">
+              <div className="pointer-events-none relative mb-1 flex flex-col items-center gap-1 sm:flex-row sm:justify-between">
                 <span
                   className={cn(
                     "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
@@ -655,7 +717,7 @@ function MonthView({
                   </span>
                 )}
               </div>
-              <ul className="pointer-events-none relative space-y-1">
+              <ul className="pointer-events-none relative hidden space-y-1 sm:block">
                 {visible.map((e) => (
                   <li key={`${e.kind}-${e.id}`}>
                     <Link
