@@ -18,13 +18,33 @@ themselves are in `deployment.md` § Tests gate the backend deploy.
 
 ```sh
 node .claude/hooks/backend-tests.mjs be src/services/bookings/cancel.ts   # lists them
-cd be && node --import tsx --import ./src/test/environment.ts --test --experimental-test-isolation=none --test-force-exit <those files>
+cd be && npm run check -- <those files>
 ```
 
 **One test database per checkout.** In a new checkout or worktree, run `npm run test:db` in `be/`
 once. It creates `reservetoday-test-<checkout folder>` on the local Postgres named by `be/.env`,
 and fills in `TEST_DATABASE_URL` there if it is blank. The harness migrates and seeds that database
 on first use. Without `TEST_DATABASE_URL` the integration tests skip, and CI fails on any skip.
+**Reset it before a full local run:** `npm run test:db -- --reset` drops and recreates it, so the
+run starts from an empty database as CI's does, not from rows an earlier run left behind. It refuses
+any database not named `reservetoday-test-*`, and the development one (`POSTGRES_DB`).
+
+**Matching CI locally.** A green local `npm run check` should predict a green CI run, so the two
+share everything that can be shared:
+
+- **Node 22**, as `.nvmrc` pins it (`nvm use`), `engines` in `be/package.json` states it, and CI and
+  `be/Dockerfile` run it. Node 23 accepts flags Node 22 refuses.
+- **One command.** CI's **Backend tests (serial)** step and the stop hook both run `npm run check`
+  (`be/scripts/check.mjs`), adding only reporter and coverage flags, or the files to run.
+- **One environment.** `be/src/test/environment.ts` sets the whole test environment before any file
+  loads. The one value it reads from `be/.env` is `TEST_DATABASE_URL`; nothing else in `.env`
+  reaches a test (`src/db/url.ts` loads no `.env` under `NODE_ENV=test`). Stripe, R2, the webhook
+  secrets and `PLATFORM_ADMIN_EMAIL` are unset, so a run with real keys in `.env` still calls no
+  real service. A test that needs one sets it with `withEnv`.
+- **A fresh database**, with `--reset` above.
+
+What still differs is the OS and the machine's speed. They show up only as timing flakiness, and a
+flaky test gets fixed in the test.
 
 **What a run costs.** The harness (`be/src/test/harness.ts`) migrates, seeds and imports the app
 once per process, and every later `startTestApp()` in that process gets the same app back. It holds
@@ -32,7 +52,7 @@ a Postgres advisory lock on the test database from its first `startTestApp()` to
 process, so a second run on the same database waits for the first one. With a database per
 checkout, only two runs in the same checkout ever wait on each other.
 
-**One process for the whole suite.** `npm run check`, CI and the stop hook all run every file in
+**One process for the whole suite.** `npm run check`, which CI and the stop hook also run, runs every file in
 one process (`--experimental-test-isolation=none`, the spelling Node 22 and 23 both accept;
 `--test-isolation` exists only from Node 23.6), so the app import and the database setup happen
 once per run instead of once per file. `--import ./src/test/environment.ts` puts the test
