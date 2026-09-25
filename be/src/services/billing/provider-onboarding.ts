@@ -73,11 +73,11 @@ export async function configureProviderAccount(
   // would accept either kind of key — this is the environment's rule, not the
   // provider's: a live key on staging takes testers' real money, and a test key
   // on production takes members' "payments" that never arrive.
-  if (!keyModeMatches(input.secretKey, env.APP_ENV)) {
-    logger.warn({ tenantId, appEnv: env.APP_ENV }, 'payment credentials refused — wrong key mode')
+  if (!keyModeMatches(input.secretKey, currentEnv('APP_ENV'))) {
+    logger.warn({ tenantId, appEnv: currentEnv('APP_ENV') }, 'payment credentials refused — wrong key mode')
     throw new ProviderOnboardingError(
       'key_wrong_mode',
-      `this environment accepts only ${expectedKeyPrefix(env.APP_ENV)} keys`,
+      `this environment accepts only ${expectedKeyPrefix(currentEnv('APP_ENV'))} keys`,
     )
   }
 
