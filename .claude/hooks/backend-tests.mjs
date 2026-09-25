@@ -14,6 +14,9 @@
  * (the schema, `db/index.ts`, a shared helper) is a hub: it runs the tenant
  * isolation guards, and leaves the rest to CI.
  *
+ * Tests are `*.test.ts` under `src/` and `tools/`, and `*.test.mjs` under
+ * `scripts/` (the backend's own tooling, which `npm run check` runs too).
+ *
  * Paths in and out are relative to `be/`, with forward slashes.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
@@ -21,9 +24,9 @@ import { join, posix } from 'node:path'
 
 export const HUB_LIMIT = 15
 export const GUARDS = ['src/test/isolation.test.ts', 'src/test/rls.test.ts', 'src/test/rls-coverage.test.ts']
-const ROOTS = ['src', 'tools']
+const ROOTS = ['src', 'tools', 'scripts']
 const STOP = new Set(['src/app.ts', 'src/index.ts', 'src/test/harness.ts'])
-const isTest = (p) => p.endsWith('.test.ts')
+const isTest = (p) => p.endsWith('.test.ts') || p.endsWith('.test.mjs')
 const isStop = (p) => STOP.has(p) || (p.startsWith('src/routes/') && p.endsWith('/index.ts'))
 
 function listTs(beDir) {
@@ -33,7 +36,7 @@ function listTs(beDir) {
       if (name === 'node_modules' || name.startsWith('.')) continue
       const child = `${rel}/${name}`
       if (statSync(join(beDir, child)).isDirectory()) walk(child)
-      else if (name.endsWith('.ts') && !name.endsWith('.d.ts')) out.push(child)
+      else if ((name.endsWith('.ts') && !name.endsWith('.d.ts')) || name.endsWith('.mjs')) out.push(child)
     }
   }
   for (const root of ROOTS) if (existsSync(join(beDir, root))) walk(root)
