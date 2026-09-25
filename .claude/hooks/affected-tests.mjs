@@ -25,10 +25,11 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { backendTestFiles } from './backend-tests.mjs'
 
-// As CI runs it (deploy-be.yml): serially, in one process. But only the test
-// files the change reaches (backend-tests.mjs): CI runs all of it.
-const SERIAL_BE =
-  'node --import tsx --import ./src/test/environment.ts --test --experimental-test-isolation=none --test-force-exit --test-reporter=spec'
+// The command CI runs (`npm run check`, be/scripts/check.mjs), so the flags
+// cannot drift from CI's. But only on the test files the change reaches
+// (backend-tests.mjs), which check.mjs runs in place of the whole suite: CI
+// runs all of it.
+const BE_CHECK = 'npm run -s check -- --test-reporter=spec'
 
 /**
  * Suites in the order they run. `dir` is where the command runs and what it
@@ -39,7 +40,7 @@ export const SUITES = [
   {
     id: 'be',
     dir: 'be',
-    command: `${SERIAL_BE} <the test files the change reaches>`,
+    command: `${BE_CHECK} <the test files the change reaches>`,
     label: 'backend tests the change reaches (serial, real Postgres)',
     realDatabase: true,
     // Repo paths in; test files relative to `be/` out.
@@ -216,7 +217,7 @@ function run(projectDir, suite, paths) {
     const files = suite.files(cwd, paths)
     // Nothing reaches a test (a type, a doc comment, an unused helper): CI has it.
     if (!files.length) return { ok: true, command: '(no test file reaches this change)' }
-    command = `${SERIAL_BE} ${files.map((f) => `"${f}"`).join(' ')}`
+    command = `${BE_CHECK} ${files.map((f) => `"${f}"`).join(' ')}`
   }
   const lock = dbLock(projectDir)
   if (suite.realDatabase && !lockDatabase(lock)) {
