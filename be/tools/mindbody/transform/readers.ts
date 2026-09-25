@@ -304,6 +304,10 @@ export function readPricingOptionRegister(html: string): OptionSaleRow[] {
 export type SaleRow = {
   /** The client whose block the line is in, from the block header's link. Null where the header has no link. */
   clientId: string | null
+  /**
+   * The full sale number, from the Sale ID cell's link (`saleno=`). The cell's
+   * text is only its last four digits, which repeat every 10,000 sales.
+   */
   saleId: string
   soldAt: LocalDateTime
   description: string
@@ -333,7 +337,7 @@ export function readSales(html: string): SaleRow[] {
       client = clientId(row, {}, '')
       continue
     }
-    const saleId = row.cells[0] ?? ''
+    const saleId = row.links[0]?.match(/[?&]saleno=(\d+)/i)?.[1] ?? row.cells[0] ?? ''
     const soldAt = parseMindbodyDate(cell(row, columns, 'Sale Date'), 'MD')
     if (!/^\d+$/.test(saleId) || !soldAt) continue
     out.push({
@@ -352,7 +356,11 @@ export function readSales(html: string): SaleRow[] {
 /* ── 23 Promotions — Detail: every sale a promotion took money off ─────────── */
 
 export type PromotionRow = {
-  /** The same sale number as Big Spenders', which is how the two are joined: this report has no client id. */
+  /**
+   * The sale number, shortened to its last four digits as Big Spenders' text
+   * shows it, and with no link to the full one. Joined on those four digits
+   * (`./sales.ts`): this report has no client id.
+   */
   saleId: string
   soldAt: LocalDateTime
   /** The promotion's own name, as the studio set it up. */

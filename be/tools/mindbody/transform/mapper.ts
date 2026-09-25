@@ -87,7 +87,7 @@ export type MindbodyReports = {
   groupCancellations: GroupCancellationRow[]
   /** The autopays still to run (Autopay Detail): none is imported. Empty where not downloaded. */
   autopay: AutopayRow[]
-  /** How each sale was paid, a row per sale × method (Sales, Detail Accrual). Not imported yet. Empty where not downloaded. */
+  /** How each sale was paid, a row per sale × method (Sales, Detail Accrual): a past purchase's method. Empty where not downloaded. */
   saleMethods: SaleMethodRow[]
 }
 
@@ -548,6 +548,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
         cancellations: reports.cancellations,
         groupCancellations: reports.groupCancellations,
         sales,
+        saleMethods: reports.saleMethods,
         config,
         tenantId,
         id,

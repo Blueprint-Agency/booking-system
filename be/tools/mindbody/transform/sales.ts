@@ -1,13 +1,14 @@
-import type { CatalogueEntry, StudioConfig } from './config'
+import { ConfigError, OFFLINE_METHODS, type CatalogueEntry, type OfflineMethod, type StudioConfig } from './config'
 import { fold, type ConfigLookups } from './lookups'
 import { planHome } from './packages'
-import type { MemberListRow, OptionSaleRow, PromotionRow, SaleRow } from './readers'
+import type { MemberListRow, OptionSaleRow, PromotionRow, SaleMethodRow, SaleRow } from './readers'
 import { registerCandidates } from './register'
 import {
   dayNumber,
   isoDay,
   money,
   normaliseOptionName,
+  paymentMethodKey,
   zonedToInstant,
   type CalendarDate,
 } from './values'
@@ -59,6 +60,13 @@ export type JoinedSales = {
   saleOf: Map<OptionSaleRow, JoinedSale>
 }
 
+/**
+ * A sale number as Promotions shows it, the way Big Spenders' text does: its
+ * last four digits, with no link to the full one. The two are joined on those.
+ */
+const shownSaleNumber = (saleId: string) => Number(saleId) % 10_000
+const promotionKey = (saleId: string, item: string) => `${shownSaleNumber(saleId)}/${normaliseOptionName(item)}`
+
 const bySale = (a: SaleRow, b: SaleRow) =>
   dayNumber(a.soldAt) - dayNumber(b.soldAt) || Number(a.saleId) - Number(b.saleId) || a.description.localeCompare(b.description)
 
@@ -71,7 +79,7 @@ export function joinSales(input: {
   const candidatesOf = registerCandidates(input.members)
   const discountOf = new Map<string, number>()
   for (const p of input.promotions) {
-    const key = `${p.saleId}/${normaliseOptionName(p.item)}`
+    const key = promotionKey(p.saleId, p.item)
     discountOf.set(key, (discountOf.get(key) ?? 0) + p.discount)
   }
 
@@ -88,7 +96,7 @@ export function joinSales(input: {
     }
     // Taken once: a sale of two of one option carries its promotion's discount
     // on one of them, not the whole of it on each.
-    const promoted = `${sale.saleId}/${normaliseOptionName(sale.description)}`
+    const promoted = promotionKey(sale.saleId, sale.description)
     sold.push({
       sale: { ...sale, clientId: sale.clientId },
       register: null,
@@ -175,6 +183,56 @@ export function packageMoney(entry: { kind: string; priceSgd?: number | null }, 
   }
 }
 
+/**
+ * How past sales were paid, from the Sales report (`readSaleMethods`) and the
+ * config's `paymentMethods` table: a sale number → a Purchase's offline method
+ * and its Mindbody label.
+ *
+ * A sale paid one way is that way. A sale Mindbody split across methods keeps
+ * every label, largest part first ("Cash + Credit card (Visa-Keyed)"), and is
+ * `other` unless every part maps to the one method — `offline_method` holds one
+ * method, and the label is where the split is kept. Only money taken counts: a
+ * $0 line's method, and a return's, say nothing of how the sale was paid.
+ *
+ * Labels asked for that the table does not map are gathered, not guessed, for
+ * the caller to refuse the build with.
+ */
+function saleMethods(rows: SaleMethodRow[], table: Record<string, OfflineMethod>) {
+  const paidBy = new Map<string, SaleMethodRow[]>()
+  for (const r of rows) if (r.amount > 0) paidBy.set(r.saleId, [...(paidBy.get(r.saleId) ?? []), r])
+  const mapped = new Map(Object.entries(table).map(([label, method]) => [paymentMethodKey(label), method]))
+  const unmapped = new Set<string>()
+  let split = 0
+  let none = 0
+  /** Asked once per Purchase: it counts the split, unpaid and unmapped ones it answers for. */
+  const methodOf = (saleId: string): { offline_method: OfflineMethod | null; offline_method_label: string | null } => {
+    const parts = [...(paidBy.get(saleId) ?? [])].sort((a, b) => b.amount - a.amount || a.methodLabel.localeCompare(b.methodLabel))
+    if (parts.length === 0) {
+      none++
+      return { offline_method: null, offline_method_label: null }
+    }
+    const methods = new Set(
+      parts.map(p => {
+        const method = mapped.get(paymentMethodKey(p.methodLabel))
+        if (!method) unmapped.add(p.methodLabel)
+        return method
+      }),
+    )
+    if (parts.length > 1) split++
+    const [method] = methods
+    return {
+      offline_method: methods.size === 1 && method ? method : 'other',
+      offline_method_label: parts.map(p => p.methodLabel).join(' + '),
+    }
+  }
+  return {
+    methodOf,
+    /** Every label a Purchase needed that the table does not map, sorted. */
+    unmapped: () => [...unmapped].sort(),
+    counts: () => ({ split, none }),
+  }
+}
+
 /** A past purchase as history needs it, to point a past visit at the package that paid for it. */
 export type PastSlot = { clientId: string; entry: CatalogueEntry; id: string; kind: string; from: number; to: number }
 
@@ -183,12 +241,20 @@ type Sold = Exclude<CatalogueEntry, { migrate: 'skip' } | { kind: 'access_pass' 
 /**
  * Every sale line in the history window that is not a live holding, as a past,
  * inactive package on the member whose id is on the sale — dated on the sale
- * date, at its sale Location where the platform can hold one — and every
- * return as a Refund on the purchase it reverses. What cannot be placed is
- * counted, with its money, for the preflight.
+ * date, at its sale Location where the platform can hold one. Every one that
+ * took money is also a provider-less Purchase the package links to, carrying
+ * its Mindbody sale number and how it was paid; a return closes that Purchase
+ * as a Refund. What cannot be placed is counted, with its money, for the
+ * preflight.
+ *
+ * Finance counts the sale once, from the package: a paid Purchase with no
+ * payment behind it is no Money Event of its own, and only lends the package
+ * its method (`src/services/finance/list.ts`).
  */
 export function pastPackages(input: {
   joined: JoinedSales
+  /** How each sale was paid (Sales, Detail Accrual): empty where the report was not downloaded. */
+  saleMethods: SaleMethodRow[]
   from: string
   today: CalendarDate
   config: StudioConfig
@@ -227,6 +293,7 @@ export function pastPackages(input: {
   }
   const trialsPaidFor = new Map<string, number>()
   let refunds = 0
+  const methods = saleMethods(input.saleMethods, config.paymentMethods)
 
   /** Why a line of this option cannot be a package here, or the entry it is. */
   const placeable = (description: string): Sold | string => {
@@ -282,11 +349,11 @@ export function pastPackages(input: {
     const expiry = register?.expiration ?? lastDay(sale.soldAt, entry)
     const catalogueId = catalogueIds[entry.name] ?? null
     const soldAt = zonedToInstant(sale.soldAt, tz).toISOString()
-    // A refund needs a Purchase to hang from: provider-less, because the sale
-    // never reached a payment provider here, and closed as refunded on the day
-    // of the return.
+    // A sale that took money is a Purchase: provider-less, because it never
+    // reached a payment provider here, and closed as refunded on the day of its
+    // return where it has one. A $0 sale (a comp, a ClassPass visit) is none.
     const refund = returnedBy && sale.total > 0 ? returnedBy : null
-    const purchaseId = refund ? id('purchase', key) : null
+    const purchaseId = sale.total > 0 ? id('purchase', key) : null
     const row: Row = {
       id: id('client-package', key),
       tenant_id: tenantId,
@@ -322,21 +389,27 @@ export function pastPackages(input: {
       to: dayNumber(expiry),
     })
 
-    if (refund && purchaseId) {
-      refunds++
+    if (purchaseId) {
       purchases.push({
         id: purchaseId,
         tenant_id: tenantId,
         client_id: ids.clients![sale.clientId],
         kind: entry.kind === 'pt' ? 'pt_package' : 'class_package',
         total_sgd: money(sale.total),
-        // A refunded Purchase holds nothing, as one refunded here does.
+        // What its payment rows add up to, and it has none: the money was taken
+        // in Mindbody. So the platform offers no refund of money it never held,
+        // and a refunded one holds nothing, as one refunded here does.
         amount_paid_sgd: '0.00',
-        status: 'refunded',
+        status: refund ? 'refunded' : 'paid',
         settled_at: soldAt,
-        refunded_at: startOf(refund.soldAt),
+        refunded_at: refund ? startOf(refund.soldAt) : null,
         created_at: soldAt,
+        source_sale_id: sale.saleId,
+        ...methods.methodOf(sale.saleId),
       })
+    }
+    if (refund) {
+      refunds++
       if (money(-refund.total) !== money(sale.total)) {
         notes.push(
           `history purchases: ${memberNames.get(sale.clientId)} (${sale.clientId}) — "${sale.description}" sold ${day} for ${money(sale.total)} was returned for ${money(-refund.total)}; a Refund here is the whole purchase back`,
@@ -373,6 +446,27 @@ export function pastPackages(input: {
     )
   }
   if (refunds > 0) notes.push(`history purchases: ${refunds} return(s) came across as a Refund on the purchase each reverses`)
+
+  // A method nobody mapped is refused rather than guessed: every one at once, for the answers file.
+  const unmapped = methods.unmapped()
+  if (unmapped.length > 0) {
+    throw new ConfigError(
+      unmapped.map(
+        label =>
+          `paymentMethods: Mindbody's payment method "${label}" is on past purchases and is not mapped — ` +
+          `add it to the answers file's paymentMethods as one of ${OFFLINE_METHODS.join(', ')}`,
+      ),
+    )
+  }
+  const { split, none } = methods.counts()
+  if (purchases.length > 0 && input.saleMethods.length === 0) {
+    notes.push(`history purchases: no Sales (Detail Accrual) report was downloaded, so the ${purchases.length} past purchase(s) carry no payment method`)
+  } else if (none > 0) {
+    notes.push(`history purchases: ${none} past purchase(s) have no payment in the Sales report, so carry no payment method`)
+  }
+  if (split > 0) {
+    notes.push(`history purchases: ${split} past purchase(s) were paid more than one way: every Mindbody method is in the label, and the method is "other" unless they are all one method here`)
+  }
   return { clientPackages, purchases, slots, notes }
 }
 

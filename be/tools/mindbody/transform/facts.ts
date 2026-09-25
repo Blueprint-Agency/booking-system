@@ -1,4 +1,5 @@
 import { proposeCatalogue } from './catalogue'
+import type { OfflineMethod } from './config'
 import type { MindbodyReports } from './mapper'
 import type { CancellationRow } from './readers'
 import { dayNumber, normaliseClassName, normaliseOptionName, normaliseStaffName, type CalendarDate } from './values'
@@ -30,6 +31,12 @@ export type ReportFacts = {
   everySold: ReturnType<typeof proposeCatalogue>
   /** The class cancellation window the members' own cancels show, or null where they show none. */
   classWindow: CancellationWindow | null
+  /**
+   * Every payment method label the Sales report shows money taken by, with the
+   * platform method it looks like, or null where it looks like none: a
+   * proposal for the answers file's `paymentMethods`, never read by the transform.
+   */
+  paymentMethods: Record<string, OfflineMethod | null>
 }
 
 export type CancellationWindow = {
@@ -71,6 +78,15 @@ export function cancellationWindow(rows: CancellationRow[]): CancellationWindow 
     if (misfits < best.misfits) best = { hours, misfits }
   }
   return { hours: best.hours, early, late, misfits: best.misfits }
+}
+
+/** What a Mindbody payment method label looks like here, by its words alone. A proposal for a person to confirm. */
+export function proposePaymentMethod(label: string): OfflineMethod | null {
+  if (/^cash\b/i.test(label)) return 'cash'
+  if (/paynow/i.test(label)) return 'paynow'
+  if (/credit card|debit card|\b(visa|master ?card|mc|amex|nets)\b/i.test(label)) return 'card'
+  if (/bank|transfer|giro/i.test(label)) return 'bank_transfer'
+  return null
 }
 
 export function reportFacts(
@@ -136,7 +152,19 @@ export function reportFacts(
   for (const k of Object.keys(roomless)) if (roomless[k]!.held === 0) delete roomless[k]
 
   const everySold = proposeCatalogue(r, asOf, { everySold: true })
-  return { classTypes, categories, ptNames, maxByRoom, sold, roomless, everySold, classWindow: cancellationWindow(r.cancellations) }
+  const labels = [...new Set(r.saleMethods.filter(m => m.amount > 0).map(m => m.methodLabel))].sort()
+  const paymentMethods = Object.fromEntries(labels.map(l => [l, proposePaymentMethod(l)]))
+  return {
+    classTypes,
+    categories,
+    ptNames,
+    maxByRoom,
+    sold,
+    roomless,
+    everySold,
+    classWindow: cancellationWindow(r.cancellations),
+    paymentMethods,
+  }
 }
 
 export type StaffFact = {

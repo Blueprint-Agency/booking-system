@@ -3,7 +3,7 @@ import path from 'node:path'
 import { packArchive, unpackArchive } from '../../../src/services/tenants/transfer-archive'
 import { validateConfig } from './config'
 import { constraintViolations } from './constraints'
-import { compareFigures, figuresOf, type Figures } from './figures'
+import { compareFigures, figuresOf, type Figures, type StoredFigures } from './figures'
 import { mapStudio, renderPreflight, type MindbodyReports, type Transformed } from './mapper'
 import {
   readAccountBalances,
@@ -252,7 +252,7 @@ export async function transformMindbody(input: {
  * the platform's own account of what it now holds. Returns every difference,
  * by member; none means nothing was lost on the way in.
  */
-export async function verifyImport(expected: Figures, exportedZip: Buffer | Uint8Array): Promise<string[]> {
+export async function verifyImport(expected: StoredFigures, exportedZip: Buffer | Uint8Array): Promise<string[]> {
   return compareFigures(expected, figuresOf(await unpackArchive(exportedZip)))
 }
 
