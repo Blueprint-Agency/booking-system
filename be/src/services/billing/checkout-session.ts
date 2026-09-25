@@ -140,6 +140,14 @@ export function partPaymentLine(
 }
 
 /**
+ * The provider's session parameters, plus `adaptive_pricing`, which the Stripe
+ * API accepts but this SDK version's types do not yet declare.
+ */
+export type CheckoutSessionParams = Stripe.Checkout.SessionCreateParams & {
+  adaptive_pricing?: { enabled: boolean }
+}
+
+/**
  * The session Stripe is asked for.
  *
  * Split out from the call so the shape of a checkout — its metadata, its
@@ -153,7 +161,7 @@ export function partPaymentLine(
  */
 export function checkoutSessionParams(
   input: CheckoutSessionInput,
-): Stripe.Checkout.SessionCreateParams {
+): CheckoutSessionParams {
   const tenantMetadata = { tenant_id: input.tenantId, client_id: input.metadata.client_id ?? '' }
   const part = input.partPaymentCents ?? null
   // A part payment is one line for the instalment, not the shopping list: the
@@ -188,6 +196,12 @@ export function checkoutSessionParams(
   const cardsOnly = part != null || keepCard
   return {
     mode: 'payment',
+    // **SGD only.** Adaptive Pricing is on by default for a Stripe account, and
+    // it offers a foreign card its home currency at Stripe's exchange rate — a
+    // Malaysian card is shown an MYR price beside the SGD one. Every price, total,
+    // refund and Balance on this platform is in SGD, so a member paying in another
+    // currency would be charged a number no screen of ours ever showed them.
+    adaptive_pricing: { enabled: false },
     // A Customer **instead of** an email, never beside it: the provider refuses
     // a session carrying both. The member's address is already on the Customer,
     // which is where it came from.

@@ -406,7 +406,6 @@ function CheckoutContent() {
             <p className="text-xs uppercase tracking-wider text-muted mb-4">Purchase summary</p>
 
             <div className="flex gap-3 items-start pb-4 border-b border-ink/5">
-              <div className="h-12 w-12 rounded-lg bg-warm shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-ink">{itemName}</p>
                 <p className="text-xs text-muted mt-0.5">{subtitle}</p>

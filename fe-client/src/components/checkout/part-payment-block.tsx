@@ -3,8 +3,8 @@
 /**
  * Part Payment at checkout (#93).
  *
- * Off by default, and unticked the checkout behaves exactly as it always has.
- * Ticked, the member says what this card will take — because a card at its
+ * Off by default, and on "Pay in full" the checkout behaves exactly as it
+ * always has. On "Pay part now", the member says what this card will take — because a card at its
  * daily limit declines the whole charge and nothing can read that limit in
  * advance, so they are the only party who knows.
  *
@@ -18,7 +18,7 @@
  * after paying has been misled by the interface, not by the studio.
  */
 import { AlertCircle, CreditCard } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 
 export function PartPaymentBlock({
   enabled,
@@ -48,24 +48,44 @@ export function PartPaymentBlock({
   const remainder = Number.isFinite(typed) ? totalSgd - typed : 0;
 
   return (
-    <div className="mt-4 pb-4 border-b border-ink/5">
-      <label className="flex items-start gap-3 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={e => onCheckedChange(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-ink/30 text-accent focus:ring-accent"
-        />
-        <span className="min-w-0">
-          <span className="block text-sm font-medium text-ink">
-            Pay part of this now
-          </span>
-          <span className="mt-0.5 block text-xs text-muted">
-            If your card has a daily limit below {formatCurrency(totalSgd)}, make a
-            part payment now and pay the rest with another card.
-          </span>
-        </span>
-      </label>
+    <fieldset className="mt-4 pb-4 border-b border-ink/5">
+      <legend className="text-sm font-medium text-ink mb-2">How much to pay now</legend>
+      {/* Two named choices rather than one checkbox: paying in full is a choice
+          too, and a member should see both before picking. */}
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          { split: false, title: "Pay in full", detail: formatCurrency(totalSgd) },
+          { split: true, title: "Pay part now", detail: "Rest later" },
+        ].map(option => (
+          <label
+            key={option.title}
+            className={cn(
+              "flex items-start gap-2.5 rounded-xl border px-3.5 py-3 cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-accent",
+              checked === option.split
+                ? "border-accent-deep bg-accent/10"
+                : "border-ink/10 hover:border-accent",
+            )}
+          >
+            <input
+              type="radio"
+              name="part-payment"
+              checked={checked === option.split}
+              onChange={() => onCheckedChange(option.split)}
+              className="mt-0.5 h-4 w-4 border-ink/30 text-accent focus:ring-accent"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-ink">{option.title}</span>
+              <span className="block text-xs text-muted">{option.detail}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      {!checked && (
+        <p className="mt-2 text-xs text-muted">
+          If your card has a daily limit below {formatCurrency(totalSgd)}, pay part
+          now and the rest with another card.
+        </p>
+      )}
 
       {checked && (
         <div className="mt-3 space-y-2">
@@ -113,6 +133,6 @@ export function PartPaymentBlock({
           </div>
         </div>
       )}
-    </div>
+    </fieldset>
   );
 }
