@@ -108,6 +108,8 @@ backend suite means no image is built and neither stack is touched.
   service container, with `TEST_DATABASE_URL` pointing at it and the same stub environment the
   integration harness (`be/src/test/harness.ts`) fills in — `src/env.ts` validates at import, so
   unit tests need it too.
+- **No durability.** That container runs with `fsync`, `synchronous_commit` and `full_page_writes`
+  off, safe for a database the job throws away ([Non-Durable Settings](https://www.postgresql.org/docs/16/non-durability.html)).
 - **Serially** (`--test-concurrency=1`). The suite is green serially and flaky in parallel: the RLS
   coverage test's probe table races the transfer test's table count. Serial is the gate; fixing the
   flake is separate work.
