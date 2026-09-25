@@ -471,6 +471,8 @@ sum, and the waitlist is not a seat (`spec-waitlist.md` §1–§2).
 | PAY-41 | PAY | admin | **Given** a restricted key without permission to manage webhook endpoints **When** it is saved **Then** it is refused `provider_key_lacks_webhook_permission` naming "Webhook Endpoints: Write", and nothing is created or stored _(issue #294)_ | UX | integration | `be/src/test/stripe-webhook-setup.test.ts`, `be/src/services/billing/provider-key-mode.test.ts` | covered |
 | PAY-42 | PAY | admin | **Given** an endpoint made by hand at the studio's URL **When** the key is saved **Then** it is replaced rather than duplicated, and endpoints at other URLs are left alone _(issue #294)_ | money | integration | `be/src/test/stripe-webhook-setup.test.ts` | covered |
 | PAY-43 | PAY | admin | **Given** a key Stripe accepts **When** Stripe refuses to create the webhook endpoint (e.g. a URL it cannot reach) **Then** the form is told `provider_webhook_refused` rather than a server error, and nothing is stored _(issue #294)_ | UX | integration | `be/src/test/stripe-webhook-setup.test.ts` | covered |
+| PAY-44 | PAY | system | **Given** a provider account shared with a checkout another studio or deployment started **When** its `checkout.session.completed` arrives on this studio's endpoint for a member this system never had **Then** it is acknowledged, logged, and nothing is recorded | money | integration | `be/src/test/foreign-checkout.test.ts` | covered |
+| PAY-45 | PAY | system | **Given** a checkout this studio started **When** it completes for a member who cannot be found **Then** the delivery still fails with `client_not_found`, so the provider retries and a human sees it | money | integration | `be/src/test/foreign-checkout.test.ts` | covered |
 
 ## RFD — Refunds
 

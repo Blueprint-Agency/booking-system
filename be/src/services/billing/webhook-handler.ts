@@ -29,7 +29,7 @@ import {
   sendPackagePurchaseEmail,
   sendWorkshopPurchaseEmail,
 } from '../notifications/send-purchase-email'
-import { reportError } from '../../shared/logger'
+import { logger, reportError } from '../../shared/logger'
 import { NotFoundError } from '../../shared/errors'
 
 /** The provider's own receipt for a payment (§13), off its latest charge. */
@@ -367,6 +367,22 @@ export async function handleStripeEvent(
   // No client id means our own checkout never ran — the same silent return the
   // per-kind branches below make on missing metadata.
   if (!clientId) return
+  // A sale some other studio started. The provider tells every endpoint on an
+  // account about every payment, so when one account backs this studio and
+  // someone else's checkout — the same studio on another deployment — this
+  // endpoint is handed sales it never began, for members it has never had.
+  // Checkout stamps the studio that began it; one that is not this one is not
+  // this endpoint's money, and failing on it would only make the provider retry
+  // a delivery that can never succeed here. A session with no stamp predates it
+  // and falls through to the loud path.
+  const startedBy = session.metadata?.tenant_id
+  if (!named && startedBy && startedBy !== expectedTenantId) {
+    logger.info(
+      { eventId: event.id, expectedTenantId, startedBy },
+      'stripe-webhook: checkout begun by another studio, ignored',
+    )
+    return
+  }
   // By this point money has been captured. A charge whose member we cannot place
   // must land in front of a human, not vanish — see `tenantForClient` below.
   if (!named) throw new NotFoundError('client_not_found', { clientId })
