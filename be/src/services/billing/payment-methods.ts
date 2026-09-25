@@ -36,9 +36,11 @@ export function methodPatch(charge: Stripe.Charge | string | null | undefined): 
 }
 
 /**
- * The intent's latest charge, from the account the intent lives on (#97) —
- * null is the platform's. Null rather than throwing on any failure: a receipt
- * or a method is never worth failing a delivered purchase over.
+ * The intent's latest charge, from the account the intent lives on (#97). An
+ * intent recorded against no account was taken on the platform's former
+ * account, which no key reaches any more (#293), so it comes back null too.
+ * Null rather than throwing on any failure: a receipt or a method is never
+ * worth failing a delivered purchase over.
  */
 export async function latestCharge(
   tenantId: string,
@@ -68,9 +70,10 @@ export type MethodBackfillResult = {
   /** Payments whose method was read and written. */
   filled: number
   /**
-   * Payments taken on a provider account the studio no longer supplies. Their
-   * intents are unreachable with any key the platform holds, so they are left
-   * alone and counted, never read with the studio's current key.
+   * Payments taken on a provider account the studio no longer supplies —
+   * including the platform's former account, recorded as no account at all
+   * (#293). Their intents are unreachable with any key the platform holds, so
+   * they are left alone and counted, never read with the studio's current key.
    */
   skippedRetiredAccount: number
   /** Payments the provider could not answer for, or answered without a method. */
@@ -84,9 +87,10 @@ export type MethodBackfillResult = {
  * Refunded payments are included: they succeeded first, and a Refund in
  * Finance shows the method of the payment it returned.
  *
- * Each payment is read on the account it was taken on. The platform's own
- * account (null) is always reachable; any other must be the studio's current
- * one, and a payment on an account it has since replaced is skipped.
+ * Each payment is read on the account it was taken on, which must be the
+ * studio's current one. A payment on an account it has since replaced, or on
+ * the platform's former account (null — no key reaches it since #293), is
+ * skipped.
  *
  * Runs inside the studio's Tenant context. Safe to run again: it only reads
  * payments that still have no method.
@@ -113,7 +117,7 @@ export async function backfillPaymentMethods(
 
   const result: MethodBackfillResult = { filled: 0, skippedRetiredAccount: 0, unread: 0 }
   for (const row of rows) {
-    if (row.providerAccountId != null && row.providerAccountId !== current) {
+    if (row.providerAccountId == null || row.providerAccountId !== current) {
       result.skippedRetiredAccount += 1
       continue
     }

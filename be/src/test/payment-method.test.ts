@@ -267,18 +267,23 @@ describe('payment method', { skip: integrationTestsEnabled ? false : SKIP_REASON
 
   describe('backfill', () => {
     test('PAY-24 fills a past payment from its own account, and skips and counts one on a retired account', async () => {
-      // Two payments taken before capture existed: neither has a method.
+      // Three payments taken before capture existed: none has a method.
       const past = await buy('past', new Error('not read yet'))
       const retired = await buy('retired', new Error('not read yet'))
+      const onPlatform = await buy('platform', new Error('not read yet'))
       assert.equal((await checkout.payment(past.intentId)).method, null)
+      // One was taken on an account the studio has since replaced, and one on
+      // the platform's former account (recorded as none), which no key reaches
+      // any more (#293). The first is on the studio's current own account.
       await harness.db.execute(
         sql`UPDATE stripe_payments SET provider_account_id = 'acct_retired' WHERE payment_intent_id = ${retired.intentId}`,
       )
-      // The studio has since moved onto an account of its own, and the
-      // platform's still holds the first payment.
-      fake.credentials(checkout.tenantId, { accountId: 'acct_current' })
+      await harness.db.execute(
+        sql`UPDATE stripe_payments SET provider_account_id = NULL WHERE payment_intent_id = ${onPlatform.intentId}`,
+      )
       checkout.charges.set(past.intentId, cardPaid('visa', '3000'))
       checkout.charges.set(retired.intentId, cardPaid('visa', '9999'))
+      checkout.charges.set(onPlatform.intentId, cardPaid('visa', '8888'))
       fake.calls.length = 0
 
       const result = await backfill.backfillPaymentMethods(checkout.tenantId)
@@ -286,15 +291,17 @@ describe('payment method', { skip: integrationTestsEnabled ? false : SKIP_REASON
       const filled = await checkout.payment(past.intentId)
       assert.deepEqual([filled.method, filled.card_brand, filled.card_last4], ['card', 'visa', '3000'])
       const pastCall = fake.callsTo('paymentIntents.retrieve').find(c => c.args[0] === past.intentId)
-      assert.equal(pastCall?.account, null, "read on the platform's account, where it was taken")
+      assert.equal(pastCall?.account, checkout.accountId, "read on the studio's own account, where it was taken")
 
-      assert.equal((await checkout.payment(retired.intentId)).method, null)
-      assert.ok(
-        !fake.callsTo('paymentIntents.retrieve').some(c => c.args[0] === retired.intentId),
-        'a payment on an account the studio no longer supplies is never asked for',
-      )
+      for (const skipped of [retired, onPlatform]) {
+        assert.equal((await checkout.payment(skipped.intentId)).method, null)
+        assert.ok(
+          !fake.callsTo('paymentIntents.retrieve').some(c => c.args[0] === skipped.intentId),
+          'a payment on an account the studio no longer supplies is never asked for',
+        )
+      }
       assert.ok(result.filled >= 1)
-      assert.ok(result.skippedRetiredAccount >= 1)
+      assert.ok(result.skippedRetiredAccount >= 2)
     })
   })
 })
