@@ -4,11 +4,17 @@ The Playwright journeys in `e2e/journeys/` run in two places, from the same file
 
 | Run | Where | Stack | Stripe | Workflow |
 |---|---|---|---|---|
-| **Every pull request** (#207) | the CI runner | Postgres service, backend, production builds of both frontends — all in the runner | a stub (`e2e/src/stripe-stub.ts`) | `e2e-local.yml` |
+| **Every pull request** (#207), and **staging gate** | the CI runner | Postgres service, backend, production builds of both frontends — all in the runner | a stub (`e2e/src/stripe-stub.ts`) | `e2e-local.yml`, called by `deploy-be.yml` on a PR and before a `staging` deploy |
 | **Production gate** (#145) | staging | the deployed staging stack | Stripe's own test mode | `e2e.yml`, called by `deploy-be.yml` before a `main` deploy |
 
-The PR run is the early warning; the staging run still decides whether production is deployed.
+The in-runner run is the early warning on a PR and gates the staging deploy, so a push straight to
+`staging` cannot reach `main` without a journey having run on it. The staging run still decides
+whether production is deployed.
+
 Both make a throwaway `e2e-…` studio for the run and delete it afterwards (`be/src/e2e/studio.ts`).
+On staging that studio is removed three ways: Playwright's global teardown, pass or fail; the
+workflow's `if: always()` step, for a job cancelled or timed out; and the next run's setup, which
+sweeps any `e2e-` studio older than two hours. The super portal's studio list never shows them.
 
 ## The local stack
 

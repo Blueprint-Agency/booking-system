@@ -8,8 +8,9 @@ name: BE Deploy
 #
 # The deploy is gated on the backend test suite and the schema drift check:
 # `deploy` needs `test` and `drift`, so a red one never reaches either stack. A
-# `main` (production) deploy also needs `e2e` — the browser journeys, green
-# against staging (e2e.yml). The same workflow runs both frontends'
+# `staging` deploy also needs `journeys-pr` — the browser journeys, green on a
+# stack inside the runner (e2e-local.yml) — and a `main` (production) deploy
+# needs `e2e`, the same journeys green against staging (e2e.yml). The same workflow runs both frontends'
 # `check` scripts when their paths change — but Vercel deploys the frontends on
 # its own and does not wait for GitHub checks, so for them a red check is a
 # signal, not a gate. Pull requests into `staging`/`main` run every check and
@@ -509,10 +510,14 @@ jobs:
       pull-requests: read
     uses: ./.github/workflows/test-guardrails.yml
 
-  # The browser journeys on a stack inside the runner (#207): the early
-  # warning on a pull request. Not the production gate — that is `e2e` below.
+  # The browser journeys on a stack inside the runner (#207): on every pull
+  # request, and before every STAGING deploy — a push straight to `staging`
+  # would otherwise reach `main` without a journey ever having run on it. They
+  # touch nothing outside the runner, so unlike `e2e` they can gate the stack
+  # they do not run against. Not the production gate — that is `e2e` below.
+  # The job keeps its name so branch protection's required check still matches.
   journeys-pr:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.ref_name == 'staging'
     permissions:
       contents: read
     uses: ./.github/workflows/e2e-local.yml
@@ -533,18 +538,21 @@ jobs:
     secrets: inherit
 
   deploy:
-    needs: [changes, test, drift, e2e]
+    needs: [changes, test, drift, journeys-pr, e2e]
     # Push or manual dispatch only — a pull request runs the tests and stops.
     #
-    # The gate: `test` and `drift` must pass, and on `main` so must `e2e`. The
-    # results are spelled out because `e2e` is *skipped* on `staging`, and a
-    # skipped need would otherwise skip this job too; `!cancelled()` is what lets
-    # the condition be read at all once a need was skipped. A failed or skipped
-    # `e2e` on `main` still skips the production deploy.
+    # The gate: `test` and `drift` must pass; on `staging` so must the
+    # in-runner journeys (`journeys-pr`), and on `main` the journeys against
+    # staging (`e2e`). The results are spelled out because each journeys job is
+    # *skipped* on the other branch, and a skipped need would otherwise skip
+    # this job too; `!cancelled()` is what lets the condition be read at all
+    # once a need was skipped. A failed or skipped journeys job on its own
+    # branch still skips that branch's deploy.
     if: >-
       !cancelled() &&
       needs.test.result == 'success' &&
       needs.drift.result == 'success' &&
+      (needs.journeys-pr.result == 'success' || (github.ref_name != 'staging' && needs.journeys-pr.result == 'skipped')) &&
       (needs.e2e.result == 'success' || (github.ref_name != 'main' && needs.e2e.result == 'skipped')) &&
       github.event_name != 'pull_request' &&
       (github.ref_name == 'staging' || github.ref_name == 'main') &&

@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, notLike, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
 import type { TenantRow, TenantSettingsRow } from '../../db/schema/tenancy'
@@ -6,7 +6,7 @@ import type { TenantStatus } from '../../db/enums'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { ConflictError } from '../../shared/errors'
 import { claimSlug } from './former-slugs'
-import { assertUsableSlug, normaliseSlug } from './slug'
+import { assertUsableSlug, E2E_SLUG_PREFIX, normaliseSlug } from './slug'
 import { DEFAULT_TIMEZONE, termEnded, todayFor } from './term-dates'
 
 /**
@@ -185,6 +185,11 @@ export type TenantSummary = TenantRowSummary & {
   staffCount: number
 }
 
+/**
+ * Every studio the super portal lists — not the browser journeys' throwaway
+ * `e2e-` studios. Each lives for one run on staging and is deleted after it
+ * (`be/src/e2e/studio.ts`); none is a studio anyone manages.
+ */
 export async function listTenants(): Promise<TenantSummary[]> {
   const [rows, staff] = await Promise.all([
     db
@@ -199,6 +204,7 @@ export async function listTenants(): Promise<TenantSummary[]> {
         createdAt: tenants.createdAt,
       })
       .from(tenants)
+      .where(notLike(tenants.slug, `${E2E_SLUG_PREFIX}%`))
       .orderBy(tenants.createdAt),
     staffCounts(),
   ])

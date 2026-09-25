@@ -9,12 +9,14 @@ name: E2E Journeys (PR)
 # runner: not for Stripe, not for staging, not for mail (the backend runs its
 # null mail transport).
 #
-# This is the early warning, not the gate. The real-Stripe run against staging
-# (e2e.yml) still gates the production deploy, unchanged.
+# On a pull request it is the early warning. On a push to `staging` it gates
+# the staging deploy, so nothing reaches `main` without the journeys having
+# run on it. The run against staging (e2e.yml) still gates the production
+# deploy, unchanged.
 #
 # Every pull request, whatever it touches: a check that only sometimes reports
 # cannot be made required. Called by deploy-be.yml as its `journeys-pr` job, so
-# a PR runs one workflow; `github.event` here is that pull request's.
+# a PR runs one workflow; `github.event` here is the caller's.
 on:
   workflow_call:
 
@@ -25,10 +27,12 @@ jobs:
   journeys:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # A newer push to the same pull request makes this run's answer stale.
+    # A newer push to the same pull request makes this run's answer stale. A
+    # staging push's run is that push's deploy gate, so it is never cancelled:
+    # a later push queues behind it.
     concurrency:
-      group: booking-e2e-pr-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      group: booking-e2e-local-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
     services:
       postgres:

@@ -897,6 +897,7 @@ sum, and the waitlist is not a seat (`spec-waitlist.md` §1–§2).
 | SUP-07 | SUP | super | **Given** a staff or member session of any studio **When** it calls any `/api/v1/platform/*` route **Then** it gets `404 not_found` and nothing is written _(multi-tenancy-plan §Phase 6 — Super portal; spec-tenant-resolution §3)_ | tenancy | integration |  | uncovered |
 | SUP-08 | SUP | super | **Given** an active studio with members and staff signed in **When** the platform administrator suspends it **Then** its `/me` and `/portal` requests are refused `403 tenant_suspended`, and after reactivation the same sessions work again with every row kept _(multi-tenancy-plan §Phase 6 — Super portal)_ | data-loss | integration |  | uncovered |
 | SUP-09 | SUP | super | **Given** a studio that already has a staff member who is neither archived nor deleted **When** the platform administrator invites a first Admin **Then** it is refused `409 tenant_already_has_staff` and no invitation is written _(multi-tenancy-plan §Phase 6 — Super portal)_ | UX | integration |  | uncovered |
+| SUP-10 | SUP | super | **Given** a real studio and a browser journeys' throwaway `e2e-` studio **When** the platform administrator lists studios **Then** the real studio is listed and the `e2e-` one is not _(docs/md/e2e-journeys.md)_ | UX | integration | `be/src/test/platform-studio-list.test.ts` | covered |
 
 ## TEN — Tenant isolation
 

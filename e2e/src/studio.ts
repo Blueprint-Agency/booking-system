@@ -52,6 +52,9 @@ export type Studio = {
   }
 }
 
+/** Where global setup leaves the run's slug, relative to `e2e/`. Git-ignored. */
+export const STUDIO_SLUG_FILE = '.e2e-studio'
+
 function studioCommand(args: string): string {
   const command = process.env.E2E_STUDIO_CMD
   if (!command) throw new Error('E2E_STUDIO_CMD is not set — see e2e/src/studio.ts')

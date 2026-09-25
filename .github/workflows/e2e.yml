@@ -124,6 +124,22 @@ jobs:
             docker compose run --rm -T booking-be npm run -s e2e:studio --
         run: npx playwright test
 
+      # Playwright's own teardown removes the studio when the journeys finish,
+      # pass or fail. A job cancelled or timed out never reaches it, and this
+      # step still runs: it removes the studio global setup wrote down
+      # (e2e/src/global-setup.ts). A studio already removed is a no-op.
+      - name: Remove this run's studio
+        if: always()
+        shell: bash
+        run: |
+          [ -f .e2e-studio ] || exit 0
+          slug=$(cat .e2e-studio)
+          case "$slug" in e2e-*) ;; *) echo "::error::refusing to remove '$slug': not an e2e studio"; exit 1 ;; esac
+          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new "deploy@${{ vars.BPVPS2_TAILSCALE_HOST }}" \
+            cd /root/stacks/booking-staging '&&' \
+            docker compose run --rm -T booking-be npm run -s e2e:studio -- teardown "$slug" \
+            || echo "::warning::could not remove $slug; the next run's setup sweeps it"
+
       - name: Report
         if: failure()
         uses: actions/upload-artifact@v4
