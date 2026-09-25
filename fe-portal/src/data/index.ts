@@ -4,6 +4,4 @@ export { locations } from "./locations";
 export { rooms } from "./rooms";
 export { clients } from "./clients";
 export { workshops } from "./schedule";
-export { inboxItems } from "./inbox";
-export { emailTemplates } from "./email-templates";
 export { waiver } from "./waiver";

@@ -21,8 +21,8 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 | Tier | Surfaces |
 |---|---|
-| **Global (admin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Workshops, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Notifications, Waiver, Staff |
-| **Workspace-scoped** | Schedule, Check-in, Inbox, PT Requests (clients pick a `location_id` at request time — see §9) |
+| **Global (admin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Workshops, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Waiver, Staff |
+| **Workspace-scoped** | Schedule, Check-in, PT Requests (clients pick a `location_id` at request time — see §9) |
 | **Cross-workspace (global)** | Clients — cross-location credits mean a client record spans workspaces; admin sees and manages every client (kebab actions, expiry edits, set-balance, manual adjustments, block/unblock) |
 
 > **Workshops are a global package surface.** Like Classes and Private Sessions, Packages → Workshops is **not** filtered by the topbar workspace switcher — it lists every workshop across all locations. Each workshop still carries a `location_id` chosen in the editor (its days' rooms come from that location); the surface is simply not workspace-scoped.
@@ -47,8 +47,8 @@ Locations are workspaces. Surfaces are partitioned as follows:
 - **Config**: Class Types, Promo Codes. **A Promo Code sits in Config, not Packages**: it crosses products, so it belongs with the building blocks rather than inside any one catalogue (contrast a Promotion, which belongs to exactly one product and is edited there).
 - **Packages**: Classes, Workshops, Private Sessions, Corporate, Merch (global, shared across locations). Merch is shop-floor stock (mats, props, apparel) rather than catalogue governance, but like the rest of Packages it is managed by admins.
 - **People**: Customers, Corporate Requests, Staff, Leave (members + staff accounts). **Corporate Requests sits here, not in the workspace zone** — a request records no `location_id` until it is scheduled, so there is nothing for the switcher to filter it by; it is a person asking, which is what People is.
-- **Settings**: Global Policy, Notifications, Waiver (location-independent policy + config). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
-- **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, Inbox, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
+- **Settings**: Global Policy, Waiver (location-independent policy + config). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
+- **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
 
 `NavItem.workspaceScoped` marks the workspace-zone items; it is distinct from `NavItem.scope`, which only governs role visibility (admin vs instructor). The build-order below is the recommended *setup* sequence, not the visual order.
 
@@ -90,7 +90,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 **Completed this phase:**
 - 14. Roles & Invitations
 - 15. Clients (list, profile, credit balance, history, manual adjustments)
-- 16. Notifications (email template management)
+- 16. Notifications (email template management) — built against fixture templates, then hidden (#277); see §16
 - 17. Waivers
 
 **Next phase (see §19):**
@@ -598,6 +598,8 @@ Consolidated reference for all cancellation paths.
 
 ## 13. Inbox
 
+> **Hidden (#277).** The Inbox screen read fixture data and described cancellations as refunds they are not (a Workshop cancel refunds nobody; a class cancel returns credits, not money). It has been removed from the portal until it is wired to real data — a separate ticket. The design below is the target for that work, not a description of the shipped portal.
+
 Single workspace-scoped inbox at `/admin/inbox`. Filter tabs by notification type. One sidebar item with total unread count for the active workspace.
 
 PT request triage **does not live here** — it has its own dedicated page (`/admin/pt-requests`, §9). The Inbox is now purely a notification feed.
@@ -768,6 +770,8 @@ The actions on a client's active-package kebab, all written into the same immuta
 ---
 
 ## 16. Notifications (Email Templates)
+
+> **Hidden (#277).** The Notifications screen listed fixture templates, including `admin_cancel_*` emails no backend code sends, and omitted `purchase_refunded`, which it does send. It has been removed from the portal and its nav entry until the list can be read from the emails the backend actually sends — a separate ticket. The design below is the target for that work, not a description of the shipped portal.
 
 ### 16a. Overview
 

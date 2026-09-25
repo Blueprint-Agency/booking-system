@@ -1,11 +1,9 @@
 "use client";
-// FIXTURE-BACKED: reads static mock data from `@/data`, not the live backend.
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Menu, X, MapPin, Settings, ChevronDown } from "lucide-react";
 import { createPortal } from "react-dom";
 import { NAV_ITEMS, NAV_GROUP_ORDER, type NavItem, type NavGroup } from "./nav-items";
-import { inboxItems } from "@/data";
 import { cn } from "@/lib/utils";
 import { StudioMark } from "@/components/brand/studio-mark";
 import { visibleToRole } from "@/lib/staff-role";
@@ -195,9 +193,7 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
     // Re-count when the route changes (e.g. after triaging a request).
   }, [api, pathname]);
 
-  const inboxUnread = inboxItems.filter((i) => i.readAt === null).length;
   const badges: BadgeMap = {
-    inboxUnread: inboxUnread > 0 ? inboxUnread : undefined,
     ptRequestsPending: ptPending,
     corporateRequestsPending: corporatePending,
   };

@@ -288,62 +288,6 @@ export interface Client {
   waiverSignedAt: string;
 }
 
-// --- Inbox (§13) ---
-
-export type InboxType =
-  | "client_cancellation"
-  | "admin_cancel_class_pt"
-  | "admin_cancel_workshop";
-
-export interface InboxItem {
-  id: string;
-  type: InboxType;
-  payload: Record<string, unknown>;
-  readAt: string | null;
-  sourcePtSessionId: string | null;
-  actionTaken: "approved" | "declined" | null;
-  actionAt: string | null;
-  createdAt: string;
-}
-
-// --- Notifications (§17) ---
-
-export type EmailTemplateSlug =
-  | "welcome"
-  | "password_reset"
-  | "class_booking_confirmed"
-  | "pt_request_submitted"
-  | "pt_session_approved"
-  | "pt_session_declined"
-  | "pt_request_expired"
-  | "workshop_purchase_confirmed"
-  | "workshop_waitlist_promoted"
-  | "class_cancelled_credit_returned"
-  | "class_cancelled_forfeited"
-  | "pt_cancelled_session_returned"
-  | "pt_cancelled_forfeited"
-  | "admin_cancel_class"
-  | "admin_cancel_pt"
-  | "admin_cancel_workshop"
-  | "package_purchase_confirmed"
-  | "credit_expiry_reminder"
-  | "instructor_invite"
-  | "admin_invite"
-  | "checkin_nag";
-
-export interface EmailTemplate {
-  slug: EmailTemplateSlug;
-  category: string;
-  label: string;
-  description: string;
-  trigger: string;
-  recipient: string;
-  variables: string[];
-  subject: string;
-  bodyHtml: string;
-  updatedAt: string;
-}
-
 // --- Waiver (§18) ---
 
 export interface Waiver {
