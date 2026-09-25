@@ -82,7 +82,7 @@ export function OverviewPanel({
                 leaving it off the page entirely would be its own kind of lie. */}
             {data.held_on_open_purchases_sgd > 0 && (
               <Tile
-                label="Held on unfinished purchases"
+                label="Held on partial payments"
                 value={formatSgd(data.held_on_open_purchases_sgd)}
                 hint="Part payments — not revenue, not in Net, not period-scoped"
               />

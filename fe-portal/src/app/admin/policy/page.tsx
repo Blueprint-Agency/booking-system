@@ -362,7 +362,7 @@ export default function PolicyPage() {
               <span className="mt-0.5 block text-xs text-muted">
                 Nothing is granted, and no workshop place is held, until the balance
                 reaches zero. A part-paid purchase shows on the customer&apos;s page
-                here as an unfinished purchase.
+                here under Partial payments.
               </span>
             </span>
           </label>

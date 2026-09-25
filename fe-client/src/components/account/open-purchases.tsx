@@ -45,7 +45,7 @@ export function OpenPurchases({
       <div className="mt-6 flex items-start gap-2 rounded-2xl border border-ink/10 bg-warm px-4 py-3 text-sm text-ink">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
         <span>
-          We couldn&apos;t load your unfinished purchases just now. Refresh the page —
+          We couldn&apos;t load your partial payments just now. Refresh the page —
           nothing has been lost.
         </span>
       </div>
@@ -55,7 +55,7 @@ export function OpenPurchases({
   return (
     <div className="mt-6">
       <h3 className="text-base font-bold text-ink mb-3">
-        Unfinished purchases
+        Partial payments
       </h3>
       <div className="space-y-4">
         {purchases.map(p => (

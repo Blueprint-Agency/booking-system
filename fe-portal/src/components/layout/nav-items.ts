@@ -59,7 +59,7 @@ export const NAV_ITEMS: NavItem[] = [
   // are not Money Events but money held against a sale that never happened, and
   // the page exists to be acted on. Both roles see the list; only a superadmin
   // refunds, gated at the backend the same way every other Refund is.
-  { group: "Finance", label: "Unfinished", href: "/admin/purchases", icon: HandCoins, scope: "both" },
+  { group: "Finance", label: "Partial payments", href: "/admin/purchases", icon: HandCoins, scope: "both" },
 
   // --- Config (global building blocks, shared across locations) ---
   { group: "Config", label: "Class Types", href: "/admin/class-types", icon: Tag, scope: "global" },

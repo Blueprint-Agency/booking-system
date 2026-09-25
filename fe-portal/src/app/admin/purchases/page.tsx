@@ -93,7 +93,7 @@ export default function UnfinishedPurchasesPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <PageHeader
-        title="Unfinished purchases"
+        title="Partial payments"
         description="Customers who paid part of a purchase and never came back. The studio is holding their money against nothing they received."
       />
 
@@ -111,7 +111,7 @@ export default function UnfinishedPurchasesPage() {
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-16 text-sm text-muted">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading unfinished purchases…
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading partial payments…
         </div>
       ) : rows.length === 0 ? (
         <div className="rounded-xl border border-border bg-card shadow-soft">

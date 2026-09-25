@@ -662,7 +662,7 @@ export default function ClientProfilePage({
                   First, because it is the thing a member's arrival at the front
                   desk turns into a question. */}
               {profile.open_purchases.length > 0 && (
-                <Section title="Unfinished purchases" count={profile.open_purchases.length}>
+                <Section title="Partial payments" count={profile.open_purchases.length}>
                   <OpenPurchaseList
                     purchases={profile.open_purchases}
                     canEdit={canEdit}

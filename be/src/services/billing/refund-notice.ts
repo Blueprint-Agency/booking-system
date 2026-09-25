@@ -138,7 +138,7 @@ export function abandonedReturnLine(paymentCount: number, amountSgd: string): st
  * would go looking for a package they never had.
  */
 export function abandonedLine(itemName: string, amountSgd: string): string {
-  return `Your unfinished purchase of ${itemName} has been cancelled and the S$${amountSgd} you had paid towards it returned in full.`
+  return `Your partial payment for ${itemName} has been cancelled and the S$${amountSgd} you had paid returned in full.`
 }
 
 export interface RefundEmailInput {
