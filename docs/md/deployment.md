@@ -132,8 +132,11 @@ backend suite means no image is built and neither stack is touched.
   branch fails the `test` job. Each `staging`/`main` run records its count (an Actions cache keyed
   by the `be/` tree); a PR compares against the base's. Removing tests on purpose: add the
   `tests-removed` label and re-run the job. The journeys get the same check, and a skipped journey
-  fails, in the `Test Guardrails` workflow (`test-guardrails.yml`, every PR). See
+  fails, in the `guardrails` job (`test-guardrails.yml`, called by `deploy-be.yml` on every PR). See
   `test-guardrails.md`.
+- **One workflow per pull request.** `deploy-be.yml` is the only workflow a PR triggers, on every
+  PR whatever it touches. It calls `test-guardrails.yml` (`guardrails`) and `e2e-local.yml`
+  (`journeys-pr`) as jobs; its `changes` job still decides which app checks a PR needs.
 - **Coverage is reported, not gated.** The suite runs with Node's built-in coverage; the job's
   summary page shows lines/branches/functions per `src/services/<feature>/` folder. No threshold.
 - **Pull requests** into `staging` or `main` run the same tests and never deploy. A push that only

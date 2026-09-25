@@ -101,7 +101,7 @@ It prints covered/uncovered counts by role and by risk, and exits non-zero when 
 `covered` or `failing` names a test file that is gone or no longer has a test carrying the ID. It
 also fails on a row it cannot read (bad ID, a value outside its list, an ID used twice, a table
 header that is off), and on a row that names a test but is not marked `covered` or `failing`. The
-Test Guardrails workflow (`test-guardrails.yml`) runs it on every pull request.
+`guardrails` job (`test-guardrails.yml`, called by `deploy-be.yml`) runs it on every pull request.
 
 **Name a test with its ID.** Put the ID at the start of the `test(…)`, `it(…)` or `describe(…)`
 name. One test may prove several rows; a `describe` carrying an ID covers it for the whole block.

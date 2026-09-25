@@ -4,9 +4,11 @@ name: Test Guardrails
 # request. The backend's own count check and coverage report live in its `test`
 # job (deploy-be.yml), which has the suite's output to hand; these are the ones
 # that need no database. See docs/md/test-guardrails.md.
+#
+# Called by deploy-be.yml as its `guardrails` job on every pull request, so a
+# PR runs one workflow; `github.event` here is that pull request's.
 on:
-  pull_request:
-    branches: [staging, main]
+  workflow_call:
 
 permissions:
   contents: read
