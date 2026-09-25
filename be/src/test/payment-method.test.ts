@@ -222,7 +222,7 @@ describe('payment method', { skip: integrationTestsEnabled ? false : SKIP_REASON
             metadata: { tenant_id: checkout.tenantId },
           },
         },
-      } as unknown as Stripe.Event)
+      } as unknown as Stripe.Event, checkout.tenantId, checkout.accountId)
 
       const { rows } = await financeSvc.getFinance(checkout.tenantId, {
         from: window.from,

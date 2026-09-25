@@ -36,6 +36,9 @@ export const paidWith = (type: string): PaymentDetails => ({ type })
 export function checkoutWebhook(harness: TestApp, schema: typeof Schema, fake: StripeFake) {
   const run = randomUUID().slice(0, 8)
   const tenantId = harness.tenants.one.id
+  // The studio sells on its own account (#293): the one that signs the delivery
+  // and that each payment is recorded against.
+  const { accountId } = fake.ownAccount(harness.tenants.one)
   const clientIds: string[] = []
   const catalogueIds: string[] = []
 
@@ -138,7 +141,7 @@ export function checkoutWebhook(harness: TestApp, schema: typeof Schema, fake: S
         },
       },
     } as unknown as Stripe.Event
-    await handleStripeEvent(event)
+    await handleStripeEvent(event, tenantId, accountId)
   }
 
   /** A fresh intent id, unique across runs. */
@@ -168,6 +171,7 @@ export function checkoutWebhook(harness: TestApp, schema: typeof Schema, fake: S
 
   return {
     tenantId,
+    accountId,
     /** This run's name. Every member made carries it, so a name search finds only them. */
     runName: `checkout-${run}`,
     /** How each intent was paid, as the next retrieve will say. Change it to change the answer. */
