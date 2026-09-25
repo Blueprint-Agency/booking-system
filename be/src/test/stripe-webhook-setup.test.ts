@@ -113,7 +113,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     await harness.close()
   })
 
-  test('PAY-31 saving a key creates one endpoint at the studio’s URL for the two events, and a delivery verifies against it', async () => {
+  test('PAY-37 saving a key creates one endpoint at the studio’s URL for the two events, and a delivery verifies against it', async () => {
     fake.issueKey('sk_test_first', 'acct_first')
 
     const res = await put(studio.id, { secret_key: 'sk_test_first' })
@@ -142,7 +142,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     assert.equal((await deliver(studio.slug, 'whsec_some_other_secret')).status, 400)
   })
 
-  test('PAY-32 replacing a key leaves exactly one endpoint, the new one', async () => {
+  test('PAY-38 replacing a key leaves exactly one endpoint, the new one', async () => {
     fake.issueKey('sk_test_old', 'acct_old')
     fake.issueKey('sk_test_new', 'acct_new')
     assert.equal((await put(studio.id, { secret_key: 'sk_test_old' })).status, 200)
@@ -172,7 +172,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     assert.equal(storedWhenOldDeleted, endpoints[0]!.id, 'the new endpoint was stored before the old one went')
   })
 
-  test('PAY-32 a new key on the same account replaces the endpoint rather than adding a second', async () => {
+  test('PAY-38 a new key on the same account replaces the endpoint rather than adding a second', async () => {
     fake.issueKey('sk_test_same_a', 'acct_same')
     fake.issueKey('sk_test_same_b', 'acct_same')
     assert.equal((await put(studio.id, { secret_key: 'sk_test_same_a' })).status, 200)
@@ -183,7 +183,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     assert.equal((await storedRow(studio.id))?.webhookEndpointId, endpoints[0]!.id)
   })
 
-  test('PAY-33 removing credentials deletes the endpoint', async () => {
+  test('PAY-39 removing credentials deletes the endpoint', async () => {
     fake.issueKey('sk_test_gone', 'acct_gone')
     assert.equal((await put(studio.id, { secret_key: 'sk_test_gone' })).status, 200)
     assert.equal(fake.webhookEndpoints('acct_gone').length, 1)
@@ -194,7 +194,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     assert.equal(await storedRow(studio.id), undefined)
   })
 
-  test('PAY-33 credentials are removed even when the provider cannot delete the endpoint, and the ids are logged', async () => {
+  test('PAY-39 credentials are removed even when the provider cannot delete the endpoint, and the ids are logged', async () => {
     fake.issueKey('sk_test_unreachable', 'acct_unreachable')
     assert.equal((await put(studio.id, { secret_key: 'sk_test_unreachable' })).status, 200)
     const [endpoint] = fake.webhookEndpoints('acct_unreachable')
@@ -210,7 +210,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     assert.ok(line, 'the log names the account and endpoint to delete by hand')
   })
 
-  test('PAY-34 a save that fails after the endpoint is created leaves no endpoint behind', async () => {
+  test('PAY-40 a save that fails after the endpoint is created leaves no endpoint behind', async () => {
     fake.issueKey('sk_test_doomed', 'acct_doomed')
     // The endpoint is created, and then the sealing key goes bad before the
     // credentials can be sealed: the save fails with the endpoint already live.
@@ -234,7 +234,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     assert.equal(fake.webhookEndpoints('acct_doomed').length, 1)
   })
 
-  test('PAY-35 a restricted key without webhook permission is refused, naming the permission', async () => {
+  test('PAY-41 a restricted key without webhook permission is refused, naming the permission', async () => {
     fake.issueKey('rk_test_restricted', 'acct_restricted')
     fake.reply(
       'webhookEndpoints.create',
@@ -255,7 +255,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     assert.equal(await storedRow(studio.id), undefined)
   })
 
-  test('PAY-35 a key that may not even list webhook endpoints is refused the same way, before anything is created', async () => {
+  test('PAY-41 a key that may not even list webhook endpoints is refused the same way, before anything is created', async () => {
     fake.issueKey('rk_test_no_read', 'acct_no_read')
     fake.reply(
       'webhookEndpoints.list',
@@ -269,7 +269,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     assert.equal(await storedRow(studio.id), undefined)
   })
 
-  test('PAY-37 an endpoint the provider will not create is a refusal on the form, and nothing is stored', async () => {
+  test('PAY-43 an endpoint the provider will not create is a refusal on the form, and nothing is stored', async () => {
     fake.issueKey('sk_test_unreachable_url', 'acct_unreachable_url')
     fake.reply(
       'webhookEndpoints.create',
@@ -286,7 +286,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     assert.equal(await storedRow(studio.id), undefined)
   })
 
-  test('PAY-36 an endpoint made by hand at the same URL is replaced, not duplicated', async () => {
+  test('PAY-42 an endpoint made by hand at the same URL is replaced, not duplicated', async () => {
     fake.issueKey('sk_test_by_hand', 'acct_by_hand')
     fake.createWebhookEndpoint('acct_by_hand', { url: url(studio.slug), enabled_events: ['*'] })
     // One for somewhere else on the same account, which is not ours to touch.
@@ -304,7 +304,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     )
   })
 
-  test('PAY-31 the route takes the secret key alone', async () => {
+  test('PAY-37 the route takes the secret key alone', async () => {
     fake.issueKey('sk_test_only_key', 'acct_only_key')
     // A signing secret is not something the operator supplies any more.
     const res = await put(studio.id, { secret_key: 'sk_test_only_key', webhook_secret: 'whsec_typed_by_hand' })

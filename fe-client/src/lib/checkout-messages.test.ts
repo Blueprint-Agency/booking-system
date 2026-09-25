@@ -5,13 +5,13 @@ import { ERROR_CODES } from "./error-codes.ts";
 
 const FALLBACK = "Could not start checkout. Please try again.";
 
-test("PAY-19 a full workshop is said in words, never as its code", () => {
+test("PAY-25 a full workshop is said in words, never as its code", () => {
   const message = checkoutErrorMessage({ error: ERROR_CODES.workshop_full }, FALLBACK);
   assert.match(message, /full/i);
   assert.doesNotMatch(message, /workshop_full/);
 });
 
-test("PAY-19 the server's own sentence wins over the code it came with", () => {
+test("PAY-25 the server's own sentence wins over the code it came with", () => {
   const message = checkoutErrorMessage(
     { error: ERROR_CODES.part_payment_below_floor, message: "A part payment has to be at least S$1.00." },
     FALLBACK,
@@ -19,7 +19,7 @@ test("PAY-19 the server's own sentence wins over the code it came with", () => {
   assert.equal(message, "A part payment has to be at least S$1.00.");
 });
 
-test("PAY-19 the refusals a checkout can meet each get a member-facing sentence", () => {
+test("PAY-25 the refusals a checkout can meet each get a member-facing sentence", () => {
   const codes = [
     ERROR_CODES.already_booked,
     ERROR_CODES.workshop_not_active,
@@ -55,14 +55,14 @@ test("PAY-19 the refusals a checkout can meet each get a member-facing sentence"
   }
 });
 
-test("PAY-19 a code it does not know gets the caller's words, never the raw string", () => {
+test("PAY-25 a code it does not know gets the caller's words, never the raw string", () => {
   assert.equal(checkoutErrorMessage({ error: "internal_error" }, FALLBACK), FALLBACK);
   assert.equal(checkoutErrorMessage({ error: "something_new_on_the_server" }, FALLBACK), FALLBACK);
   assert.equal(checkoutErrorMessage({}, FALLBACK), FALLBACK);
   assert.equal(checkoutErrorMessage(null, FALLBACK), FALLBACK);
 });
 
-test("PAY-19 a message that is itself a code is not printed", () => {
+test("PAY-25 a message that is itself a code is not printed", () => {
   assert.equal(checkoutErrorMessage({ message: "workshop_full" }, FALLBACK), checkoutErrorMessage({ error: "workshop_full" }, FALLBACK));
   assert.equal(checkoutErrorMessage({ message: "internal_error" }, FALLBACK), FALLBACK);
 });

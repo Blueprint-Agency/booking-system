@@ -164,7 +164,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
     return (await res.json()) as { online_payments: boolean }
   }
 
-  test('PAY-23 a studio with no credentials of its own refuses a paid checkout and opens nothing', async () => {
+  test('PAY-29 a studio with no credentials of its own refuses a paid checkout and opens nothing', async () => {
     const ana = await member('ana')
     fake.calls.length = 0
 
@@ -176,7 +176,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
     assert.deepEqual(await purchasesOf(ana.clientId), [], 'a refused checkout leaves no Purchase behind')
   })
 
-  test('PAY-23 the refusal is the service’s, so no route can reach the platform account around it', async () => {
+  test('PAY-29 the refusal is the service’s, so no route can reach the platform account around it', async () => {
     const ben = await member('ben')
     fake.calls.length = 0
 
@@ -198,7 +198,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
     assert.deepEqual(await purchasesOf(ben.clientId), [])
   })
 
-  test('PAY-24 a $0 purchase still goes through at a studio that takes no online payments', async () => {
+  test('PAY-30 a $0 purchase still goes through at a studio that takes no online payments', async () => {
     const cat = await member('cat')
 
     const res = await checkoutPackage(cat.headers, freePackageId)
@@ -207,7 +207,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
     assert.equal(((await res.json()) as { outcome: string }).outcome, 'granted')
   })
 
-  test('PAY-25 the member app can read whether the studio takes online payments', async () => {
+  test('PAY-31 the member app can read whether the studio takes online payments', async () => {
     assert.deepEqual(await onlinePayments(), { online_payments: false })
 
     fake.credentials(tenantId, { accountId: 'acct_own_account_only' })
@@ -220,7 +220,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
     }
   })
 
-  test('PAY-26 the platform account’s shared webhook endpoint is gone', async () => {
+  test('PAY-32 the platform account’s shared webhook endpoint is gone', async () => {
     // Named as a request that does resolve a studio, so the answer is the
     // router's and not the tenant check's: nothing is mounted there any more.
     const res = await harness.app.request('/api/v1/webhooks/stripe', {
@@ -236,7 +236,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
     assert.equal(res.status, 404, await res.clone().text())
   })
 
-  test('PAY-27 a payment recorded against the platform account is refused a Refund, and told where to issue it', async () => {
+  test('PAY-33 a payment recorded against the platform account is refused a Refund, and told where to issue it', async () => {
     const dee = await member('dee')
     fake.credentials(tenantId, { accountId: 'acct_own_account_only' })
     const purchaseId = await partPaid(dee.clientId, `pi_${run}_platform`, null)
@@ -252,7 +252,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
     assert.deepEqual(fake.callsTo('refunds.create'), [], 'the provider is not asked at all')
   })
 
-  test('PAY-27 a Purchase holding one platform-account payment returns none of them, not half', async () => {
+  test('PAY-33 a Purchase holding one platform-account payment returns none of them, not half', async () => {
     const eve = await member('eve')
     fake.credentials(tenantId, { accountId: 'acct_own_account_only' })
     const purchaseId = await partPaid(eve.clientId, `pi_${run}_own`, 'acct_own_account_only')
@@ -276,7 +276,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
     assert.deepEqual(fake.callsTo('refunds.create'), [])
   })
 
-  test('PAY-28 a studio that has removed its credentials is refused a Refund in the same words as a checkout', async () => {
+  test('PAY-34 a studio that has removed its credentials is refused a Refund in the same words as a checkout', async () => {
     const fay = await member('fay')
     fake.restore()
     fake = (await import('./stripe-fake')).installStripeFake()
@@ -291,7 +291,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
     assert.deepEqual(fake.callsTo('refunds.create'), [])
   })
 
-  test('PAY-29 a payment the confirmation page records is stamped with the studio’s own account', async () => {
+  test('PAY-35 a payment the confirmation page records is stamped with the studio’s own account', async () => {
     const gus = await member('gus')
     fake.credentials(tenantId, { accountId: 'acct_own_account_only' })
     const intent = `pi_${run}_synced`

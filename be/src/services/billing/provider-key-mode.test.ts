@@ -9,12 +9,12 @@ import { describe, test } from 'node:test'
 import { keyModeMatches } from './provider-setup'
 
 describe('a restricted key and the environment’s key mode', () => {
-  test('PAY-35 production takes a live restricted key and refuses a test one', () => {
+  test('PAY-41 production takes a live restricted key and refuses a test one', () => {
     assert.equal(keyModeMatches('rk_live_abc', 'production'), true)
     assert.equal(keyModeMatches('rk_test_abc', 'production'), false)
   })
 
-  test('PAY-35 staging and development take a test restricted key and refuse a live one', () => {
+  test('PAY-41 staging and development take a test restricted key and refuse a live one', () => {
     for (const appEnv of ['staging', 'development'] as const) {
       assert.equal(keyModeMatches('rk_test_abc', appEnv), true)
       assert.equal(keyModeMatches('rk_live_abc', appEnv), false)
