@@ -115,7 +115,11 @@ single rule from `be/tools/mindbody/report-files.json` — the transform's own l
 test against the matchers and the single/required rules (`REPORT_RULES` in `transform.ts`) — and
 `download/plan.test.ts` checks that the names it works out from each report's number, view and page
 type are exactly that list, so neither side can drift from the other. After a real run every file
-written is checked against its expected name as well. The history cutoff the download starts
+written is checked against its expected name as well — but not yet against its dates: a
+per-year piece can come back holding another year's rows and still count as ok (#306). Until
+that check lands, read the year table `transform` prints before going on. A year with classes
+and `0 attended` means that year's attendance file is wrong: download again, do not transform
+it. The history cutoff the download starts
 from (`MB_START`, default 2023-01-01) must be on or before the config's `history.from`. Every
 date range is computed from the run date:
 
@@ -267,6 +271,13 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   trial used up long ago comes across spent and inactive, so the one-trial rule holds. A holding
   Mindbody sold with **no expiration at all** cannot be answered for by that rule, and no package
   here runs forever: it does not come across, and is listed in the preflight instead of vanishing.
+  Visits Remaining leaves some live purchases out altogether (a plan started the day before the
+  download, one bought to start later) that Pricing Option Expirations still has: a live
+  purchase of something the member holds nothing of in Visits Remaining comes across from that
+  register instead, its credits all counted as booked ahead so the imported bookings settle its
+  balance. A holding filed under a `workshopCategories` service category is a place on a workshop
+  or retreat, never a package, even where the catalogue did not skip its option: it is listed in
+  the preflight, so a retreat place cannot take the running slot in front of a member's plan.
 - **The timetable to come** is every class on the all-teachers Staff Schedule ("Scheduled")
   that starts after `asOf`, whether or not anybody booked it. Its Class Type, Room and Location
   are matched through the config (`classTypes[].mindbodyNames`, `rooms[].mindbodyNames`,

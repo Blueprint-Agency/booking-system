@@ -1,6 +1,7 @@
 import { isLive } from './catalogue'
 import { ConfigError, type CatalogueEntry, type StudioConfig } from './config'
 import type { AccountBalanceRow, AttendanceRow, HoldingRow, MemberListRow, MembershipRow, OptionSaleRow, RetentionRow } from './readers'
+import { fold } from './lookups'
 import { registerMatcher } from './register'
 import { packageMoney, type JoinedSales } from './sales'
 import {
@@ -297,7 +298,46 @@ export function mapPackages(input: {
   /* ── Who holds what ────────────────────────────────────────────────────── */
 
   const onAWorkshop = (h: HoldingRow) => input.workshopOptions.has(normaliseOptionName(h.option))
-  const live = input.holdings.filter(h => isLive(h, today) && !onAWorkshop(h))
+  // A retreat or a workshop is its own service category (`workshopCategories`),
+  // whatever its options are called: a place on one is not a package, even
+  // where the catalogue did not know to skip it.
+  const workshopCategories = new Set(config.workshopCategories.map(fold))
+  const inAWorkshopCategory = (h: HoldingRow) => workshopCategories.has(fold(h.serviceCategory))
+
+  // Visits Remaining leaves some live purchases out altogether — a plan started
+  // the day before the download, one bought to start later — where the
+  // register still has them. A live purchase of something the member holds
+  // nothing of in Visits Remaining is a holding of its own, read off the
+  // register. The register does not say how much of it is booked ahead, so all
+  // of it is: the mapper gives back whatever no imported booking accounts for.
+  const whoBought = registerMatcher(input.members)
+  const groupOf = (option: string) => {
+    const entry = entryOf.get(normaliseOptionName(option))
+    if (!entry) return normaliseOptionName(option)
+    return entry.migrate !== 'skip' && entry.kind === 'trial' ? 'trial' : catalogueKey(entry)
+  }
+  const categoryOf = new Map(input.holdings.map(h => [normaliseOptionName(h.option), h.serviceCategory]))
+  const heldInReport = new Set(input.holdings.map(h => `${h.clientId}/${groupOf(h.option)}`))
+  const fromRegister: HoldingRow[] = []
+  for (const sale of input.optionSales) {
+    const left = sale.remaining !== null && (sale.remaining.unlimited || sale.remaining.count > 0)
+    if (!left || dayNumber(sale.expiration) < dayNumber(today) || input.sales.refunded.has(sale)) continue
+    if (!entryOf.has(normaliseOptionName(sale.option))) continue
+    const match = whoBought(sale)
+    if (match.outcome !== 'matched' || heldInReport.has(`${match.clientId}/${groupOf(sale.option)}`)) continue
+    fromRegister.push({
+      clientId: match.clientId!,
+      serviceCategory: categoryOf.get(normaliseOptionName(sale.option)) ?? '',
+      option: sale.option,
+      firstActivation: sale.activation,
+      lastExpiration: sale.expiration,
+      totalPaid: sale.paid,
+      purchased: sale.remaining,
+      remaining: sale.remaining,
+      unbooked: sale.remaining!.unlimited ? sale.remaining : { unlimited: false, count: 0 },
+    })
+  }
+  const live = [...input.holdings.filter(h => isLive(h, today)), ...fromRegister].filter(h => !onAWorkshop(h))
   const unlisted = new Map<string, number>()
   for (const h of live) {
     if (!entryOf.has(normaliseOptionName(h.option))) unlisted.set(h.option, (unlisted.get(h.option) ?? 0) + 1)
@@ -341,6 +381,7 @@ export function mapPackages(input: {
     const entry = entryOf.get(normaliseOptionName(h.option))!
     if (!memberNames.has(h.clientId)) leftBehind(h, 'the client is not in the member list')
     else if (entry.migrate === 'skip') leftBehind(h, 'not a package here (skipped in the catalogue)')
+    else if (inAWorkshopCategory(h)) leftBehind(h, `a place on a workshop or retreat (${h.serviceCategory}), not a package`)
     else if (entry.kind === 'access_pass') passes.set(h.clientId, [...(passes.get(h.clientId) ?? []), h])
     else {
       const mine = grouped.get(h.clientId) ?? new Map<string, { entry: Sold; holdings: HoldingRow[] }>()
@@ -372,7 +413,6 @@ export function mapPackages(input: {
 
   // The register's live purchases, by member and catalogue entry: live by the
   // same test the holdings use — something left, and not expired on the day.
-  const whoBought = registerMatcher(input.members)
   const livePurchases = new Map<string, OptionSaleRow[]>()
   for (const sale of input.optionSales) {
     const entry = entryOf.get(normaliseOptionName(sale.option))
