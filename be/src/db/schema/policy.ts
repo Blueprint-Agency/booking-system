@@ -41,10 +41,10 @@ export const globalPolicy = pgTable(
       .notNull()
       .default('30.00'),
     // **Part Payment** (#93): may a member split one Purchase across two cards?
-    // Off unless the studio turns it on, and turning it off again only hides the
-    // checkbox — a Purchase already open can still be resumed and finished, since
+    // On unless the studio turns it off (migration 0083), and turning it off only
+    // hides the choice at checkout — a Purchase already open can still be resumed and finished, since
     // the alternative is money held against a Balance nobody can clear.
-    partPaymentEnabled: boolean('part_payment_enabled').notNull().default(false),
+    partPaymentEnabled: boolean('part_payment_enabled').notNull().default(true),
     // The **Check-in Window** (#192): how many minutes before a class or PT
     // session starts its members may be checked in, by scan or by tick. A
     // no-show is not moved by it — nobody is a no-show before the session begins.

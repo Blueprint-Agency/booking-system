@@ -3,10 +3,10 @@
 /**
  * Part Payment at checkout (#93).
  *
- * Off by default, and on "Pay in full" the checkout behaves exactly as it
- * always has. On "Pay part now", the member says what this card will take — because a card at its
- * daily limit declines the whole charge and nothing can read that limit in
- * advance, so they are the only party who knows.
+ * On "Full payment" (the default) the checkout behaves exactly as it always
+ * has. On "Partial payment", the member says what this card will take —
+ * because a card at its daily limit declines the whole charge and nothing can
+ * read that limit in advance, so they are the only party who knows.
  *
  * The field is pre-filled with the full price and edited **downward**. Asking
  * for more than is owed is refused by the server rather than quietly reduced,
@@ -54,8 +54,8 @@ export function PartPaymentBlock({
           too, and a member should see both before picking. */}
       <div className="grid grid-cols-2 gap-2">
         {[
-          { split: false, title: "Pay in full", detail: formatCurrency(totalSgd) },
-          { split: true, title: "Pay part now", detail: "Rest later" },
+          { split: false, title: "Full payment", detail: formatCurrency(totalSgd) },
+          { split: true, title: "Partial payment", detail: "Pay the rest later" },
         ].map(option => (
           <label
             key={option.title}
@@ -82,8 +82,8 @@ export function PartPaymentBlock({
       </div>
       {!checked && (
         <p className="mt-2 text-xs text-muted">
-          If your card has a daily limit below {formatCurrency(totalSgd)}, pay part
-          now and the rest with another card.
+          If your card has a daily limit below {formatCurrency(totalSgd)}, make a
+          partial payment now and pay the rest with another card.
         </p>
       )}
 

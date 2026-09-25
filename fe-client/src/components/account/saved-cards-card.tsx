@@ -8,16 +8,14 @@
  * unfinished purchase, which is why that list lives on the overview and this
  * does not.
  *
- * **There is no "add a card" button, and that is deliberate.** A card is kept
- * by ticking a box while paying, which is the only moment a member has a reason
- * to hand one over. A button here would have to open a payment page that takes
- * no money, which is a strange thing to be sent to and a worse thing to be
- * charged nothing by. So this screen lists and removes, and says where cards
- * come from.
+ * **There is no "add a card" button, and that is deliberate.** A button here
+ * would have to open a payment page that takes no money, which is a strange
+ * thing to be sent to and a worse thing to be charged nothing by. Checkout no
+ * longer offers "save this card for next time", so this screen only lists and
+ * removes the cards members kept before that box was withdrawn.
  *
- * Removing is immediate and needs no confirmation dialog: nothing is lost that
- * cannot be put back by ticking the box on the next purchase, and a modal over
- * a reversible action is friction for its own sake.
+ * Removing is immediate and needs no confirmation dialog: a modal over a
+ * one-line action on the member's own card is friction for its own sake.
  */
 import { useState } from "react";
 import { AlertCircle, CreditCard, Loader2, Trash2 } from "lucide-react";
@@ -62,11 +60,7 @@ export function SavedCardsCard() {
           </div>
         ) : cards.length === 0 ? (
           <p className="text-sm text-muted">
-            You haven&apos;t saved a card. Tick{" "}
-            <span className="font-medium text-ink">
-              &ldquo;Save this card for next time&rdquo;
-            </span>{" "}
-            when you next pay, and it will appear here.
+            You don&apos;t have any saved cards.
           </p>
         ) : (
           <ul className="space-y-3">

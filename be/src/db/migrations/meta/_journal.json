@@ -582,6 +582,13 @@
       "when": 1790330815543,
       "tag": "0082_payment_webhook_endpoint_id",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790366209432,
+      "tag": "0083_part_payment_default_on",
+      "breakpoints": true
     }
   ]
 }

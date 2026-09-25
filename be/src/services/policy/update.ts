@@ -37,8 +37,9 @@ export async function readPolicy(tenantId: string): Promise<{
  * Its own read rather than a field off `readPolicy`, because the checkout path
  * asks this on every sale and does not want the PT booking config or a throw
  * for a studio whose policy has not been seeded. A studio with no policy row
- * has not turned anything on, which is `false` — the same answer the default
- * gives, and the safe one: an unasked-for checkbox is worse than a missing one.
+ * has not turned it off, which is `true` — the same answer the column default
+ * gives (migration 0083), so a studio reads the same before and after its
+ * policy row exists.
  */
 export async function partPaymentEnabled(tenantId: string): Promise<boolean> {
   const [row] = await db
@@ -46,7 +47,7 @@ export async function partPaymentEnabled(tenantId: string): Promise<boolean> {
     .from(globalPolicy)
     .where(eq(globalPolicy.tenantId, tenantId))
     .limit(1)
-  return row?.enabled ?? false
+  return row?.enabled ?? true
 }
 
 export interface UpdateGlobalPolicyInput {

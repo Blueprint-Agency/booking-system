@@ -17,7 +17,6 @@ import { CrossLocationBlock } from "@/components/checkout/cross-location-block";
 import { AddOnCheckout } from "@/components/checkout/add-on-checkout";
 import { PayButton, StripeFootnote } from "@/components/checkout/pay-button";
 import { PartPaymentBlock } from "@/components/checkout/part-payment-block";
-import { SaveCardBlock } from "@/components/checkout/save-card-block";
 import { usePartPaymentOptions } from "@/lib/open-purchases";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { tierEffectivePrice, type ApiWorkshopDetail, type ApiWorkshopTier } from "@/lib/workshops";
@@ -100,9 +99,6 @@ function CheckoutContent() {
   const onlinePayments = useOnlinePayments();
   const [partChecked, setPartChecked] = useState(false);
   const [partAmount, setPartAmount] = useState("");
-  // "Save this card for next time" (#185) — unticked unless the member says so.
-  // A card is only ever kept because somebody asked for it to be.
-  const [saveCard, setSaveCard] = useState(false);
   const isUnlimited = pkg?._kind === "class" && pkg.kind === "unlimited";
   const chosenLocation = isUnlimited
     ? unlimitedLocation ?? locations?.find((l) => l.id === homeLocationId) ?? null
@@ -213,20 +209,15 @@ function CheckoutContent() {
       const token = await getToken();
       const endpoint = mode === "workshop" ? "/me/checkout/workshop" : "/me/checkout/package";
       const part = partSgd == null ? {} : { part_payment_sgd: partSgd };
-      // Sent only when it is true. An absent field is "no" on the server, so a
-      // false here would be noise on every checkout that does not save a card.
-      const keep = saveCard ? { save_card: true } : {};
       const body = mode === "workshop"
         ? {
             workshop_id: workshopId,
             workshop_tier_id: selectedTier?.id,
             promo_code: promoApplied?.code,
             ...part,
-            ...keep,
           }
         : {
             ...part,
-            ...keep,
             package_kind: packageKind,
             package_id: packageId,
             promo_code: promoApplied?.code,
@@ -655,20 +646,6 @@ function CheckoutContent() {
                 isWorkshop={mode === "workshop"}
               />
             )}
-
-            {/* Saving the card (#185) — under the Part Payment block, because a
-                member splitting a price across two cards is the one this saves
-                the most typing for. A free purchase reaches no payment page, so
-                there is no card to keep. */}
-            {grandTotal > 0 && (
-              <SaveCardBlock
-                checked={saveCard}
-                onCheckedChange={setSaveCard}
-                // A Part Payment is already card-only and says so itself; the
-                // same notice twice reads as two restrictions, not one.
-                alreadyCardOnly={splitting}
-              />
-            )}
           </div>
 
           {checkoutError && (
@@ -725,7 +702,7 @@ function CheckoutContent() {
                         ? "Confirm your free purchase"
                         : // The button names the charge, never the price, so a part
                           // payment cannot be mistaken for settling the whole thing.
-                          `Pay ${formatCurrency(payingNow ?? grandTotal)} with Stripe`
+                          `Pay ${formatCurrency(payingNow ?? grandTotal)}`
               }
             />
           )}

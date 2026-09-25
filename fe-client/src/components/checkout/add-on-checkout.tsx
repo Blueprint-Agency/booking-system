@@ -192,7 +192,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
                 onClick={handleProceed}
                 busy={redirecting}
                 disabled={false}
-                label={`Pay ${formatCurrency(Number(quote.price_sgd))} with Stripe`}
+                label={`Pay ${formatCurrency(Number(quote.price_sgd))}`}
               />
               <StripeFootnote />
             </>

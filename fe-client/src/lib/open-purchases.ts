@@ -116,20 +116,14 @@ export function usePartPaymentOptions(): PartPaymentOptions & { loading: boolean
  * Resume button does unless the member says otherwise. The session created here
  * expires the previous one first, so two open sessions can never together take
  * more than the price.
- *
- * `saveCard` is the member's answer to "save this card for next time" (#185),
- * and is sent only when it is true — an absent field is "no" on the server, so
- * there is nothing to say on a checkout that keeps no card.
  */
 export async function resumePurchase(
   api: Api,
   purchaseId: string,
   amountSgd: number | null,
-  saveCard = false,
 ): Promise<void> {
   const res = await api.post<{ url: string | null }>(`/me/purchases/${purchaseId}/resume`, {
     ...(amountSgd == null ? {} : { part_payment_sgd: amountSgd }),
-    ...(saveCard ? { save_card: true } : {}),
   });
   if (!res.url) throw new Error("no checkout url");
   window.location.href = res.url;

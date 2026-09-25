@@ -19,7 +19,7 @@ test('PAY-16 a member buys a plan with a test card and books a class', async ({ 
     .last()
   await plan.getByRole('button', { name: 'Purchase' }).click()
 
-  await page.getByRole('button', { name: /^Pay .* with Stripe$/ }).click()
+  await page.getByRole('button', { name: /^Pay \S*\$[\d,.]+$/ }).click()
   await payWithTestCard(page)
 
   await expect(page.getByText("You're all set!")).toBeVisible({ timeout: 60_000 })

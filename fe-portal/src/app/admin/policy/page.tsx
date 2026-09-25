@@ -74,7 +74,7 @@ function emptyPolicy(): PolicyState {
     leaveCarryOverCapDays: 0,
     studyLeaveCap: 1,
     crossLocationRateSgd: 0,
-    partPaymentEnabled: false,
+    partPaymentEnabled: true,
     checkInOpensMinutesBefore: 30,
     bookInAdvanceDays: 0,
     updatedAt: null,
