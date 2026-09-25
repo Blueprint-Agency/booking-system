@@ -10,5 +10,5 @@ missions in order — they follow the risk order money → tenancy → data loss
 | **Catalogue.** Packages, promo codes (expired, zero, 100 %, reused), merch, workshops — create, edit, archive, and check the member app shows the change. | PKG, PRM, MRC, WSP |
 | **Schedule a day.** `/admin/schedule`: a class, a series, a workshop; edit and cancel one with bookings on it; rooms and capacity limits. | SCH, CXL |
 | **Run a day.** `/admin/check-in` and a class's roster; mark attendance. | CHK, ROS |
-| **Policy and people.** `/admin/policy` (cancellation window), `/admin/staff`, `/admin/leave`, `/admin/locations`, `/admin/rooms`, `/admin/waiver`, `/admin/notifications`. | CXL, STF, LEV, LOC, WVR, NTF |
+| **Policy and people.** `/admin/policy` (cancellation window), `/admin/staff`, `/admin/leave`, `/admin/locations`, `/admin/rooms`, `/admin/waiver`. | CXL, STF, LEV, LOC, WVR, NTF |
 | **Other studio.** With a second studio: its customer, class and purchase ids in this studio's URLs; its portal hostname with this session. | TEN |

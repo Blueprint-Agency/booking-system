@@ -8,7 +8,7 @@ Staff identity is `admin` or `instructor` — a studio's portal has exactly thes
 
 | Role | Authority |
 |---|---|
-| **Admin** | Runs the studio. Global catalog + policy owner: creates locations, edits class types, configures all packages and their promotions, promo codes, Global Policy, Waiver, Notifications, Marketing and feature flags. Manages Staff (including other admins), Clients, Workshops and Rooms with full read/write — nothing is read-only — and can impersonate a member. Sees every active location of the studio. |
+| **Admin** | Runs the studio. Global catalog + policy owner: creates locations, edits class types, configures all packages and their promotions, promo codes, Global Policy, Waiver, Marketing and feature flags. Manages Staff (including other admins), Clients, Workshops and Rooms with full read/write — nothing is read-only — and can impersonate a member. Sees every active location of the studio. |
 | **Instructor** | Teaching staff. Uses the instructor portal (`/instructor/*`; routes in `be-portal.md` §4) scoped to their own sessions. Cannot reach any `/admin/*` surface. |
 
 - There are no location grants: an admin's accessible locations are all of the studio's active locations.
@@ -30,7 +30,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 ### Workspace switcher (topbar)
 
 - The admin shell topbar carries a `<WorkspaceSwitcher />` dropdown listing the studio's active locations. The sidebar **no longer has a "Locations" entry** — moved into this dropdown's "Manage locations" modal.
-- The active location is global state, persisted in localStorage under `rt.activeLocationId`. All workspace-scoped pages (Schedule, Rooms, Check-in, Inbox) read it directly — there are **no per-page LocationFilterChips** and **no CheckinLocationPill**. (Workshops is **not** workspace-scoped — see the Workshops note above.)
+- The active location is global state, persisted in localStorage under `rt.activeLocationId`. All workspace-scoped pages (Schedule, Rooms, Check-in, PT Requests) read it directly — there are **no per-page LocationFilterChips** and **no CheckinLocationPill**. (Workshops is **not** workspace-scoped — see the Workshops note above.)
 - Dropdown contents:
   - List of the studio's active locations (current marked).
   - "+ Add location" and "Manage locations" (modal CRUD reusing `LocationFormDialog`).
@@ -109,7 +109,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 **Surface:** Topbar `<WorkspaceSwitcher />` dropdown → "Manage locations" modal. **Admin-only.** There is no sidebar entry for Locations.
 
-Locations are the workspace boundary — every scoped surface (Schedule, Workshops, Check-in, Inbox) reads `rt.activeLocationId` from localStorage and renders only data tied to it.
+Locations are the workspace boundary — every scoped surface (Schedule, Rooms, Check-in, PT Requests) reads `rt.activeLocationId` from localStorage and renders only data tied to it.
 
 **Fields per location:**
 - Name
@@ -515,7 +515,7 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 **Workshop detail page additions:**
 - Per-tier breakdown (which tier each attendee bought)
 - No check-in (workshops are not check-in tracked)
-- Cancel workshop action (admin) → triggers automatic Stripe refund + Inbox notification
+- Cancel workshop action (admin) → cancels its bookings; nobody is refunded automatically. Each paid booking stays refundable from the member's Workshop purchases card (#272)
 
 **PT detail page additions:**
 - Single client (1-on-1) or two clients (2-on-1)
@@ -935,7 +935,7 @@ The following sections are out of scope for this phase and will be defined in th
 
 | Section | Description |
 |---|---|
-| **Dashboard** | Admin landing page — key metrics (bookings, revenue, attendance), unread inbox count, pending check-in alerts, upcoming sessions snapshot. |
+| **Dashboard** | Admin landing page — key metrics (bookings, revenue, attendance), pending check-in alerts, upcoming sessions snapshot. |
 | **Reports** | Aggregate analytics across instructors, class types, and locations — attendance rates, cancellation rates. *(Partly shipped: the money half and class popularity now live on Finance §20.)* |
 | **Audit log** | Immutable system-wide log of all admin actions — credit adjustments, cancellations, invites, status changes, role changes. Referenced throughout this doc as the record-keeping layer. |
 | **Referrals** | Referral program mechanics — reward type, trigger (registration vs. first purchase), admin-configurable reward amount, referral link or code generation. |
