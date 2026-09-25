@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, ShoppingBag, Store } from "lucide-react";
+import { ShoppingBag, Store } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { BuyButton } from "@/components/checkout/buy-button";
 import { CancelledBanner } from "@/components/checkout/cancelled-banner";
@@ -33,23 +34,29 @@ export default function MerchPage() {
   }, []);
 
   return (
-    <BookingSurface maxWidth="xl" padding="default">
+    <BookingSurface maxWidth="xl" flush>
       <SectionHeading eyebrow="Studio shop" title="Merch" />
 
       {/* Back from the payment page without paying (#274). */}
       <CancelledBanner className="mb-6" />
 
-      <div className="mb-8 flex items-start gap-3 rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-sm text-ink">
-        <Store className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+      <div className="mb-6 flex items-start gap-3 rounded-xl border border-accent/20 bg-accent/5 px-4 py-3 text-sm text-ink">
+        <Store className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
         <p>
-          Merch is paid for online and collected in person — once you&apos;ve purchased an
-          item, we&apos;ll hand it over to you physically at the studio. Nothing is shipped.
+          <span className="font-semibold">Pay online, collect at the studio.</span>{" "}
+          We hand your item over at the front desk on your next visit — nothing is shipped.
         </p>
       </div>
 
       {!items && !error && (
-        <div className="flex items-center justify-center py-16 text-sm text-muted">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading merch…
+        <div
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          aria-busy="true"
+          aria-label="Loading merch"
+        >
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-80 rounded-2xl" />
+          ))}
         </div>
       )}
 
@@ -60,19 +67,22 @@ export default function MerchPage() {
       )}
 
       {items && items.length === 0 && (
-        <div className="py-20 text-center">
-          <p className="text-muted">Nothing in the shop just yet. Check back soon.</p>
+        <div className="rounded-2xl border border-dashed border-ink/15 px-6 py-14 text-center">
+          <ShoppingBag className="mx-auto h-6 w-6 text-muted" aria-hidden />
+          <p className="mt-3 text-sm font-medium text-ink">Nothing in the shop just yet</p>
+          <p className="mt-1 text-sm text-muted">Check back soon.</p>
         </div>
       )}
 
       {items && items.length > 0 && (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 md:gap-6">
           {items.map((item) => (
             <article
               key={item.id}
-              className="overflow-hidden rounded-xl border border-border bg-card shadow-soft"
+              className="flex flex-col overflow-hidden rounded-2xl border border-ink/5 bg-card shadow-soft"
             >
-              <div className="flex aspect-square items-center justify-center bg-warm">
+              {/* 4:3 on a phone so one item doesn't fill the whole screen. */}
+              <div className="flex aspect-[4/3] items-center justify-center bg-warm sm:aspect-square">
                 {item.image_url ? (
                   // Plain <img>: R2 hosts are not in next.config remotePatterns.
                   // eslint-disable-next-line @next/next/no-img-element
@@ -85,10 +95,10 @@ export default function MerchPage() {
                   <ShoppingBag className="h-8 w-8 text-muted" />
                 )}
               </div>
-              <div className="p-5">
+              <div className="flex flex-1 flex-col p-4 sm:p-5">
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="font-serif text-lg leading-snug text-ink">{item.title}</h3>
-                  <span className="whitespace-nowrap text-sm font-semibold text-ink">
+                  <h3 className="min-w-0 font-serif text-lg leading-snug text-ink">{item.title}</h3>
+                  <span className="whitespace-nowrap text-base font-bold text-ink">
                     {formatSgd(item.price_sgd)}
                   </span>
                 </div>
@@ -97,12 +107,13 @@ export default function MerchPage() {
                     {item.description}
                   </p>
                 )}
+                <div className="mt-auto" />
                 <BuyButton
                   target={{ kind: "merch", merchId: item.id }}
                   context="buy merch"
                   gateHref="/merch"
                   priceSgd={item.price_sgd}
-                  className="mt-4 w-full rounded-full bg-accent px-5 py-2.5 text-xs font-medium text-white transition-colors hover:bg-accent-deep"
+                  className="mt-4 w-full min-h-[44px] rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-deep"
                 >
                   Buy
                 </BuyButton>

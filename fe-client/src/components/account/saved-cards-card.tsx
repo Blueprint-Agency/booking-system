@@ -26,17 +26,16 @@ import { reportError } from "@/lib/report-error";
 import { cardBrandLabel, cardExpiry, type SavedCard } from "@/lib/saved-cards";
 import { removeSavedCard, useSavedCards } from "@/lib/use-saved-cards";
 
-const cardClass = "rounded-2xl bg-paper border border-ink/10 p-8";
+const cardClass = "rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-6";
 
 export function SavedCardsCard() {
   const { cards, loading, failed, refetch } = useSavedCards();
 
   return (
-    <section className={cardClass}>
+    <section className={cardClass} aria-labelledby="saved-cards-heading">
       <div className="flex items-start gap-3">
-        <CreditCard className="mt-0.5 h-5 w-5 shrink-0 text-muted" />
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+          <h2 id="saved-cards-heading" className="text-base font-bold text-ink">
             Saved cards
           </h2>
           <p className="mt-1 text-sm text-muted">
@@ -47,7 +46,7 @@ export function SavedCardsCard() {
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-5">
         {loading ? (
           <p className="flex items-center gap-2 text-sm text-muted">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -112,9 +111,12 @@ function SavedCardRow({
   }
 
   return (
-    <li className="rounded-xl border border-ink/10 px-4 py-3">
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
+    <li className="rounded-xl border border-ink/10 px-3 py-3 sm:px-4">
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ink/[0.04] text-muted">
+          <CreditCard className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-ink">
             {cardBrandLabel(card.brand)} ···· {card.last4}
           </p>
@@ -133,14 +135,14 @@ function SavedCardRow({
           onClick={remove}
           disabled={busy}
           aria-label={`Remove ${cardBrandLabel(card.brand)} ending ${card.last4}`}
-          className="inline-flex shrink-0 items-center gap-2 rounded-full border border-ink/10 px-4 py-2 text-sm font-medium transition-colors hover:border-error hover:text-error disabled:opacity-50"
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-ink/10 min-h-[44px] min-w-[44px] px-3 sm:px-4 text-sm font-semibold transition-colors hover:border-error hover:text-error disabled:opacity-50"
         >
           {busy ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Trash2 className="h-4 w-4" />
           )}
-          Remove
+          <span className="hidden sm:inline">Remove</span>
         </button>
       </div>
       {error && <p className="mt-2 text-xs text-error">{error}</p>}

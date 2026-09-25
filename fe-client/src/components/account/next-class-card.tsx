@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, MapPin, QrCode, UserRound } from "lucide-react";
 import { QrFullScreen } from "@/components/account/qr-badge";
+import { DateStub } from "@/components/account/date-stub";
 import type { ApiBooking } from "@/components/account/class-bookings";
 import { formatDate } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
@@ -40,53 +41,66 @@ function NextClassCard({ booking }: { booking: ApiBooking }) {
   const closeQr = useCallback(() => setQrOpen(false), []);
 
   const attended = booking.check_in_state === "attended";
+  const running = new Date(booking.starts_at).getTime() <= Date.now();
   const when = `${formatDate(booking.starts_at)} · ${formatClassTime(booking.starts_at)}`;
 
   return (
     <section
       data-testid="next-class-card"
       aria-labelledby="next-class-heading"
-      className="mb-6 rounded-2xl bg-paper border border-accent/30 p-5 sm:p-6 shadow-soft"
+      className="relative mb-6 overflow-hidden rounded-2xl bg-accent text-inverse p-5 sm:p-6 shadow-hover"
     >
-      <div className="flex items-start justify-between gap-3">
-        <h2
-          id="next-class-heading"
-          className="text-xs font-semibold uppercase tracking-wider text-muted"
-        >
-          My next class
-        </h2>
-        {attended && (
-          <span
-            data-testid="next-class-checked-in"
-            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sage/15 px-2.5 py-1 text-xs font-medium text-sage"
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Checked in
-          </span>
-        )}
-      </div>
-      <p className="mt-2 text-lg font-semibold text-ink break-words">{booking.name}</p>
-      <p className="mt-1 text-sm font-medium text-ink">{when}</p>
-      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-        {booking.location && (
-          <span className="inline-flex items-center gap-1 min-w-0">
-            <MapPin className="h-4 w-4 shrink-0 text-ink/30" />
-            <span className="break-words">{booking.location.name}</span>
-          </span>
-        )}
-        {booking.instructor && (
-          <span className="inline-flex items-center gap-1 min-w-0">
-            <UserRound className="h-4 w-4 shrink-0 text-ink/30" />
-            <span className="break-words">{booking.instructor.name}</span>
-          </span>
-        )}
+      {/* The perforation between stub and ticket: two notches and a dashed
+          seam, so the card reads as the ticket it stands in for. */}
+      {/* Centred in the gap after the stub: padding + stub width + half the gap. */}
+      <span aria-hidden className="pointer-events-none absolute left-[4.75rem] sm:left-[5.125rem] -top-2.5 h-5 w-5 rounded-full bg-paper" />
+      <span aria-hidden className="pointer-events-none absolute left-[4.75rem] sm:left-[5.125rem] -bottom-2.5 h-5 w-5 rounded-full bg-paper" />
+      <span aria-hidden className="pointer-events-none absolute left-[5.375rem] sm:left-[5.75rem] top-5 bottom-5 border-l border-dashed border-inverse/25" />
+
+      <div className="flex gap-5 sm:gap-6">
+        <DateStub iso={booking.starts_at} tone="accent" className="bg-inverse/10 self-start" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <h2
+              id="next-class-heading"
+              className="text-[11px] font-bold uppercase tracking-[0.14em] text-inverse/70"
+            >
+              {running ? "Happening now" : "My next class"}
+            </h2>
+            {attended && (
+              <span
+                data-testid="next-class-checked-in"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-inverse/15 px-2.5 py-1 text-xs font-semibold text-inverse"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Checked in
+              </span>
+            )}
+          </div>
+          <p className="mt-1.5 text-xl font-extrabold leading-tight break-words">{booking.name}</p>
+          <p className="mt-1 text-sm font-semibold text-inverse/90">{formatClassTime(booking.starts_at)}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-inverse/75">
+            {booking.location && (
+              <span className="inline-flex items-center gap-1 min-w-0">
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                <span className="break-words">{booking.location.name}</span>
+              </span>
+            )}
+            {booking.instructor && (
+              <span className="inline-flex items-center gap-1 min-w-0">
+                <UserRound className="h-3.5 w-3.5 shrink-0" />
+                <span className="break-words">{booking.instructor.name}</span>
+              </span>
+            )}
+          </div>
+        </div>
       </div>
       <button
         type="button"
         data-testid="next-class-show-qr"
         onClick={() => setQrOpen(true)}
         aria-haspopup="dialog"
-        className="mt-4 inline-flex w-full min-h-[48px] items-center justify-center gap-2 rounded-full bg-accent px-5 text-base font-medium text-white hover:bg-accent-deep transition-colors sm:w-auto"
+        className="mt-5 inline-flex w-full min-h-[48px] items-center justify-center gap-2 rounded-full bg-inverse px-5 text-base font-bold text-accent-deep hover:bg-inverse/90 transition-colors sm:w-auto focus-visible:outline-inverse"
       >
         <QrCode className="h-5 w-5" />
         Show my QR
@@ -105,11 +119,23 @@ function NextClassCard({ booking }: { booking: ApiBooking }) {
   );
 }
 
-/** The card, loading the member's bookings itself. */
-export function MyNextClass() {
+/**
+ * The card, loading the member's bookings itself. `onResolved` hears which
+ * booking it settled on (or null), so a list beside it can leave that one out.
+ */
+export function MyNextClass({
+  onResolved,
+}: {
+  onResolved?: (bookingId: string | null) => void;
+} = {}) {
   const api = useApi();
   const { isSignedIn } = useMemberSession();
   const [booking, setBooking] = useState<ApiBooking | null>(null);
+
+  const resolvedId = booking?.booking_id ?? null;
+  useEffect(() => {
+    onResolved?.(resolvedId);
+  }, [onResolved, resolvedId]);
 
   useEffect(() => {
     if (!isSignedIn) {

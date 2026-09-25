@@ -55,7 +55,7 @@ export function OpenPurchases({
   if (purchases.length === 0) return null;
   return (
     <div className="mt-6">
-      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+      <h3 className="text-base font-bold text-ink mb-3">
         Unfinished purchases
       </h3>
       <div className="space-y-4">
@@ -175,7 +175,7 @@ function OpenPurchaseCard({
             type="button"
             disabled={busy || blocked}
             onClick={() => pay(splitting ? typed : null)}
-            className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-colors hover:bg-ink/90 disabled:opacity-50"
+            className="inline-flex flex-1 sm:flex-none min-h-[44px] items-center justify-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-paper transition-colors hover:bg-ink/90 disabled:opacity-50"
           >
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {blocked
@@ -189,7 +189,7 @@ function OpenPurchaseCard({
               type="button"
               disabled={busy}
               onClick={() => setSplitting(s => !s)}
-              className="rounded-full border border-ink/10 px-5 py-2.5 text-sm font-medium transition-colors hover:border-accent disabled:opacity-50"
+              className="flex-1 sm:flex-none min-h-[44px] rounded-full border border-ink/10 bg-card px-5 text-sm font-semibold transition-colors hover:border-accent disabled:opacity-50"
             >
               {splitting ? "Pay it all instead" : "Pay part of it"}
             </button>

@@ -93,8 +93,15 @@ export function ClassFeed() {
     return Array.from(byDay, ([date, items]) => ({ date, items }));
   }, [all, nowMs]);
 
+  const filtered = Boolean(selectedLocation || instructor);
+  const clearFilters = () => {
+    setSelectedLocation("");
+    setInstructor("");
+  };
+
   return (
-    <BookingSurface maxWidth="xl" padding="default">
+    <BookingSurface maxWidth="xl" flush>
+      <ScheduleSegments />
       {/* A signed-in member's soonest class and its check-in QR (#192). */}
       <MyNextClass />
       <SectionHeading
@@ -104,43 +111,71 @@ export function ClassFeed() {
           locations.length === 1 ? "the studio" : "every studio"
         } — book your spot.`}
       />
-      <ScheduleSegments />
 
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="grid grid-cols-2 gap-2 mb-3 sm:flex">
         <FilterSelect
+          label="Location"
           value={selectedLocation}
           onChange={setSelectedLocation}
           options={locations.map((l) => ({ value: l.id, label: l.name }))}
           placeholder="All locations"
         />
-        <FilterSelect value={instructor} onChange={setInstructor} options={instructorOptions} placeholder="All instructors" />
+        <FilterSelect
+          label="Instructor"
+          value={instructor}
+          onChange={setInstructor}
+          options={instructorOptions}
+          placeholder="All instructors"
+        />
       </div>
 
       {/* The rules a member agrees to by booking, stated before they do. Left
           out rather than guessed while the studio's policy is still loading. */}
       {policy && (
-        <p className="-mt-3 mb-6 text-xs text-muted leading-relaxed">
+        <p className="mb-6 text-xs text-muted leading-relaxed">
           {classBookingPolicy(policy)}
         </p>
       )}
 
       {loading ? (
-        <div className="flex flex-col gap-3" aria-label="Loading schedule">
+        <div className="flex flex-col gap-3" aria-busy="true" aria-label="Loading schedule">
           <Skeleton className="h-5 w-40 mb-1" />
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[72px] rounded-2xl" />
+            <Skeleton key={i} className="h-[104px] sm:h-[72px] rounded-2xl" />
           ))}
         </div>
       ) : groups.length === 0 ? (
-        <div className="text-center py-16 text-sm text-muted">No upcoming classes in the next {WINDOW_DAYS} days.</div>
+        <div className="rounded-2xl border border-dashed border-ink/15 px-6 py-12 text-center">
+          <p className="text-sm font-medium text-ink">
+            {filtered
+              ? "No classes match these filters"
+              : `No upcoming classes in the next ${WINDOW_DAYS} days`}
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            {filtered
+              ? "Try another location or instructor."
+              : "New classes show up here as soon as the studio schedules them."}
+          </p>
+          {filtered && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="mt-5 inline-flex min-h-[44px] items-center rounded-full border border-ink/15 px-5 text-sm font-medium text-ink hover:border-accent transition-colors"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
       ) : (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-6 md:gap-8">
           {groups.map(({ date, items }) => (
-            <div key={date}>
-              <p className="font-serif text-base text-ink mb-3 sticky top-16 bg-paper/95 backdrop-blur-sm py-1 z-10">
+            <section key={date} aria-label={dayHeaderLabel(date)}>
+              {/* Pinned under the top bar while its day scrolls past, in the
+                  surface's own colour so rows slide cleanly beneath it. */}
+              <p className="sticky top-16 z-10 -mx-4 mb-2 bg-paper/95 px-4 py-2 font-serif text-base text-ink backdrop-blur-sm sm:-mx-6 sm:px-6 md:mx-0 md:bg-card/95 md:px-0">
                 {dayHeaderLabel(date)}
               </p>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2.5 md:gap-3">
                 {items.map((c) => (
                   <ClassRow
                     key={c.id}
@@ -153,7 +188,7 @@ export function ClassFeed() {
                   />
                 ))}
               </div>
-            </div>
+            </section>
           ))}
         </div>
       )}

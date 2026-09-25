@@ -20,7 +20,7 @@ export function PayButton({
       onClick={onClick}
       disabled={busy || disabled}
       className={cn(
-        "w-full rounded-full bg-ink text-paper py-4 text-sm font-semibold transition-colors",
+        "w-full min-h-[52px] rounded-full bg-ink text-paper px-5 py-3.5 text-base font-semibold shadow-soft transition-colors",
         busy || disabled ? "opacity-60 cursor-not-allowed" : "hover:bg-ink/90",
       )}
     >

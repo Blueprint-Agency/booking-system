@@ -10,13 +10,14 @@ import {
   CalendarX,
   CheckCircle2,
   XCircle,
-  Loader2,
   MapPin,
 } from "lucide-react";
 import { QrBadge } from "@/components/account/qr-badge";
-import { SectionHeading } from "@/components/booking/section-heading";
-import { AccountMobileNav } from "@/components/account/account-mobile-nav";
+import { AccountPageHeader } from "@/components/account/account-page-header";
+import { SegmentedTabs } from "@/components/account/segmented-tabs";
+import { DateStub } from "@/components/account/date-stub";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate, cn } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { useApi } from "@/lib/api";
@@ -100,58 +101,51 @@ export function WorkshopBookings() {
 
   return (
     <div>
-      <SectionHeading eyebrow="Workshops" title="Your workshops" />
-      <AccountMobileNav />
       {/* There is no self-serve cancel for a workshop, and a cancelled one is
           not the same as a refunded one — the studio arranges both (#272). */}
-      <p className="mb-4 text-sm text-muted">
-        Workshop bookings can&apos;t be cancelled in the app. To change or cancel
-        one, or to ask about a refund, contact the studio.
-      </p>
+      <AccountPageHeader
+        title="Your workshops"
+        description="Workshop bookings can't be cancelled in the app. To change or cancel one, or to ask about a refund, contact the studio."
+      />
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted">
-          <Loader2 className="h-5 w-5 animate-spin" />
+        <div className="space-y-3" aria-busy="true" aria-label="Loading your workshops">
+          <Skeleton className="h-11 rounded-full" />
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-2xl" />
+          ))}
         </div>
       ) : loadError ? (
-        <div className="rounded-2xl bg-paper border border-ink/10 p-8 text-center">
+        <div className="rounded-2xl bg-card border border-ink/5 shadow-soft p-8 text-center">
           <p className="text-sm text-muted">Couldn&apos;t load your workshops.</p>
           <button
             onClick={reload}
-            className="mt-4 rounded-full border border-ink/10 px-5 py-2 text-sm font-medium hover:border-accent transition-colors"
+            className="mt-4 min-h-[44px] rounded-full border border-ink/10 px-5 text-sm font-semibold hover:border-accent transition-colors"
           >
             Try again
           </button>
         </div>
       ) : !hasAny ? (
-        <EmptyState
-          icon={CalendarX}
-          title="No workshops yet"
-          description="Explore upcoming workshops and immersions."
-          cta={{ href: "/workshops", label: "Browse workshops" }}
-        />
+        <div className="rounded-2xl bg-card border border-ink/5 shadow-soft">
+          <EmptyState
+            icon={CalendarX}
+            title="No workshops yet"
+            description="Explore upcoming workshops and immersions."
+            cta={{ href: "/workshops", label: "Browse workshops" }}
+          />
+        </div>
       ) : (
         <>
-          <div className="mb-4 -mx-4 sm:mx-0 overflow-x-auto no-scrollbar">
-            <div className="inline-flex rounded-lg border border-border bg-warm p-1 mx-4 sm:mx-0">
-              {(["upcoming", "past", "cancelled"] as Tab[]).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={cn(
-                    "px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap",
-                    tab === t ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink",
-                  )}
-                >
-                  {TAB_LABEL[t]}
-                  <span className="ml-1.5 text-xs text-muted">({byTab[t].length})</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <SegmentedTabs
+            label="Workshops"
+            tabs={(["upcoming", "past", "cancelled"] as Tab[]).map((t) => ({ value: t, label: TAB_LABEL[t] }))}
+            value={tab}
+            onChange={setTab}
+            counts={{ upcoming: byTab.upcoming.length, past: byTab.past.length, cancelled: byTab.cancelled.length }}
+          />
 
           {visible.length === 0 ? (
-            <div className="rounded-2xl bg-paper border border-ink/10 p-8 text-center text-sm text-muted">
+            <div className="rounded-2xl border border-dashed border-ink/15 p-8 text-center text-sm text-muted">
               {tab === "upcoming"
                 ? "Nothing on the schedule."
                 : tab === "past"
@@ -172,7 +166,7 @@ export function WorkshopBookings() {
                   is arranged by the studio and shows on your card statement.
                 </p>
               )}
-              <div className="rounded-2xl bg-paper border border-ink/10 divide-y divide-ink/5">
+              <div className="rounded-2xl bg-card border border-ink/5 shadow-soft divide-y divide-ink/5">
                 {visible.map((b) => (
                   <PastRow key={b.id} booking={b} cancelled={tab === "cancelled"} />
                 ))}
@@ -206,26 +200,17 @@ function UpcomingCard({
   return (
     <div
       className={cn(
-        featured
-          ? "rounded-2xl bg-paper border border-accent/30 p-6 shadow-soft"
-          : "rounded-2xl bg-paper border border-ink/10 p-4",
+        "rounded-2xl bg-card border shadow-soft p-4",
+        featured ? "border-accent/25" : "border-ink/5",
       )}
     >
-      <div className="flex items-start justify-between gap-3 sm:gap-4">
+      <div className="flex items-start gap-3 sm:gap-4">
+        <DateStub iso={booking.starts_at} tone={featured ? "accent" : "default"} />
         <div className="min-w-0 flex-1">
-          <span className="inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-sage/15 text-sage">
-            Workshop
-          </span>
-          <p
-            className={cn(
-              featured
-                ? "text-base sm:text-lg font-semibold text-ink truncate"
-                : "font-medium text-ink truncate",
-              "mt-1",
-            )}
-          >
+          <p className="font-semibold text-ink break-words leading-snug">
             {booking.workshop_name}
           </p>
+          <p className="mt-0.5 text-sm font-medium text-ink/80">{dateLine(booking)}</p>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
             {booking.tier_name && <span>{booking.tier_name}</span>}
             {booking.location && (
@@ -240,10 +225,6 @@ function UpcomingCard({
               </>
             )}
           </div>
-          <div className="mt-1 text-xs text-muted sm:hidden">{dateLine(booking)}</div>
-        </div>
-        <div className="hidden sm:block text-right shrink-0">
-          <p className="text-sm text-ink font-medium">{dateLine(booking)}</p>
         </div>
         <QrBadge
           value={booking.qr_token}
@@ -265,16 +246,14 @@ function PastRow({
   const attended = booking.check_in_state === "attended";
   const noShow = booking.check_in_state === "no_show";
   return (
-    <div className="flex items-center justify-between gap-3 sm:gap-4 p-4">
+    <div className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4">
+      <DateStub iso={booking.starts_at} tone="muted" />
       <div className="min-w-0 flex-1">
-        <p className="font-medium text-ink truncate">{booking.workshop_name}</p>
-        {booking.tier_name && (
-          <p className="text-sm text-muted truncate">{booking.tier_name}</p>
-        )}
-        <p className="text-xs text-muted mt-0.5 sm:hidden">{dateLine(booking)}</p>
-      </div>
-      <div className="hidden sm:block text-right shrink-0">
-        <p className="text-sm text-ink">{dateLine(booking)}</p>
+        <p className="font-semibold text-ink truncate">{booking.workshop_name}</p>
+        <p className="text-sm text-muted truncate">
+          {booking.tier_name ? `${booking.tier_name} · ` : ""}
+          {dateLine(booking)}
+        </p>
       </div>
       {cancelled ? (
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warm px-2.5 py-1 text-xs font-medium text-muted">

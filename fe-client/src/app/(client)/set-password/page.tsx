@@ -18,11 +18,12 @@ import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 
 const inputClass =
-  "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
+  "min-h-[44px] rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
 const labelClass =
-  "text-xs uppercase tracking-wider text-muted mb-2 block";
+  "text-sm font-medium text-ink mb-1.5 block";
 const primaryBtnClass =
-  "w-full rounded-full bg-ink text-paper py-3 text-sm font-medium hover:bg-ink/90 mt-2 disabled:opacity-50";
+  "flex w-full min-h-[48px] items-center justify-center rounded-full bg-ink text-paper py-3 text-sm font-semibold hover:bg-ink/90 mt-2 disabled:opacity-50";
+const titleClass = "text-2xl sm:text-3xl font-extrabold tracking-tight text-ink mb-2";
 
 const IMAGE_KEY = "hero-yoga-01";
 const QUOTE = "The pose you avoid is the one you need most.";
@@ -81,14 +82,14 @@ function SetPasswordContent() {
   if (!token || linkError) {
     return (
       <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
-        <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+        <h1 className={titleClass}>
           This link has expired
         </h1>
-        <p className="text-sm text-muted mb-8">
+        <p className="text-sm text-muted mb-6">
           A set-password link works once, for 30 minutes. Enter your email again and
           we&apos;ll send you a new one.
         </p>
-        <Link href="/login" className={`${primaryBtnClass} block text-center`}>
+        <Link href="/login" className={primaryBtnClass}>
           Back to sign in
         </Link>
       </AuthSplitShell>
@@ -97,10 +98,10 @@ function SetPasswordContent() {
 
   return (
     <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
-      <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+      <h1 className={titleClass}>
         Set your password
       </h1>
-      <p className="text-sm text-muted mb-8">
+      <p className="text-sm text-muted mb-6">
         Choose a password of at least {MIN_LENGTH} characters. You&apos;ll be signed in straight away.
       </p>
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -115,7 +116,7 @@ function SetPasswordContent() {
             className={inputClass} value={confirm} onChange={(ev) => setConfirm(ev.target.value)} />
         </div>
         {error ? (
-          <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p>
+          <p role="alert" className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p>
         ) : null}
         <button type="submit" disabled={submitting} className={primaryBtnClass}>
           {submitting ? "Saving…" : "Set password and sign in"}

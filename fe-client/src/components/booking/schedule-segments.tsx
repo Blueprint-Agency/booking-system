@@ -5,31 +5,35 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const SEGMENTS = [
-  { href: "/", label: "Group Classes" },
-  { href: "/private-sessions", label: "Private Sessions" },
+  { href: "/", label: "Group classes" },
+  { href: "/private-sessions", label: "Private sessions" },
 ];
 
-export function ScheduleSegments() {
+export function ScheduleSegments({ className }: { className?: string }) {
   const pathname = usePathname();
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
   return (
-    // Both labels together are a few pixels wider than a 320px card, so the
-    // pill scrolls instead of pushing the page sideways.
-    <div className="-mx-6 mb-6 overflow-x-auto no-scrollbar sm:mx-0">
-      <div className="mx-6 inline-flex w-max items-center rounded-full bg-warm border border-ink/10 p-1 sm:mx-0">
-        {SEGMENTS.map(({ href, label }) => (
-          <Link
-            key={href}
-            href={href}
-            className={cn(
-              "whitespace-nowrap px-4 py-1.5 text-sm font-semibold rounded-full transition-colors",
-              isActive(href) ? "bg-paper text-accent-deep shadow-sm" : "text-muted hover:text-ink",
-            )}
-          >
-            {label}
-          </Link>
-        ))}
+    // Two equal halves across the phone width — both labels fit at 320px, so
+    // nothing scrolls — and a hugging pill once there is room.
+    <nav aria-label="Schedule" className={cn("mb-5", className)}>
+      <div className="grid grid-cols-2 rounded-full bg-warm border border-ink/10 p-1 sm:inline-grid sm:w-auto">
+        {SEGMENTS.map(({ href, label }) => {
+          const active = isActive(href);
+          return (
+            <Link
+              key={href}
+              href={href}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "flex min-h-[40px] items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-colors",
+                active ? "bg-card text-accent-deep shadow-sm" : "text-muted hover:text-ink",
+              )}
+            >
+              {label}
+            </Link>
+          );
+        })}
       </div>
-    </div>
+    </nav>
   );
 }

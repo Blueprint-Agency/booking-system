@@ -10,8 +10,7 @@ import { useClientPackages } from "@/lib/use-client-packages";
 import { OpenPurchases } from "@/components/account/open-purchases";
 import { usePartPaymentOptions, type OpenPurchase } from "@/lib/open-purchases";
 import { reportError } from "@/lib/report-error";
-import { BookingSurface } from "@/components/booking/booking-surface";
-import { SectionHeading } from "@/components/booking/section-heading";
+import { CheckoutFrame } from "@/components/checkout/checkout-frame";
 import {
   confirmationEyebrow,
   confirmationOutcome,
@@ -27,6 +26,47 @@ function Spinner() {
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
     </svg>
+  );
+}
+
+// ── Layout ────────────────────────────────────────────────────────────────────
+const primaryCta =
+  "inline-flex w-full sm:w-auto min-h-[48px] items-center justify-center rounded-full bg-ink text-paper px-6 py-3 text-sm font-semibold hover:bg-ink/90 transition-colors";
+const secondaryCta =
+  "inline-flex w-full sm:w-auto min-h-[48px] items-center justify-center rounded-full border border-ink/10 bg-card px-6 py-3 text-sm font-medium text-ink hover:border-accent transition-colors";
+const ctaRow = "mt-8 flex flex-col sm:flex-row gap-3 justify-center";
+
+/** One centred card on the page — the whole confirmation, nothing nested. */
+function ConfirmationCard({ children }: { children: React.ReactNode }) {
+  return (
+    <CheckoutFrame width="wide">
+      <div className="rounded-3xl border border-ink/5 bg-card shadow-soft px-5 py-8 sm:px-10 sm:py-12">
+        {children}
+      </div>
+    </CheckoutFrame>
+  );
+}
+
+/**
+ * What was bought, as a receipt panel under the heading — one label, the
+ * item, and a line about it. It replaces a second, larger heading that used to
+ * outrank the page's own.
+ */
+function ReceiptPanel({
+  label,
+  name,
+  children,
+}: {
+  label: string;
+  name: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-ink/5 bg-paper px-5 py-5 sm:px-6 text-center">
+      <p className="text-xs font-semibold uppercase tracking-wider text-accent-deep">{label}</p>
+      <p className="mt-2 text-xl sm:text-2xl font-bold text-ink break-words">{name}</p>
+      {children}
+    </div>
   );
 }
 
@@ -90,9 +130,9 @@ function ConfirmationHeader({
         {outcome === null || outcome === "pending" ? <Spinner /> : <Check className="w-8 h-8 text-accent" />}
       </div>
       {outcome !== null && (
-        <p className="text-sm uppercase tracking-wider text-muted mb-1">{confirmationEyebrow(outcome)}</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">{confirmationEyebrow(outcome)}</p>
       )}
-      <h1 className="font-serif text-3xl text-ink">
+      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink">
         {outcome === null ? syncingHeading : outcome === "pending" ? PENDING_HEADING : doneHeading}
       </h1>
     </div>
@@ -103,11 +143,11 @@ function ConfirmationHeader({
 function PendingNotice() {
   return (
     <>
-      <p className="text-center text-lg text-muted">{PENDING_BODY}</p>
-      <div className="mt-10 flex justify-center">
+      <p className="text-center text-base sm:text-lg text-muted">{PENDING_BODY}</p>
+      <div className={ctaRow}>
         <Link
           href="/account"
-          className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+          className={primaryCta}
         >
           View my account
         </Link>
@@ -153,7 +193,7 @@ function WorkshopSuccess({
 
   return (
     <div id="summary">
-      <BookingSurface maxWidth="md" padding="loose">
+      <ConfirmationCard>
         <ConfirmationHeader
           outcome={outcome}
           syncingHeading="Confirming your booking…"
@@ -164,34 +204,32 @@ function WorkshopSuccess({
 
         {settled(outcome) && workshop && (
           <>
-            <SectionHeading eyebrow="Your workshop" title="Booking details" align="center" />
-            <div className="text-center">
-              <p className="text-2xl font-bold text-ink">{workshop.name}</p>
-              {dateLine && <p className="text-lg text-muted mt-2">{dateLine}</p>}
+            <ReceiptPanel label="Your workshop" name={workshop.name}>
+              {dateLine && <p className="mt-2 text-base font-medium text-ink">{dateLine}</p>}
               {workshop.location && (
                 <p className="text-sm text-muted mt-1">
                   {workshop.location.name}
                   {workshop.location.address ? ` · ${workshop.location.address}` : ""}
                 </p>
               )}
-            </div>
-            <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center text-center">
+            </ReceiptPanel>
+            <div className={ctaRow}>
               <Link
                 href="/account/workshops"
-                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+                className={primaryCta}
               >
                 View my workshops
               </Link>
               <Link
                 href="/workshops"
-                className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
+                className={secondaryCta}
               >
                 Browse more
               </Link>
             </div>
           </>
         )}
-      </BookingSurface>
+      </ConfirmationCard>
     </div>
   );
 }
@@ -202,7 +240,7 @@ function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
 
   return (
     <div id="summary">
-      <BookingSurface maxWidth="md" padding="loose">
+      <ConfirmationCard>
         <ConfirmationHeader
           outcome={outcome}
           syncingHeading="Recording your purchase…"
@@ -214,28 +252,28 @@ function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
         {settled(outcome) && (
           <>
             <div className="text-center">
-              <p className="text-lg text-muted">
+              <p className="text-base sm:text-lg text-muted">
                 We&apos;ll hand your merch over to you physically at the studio — just ask
                 at the front desk on your next visit. Nothing is shipped.
               </p>
             </div>
-            <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center text-center">
+            <div className={ctaRow}>
               <Link
                 href="/account/merch"
-                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+                className={primaryCta}
               >
                 View my purchases
               </Link>
               <Link
                 href="/merch"
-                className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
+                className={secondaryCta}
               >
                 Browse more
               </Link>
             </div>
           </>
         )}
-      </BookingSurface>
+      </ConfirmationCard>
     </div>
   );
 }
@@ -257,7 +295,7 @@ function CrossLocationSuccess({ stripeSessionId }: { stripeSessionId: string | n
 
   return (
     <div id="summary">
-      <BookingSurface maxWidth="md" padding="loose">
+      <ConfirmationCard>
         <ConfirmationHeader
           outcome={outcome}
           syncingHeading="Activating your add-on…"
@@ -268,27 +306,27 @@ function CrossLocationSuccess({ stripeSessionId }: { stripeSessionId: string | n
 
         {settled(outcome) && (
           <>
-            <p className="text-center text-lg text-muted">
+            <p className="text-center text-base sm:text-lg text-muted">
               You can now book at other locations. The add-on ends with the plan it&apos;s
               attached to.
             </p>
-            <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center text-center">
+            <div className={ctaRow}>
               <Link
                 href="/classes"
-                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+                className={primaryCta}
               >
-                Start Booking Classes
+                Book a class
               </Link>
               <Link
                 href="/account"
-                className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
+                className={secondaryCta}
               >
                 View my account
               </Link>
             </div>
           </>
         )}
-      </BookingSurface>
+      </ConfirmationCard>
     </div>
   );
 }
@@ -367,17 +405,17 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
 
   return (
     <div id="summary">
-      <BookingSurface maxWidth="md" padding="loose">
+      <ConfirmationCard>
         <div className="text-center mb-6">
           <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
             {done ? <Check className="w-8 h-8 text-accent" /> : <Spinner />}
           </div>
           {outcome.kind !== "syncing" && (
-            <p className="text-sm uppercase tracking-wider text-muted mb-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
               {done ? "Part payment received" : confirmationEyebrow("pending")}
             </p>
           )}
-          <h1 className="font-serif text-3xl text-ink">
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink">
             {outcome.kind === "syncing"
               ? "Recording your payment…"
               : outcome.kind === "pending"
@@ -392,13 +430,13 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
 
         {outcome.kind === "settled" && (
           <>
-            <p className="text-center text-lg text-muted">
+            <p className="text-center text-base sm:text-lg text-muted">
               That cleared the balance. Everything you bought is on your account.
             </p>
-            <div className="mt-10 flex justify-center">
+            <div className={ctaRow}>
               <Link
                 href="/account"
-                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+                className={primaryCta}
               >
                 View my account
               </Link>
@@ -410,7 +448,7 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
           <OpenPurchases purchases={[outcome.purchase]} partPayment={partPayment} />
         )}
 
-      </BookingSurface>
+      </ConfirmationCard>
     </div>
   );
 }
@@ -434,7 +472,7 @@ function buildPackageView(packageKind: PackageKind, details: PackageDetails | nu
       subtitle: sessions != null
         ? `${sessions} private session${sessions === 1 ? "" : "s"} added to your account`
         : "Your private sessions have been added to your account",
-      primary: { href: "/private-sessions", label: "Start Booking Private Sessions" },
+      primary: { href: "/private-sessions", label: "Request a private session" },
       secondary: { href: "/account", label: "View my account" },
     };
   }
@@ -450,7 +488,7 @@ function buildPackageView(packageKind: PackageKind, details: PackageDetails | nu
       : credits != null
         ? `${credits} class credit${credits === 1 ? "" : "s"} added to your account`
         : "Credits have been added to your account",
-    primary: { href: "/classes", label: "Start Booking Classes" },
+    primary: { href: "/classes", label: "Book a class" },
     secondary: { href: "/account", label: "View my account" },
   };
 }
@@ -497,7 +535,7 @@ function PackageSuccess({
 
   return (
     <div id="summary">
-      <BookingSurface maxWidth="md" padding="loose">
+      <ConfirmationCard>
         <ConfirmationHeader
           outcome={outcome}
           syncingHeading="Activating your package…"
@@ -508,28 +546,26 @@ function PackageSuccess({
 
         {settled(outcome) && (
           <>
-            <SectionHeading eyebrow="Your purchase" title={view.title} align="center" />
-            <div className="text-center">
-              <p className="text-2xl font-bold text-ink">{view.name}</p>
-              <p className="text-lg text-muted mt-2">{view.subtitle}</p>
-            </div>
-            <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center text-center">
+            <ReceiptPanel label="Your purchase" name={view.name}>
+              <p className="mt-2 text-base text-muted">{view.subtitle}</p>
+            </ReceiptPanel>
+            <div className={ctaRow}>
               <Link
                 href={view.primary.href}
-                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+                className={primaryCta}
               >
                 {view.primary.label}
               </Link>
               <Link
                 href={view.secondary.href}
-                className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
+                className={secondaryCta}
               >
                 {view.secondary.label}
               </Link>
             </div>
           </>
         )}
-      </BookingSurface>
+      </ConfirmationCard>
     </div>
   );
 }
@@ -579,10 +615,10 @@ function ConfirmationContent() {
     <div className="max-w-lg mx-auto px-4 py-16 text-center">
       <p className="text-muted text-sm">Nothing to confirm.</p>
       <Link
-        href="/classes"
-        className="mt-4 inline-block text-sm text-accent hover:underline"
+        href="/"
+        className="mt-4 inline-flex min-h-[44px] items-center text-sm font-medium text-accent-deep hover:underline"
       >
-        Back to Classes
+        Back to the schedule
       </Link>
     </div>
   );
@@ -592,8 +628,8 @@ export default function BookingConfirmationPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-paper px-4 py-12 text-muted text-sm">
-          Loading...
+        <div className="px-4 py-20 text-center text-muted text-sm">
+          Loading…
         </div>
       }
     >

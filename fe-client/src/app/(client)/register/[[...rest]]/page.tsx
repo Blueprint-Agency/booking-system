@@ -24,11 +24,14 @@ import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 import { OtpInput } from "@/components/auth/otp-input";
 
 const inputClass =
-  "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
+  "min-h-[44px] rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
 const labelClass =
-  "text-xs uppercase tracking-wider text-muted mb-2 block";
+  "text-sm font-medium text-ink mb-1.5 block";
 const primaryBtnClass =
-  "w-full rounded-full bg-ink text-paper py-3 text-sm font-medium hover:bg-ink/90 mt-2 disabled:opacity-50";
+  "w-full min-h-[48px] rounded-full bg-ink text-paper py-3 text-sm font-semibold hover:bg-ink/90 mt-2 disabled:opacity-50";
+const titleClass = "text-2xl sm:text-3xl font-extrabold tracking-tight text-ink";
+/** A text-styled action, still a full-height touch target. */
+const textBtnClass = "inline-flex min-h-[44px] items-center font-medium text-accent-deep hover:underline disabled:opacity-50";
 
 type Gender = "female" | "male" | "prefer_not_to_say";
 
@@ -162,7 +165,7 @@ function RegisterContent() {
   if (!isLoaded || redirectTarget) {
     return (
       <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
-        <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+        <h1 className={`${titleClass} mb-2`}>
           One moment…
         </h1>
       </AuthSplitShell>
@@ -170,16 +173,16 @@ function RegisterContent() {
   }
 
   const errorNote = error ? (
-    <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p>
+    <p role="alert" className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p>
   ) : null;
 
   if (view === "verify") {
     return (
       <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
-        <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+        <h1 className={`${titleClass} mb-2`}>
           Check your email
         </h1>
-        <p className="text-sm text-muted mb-8">
+        <p className="text-sm text-muted mb-6">
           We sent a 6-digit code to {email.trim()}.
         </p>
         <form onSubmit={handleVerify} className="space-y-4">
@@ -194,14 +197,14 @@ function RegisterContent() {
             {submitting ? "Verifying…" : "Verify & create account"}
           </button>
         </form>
-        <div className="mt-4 flex flex-wrap gap-4 text-sm">
-          <button type="button" onClick={handleResend} disabled={submitting} className="font-medium text-accent-deep">
+        <div className="mt-2 flex flex-wrap gap-x-5 text-sm">
+          <button type="button" onClick={handleResend} disabled={submitting} className={textBtnClass}>
             Resend code
           </button>
           <button
             type="button"
             onClick={() => { setView("form"); setError(null); }}
-            className="font-medium text-accent-deep"
+            className={textBtnClass}
           >
             Change details
           </button>
@@ -212,19 +215,19 @@ function RegisterContent() {
 
   return (
     <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
-      <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-8">
+      <h1 className={`${titleClass} mb-6`}>
         Create your account
       </h1>
       <form onSubmit={handleCreate} className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-4 min-[400px]:gap-3">
           <div>
             <label htmlFor="firstName" className={labelClass}>First name</label>
-            <input id="firstName" className={inputClass} value={firstName}
+            <input id="firstName" autoComplete="given-name" className={inputClass} value={firstName}
               onChange={(ev) => setFirstName(ev.target.value)} />
           </div>
           <div>
             <label htmlFor="lastName" className={labelClass}>Last name</label>
-            <input id="lastName" className={inputClass} value={lastName}
+            <input id="lastName" autoComplete="family-name" className={inputClass} value={lastName}
               onChange={(ev) => setLastName(ev.target.value)} />
           </div>
         </div>

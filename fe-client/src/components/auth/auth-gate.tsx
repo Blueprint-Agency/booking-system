@@ -45,7 +45,9 @@ function LoginRequiredModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-ink/60 backdrop-blur-sm animate-fade-in"
+      // A bottom sheet on a phone — the actions land under the thumb — and a
+      // centred dialog from `sm` up.
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4 bg-ink/60 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div
@@ -54,7 +56,7 @@ function LoginRequiredModal({
         aria-modal="true"
         aria-label="Sign in required"
         tabIndex={-1}
-        className="w-full max-w-md max-h-[85dvh] overflow-y-auto bg-paper rounded-xl shadow-hover p-6 sm:p-8 outline-none"
+        className="w-full sm:max-w-md max-h-[85dvh] overflow-y-auto bg-card rounded-t-3xl sm:rounded-2xl shadow-modal p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:p-8 outline-none animate-fade-up"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mb-4">
@@ -73,7 +75,7 @@ function LoginRequiredModal({
             <path d="M7 11V7a5 5 0 0 1 10 0v4" />
           </svg>
         </div>
-        <h2 className="text-xl sm:text-2xl font-serif text-ink mb-2">
+        <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-ink mb-2">
           Please log in to {context}
         </h2>
         <p className="text-sm text-muted mb-6 leading-relaxed">
@@ -82,20 +84,21 @@ function LoginRequiredModal({
         <div className="flex flex-col sm:flex-row gap-2.5">
           <Link
             href={loginHref}
-            className="flex-1 inline-flex items-center justify-center px-4 py-2.5 text-sm font-bold text-inverse bg-accent rounded-full hover:bg-accent-deep transition-colors"
+            className="flex-1 inline-flex min-h-[48px] items-center justify-center px-4 py-2.5 text-sm font-bold text-inverse bg-accent rounded-full hover:bg-accent-deep transition-colors"
           >
             Log in
           </Link>
           <Link
             href={registerHref}
-            className="flex-1 inline-flex items-center justify-center px-4 py-2.5 text-sm font-bold text-ink border border-ink/10 rounded-full hover:bg-warm transition-colors"
+            className="flex-1 inline-flex min-h-[48px] items-center justify-center px-4 py-2.5 text-sm font-bold text-ink border border-ink/10 rounded-full hover:bg-warm transition-colors"
           >
             Sign up
           </Link>
         </div>
         <button
+          type="button"
           onClick={onClose}
-          className="mt-4 w-full text-center text-xs text-muted hover:text-ink transition-colors"
+          className="mt-2 w-full min-h-[44px] text-center text-sm text-muted hover:text-ink transition-colors"
         >
           Cancel
         </button>

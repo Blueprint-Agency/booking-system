@@ -84,7 +84,7 @@ export function OtpInput({ value, onChange, length = 6, autoFocus }: OtpInputPro
           onKeyDown={(e) => handleKeyDown(index, e)}
           onPaste={handlePaste}
           aria-label={`Digit ${index + 1}`}
-          className="h-12 w-full rounded-xl border border-ink/10 bg-paper text-center text-lg font-medium text-ink focus:border-accent focus:outline-none"
+          className="h-12 w-full min-w-0 rounded-xl border border-ink/10 bg-paper text-center text-lg font-medium text-ink focus:border-accent focus:outline-none"
         />
       ))}
     </div>

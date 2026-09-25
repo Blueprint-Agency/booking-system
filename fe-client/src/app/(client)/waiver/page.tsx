@@ -76,14 +76,18 @@ function WaiverContent() {
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.4 }}
           >
-            <h1 className="text-3xl font-extrabold tracking-tight text-ink">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink">
               Studio waiver
             </h1>
             <p className="text-sm text-muted mt-2">
               Please read and acknowledge before your first class.
             </p>
 
-            <div className="max-h-80 overflow-y-auto rounded-xl border border-ink/10 bg-warm p-6 text-sm text-ink/80 leading-relaxed space-y-3 mt-6">
+            <div
+              tabIndex={0}
+              aria-label="Waiver terms"
+              className="max-h-[45dvh] sm:max-h-80 overflow-y-auto overscroll-contain rounded-xl border border-ink/10 bg-paper p-4 sm:p-6 text-sm text-ink/80 leading-relaxed space-y-3 mt-5"
+            >
               {WAIVER_TEXT.map((section) => (
                 <p key={section.title}>
                   <strong className="font-semibold text-ink">
@@ -94,12 +98,12 @@ function WaiverContent() {
               ))}
             </div>
 
-            <label className="flex items-start gap-3 mt-6 cursor-pointer">
+            <label className="flex min-h-[44px] items-start gap-3 mt-5 py-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={acknowledged}
                 onChange={(e) => setAcknowledged(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-ink"
+                className="mt-0.5 h-5 w-5 shrink-0 accent-ink"
               />
               <span className="text-sm text-ink/80">
                 I have read and agree to the terms above.
@@ -110,7 +114,7 @@ function WaiverContent() {
               type="button"
               onClick={handleSign}
               disabled={!canSign}
-              className="w-full rounded-full bg-ink text-paper py-3 text-sm font-medium hover:bg-ink/90 mt-6 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full min-h-[48px] rounded-full bg-ink text-paper py-3 text-sm font-semibold hover:bg-ink/90 mt-4 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               I agree and sign
             </button>
@@ -145,8 +149,8 @@ function WaiverContent() {
             </p>
 
             <Link
-              href="/classes"
-              className="mt-8 inline-flex items-center justify-center gap-2 rounded-full bg-ink text-paper px-6 py-3 text-sm font-medium hover:bg-ink/90"
+              href="/"
+              className="mt-8 inline-flex w-full sm:w-auto min-h-[48px] items-center justify-center gap-2 rounded-full bg-ink text-paper px-6 py-3 text-sm font-semibold hover:bg-ink/90"
             >
               Continue to booking
               <ArrowRight className="h-4 w-4" />

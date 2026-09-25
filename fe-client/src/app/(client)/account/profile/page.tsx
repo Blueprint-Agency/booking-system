@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Lock } from "lucide-react";
 import { ChangePasswordCard } from "@/components/account/change-password-card";
 import { SavedCardsCard } from "@/components/account/saved-cards-card";
-import { SectionHeading } from "@/components/booking/section-heading";
+import { AccountPageHeader } from "@/components/account/account-page-header";
 import { ApiError, useApi } from "@/lib/api";
 import { refreshAppUser } from "@/lib/auth";
 
@@ -39,11 +39,11 @@ function splitName(full: string): { first: string; last: string } {
 }
 
 const inputClass =
-  "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
+  "min-h-[44px] rounded-xl border border-ink/10 bg-card px-4 py-2.5 text-sm w-full focus:border-accent focus:ring-2 focus:ring-accent/15 focus:outline-none transition-shadow disabled:opacity-60";
 const readOnlyClass =
-  "rounded-xl border border-ink/10 bg-warm px-4 py-3 text-sm w-full text-muted cursor-not-allowed";
-const labelClass = "text-xs uppercase tracking-wider text-muted mb-2 block";
-const cardClass = "rounded-2xl bg-paper border border-ink/10 p-8 space-y-6";
+  "min-h-[44px] rounded-xl border border-transparent bg-ink/[0.04] pl-4 pr-10 py-2.5 text-sm w-full text-muted cursor-not-allowed";
+const labelClass = "text-sm font-semibold text-ink mb-1.5 block";
+const cardClass = "rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-6 space-y-5";
 
 export default function ProfilePage() {
   const api = useApi();
@@ -130,17 +130,16 @@ export default function ProfilePage() {
 
   return (
     <div>
-      <SectionHeading
-        eyebrow="Profile"
-        title="Account details"
-        description="Keep your info current so we can reach you."
+      <AccountPageHeader
+        title="Profile & security"
+        description="Keep your details current so the studio can reach you."
       />
 
-      <div className="mt-8 space-y-6">
+      <div className="max-w-3xl space-y-5">
         {/* Name + contact */}
         <form onSubmit={handleSave} aria-busy={loading}>
-          <section className={cardClass}>
-            <h3 className="font-serif text-lg text-ink">Personal info</h3>
+          <section className={cardClass} aria-labelledby="personal-info-heading">
+            <h2 id="personal-info-heading" className="text-base font-bold text-ink">Personal info</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="firstName" className={labelClass}>
@@ -192,7 +191,7 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-5 border-t border-ink/5">
               <div>
                 <label htmlFor="email" className={labelClass}>
                   Email
@@ -224,26 +223,23 @@ export default function ProfilePage() {
                 </div>
               </div>
             </div>
-            <p className="text-xs text-muted">
+            <p className="-mt-2 text-xs text-muted">
               Email and phone can&apos;t be changed here. Contact the studio if
               you need to update them.
             </p>
 
-            <div className="flex flex-wrap justify-end gap-3 items-center pt-2">
-              {error && (
-                <span className="text-sm text-error font-medium mr-2">
-                  {error}
-                </span>
-              )}
-              {saved && (
-                <span className="text-sm text-sage font-medium mr-2">
-                  Changes saved
-                </span>
-              )}
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 sm:items-center pt-1">
+              <span role="status" className="text-sm font-medium sm:mr-2 empty:hidden">
+                {error ? (
+                  <span className="text-error">{error}</span>
+                ) : saved ? (
+                  <span className="text-sage">Changes saved</span>
+                ) : null}
+              </span>
               <button
                 type="submit"
                 disabled={saving || loading}
-                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium disabled:opacity-60"
+                className="min-h-[48px] w-full sm:w-auto rounded-full bg-ink text-paper px-6 text-sm font-semibold hover:bg-ink/90 transition-colors disabled:opacity-60"
               >
                 {saving ? "Saving…" : loading ? "Loading…" : "Save changes"}
               </button>

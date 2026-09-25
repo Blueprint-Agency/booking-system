@@ -1,11 +1,15 @@
 "use client";
 
 import { useMemo, useState, useEffect, useCallback, Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { CalendarX, CheckCircle2, XCircle, Clock } from "lucide-react";
-import { SectionHeading } from "@/components/booking/section-heading";
+import { CalendarX, CheckCircle2, XCircle, Clock, Plus } from "lucide-react";
+import { AccountPageHeader } from "@/components/account/account-page-header";
+import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { QrBadge } from "@/components/account/qr-badge";
+import { DateStub } from "@/components/account/date-stub";
 import {
   usePtSessionsApi,
   type CancelPtRequestResult,
@@ -138,10 +142,21 @@ function Inner() {
       {/* No padding of its own — AccountShell already gutters the column, and
           doubling it left ~296px of content on a 360px phone. */}
       <div className="max-w-3xl">
-        <SectionHeading eyebrow="Private sessions" title="Your PT sessions" />
+        <AccountPageHeader
+          title="Your PT sessions"
+          action={
+            <Link
+              href="/private-sessions"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-ink px-5 min-h-[44px] text-sm font-semibold text-paper hover:bg-ink/90 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              New request
+            </Link>
+          }
+        />
 
         {justSubmitted && (
-          <div className="mt-4 rounded-xl border border-sage/30 bg-sage/10 p-4 text-sm text-ink">
+          <div role="status" className="mb-4 rounded-xl border border-sage/30 bg-sage/10 p-4 text-sm text-ink">
             Your request is in. We&apos;ll reach you on WhatsApp shortly to confirm the time.
           </div>
         )}
@@ -150,7 +165,7 @@ function Inner() {
           <div
             role="status"
             className={cn(
-              "mt-4 rounded-xl border p-4 text-sm text-ink",
+              "mb-4 rounded-xl border p-4 text-sm text-ink",
               notice.tone === "ok" ? "border-sage/30 bg-sage/10" : "border-warm bg-warm",
             )}
           >
@@ -159,43 +174,38 @@ function Inner() {
         )}
 
         {error && (
-          <div className="mt-4 rounded-xl border border-error/30 bg-error/10 p-4 text-sm text-error">
+          <div role="alert" className="mb-4 rounded-xl border border-error/30 bg-error/10 p-4 text-sm text-error">
             {error}
           </div>
         )}
 
         {loading ? (
-          <div className="mt-10 text-sm text-muted text-center">Loading…</div>
+          <div className="space-y-3" aria-busy="true" aria-label="Loading your PT sessions">
+            <Skeleton className="h-11 rounded-full" />
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 rounded-2xl" />
+            ))}
+          </div>
         ) : (
           <>
-            <div className="mt-6 flex flex-wrap gap-2">
-              {tabs.map((t) => {
-                const count = requests.filter((r) => inTab(r, t)).length;
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setTab(t)}
-                    className={`rounded-full border px-3 py-1.5 text-xs transition ${
-                      tab === t
-                        ? "border-accent bg-accent/10 text-ink"
-                        : "border-ink/10 bg-card text-muted hover:text-ink"
-                    }`}
-                  >
-                    {TAB_LABEL[t]} ({count})
-                  </button>
-                );
-              })}
-            </div>
+            <SegmentedTabs
+              label="PT sessions"
+              tabs={tabs.map((t) => ({ value: t, label: TAB_LABEL[t] }))}
+              value={tab}
+              onChange={setTab}
+              counts={Object.fromEntries(tabs.map((t) => [t, requests.filter((r) => inTab(r, t)).length]))}
+            />
 
-            <div className="mt-6">
+            <div>
               {filtered.length === 0 ? (
-                <EmptyState
-                  icon={CalendarX}
-                  title={emptyTitle(tab)}
-                  description="Submit a request to get started."
-                  cta={{ href: "/private-sessions", label: "Request a session" }}
-                />
+                <div className="rounded-2xl bg-card border border-ink/5 shadow-soft">
+                  <EmptyState
+                    icon={CalendarX}
+                    title={emptyTitle(tab)}
+                    description="Pick a few times that suit you and the studio confirms one."
+                    cta={{ href: "/private-sessions", label: "Request a session" }}
+                  />
+                </div>
               ) : (
                 <ul className="space-y-3">
                   {filtered.map((r) => (
@@ -216,7 +226,7 @@ function Inner() {
           </>
         )}
 
-        <p className="text-xs text-muted mt-10 leading-relaxed">
+        <p className="text-xs text-muted mt-8 leading-relaxed">
           {ptPolicyNote(policy)}
         </p>
       </div>
@@ -266,19 +276,29 @@ function RequestCard({
   const cancelPrompt = ptCancelPrompt(r.status === "pending" ? "pending" : "scheduled", policy);
 
   return (
-    <li className="rounded-2xl border border-ink/10 bg-card p-5">
+    <li className="rounded-2xl border border-ink/5 bg-card shadow-soft p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wider text-muted">
-            {r.session_type === "1on1" ? "1-on-1" : "2-on-1"}
-            {r.class_name ? ` · ${r.class_name}` : ""}
-            {r.location_name ? ` · ${r.location_name}` : ""}
-          </p>
+        <p className="min-w-0 pt-1 text-xs font-semibold text-muted">
+          {r.session_type === "1on1" ? "1-on-1" : "2-on-1"}
+          {r.class_name ? ` · ${r.class_name}` : ""}
+          {r.location_name ? ` · ${r.location_name}` : ""}
+        </p>
+        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${badge.tone}`}>
+          <badge.icon size={12} /> {badge.label}
+        </span>
+      </div>
+      <div className="mt-3 flex items-start gap-3 sm:gap-4">
+        {(scheduled || slot0) && (
+          <DateStub
+            iso={scheduled ? scheduled.starts_at : `${slot0!.proposed_date.slice(0, 10)}T12:00:00+08:00`}
+            tone={scheduled && r.status === "scheduled" ? "accent" : r.status === "pending" ? "default" : "muted"}
+          />
+        )}
+        <div className="min-w-0 flex-1">
           {scheduled ? (
             <>
-              <p className="font-serif text-lg text-ink mt-1">
-                {formatDate(scheduled.starts_at)} · {formatClassTime(scheduled.starts_at)}–
-                {formatClassTime(scheduled.ends_at)}
+              <p className="font-semibold text-ink">
+                {formatClassTime(scheduled.starts_at)}–{formatClassTime(scheduled.ends_at)}
               </p>
               <p className="text-sm text-muted mt-0.5">
                 with {scheduled.instructor_name ?? "your instructor"}
@@ -286,10 +306,10 @@ function RequestCard({
               </p>
             </>
           ) : slot0 ? (
-            <p className="font-serif text-lg text-ink mt-1">
-              {formatDate(slot0.proposed_date)} · {hhmm(slot0.start_time)}–{hhmm(slot0.end_time)}
+            <p className="font-semibold text-ink">
+              {hhmm(slot0.start_time)}–{hhmm(slot0.end_time)}
               {r.slots.length > 1 ? (
-                <span className="text-sm text-muted ml-2">+{r.slots.length - 1} more</span>
+                <span className="text-sm font-normal text-muted ml-2">+{r.slots.length - 1} more</span>
               ) : null}
             </p>
           ) : null}
@@ -297,7 +317,7 @@ function RequestCard({
             <p className="text-xs text-muted mt-1">{coClientLine}</p>
           )}
           {r.message && (
-            <blockquote className="mt-2 rounded-md border-l-2 border-ink/10 bg-paper px-3 py-1.5 text-xs italic text-muted">
+            <blockquote className="mt-2 rounded-lg bg-ink/[0.04] px-3 py-1.5 text-xs italic text-muted">
               {r.message}
             </blockquote>
           )}
@@ -314,14 +334,11 @@ function RequestCard({
             </div>
           )}
         </div>
-        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ${badge.tone}`}>
-          <badge.icon size={12} /> {badge.label}
-        </span>
       </div>
 
       {r.status === "pending" && r.slots.length > 1 && (
         <details className="mt-3">
-          <summary className="cursor-pointer text-xs text-accent hover:text-accent-deep">
+          <summary className="cursor-pointer py-2 text-sm font-semibold text-accent-deep hover:text-accent">
             View all proposed slots
           </summary>
           <ul className="mt-2 space-y-1 text-xs text-muted">
@@ -335,7 +352,7 @@ function RequestCard({
       )}
 
       {canCancel && (
-        <div className="mt-4 flex justify-end">
+        <div className="mt-3 -mx-4 sm:-mx-5 -mb-4 sm:-mb-5 px-4 sm:px-5 py-2 border-t border-ink/5 flex justify-end">
           {windowClosed && policy ? (
             <span className="text-xs text-muted">{cancelClosed(policy.pt_window_hours)}</span>
           ) : (
@@ -408,7 +425,7 @@ function CancelButton({
       <button
         type="button"
         onClick={() => setConfirming(true)}
-        className="text-xs text-muted hover:text-error transition-colors"
+        className="-mr-2 min-h-[44px] rounded-full px-3 text-sm font-semibold text-muted hover:bg-error/5 hover:text-error transition-colors"
       >
         Cancel request
       </button>
@@ -416,26 +433,26 @@ function CancelButton({
   }
 
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="text-muted">
-        {prompt}
-      </span>
-      <button
-        type="button"
-        onClick={() => setConfirming(false)}
-        disabled={cancelling}
-        className="rounded-full border border-ink/10 px-2.5 py-1 text-muted hover:text-ink disabled:opacity-50"
-      >
-        Keep
-      </button>
-      <button
-        type="button"
-        onClick={handleCancel}
-        disabled={cancelling}
-        className="rounded-full bg-error text-paper px-2.5 py-1 hover:bg-error/90 disabled:opacity-50"
-      >
-        {cancelling ? "Cancelling…" : "Cancel"}
-      </button>
+    <div className="w-full flex flex-col sm:flex-row sm:items-center gap-2 py-1 text-sm">
+      <span className="text-muted sm:flex-1">{prompt}</span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          disabled={cancelling}
+          className="flex-1 sm:flex-none min-h-[44px] rounded-full border border-ink/10 px-4 font-semibold text-ink hover:border-ink/30 disabled:opacity-50"
+        >
+          Keep
+        </button>
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={cancelling}
+          className="flex-1 sm:flex-none min-h-[44px] rounded-full bg-error text-inverse px-4 font-semibold hover:bg-error/90 disabled:opacity-50"
+        >
+          {cancelling ? "Cancelling…" : "Cancel"}
+        </button>
+      </div>
     </div>
   );
 }

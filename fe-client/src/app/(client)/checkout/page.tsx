@@ -4,7 +4,7 @@ import { useState, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, ShoppingCart, Tag, Check, AlertCircle, MapPin, UserRound } from "lucide-react";
 import { cn, formatCurrency, formatDurationMonths } from "@/lib/utils";
-import { BookingSurface } from "@/components/booking/booking-surface";
+import { CheckoutFrame, checkoutCardClass } from "@/components/checkout/checkout-frame";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getMemberToken, useMemberSession } from "@/lib/member-auth";
 import { fetchApi } from "@/lib/api-url";
@@ -288,9 +288,9 @@ function CheckoutContent() {
 
   if (!isLoaded || loadingPkg) {
     return (
-      <BookingSurface maxWidth="lg" padding="default">
-        <div className="py-20 text-center text-muted text-sm">Loading…</div>
-      </BookingSurface>
+      <CheckoutFrame>
+        <div className="py-20 text-center text-muted text-sm" aria-busy="true">Loading…</div>
+      </CheckoutFrame>
     );
   }
 
@@ -302,14 +302,14 @@ function CheckoutContent() {
         : Boolean(pkg);
   if (pkgError || !hasItem) {
     return (
-      <BookingSurface maxWidth="lg" padding="default">
+      <CheckoutFrame>
         <EmptyState
           icon={ShoppingCart}
           title="Nothing to check out"
           description={pkgError ?? "Pick a package or workshop to get started."}
           cta={{ href: mode === "workshop" ? "/workshops" : "/packages", label: mode === "workshop" ? "Browse workshops" : "Browse packages" }}
         />
-      </BookingSurface>
+      </CheckoutFrame>
     );
   }
 
@@ -320,27 +320,27 @@ function CheckoutContent() {
     const loginHref = `/login?next=${encodeURIComponent(next)}`;
     const registerHref = `/register?next=${encodeURIComponent(next)}`;
     return (
-      <BookingSurface maxWidth="md" padding="default">
-        <div className="max-w-md mx-auto text-center py-12">
+      <CheckoutFrame>
+        <div className={cn(checkoutCardClass, "text-center py-10 sm:py-12")}>
           <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-5">
             <Lock className="w-6 h-6 text-accent-deep" />
           </div>
-          <h1 className="text-2xl font-serif text-ink mb-2">Please log in to continue</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink mb-2">Please log in to continue</h1>
           <p className="text-sm text-muted mb-6 leading-relaxed">
             You need an account before you can{" "}
             {mode === "workshop" ? "book a workshop" : mode === "add_on" ? "buy an add-on" : "buy a package"}.
             Log in, or create one in under a minute.
           </p>
           <div className="flex flex-col sm:flex-row gap-2.5 justify-center">
-            <a href={loginHref} className="flex-1 inline-flex items-center justify-center px-5 py-2.5 text-sm font-bold text-inverse bg-accent rounded-md hover:bg-accent-deep transition-colors">
+            <a href={loginHref} className="flex-1 inline-flex min-h-[44px] items-center justify-center px-5 py-2.5 text-sm font-bold text-inverse bg-accent rounded-full hover:bg-accent-deep transition-colors">
               Log in
             </a>
-            <a href={registerHref} className="flex-1 inline-flex items-center justify-center px-5 py-2.5 text-sm font-bold text-ink border border-ink/15 rounded-md hover:bg-warm transition-colors">
+            <a href={registerHref} className="flex-1 inline-flex min-h-[44px] items-center justify-center px-5 py-2.5 text-sm font-bold text-ink border border-ink/15 rounded-full hover:bg-warm transition-colors">
               Sign up
             </a>
           </div>
         </div>
-      </BookingSurface>
+      </CheckoutFrame>
     );
   }
 
@@ -391,8 +391,8 @@ function CheckoutContent() {
 
   return (
     <div id="checkout">
-      <BookingSurface maxWidth="lg" padding="default">
-        <div className="max-w-lg mx-auto space-y-6">
+      <CheckoutFrame title="Checkout" description="Review your order, then pay securely.">
+        <div className="space-y-5">
 
           {cancelled && (
             <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink">
@@ -402,15 +402,15 @@ function CheckoutContent() {
           )}
 
           {/* Purchase summary card */}
-          <div className="rounded-2xl border border-ink/10 bg-paper p-6">
-            <p className="text-xs uppercase tracking-wider text-muted mb-4">Purchase summary</p>
+          <div className={checkoutCardClass}>
+            <h2 className="text-sm font-semibold text-muted mb-3">Purchase summary</h2>
 
             <div className="flex gap-3 items-start pb-4 border-b border-ink/5">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-ink">{itemName}</p>
-                <p className="text-xs text-muted mt-0.5">{subtitle}</p>
+                <p className="text-base font-semibold text-ink break-words">{itemName}</p>
+                <p className="text-xs text-muted mt-1">{subtitle}</p>
               </div>
-              <p className="text-sm font-semibold shrink-0">{formatCurrency(price)}</p>
+              <p className="text-base font-bold text-ink shrink-0 tabular-nums">{formatCurrency(price)}</p>
             </div>
 
             {/* Home studio — an Unlimited Plan covers one Location, chosen here. */}
@@ -560,42 +560,53 @@ function CheckoutContent() {
                   <button
                     type="button"
                     onClick={() => { setPromoApplied(null); setPromoInput(""); }}
-                    className="text-xs text-muted hover:text-ink underline"
+                    className="min-h-[32px] text-xs text-muted hover:text-ink underline"
                   >
                     Remove
                   </button>
                 </div>
               ) : (
                 <>
+                  <label htmlFor="promo-code" className="block text-sm font-medium text-ink mb-1.5">
+                    Promo code <span className="font-normal text-muted">(optional)</span>
+                  </label>
                   <div className="flex gap-2">
-                    <div className="relative flex-1">
+                    <div className="relative flex-1 min-w-0">
                       <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
                       <input
+                        id="promo-code"
                         type="text"
+                        autoComplete="off"
+                        aria-invalid={promoError ? true : undefined}
+                        aria-describedby={promoError ? "promo-code-error" : undefined}
                         value={promoInput}
                         onChange={(e) => { setPromoInput(e.target.value); if (promoError) setPromoError(null); }}
                         onKeyDown={(e) => e.key === "Enter" && applyPromo()}
-                        placeholder="Promo code"
-                        className="rounded-xl border border-ink/10 bg-paper pl-9 pr-4 py-3 text-sm w-full uppercase focus:border-accent focus:outline-none transition-colors"
+                        placeholder="Enter code"
+                        className="min-h-[44px] rounded-xl border border-ink/10 bg-paper pl-9 pr-4 py-3 text-sm w-full uppercase placeholder:normal-case focus:border-accent focus:outline-none transition-colors"
                       />
                     </div>
                     <button
                       type="button"
                       onClick={applyPromo}
                       disabled={promoLoading || !promoInput.trim()}
-                      className="rounded-xl border border-ink/10 px-4 py-3 text-sm font-medium hover:border-accent transition-colors disabled:opacity-50"
+                      className="shrink-0 min-h-[44px] rounded-xl border border-ink/10 px-4 py-3 text-sm font-medium hover:border-accent transition-colors disabled:opacity-50"
                     >
                       Apply
                     </button>
                   </div>
-                  {promoError && <p className="text-xs text-error mt-1.5">{promoError}</p>}
+                  {promoError && (
+                    <p id="promo-code-error" role="alert" className="text-xs text-error mt-1.5">
+                      {promoError}
+                    </p>
+                  )}
                 </>
               )}
             </div>
 
             {/* Price breakdown */}
-            <div className="mt-4 space-y-1">
-              <div className="flex justify-between py-1.5 text-sm">
+            <div className="mt-4 space-y-1 tabular-nums">
+              <div className="flex justify-between py-1.5 text-sm text-muted">
                 <span>Subtotal</span>
                 <span>{formatCurrency(price)}</span>
               </div>
@@ -606,12 +617,12 @@ function CheckoutContent() {
                 </div>
               )}
               {addOnCents > 0 && (
-                <div className="flex justify-between py-1.5 text-sm">
+                <div className="flex justify-between gap-3 py-1.5 text-sm text-muted">
                   <span>Cross-Location Add-On</span>
                   <span>{formatCurrency(addOnCents / 100)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-base font-bold text-ink mt-2 pt-2 border-t border-ink/10">
+              <div className="flex items-baseline justify-between text-lg font-extrabold text-ink mt-2 pt-3 border-t border-ink/10">
                 <span>Total</span>
                 <span>{formatCurrency(grandTotal)}</span>
               </div>
@@ -661,7 +672,7 @@ function CheckoutContent() {
           </div>
 
           {checkoutError && (
-            <div className="flex items-start gap-3 rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+            <div role="alert" className="flex items-start gap-3 rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>{checkoutError}</span>
             </div>
@@ -721,14 +732,14 @@ function CheckoutContent() {
 
           {totalCents > 0 && onlinePayments !== false && <StripeFootnote />}
         </div>
-      </BookingSurface>
+      </CheckoutFrame>
     </div>
   );
 }
 
 export default function CheckoutPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-paper px-4 py-12 text-muted text-sm">Loading…</div>}>
+    <Suspense fallback={<div className="px-4 py-20 text-center text-muted text-sm">Loading…</div>}>
       <CheckoutContent />
     </Suspense>
   );

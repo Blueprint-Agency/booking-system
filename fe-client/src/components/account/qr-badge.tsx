@@ -35,11 +35,11 @@ export function QrBadge({ value, label, subLabel }: Props) {
           setOpen(true);
         }}
         aria-label="Show QR code"
-        className="shrink-0 rounded-md border border-ink/10 bg-paper p-1 hover:border-accent transition-colors"
+        className="shrink-0 flex h-11 w-11 items-center justify-center rounded-lg border border-ink/10 bg-card hover:border-accent transition-colors"
       >
         <QRCodeSVG
           value={value}
-          size={36}
+          size={32}
           level="M"
           marginSize={0}
           bgColor="transparent"
@@ -61,7 +61,7 @@ export function QrBadge({ value, label, subLabel }: Props) {
             aria-modal="true"
             aria-label={label ? `QR code — ${label}` : "QR code"}
             tabIndex={-1}
-            className="relative w-full max-w-sm max-h-[85dvh] overflow-y-auto rounded-2xl bg-paper border border-ink/10 p-6 sm:p-8 shadow-modal outline-none"
+            className="relative w-full max-w-sm max-h-[85dvh] overflow-y-auto rounded-2xl bg-card p-6 sm:p-8 shadow-modal outline-none"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -74,7 +74,7 @@ export function QrBadge({ value, label, subLabel }: Props) {
                 setOpen(false);
               }}
               aria-label="Close"
-              className="absolute top-4 right-4 text-muted hover:text-ink transition-colors"
+              className="absolute top-2 right-2 flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-ink/5 hover:text-ink transition-colors"
             >
               <X className="w-5 h-5" />
             </button>

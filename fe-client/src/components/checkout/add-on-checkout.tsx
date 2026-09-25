@@ -6,7 +6,7 @@ import { addMonths, differenceInDays } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { getMemberToken } from "@/lib/member-auth";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { BookingSurface } from "@/components/booking/booking-surface";
+import { CheckoutFrame, checkoutCardClass } from "./checkout-frame";
 import { fetchApi } from "@/lib/api-url";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { checkoutErrorMessage } from "@/lib/checkout-messages";
@@ -141,19 +141,19 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
 
   if (packagesLoading || loadingQuote) {
     return (
-      <BookingSurface maxWidth="lg" padding="default">
-        <div className="py-20 text-center text-muted text-sm">Loading…</div>
-      </BookingSurface>
+      <CheckoutFrame>
+        <div className="py-20 text-center text-muted text-sm" aria-busy="true">Loading…</div>
+      </CheckoutFrame>
     );
   }
 
   return (
     <div id="checkout">
-      <BookingSurface maxWidth="lg" padding="default">
-        <div className="max-w-lg mx-auto space-y-6">
+      <CheckoutFrame title="Checkout" description="Review your add-on, then pay securely.">
+        <div className="space-y-5">
 
-          <div className="rounded-2xl border border-ink/10 bg-paper p-6">
-            <p className="text-xs uppercase tracking-wider text-muted">Purchase summary</p>
+          <div className={checkoutCardClass}>
+            <h2 className="text-sm font-semibold text-muted">Purchase summary</h2>
             {/* The page is entered with a plan's id, so name the plan the
                 Add-On attaches to — the block says "expires with the plan it's
                 attached to" without saying which one. */}
@@ -177,7 +177,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
           </div>
 
           {error && (
-            <div className="flex items-start gap-3 rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+            <div role="alert" className="flex items-start gap-3 rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
@@ -199,13 +199,13 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
           ) : (
             <Link
               href="/account"
-              className="block w-full rounded-full border border-ink/10 py-3.5 text-center text-sm font-medium text-ink hover:border-accent transition-colors"
+              className="flex w-full min-h-[48px] items-center justify-center rounded-full border border-ink/10 bg-card py-3.5 text-center text-sm font-medium text-ink hover:border-accent transition-colors"
             >
               Back to your account
             </Link>
           )}
         </div>
-      </BookingSurface>
+      </CheckoutFrame>
     </div>
   );
 }

@@ -10,9 +10,9 @@ import { memberAuth } from "@/lib/member-auth";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 
 const inputClass =
-  "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
-const labelClass = "text-xs uppercase tracking-wider text-muted mb-2 block";
-const cardClass = "rounded-2xl bg-paper border border-ink/10 p-8 space-y-6";
+  "min-h-[44px] rounded-xl border border-ink/10 bg-card px-4 py-2.5 text-sm w-full focus:border-accent focus:ring-2 focus:ring-accent/15 focus:outline-none transition-shadow";
+const labelClass = "text-sm font-semibold text-ink mb-1.5 block";
+const cardClass = "rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-6 space-y-5";
 const MIN_LENGTH = MIN_PASSWORD_LENGTH;
 
 export function ChangePasswordCard() {
@@ -58,8 +58,11 @@ export function ChangePasswordCard() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <section className={cardClass}>
-        <h3 className="font-serif text-lg text-ink">Password</h3>
+      <section className={cardClass} aria-labelledby="password-heading">
+        <div>
+          <h2 id="password-heading" className="text-base font-bold text-ink">Password</h2>
+          <p className="mt-0.5 text-sm text-muted">Your other devices stay signed in.</p>
+        </div>
         <div>
           <label htmlFor="currentPassword" className={labelClass}>Current password</label>
           <input id="currentPassword" type="password" autoComplete="current-password"
@@ -77,14 +80,19 @@ export function ChangePasswordCard() {
               className={inputClass} value={confirm} onChange={(ev) => setConfirm(ev.target.value)} />
           </div>
         </div>
-        <p className="text-xs text-muted">At least {MIN_LENGTH} characters.</p>
-        <div className="flex flex-wrap justify-end gap-3 items-center pt-2">
-          {error && <span className="text-sm text-error font-medium mr-2">{error}</span>}
-          {saved && <span className="text-sm text-sage font-medium mr-2">Password changed</span>}
+        <p className="-mt-2 text-xs text-muted">At least {MIN_LENGTH} characters.</p>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 sm:items-center pt-1">
+          <span role="status" className="text-sm font-medium sm:mr-2 empty:hidden">
+            {error ? (
+              <span className="text-error">{error}</span>
+            ) : saved ? (
+              <span className="text-sage">Password changed</span>
+            ) : null}
+          </span>
           <button
             type="submit"
             disabled={saving || !current || !next}
-            className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium disabled:opacity-60"
+            className="min-h-[48px] w-full sm:w-auto rounded-full bg-ink text-paper px-6 text-sm font-semibold hover:bg-ink/90 transition-colors disabled:opacity-60"
           >
             {saving ? "Saving…" : "Change password"}
           </button>

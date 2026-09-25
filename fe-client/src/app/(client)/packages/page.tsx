@@ -9,8 +9,9 @@ import { useAuthGate } from "@/components/auth/auth-gate";
 import { BuyButton } from "@/components/checkout/buy-button";
 import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { cn, formatDurationMonths } from "@/lib/utils";
-import { BookingSurface } from "@/components/booking/booking-surface";
+import { BookingSurface, FLUSH_BLEED } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useApi } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
@@ -50,6 +51,18 @@ const CORPORATE_TRANSPORT_SURCHARGE_SGD = 50;
 const TRIAL_TERMS_COPY_KEY = "trial.terms";
 /** The line a member ticks to accept those terms; a neutral one when unset. */
 const TRIAL_ACK_COPY_KEY = "trial.acknowledgement";
+
+// What a card includes, as a dotted list that stretches to push the button to
+// the card's foot — so buttons line up across a row of cards.
+const FEATURE_LIST =
+  "mt-5 flex-1 space-y-2 text-sm text-muted [&>li]:relative [&>li]:pl-4 [&>li]:before:absolute [&>li]:before:left-0 [&>li]:before:top-[0.6em] [&>li]:before:h-1.5 [&>li]:before:w-1.5 [&>li]:before:rounded-full [&>li]:before:bg-accent/40 [&>li]:before:content-['']";
+
+// A bottom sheet on phones, where the actions land under the thumb; a centred
+// dialog from `sm` up.
+const SHEET_BACKDROP =
+  "fixed inset-0 z-[70] flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center sm:p-4";
+const SHEET_PANEL =
+  "w-full max-h-[90dvh] overflow-y-auto rounded-t-3xl bg-card px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-modal sm:max-w-md sm:rounded-2xl sm:p-8 animate-fade-up";
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -210,20 +223,25 @@ export default function PackagesPage() {
   return (
     <>
       <div id="packages">
-        <BookingSurface maxWidth="xl" padding="default">
+        <BookingSurface maxWidth="xl" flush>
           <SectionHeading
             eyebrow="Choose your track"
             title="Group, private or corporate"
           />
 
           {loading && (
-            <div className="flex items-center justify-center py-16 text-muted text-sm">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading packages…
+            <div aria-busy="true" aria-label="Loading packages">
+              <Skeleton className="mb-6 h-11 w-full rounded-full sm:mx-auto sm:w-80" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-64 rounded-2xl" />
+                ))}
+              </div>
             </div>
           )}
 
           {!loading && error && (
-            <div className="mx-auto max-w-md rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+            <div className="mx-auto max-w-md rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3">
               We couldn't load packages right now. Please refresh in a moment.
             </div>
           )}
@@ -231,11 +249,12 @@ export default function PackagesPage() {
           {!loading && !error && data && (
             <>
               {/* ── Main tab strip ──────────────────────────────────── */}
-              <div className="flex justify-center mb-6">
+              {/* Equal thirds across a phone; a hugging pill once there's room. */}
+              <div className="mb-6 sm:flex sm:justify-center">
                 <div
                   role="tablist"
                   aria-label="Package family"
-                  className="inline-flex items-center gap-1 p-1 rounded-full bg-warm border border-ink/10"
+                  className="grid grid-cols-3 gap-1 p-1 rounded-full bg-warm border border-ink/10 sm:inline-grid sm:auto-cols-fr sm:grid-flow-col sm:grid-cols-none"
                 >
                   {MAIN_TABS.filter((t) => !t.hidden).map((tab) => {
                     const isActive = activeTab === tab.key;
@@ -246,9 +265,9 @@ export default function PackagesPage() {
                         aria-selected={isActive}
                         onClick={() => setActiveTab(tab.key)}
                         className={cn(
-                          "relative rounded-full px-3.5 sm:px-5 py-2 text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200",
+                          "relative min-h-[40px] rounded-full px-3 sm:px-6 text-sm font-semibold whitespace-nowrap transition-all duration-200",
                           isActive
-                            ? "bg-ink text-paper shadow-sm"
+                            ? "bg-card text-accent-deep shadow-sm"
                             : "text-muted hover:text-ink",
                         )}
                       >
@@ -344,20 +363,20 @@ function ClassCreditsSection({
   onRequestTrial: (pkg: ApiClassPackage) => void;
 }) {
   const subTabs: { key: ClassSubTab; label: string; hidden?: boolean }[] = [
-    { key: "bundle", label: "Credit Bundles" },
-    { key: "unlimited", label: "Unlimited Access" },
-    { key: "trial", label: "Trial Pass", hidden: trials.length === 0 },
+    { key: "bundle", label: "Credit bundles" },
+    { key: "unlimited", label: "Unlimited" },
+    { key: "trial", label: "Trial pass", hidden: trials.length === 0 },
   ];
 
   return (
     <div className="space-y-8">
       {/* Three full-word labels do not fit across a 320px card, so the strip
           scrolls sideways there and centres itself once it fits. */}
-      <div className="-mx-6 overflow-x-auto no-scrollbar sm:mx-0">
+      <div className={cn("overflow-x-auto no-scrollbar border-b border-ink/10", FLUSH_BLEED)}>
         <div
           role="tablist"
           aria-label="Class credit type"
-          className="mx-auto flex w-max gap-6 px-6 sm:gap-8 sm:px-0"
+          className="flex w-max gap-6 sm:gap-8 md:mx-auto"
         >
           {subTabs
             .filter((t) => !t.hidden)
@@ -370,7 +389,7 @@ function ClassCreditsSection({
                   aria-selected={isActive}
                   onClick={() => setSubTab(tab.key)}
                   className={cn(
-                    "relative whitespace-nowrap pb-3 text-sm font-medium transition-colors",
+                    "relative whitespace-nowrap pt-2 pb-3 text-sm font-medium transition-colors",
                     isActive ? "text-ink" : "text-muted hover:text-ink",
                   )}
                 >
@@ -394,7 +413,7 @@ function ClassCreditsSection({
       {subTab === "bundle" && (
         <>
           {(hasUnlimited || hasBundle) && (
-            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3">
               You already have a {hasUnlimited ? "class pass" : "Credit Bundle"}. Buy a bundle
               now and it waits — it starts when you book your first class after your current
               package ends or is used up.
@@ -403,7 +422,7 @@ function ClassCreditsSection({
           {bundles.length === 0 ? (
             <EmptyCatalog kind="bundle" />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
               {bundles.map((p) => (
                 <BundleCard key={p.id} pkg={p} disabled={false} disabledReason="" />
               ))}
@@ -415,13 +434,13 @@ function ClassCreditsSection({
       {subTab === "unlimited" && (
         <>
           {hasBundle && !hasUnlimited && (
-            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3">
               You still have a Credit Bundle. Buy Unlimited now and it waits — it starts when you
               book your first class after your credits are used up or expire.
             </div>
           )}
           {hasUnlimited && (
-            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3">
               You already have an Unlimited pass. Buy another and it waits — it starts when you book
               your first class after this one ends, at the same home studio.
             </div>
@@ -429,7 +448,7 @@ function ClassCreditsSection({
           {unlimited.length === 0 ? (
             <EmptyCatalog kind="unlimited" />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
               {unlimited.map((p) => (
                 <UnlimitedCard key={p.id} pkg={p} disabled={false} disabledReason="" />
               ))}
@@ -503,13 +522,13 @@ function TrialSection({
         </div>
       )}
       {!trialEligible && !banner && (
-        <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center max-w-xl mx-auto">
+        <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 max-w-xl mx-auto">
           {trialUsed
             ? "You've already used your trial pass. Browse our bundles or unlimited options to continue practising."
             : "The trial pass is for new members only. Since you already have a package, browse our bundles or unlimited options."}
         </div>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mt-6">
         {trials.map((p) => (
           <TrialCard
             key={p.id}
@@ -543,11 +562,11 @@ function PrivateSection({
 
   return (
     <div className="space-y-8">
-      <div className="-mx-6 overflow-x-auto no-scrollbar sm:mx-0">
+      <div className={cn("overflow-x-auto no-scrollbar border-b border-ink/10", FLUSH_BLEED)}>
         <div
           role="tablist"
           aria-label="Private session type"
-          className="mx-auto flex w-max gap-6 px-6 sm:gap-8 sm:px-0"
+          className="flex w-max gap-6 sm:gap-8 md:mx-auto"
         >
           {subTabs.map((tab) => {
             const isActive = subTab === tab.key;
@@ -558,7 +577,7 @@ function PrivateSection({
                 aria-selected={isActive}
                 onClick={() => setSubTab(tab.key)}
                 className={cn(
-                  "relative whitespace-nowrap pb-3 text-sm font-medium transition-colors",
+                  "relative whitespace-nowrap pt-2 pb-3 text-sm font-medium transition-colors",
                   isActive ? "text-ink" : "text-muted hover:text-ink",
                 )}
               >
@@ -588,7 +607,7 @@ function PtSection({ items, blurb }: { items: ApiPtPackage[]; blurb: string }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted text-center max-w-xl mx-auto">{blurb}</p>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mt-6">
         {items.map((p) => (
           <PtCard key={p.id} pkg={p} />
         ))}
@@ -648,10 +667,10 @@ function BundleCard({
   const validity =
     pkg.validity_days != null ? `${pkg.validity_days} days from your first class` : "no expiry";
   return (
-    <div className="relative rounded-2xl bg-paper border border-ink/10 p-6 sm:p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+    <div className="relative rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-7 flex flex-col transition-all md:hover:shadow-hover md:hover:-translate-y-0.5">
       <PromoTag pkg={pkg} />
       <div>
-        <p className="text-4xl font-extrabold text-ink">
+        <p className="text-3xl sm:text-4xl font-extrabold text-ink tracking-tight">
           {credits} {credits === 1 ? "credit" : "credits"}
         </p>
         <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
@@ -673,7 +692,7 @@ function BundleCard({
           context="buy a package"
           gateHref="/packages"
           priceSgd={pkg.effective_price_sgd}
-          className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
+          className="rounded-full bg-ink text-paper min-h-[44px] px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
         >
           Purchase
         </BuyButton>
@@ -696,14 +715,14 @@ function UnlimitedCard({
       ? formatDurationMonths(pkg.duration_months)
       : "unlimited";
   return (
-    <div className="relative rounded-2xl bg-paper border border-ink/10 p-6 sm:p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+    <div className="relative rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-7 flex flex-col transition-all md:hover:shadow-hover md:hover:-translate-y-0.5">
       <PromoTag pkg={pkg} />
       <div>
-        <p className="text-4xl font-extrabold text-ink">{months}</p>
+        <p className="text-3xl sm:text-4xl font-extrabold text-ink tracking-tight">{months}</p>
         <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
       </div>
       <PriceBlock pkg={pkg} />
-      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
+      <ul className={FEATURE_LIST}>
         <li>Unlimited classes for {months}</li>
         <li>All group classes included</li>
         <li>No class limit per week</li>
@@ -726,7 +745,7 @@ function UnlimitedCard({
           // A plan has a Home studio to pick, at every price — including one a
           // Promotion took to zero.
           requiresReview
-          className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
+          className="rounded-full bg-ink text-paper min-h-[44px] px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
         >
           Purchase
         </BuyButton>
@@ -762,18 +781,18 @@ function TrialCard({
   );
 
   return (
-    <div className="relative rounded-2xl bg-paper border border-accent/40 p-6 sm:p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+    <div className="relative rounded-2xl bg-card border border-accent/40 shadow-soft p-5 sm:p-7 flex flex-col transition-all md:hover:shadow-hover md:hover:-translate-y-0.5">
       <span className="absolute -top-2.5 left-4 text-[10px] font-mono uppercase tracking-wider bg-accent text-white px-2.5 py-0.5 rounded-full">
         Trial
       </span>
       <div>
-        <p className="text-4xl font-extrabold text-ink">
+        <p className="text-3xl sm:text-4xl font-extrabold text-ink tracking-tight">
           {credits} {credits === 1 ? "credit" : "credits"}
         </p>
         <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
       </div>
       <PriceBlock pkg={pkg} />
-      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
+      <ul className={FEATURE_LIST}>
         <li>One-time only per student</li>
         <li>Valid for {validity}</li>
         <li>Any group class, any location</li>
@@ -832,12 +851,12 @@ function TrialTermsModal({
   useBodyScrollLock(true);
   const isFree = Number(pkg.effective_price_sgd) === 0;
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
-      onClick={onCancel}
-    >
+    <div className={SHEET_BACKDROP} onClick={onCancel}>
       <div
-        className="bg-paper rounded-2xl p-6 sm:p-8 max-w-md w-full max-h-[85dvh] overflow-y-auto shadow-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Trial pass terms"
+        className={SHEET_PANEL}
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-serif text-xl text-ink leading-snug">
@@ -892,16 +911,16 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
       ? "Train with one partner"
       : `${pkg.num_sessions} personal training sessions`;
   return (
-    <div className="relative rounded-2xl bg-paper border border-ink/10 p-6 sm:p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+    <div className="relative rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-7 flex flex-col transition-all md:hover:shadow-hover md:hover:-translate-y-0.5">
       <PromoTag pkg={pkg} />
       <div>
-        <p className="text-4xl font-extrabold text-ink">
+        <p className="text-3xl sm:text-4xl font-extrabold text-ink tracking-tight">
           {pkg.num_sessions} {pkg.num_sessions === 1 ? "session" : "sessions"}
         </p>
         <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
       </div>
       <PriceBlock pkg={pkg} />
-      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
+      <ul className={FEATURE_LIST}>
         <li>{partnerLine}</li>
         <li>{formatSgd(perSession)}/session</li>
         <li>
@@ -923,7 +942,7 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
         context="buy a package"
         gateHref="/packages"
         priceSgd={pkg.effective_price_sgd}
-        className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
+        className="rounded-full bg-ink text-paper min-h-[44px] px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
       >
         Purchase
       </BuyButton>
@@ -947,7 +966,7 @@ function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
           No corporate packages are available right now.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           {items.map((p) => (
             <CorporateCard key={p.id} pkg={p} />
           ))}
@@ -1007,7 +1026,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
   }
 
   return (
-    <div className="relative rounded-2xl bg-paper border border-ink/10 p-6 sm:p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+    <div className="relative rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-7 flex flex-col transition-all md:hover:shadow-hover md:hover:-translate-y-0.5">
       <div>
         <p className="text-base font-medium text-ink">{pkg.name}</p>
         {pkg.description && (
@@ -1039,7 +1058,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
           }
         }}
         className={cn(
-          "rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 w-full text-center transition-colors inline-flex items-center justify-center gap-2",
+          "rounded-full bg-ink text-paper min-h-[44px] px-5 py-3 text-sm font-medium hover:bg-ink/90 w-full text-center transition-colors inline-flex items-center justify-center gap-2",
           pending && "opacity-70 cursor-wait",
         )}
       >
@@ -1124,12 +1143,12 @@ function CorporateRequestModal({
   if (!mounted) return null;
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
-      onClick={pending ? undefined : onCancel}
-    >
+    <div className={SHEET_BACKDROP} onClick={pending ? undefined : onCancel}>
       <div
-        className="bg-paper rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-modal max-h-[85dvh] overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Request ${pkg.name}`}
+        className={SHEET_PANEL}
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-serif text-xl text-ink leading-snug">
@@ -1150,7 +1169,7 @@ function CorporateRequestModal({
             {studioOptions.map((name) => (
               <label
                 key={name}
-                className="flex items-center gap-2.5 text-sm text-ink cursor-pointer"
+                className="flex min-h-[44px] items-center gap-2.5 rounded-xl border border-ink/10 px-3.5 text-sm text-ink cursor-pointer transition-colors has-[:checked]:border-accent has-[:checked]:bg-accent/5"
               >
                 <input
                   type="radio"
@@ -1163,7 +1182,7 @@ function CorporateRequestModal({
                 <span>{name}</span>
               </label>
             ))}
-            <label className="flex items-center gap-2.5 text-sm text-ink cursor-pointer">
+            <label className="flex min-h-[44px] items-center gap-2.5 rounded-xl border border-ink/10 px-3.5 text-sm text-ink cursor-pointer transition-colors has-[:checked]:border-accent has-[:checked]:bg-accent/5">
               <input
                 type="radio"
                 name="corporate-where"

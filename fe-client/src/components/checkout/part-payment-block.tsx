@@ -99,7 +99,7 @@ export function PartPaymentBlock({
               step="0.01"
               value={amount}
               onChange={e => onAmountChange(e.target.value)}
-              className="w-36 rounded-xl border border-ink/10 bg-paper px-3 py-2.5 text-sm focus:border-accent focus:outline-none transition-colors"
+              className="w-36 min-h-[44px] rounded-xl border border-ink/10 bg-paper px-3 py-2.5 text-sm tabular-nums focus:border-accent focus:outline-none transition-colors"
               aria-label="Amount to pay now"
             />
             <span className="text-xs text-muted">

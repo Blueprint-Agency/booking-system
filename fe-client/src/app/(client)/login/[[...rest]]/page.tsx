@@ -22,11 +22,14 @@ import { memberAuth, readMemberToken, signOutMember, useMemberSession } from "@/
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 
 const inputClass =
-  "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
+  "min-h-[44px] rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
 const labelClass =
-  "text-xs uppercase tracking-wider text-muted mb-2 block";
+  "text-sm font-medium text-ink mb-1.5 block";
 const primaryBtnClass =
-  "w-full rounded-full bg-ink text-paper py-3 text-sm font-medium hover:bg-ink/90 mt-2 disabled:opacity-50";
+  "w-full min-h-[48px] rounded-full bg-ink text-paper py-3 text-sm font-semibold hover:bg-ink/90 mt-2 disabled:opacity-50";
+const titleClass = "text-2xl sm:text-3xl font-extrabold tracking-tight text-ink mb-2";
+/** A text-styled action, still a full-height touch target. */
+const textBtnClass = "inline-flex min-h-[44px] items-center font-medium text-accent-deep hover:underline disabled:opacity-50";
 
 const IMAGE_KEY = "hero-yoga-01";
 const QUOTE = "The pose you avoid is the one you need most.";
@@ -136,7 +139,7 @@ function LoginContent() {
   if (!isLoaded || redirectTarget) {
     return (
       <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
-        <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+        <h1 className={titleClass}>
           One moment…
         </h1>
       </AuthSplitShell>
@@ -144,13 +147,13 @@ function LoginContent() {
   }
 
   const errorNote = error ? (
-    <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p>
+    <p role="alert" className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p>
   ) : null;
 
   if (view === "link") {
     return (
       <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
-        <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+        <h1 className={titleClass}>
           Check your email
         </h1>
         <p className="text-sm text-muted mb-8">
@@ -158,11 +161,11 @@ function LoginContent() {
           password. The link works once, for 30 minutes.
         </p>
         {errorNote}
-        <div className="mt-4 flex flex-wrap gap-4 text-sm">
-          <button type="button" onClick={sendLink} disabled={submitting} className="font-medium text-accent-deep">
+        <div className="mt-2 flex flex-wrap gap-x-5 text-sm">
+          <button type="button" onClick={sendLink} disabled={submitting} className={textBtnClass}>
             {submitting ? "Sending…" : "Send the link again"}
           </button>
-          <button type="button" onClick={useDifferentEmail} className="font-medium text-accent-deep">
+          <button type="button" onClick={useDifferentEmail} className={textBtnClass}>
             Use a different email
           </button>
         </div>
@@ -177,7 +180,7 @@ function LoginContent() {
   if (view === "password") {
     return (
       <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
-        <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+        <h1 className={titleClass}>
           Enter your password
         </h1>
         <p className="text-sm text-muted mb-8">Signing in as {email.trim()}.</p>
@@ -194,11 +197,11 @@ function LoginContent() {
             {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
-        <div className="mt-4 flex flex-wrap gap-4 text-sm">
-          <button type="button" onClick={sendLink} disabled={submitting} className="font-medium text-accent-deep">
+        <div className="mt-2 flex flex-wrap gap-x-5 text-sm">
+          <button type="button" onClick={sendLink} disabled={submitting} className={textBtnClass}>
             Forgot password?
           </button>
-          <button type="button" onClick={useDifferentEmail} className="font-medium text-accent-deep">
+          <button type="button" onClick={useDifferentEmail} className={textBtnClass}>
             Use a different email
           </button>
         </div>
@@ -208,7 +211,7 @@ function LoginContent() {
 
   return (
     <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
-      <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+      <h1 className={titleClass}>
         Welcome back
       </h1>
       <p className="text-sm text-muted mb-8">

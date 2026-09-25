@@ -26,7 +26,7 @@ export function AuthSplitShell({
   return (
     // 4rem is the top bar. `dvh` so mobile browser chrome collapsing doesn't
     // leave a stray scroll on an otherwise short form.
-    <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[calc(100dvh-4rem)]">
+    <div className="grid grid-cols-1 lg:grid-cols-2 lg:min-h-[calc(100dvh-4rem)]">
       <div className="relative hidden lg:block">
         <Image
           src={src}
@@ -49,8 +49,13 @@ export function AuthSplitShell({
         </div>
       </div>
 
-      <div className="flex items-center justify-center bg-paper px-6 py-12 md:px-16">
-        <div className="w-full max-w-md">{children}</div>
+      {/* On a phone the form is a card at the top of the page, not floated to
+          the middle of a tall column — the keyboard opening then never shoves
+          the field out from under the member's thumb. */}
+      <div className="flex justify-center bg-paper px-4 py-6 sm:px-6 sm:py-12 lg:items-center lg:px-16">
+        <div className="w-full max-w-md rounded-3xl border border-ink/5 bg-card p-6 shadow-soft sm:p-8 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
+          {children}
+        </div>
       </div>
     </div>
   );

@@ -3,10 +3,12 @@
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
-import { Calendar, MapPin, CalendarX, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { ArrowDown, Calendar, ChevronLeft, MapPin, CalendarX } from "lucide-react";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { BuyButton } from "@/components/checkout/buy-button";
 import { cn } from "@/lib/utils";
 import {
@@ -52,8 +54,18 @@ export default function WorkshopDetailPage() {
 
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 flex items-center justify-center text-muted text-sm">
-        <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading workshop…
+      <div
+        className="max-w-5xl mx-auto px-4 sm:px-6 py-6 md:py-12 grid gap-8 lg:grid-cols-[1fr_360px]"
+        aria-busy="true"
+        aria-label="Loading workshop"
+      >
+        <div className="space-y-4">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-10 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="aspect-[16/9] w-full rounded-2xl" />
+        </div>
+        <Skeleton className="hidden lg:block h-72 rounded-2xl" />
       </div>
     );
   }
@@ -65,7 +77,7 @@ export default function WorkshopDetailPage() {
           icon={CalendarX}
           title="Workshop not found"
           description="This workshop doesn't exist or has been removed."
-          cta={{ href: "/workshops", label: "Back to Workshops" }}
+          cta={{ href: "/workshops", label: "Back to workshops" }}
         />
       </div>
     );
@@ -95,17 +107,79 @@ export default function WorkshopDetailPage() {
     (i) => i.id !== mainInstructor?.id,
   );
 
+  // The cheapest way in, for the summary above the fold on a phone.
+  const fromPrice =
+    sortedTiers.length > 1
+      ? `From ${formatSgd(
+          sortedTiers
+            .map((t) => Number(tierEffectivePrice(t).amount))
+            .reduce((a, b) => Math.min(a, b)),
+        )}`
+      : priceForSelected
+        ? formatSgd(priceForSelected.amount)
+        : null;
+
   return (
     <>
       <div id="purchase">
-        <BookingSurface maxWidth="lg" padding="default">
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-10">
+        <BookingSurface maxWidth="lg" flush>
+          <Link
+            href="/workshops"
+            className="-ml-1 mb-4 inline-flex min-h-[40px] items-center gap-1 rounded-full pl-1 pr-3 text-sm font-medium text-muted hover:text-ink transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden />
+            All workshops
+          </Link>
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 lg:gap-10">
             {/* Left column */}
-            <div>
+            <div className="min-w-0">
               <SectionHeading
                 eyebrow="Workshop"
                 title={workshop.name}
               />
+
+              {/* Date & place first — they decide whether the rest is worth reading. */}
+              <div className="-mt-2 mb-6 space-y-1.5">
+                <div className="text-sm text-ink flex items-start gap-2">
+                  <Calendar size={15} className="mt-0.5 shrink-0 text-accent-deep" />
+                  <span>
+                    {formatDayRange(workshop.starts_at, workshop.ends_at)}
+                  </span>
+                </div>
+                {workshop.location && (
+                  <div className="text-sm text-muted flex items-start gap-2">
+                    <MapPin size={15} className="mt-0.5 shrink-0 text-ink/40" />
+                    <span>
+                      {workshop.location.name}
+                      {workshop.location.address
+                        ? ` · ${workshop.location.address}`
+                        : ""}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Below lg the purchase card sits after the whole description,
+                  so the price and a way to it come up front. */}
+              {sortedTiers.length > 0 && (
+                <div className="mb-6 flex items-center justify-between gap-3 rounded-2xl border border-ink/5 bg-card p-4 shadow-soft lg:hidden">
+                  <div className="min-w-0">
+                    <p className="text-lg font-bold text-ink">{fromPrice ?? "—"}</p>
+                    {sortedTiers.length > 1 && (
+                      <p className="text-xs text-muted">
+                        {sortedTiers.length} options to choose from
+                      </p>
+                    )}
+                  </div>
+                  <a
+                    href="#book"
+                    className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full bg-ink px-5 text-sm font-medium text-paper hover:bg-ink/90 transition-colors"
+                  >
+                    {sortedTiers.length > 1 ? "Choose and book" : "Book"}
+                    <ArrowDown className="h-4 w-4" aria-hidden />
+                  </a>
+                </div>
+              )}
 
               {workshop.cover_url && (
                 <div className="relative w-full aspect-[16/9] rounded-2xl overflow-hidden mb-6">
@@ -199,38 +273,17 @@ export default function WorkshopDetailPage() {
                 </div>
               )}
 
-              {/* Date & Location */}
-              <div className="mt-8 space-y-2">
-                <div className="text-sm text-muted flex items-center gap-2">
-                  <Calendar size={15} className="shrink-0" />
-                  <span>
-                    {formatDayRange(workshop.starts_at, workshop.ends_at)}
-                  </span>
-                </div>
-                {workshop.location && (
-                  <div className="text-sm text-muted flex items-center gap-2">
-                    <MapPin size={15} className="shrink-0" />
-                    <span>
-                      {workshop.location.name}
-                      {workshop.location.address
-                        ? ` · ${workshop.location.address}`
-                        : ""}
-                    </span>
-                  </div>
-                )}
-              </div>
-
               {/* All days */}
               {sortedDays.length > 1 && (
                 <div className="mt-8">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">
+                  <h3 className="text-sm font-semibold text-ink mb-3">
                     Sessions
                   </h3>
                   <ul className="space-y-2">
                     {sortedDays.map((d) => (
                       <li
                         key={d.id}
-                        className="rounded-lg border border-ink/10 bg-paper px-4 py-3 text-sm"
+                        className="rounded-xl border border-ink/10 bg-card px-4 py-3 text-sm"
                       >
                         <p className="font-medium text-ink">
                           Day {d.ord}
@@ -246,7 +299,10 @@ export default function WorkshopDetailPage() {
             </div>
 
             {/* Right column — sticky purchase card */}
-            <div className="lg:sticky lg:top-24 self-start rounded-2xl border border-ink/10 bg-paper p-5 sm:p-6 space-y-4">
+            <div
+              id="book"
+              className="scroll-mt-20 lg:sticky lg:top-24 self-start w-full rounded-2xl border border-ink/5 bg-card shadow-soft p-5 sm:p-6 space-y-4"
+            >
               {sortedTiers.length === 0 ? (
                 <p className="text-sm text-muted">
                   Pricing is being finalised. Check back soon.
@@ -279,8 +335,8 @@ export default function WorkshopDetailPage() {
 
                   {sortedTiers.length > 1 && (
                     <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                        Choose a tier
+                      <p className="text-sm font-semibold text-ink">
+                        Choose an option
                       </p>
                       <div className="space-y-2">
                         {sortedTiers.map((t) => {
@@ -291,10 +347,11 @@ export default function WorkshopDetailPage() {
                               key={t.id}
                               type="button"
                               onClick={() => setSelectedTierId(t.id)}
+                              aria-pressed={isActive}
                               className={cn(
                                 "w-full text-left rounded-xl border px-4 py-3 transition-colors",
                                 isActive
-                                  ? "border-accent bg-accent/5"
+                                  ? "border-accent bg-accent/5 ring-1 ring-accent"
                                   : "border-ink/10 hover:border-ink/20",
                               )}
                             >
@@ -311,7 +368,7 @@ export default function WorkshopDetailPage() {
                                   {t.description}
                                 </p>
                               )}
-                              <p className="text-[11px] uppercase tracking-wider text-muted mt-1">
+                              <p className="text-xs text-muted mt-1">
                                 {t.day_ids.length}{" "}
                                 {t.day_ids.length === 1 ? "day" : "days"} included
                               </p>
@@ -340,7 +397,7 @@ export default function WorkshopDetailPage() {
                     // NaN, not 0: an absent price must fall to the paid branch.
                     // Coercing it to 0 would post-and-grant the workshop for free.
                     priceSgd={priceForSelected?.amount ?? NaN}
-                    className="block rounded-full bg-ink text-paper w-full py-3 text-sm font-medium mt-1 hover:bg-ink/90 transition-colors text-center"
+                    className="block rounded-full bg-ink text-paper w-full min-h-[48px] py-3 text-sm font-medium mt-1 hover:bg-ink/90 transition-colors text-center"
                     loadingLabel="Redirecting…"
                   >
                     Purchase Now

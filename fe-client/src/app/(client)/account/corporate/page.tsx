@@ -5,12 +5,13 @@ import {
   Building2,
   CheckCircle2,
   Clock,
-  Loader2,
   MessageCircle,
   XCircle,
 } from "lucide-react";
-import { SectionHeading } from "@/components/booking/section-heading";
+import { AccountPageHeader } from "@/components/account/account-page-header";
+import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useBrandCopy } from "@/components/brand/brand-provider";
 import {
   ApiCorporateRequest,
@@ -103,16 +104,20 @@ export default function AccountCorporatePage() {
       {/* AccountShell supplies the column gutters; adding more here squeezed
           the card content on phones. */}
       <div className="max-w-3xl">
-        <SectionHeading eyebrow="Corporate" title="Your corporate packages" />
+        <AccountPageHeader
+          title="Corporate packages"
+          description="After you request one, the studio arranges the dates, location and instructor with you on WhatsApp. Once it's scheduled, the details appear here."
+        />
 
         {loading && (
-          <div className="mt-6 flex items-center justify-center py-12 text-muted text-sm">
-            <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading…
+          <div className="space-y-3" aria-busy="true" aria-label="Loading your corporate packages">
+            <Skeleton className="h-11 rounded-full" />
+            <Skeleton className="h-28 rounded-2xl" />
           </div>
         )}
 
         {!loading && error && (
-          <div className="mt-6 rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+          <div role="alert" className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3">
             We couldn&apos;t load your corporate packages right now. Please
             refresh in a moment.
           </div>
@@ -120,34 +125,24 @@ export default function AccountCorporatePage() {
 
         {!loading && !error && (
           <>
-            <div className="mt-6 flex flex-wrap gap-2">
-              {tabs.map((t) => {
-                const count = requests.filter((r) => inTab(r, t)).length;
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setTab(t)}
-                    className={`rounded-full border px-3 py-1.5 text-xs transition ${
-                      tab === t
-                        ? "border-accent bg-accent/10 text-ink"
-                        : "border-ink/10 bg-card text-muted hover:text-ink"
-                    }`}
-                  >
-                    {TAB_LABEL[t]} ({count})
-                  </button>
-                );
-              })}
-            </div>
+            <SegmentedTabs
+              label="Corporate packages"
+              tabs={tabs.map((t) => ({ value: t, label: TAB_LABEL[t] }))}
+              value={tab}
+              onChange={setTab}
+              counts={Object.fromEntries(tabs.map((t) => [t, requests.filter((r) => inTab(r, t)).length]))}
+            />
 
-            <div className="mt-6">
+            <div>
               {filtered.length === 0 ? (
-                <EmptyState
-                  icon={Building2}
-                  title={emptyTitle(tab)}
-                  description="Browse corporate packages to get started."
-                  cta={{ href: "/corporate", label: "View packages" }}
-                />
+                <div className="rounded-2xl bg-card border border-ink/5 shadow-soft">
+                  <EmptyState
+                    icon={Building2}
+                    title={emptyTitle(tab)}
+                    description="Book a session for your team from the corporate packages."
+                    cta={{ href: "/packages#corporate", label: "View corporate packages" }}
+                  />
+                </div>
               ) : (
                 <ul className="space-y-3">
                   {filtered.map((r) => (
@@ -156,12 +151,6 @@ export default function AccountCorporatePage() {
                 </ul>
               )}
             </div>
-
-            <p className="text-xs text-muted mt-10 leading-relaxed">
-              After requesting, we&apos;ll reach out on WhatsApp to arrange the
-              dates, location and instructor. Once scheduled, the details appear
-              here.
-            </p>
           </>
         )}
       </div>
@@ -176,16 +165,13 @@ function RequestCard({ request: r }: { request: ApiCorporateRequest }) {
   const whatsapp = corporateWhatsappHref(useBrandCopy(WHATSAPP_COPY_KEY, ""), r.package.name);
 
   return (
-    <li className="rounded-2xl border border-ink/10 bg-card p-5">
+    <li className="rounded-2xl border border-ink/5 bg-card shadow-soft p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wider text-muted">
-            Corporate
-          </p>
-          <p className="font-serif text-lg text-ink mt-1">{r.package.name}</p>
+          <p className="font-semibold text-ink break-words">{r.package.name}</p>
           {r.session ? (
             <>
-              <p className="text-sm text-ink mt-2">
+              <p className="text-sm font-medium text-ink/80 mt-1">
                 {formatSessionWindow(r.session.starts_at, r.session.ends_at)}
               </p>
               {(r.session.location_name || r.session.instructor_name) && (
@@ -197,34 +183,29 @@ function RequestCard({ request: r }: { request: ApiCorporateRequest }) {
               )}
             </>
           ) : (
-            <p className="text-sm text-muted mt-2">
+            <p className="text-sm text-muted mt-1">
               Not yet scheduled — we&apos;ll arrange the details with you over
               WhatsApp.
             </p>
           )}
         </div>
         <span
-          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ${badge.tone}`}
+          className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${badge.tone}`}
         >
           <badge.icon size={12} /> {badge.label}
         </span>
       </div>
 
       {r.status === "pending" && whatsapp && (
-        <div className="mt-4">
-          <a
-            href={whatsapp}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-ink text-paper px-4 py-2 text-sm font-medium hover:bg-ink/90 transition-colors"
-          >
-            <MessageCircle className="h-4 w-4" strokeWidth={1.5} />
-            Arrange on WhatsApp
-          </a>
-          <p className="text-xs text-muted mt-2">
-            We&apos;ll arrange the details with you over WhatsApp.
-          </p>
-        </div>
+        <a
+          href={whatsapp}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center gap-2 rounded-full bg-ink text-paper px-5 text-sm font-semibold hover:bg-ink/90 transition-colors"
+        >
+          <MessageCircle className="h-4 w-4" strokeWidth={1.8} />
+          Arrange on WhatsApp
+        </a>
       )}
     </li>
   );

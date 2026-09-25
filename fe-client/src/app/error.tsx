@@ -31,17 +31,17 @@ export default function Error({
         {error.digest && (
           <p className="mt-3 font-mono text-xs text-muted">Reference: {error.digest}</p>
         )}
-        <div className="mt-6 flex items-center justify-center gap-3">
+        <div className="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
           <button
             type="button"
             onClick={reset}
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-accent px-5 text-sm font-medium text-white transition-colors hover:bg-accent-deep"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-6 text-sm font-semibold text-white transition-colors hover:bg-accent-deep"
           >
             Try again
           </button>
           <Link
             href="/"
-            className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-5 text-sm font-medium text-ink transition-colors hover:bg-paper"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-border bg-card px-6 text-sm font-medium text-ink transition-colors hover:bg-paper"
           >
             Go home
           </Link>

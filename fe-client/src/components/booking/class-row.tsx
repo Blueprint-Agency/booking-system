@@ -11,6 +11,13 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { formatClassTime, type ApiClassCard, type ClassEntitlements } from "@/lib/classes";
 
+// A bottom sheet on phones — the actions land under the thumb, above the
+// home indicator — and a centred dialog from `sm` up.
+const SHEET_BACKDROP =
+  "fixed inset-0 z-[70] flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center sm:p-4";
+const SHEET_PANEL =
+  "w-full max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-card px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-center shadow-modal outline-none sm:max-w-sm sm:rounded-2xl sm:p-8 animate-fade-up";
+
 export function ClassRow({
   cls,
   showLocation,
@@ -146,8 +153,8 @@ export function ClassRow({
   // to nothing, and the name is what the member is scanning for.
   const cta = (fullWidth: boolean) => {
     const shape = fullWidth
-      ? "w-full justify-center px-4 py-2.5 text-sm"
-      : "px-4 md:px-5 py-2 text-xs";
+      ? "w-full justify-center px-4 min-h-[44px] text-sm"
+      : "px-4 md:px-5 min-h-[36px] text-xs";
     if (booked)
       return (
         <span className={cn("inline-flex items-center justify-center rounded-full bg-sage/20 text-accent-deep font-medium", shape)}>
@@ -185,9 +192,11 @@ export function ClassRow({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-ink/10 bg-paper transition-all hover:border-ink/20 hover:shadow-hover",
+        "rounded-2xl border border-ink/5 bg-card shadow-soft transition-shadow md:hover:border-ink/15 md:hover:shadow-hover",
         "px-4 py-3.5 md:px-5 md:py-4",
-        (isFull || notCovered) && "opacity-60",
+        // Dim the row and its phone CTA line only — not the plan nudge, which
+        // is the way through, nor a dialog opened from this row.
+        (isFull || notCovered) && "[&>*:nth-child(-n+2)]:opacity-60",
       )}
     >
       <div className="flex items-center gap-3 md:gap-5">
@@ -250,7 +259,7 @@ export function ClassRow({
         </div>
 
         {/* Credit chip */}
-        <span className="hidden sm:inline-flex items-center gap-1.5 shrink-0 rounded-full bg-warm px-3 py-1 text-[11px] font-medium text-ink/70">
+        <span className="hidden sm:inline-flex items-center gap-1.5 shrink-0 rounded-full bg-warm px-3 py-1 text-[11px] font-medium text-ink/70 tabular-nums">
           <Ticket className="h-3.5 w-3.5 text-ink/40" />
           {cls.credit_cost} credit{cls.credit_cost === 1 ? "" : "s"}
         </span>
@@ -295,8 +304,8 @@ export function ClassRow({
       )}
 
       {showNoPackage && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4" onClick={() => setShowNoPackage(false)}>
-          <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-label="You need a package to book a class" tabIndex={-1} className="bg-paper rounded-2xl p-6 sm:p-8 max-w-sm w-full max-h-[85dvh] overflow-y-auto shadow-modal text-center outline-none" onClick={(e) => e.stopPropagation()}>
+        <div className={SHEET_BACKDROP} onClick={() => setShowNoPackage(false)}>
+          <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-label="You need a package to book a class" tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
             <h3 className="font-serif text-xl text-ink leading-snug">You need a package to book a class</h3>
             <p className="text-sm text-muted mt-2 leading-relaxed">You&apos;re out of credits. Grab a package to keep booking.</p>
             <div className="mt-6 flex flex-col gap-2">
@@ -308,8 +317,8 @@ export function ClassRow({
       )}
 
       {bookError && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4" onClick={() => setBookError(null)}>
-          <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-label="Couldn't book" tabIndex={-1} className="bg-paper rounded-2xl p-6 sm:p-8 max-w-sm w-full max-h-[85dvh] overflow-y-auto shadow-modal text-center outline-none" onClick={(e) => e.stopPropagation()}>
+        <div className={SHEET_BACKDROP} onClick={() => setBookError(null)}>
+          <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-label="Couldn't book" tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
             <h3 className="font-serif text-xl text-ink leading-snug">Couldn&apos;t book</h3>
             <p className="text-sm text-muted mt-2 leading-relaxed">{bookError.msg}</p>
             {/* Only the expiry refusal offers credits here — the wrong-studio case
@@ -334,19 +343,25 @@ export function ClassRow({
 }
 
 type FilterSelectProps = {
+  /** What the filter narrows by, for screen readers — the placeholder is the visible label. */
+  label?: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
   placeholder: string;
 };
 
-export function FilterSelect({ value, onChange, options, placeholder }: FilterSelectProps) {
+export function FilterSelect({ label, value, onChange, options, placeholder }: FilterSelectProps) {
   return (
-    <div className="relative flex-1 min-w-[160px]">
+    <div className="relative min-w-0 flex-1 sm:max-w-[240px]">
       <select
+        aria-label={label ?? placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-xl border border-ink/10 bg-paper px-4 py-2.5 pr-9 text-sm text-ink focus:border-accent focus:outline-none cursor-pointer"
+        className={cn(
+          "w-full min-h-[44px] appearance-none truncate rounded-xl border bg-card px-3.5 pr-9 text-sm text-ink focus:border-accent focus:outline-none cursor-pointer transition-colors",
+          value ? "border-accent/40 font-medium" : "border-ink/10",
+        )}
       >
         <option value="">{placeholder}</option>
         {options.map((o) => (

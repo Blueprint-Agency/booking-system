@@ -7,6 +7,7 @@ import { Plus, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useLocations, useClassTypes } from "@/lib/classes";
 import { usePtSessionsApi } from "@/lib/pt-sessions";
@@ -234,17 +235,20 @@ export default function PrivateSessionsPage() {
     );
 
   return (
-    <BookingSurface maxWidth="md" padding="default">
-      <SectionHeading eyebrow="Private sessions" title="Request a session" />
-      <div className="mt-4">
-        <ScheduleSegments />
-      </div>
-      <p className="text-sm text-muted mt-2 mb-8 leading-relaxed">
-        Tell us what you want and when — we&apos;ll reach you on WhatsApp shortly to confirm. No back-and-forth in the app.
-      </p>
+    <BookingSurface maxWidth="md" flush>
+      <ScheduleSegments />
+      <SectionHeading
+        eyebrow="Private sessions"
+        title="Request a session"
+        description="Tell us what you want and when — we'll reach you on WhatsApp shortly to confirm."
+      />
 
       {pkgLoading ? (
-        <div className="text-sm text-muted py-12 text-center">Loading your packages…</div>
+        <div className="space-y-4" aria-busy="true" aria-label="Loading your packages">
+          <Skeleton className="h-12 rounded-xl" />
+          <Skeleton className="h-12 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+        </div>
       ) : (
         <form className="space-y-6" onSubmit={handleSubmit}>
           {!showSessionTypeChoice && (
@@ -258,16 +262,17 @@ export default function PrivateSessionsPage() {
 
           {showSessionTypeChoice && (
             <div>
-              <label className="text-xs uppercase tracking-wider text-muted mb-2 block">Session type</label>
-              <div className="grid grid-cols-2 gap-2">
+              <p className="text-sm font-medium text-ink mb-1.5">Session type</p>
+              <div className="grid grid-cols-2 gap-2" role="group" aria-label="Session type">
                 {(["1on1", "2on1"] as const).map((t) => (
                   <button
                     type="button"
                     key={t}
+                    aria-pressed={computedSessionType === t}
                     onClick={() => setSessionType(t)}
-                    className={`rounded-xl border px-4 py-3 text-sm transition ${
+                    className={`min-h-[48px] rounded-xl border px-4 py-3 text-sm font-medium transition ${
                       computedSessionType === t
-                        ? "border-accent bg-accent/10 text-ink"
+                        ? "border-accent bg-accent/10 text-ink ring-1 ring-accent"
                         : "border-ink/10 bg-card text-muted hover:border-accent/40"
                     }`}
                   >
@@ -284,7 +289,7 @@ export default function PrivateSessionsPage() {
           {eligiblePackages.length > 1 && (
             <div>
               <label
-                className="text-xs uppercase tracking-wider text-muted mb-1.5 block"
+                className="text-sm font-medium text-ink mb-1.5 block"
                 htmlFor="pt-package"
               >
                 Use package
@@ -293,7 +298,7 @@ export default function PrivateSessionsPage() {
                 id="pt-package"
                 value={matchingPackage?.id ?? ""}
                 onChange={(e) => setPackageId(e.target.value)}
-                className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+                className="w-full min-h-[44px] rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
               >
                 {eligiblePackages.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -323,14 +328,14 @@ export default function PrivateSessionsPage() {
           )}
 
           <div>
-            <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block" htmlFor="location">
+            <label className="text-sm font-medium text-ink mb-1.5 block" htmlFor="location">
               Location
             </label>
             <select
               id="location"
               value={locationId}
               onChange={(e) => setLocationId(e.target.value)}
-              className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+              className="w-full min-h-[44px] rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
             >
               {(locations ?? []).map((l) => (
                 <option key={l.id} value={l.id}>
@@ -341,14 +346,14 @@ export default function PrivateSessionsPage() {
           </div>
 
           <div>
-            <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block" htmlFor="class-type">
+            <label className="text-sm font-medium text-ink mb-1.5 block" htmlFor="class-type">
               Class type
             </label>
             <select
               id="class-type"
               value={classTypeId}
               onChange={(e) => setClassTypeId(e.target.value)}
-              className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+              className="w-full min-h-[44px] rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
             >
               {(classTypes ?? []).map((c) => (
                 <option key={c.id} value={c.id}>
@@ -360,14 +365,10 @@ export default function PrivateSessionsPage() {
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs uppercase tracking-wider text-muted">Proposed slots</label>
-              <button
-                type="button"
-                onClick={addSlot}
-                className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-deep"
-              >
-                <Plus size={14} /> Add slot
-              </button>
+              <p className="text-sm font-medium text-ink">
+                Proposed slots
+                <span className="ml-1.5 font-normal text-muted">— more options, faster confirmation</span>
+              </p>
             </div>
             <div className="space-y-3">
               {slots.map((s, i) => (
@@ -375,11 +376,13 @@ export default function PrivateSessionsPage() {
                   key={i}
                   className="rounded-xl border border-ink/10 bg-card p-3"
                 >
-                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
-                    <div>
+                  {/* Date across the full width and the two times side by side
+                      on a phone; one row from sm. */}
+                  <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
+                    <div className="col-span-2 sm:col-span-1">
                       <label
                         htmlFor={`slot-${i}-date`}
-                        className="text-[11px] uppercase tracking-wider text-muted mb-1 block"
+                        className="text-xs text-muted mb-1 block"
                       >
                         Date
                       </label>
@@ -389,13 +392,13 @@ export default function PrivateSessionsPage() {
                         min={todayIso()}
                         value={s.proposedDate}
                         onChange={(e) => setSlot(i, { proposedDate: e.target.value })}
-                        className="w-full rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                        className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
                       />
                     </div>
                     <div>
                       <label
                         htmlFor={`slot-${i}-start`}
-                        className="text-[11px] uppercase tracking-wider text-muted mb-1 block"
+                        className="text-xs text-muted mb-1 block"
                       >
                         Start time
                       </label>
@@ -404,13 +407,13 @@ export default function PrivateSessionsPage() {
                         type="time"
                         value={s.startTime}
                         onChange={(e) => setSlot(i, { startTime: e.target.value })}
-                        className="w-full rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                        className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
                       />
                     </div>
                     <div>
                       <label
                         htmlFor={`slot-${i}-end`}
-                        className="text-[11px] uppercase tracking-wider text-muted mb-1 block"
+                        className="text-xs text-muted mb-1 block"
                       >
                         End time
                       </label>
@@ -419,27 +422,37 @@ export default function PrivateSessionsPage() {
                         type="time"
                         value={s.endTime}
                         onChange={(e) => setSlot(i, { endTime: e.target.value })}
-                        className="w-full rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                        className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
                       />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => removeSlot(i)}
-                      disabled={slots.length === 1}
-                      className="inline-flex items-center justify-center rounded-lg border border-ink/10 px-3 py-2 text-muted hover:text-error disabled:opacity-40 disabled:cursor-not-allowed"
-                      aria-label={`Remove slot ${i + 1}`}
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {/* A lone slot has nothing to remove, so no button. */}
+                    {slots.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeSlot(i)}
+                        className="col-span-2 sm:col-span-1 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-ink/10 px-3 text-sm text-muted hover:text-error hover:border-error/40 transition-colors"
+                        aria-label={`Remove slot ${i + 1}`}
+                      >
+                        <Trash2 size={14} />
+                        <span className="sm:hidden">Remove slot</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
+            <button
+              type="button"
+              onClick={addSlot}
+              className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-ink/20 text-sm font-medium text-accent-deep hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <Plus size={16} /> Add another slot
+            </button>
           </div>
 
           {computedSessionType === "2on1" && (
             <div>
-              <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block" htmlFor="partner-email">
+              <label className="text-sm font-medium text-ink mb-1.5 block" htmlFor="partner-email">
                 Partner email
               </label>
               <div className="flex gap-2">
@@ -453,12 +466,12 @@ export default function PrivateSessionsPage() {
                   }}
                   onBlur={runPartnerLookup}
                   placeholder="partner@example.com"
-                  className="flex-1 rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+                  className="min-w-0 flex-1 min-h-[44px] rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
                 />
                 <button
                   type="button"
                   onClick={runPartnerLookup}
-                  className="rounded-xl border border-ink/10 px-3 py-2.5 text-sm text-ink hover:bg-warm"
+                  className="shrink-0 min-h-[44px] rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm font-medium text-ink hover:bg-warm"
                 >
                   Look up
                 </button>
@@ -478,7 +491,7 @@ export default function PrivateSessionsPage() {
                     value={partnerName}
                     onChange={(e) => setPartnerName(e.target.value)}
                     placeholder="Partner full name"
-                    className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+                    className="w-full min-h-[44px] rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
                   />
                 </div>
               )}
@@ -486,7 +499,7 @@ export default function PrivateSessionsPage() {
           )}
 
           <div>
-            <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block" htmlFor="message">
+            <label className="text-sm font-medium text-ink mb-1.5 block" htmlFor="message">
               Note (optional)
             </label>
             <textarea
@@ -495,7 +508,7 @@ export default function PrivateSessionsPage() {
               onChange={(e) => setMessage(e.target.value)}
               rows={3}
               placeholder="Anything we should know — focus areas, injuries, preferences."
-              className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent resize-y"
+              className="w-full min-h-[44px] rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent resize-y"
             />
           </div>
 
@@ -531,7 +544,7 @@ export default function PrivateSessionsPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-full bg-ink text-paper px-6 py-3 text-sm font-medium hover:bg-ink/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full min-h-[48px] rounded-full bg-ink text-paper px-6 py-3 text-sm font-medium hover:bg-ink/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting
               ? "Submitting…"

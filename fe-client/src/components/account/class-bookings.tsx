@@ -16,9 +16,11 @@ import {
   UserRound,
 } from "lucide-react";
 import { QrBadge } from "@/components/account/qr-badge";
-import { SectionHeading } from "@/components/booking/section-heading";
-import { AccountMobileNav } from "@/components/account/account-mobile-nav";
+import { AccountPageHeader } from "@/components/account/account-page-header";
+import { SegmentedTabs } from "@/components/account/segmented-tabs";
+import { DateStub } from "@/components/account/date-stub";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate, cn } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { ApiError, useApi } from "@/lib/api";
@@ -187,11 +189,14 @@ export function ClassBookings() {
 
   return (
     <div>
-      <SectionHeading eyebrow="Classes" title="Your classes" />
-      <AccountMobileNav />
+      <AccountPageHeader
+        title="Your classes"
+        description="Show your QR at the desk to check in."
+      />
 
       {banner && (
         <div
+          role="status"
           className={cn(
             "mb-4 flex items-start justify-between gap-3 rounded-xl border p-3 text-sm",
             banner.tone === "ok" && "border-sage/25 bg-sage/10 text-ink",
@@ -211,48 +216,43 @@ export function ClassBookings() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted">
-          <Loader2 className="h-5 w-5 animate-spin" />
+        <div className="space-y-3" aria-busy="true" aria-label="Loading your classes">
+          <Skeleton className="h-11 rounded-full" />
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-2xl" />
+          ))}
         </div>
       ) : loadError ? (
-        <div className="rounded-2xl bg-paper border border-ink/10 p-8 text-center">
+        <div className="rounded-2xl bg-card border border-ink/5 shadow-soft p-8 text-center">
           <p className="text-sm text-muted">Couldn&apos;t load your classes.</p>
           <button
             onClick={reload}
-            className="mt-4 rounded-full border border-ink/10 px-5 py-2 text-sm font-medium hover:border-accent transition-colors"
+            className="mt-4 min-h-[44px] rounded-full border border-ink/10 px-5 text-sm font-semibold hover:border-accent transition-colors"
           >
             Try again
           </button>
         </div>
       ) : !hasAny ? (
-        <EmptyState
-          icon={CalendarX}
-          title="No classes yet"
-          description="Browse classes to book your next session."
-          cta={{ href: "/classes", label: "Browse classes" }}
-        />
+        <div className="rounded-2xl bg-card border border-ink/5 shadow-soft">
+          <EmptyState
+            icon={CalendarX}
+            title="No classes yet"
+            description="Book a class from the schedule and it shows up here with its check-in QR."
+            cta={{ href: "/", label: "See the schedule" }}
+          />
+        </div>
       ) : (
         <>
-          <div className="mb-4 -mx-4 sm:mx-0 overflow-x-auto no-scrollbar">
-            <div className="inline-flex rounded-lg border border-border bg-warm p-1 mx-4 sm:mx-0">
-              {(["upcoming", "ongoing", "past"] as Tab[]).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={cn(
-                    "px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap",
-                    tab === t ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink",
-                  )}
-                >
-                  {TAB_LABEL[t]}
-                  <span className="ml-1.5 text-xs text-muted">({counts[t]})</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <SegmentedTabs
+            label="Classes"
+            tabs={(["upcoming", "ongoing", "past"] as Tab[]).map((t) => ({ value: t, label: TAB_LABEL[t] }))}
+            value={tab}
+            onChange={setTab}
+            counts={counts}
+          />
 
           {rows.length === 0 ? (
-            <div className="rounded-2xl bg-paper border border-ink/10 p-8 text-center text-sm text-muted">
+            <div className="rounded-2xl border border-dashed border-ink/15 p-8 text-center text-sm text-muted">
               {tab === "upcoming"
                 ? "Nothing on the schedule."
                 : tab === "ongoing"
@@ -260,7 +260,7 @@ export function ClassBookings() {
                   : "No past classes yet."}
             </div>
           ) : tab === "past" ? (
-            <div className="rounded-2xl bg-paper border border-ink/10 divide-y divide-ink/5">
+            <div className="rounded-2xl bg-card border border-ink/5 shadow-soft divide-y divide-ink/5">
               {rows.map((b) => (
                 <PastRow key={b.booking_id} booking={b} />
               ))}
@@ -284,33 +284,36 @@ export function ClassBookings() {
 
       {cancelTarget && (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 p-4"
+          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-ink/40 p-3 sm:p-4"
           onClick={() => !cancelling && setCancelTarget(null)}
         >
           <div
-            className="w-full max-w-md max-h-[85dvh] overflow-y-auto rounded-2xl bg-paper border border-ink/10 p-6 shadow-hover"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-booking-title"
+            className="w-full max-w-md max-h-[85dvh] overflow-y-auto rounded-2xl bg-card p-6 shadow-modal animate-fade-up"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-bold text-ink">Cancel this booking?</h3>
+            <h3 id="cancel-booking-title" className="text-lg font-bold text-ink">Cancel this booking?</h3>
             <p className="mt-1 text-sm text-muted">
               {cancelTarget.name} · {formatDate(cancelTarget.starts_at)} ·{" "}
               {formatClassTime(cancelTarget.starts_at)}
             </p>
-            <div className="mt-4 rounded-xl border border-ink/10 bg-warm p-3 text-sm text-ink">
+            <div className="mt-4 rounded-xl bg-ink/[0.04] p-3 text-sm text-ink">
               {classCancelNotice(policy, cancelTarget.was_unlimited)}
             </div>
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">
               <button
                 onClick={() => setCancelTarget(null)}
                 disabled={cancelling}
-                className="flex-1 min-h-[44px] rounded-full border border-ink/10 px-4 text-sm font-medium hover:border-accent transition-colors disabled:opacity-60"
+                className="flex-1 min-h-[48px] rounded-full border border-ink/10 px-4 text-sm font-semibold hover:border-ink/30 transition-colors disabled:opacity-60"
               >
                 Keep booking
               </button>
               <button
                 onClick={confirmCancel}
                 disabled={cancelling}
-                className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-full bg-error px-4 text-sm font-medium text-paper hover:bg-error/90 transition-colors disabled:opacity-70 disabled:cursor-wait"
+                className="flex-1 min-h-[48px] inline-flex items-center justify-center gap-1.5 rounded-full bg-error px-4 text-sm font-semibold text-inverse hover:bg-error/90 transition-colors disabled:opacity-70 disabled:cursor-wait"
               >
                 {cancelling && <Loader2 className="h-4 w-4 animate-spin" />}
                 {cancelling ? "Cancelling…" : "Confirm cancellation"}
@@ -367,50 +370,32 @@ function UpcomingCard({
   return (
     <div
       className={cn(
-        ongoing
-          ? "rounded-2xl bg-paper border border-sage/40 p-6 shadow-soft"
-          : featured
-            ? "rounded-2xl bg-paper border border-accent/30 p-6 shadow-soft"
-            : "rounded-2xl bg-paper border border-ink/10 p-4",
+        "rounded-2xl bg-card border shadow-soft",
+        ongoing ? "border-sage/40" : featured ? "border-accent/25" : "border-ink/5",
       )}
     >
-      <div className="flex items-start justify-between gap-3 sm:gap-4">
+      <div className="flex items-start gap-3 sm:gap-4 p-4">
+        <DateStub iso={booking.starts_at} tone={featured || ongoing ? "accent" : "default"} />
         <div className="min-w-0 flex-1">
-          {ongoing && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-sage/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-sage">
-              <span className="h-1.5 w-1.5 rounded-full bg-sage animate-pulse" />
-              In progress
-            </span>
-          )}
-          {booking.check_in_state === "attended" && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full bg-sage/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-sage",
-                ongoing && "ml-1.5",
+          {(ongoing || booking.check_in_state === "attended") && (
+            <div className="mb-1 flex flex-wrap gap-1.5">
+              {ongoing && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-sage/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sage">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sage animate-pulse" />
+                  In progress
+                </span>
               )}
-            >
-              <CheckCircle2 className="h-3 w-3" />
-              Checked in
-            </span>
+              {booking.check_in_state === "attended" && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-sage/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sage">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Checked in
+                </span>
+              )}
+            </div>
           )}
-          <p
-            className={cn(
-              featured || ongoing
-                ? "text-base sm:text-lg font-semibold text-ink truncate"
-                : "font-medium text-ink truncate",
-              (ongoing || booking.check_in_state === "attended") && "mt-1",
-            )}
-          >
-            {booking.name}
-          </p>
+          <p className="font-semibold text-ink break-words leading-snug">{booking.name}</p>
+          <p className="mt-0.5 text-sm font-medium text-ink/80">{formatClassTime(booking.starts_at)}</p>
           <MetaLine booking={booking} />
-          <div className="mt-1 text-xs text-muted sm:hidden">
-            {formatDate(booking.starts_at)} · {formatClassTime(booking.starts_at)}
-          </div>
-        </div>
-        <div className="hidden sm:block text-right shrink-0">
-          <p className="text-sm text-ink font-medium">{formatDate(booking.starts_at)}</p>
-          <p className="text-sm text-muted">{formatClassTime(booking.starts_at)}</p>
         </div>
         <QrBadge
           value={booking.qr_token}
@@ -418,17 +403,18 @@ function UpcomingCard({
           subLabel={`${formatDate(booking.starts_at)} · ${booking.code}`}
         />
       </div>
-      <div className="mt-3 flex items-center gap-3">
+      <div className="flex items-center justify-between gap-3 border-t border-ink/5 px-4 min-h-[48px]">
+        <span className="text-xs text-muted font-mono tracking-wide">{booking.code}</span>
         {open ? (
           <button
             onClick={() => onCancel(booking)}
-            className="inline-flex items-center gap-1.5 min-h-[32px] text-xs font-medium text-muted hover:text-error transition-colors"
+            className="-mr-2 inline-flex items-center gap-1.5 min-h-[44px] rounded-full px-3 text-sm font-semibold text-muted hover:bg-error/5 hover:text-error transition-colors"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
             Cancel
           </button>
         ) : (
-          <span className="text-xs text-muted">
+          <span className="text-xs text-muted text-right">
             {policy ? cancelClosed(policy.class_window_hours) : "Cancellation closed"}
           </span>
         )}
@@ -442,19 +428,14 @@ function PastRow({ booking }: { booking: ApiBooking }) {
   const attended = booking.check_in_state === "attended";
   const noShow = booking.check_in_state === "no_show" || booking.state === "no_show";
   return (
-    <div className="flex items-center justify-between gap-3 sm:gap-4 p-4">
+    <div className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4">
+      <DateStub iso={booking.starts_at} tone="muted" />
       <div className="min-w-0 flex-1">
-        <p className="font-medium text-ink truncate">{booking.name}</p>
-        {booking.instructor && (
-          <p className="text-sm text-muted truncate">with {booking.instructor.name}</p>
-        )}
-        <p className="text-xs text-muted mt-0.5 sm:hidden">
-          {formatDate(booking.starts_at)} · {formatClassTime(booking.starts_at)}
+        <p className="font-semibold text-ink truncate">{booking.name}</p>
+        <p className="text-sm text-muted truncate">
+          {formatClassTime(booking.starts_at)}
+          {booking.instructor ? ` · ${booking.instructor.name}` : ""}
         </p>
-      </div>
-      <div className="hidden sm:block text-right shrink-0">
-        <p className="text-sm text-ink">{formatDate(booking.starts_at)}</p>
-        <p className="text-sm text-muted">{formatClassTime(booking.starts_at)}</p>
       </div>
       {cancelled ? (
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warm px-2.5 py-1 text-xs font-medium text-muted">
