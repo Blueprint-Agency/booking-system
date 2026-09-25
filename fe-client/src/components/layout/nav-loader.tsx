@@ -2,24 +2,24 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import { PageLoader } from "@/components/layout/page-loader";
 
 type State = "idle" | "loading" | "done";
 
-/** A navigation that answers faster than this shows no bar at all. */
+/** A navigation that answers faster than this shows no loader at all. */
 const SHOW_AFTER_MS = 120;
 /** A click that has not changed the page by now is not going to. */
 const GIVE_UP_AFTER_MS = 15_000;
 
 /**
- * A thin accent bar across the top while the next page loads, so a tap on a
- * slow connection visibly did something. Styles: `.nav-progress` in
- * `globals.css`.
+ * The centred loader (`PageLoader`) while the next page is on its way, so a
+ * tap on a slow connection visibly did something.
  *
- * It starts on a click on an in-app link to another page and completes when
- * the pathname changes. Modified clicks, new tabs, downloads and links off
- * this site are left alone — the browser shows its own progress for those.
+ * It starts on a click on an in-app link to another page and ends when the
+ * pathname changes. Modified clicks, new tabs, downloads and links off this
+ * site are left alone — the browser shows its own progress for those.
  */
-export function NavProgress() {
+export function NavLoader() {
   const pathname = usePathname();
   const [state, setState] = useState<State>("idle");
   const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -75,5 +75,5 @@ export function NavProgress() {
     return () => clearTimeout(t);
   }, [state]);
 
-  return <div className="nav-progress" data-state={state} aria-hidden />;
+  return <PageLoader state={state} />;
 }

@@ -210,34 +210,79 @@
   pointer-events: none;
 }
 
-/* ── Navigation progress (`components/layout/nav-progress.tsx`) ─────────────
-   Creeps toward the end while the next page loads, then completes and fades. */
-.nav-progress {
+/* ── Page loader (`components/layout/page-loader.tsx`) ──────────────────────
+   Centred on the screen: a ring breathing in and out around a still dot, on a
+   slow count — a pause, not a spinner's hurry. Fades in and out with the load;
+   under the sheets (z 70) and never in the pointer's way. */
+.page-loader {
   position: fixed;
-  inset: 0 0 auto 0;
-  z-index: 90;
-  height: 2px;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
   pointer-events: none;
-  transform-origin: left;
-  background: var(--color-accent);
   opacity: 0;
-  transform: scaleX(0);
+  transition: opacity 0.2s ease-out;
 }
 
-.nav-progress[data-state="loading"] {
+.page-loader[data-state="loading"] {
   opacity: 1;
-  transform: scaleX(0.85);
-  transition:
-    opacity 0.15s ease-out,
-    transform 8s cubic-bezier(0.1, 0.8, 0.2, 1);
 }
 
-.nav-progress[data-state="done"] {
-  opacity: 0;
-  transform: scaleX(1);
-  transition:
-    transform 0.2s ease-out,
-    opacity 0.25s ease-out 0.2s;
+.page-loader__card {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 9999px;
+  background: var(--color-card);
+  box-shadow: var(--shadow-soft);
+  transform: scale(0.92);
+  transition: transform 0.2s ease-out;
+}
+
+.page-loader[data-state="loading"] .page-loader__card {
+  transform: scale(1);
+}
+
+.page-loader__ring {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  border: 2px solid var(--color-accent);
+  animation: loaderBreathe 2.4s ease-in-out infinite;
+}
+
+.page-loader__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--color-accent);
+}
+
+@keyframes loaderBreathe {
+  0%,
+  100% {
+    transform: scale(0.55);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+}
+
+/* The route's loading screen shows a beat late, so a quick load shows only the page. */
+.page-loader--delayed {
+  animation: fadeIn 0.2s ease-out 0.15s backwards;
+}
+
+/* A navigation that lands on the loading screen would otherwise show two
+   loaders in the same spot; the screen's own one stays. */
+body:has(.page-loader--delayed) .page-loader:not(.page-loader--delayed) {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
