@@ -1,4 +1,5 @@
 import { DEFAULT_API_TIMEOUT_MS } from "@/lib/api-request";
+import { currentImpersonationGrant, IMPERSONATION_GRANT_HEADER } from "@/lib/impersonation-handoff";
 import { bearerToken, noteSessionExpiry } from "@/lib/session-expiry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
@@ -29,6 +30,11 @@ export function getApiBaseUrl(): string {
 export async function fetchApi(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   for (const [name, value] of Object.entries(tenantRequestHeaders())) headers.set(name, value);
+  // An impersonation session is refused (401) on any call without its grant —
+  // which would then sign the member out — so a signed-in call carries it here
+  // exactly as `api.ts` does (`lib/impersonation-handoff.ts`).
+  const impGrant = currentImpersonationGrant();
+  if (impGrant && bearerToken(headers)) headers.set(IMPERSONATION_GRANT_HEADER, impGrant);
   const res = await fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
     headers,

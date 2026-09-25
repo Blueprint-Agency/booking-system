@@ -6,7 +6,9 @@
  *   member. It becomes this hostname's member session, like any sign-in.
  * - `grant` is the backend-signed proof that a studio admin is behind it. It is
  *   kept in a cookie so the server layout can show the banner, and sent on every
- *   member API call as `x-impersonation-grant` (`lib/api.ts`).
+ *   member API call as `x-impersonation-grant` — by both `lib/api.ts` and
+ *   `fetchApi` (`lib/api-url.ts`). The backend refuses an impersonation
+ *   session's call without it (401), and a 401 signs the member out.
  *
  * In the fragment because a fragment never leaves the browser: the session
  * token reaches no server log, proxy or `Referer`.
@@ -15,6 +17,18 @@
  */
 
 export const IMPERSONATION_GRANT_COOKIE = "__imp_grant";
+export const IMPERSONATION_GRANT_HEADER = "x-impersonation-grant";
+
+/** The grant this browser holds, read from a `document.cookie` string; null when none. */
+export function readImpersonationGrant(cookie: string): string | null {
+  const m = cookie.match(new RegExp(`(?:^|;\\s*)${IMPERSONATION_GRANT_COOKIE}=([^;]+)`));
+  return m ? decodeURIComponent(m[1]!) : null;
+}
+
+/** The grant this page holds; null on the server or when not impersonating. */
+export function currentImpersonationGrant(): string | null {
+  return typeof document === "undefined" ? null : readImpersonationGrant(document.cookie);
+}
 
 /** The grant's own life (`be/src/lib/impersonation-grant.ts`). */
 const GRANT_TTL_SECONDS = 60 * 60;

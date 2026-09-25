@@ -20,12 +20,7 @@ import { getMemberToken } from "@/lib/member-auth";
 import { reportError } from "@/lib/report-error";
 import { noteSessionExpiry } from "@/lib/session-expiry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
-
-function readImpGrant(): string | null {
-  if (typeof document === "undefined") return null;
-  const m = document.cookie.match(/(?:^|;\s*)__imp_grant=([^;]+)/);
-  return m ? decodeURIComponent(m[1]!) : null;
-}
+import { currentImpersonationGrant, IMPERSONATION_GRANT_HEADER } from "@/lib/impersonation-handoff";
 
 export type TokenGetter = () => Promise<string | null>;
 
@@ -74,8 +69,8 @@ export async function apiFetch<T = unknown>(
   if (token) headers.Authorization = `Bearer ${token}`;
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
 
-  const impGrant = readImpGrant();
-  if (impGrant) headers["x-impersonation-grant"] = impGrant;
+  const impGrant = currentImpersonationGrant();
+  if (impGrant) headers[IMPERSONATION_GRANT_HEADER] = impGrant;
 
   const answer = await sendApiRequest(
     buildUrl(path, opts.query),
