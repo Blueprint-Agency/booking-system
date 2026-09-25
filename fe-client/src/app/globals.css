@@ -152,6 +152,103 @@
   animation: fadeIn 0.3s ease-out both;
 }
 
+/* A dropdown list opening from its trigger (`components/ui/select.tsx`). */
+@keyframes dropIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-drop-in {
+  animation: dropIn 0.14s ease-out both;
+}
+
+/* ── Page transitions (`components/layout/page-transition.tsx`) ──────────────
+   The new page rises in. Fill mode `backwards`, not `both`: a transform left on
+   the wrapper after the animation would become the containing block for every
+   `position: fixed` sheet and dialog inside the page. */
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: pageEnter 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) 0.06s backwards;
+}
+
+/* The old page leaves quickly, so it never competes with the new one arriving. */
+::view-transition-old(.page) {
+  animation: pageLeave 0.12s ease-in both;
+}
+
+@keyframes pageLeave {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Only the page moves: the header, tab bar and account menu are part of the
+   root snapshot, which swaps without a crossfade. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+/* Clicks during the brief overlay reach the live page rather than being lost. */
+::view-transition {
+  pointer-events: none;
+}
+
+/* ── Navigation progress (`components/layout/nav-progress.tsx`) ─────────────
+   Creeps toward the end while the next page loads, then completes and fades. */
+.nav-progress {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 90;
+  height: 2px;
+  pointer-events: none;
+  transform-origin: left;
+  background: var(--color-accent);
+  opacity: 0;
+  transform: scaleX(0);
+}
+
+.nav-progress[data-state="loading"] {
+  opacity: 1;
+  transform: scaleX(0.85);
+  transition:
+    opacity 0.15s ease-out,
+    transform 8s cubic-bezier(0.1, 0.8, 0.2, 1);
+}
+
+.nav-progress[data-state="done"] {
+  opacity: 0;
+  transform: scaleX(1);
+  transition:
+    transform 0.2s ease-out,
+    opacity 0.25s ease-out 0.2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+}
+
 .stagger-1 { animation-delay: 0.06s; }
 .stagger-2 { animation-delay: 0.12s; }
 .stagger-3 { animation-delay: 0.18s; }

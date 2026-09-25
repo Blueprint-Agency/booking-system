@@ -22,6 +22,7 @@ import { adoptMemberSession, memberAuth, useMemberSession } from "@/lib/member-a
 import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 import { OtpInput } from "@/components/auth/otp-input";
+import { Select } from "@/components/ui/select";
 
 const inputClass =
   "min-h-[44px] rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
@@ -249,13 +250,9 @@ function RegisterContent() {
         </div>
         <div>
           <label htmlFor="gender" className={labelClass}>Gender</label>
-          <select id="gender" className={inputClass} value={gender}
-            onChange={(ev) => setGender(ev.target.value as Gender | "")}>
-            <option value="" disabled>Select…</option>
-            {GENDERS.map((g) => (
-              <option key={g.value} value={g.value}>{g.label}</option>
-            ))}
-          </select>
+          <Select id="gender" value={gender} options={GENDERS}
+            onChange={(v) => setGender(v as Gender | "")}
+            triggerClassName="bg-paper px-4" />
         </div>
         <div>
           <label htmlFor="password" className={labelClass}>Password</label>

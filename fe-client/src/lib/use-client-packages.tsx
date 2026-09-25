@@ -226,10 +226,14 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
-        reportError(new Error(`/me/packages ${res.status}`), {
-          scope: "load-packages",
-          status: res.status,
-        });
+        // A 401 is an expired session, not a fault: `fetchApi` has already
+        // signed the member out, and the pages that need one send them to /login.
+        if (res.status !== 401) {
+          reportError(new Error(`/me/packages ${res.status}`), {
+            scope: "load-packages",
+            status: res.status,
+          });
+        }
         return;
       }
       setData(mapPackagesResponse(await res.json()));

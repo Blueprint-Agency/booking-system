@@ -3,8 +3,9 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, ChevronRight, UserRound, MapPin, Loader2, Lock } from "lucide-react";
+import { Check, UserRound, MapPin, Loader2, Lock } from "lucide-react";
 import { cn, formatSgd } from "@/lib/utils";
+import { Select } from "@/components/ui/select";
 import { ApiError, useApi } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -316,24 +317,13 @@ type FilterSelectProps = {
 
 export function FilterSelect({ label, value, onChange, options, placeholder }: FilterSelectProps) {
   return (
-    <div className="relative min-w-0 flex-1 sm:max-w-[240px]">
-      <select
-        aria-label={label ?? placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={cn(
-          "w-full min-h-[44px] appearance-none truncate rounded-xl border bg-card px-3.5 pr-9 text-sm text-ink focus:border-accent focus:outline-none cursor-pointer transition-colors",
-          value ? "border-accent/40 font-medium" : "border-ink/10",
-        )}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90 text-muted pointer-events-none" />
-    </div>
+    <Select
+      ariaLabel={label ?? placeholder}
+      value={value}
+      onChange={onChange}
+      options={[{ value: "", label: placeholder }, ...options]}
+      className="min-w-0 flex-1 sm:max-w-[240px]"
+      triggerClassName={value ? "border-accent/40 font-medium" : undefined}
+    />
   );
 }

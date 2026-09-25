@@ -7,6 +7,7 @@ import { Plus, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BTN_PRIMARY, CARD } from "@/components/ui/styles";
 import { useClientPackages } from "@/lib/use-client-packages";
@@ -285,19 +286,17 @@ export default function PrivateSessionsPage() {
               >
                 Use package
               </label>
-              <select
+              <Select
                 id="pt-package"
                 value={matchingPackage?.id ?? ""}
-                onChange={(e) => setPackageId(e.target.value)}
-                className="w-full min-h-[44px] rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
-              >
-                {eligiblePackages.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} — {p.creditsOrSessionsRemaining ?? 0} left
-                    {p.boundInstructor ? ` · with ${p.boundInstructor.name}` : ""}
-                  </option>
-                ))}
-              </select>
+                onChange={setPackageId}
+                options={eligiblePackages.map((p) => ({
+                  value: p.id,
+                  label:
+                    `${p.name} — ${p.creditsOrSessionsRemaining ?? 0} left` +
+                    (p.boundInstructor ? ` · with ${p.boundInstructor.name}` : ""),
+                }))}
+              />
             </div>
           )}
 
@@ -322,18 +321,12 @@ export default function PrivateSessionsPage() {
             <label className="text-sm font-medium text-ink mb-1.5 block" htmlFor="location">
               Location
             </label>
-            <select
+            <Select
               id="location"
               value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-              className="w-full min-h-[44px] rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
-            >
-              {(locations ?? []).map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
+              onChange={setLocationId}
+              options={(locations ?? []).map((l) => ({ value: l.id, label: l.name }))}
+            />
           </div>
 
           <PreferredClassType
@@ -381,18 +374,13 @@ export default function PrivateSessionsPage() {
                       </label>
                       {/* On the hour or half hour only — a native time input
                           would offer every minute. */}
-                      <select
+                      <Select
                         id={`slot-${i}-start`}
                         value={s.startTime}
-                        onChange={(e) => setSlot(i, { startTime: e.target.value })}
-                        className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
-                      >
-                        {HALF_HOUR_TIMES.map((t) => (
-                          <option key={t} value={t}>
-                            {formatSlotTime(t)}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => setSlot(i, { startTime: v })}
+                        options={HALF_HOUR_TIMES.map((t) => ({ value: t, label: formatSlotTime(t) }))}
+                        triggerClassName="rounded-lg px-3"
+                      />
                     </div>
                     {/* A lone slot has nothing to remove, so no button. */}
                     {slots.length > 1 && (

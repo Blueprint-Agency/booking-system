@@ -1,4 +1,5 @@
 import { DEFAULT_API_TIMEOUT_MS } from "@/lib/api-request";
+import { bearerToken, noteSessionExpiry } from "@/lib/session-expiry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
 /** Backend API base URL, always ending with `/api/v1`. */
@@ -21,13 +22,19 @@ export function getApiBaseUrl(): string {
  *
  * It carries the same default deadline as `api.ts` (`lib/api-request.ts`), so a
  * hung backend ends in an error rather than a spinner; pass `signal` to set your own.
+ *
+ * A 401 on a call that sent a bearer token signs the member out here
+ * (`lib/session-expiry.ts`), so no call site has to remember to.
  */
-export function fetchApi(path: string, init: RequestInit = {}): Promise<Response> {
+export async function fetchApi(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   for (const [name, value] of Object.entries(tenantRequestHeaders())) headers.set(name, value);
-  return fetch(`${getApiBaseUrl()}${path}`, {
+  const res = await fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
     headers,
     signal: init.signal ?? AbortSignal.timeout(DEFAULT_API_TIMEOUT_MS),
   });
+  const sent = bearerToken(headers);
+  noteSessionExpiry(res.status, sent !== undefined, sent);
+  return res;
 }

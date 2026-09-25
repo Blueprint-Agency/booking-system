@@ -24,7 +24,8 @@ export function BookingSurface({
   return (
     <div
       className={cn(
-        "mx-auto w-full px-4 md:px-8 py-5 md:py-10 animate-fade-in",
+        // No entry animation of its own: the route template brings every page in.
+        "mx-auto w-full px-4 md:px-8 py-5 md:py-10",
         widthMap[maxWidth],
         className,
       )}

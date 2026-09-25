@@ -5,6 +5,7 @@ import { Lock } from "lucide-react";
 import { ChangePasswordCard } from "@/components/account/change-password-card";
 import { SavedCardsCard } from "@/components/account/saved-cards-card";
 import { AccountPageHeader } from "@/components/account/account-page-header";
+import { Select } from "@/components/ui/select";
 import { ApiError, useApi } from "@/lib/api";
 import { refreshAppUser } from "@/lib/auth";
 
@@ -174,20 +175,14 @@ export default function ProfilePage() {
                 <label htmlFor="gender" className={labelClass}>
                   Gender
                 </label>
-                <select
+                <Select
                   id="gender"
                   value={gender}
-                  onChange={(e) => setGender(e.target.value as Gender | "")}
+                  onChange={(v) => setGender(v as Gender | "")}
+                  options={[{ value: "", label: "Not set" }, ...GENDERS]}
                   disabled={loading}
-                  className={inputClass}
-                >
-                  <option value="">Not set</option>
-                  {GENDERS.map((g) => (
-                    <option key={g.value} value={g.value}>
-                      {g.label}
-                    </option>
-                  ))}
-                </select>
+                  triggerClassName="px-4 focus:ring-2 focus:ring-accent/15"
+                />
               </div>
             </div>
 

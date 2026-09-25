@@ -21,6 +21,7 @@
 import { createAuthClient } from "better-auth/react";
 import { emailOTPClient } from "better-auth/client/plugins";
 import { getApiBaseUrl } from "@/lib/api-url";
+import { onSessionExpired } from "@/lib/session-expiry";
 import { clearTelemetryUser } from "@/lib/telemetry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
@@ -102,6 +103,25 @@ export async function signOutMember(): Promise<void> {
     memberAuth.$store.notify("$sessionSignal");
   }
 }
+
+/**
+ * The backend refused this hostname's token (a 401 on a signed-in call): the
+ * session is already gone on its side, so there is nothing to sign out of.
+ * Forget the token and let the session store re-read — the member reads as
+ * signed out, and the pages that need one send them to `/login`.
+ */
+export function handleExpiredSession(sentToken?: string): void {
+  const current = readMemberToken();
+  if (!current) return;
+  // A late 401 for a token this browser has since replaced (the member signed
+  // in again while it was in flight) says nothing about the new session.
+  if (sentToken !== undefined && sentToken !== current) return;
+  storeMemberToken(null);
+  clearTelemetryUser();
+  memberAuth.$store.notify("$sessionSignal");
+}
+
+onSessionExpired(handleExpiredSession);
 
 /** The session as the member app reads it. */
 export interface MemberSession {
