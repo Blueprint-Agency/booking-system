@@ -243,7 +243,7 @@ A studio's own account with the payment provider, opened by the studio itself, t
 _Avoid_: connected account, merchant account, sub-account, Stripe account, seller account, payout account
 
 **Payment Credentials**:
-The secret key and webhook signing secret of a studio's Payment Account, held by the platform on that studio's behalf. Stored encrypted, never logged, never returned by any route, and never present in an error or an exception report — so after they are set, the only facts anyone can learn about them are that they exist and which account they name. Only the super portal can set or replace them, and nothing anywhere can read them back. They are not a login and not a Tenant's identity: they open one studio's money and nothing else.
+The secret key and webhook signing secret of a studio's Payment Account, held by the platform on that studio's behalf. The studio supplies only the key; the platform creates the webhook endpoint on its account with it and keeps the signing secret Stripe returns. Stored encrypted, never logged, never returned by any route, and never present in an error or an exception report — so after they are set, the only facts anyone can learn about them are that they exist and which account they name. Only the super portal can set or replace them, and nothing anywhere can read them back. They are not a login and not a Tenant's identity: they open one studio's money and nothing else.
 _Avoid_: API keys, Stripe keys, secrets, tokens
 
 **Account of Record**:

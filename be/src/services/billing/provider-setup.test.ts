@@ -80,21 +80,19 @@ describe('the webhook URL a studio is shown', () => {
 describe('saving a key of the wrong mode', () => {
   let onboarding!: typeof import('./provider-onboarding')
   let stripe!: typeof import('../../lib/stripe')
-  let env!: typeof import('../../env').env
-  let originalAppEnv!: typeof env.APP_ENV
+  // The guard reads APP_ENV when it runs (`currentEnv`), not off the `env`
+  // object loaded at import, so the environment itself is what a test sets.
+  let originalAppEnv: string | undefined
   let providerAsked = 0
 
   before(async () => {
-    ;[onboarding, stripe, { env }] = await Promise.all([
-      import('./provider-onboarding'),
-      import('../../lib/stripe'),
-      import('../../env'),
-    ])
-    originalAppEnv = env.APP_ENV
+    ;[onboarding, stripe] = await Promise.all([import('./provider-onboarding'), import('../../lib/stripe')])
+    originalAppEnv = process.env.APP_ENV
   })
 
   afterEach(() => {
-    env.APP_ENV = originalAppEnv
+    if (originalAppEnv === undefined) delete process.env.APP_ENV
+    else process.env.APP_ENV = originalAppEnv
     stripe.setStripeFactory(null)
   })
 
@@ -112,7 +110,7 @@ describe('saving a key of the wrong mode', () => {
   }
 
   const attempt = (secretKey: string) =>
-    onboarding.configureProviderAccount(TENANT, { secretKey, webhookSecret: 'whsec_x' })
+    onboarding.configureProviderAccount(TENANT, { secretKey })
 
   const refusedAs = async (secretKey: string, reason: string) => {
     await assert.rejects(attempt(secretKey), (err: unknown) => {
@@ -127,7 +125,7 @@ describe('saving a key of the wrong mode', () => {
     ['production', 'sk_test_abc', 'sk_live_abc', 'sk_live_'],
   ] as const) {
     test(`on ${appEnv}, a ${wrong.slice(0, 8)} key is refused before the provider is asked`, async () => {
-      env.APP_ENV = appEnv
+      process.env.APP_ENV = appEnv
       refusingProvider()
       await assert.rejects(attempt(wrong), (err: unknown) => {
         assert.ok(err instanceof onboarding.ProviderOnboardingError)
@@ -141,7 +139,7 @@ describe('saving a key of the wrong mode', () => {
     })
 
     test(`on ${appEnv}, a ${right.slice(0, 8)} key goes on to the provider`, async () => {
-      env.APP_ENV = appEnv
+      process.env.APP_ENV = appEnv
       refusingProvider()
       await refusedAs(right, 'key_rejected')
       assert.equal(providerAsked, 1)

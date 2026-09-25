@@ -25,13 +25,10 @@ import {
   configureProviderAccount,
   releaseProviderAccount,
   ProviderOnboardingError,
+  WEBHOOK_PERMISSION,
   type ConfiguredAccount,
 } from '../../services/billing/provider-onboarding'
-import {
-  expectedKeyPrefix,
-  PROVIDER_WEBHOOK_EVENTS,
-  providerWebhookUrl,
-} from '../../services/billing/provider-setup'
+import { expectedKeyPrefix } from '../../services/billing/provider-setup'
 import { env } from '../../env'
 import { logger } from '../../shared/logger'
 
@@ -79,11 +76,10 @@ function serialize(
     payments: {
       configured: payments.configured,
       account_id: payments.accountId,
-      // What setting the studio up on its own account takes (#276), sent
-      // before anything is saved: the signing secret the form asks for only
-      // exists once an endpoint at this URL has been created on the studio's
-      // account, so the URL cannot wait for the save.
-      setup: paymentSetupFor(tenant.slug),
+      // What the form needs before anything is saved (#276): the kind of key
+      // this environment takes. The webhook endpoint is the platform's to set
+      // up since #294, so there is nothing else for the operator to do first.
+      setup: { key_prefix: expectedKeyPrefix(env.APP_ENV) },
     },
     urls: {
       client: tenantOrigin('client', tenant.slug),
@@ -92,13 +88,6 @@ function serialize(
   }
 }
 
-function paymentSetupFor(slug: string) {
-  return {
-    webhook_url: providerWebhookUrl(env.BETTER_AUTH_URL, slug, env.APP_ENV),
-    webhook_events: PROVIDER_WEBHOOK_EVENTS,
-    key_prefix: expectedKeyPrefix(env.APP_ENV),
-  }
-}
 
 const createBody = z.object({
   slug: z.string().min(1),
@@ -158,18 +147,19 @@ const firstAdminBody = z.object({
 
 /**
  * A studio's own payment-provider credentials, on the way in and never on the
- * way out.
+ * way out: its secret key, and nothing else (#294). The webhook signing secret
+ * is the provider's answer when the platform creates the endpoint, not
+ * something anyone types.
  *
- * Both are trimmed, because a key pasted out of a dashboard carries whitespace
- * often enough that the alternative is a validation failure nobody can see the
- * cause of. Neither is pattern-matched here beyond being non-empty: the provider
- * is the authority on whether a key is real, and it is asked directly a few
- * lines later. The one shape rule — test keys off production, live keys on it —
- * is the environment's, and lives in the onboarding service.
+ * Trimmed, because a key pasted out of a dashboard carries whitespace often
+ * enough that the alternative is a validation failure nobody can see the cause
+ * of. Not pattern-matched here beyond being non-empty: the provider is the
+ * authority on whether a key is real, and it is asked directly a few lines
+ * later. The one shape rule — test keys off production, live keys on it — is
+ * the environment's, and lives in the onboarding service.
  */
 const credentialsBody = z.object({
   secret_key: z.string().trim().min(1),
-  webhook_secret: z.string().trim().min(1),
 })
 
 const statusBody = z.object({
@@ -401,10 +391,9 @@ const app = new Hono()
    * comes back from the provider rather than from whoever pasted the key, so
    * "these credentials belong to acct_xxx" is a fact.
    *
-   * The signing secret is not validated, because it cannot be — the provider
-   * offers no way to ask. It is proved by the first delivery that verifies
-   * against it, which is why the studio's endpoint refuses every delivery until
-   * this is right rather than falling back to the platform's secret.
+   * The webhook endpoint on the studio's account is created here too (#294),
+   * at the studio's own URL for exactly the events the handler acts on, and
+   * its signing secret is stored alongside the key. Neither is ever returned.
    */
   .put('/tenants/:id/payment-credentials', zValidator('json', credentialsBody), async c => {
     const id = z.string().uuid().safeParse(c.req.param('id'))
@@ -417,10 +406,7 @@ const app = new Hono()
 
     let payments: ConfiguredAccount
     try {
-      payments = await configureProviderAccount(id.data, {
-        secretKey: body.secret_key,
-        webhookSecret: body.webhook_secret,
-      })
+      payments = await configureProviderAccount(id.data, { secretKey: body.secret_key })
     } catch (err) {
       if (!(err instanceof ProviderOnboardingError)) throw err
       if (err.reason === 'storage_unavailable') {
@@ -431,6 +417,15 @@ const app = new Hono()
           { error: ERROR_CODES.provider_key_wrong_mode, expected_prefix: expectedKeyPrefix(env.APP_ENV) },
           400,
         )
+      }
+      if (err.reason === 'key_lacks_webhook_permission') {
+        return c.json(
+          { error: ERROR_CODES.provider_key_lacks_webhook_permission, required_permission: WEBHOOK_PERMISSION },
+          400,
+        )
+      }
+      if (err.reason === 'webhook_refused') {
+        return c.json({ error: ERROR_CODES.provider_webhook_refused }, 400)
       }
       return c.json({ error: ERROR_CODES.provider_key_rejected }, 400)
     }
@@ -449,15 +444,14 @@ const app = new Hono()
 
     return c.json({
       tenant: serialize(tenant, await staffCountFor(id.data), payments),
-      // Where the studio has to point the webhook on its own account — also on
-      // `tenant.payments.setup`, repeated here for the confirmation.
-      webhook_url: paymentSetupFor(tenant.slug).webhook_url,
+      // What was set up on the studio's account, for the confirmation.
+      webhook: payments.webhook,
     })
   })
 
   /**
-   * Take a studio back off its own account, so it charges on the platform's
-   * again.
+   * Take a studio off its own account, so it stops taking online payments, and
+   * delete the webhook endpoint the platform created there.
    *
    * The only way out of credentials that turn out to be wrong, because the way
    * that would seem obvious — look at what is stored — does not exist by

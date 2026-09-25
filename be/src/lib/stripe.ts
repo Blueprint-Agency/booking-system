@@ -210,8 +210,20 @@ export async function providerAccountForKey(secretKey: string): Promise<string> 
   // the one credentials object on this platform that a log line or a Sentry
   // event could serialise. The two empty strings are honest here — the account
   // is what this call is about to find out, and a probe verifies no webhook.
-  const probe = factory(providerCredentials({ accountId: '', secretKey, webhookSecret: '' }))
+  const probe = stripeForKey({ accountId: '', secretKey })
   const account = await probe.accounts.retrieve()
   if (!account?.id) throw new Error('the provider returned no account for that key')
   return account.id
+}
+
+/**
+ * The provider, bound to a key that is not (or not yet, or no longer) the one
+ * a studio's calls are made with: a key being onboarded, whose webhook endpoint
+ * has to be created before anything is stored (#294), or a key being retired,
+ * whose endpoint has to be deleted after.
+ *
+ * Built and thrown away rather than cached, for the reason the probe above is.
+ */
+export function stripeForKey(input: { accountId: string; secretKey: string }): Stripe {
+  return factory(providerCredentials({ ...input, webhookSecret: '' }))
 }

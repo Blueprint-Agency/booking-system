@@ -30,9 +30,14 @@ export function expectedKeyPrefix(appEnv: AppEnv): 'sk_live_' | 'sk_test_' {
   return appEnv === 'production' ? 'sk_live_' : 'sk_test_'
 }
 
-/** Whether a secret key is of the mode this environment takes. */
+/**
+ * Whether a secret key is of the mode this environment takes. A restricted key
+ * (`rk_live_…` / `rk_test_…`) is a secret key too, of the same mode as its
+ * `sk_` twin; whether it may do enough is the provider's to say (#294).
+ */
 export function keyModeMatches(secretKey: string, appEnv: AppEnv): boolean {
-  return secretKey.startsWith(expectedKeyPrefix(appEnv))
+  const mode = expectedKeyPrefix(appEnv).slice('sk_'.length)
+  return secretKey.startsWith(`sk_${mode}`) || secretKey.startsWith(`rk_${mode}`)
 }
 
 /**

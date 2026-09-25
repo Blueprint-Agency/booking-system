@@ -847,7 +847,7 @@ The fe-client `/account/invoices` "Download" link points directly to `receipt_ur
 
 #### `tenant_payment_credentials` (#100)
 
-tenant_id (uuid PK, FK → tenants.id on delete cascade), provider (text, not null, default `'stripe'`), account_id (text, not null), secret_key_sealed (text, not null), webhook_secret_sealed (text, not null), created_at, updated_at.
+tenant_id (uuid PK, FK → tenants.id on delete cascade), provider (text, not null, default `'stripe'`), account_id (text, not null), secret_key_sealed (text, not null), webhook_secret_sealed (text, not null), webhook_endpoint_id (text, nullable — the endpoint the platform created on the studio's account, #294; null on rows saved before then), created_at, updated_at.
 
 A studio's **own** payment-provider account: its credentials, so every call on that studio's behalf is made against that account rather than the platform's. Not Stripe Connect — there is no connected account and no `Stripe-Account` header; an account here is a *key*. See `be/docs/adr/0004-tenant-supplied-payment-credentials.md`.
 
