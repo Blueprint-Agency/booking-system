@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ShoppingBag } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BTN_PRIMARY, CARD } from "@/components/ui/styles";
 import { BookingSurface } from "@/components/booking/booking-surface";
@@ -44,15 +44,7 @@ export default function MerchPage() {
       <CancelledBanner className="mb-5" />
 
       {!items && !error && (
-        <div
-          className="grid gap-4 grid-cols-2 lg:grid-cols-3"
-          aria-busy="true"
-          aria-label="Loading merch"
-        >
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-72 rounded-2xl" />
-          ))}
-        </div>
+        <ContentLoading label="Loading merch" />
       )}
 
       {error && (

@@ -13,7 +13,7 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { FilterChips } from "@/components/ui/filter-chips";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import {
   BTN_PRIMARY,
   BTN_SECONDARY,
@@ -230,14 +230,7 @@ export default function PackagesPage() {
           <PageHeader title="Packages" />
 
           {loading && (
-            <div aria-busy="true" aria-label="Loading packages">
-              <Skeleton className="mb-4 h-12 w-full rounded-full sm:w-80" />
-              <div className={PACKAGE_GRID}>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-64 rounded-2xl" />
-                ))}
-              </div>
-            </div>
+            <ContentLoading label="Loading packages" />
           )}
 
           {!loading && error && (

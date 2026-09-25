@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { AppShell } from "@/components/layout/app-shell";
-import { NavLoader } from "@/components/layout/nav-loader";
+import { AppLoader } from "@/components/layout/app-loader";
 import { ScrollToTop } from "@/components/layout/scroll-to-top";
 import { ClientPackagesProvider } from "@/lib/use-client-packages";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
@@ -18,7 +18,7 @@ export default async function ClientLayout({
       <ImpersonationBanner />
       <div className={`min-h-screen bg-paper flex flex-col ${impersonating ? "pt-10" : ""}`}>
         <ScrollToTop />
-        <NavLoader />
+        <AppLoader />
         <AppShell impersonating={impersonating}>{children}</AppShell>
       </div>
     </ClientPackagesProvider>

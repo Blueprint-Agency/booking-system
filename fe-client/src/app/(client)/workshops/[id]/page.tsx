@@ -8,7 +8,7 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { DateStub } from "@/components/account/date-stub";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { BTN_PRIMARY, CARD } from "@/components/ui/styles";
 import { BuyButton } from "@/components/checkout/buy-button";
 import { cn } from "@/lib/utils";
@@ -49,15 +49,7 @@ export default function WorkshopDetailPage() {
   if (loading) {
     return (
       <BookingSurface>
-        <div className="grid gap-8 lg:grid-cols-[1fr_360px]" aria-busy="true" aria-label="Loading workshop">
-          <div className="space-y-4">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-9 w-3/4" />
-            <Skeleton className="h-4 w-1/2" />
-            <Skeleton className="aspect-[16/9] w-full rounded-2xl" />
-          </div>
-          <Skeleton className="hidden lg:block h-72 rounded-2xl" />
-        </div>
+        <ContentLoading label="Loading workshop" />
       </BookingSurface>
     );
   }

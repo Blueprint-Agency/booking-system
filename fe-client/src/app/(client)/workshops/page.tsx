@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/booking/page-header";
 import { DateStub } from "@/components/account/date-stub";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FilterChips } from "@/components/ui/filter-chips";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { CARD } from "@/components/ui/styles";
 import { cn } from "@/lib/utils";
 import {
@@ -60,15 +60,7 @@ export default function WorkshopsPage() {
       )}
 
       {loading && (
-        <div
-          className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
-          aria-busy="true"
-          aria-label="Loading workshops"
-        >
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-72 rounded-2xl" />
-          ))}
-        </div>
+        <ContentLoading label="Loading workshops" />
       )}
 
       {!loading && error && (

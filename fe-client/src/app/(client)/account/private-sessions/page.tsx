@@ -7,7 +7,7 @@ import { CalendarX, CheckCircle2, XCircle, Clock, Plus } from "lucide-react";
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { QrBadge } from "@/components/account/qr-badge";
 import { DateStub } from "@/components/account/date-stub";
 import {
@@ -178,12 +178,7 @@ function Inner() {
         )}
 
         {loading ? (
-          <div className="space-y-3" aria-busy="true" aria-label="Loading your PT sessions">
-            <Skeleton className="h-11 rounded-full" />
-            {Array.from({ length: 2 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 rounded-2xl" />
-            ))}
-          </div>
+          <ContentLoading label="Loading your PT sessions" />
         ) : (
           <>
             <SegmentedTabs

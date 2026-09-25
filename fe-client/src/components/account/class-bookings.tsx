@@ -20,7 +20,7 @@ import { AccountPageHeader } from "@/components/account/account-page-header";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { DateStub } from "@/components/account/date-stub";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { formatDate, cn } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { ApiError, useApi } from "@/lib/api";
@@ -216,12 +216,7 @@ export function ClassBookings() {
       )}
 
       {loading ? (
-        <div className="space-y-3" aria-busy="true" aria-label="Loading your classes">
-          <Skeleton className="h-11 rounded-full" />
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-2xl" />
-          ))}
-        </div>
+        <ContentLoading label="Loading your classes" />
       ) : loadError ? (
         <div className="rounded-2xl bg-card border border-ink/5 shadow-soft p-8 text-center">
           <p className="text-sm text-muted">Couldn&apos;t load your classes.</p>

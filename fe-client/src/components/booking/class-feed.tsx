@@ -7,7 +7,7 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { ClassRow, FilterSelect } from "@/components/booking/class-row";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { BTN_SECONDARY, CARD } from "@/components/ui/styles";
 import { MyNextClass } from "@/components/account/next-class-card";
 import { cn } from "@/lib/utils";
@@ -124,14 +124,7 @@ export function ClassFeed() {
       )}
 
       {loading ? (
-        <div className="space-y-2" aria-busy="true" aria-label="Loading schedule">
-          <Skeleton className="h-5 w-32 mb-3" />
-          <div className={cn(CARD, "p-3 space-y-2")}>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 rounded-xl" />
-            ))}
-          </div>
-        </div>
+        <ContentLoading label="Loading schedule" />
       ) : groups.length === 0 ? (
         <div className={cn(CARD, "px-6 py-12 text-center")}>
           <p className="font-semibold text-ink">

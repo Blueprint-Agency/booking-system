@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowRight, CalendarPlus, ChevronRight, Ticket, UserRound } from "lucide-react";
 import { cn, formatDate, formatSgd } from "@/lib/utils";
 import { formatClassTime, useLocations } from "@/lib/classes";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { QrBadge } from "@/components/account/qr-badge";
 import { DateStub } from "@/components/account/date-stub";
 import { MyNextClass } from "@/components/account/next-class-card";
@@ -169,11 +169,7 @@ export default function AccountOverview() {
               <span id="coming-up">Coming up</span>
             </SectionTitle>
             {upcomingLoading ? (
-              <div className={cn(cardClass, "p-3 space-y-2")} aria-label="Loading upcoming classes">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 rounded-xl" />
-                ))}
-              </div>
+              <ContentLoading label="Loading upcoming classes" className="min-h-48" />
             ) : comingUp.length === 0 ? (
               <div className={cn(cardClass, "p-5 flex flex-col sm:flex-row sm:items-center gap-4 justify-between")}>
                 <div>
@@ -244,7 +240,7 @@ export default function AccountOverview() {
               <span id="packages-heading">Active packages</span>
             </SectionTitle>
             {pkgLoading ? (
-              <Skeleton className="h-24 rounded-2xl" />
+              <ContentLoading label="Loading your packages" className="min-h-24" />
             ) : packages.length === 0 ? (
               <div className={cn(cardClass, "p-5")}>
                 <p className="font-semibold text-ink">No active packages</p>

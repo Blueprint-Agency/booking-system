@@ -9,7 +9,7 @@ import Link from "next/link";
 import { ChevronRight, ShoppingBag } from "lucide-react";
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { useApi } from "@/lib/api";
 import { formatDate, formatSgd } from "@/lib/utils";
 
@@ -58,11 +58,7 @@ export default function AccountMerchPage() {
       />
 
       {!rows && !error && (
-        <div className="rounded-2xl bg-card border border-ink/5 shadow-soft p-3 space-y-2" aria-busy="true" aria-label="Loading purchases">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 rounded-xl" />
-          ))}
-        </div>
+        <ContentLoading label="Loading purchases" />
       )}
 
       {error && (

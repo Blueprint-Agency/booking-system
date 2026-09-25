@@ -8,7 +8,7 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { Select } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { BTN_PRIMARY, CARD } from "@/components/ui/styles";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useLocations, useClassTypes } from "@/lib/classes";
@@ -230,11 +230,7 @@ export default function PrivateSessionsPage() {
       <ScheduleSegments />
 
       {pkgLoading ? (
-        <div className={cn(CARD, "max-w-2xl p-5 space-y-4")} aria-busy="true" aria-label="Loading your packages">
-          <Skeleton className="h-12 rounded-xl" />
-          <Skeleton className="h-12 rounded-xl" />
-          <Skeleton className="h-28 rounded-xl" />
-        </div>
+        <ContentLoading label="Loading your packages" />
       ) : (
         <form className={cn(CARD, "max-w-2xl p-4 sm:p-6 space-y-6")} onSubmit={handleSubmit}>
           <div>

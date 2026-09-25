@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { signInPathFor } from "@/lib/auth-redirect";
 import { useMemberSession } from "@/lib/member-auth";
 import { cn } from "@/lib/utils";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { AccountHeader } from "./account-header";
 import { ACCOUNT_OVERVIEW, ACCOUNT_SECTIONS } from "./account-nav-items";
 import { SignOutButton, SigningOutContext } from "./sign-out-button";
@@ -35,14 +35,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
 
   if (!isLoaded || !isSignedIn) {
     return (
-      <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 md:py-10 space-y-4" aria-busy="true">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 rounded-2xl" />
-        <div className="grid grid-cols-2 gap-3">
-          <Skeleton className="h-24 rounded-2xl" />
-          <Skeleton className="h-24 rounded-2xl" />
-        </div>
-      </div>
+      <ContentLoading label="Loading your account" className="min-h-[60vh]" />
     );
   }
 

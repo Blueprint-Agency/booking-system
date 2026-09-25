@@ -11,7 +11,7 @@ import {
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { useBrandCopy } from "@/components/brand/brand-provider";
 import {
   ApiCorporateRequest,
@@ -110,10 +110,7 @@ export default function AccountCorporatePage() {
         />
 
         {loading && (
-          <div className="space-y-3" aria-busy="true" aria-label="Loading your corporate packages">
-            <Skeleton className="h-11 rounded-full" />
-            <Skeleton className="h-28 rounded-2xl" />
-          </div>
+          <ContentLoading label="Loading your corporate packages" />
         )}
 
         {!loading && error && (

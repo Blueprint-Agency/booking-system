@@ -211,9 +211,8 @@
 }
 
 /* ── Page loader (`components/layout/page-loader.tsx`) ──────────────────────
-   Centred on the screen: a ring breathing in and out around a still dot, on a
-   slow count — a pause, not a spinner's hurry. Fades in and out with the load;
-   under the sheets (z 70) and never in the pointer's way. */
+   Centred on the screen: a spinning ring on a small card. Fades in and out
+   with the load; under the sheets (z 70) and never in the pointer's way. */
 .page-loader {
   position: fixed;
   inset: 0;
@@ -246,43 +245,25 @@
   transform: scale(1);
 }
 
+/* A faint full track with an accent arc running round it. */
 .page-loader__ring {
-  position: absolute;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border-radius: 9999px;
-  border: 2px solid var(--color-accent);
-  animation: loaderBreathe 2.4s ease-in-out infinite;
+  border: 2.5px solid color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border-top-color: var(--color-accent);
+  animation: loaderSpin 0.8s linear infinite;
 }
 
-.page-loader__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 9999px;
-  background: var(--color-accent);
-}
-
-@keyframes loaderBreathe {
-  0%,
-  100% {
-    transform: scale(0.55);
-    opacity: 0.9;
-  }
-  50% {
-    transform: scale(1);
-    opacity: 0.35;
+@keyframes loaderSpin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
-/* The route's loading screen shows a beat late, so a quick load shows only the page. */
-.page-loader--delayed {
-  animation: fadeIn 0.2s ease-out 0.15s backwards;
-}
-
-/* A navigation that lands on the loading screen would otherwise show two
-   loaders in the same spot; the screen's own one stays. */
-body:has(.page-loader--delayed) .page-loader:not(.page-loader--delayed) {
-  display: none;
+/* No turning while it is hidden. */
+.page-loader:not([data-state="loading"]) .page-loader__ring {
+  animation-play-state: paused;
 }
 
 @media (prefers-reduced-motion: reduce) {
