@@ -1,7 +1,7 @@
 /**
  * Payroll listing — every COMPLETED class + PT session + workshop with the pay
  * owed to EACH instructor involved (main or supporting). "Completed" = lifecycle
- * 'active' AND ends_at < now() (per the payroll design: a cancelled session
+ * 'active' AND ends_at < now, read from lib/clock (per the payroll design: a cancelled session
  * never owes pay; a future session hasn't happened yet, even if its pay is
  * pre-set at scheduling). Workshops use the min/max of their workshop_days as
  * their effective starts_at/ends_at window (a workshop has no single date).
@@ -24,6 +24,7 @@
  */
 import { and, eq, gte, lt, lte, sql } from 'drizzle-orm'
 import { db } from '../../db'
+import { now as clockNow } from '../../lib/clock'
 import {
   classes,
   classSupportingInstructors,
@@ -103,7 +104,7 @@ export async function listPayroll(
   tenantId: string,
   filter: PayrollFilter,
 ): Promise<PayrollRow[]> {
-  const now = new Date()
+  const now = clockNow()
 
   // Every arm below is scoped on the table it reads FROM — the sessions, the
   // join rows and the manual entries each carry the Tenant, so one predicate
@@ -445,7 +446,8 @@ export interface CreateManualPayrollInput {
   instructorId: string
   amountSgd: number
   label: string
-  entryDate: Date
+  /** Defaults to now. */
+  entryDate?: Date
 }
 
 /** Ad-hoc pay line for an instructor — bonus/adjustment/one-off not tied to a session. */
@@ -465,7 +467,7 @@ export async function createManualPayroll(
       instructorId: input.instructorId,
       amountSgd: input.amountSgd.toFixed(2),
       label: input.label,
-      entryDate: input.entryDate,
+      entryDate: input.entryDate ?? clockNow(),
       createdByStaffId: actorStaffId,
     })
     .returning()

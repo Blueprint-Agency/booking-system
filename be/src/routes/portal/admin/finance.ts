@@ -141,7 +141,7 @@ const app = new Hono()
         instructorId: body.instructor_id,
         amountSgd: body.amount_sgd,
         label: body.label,
-        entryDate: body.entry_date ? new Date(body.entry_date) : new Date(),
+        entryDate: body.entry_date ? new Date(body.entry_date) : undefined,
       },
       actorStaffId,
     )

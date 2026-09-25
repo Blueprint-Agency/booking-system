@@ -12,8 +12,9 @@
  * One of them, Active Members, is not period-scoped at all; `memberCounts` says
  * why, and the tile says so to the reader.
  */
-import { and, count, countDistinct, eq, gte, isNull, lt, lte, or, sql } from 'drizzle-orm'
+import { and, count, countDistinct, eq, gte, isNull, lt, lte, or } from 'drizzle-orm'
 import { db } from '../../db'
+import { now as clockNow } from '../../lib/clock'
 import { clientPackages } from '../../db/schema/packages'
 import { clients } from '../../db/schema/identity'
 import { bookings } from '../../db/schema/bookings'
@@ -235,7 +236,7 @@ async function memberCounts(tenantId: string, filter: FinanceFilter): Promise<Me
         // 01:00 SGT the flag is stale. The bound closes that window.
         // A Dormant Unlimited Plan has no expiry yet (its clock starts at
         // Activation). It is an entitlement the member holds, so it counts.
-        or(isNull(clientPackages.expiresAt), gte(clientPackages.expiresAt, sql`now()`)),
+        or(isNull(clientPackages.expiresAt), gte(clientPackages.expiresAt, clockNow())),
       ),
     )
 
