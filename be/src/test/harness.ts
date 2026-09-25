@@ -264,7 +264,7 @@ type Shared = {
 /**
  * The run's one owner connection and app, shared by every file in it.
  *
- * When every test file runs in one process (`--test-isolation=none`),
+ * When every test file runs in one process (`--experimental-test-isolation=none`),
  * migrating, seeding and importing the app per file would repeat the expensive
  * part of a run seventy times over. The first `startTestApp` does it;
  * the rest get the same app back. A promise, so two callers racing the first

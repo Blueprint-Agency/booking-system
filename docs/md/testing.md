@@ -34,7 +34,8 @@ checkout, only two runs in the same checkout ever wait on each other.
 
 **One process for the whole suite (not yet).** `node --test` starts a process per file, so the
 suite pays the app import and setup once per harness-using file. That is most of CI's test time. The
-harness already supports one process (`--test-isolation=none`, with
+harness already supports one process (`--experimental-test-isolation=none`, the spelling Node 22
+and 23 both accept; `--test-isolation` exists only from Node 23.6, with
 `--import ./src/test/environment.ts` so the test environment is in place before any file loads).
 The suite cannot switch until the files that only pass in their own process are fixed. In one
 process, every file's top level runs before any test does, and a hook outside a `describe` hooks

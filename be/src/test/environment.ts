@@ -9,7 +9,7 @@ import 'dotenv/config'
  *
  * `src/env.ts` validates the environment once, at import, and `src/db/index.ts`
  * builds its pool from `DATABASE_APP_URL` the same way. In a run of one process
- * (`npm run check` passes `--test-isolation=none`) every test file is imported
+ * (`--experimental-test-isolation=none`) every test file is imported
  * before the first test runs, and a unit test that imports a service imports
  * both. So stubbing when the first integration test starts is too late: the app
  * would already hold the developer's `.env` database and `NODE_ENV`.
