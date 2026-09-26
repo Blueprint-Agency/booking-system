@@ -24,7 +24,7 @@ test('an admin creates a class and the instructor sees it on their schedule', as
   const field = (label: string) => admin.getByLabel(label, { exact: true })
   await field('Class type').selectOption({ label: catalogue.portalClassType })
   await field('Main instructor').selectOption({ label: staff.instructor.name })
-  await field('Main instructor pay (S$)').fill('50')
+  await field('Main instructor pay (S$) · optional').fill('50')
   await field('Room').selectOption({ label: 'E2E Room' })
   await field('Date').fill(date)
   await field('Start time').fill('10:00')
