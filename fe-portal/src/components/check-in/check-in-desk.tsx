@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Avatar, Badge, Button, EmptyState, Input, Label, PageHeader, Select } from "@/components/ui";
 import { QrScanner } from "@/components/check-in/qr-scanner";
+import { UntickConfirmDialog } from "@/components/check-in/untick-confirm-dialog";
 import { ApiError } from "@/lib/api";
 import {
   checkInBase,
@@ -118,6 +119,8 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
 
   const [busyBookingId, setBusyBookingId] = useState<string | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
+  /** The checked-in row whose Undo is waiting on the confirmation. */
+  const [undoing, setUndoing] = useState<CheckInRosterRow | null>(null);
 
   // The latest request wins: a slow answer for the old location must not
   // overwrite the new one. `loading` is raised by whoever asks for a visible
@@ -429,11 +432,18 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
                   phase={sessionPhase(selected, now)}
                   busyBookingId={busyBookingId}
                   error={rosterError}
-                  onMark={mark}
+                  // Check in is one tap; Undo asks first.
+                  onMark={(row, attended) => (attended ? void mark(row, true) : setUndoing(row))}
                 />
               )}
             </>
           )}
+          <UntickConfirmDialog
+            row={undoing}
+            name={(r) => r.name}
+            onClose={() => setUndoing(null)}
+            onUnmark={(r) => void mark(r, false)}
+          />
         </section>
       </div>
     </div>

@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, CalendarPlus, ChevronRight, MapPin, Ticket, UserRound } from "lucide-react";
+import { ArrowRight, CalendarPlus, ChevronRight, Ticket, UserRound } from "lucide-react";
 import { cn, formatExpiryDate, formatSgd } from "@/lib/utils";
+import { coversAllLocations } from "@/lib/package-coverage";
+import { AllLocationsRow, CoversRow, LocationChip } from "@/components/ui/location-chip";
 import { useLocations } from "@/lib/classes";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { ComingUp } from "@/components/account/coming-up";
@@ -310,16 +312,6 @@ function AccountMenu() {
   );
 }
 
-function LocationChip({ name, until }: { name: string; until?: string | null }) {
-  return (
-    <li className="inline-flex max-w-full items-center gap-1 rounded-full border border-ink/10 bg-ink/[0.03] px-2 py-0.5 text-xs font-medium text-ink">
-      <MapPin className="h-3 w-3 shrink-0 text-ink/40" aria-hidden />
-      <span className="truncate">{name}</span>
-      {until && <span className="shrink-0 text-muted">· until {until}</span>}
-    </li>
-  );
-}
-
 function PackageCard({
   pkg,
   otherLocationName,
@@ -365,7 +357,7 @@ function PackageCard({
           {/* What this plan Covers, one chip per Location. The added one says
               when its coverage ends — losing it is never silent (§5). */}
           {isUnlimited && pkg.location && (
-            <ul aria-label="Covers" className="mt-2 flex flex-wrap gap-1.5">
+            <CoversRow className="mt-2">
               <LocationChip name={pkg.location.name} />
               {pkg.crossLocationPaidSgd !== null && (
                 <LocationChip
@@ -373,8 +365,10 @@ function PackageCard({
                   until={pkg.expiresAt ? formatExpiryDate(pkg.expiresAt) : null}
                 />
               )}
-            </ul>
+            </CoversRow>
           )}
+          {/* A bundle — a Trial arrives as one — works at every Location. */}
+          {coversAllLocations(pkg.kind) && <AllLocationsRow className="mt-2" />}
         </div>
         <div className="text-right shrink-0">
           <p className="text-2xl font-extrabold text-ink tabular-nums leading-none">

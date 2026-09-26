@@ -551,6 +551,14 @@ Per-booking codes are **unique** — the system resolves both client identity an
 
 Both admin and instructor can perform check-in (instructor scoped to own sessions).
 
+**Unticking asks first.** Ticking a member attended stays one tap. Taking it away — unticking the class roster's **Attended** pill, or pressing **Undo** on the check-in desk — opens one shared confirmation, and nothing is sent until it is answered:
+
+- title "Unmark {name} as attended?"
+- body "Their check-in is removed. The credit stays spent — to return it, cancel the booking afterwards."
+- actions **Keep attended** / **Unmark**
+
+Unmarking only removes the check-in; it never returns the credit the booking spent.
+
 **State machines:**
 
 **Event state** (auto-flipped by system, time-based):

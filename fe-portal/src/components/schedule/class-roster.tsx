@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, Loader2, Plus, Search, X } from "lucide-react";
 import { Badge, Button, Input } from "@/components/ui";
+import { UntickConfirmDialog } from "@/components/check-in/untick-confirm-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { checkInErrorMessage } from "@/lib/check-in";
 import {
@@ -140,6 +141,8 @@ export function ClassRoster({
   const [rows, setRows] = useState<ScheduleClassAttendee[]>(attendees);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  /** The attended member whose untick is waiting on the confirmation. */
+  const [unticking, setUnticking] = useState<ScheduleClassAttendee | null>(null);
 
   // Re-sync when the parent reloads the class.
   useEffect(() => setRows(attendees), [attendees]);
@@ -148,9 +151,15 @@ export function ClassRoster({
   // holds; a tick before it comes back refused with the opening time.
   const attendedCount = rows.filter((r) => r.check_in_state === "attended").length;
 
-  async function toggle(a: ScheduleClassAttendee) {
+  /** Ticking is one tap; unticking asks first. */
+  function toggle(a: ScheduleClassAttendee) {
     if (!api || cancelled || busyId) return;
-    const attended = a.check_in_state !== "attended";
+    if (a.check_in_state === "attended") setUnticking(a);
+    else void mark(a, true);
+  }
+
+  async function mark(a: ScheduleClassAttendee, attended: boolean) {
+    if (!api || cancelled || busyId) return;
     setBusyId(a.booking_id);
     setErr(null);
     try {
@@ -256,6 +265,12 @@ export function ClassRoster({
           })}
         </ul>
       )}
+      <UntickConfirmDialog
+        row={unticking}
+        name={(a) => a.client.name}
+        onClose={() => setUnticking(null)}
+        onUnmark={(a) => void mark(a, false)}
+      />
     </section>
   );
 }

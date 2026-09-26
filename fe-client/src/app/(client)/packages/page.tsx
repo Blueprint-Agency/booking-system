@@ -15,6 +15,8 @@ import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { FilterChips } from "@/components/ui/filter-chips";
 import { Portal } from "@/components/ui/portal";
 import { ContentLoading } from "@/components/ui/content-loading";
+import { AllLocationsRow } from "@/components/ui/location-chip";
+import { coversAllLocations } from "@/lib/package-coverage";
 import {
   BTN_PRIMARY,
   BTN_SECONDARY,
@@ -553,6 +555,7 @@ function PackageCard({
   badge,
   price,
   features,
+  allLocations = false,
   highlight = false,
   children,
 }: {
@@ -562,6 +565,8 @@ function PackageCard({
   badge?: string | null;
   price: React.ReactNode;
   features?: string[];
+  /** A Covers row under the validity line holding one "All locations" chip. */
+  allLocations?: boolean;
   highlight?: boolean;
   /** The action. */
   children: React.ReactNode;
@@ -578,6 +583,7 @@ function PackageCard({
       </div>
       <p className="mt-2 text-3xl font-extrabold tracking-tight text-ink leading-none">{headline}</p>
       {sub && <p className="mt-1.5 text-sm text-muted">{sub}</p>}
+      {allLocations && <AllLocationsRow className="mt-2" />}
       <div className="mt-4">{price}</div>
       {features && features.length > 0 && (
         <ul className="mt-4 space-y-1.5 border-t border-ink/5 pt-4 text-sm text-ink/80">
@@ -636,6 +642,7 @@ function BundleCard({
       name={pkg.name}
       headline={`${credits} ${credits === 1 ? "credit" : "credits"}`}
       sub={validity}
+      allLocations={coversAllLocations(pkg.kind)}
       badge={promo(pkg)}
       price={<PriceBlock pkg={pkg} />}
     >
@@ -726,10 +733,10 @@ function TrialCard({
       name={pkg.name}
       headline={`${credits} ${credits === 1 ? "credit" : "credits"}`}
       sub={validity}
+      allLocations={coversAllLocations(pkg.kind)}
       badge="Trial"
       highlight
       price={<PriceBlock pkg={pkg} />}
-      features={["Any group class, any location"]}
     >
       {disabled ? (
         <DisabledButton>{disabledReason}</DisabledButton>
