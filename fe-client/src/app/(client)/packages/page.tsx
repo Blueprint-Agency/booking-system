@@ -13,6 +13,7 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { FilterChips } from "@/components/ui/filter-chips";
+import { Portal } from "@/components/ui/portal";
 import { ContentLoading } from "@/components/ui/content-loading";
 import {
   BTN_PRIMARY,
@@ -298,8 +299,8 @@ export default function PackagesPage() {
 // ── Sections ──────────────────────────────────────────────────────────────────
 
 const SHARED_BLURBS = {
-  pt1on1: "One-to-one time with an instructor. 1 session = 30 min.",
-  pt2on1: "Train with a partner and share the cost. 1 session = 30 min.",
+  pt1on1: "One-to-one time with an instructor. 1 session = 60 min.",
+  pt2on1: "Train with a partner and share the cost. 1 session = 60 min.",
 };
 
 function ClassCreditsSection({
@@ -778,6 +779,7 @@ function TrialTermsModal({
   useBodyScrollLock(true);
   const isFree = Number(pkg.effective_price_sgd) === 0;
   return (
+    <Portal>
     <div className={SHEET_BACKDROP} onClick={onCancel}>
       <div
         role="dialog"
@@ -814,6 +816,7 @@ function TrialTermsModal({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }
 

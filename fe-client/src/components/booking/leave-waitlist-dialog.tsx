@@ -5,6 +5,7 @@ import { formatDate } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
+import { Portal } from "@/components/ui/portal";
 
 /**
  * "Leave this waitlist?" — asked from the class row and from My Bookings alike.
@@ -30,6 +31,7 @@ export function LeaveWaitlistDialog({
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   useBodyScrollLock(true);
   return (
+    <Portal>
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
       onClick={() => !leaving && onClose()}
@@ -69,5 +71,6 @@ export function LeaveWaitlistDialog({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

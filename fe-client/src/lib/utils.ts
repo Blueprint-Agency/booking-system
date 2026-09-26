@@ -47,3 +47,17 @@ export function formatDate(date: string): string {
     timeZone: "Asia/Singapore",
   });
 }
+
+/**
+ * "Tue, 24 Nov 2026" — for a package's expiry, which can be months out, so the
+ * day and month alone leave the member guessing which year.
+ */
+export function formatExpiryDate(date: string): string {
+  return new Date(date).toLocaleDateString("en-SG", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "Asia/Singapore",
+  });
+}

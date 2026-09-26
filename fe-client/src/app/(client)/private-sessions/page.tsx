@@ -16,7 +16,7 @@ import { PreferredClassType } from "@/components/booking/preferred-class-type";
 import { usePtSessionsApi, HALF_HOUR_TIMES, formatSlotTime } from "@/lib/pt-sessions";
 import { ApiError } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatExpiryDate } from "@/lib/utils";
 
 type Slot = { proposedDate: string; startTime: string };
 
@@ -469,7 +469,7 @@ export default function PrivateSessionsPage() {
             <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink">
               Your {runningPt.name} is running, and only one private session package
               can run at a time. Your next package starts once it ends
-              {runningPt.expiresAt ? ` (${formatDate(runningPt.expiresAt)})` : ""} or is
+              {runningPt.expiresAt ? ` (${formatExpiryDate(runningPt.expiresAt)})` : ""} or is
               used up.
             </div>
           )}

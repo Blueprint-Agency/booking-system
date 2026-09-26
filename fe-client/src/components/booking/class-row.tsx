@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Check, UserRound, MapPin, Loader2, Lock } from "lucide-react";
 import { cn, formatSgd } from "@/lib/utils";
 import { Select } from "@/components/ui/select";
+import { Portal } from "@/components/ui/portal";
 import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
 import { notCoveredCopy, planRunsOutCopy } from "@/lib/booking-copy";
 import { ERROR_CODES } from "@/lib/error-codes";
@@ -389,6 +390,7 @@ export function ClassRow({
       )}
 
       {showNoPackage && (
+        <Portal>
         <div className={SHEET_BACKDROP} onClick={() => setShowNoPackage(false)}>
           <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-labelledby={`no-package-${cls.id}`} tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
             <span aria-hidden className={SHEET_HANDLE} />
@@ -400,9 +402,11 @@ export function ClassRow({
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       {bookError && (
+        <Portal>
         <div className={SHEET_BACKDROP} onClick={() => setBookError(null)}>
           <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-labelledby={`book-error-${cls.id}`} tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
             <span aria-hidden className={SHEET_HANDLE} />
@@ -428,6 +432,7 @@ export function ClassRow({
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );

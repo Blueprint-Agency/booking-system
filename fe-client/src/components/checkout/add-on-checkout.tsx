@@ -5,7 +5,7 @@ import Link from "next/link";
 import { addMonths, differenceInDays } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { getMemberToken } from "@/lib/member-auth";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatExpiryDate } from "@/lib/utils";
 import { CheckoutFrame, checkoutCardClass } from "./checkout-frame";
 import { fetchApi } from "@/lib/api-url";
 import { ERROR_CODES } from "@/lib/error-codes";
@@ -25,7 +25,7 @@ import { PayButton, StripeFootnote } from "./pay-button";
  */
 function remainderSentence(expiresAt: string, months: number, now: Date = new Date()): string {
   const end = new Date(expiresAt);
-  const runsTo = `Your plan runs to ${formatDate(expiresAt)}`;
+  const runsTo = `Your plan runs to ${formatExpiryDate(expiresAt)}`;
   // Anchored on the server's `months` rather than on a second month count of
   // this app's own, so the breakdown can never contradict the number charged:
   // the server rounded up, so all but the last month is whole and the days are

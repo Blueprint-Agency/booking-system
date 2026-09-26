@@ -6,6 +6,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { X } from "lucide-react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
+import { Portal } from "@/components/ui/portal";
 
 type Props = {
   value: string;
@@ -47,6 +48,7 @@ export function QrBadge({ value, label, subLabel }: Props) {
       </button>
 
       {open && (
+        <Portal>
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/60 backdrop-blur-sm p-4"
           onClick={(e) => {
@@ -102,6 +104,7 @@ export function QrBadge({ value, label, subLabel }: Props) {
             </p>
           </div>
         </div>
+        </Portal>
       )}
     </>
   );

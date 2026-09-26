@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, CalendarPlus, ChevronRight, Ticket, UserRound } from "lucide-react";
-import { cn, formatDate, formatSgd } from "@/lib/utils";
+import { cn, formatDate, formatExpiryDate, formatSgd } from "@/lib/utils";
 import { formatClassTime, useLocations } from "@/lib/classes";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { QrBadge } from "@/components/account/qr-badge";
@@ -299,7 +299,7 @@ function Balances({
 }) {
   const classNote = unlimited
     ? unlimitedExpiresAt
-      ? `Until ${formatDate(unlimitedExpiresAt)}`
+      ? `Until ${formatExpiryDate(unlimitedExpiresAt)}`
       : unlimitedDormant
         ? ACTIVATION_LINE
         : null
@@ -433,7 +433,7 @@ function PackageCard({
           <p className="text-xs text-muted mt-1">
             {pkg.dormant
               ? dormantLine(pkg)
-              : `Expires ${formatDate(pkg.expiresAt!)}`}
+              : `Expires ${formatExpiryDate(pkg.expiresAt!)}`}
           </p>
           {/* Who this package's sessions are with. Shown only when the backend
               says it is bound — an open package says nothing rather than
@@ -451,7 +451,7 @@ function PackageCard({
               {pkg.crossLocationPaidSgd !== null ? (
                 pkg.expiresAt ? (
                   <>
-                    Both studios until {formatDate(pkg.expiresAt)}, then{" "}
+                    Both studios until {formatExpiryDate(pkg.expiresAt)}, then{" "}
                     <span className="text-ink">{pkg.location.name}</span> only.
                   </>
                 ) : (

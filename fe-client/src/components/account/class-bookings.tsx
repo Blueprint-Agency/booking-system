@@ -30,6 +30,7 @@ import {
   type ApiWaitlistEntry,
 } from "@/lib/waitlist";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Portal } from "@/components/ui/portal";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { formatDate, cn } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
@@ -331,6 +332,7 @@ export function ClassBookings() {
       )}
 
       {cancelTarget && (
+        <Portal>
         <div
           className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-ink/40 p-3 sm:p-4"
           onClick={() => !cancelling && setCancelTarget(null)}
@@ -369,6 +371,7 @@ export function ClassBookings() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );

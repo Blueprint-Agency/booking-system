@@ -6,6 +6,7 @@ import { LogOut } from "lucide-react";
 import { signOutMember } from "@/lib/member-auth";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Portal } from "@/components/ui/portal";
 
 /**
  * Set by `AccountShell`: tells its sign-in gate a sign-out is under way, so the
@@ -45,6 +46,7 @@ export function SignOutButton({ className }: { className?: string }) {
       </button>
 
       {confirming && (
+        <Portal>
         <div
           className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-ink/40 p-4"
           onClick={() => !busy && setConfirming(false)}
@@ -85,6 +87,7 @@ export function SignOutButton({ className }: { className?: string }) {
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </>
   );
