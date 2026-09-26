@@ -77,9 +77,7 @@ run's studio, and the seed opens its member app and prints its portal URL and st
 3. **Heal** — the `playwright-test-healer` runs and repairs failing journeys. It may fix a
    locator or a wait. It must not skip: its default for a journey it cannot fix is
    `test.fixme()`, and a skipped journey fails CI (`e2e/src/no-skips-reporter.ts`). A journey that
-   fails because the feature is broken is a bug to file, not a test to change. Committed journeys
-   are also protected by the test guardrail hook — a human lists one in `.claude/test-edits.allow`
-   before an agent may edit it (`docs/md/test-guardrails.md`).
+   fails because the feature is broken is a bug to file, not a test to change.
 
 Then run the whole suite on the local stack, as above, and open the PR; `e2e-local.yml` runs it again.
 

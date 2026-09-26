@@ -7,41 +7,15 @@ make it pass.**
 
 | Guardrail | Where | What it stops |
 |---|---|---|
-| Committed tests are read-only to agents | `.claude/hooks/protect-tests.mjs` (PreToolUse) | Editing, overwriting, moving or deleting an existing test file |
 | No skipped tests | backend `test` job (deploy-be.yml); `e2e/src/no-skips-reporter.ts` | A skip passing as a pass |
 | No lost tests | backend `test` job; `test-guardrails.yml` | A PR with fewer tests than its base branch |
 | Coverage report | backend `test` job → run summary | Untested code going unseen (report only, no % gate) |
 | Scenario Inventory traces | `scripts/check-scenarios.mjs` in `test-guardrails.yml` | A row still marked covered after its test was renamed or deleted (`testing.md`) |
 
-The hook is registered in `.claude/settings.json`, so every Claude Code session in this repo
-gets it. Running the suites is CI's job: every PR runs all of them (`deploy-be.yml`,
-`e2e-local.yml`, `test-guardrails.yml`), so sessions don't run them on stop.
-
-## Committed tests are read-only to agents
-
-Any file named `*.test.*` or `*.spec.*` that git already tracks is protected. An agent's
-Edit / Write / MultiEdit on it is refused with a message telling it to fix the code instead. The
-hook also reads Bash and PowerShell commands for the obvious routes round it — `rm`, `git rm`,
-`mv`, `sed -i`, `>` redirects, `tee`, `cp` onto it, `find … -delete`, a `node -e` that writes it.
-It is a fence, not a sandbox: a determined workaround is still possible, which is what the CI
-count check and review are for.
-
-Writing a **new** test file is always allowed, and so is editing one that is not committed yet.
-The committed hooks (`.claude/hooks/`) and `.claude/settings.json` are protected the same way, so
-the fence cannot simply be taken down.
-
-**Letting a change through.** When a task genuinely needs a committed test changed (the spec
-changed, or the test is wrong), a human lists it in `.claude/test-edits.allow` (gitignored), one
-path or glob per line, relative to the repo root:
-
-```
-# #212: the cancellation window moved from 12h to 24h
-be/src/test/cancellation-policy.test.ts
-e2e/journeys/*.spec.ts
-```
-
-Delete the file when the task is done. The agent cannot write it — the hook refuses that too.
-Starting a whole session with `ALLOW_TEST_EDITS=1` in the environment turns the check off.
+All of them run in CI, where a reviewer already reads the diff: every PR runs every suite
+(`deploy-be.yml`, `e2e-local.yml`, `test-guardrails.yml`), so sessions don't run them on stop.
+There is no local hook: an edit to a committed test is a normal diff for review, and a test
+removed on purpose is allowed with the `tests-removed` label (below).
 
 ## Running tests locally
 

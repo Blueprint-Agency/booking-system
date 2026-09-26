@@ -16,7 +16,7 @@ permissions:
   pull-requests: read
 
 jobs:
-  # The guardrail hooks (.claude/hooks/) and the repo scripts are tested too.
+  # The test-picker hooks (.claude/hooks/) and the repo scripts are tested too.
   scripts:
     runs-on: ubuntu-latest
     timeout-minutes: 5
