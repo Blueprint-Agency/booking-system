@@ -261,9 +261,11 @@ test('an Unlimited Plan keeps its expiry, is homed where its member is, and a pa
   )
   assert.equal(plan!.cross_location_paid_sgd, '120.00', 'what the pass cost')
 
-  // Where no report places the member, a plan whose name names a Location is homed there.
+  // Where no report places the member, a plan whose name names a Location is homed there. Its
+  // name, not a second Mindbody spelling: a `- Riverside` spelling would make it a plan sold once
+  // per Location, homed by the option bought (location-variants.test.ts).
   const config = fixtureConfig()
-  config.catalogue.find((e: { name: string }) => e.name === 'Unlimited 12').mindbodyNames = ['Unlimited 12', 'Unlimited 12 - Riverside']
+  config.catalogue.find((e: { name: string }) => e.name === 'Unlimited 12').name = 'Unlimited 12 Riverside'
   const homed = mapStudio(rickAt(reports, '0'), validateConfig(config), TENANT)
   const moved = homed.archive.rows.client_packages!.find(r => r.kind === 'unlimited')!
   assert.equal(moved.location_id, homed.ids.locations!['location-2'])

@@ -14,8 +14,30 @@ make it pass.**
 
 All of them run in CI, where a reviewer already reads the diff: every PR runs every suite
 (`deploy-be.yml`, `e2e-local.yml`, `test-guardrails.yml`), so sessions don't run them on stop.
-There is no local hook: an edit to a committed test is a normal diff for review, and a test
-removed on purpose is allowed with the `tests-removed` label (below).
+An edit to a committed test is a normal diff for review, and a test removed on purpose is allowed
+with the `tests-removed` label (below). The one local gate is before a push (next section).
+
+## Before a push
+
+A push runs the suites its commits touch first, with CI's own commands, and is stopped if one
+fails — so a push to `staging` or `main` that would turn CI red fails on the machine that made it,
+not twenty minutes later in Actions. It is the git hook `.githooks/pre-push`, which calls
+`node .claude/hooks/affected-tests.mjs pre-push`; install it once per clone with `make hooks`
+(`git config core.hooksPath .githooks`; `make install` and `make init` do it too).
+
+| Pushed code in | Runs | CI job it mirrors |
+|---|---|---|
+| `be/` | `npm run check -- <the test files the change reaches>` (below), on real Postgres, failing on any skip | backend `test` |
+| `fe-client/`, `fe-portal/` | `npm run check` | `fe-client`, `fe-portal` |
+| any `error-codes.ts` | `node scripts/check-error-codes.mjs` | "Error catalogues match" |
+| `e2e/` | `npm run check && npx playwright test --list` | `test-guardrails` journey list |
+| `scripts/`, `.claude/hooks/` | `node --test` on their tests | — |
+
+"Touch" is the diff from the remote branch's commit to the one pushed (for a new branch, from its
+merge base with `origin/main`), so pushing `staging` to `main` runs everything `main` has not yet
+had. The backend runs only the test files that change reaches, not the whole ~25-minute suite; CI
+still runs all of it. Tests run on the working tree, and the hook names any uncommitted change to
+the same code. `git push --no-verify` skips it.
 
 ## Running tests locally
 

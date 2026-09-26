@@ -1,4 +1,4 @@
-.PHONY: dev start urls install build studio init reset generate up down migrate ensure-db seed
+.PHONY: dev start urls install hooks build studio init reset generate up down migrate ensure-db seed
 
 dev: urls
 	(cd fe-client && npm run dev) & \
@@ -36,11 +36,16 @@ urls:
 	echo '  localhost:3000 / :3001 resolve no Tenant and will 404.' && \
 	echo ''
 
-install:
+install: hooks
 	(cd fe-client && npm install) & \
 	(cd fe-portal && npm install) & \
 	(cd be && npm install) & \
 	wait
+
+# The git hooks in .githooks/: pre-push runs the suites a push touches, with
+# CI's commands (docs/md/test-guardrails.md § Before a push).
+hooks:
+	git config core.hooksPath .githooks
 
 build:
 	(cd fe-client && npm run build) & \
@@ -59,6 +64,7 @@ studio:
 # `Program Files (x86)`, and a recursive call through that path fails on Windows.
 # Keep them in step with `install`, `ensure-db`, `migrate`, `seed` and `build`.
 init:
+	git config core.hooksPath .githooks
 	(cd fe-client && npm install) & \
 	(cd fe-portal && npm install) & \
 	(cd be && npm install) & \

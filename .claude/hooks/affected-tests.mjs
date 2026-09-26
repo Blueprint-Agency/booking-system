@@ -59,6 +59,14 @@ export const SUITES = [
     command: 'node --test "scripts/*.test.mjs" ".claude/hooks/*.test.mjs"',
     label: 'repo script + hook tests',
   },
+  // CI's "Error catalogues match" step, in the backend and both frontend jobs.
+  {
+    id: 'error-codes',
+    dir: '.',
+    watch: ['be/src/shared/error-codes.ts', 'fe-client/src/lib/error-codes.ts', 'fe-portal/src/lib/error-codes.ts'],
+    command: 'node scripts/check-error-codes.mjs',
+    label: 'error catalogues match',
+  },
 ]
 
 function watched(suite) {
@@ -307,6 +315,101 @@ function stop(projectDir, input) {
       }),
     )
   }
+}
+
+// ── Git pre-push hook ────────────────────────────────────────────────────────
+
+const NO_COMMIT = /^0+$/
+
+/**
+ * What each pushed ref is to be diffed against, from the lines git hands a
+ * pre-push hook (`<local ref> <local sha> <remote ref> <remote sha>`): the
+ * remote's commit, or — for a new branch, or a remote commit this clone has
+ * never seen — null, for the caller to find a merge base. A deleted ref pushes
+ * no code and is left out.
+ */
+export function pushedRanges(stdin) {
+  return stdin
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/))
+    .filter((parts) => parts.length === 4 && !NO_COMMIT.test(parts[1]))
+    .map(([, local, remoteRef, remote]) => ({ local, remoteRef, remote: NO_COMMIT.test(remote) ? null : remote }))
+}
+
+function hasCommit(projectDir, sha) {
+  try {
+    git(projectDir, ['cat-file', '-e', `${sha}^{commit}`])
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Before a push leaves: every suite the pushed commits touch, with CI's own
+ * commands (`SUITES`), so a push that would turn CI red is stopped here. CI
+ * still runs everything; this runs what the push reaches. The suites run on the
+ * working tree, so uncommitted changes to the same code are pointed out.
+ * `git push --no-verify` skips it.
+ */
+function prePush(projectDir, stdin) {
+  const paths = new Set()
+  for (const { local, remote } of pushedRanges(stdin)) {
+    let base = remote && hasCommit(projectDir, remote) ? remote : null
+    if (!base) {
+      try {
+        base = git(projectDir, ['merge-base', local, 'origin/main']).trim()
+      } catch {
+        base = null
+      }
+    }
+    // No common history to diff against: every file the pushed commit holds.
+    const listed = base
+      ? git(projectDir, ['diff', '--name-only', '-z', base, local])
+      : git(projectDir, ['ls-tree', '-r', '--name-only', '-z', local])
+    for (const p of listed.split('\0').filter(Boolean)) paths.add(p)
+  }
+  const changed = [...paths]
+  const suites = affectedSuites(changed)
+  if (!suites.length) return
+
+  const dirty = git(projectDir, ['status', '--porcelain', '--untracked-files=no', '-z'])
+    .split('\0')
+    .filter(Boolean)
+    .map((line) => line.slice(3))
+    .filter((p) => suites.some((s) => watched(s).some((w) => p.startsWith(w))))
+  if (dirty.length) {
+    process.stderr.write(
+      `pre-push: uncommitted changes to code the push touches are tested along with it:\n  ${dirty.join('\n  ')}\n`,
+    )
+  }
+
+  const report = []
+  for (const suite of suites) {
+    process.stderr.write(`pre-push: ${suite.label}…\n`)
+    const result = run(projectDir, suite, changed)
+    if (!result.ok) report.push(`── ${suite.label} (in ${suite.dir}/: ${result.command ?? suite.command}) ──\n${result.output}`)
+  }
+  if (report.length) {
+    process.stderr.write(
+      [
+        '',
+        ...report,
+        '',
+        'Push stopped: the tests CI will run fail for the code being pushed (above).',
+        'Fix the code, then push again. `git push --no-verify` pushes anyway.',
+        '',
+      ].join('\n'),
+    )
+    process.exit(1)
+  }
+  process.stderr.write('pre-push: the suites this push touches pass.\n')
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.argv[2] === 'pre-push') {
+  const projectDir = git(process.cwd(), ['rev-parse', '--show-toplevel']).trim()
+  prePush(projectDir, readFileSync(0, 'utf8'))
+  process.exit(0)
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
