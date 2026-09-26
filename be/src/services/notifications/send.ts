@@ -114,7 +114,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
 }
 
 /** Mail worded by the platform rather than a studio template, sent in the studio's name. */
-export type SystemMailSlug = 'staff_email_change_code' | 'staff_email_changed_notice'
+export type SystemMailSlug = 'staff_email_change_link' | 'staff_email_changed_notice'
 
 /**
  * A studio's mail whose wording is not the studio's to edit — the security
@@ -131,7 +131,7 @@ export type SystemMailSlug = 'staff_email_change_code' | 'staff_email_changed_no
  * `render` is called twice: once for the message sent, and once with `redact`
  * set for the copy the log keeps.
  *
- * Answers whether the send went out, because a code nobody receives is a flow
+ * Answers whether the send went out, because a link nobody receives is a flow
  * that cannot finish — its caller has to be able to say so.
  */
 export async function sendStudioSystemEmail(input: {

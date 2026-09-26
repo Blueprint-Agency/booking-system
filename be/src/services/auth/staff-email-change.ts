@@ -1,19 +1,21 @@
 /**
  * An admin changes a staff member's sign-in email — another instructor's,
- * another admin's, or their own.
+ * another admin's, or their own — and the new address confirms it by link.
  *
  * **Verified before it moves.** A staff address is a credential twice over:
  * the password signs in against it, and the second factor is a code mailed to
  * it. An address moved on an admin's say-so alone could put the portal's second
  * factor in a typo's inbox, or in a stranger's. So the change is two steps:
  *
- *   1. `startStaffEmailChange` mails a six-digit code to the NEW address and
- *      keeps the request pending. Nothing about the account changes yet.
- *   2. `confirmStaffEmailChange` takes that code back. Only then do the
- *      `staff_users` row and the `staff` pool login move, together.
+ *   1. `startStaffEmailChange` saves the new address as **Unverified** and
+ *      mails a confirmation link to it. The portal shows the address, labelled
+ *      Unverified, beside the staff member; nothing about the sign-in changes.
+ *   2. `confirmStaffEmailChange` is the link clicked, on the studio's own
+ *      portal, by whoever holds the new inbox. Only then do the `staff_users`
+ *      row and the `staff` pool login move, together.
  *
- * For someone else's address the admin gets the code from the person, who
- * reads it off their new inbox; for their own, from their own inbox.
+ * While it is Unverified an admin can revoke it (`revokeStaffEmailChange`), and
+ * the link dies. A new change, or a resend, replaces the old link.
  *
  * **The login is kept, not replaced.** Unlike a member's change
  * (`services/clients/change-email.ts`), where the login is passwordless and
@@ -21,15 +23,19 @@
  * second factor. The same `staff_auth_users` row is re-addressed, so both
  * survive and no session ends: sessions belong to the login, not the address.
  *
- * The pending request is a row in the pool's own verification table, keyed by
- * the staff member, holding the address and a hash of the code — never the code.
- * A code works for ten minutes and five guesses, and a new one replaces the old.
+ * The pending change is a row in the pool's own verification table, keyed by
+ * the staff member, holding the address and a hash of the link's secret — never
+ * the secret. The link names the staff member and carries 32 random bytes, so
+ * it cannot be guessed and needs no attempt count. It works for 24 hours; after
+ * that the portal shows the change as expired until it is resent or revoked.
+ * The page the link opens asks for a click before confirming, so a mail
+ * scanner that opens links cannot confirm one.
  *
  * The old address is told afterwards, unless it is a placeholder (`.invalid`)
  * that reaches nobody — so a change nobody expected does not go unnoticed.
  */
-import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
-import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { and, eq, inArray, isNull, like, ne, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { now } from '../../lib/clock'
 import { isUniqueViolation } from '../../db/unique-violation'
@@ -38,44 +44,78 @@ import { staffInvitations, staffUsers } from '../../db/schema/identity'
 import { auditLog } from '../../db/schema/ledger'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { reportError } from '../../shared/logger'
-import { withLeaveFigures } from '../leave/requests'
-import { emailCode, emailHeading, emailNote, emailParagraph, escapeHtml, renderEmail } from '../mail/layout'
+import { emailButton, emailHeading, emailNote, emailParagraph, escapeHtml, renderEmail } from '../mail/layout'
 import { sendStudioSystemEmail } from '../notifications/send'
+import { requireTenantUrl } from '../tenants/urls'
 import { isPlaceholderEmail } from './account-access'
-import type { StaffProfileRow } from './staff-archive'
 import { STAFF_EDIT_REFUSAL_MESSAGE, staffEditRefusal } from './staff-rank'
 
-export const EMAIL_CHANGE_CODE_TTL_MS = 10 * 60_000
-export const EMAIL_CHANGE_MAX_ATTEMPTS = 5
-/** How soon another code may be sent for the same person. */
+export const EMAIL_CHANGE_LINK_TTL_MS = 24 * 60 * 60_000
+/** How soon another link may be sent for the same person. */
 export const EMAIL_CHANGE_RESEND_AFTER_MS = 30_000
 
-const identifierFor = (staffId: string) => `staff-email-change:${staffId}`
+const IDENTIFIER_PREFIX = 'staff-email-change:'
+const identifierFor = (staffId: string) => `${IDENTIFIER_PREFIX}${staffId}`
 
 /** What the verification row's `value` holds. */
 interface PendingChange {
   email: string
-  /** Null once withdrawn: no code confirms, but `sentAt` still holds the cooldown. */
-  codeHash: string | null
-  attempts: number
+  /** Null once revoked: no link confirms, but `sentAt` still holds the cooldown. */
+  tokenHash: string | null
+  /** The admin who made the change — the actor on the audit row when it is confirmed. */
+  requestedByStaffId: string
   /** On the app's clock (`lib/clock`), like the expiry — not the row's own timestamps. */
   sentAt: string
 }
 
-/** Salted with the staff id, so one code's hash says nothing about another's. */
-const hashCode = (staffId: string, code: string) =>
-  createHash('sha256').update(`${staffId}:${code}`).digest('hex')
+/** An Unverified address, as the portal shows it beside the staff member. */
+export interface PendingStaffEmail {
+  email: string
+  sentAt: Date
+  expiresAt: Date
+  /** The link no longer works; the portal offers a resend. */
+  expired: boolean
+}
 
-function codeMatches(pending: PendingChange, staffId: string, code: string): boolean {
-  if (!pending.codeHash) return false
-  const expected = Buffer.from(pending.codeHash, 'hex')
-  const offered = Buffer.from(hashCode(staffId, code), 'hex')
+/** Salted with the staff id, so one link's hash says nothing about another's. */
+const hashSecret = (staffId: string, secret: string) =>
+  createHash('sha256').update(`${staffId}:${secret}`).digest('hex')
+
+/** The link's token: whose change it is, then the secret. */
+const tokenFor = (staffId: string, secret: string) => `${staffId}.${secret}`
+
+function parseToken(token: string): { staffId: string; secret: string } | null {
+  const dot = token.indexOf('.')
+  if (dot <= 0 || dot === token.length - 1) return null
+  const staffId = token.slice(0, dot)
+  // A uuid, or no row could hold it — and the query below would refuse the cast.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(staffId)) return null
+  return { staffId, secret: token.slice(dot + 1) }
+}
+
+function secretMatches(pending: PendingChange, staffId: string, secret: string): boolean {
+  if (!pending.tokenHash) return false
+  const expected = Buffer.from(pending.tokenHash, 'hex')
+  const offered = Buffer.from(hashSecret(staffId, secret), 'hex')
   return expected.length === offered.length && timingSafeEqual(expected, offered)
+}
+
+/**
+ * The confirmation page, on the **studio's own portal**: the link is looked up
+ * inside the Tenant it was issued for, as an invitation's is.
+ */
+export function buildConfirmEmailUrl(portalUrl: string, token: string): string {
+  return `${portalUrl.replace(/\/+$/, '')}/confirm-email?token=${encodeURIComponent(token)}`
 }
 
 const emailInUse = () =>
   new ConflictError('email_in_use', {
     message: 'Another staff member of this studio already signs in with that email.',
+  })
+
+const linkInvalid = () =>
+  new BadRequestError('email_change_link_invalid', {
+    message: 'This link no longer works. It was used, replaced by a newer one, or revoked.',
   })
 
 /** The target, and a refusal when this actor may not edit them. */
@@ -101,13 +141,17 @@ async function editableTarget(tenantId: string, targetStaffId: string, actorStaf
     touchesPrivilegeFields: false,
   })
   if (refusal) throw new ForbiddenError(refusal, { message: STAFF_EDIT_REFUSAL_MESSAGE[refusal] })
-  // Archived is how staff are blocked; the account is closed to changes as it is to sign-in.
+  assertNotBlocked(target)
+  return { target, actor }
+}
+
+/** Archived is how staff are blocked; the account is closed to changes as it is to sign-in. */
+function assertNotBlocked(target: { status: string }) {
   if (target.status === 'archived') {
     throw new ConflictError('staff_archived', {
       message: 'This staff member is blocked. Unblock them before changing their email.',
     })
   }
-  return { target, actor }
 }
 
 /**
@@ -146,10 +190,9 @@ async function assertAddressFree(tenantId: string, target: { id: string; authUse
  * One step at a time per staff member, until the request commits.
  *
  * Every step reads the pending row and writes it back: without this, two
- * starts at once each delete-then-insert and leave two rows, and twenty
- * confirms at once each read `attempts: 0` and spend twenty guesses against a
- * limit of five. A transaction-scoped advisory lock, because the first start
- * has no row yet to lock.
+ * starts at once each delete-then-insert and leave two rows. A
+ * transaction-scoped advisory lock, because the first start has no row yet to
+ * lock.
  */
 async function lockPending(staffId: string) {
   await db.execute(sql`select pg_advisory_xact_lock(hashtext(${identifierFor(staffId)}))`)
@@ -180,6 +223,50 @@ async function dropPending(tenantId: string, staffId: string) {
     )
 }
 
+function pendingView(row: { value: string; expiresAt: Date }): PendingStaffEmail | null {
+  const pending = JSON.parse(row.value) as PendingChange
+  // Revoked: kept only for its cooldown, and no longer anything to show.
+  if (!pending.tokenHash) return null
+  return {
+    email: pending.email,
+    sentAt: new Date(pending.sentAt),
+    expiresAt: row.expiresAt,
+    expired: row.expiresAt.getTime() <= now().getTime(),
+  }
+}
+
+/**
+ * The Unverified addresses at this studio, by staff id — for the staff list,
+ * or for the given staff members only.
+ */
+export async function pendingStaffEmails(
+  tenantId: string,
+  staffIds?: readonly string[],
+): Promise<Map<string, PendingStaffEmail>> {
+  if (staffIds && staffIds.length === 0) return new Map()
+  const rows = await db
+    .select({
+      identifier: staffAuthVerifications.identifier,
+      value: staffAuthVerifications.value,
+      expiresAt: staffAuthVerifications.expiresAt,
+    })
+    .from(staffAuthVerifications)
+    .where(
+      and(
+        eq(staffAuthVerifications.tenantId, tenantId),
+        staffIds
+          ? inArray(staffAuthVerifications.identifier, staffIds.map(identifierFor))
+          : like(staffAuthVerifications.identifier, `${IDENTIFIER_PREFIX}%`),
+      ),
+    )
+  const byStaff = new Map<string, PendingStaffEmail>()
+  for (const row of rows) {
+    const view = pendingView(row)
+    if (view) byStaff.set(row.identifier.slice(IDENTIFIER_PREFIX.length), view)
+  }
+  return byStaff
+}
+
 export interface StartStaffEmailChangeInput {
   tenantId: string
   targetStaffId: string
@@ -187,45 +274,47 @@ export interface StartStaffEmailChangeInput {
   email: string
 }
 
-export interface PendingStaffEmailChange {
-  email: string
-  expiresAt: Date
-}
-
-/** Step one: mail a code to the new address. Changes nothing on the account. */
-export async function startStaffEmailChange(input: StartStaffEmailChangeInput): Promise<PendingStaffEmailChange> {
+/**
+ * Step one: save the address as Unverified and mail it the confirmation link.
+ * Changes nothing on the account. Sending the same address again is the resend:
+ * a new link, and the old one dies.
+ */
+export async function startStaffEmailChange(input: StartStaffEmailChangeInput): Promise<PendingStaffEmail> {
   const email = input.email.trim().toLowerCase()
   if (!email) throw new BadRequestError('email_required')
   const { target } = await editableTarget(input.tenantId, input.targetStaffId, input.actorStaffId)
 
   if (target.email.toLowerCase() === email) throw new BadRequestError('email_unchanged')
-  // A placeholder can receive no code, and moving onto one is not a change anyone needs.
+  // A placeholder can receive no link, and moving onto one is not a change anyone needs.
   if (isPlaceholderEmail(email)) {
     throw new BadRequestError('email_placeholder_not_allowed', {
-      message: 'Enter an address that receives mail — a code is sent to it to confirm the change.',
+      message: 'Enter an address that receives mail — a link is sent to it to confirm the change.',
     })
   }
   await assertAddressFree(input.tenantId, target, email)
+  // Before anything is written: a change saved with no link built for it is an
+  // Unverified address that can never be verified.
+  const portalUrl = await requireTenantUrl('portal', input.tenantId)
 
   await lockPending(target.id)
   const previous = await pendingRow(input.tenantId, target.id)
   const sentAt = previous && (JSON.parse(previous.value) as PendingChange).sentAt
   if (sentAt && now().getTime() - new Date(sentAt).getTime() < EMAIL_CHANGE_RESEND_AFTER_MS) {
     throw new AppError(429, 'too_many_requests', {
-      message: `A code was sent a moment ago. Wait ${EMAIL_CHANGE_RESEND_AFTER_MS / 1000} seconds before sending another.`,
+      message: `A link was sent a moment ago. Wait ${EMAIL_CHANGE_RESEND_AFTER_MS / 1000} seconds before sending another.`,
     })
   }
 
-  const code = randomInt(0, 1_000_000).toString().padStart(6, '0')
+  const secret = randomBytes(32).toString('base64url')
   const sent = now()
-  const expiresAt = new Date(sent.getTime() + EMAIL_CHANGE_CODE_TTL_MS)
+  const expiresAt = new Date(sent.getTime() + EMAIL_CHANGE_LINK_TTL_MS)
   const pending: PendingChange = {
     email,
-    codeHash: hashCode(target.id, code),
-    attempts: 0,
+    tokenHash: hashSecret(target.id, secret),
+    requestedByStaffId: input.actorStaffId,
     sentAt: sent.toISOString(),
   }
-  // A new code replaces the old one, and whatever address it was for.
+  // A new link replaces the old one, and whatever address it was for.
   await dropPending(input.tenantId, target.id)
   await db.insert(staffAuthVerifications).values({
     id: randomUUID(),
@@ -235,87 +324,89 @@ export async function startStaffEmailChange(input: StartStaffEmailChangeInput): 
     expiresAt,
   })
 
+  const link = buildConfirmEmailUrl(portalUrl, tokenFor(target.id, secret))
   const sentOk = await sendStudioSystemEmail({
     tenantId: input.tenantId,
-    slug: 'staff_email_change_code',
+    slug: 'staff_email_change_link',
     recipient: { email, userId: target.id, userKind: 'staff' },
-    render: (studio, redact) => emailChangeCodeEmail(studio, target.name, redact ? '[redacted]' : code),
+    render: (studio, redact) => emailChangeLinkEmail(studio, target.name, redact ? '#redacted' : link),
   })
   // Unlike an everyday notice, this flow is nothing without the mail: say so,
-  // rather than "Code sent" for a code nobody will receive. The row goes too,
+  // rather than "Link sent" for a link nobody will receive. The row goes too,
   // so the retry is not held back by the cooldown of a send that never left.
   if (!sentOk) {
     await dropPending(input.tenantId, target.id)
     throw new AppError(503, 'email_send_failed', {
-      message: 'The code could not be emailed. Try again in a moment.',
+      message: 'The confirmation link could not be emailed. Try again in a moment.',
     })
   }
 
-  return { email, expiresAt }
+  return { email, sentAt: sent, expiresAt, expired: false }
 }
 
-export interface ConfirmStaffEmailChangeInput {
-  tenantId: string
-  targetStaffId: string
-  actorStaffId: string
-  code: string
+/** The pending change a link names, and whether it still confirms. */
+async function changeForToken(tenantId: string, token: string) {
+  const parsed = parseToken(token.trim())
+  if (!parsed) return null
+  const row = await pendingRow(tenantId, parsed.staffId)
+  if (!row) return null
+  const pending = JSON.parse(row.value) as PendingChange
+  if (!secretMatches(pending, parsed.staffId, parsed.secret)) return null
+  const [target] = await db
+    .select()
+    .from(staffUsers)
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, parsed.staffId), isNull(staffUsers.deletedAt)))
+    .limit(1)
+  if (!target) return null
+  return { row, pending, target, expired: row.expiresAt.getTime() <= now().getTime() }
 }
 
-/** Step two: the code back, and the address moves. Returns the staff row as the portal reads it. */
-export async function confirmStaffEmailChange(input: ConfirmStaffEmailChangeInput): Promise<StaffProfileRow> {
-  const { target, actor } = await editableTarget(input.tenantId, input.targetStaffId, input.actorStaffId)
+export type StaffEmailChangeLinkStatus = 'valid' | 'expired' | 'invalid'
 
-  await lockPending(target.id)
-  const row = await pendingRow(input.tenantId, target.id)
-  const pending = row && (JSON.parse(row.value) as PendingChange)
-  // No row, or one withdrawn — kept only so its cooldown still holds.
-  if (!row || !pending?.codeHash) {
-    throw new BadRequestError('email_change_not_requested', {
-      message: 'No email change is waiting to be confirmed. Send a code first.',
+/**
+ * What the confirmation page shows before the click. Read-only, and public:
+ * holding the link is the only way to learn anything from it.
+ */
+export async function lookupStaffEmailChange(
+  tenantId: string,
+  token: string,
+): Promise<{ status: StaffEmailChangeLinkStatus; email: string | null }> {
+  const change = await changeForToken(tenantId, token)
+  if (!change) return { status: 'invalid', email: null }
+  return { status: change.expired ? 'expired' : 'valid', email: change.pending.email }
+}
+
+/**
+ * Step two: the link clicked, and the address moves. Public — the person
+ * holding the new inbox need not be signed in, and holding the link is the
+ * proof, as it is for an invitation or a password reset.
+ */
+export async function confirmStaffEmailChange(input: { tenantId: string; token: string }): Promise<{ email: string }> {
+  const parsed = parseToken(input.token.trim())
+  if (!parsed) throw linkInvalid()
+  await lockPending(parsed.staffId)
+  const change = await changeForToken(input.tenantId, input.token)
+  if (!change) throw linkInvalid()
+  const { row, pending, target } = change
+  if (change.expired) {
+    throw new BadRequestError('email_change_link_expired', {
+      message: 'This link has expired. Ask an admin to send a new one.',
     })
   }
-  if (row.expiresAt.getTime() <= now().getTime()) {
-    await dropPending(input.tenantId, target.id)
-    throw new BadRequestError('email_change_code_expired', {
-      message: 'That code has expired. Send a new one.',
-    })
-  }
-
-  if (!codeMatches(pending, target.id, input.code.trim())) {
-    // The count is written and then refused. A refusal does not roll the
-    // request's transaction back — `onError` answers at the layer that threw —
-    // so the guess stays spent; and `lockPending` makes the next guess wait
-    // for this one's count.
-    const attempts = pending.attempts + 1
-    const left = EMAIL_CHANGE_MAX_ATTEMPTS - attempts
-    if (left <= 0) {
-      await dropPending(input.tenantId, target.id)
-      throw new BadRequestError('email_change_code_expired', {
-        message: 'Too many wrong codes. Send a new one.',
-      })
-    }
-    await db
-      .update(staffAuthVerifications)
-      .set({ value: JSON.stringify({ ...pending, attempts }) })
-      .where(and(eq(staffAuthVerifications.tenantId, input.tenantId), eq(staffAuthVerifications.id, row.id)))
-    throw new BadRequestError('email_change_code_invalid', {
-      message: `That code isn't right. ${left} ${left === 1 ? 'try' : 'tries'} left.`,
-    })
-  }
-
-  // Checked again: the address may have been taken in the minutes the code was in flight.
+  // Blocked since the link was sent: the account is closed to changes.
+  assertNotBlocked(target)
+  // Checked again: the address may have been taken while the link was out.
   await assertAddressFree(input.tenantId, target, pending.email)
   const previousEmail = target.email
 
-  const updated = await db
+  await db
     .transaction(async tx => {
-      const [moved] = await tx
+      await tx
         .update(staffUsers)
         .set({ email: pending.email, updatedAt: new Date() })
         .where(and(eq(staffUsers.tenantId, input.tenantId), eq(staffUsers.id, target.id)))
-        .returning()
       // The same login, re-addressed: its password, second factor and sessions stay.
-      // Verified, because the code just proved the address receives mail.
+      // Verified, because the link just proved the address receives mail.
       await tx
         .update(staffAuthUsers)
         .set({ email: pending.email, emailVerified: true, updatedAt: new Date() })
@@ -349,14 +440,13 @@ export async function confirmStaffEmailChange(input: ConfirmStaffEmailChangeInpu
         .where(and(eq(staffAuthVerifications.tenantId, input.tenantId), eq(staffAuthVerifications.id, row.id)))
       await tx.insert(auditLog).values({
         tenantId: input.tenantId,
-        actorStaffId: input.actorStaffId,
+        actorStaffId: pending.requestedByStaffId,
         actorType: 'staff',
         action: 'staff_email_changed',
         targetTable: 'staff_users',
         targetId: target.id,
         payload: { from: previousEmail, to: pending.email },
       })
-      return moved!
     })
     .catch((err: unknown) => {
       // Two changes racing onto one address: the index decides.
@@ -365,26 +455,33 @@ export async function confirmStaffEmailChange(input: ConfirmStaffEmailChangeInpu
     })
 
   if (!isPlaceholderEmail(previousEmail)) {
+    const [requester] =
+      pending.requestedByStaffId === target.id
+        ? []
+        : await db
+            .select({ name: staffUsers.name })
+            .from(staffUsers)
+            .where(and(eq(staffUsers.tenantId, input.tenantId), eq(staffUsers.id, pending.requestedByStaffId)))
+            .limit(1)
     // Best-effort: the change is committed, and a notice that fails to send must not undo it.
     await sendStudioSystemEmail({
       tenantId: input.tenantId,
       slug: 'staff_email_changed_notice',
       recipient: { email: previousEmail, userId: target.id, userKind: 'staff' },
-      render: studio =>
-        emailChangedNotice(studio, target.name, pending.email, actor.id === target.id ? null : actor.name),
+      render: studio => emailChangedNotice(studio, target.name, pending.email, requester?.name ?? null),
     }).catch(err => reportError(err, 'staff email change notice failed', { scope: 'staff-email-change' }))
   }
 
-  const [profile] = await withLeaveFigures(input.tenantId, [updated])
-  return profile ?? updated
+  return { email: pending.email }
 }
 
 /**
- * Withdraw a pending change's code — the admin closed the dialog. The row stays,
- * code-less, until it expires: deleting it would reset the resend cooldown, so
- * closing and reopening the dialog could mail codes as fast as it can be clicked.
+ * Revoke an Unverified address: the link dies and the portal stops showing it.
+ * The row stays, link-less, until it expires: deleting it would reset the
+ * resend cooldown, so revoking and re-adding could mail links as fast as it can
+ * be clicked.
  */
-export async function cancelStaffEmailChange(input: {
+export async function revokeStaffEmailChange(input: {
   tenantId: string
   targetStaffId: string
   actorStaffId: string
@@ -396,13 +493,13 @@ export async function cancelStaffEmailChange(input: {
   const pending = JSON.parse(row.value) as PendingChange
   await db
     .update(staffAuthVerifications)
-    .set({ value: JSON.stringify({ ...pending, codeHash: null }) })
+    .set({ value: JSON.stringify({ ...pending, tokenHash: null }) })
     .where(and(eq(staffAuthVerifications.tenantId, input.tenantId), eq(staffAuthVerifications.id, row.id)))
 }
 
 /* ── the two messages, in the studio's name ─────────────────────────────── */
 
-export function emailChangeCodeEmail(studio: string, name: string, code: string) {
+export function emailChangeLinkEmail(studio: string, name: string, link: string) {
   const subject = `Confirm your new ${studio} portal email`
   return {
     subject,
@@ -413,11 +510,11 @@ export function emailChangeCodeEmail(studio: string, name: string, code: string)
         emailHeading('Confirm your new email'),
         emailParagraph(`Hi ${escapeHtml(name)},`),
         emailParagraph(
-          `This address was entered as the new sign-in email for your ${escapeHtml(studio)} portal account. Give this code to whoever is making the change, or enter it yourself:`,
+          `This address was entered as the new sign-in email for your ${escapeHtml(studio)} portal account. Confirm it to start signing in with it:`,
         ),
-        emailCode(escapeHtml(code)),
+        emailButton(escapeHtml(link), 'Confirm email'),
         emailNote(
-          "The code works once and expires in ten minutes. Until it is entered, you keep signing in with your current email. If you weren't expecting this, ignore it — nothing changes.",
+          "The link works once and expires in 24 hours. Until it is confirmed, you keep signing in with your current email. If you weren't expecting this, ignore it — nothing changes.",
         ),
       ].join('\n'),
       reason: `You're receiving this because this address was entered as a new sign-in email at ${studio}.`,

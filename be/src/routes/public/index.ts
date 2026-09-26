@@ -3,6 +3,7 @@ import catalog from './catalog'
 import marketing from './marketing'
 import members from './members'
 import referral from './referral'
+import staffEmailChange from './staff-email-change'
 import staffInvitations from './staff-invitations'
 import staffSignIn from './staff-sign-in'
 import tenants from './tenants'
@@ -13,6 +14,7 @@ const app = new Hono()
   .route('/', marketing)
   .route('/', members)
   .route('/', referral)
+  .route('/', staffEmailChange)
   .route('/', staffInvitations)
   .route('/', staffSignIn)
 

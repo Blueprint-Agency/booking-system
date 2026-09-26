@@ -33,6 +33,7 @@ import { formatDate, formatRelative } from "@/lib/formatters";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
 import {
   StaffEditDialog,
+  type PendingEmail,
   type StaffEditPatch,
 } from "@/components/staff/staff-edit-dialog";
 
@@ -41,6 +42,8 @@ import {
 interface StaffApiRow {
   id: string;
   email: string;
+  /** A new address awaiting its confirmation link; `email` signs in until then. */
+  pending_email: PendingEmail | null;
   name: string;
   first_name: string | null;
   last_name: string | null;
@@ -556,19 +559,11 @@ export default function StaffPage() {
           canChangeEmail={canManageStaff && canEditTarget(editTarget)}
           isSelf={editTarget.id === currentStaff?.id}
           onSubmit={handleEdit}
-          onEmailChanged={updated => {
-            const row = updated as StaffApiRow;
-            setStaff(prev => prev.map(s => (s.id === row.id ? row : s)));
-            // The open dialog's actions read the target — a placeholder given a
-            // real address can be sent its set-password link straight away.
-            setEditTarget(row);
-            toast.success(
-              editTarget.id === currentStaff?.id
-                ? `You now sign in with ${row.email}.`
-                : `${row.name} now signs in with ${row.email}.`,
-            );
-            // A pending invitation moved with the address; the list shows it.
-            if (row.status === "pending") void refresh();
+          onPendingEmailChanged={(id, pending) => {
+            setStaff(prev => prev.map(s => (s.id === id ? { ...s, pending_email: pending } : s)));
+            // Nothing moves until the link is clicked — the sign-in, and any
+            // pending invitation, follow the address then.
+            if (pending) toast.success(`Confirmation link sent to ${pending.email}.`);
           }}
           onClose={() => setEditTarget(null)}
         />
@@ -648,6 +643,16 @@ function StaffRow({
         <div className="truncate text-xs text-muted">
           {isPlaceholderEmail(staff.email) ? "No email — no login" : staff.email}
         </div>
+        {staff.pending_email && (
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
+            <span className="truncate text-ink">{staff.pending_email.email}</span>
+            {staff.pending_email.expired ? (
+              <Badge tone="error">Link expired</Badge>
+            ) : (
+              <Badge tone="warning">Unverified</Badge>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

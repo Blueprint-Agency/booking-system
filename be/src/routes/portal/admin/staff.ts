@@ -18,16 +18,16 @@ import {
   signStaffOutEverywhere,
 } from '../../../services/auth/account-access'
 import {
-  cancelStaffEmailChange,
-  confirmStaffEmailChange,
   EMAIL_CHANGE_RESEND_AFTER_MS,
+  pendingStaffEmails,
+  revokeStaffEmailChange,
   startStaffEmailChange,
+  type PendingStaffEmail,
 } from '../../../services/auth/staff-email-change'
 import { sessionView } from '../session-view'
 
 // Trimming and lower-casing are the service's, so a refusal can name what was typed.
 const emailChangeSchema = z.object({ email: z.string().email().max(254) })
-const emailChangeCodeSchema = z.object({ code: z.string().trim().regex(/^\d{6}$/) })
 
 const inviteSchema = z.object({
   email: z.string().email().max(254),
@@ -60,10 +60,29 @@ const updateStaffSchema = z.object({
 
 const idParam = z.object({ id: z.string().uuid() })
 
-function serializeStaff(row: StaffProfileRow) {
+function serializePendingEmail(pending: PendingStaffEmail) {
+  return {
+    email: pending.email,
+    sent_at: pending.sentAt,
+    expires_at: pending.expiresAt,
+    expired: pending.expired,
+  }
+}
+
+/** One staff member's Unverified address, or null. */
+async function pendingEmailOf(tenant: string, staffId: string) {
+  return (await pendingStaffEmails(tenant, [staffId])).get(staffId) ?? null
+}
+
+/**
+ * `pending_email` is an address saved but not yet confirmed by its link: the
+ * portal labels it Unverified, and `email` still signs the person in.
+ */
+function serializeStaff(row: StaffProfileRow, pendingEmail: PendingStaffEmail | null) {
   return {
     id: row.id,
     email: row.email,
+    pending_email: pendingEmail ? serializePendingEmail(pendingEmail) : null,
     name: row.name,
     first_name: row.firstName,
     last_name: row.lastName,
@@ -121,8 +140,9 @@ const app = new Hono()
   .use('*', requireRole('admin'))
   .get('/', async c => {
     const { staff, invitations } = await svc.listStaffAndInvitations(tenantId(c))
+    const pending = await pendingStaffEmails(tenantId(c))
     return c.json({
-      staff: staff.map(serializeStaff),
+      staff: staff.map(row => serializeStaff(row, pending.get(row.id) ?? null)),
       invitations: invitations.map(serializeInvitation),
     })
   })
@@ -194,10 +214,12 @@ const app = new Hono()
       },
     })
     c.set('auditTarget' as any, { table: 'staff_users', id })
-    return c.json(serializeStaff(row))
+    return c.json(serializeStaff(row, await pendingEmailOf(tenantId(c), id)))
   })
-  // The sign-in email, anyone's the admin may edit, their own included: a code
-  // mailed to the new address, then that code back before anything moves.
+  // The sign-in email, anyone's the admin may edit, their own included: the new
+  // address is saved Unverified and mailed a confirmation link, and nothing
+  // moves until the link is clicked (`routes/public/staff-email-change.ts`).
+  // The same address again is the resend.
   .post('/:id/email', zValidator('param', idParam), zValidator('json', emailChangeSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
@@ -209,26 +231,14 @@ const app = new Hono()
     })
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json({
-      pending_email: pending.email,
-      expires_at: pending.expiresAt,
+      pending_email: serializePendingEmail(pending),
       resend_after_seconds: EMAIL_CHANGE_RESEND_AFTER_MS / 1000,
     })
   })
-  .post('/:id/email/confirm', zValidator('param', idParam), zValidator('json', emailChangeCodeSchema), async c => {
-    const { id } = c.req.valid('param')
-    const body = c.req.valid('json')
-    const row = await confirmStaffEmailChange({
-      tenantId: tenantId(c),
-      targetStaffId: id,
-      actorStaffId: c.get('staffUserId'),
-      code: body.code,
-    })
-    c.set('auditTarget' as any, { table: 'staff_users', id })
-    return c.json(serializeStaff(row))
-  })
+  // Revoke the Unverified address: its link stops working.
   .delete('/:id/email', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    await cancelStaffEmailChange({
+    await revokeStaffEmailChange({
       tenantId: tenantId(c),
       targetStaffId: id,
       actorStaffId: c.get('staffUserId'),
@@ -245,7 +255,7 @@ const app = new Hono()
       from: c.req.raw.headers,
     })
     c.set('auditTarget' as any, { table: 'staff_users', id })
-    return c.json(serializeStaff(row))
+    return c.json(serializeStaff(row, await pendingEmailOf(tenantId(c), id)))
   })
   .post('/:id/unarchive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
@@ -257,7 +267,7 @@ const app = new Hono()
       from: c.req.raw.headers,
     })
     c.set('auditTarget' as any, { table: 'staff_users', id })
-    return c.json(serializeStaff(row))
+    return c.json(serializeStaff(row, await pendingEmailOf(tenantId(c), id)))
   })
   .get('/:id/sessions', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')

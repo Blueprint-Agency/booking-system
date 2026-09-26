@@ -4,7 +4,7 @@ import { AtSign, Pencil, RotateCcw, ShieldOff } from "lucide-react";
 import { ResendInvitationButton } from "@/components/access/resend-invitation-button";
 import { SessionsPanel } from "@/components/access/sessions-panel";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
-import { StaffEmailChange } from "./staff-email-change";
+import { PendingEmailNotice, StaffEmailChange } from "./staff-email-change";
 import {
   Badge,
   Button,
@@ -46,9 +46,21 @@ function poolNote(pool?: number, carried?: number, ceiling?: number) {
   return `Pool ${pool} days${composition} — remaining can be set up to ${ceiling ?? pool}, their assigned plus carried days.`;
 }
 
+/** An address saved but not yet confirmed by the link mailed to it. */
+export interface PendingEmail {
+  email: string;
+  sent_at: string;
+  expires_at: string;
+  /** The link no longer works; resend or revoke. */
+  expired: boolean;
+}
+
 export interface StaffEditableFields {
   id: string;
+  /** The address they sign in with. */
   email: string;
+  /** A new address awaiting its confirmation link — shown as Unverified. */
+  pending_email?: PendingEmail | null;
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
@@ -128,7 +140,7 @@ export function StaffEditDialog({
   isSelf,
   access,
   onSubmit,
-  onEmailChanged,
+  onPendingEmailChanged,
   onClose,
 }: {
   staff: StaffEditableFields;
@@ -149,8 +161,8 @@ export function StaffEditDialog({
     id: string,
     patch: StaffEditPatch,
   ) => Promise<StaffEditableFields | null>;
-  /** A verified email change landed; the row is the API's echo. */
-  onEmailChanged: (updated: StaffEditableFields) => void;
+  /** An address was saved as Unverified, resent, or revoked (null). */
+  onPendingEmailChanged: (staffId: string, pending: PendingEmail | null) => void;
   onClose: () => void;
 }) {
   // The row the dialog trusts. Seeded from the list, then replaced by the PATCH
@@ -176,6 +188,11 @@ export function StaffEditDialog({
   const name = [current.first_name, current.last_name].filter(Boolean).join(" ");
   const shownEmail = isPlaceholderEmail(current.email) ? "No email on file" : current.email;
   const emailChangeable = canChangeEmail && current.status !== "archived";
+
+  function setPendingEmail(pending: PendingEmail | null) {
+    setCurrent(c => ({ ...c, pending_email: pending }));
+    onPendingEmailChanged(current.id, pending);
+  }
 
   return (
     <Dialog
@@ -203,10 +220,9 @@ export function StaffEditDialog({
           staff={current}
           isSelf={isSelf}
           onCancel={() => setChangingEmail(false)}
-          onDone={updated => {
-            setCurrent(updated);
+          onSent={pending => {
             setChangingEmail(false);
-            onEmailChanged(updated);
+            setPendingEmail(pending);
           }}
         />
       )}
@@ -218,6 +234,7 @@ export function StaffEditDialog({
             staff={current}
             canChangeRole={canChangeRole}
             onChangeEmail={emailChangeable ? () => setChangingEmail(true) : undefined}
+            onPendingEmailChange={setPendingEmail}
             submitting={submitting}
             onSubmit={save}
             onCancel={() => setEditing(false)}
@@ -228,6 +245,7 @@ export function StaffEditDialog({
             canEdit={canEdit}
             access={access}
             onChangeEmail={emailChangeable ? () => setChangingEmail(true) : undefined}
+            onPendingEmailChange={setPendingEmail}
             onEdit={() => setEditing(true)}
             onClose={onClose}
           />
@@ -253,6 +271,7 @@ function StaffProfileView({
   canEdit,
   access,
   onChangeEmail,
+  onPendingEmailChange,
   onEdit,
   onClose,
 }: {
@@ -260,6 +279,7 @@ function StaffProfileView({
   canEdit: boolean;
   access: StaffAccessActions;
   onChangeEmail?: () => void;
+  onPendingEmailChange: (pending: PendingEmail | null) => void;
   onEdit: () => void;
   onClose: () => void;
 }) {
@@ -283,6 +303,13 @@ function StaffProfileView({
             </span>
             {onChangeEmail && <ChangeEmailButton onClick={onChangeEmail} />}
           </span>
+          {staff.pending_email && (
+            <PendingEmailNotice
+              staff={{ ...staff, pending_email: staff.pending_email }}
+              canManage={!!onChangeEmail}
+              onChange={onPendingEmailChange}
+            />
+          )}
         </Field>
         <Field label="Phone">{staff.phone}</Field>
         <Field label="Gender">{gender}</Field>
@@ -471,6 +498,7 @@ function StaffProfileForm({
   staff,
   canChangeRole,
   onChangeEmail,
+  onPendingEmailChange,
   submitting,
   onSubmit,
   onCancel,
@@ -479,6 +507,7 @@ function StaffProfileForm({
   canChangeRole: boolean;
   /** The email is not a form field: it moves only through its own verified flow. */
   onChangeEmail?: () => void;
+  onPendingEmailChange: (pending: PendingEmail | null) => void;
   submitting: boolean;
   onSubmit: (patch: StaffEditPatch) => void | Promise<void>;
   onCancel: () => void;
@@ -595,10 +624,18 @@ function StaffProfileForm({
           />
           {onChangeEmail && <ChangeEmailButton onClick={onChangeEmail} />}
         </div>
-        {onChangeEmail && (
-          <p className="text-xs text-muted">
-            Changed separately — the new address confirms a code first.
-          </p>
+        {staff.pending_email ? (
+          <PendingEmailNotice
+            staff={{ ...staff, pending_email: staff.pending_email }}
+            canManage={!!onChangeEmail}
+            onChange={onPendingEmailChange}
+          />
+        ) : (
+          onChangeEmail && (
+            <p className="text-xs text-muted">
+              Changed separately — the new address confirms by link first.
+            </p>
+          )
         )}
       </div>
 
