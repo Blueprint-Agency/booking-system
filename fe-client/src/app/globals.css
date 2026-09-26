@@ -168,6 +168,35 @@
   animation: dropIn 0.14s ease-out both;
 }
 
+/* A hole punched in the practice card (`components/account/practice-summary.tsx`).
+   Each hole carries its own delay, so they punch in left to right. */
+@keyframes punchIn {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.punch-hole {
+  animation: punchIn 0.28s ease-out both;
+}
+
+/* The global rule shortens the animation but keeps its delay, which would leave
+   the last holes blank for most of a second. */
+@media (prefers-reduced-motion: reduce) {
+  .punch-hole {
+    animation: none;
+  }
+}
+
 /* ── Page transitions (`components/layout/page-transition.tsx`) ──────────────
    The new page rises in. Fill mode `backwards`, not `both`: a transform left on
    the wrapper after the animation would become the containing block for every

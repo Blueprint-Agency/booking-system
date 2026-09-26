@@ -8,6 +8,7 @@ import { AllLocationsRow, CoversRow, LocationChip } from "@/components/ui/locati
 import { useLocations } from "@/lib/classes";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { ComingUp } from "@/components/account/coming-up";
+import { PracticeSummary } from "@/components/account/practice-summary";
 import { AccountHeader } from "@/components/account/account-header";
 import { ACCOUNT_SECTIONS } from "@/components/account/account-nav-items";
 import { SignOutButton } from "@/components/account/sign-out-button";
@@ -108,6 +109,9 @@ export default function AccountOverview() {
           {/* The class running now or next as the ticket, with its check-in QR
               one tap away (#192); the rest beside it, swiped through. */}
           <ComingUp />
+
+          {/* Attended classes over a chosen timeframe, as a punch card (#317). */}
+          <PracticeSummary />
 
           {/* Balances — side by side even on a phone; they're read together. */}
           <div className="xl:hidden mb-6">

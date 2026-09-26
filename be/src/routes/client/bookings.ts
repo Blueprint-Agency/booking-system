@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { bookClass } from '../../services/bookings/book'
 import { cancelBooking } from '../../services/bookings/cancel'
 import { listClassBookings, getClassBookingDetail, type ClassBookingRow } from '../../services/bookings/list'
+import { memberAttendance } from '../../services/bookings/attendance'
+import { ATTENDANCE_PERIODS } from '../../services/bookings/attendance-periods'
 import { tenantId } from '../../middleware/tenant'
 
 function bookingRow(b: ClassBookingRow) {
@@ -38,6 +40,25 @@ const app = new Hono()
     const rows = await listClassBookings(tenantId(c), clientId, 'past')
     return c.json({ bookings: rows.map(bookingRow) })
   })
+  .get(
+    '/attendance',
+    zValidator('query', z.object({ period: z.enum(ATTENDANCE_PERIODS).default('month') })),
+    async c => {
+      const clientId = c.get('clientId')
+      const { period } = c.req.valid('query')
+      const summary = await memberAttendance(tenantId(c), clientId, period)
+      return c.json({
+        period: summary.period,
+        from: summary.from,
+        to: summary.to,
+        attended: summary.attended,
+        previous_attended: summary.previousAttended,
+        buckets: summary.buckets.map(b => ({ starts_on: b.startsOn, attended: b.attended })),
+        top_class_types: summary.topClassTypes,
+        last_attended_at: summary.lastAttendedAt?.toISOString() ?? null,
+      })
+    },
+  )
   .get('/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const clientId = c.get('clientId')
     const { id } = c.req.valid('param')
