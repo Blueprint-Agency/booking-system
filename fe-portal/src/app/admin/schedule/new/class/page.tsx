@@ -5,6 +5,8 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
+import { CancelWindowField } from "@/components/schedule/cancel-window-field";
+import { parseCancelWindow } from "@/lib/cancel-window";
 import {
   SupportingInstructorsField,
   type SupportingRow,
@@ -67,6 +69,7 @@ function NewClassForm() {
     buffer: 2,
   });
   const [creditCost, setCreditCost] = useState("1");
+  const [cancelWindow, setCancelWindow] = useState("");
   const [difficulty, setDifficulty] = useState<ClassTypeDifficulty>("general");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -126,6 +129,11 @@ function NewClassForm() {
       setSubmitError("End time must be after start time.");
       return;
     }
+    const ownWindow = parseCancelWindow(cancelWindow);
+    if (!ownWindow.ok) {
+      setSubmitError(ownWindow.message);
+      return;
+    }
 
     setSubmitting(true);
     setSubmitError(null);
@@ -146,6 +154,7 @@ function NewClassForm() {
         capacity_buffer: capacity.buffer,
         credit_cost: Number(creditCost),
         instructor_pay_sgd: payOrNull(mainPay),
+        cancel_window_hours: ownWindow.hours,
       });
       router.push("/admin/schedule");
     } catch (err) {
@@ -322,6 +331,7 @@ function NewClassForm() {
               />
               <p className="text-xs text-muted">Credits charged per booking on this instance.</p>
             </div>
+            <CancelWindowField value={cancelWindow} onChange={setCancelWindow} />
           </div>
         </section>
 

@@ -76,9 +76,16 @@ function comesBack(policy: CancellationPolicy, thing: string): string {
   );
 }
 
-/** Stated where a member books a class, before they do. */
-export function classBookingPolicy(policy: CancellationPolicy): string {
-  const when = `You can cancel a class ${deadline(policy.class_window_hours, "it")}.`;
+/**
+ * Stated where a member books a class, before they do. `windowHours` is that
+ * class's own Cancellation Window (`effective_cancel_window_hours`); left out,
+ * the sentence is about the studio's.
+ */
+export function classBookingPolicy(
+  policy: CancellationPolicy,
+  windowHours: number = policy.class_window_hours,
+): string {
+  const when = `You can cancel a class ${deadline(windowHours, "it")}.`;
   if (policy.cancel_cap_count === 0) {
     return `${when} Cancelling doesn't return the credit.`;
   }

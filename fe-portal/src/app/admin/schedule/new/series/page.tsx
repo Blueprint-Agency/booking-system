@@ -5,6 +5,8 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CalendarSearch, Loader2, Repeat } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
+import { CancelWindowField } from "@/components/schedule/cancel-window-field";
+import { parseCancelWindow } from "@/lib/cancel-window";
 import {
   SupportingInstructorsField,
   type SupportingRow,
@@ -71,6 +73,7 @@ function NewSeriesForm() {
   const [lastDate, setLastDate] = useState("");
   const [capacity, setCapacity] = useState<Capacity>({ waitlist: 0, onlineBooking: 18, buffer: 2 });
   const [creditCost, setCreditCost] = useState("1");
+  const [cancelWindow, setCancelWindow] = useState("");
 
   const [preview, setPreview] = useState<{ key: string; result: Preview } | null>(null);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
@@ -116,6 +119,8 @@ function NewSeriesForm() {
     }
     if (!firstDate || !lastDate) return "Pick a first and a last date.";
     if (endTime <= startTime) return "End time must be after start time.";
+    const ownWindow = parseCancelWindow(cancelWindow);
+    if (!ownWindow.ok) return ownWindow.message;
     return {
       class_type_id: classTypeId,
       main_instructor_id: mainInstructorId,
@@ -133,6 +138,7 @@ function NewSeriesForm() {
       capacity_waitlist: capacity.waitlist,
       capacity_buffer: capacity.buffer,
       credit_cost: Number(creditCost),
+      cancel_window_hours: ownWindow.hours,
       first_date: firstDate,
       last_date: lastDate,
       excluded_dates: [],
@@ -340,6 +346,11 @@ function NewSeriesForm() {
                 onChange={(e) => setCreditCost(e.target.value)}
               />
             </div>
+            <CancelWindowField
+              value={cancelWindow}
+              onChange={setCancelWindow}
+              hint="Copied onto every class in the series. Leave blank to follow the studio's cancellation policy."
+            />
           </div>
         </section>
 

@@ -24,7 +24,8 @@ import { sendTemplatedEmail } from '../notifications/send'
 import { loadTenantById } from '../tenants/tenants'
 import { reportError } from '../../shared/logger'
 import { beforeWindow, nextToPromote, waitlistClosesAt, type PromotionOutcome } from './rules'
-import { classWindowHours, waitingLine } from './line'
+import { waitingLine } from './line'
+import { classCancelWindow } from '../policy/cancel-window'
 
 export interface Promotion {
   entryId: string
@@ -47,7 +48,7 @@ export async function promoteFromWaitlist(
 ): Promise<Promotion[]> {
   const cls = await lockClass(tx, tenantId, classId)
   if (!cls || cls.lifecycle !== 'active') return []
-  if (!beforeWindow(cls.startsAt, await classWindowHours(tenantId), now)) return []
+  if (!beforeWindow(cls.startsAt, await classCancelWindow(tenantId, cls), now)) return []
 
   const line = await waitingLine(tx, tenantId, classId, now)
   const outcomes = new Map<string, PromotionOutcome>()
@@ -97,6 +98,7 @@ export async function sendPromotionEmails(tenantId: string, promotions: readonly
           clientEmail: clients.email,
           className: classTypes.name,
           startsAt: classes.startsAt,
+          cancelWindowHours: classes.cancelWindowHours,
           locationName: locations.name,
           instructorName: staffUsers.name,
         })
@@ -118,7 +120,7 @@ export async function sendPromotionEmails(tenantId: string, promotions: readonly
         year: 'numeric',
       })
       const time = new Intl.DateTimeFormat('en-GB', { timeZone, hour: 'numeric', minute: '2-digit', hour12: true })
-      const cancelBy = waitlistClosesAt(row.startsAt, await classWindowHours(tenantId))
+      const cancelBy = waitlistClosesAt(row.startsAt, await classCancelWindow(tenantId, row))
 
       await sendTemplatedEmail({
         tenantId,

@@ -80,14 +80,8 @@ export function CancelBookingDialog({
       const refused = { tone: "error" as const, cancelled: false, stale: true };
       if (code === ERROR_CODES.cancellation_window_passed) {
         // The window the server refused under — the one that was actually applied.
-        const hours = errNumber(err, "window_hours") ?? policy?.class_window_hours;
-        outcome = {
-          ...refused,
-          text:
-            hours !== undefined
-              ? windowRefusal("class", hours)
-              : "This class can no longer be cancelled in the app. Please contact the studio.",
-        };
+        const hours = errNumber(err, "window_hours") ?? booking.effective_cancel_window_hours;
+        outcome = { ...refused, text: windowRefusal("class", hours) };
       } else if (code === ERROR_CODES.not_cancellable) {
         outcome = { ...refused, text: "This booking can no longer be cancelled." };
       } else {

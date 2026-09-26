@@ -34,7 +34,7 @@ import { CancelBookingDialog, type CancelOutcome } from "@/components/account/ca
 import { formatDate, cn } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
-import { useCancellationPolicy, type CancellationPolicy } from "@/lib/cancellation-policy";
+import { useCancellationPolicy } from "@/lib/cancellation-policy";
 import { cancelClosed, canStillCancel } from "@/lib/cancellation-copy";
 
 export interface ApiBooking {
@@ -54,6 +54,8 @@ export interface ApiBooking {
   state: "confirmed" | "cancelled" | "no_show";
   qr_token: string;
   code: string;
+  /** This class's Cancellation Window in hours, as the server applies it now. */
+  effective_cancel_window_hours: number;
 }
 
 interface ListResponse {
@@ -250,7 +252,6 @@ export function ClassBookings() {
                   booking={b}
                   featured={tab === "upcoming" && i === 0}
                   ongoing={tab === "ongoing"}
-                  policy={policy}
                   onCancel={setCancelTarget}
                 />
               ))}
@@ -308,21 +309,15 @@ function UpcomingCard({
   booking,
   featured,
   ongoing = false,
-  policy,
   onCancel,
 }: {
   booking: ApiBooking;
   featured: boolean;
   ongoing?: boolean;
-  policy: CancellationPolicy | null;
   onCancel: (b: ApiBooking) => void;
 }) {
-  // Until the studio's window is known, offer the cancel on anything not yet
-  // started and let the server decide — a guessed number is how members were
-  // told the wrong one before.
-  const open = policy
-    ? canStillCancel(booking.starts_at, policy.class_window_hours)
-    : !ongoing;
+  // The class's own window, as the server will judge the cancel by it.
+  const open = canStillCancel(booking.starts_at, booking.effective_cancel_window_hours);
   return (
     <div
       className={cn(
@@ -371,7 +366,7 @@ function UpcomingCard({
           </button>
         ) : (
           <span className="text-xs text-muted text-right">
-            {policy ? cancelClosed(policy.class_window_hours) : "Cancellation closed"}
+            {cancelClosed(booking.effective_cancel_window_hours)}
           </span>
         )}
       </div>

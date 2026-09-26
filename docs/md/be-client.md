@@ -43,7 +43,7 @@ Unauthenticated. Cache-friendly (HTTP `Cache-Control: public, max-age=60` where 
 | GET | `/workshops/:id` | Detail incl. tiers (each with derived seats-left + effective price), `tier_days{}` (which tier covers which days), images (presigned R2 URLs), instructors, description. |
 | GET | `/packages` | List active class_packages + pt_packages. Each row carries resolved promotion fields. **Trial Pass first, then credit bundles, then unlimited, then PT** (matches fe-client `/packages` ordering per `fe-client-features.md` §6.1). |
 | GET | `/corporate-packages` | List active `corporate_packages`. Shape: `{ corporate_packages: [{ id, name, description, price_sgd, status }] }`. Same shape as the authenticated `/me/corporate-packages`. |
-| GET | `/cancellation-policy` | The studio's cancellation rules as `global_policy` holds them: `{ class_window_hours, pt_window_hours, cancel_cap_count, cancel_cap_cycle_days }`. The same row `evaluateCancellation` judges a cancel by, so what fe-client states and what the server enforces cannot drift. Not cached — a changed window reaches members on their next page load. |
+| GET | `/cancellation-policy` | The studio's cancellation rules as `global_policy` holds them: `{ class_window_hours, pt_window_hours, cancel_cap_count, cancel_cap_cycle_days }`. The same row `evaluateCancellation` judges a cancel by, so what fe-client states and what the server enforces cannot drift. Not cached — a changed window reaches members on their next page load. These are the studio's defaults: a class with its own Cancellation Window says so in its `effective_cancel_window_hours` (below). |
 | GET | `/online-payments` | Whether this studio takes card payments online: `{ online_payments }`, false until it has supplied its own payment account (#293). fe-client shows "This studio isn't taking online payments yet." in place of a paid buy button when false; a $0 purchase keeps its button. The same lookup a charge makes. Not cached. |
 | GET | `/merch` | List merch items where `archived_at IS NULL`, title-ordered. Shape: `{ merch: [{ id, title, description, price_sgd, image_url, archived_at }] }` — `image_url` is the unsigned R2 public URL (null when unset or storage unconfigured). Browse-only and priced the same for everyone, so there is no authenticated variant. |
 
@@ -63,6 +63,8 @@ Unauthenticated. Cache-friendly (HTTP `Cache-Control: public, max-age=60` where 
 ```
 
 Resolution is server-side via `services/promotions/resolve.ts:bestPriceFor(parent_type, parent_id)` — best-price-wins, deterministic tie-break on lowest `sort_id` (`fe-client-features.md` §6.1). The client never recomputes prices.
+
+**Cancellation Window** — every class in `/classes`, `/classes/:id` and `/me/classes`, and every row of `/me/bookings/upcoming`, `/me/bookings/past` and `/me/bookings/:id`, carries `effective_cancel_window_hours`: that class's own window if staff set one, else the studio's `class_window_hours`, read now (#313, `be/CONTEXT.md` § Cancellation Window). The member app states and gates a class's cancel by it, never by the studio-wide number.
 
 **Waitlist shape** — every class in `/classes`, `/classes/:id` and the authenticated `/me/classes` carries its line (`spec-waitlist.md` §9):
 

@@ -617,6 +617,13 @@
       "when": 1790417834766,
       "tag": "0087_series_supporting_pay_optional",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1790418019915,
+      "tag": "0088_class_cancel_window",
+      "breakpoints": true
     }
   ]
 }

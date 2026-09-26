@@ -275,7 +275,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 5. Success dialog: *"Your booking is confirmed! Please arrive 15 minutes before class."* → CTA "I will attend on time" → routes to `/account/classes`.
 
 **Where admin comes in**
-- Admin sets the cancellation window (overall, or per class category if needed).
+- Admin sets the studio's cancellation window, and staff may give any class (or weekly series) its own. The confirm sheet, the booking cards' cancel button and "Cancellation closed" line all use that class's `effective_cancel_window_hours` (#313).
 - Admin sees who reserved and credit-source per booking (audit trail).
 
 ---

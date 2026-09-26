@@ -15,7 +15,8 @@ import { countSeats } from '../bookings/seats'
 import { selectPackage } from '../packages/selection'
 import { ConflictError, NotFoundError } from '../../shared/errors'
 import { beforeWindow, joinRefusal, positions } from './rules'
-import { classWindowHours, waitingLine, waitlistEnabled } from './line'
+import { waitingLine, waitlistEnabled } from './line'
+import { classCancelWindow } from '../policy/cancel-window'
 import { assertMayWorkClass, type StaffActor } from './staff'
 
 export interface JoinResult {
@@ -52,7 +53,8 @@ export async function join(
       if (!client) throw new NotFoundError('client_not_found')
     }
     const active = !!cls && cls.lifecycle === 'active'
-    const windowHours = await classWindowHours(tenantId)
+    // The line closes at this class's Cancellation Window (§4).
+    const windowHours = cls ? await classCancelWindow(tenantId, cls) : 0
 
     const booked = await holdsSeat(tx, tenantId, clientId, classId)
     const waiting = cls ? await waitingLine(tx, tenantId, classId, now) : []

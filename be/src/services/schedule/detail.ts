@@ -59,6 +59,8 @@ export interface ClassDetail {
   capacityWaitlist: number
   capacityBuffer: number
   creditCost: number
+  /** The class's own Cancellation Window; null = the studio's. */
+  cancelWindowHours: number | null
   /** Every confirmed booking — the same number as `seats.attending`. */
   bookedCount: number
   /** Online plus buffer seats; the waitlist is not a seat. */
@@ -89,6 +91,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       capacityWaitlist: classes.capacityWaitlist,
       capacityBuffer: classes.capacityBuffer,
       creditCost: classes.creditCost,
+      cancelWindowHours: classes.cancelWindowHours,
       instructorPaySgd: classes.instructorPaySgd,
       classTypeId: classes.classTypeId,
       classTypeName: classTypes.name,
@@ -205,6 +208,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     capacityWaitlist: row.capacityWaitlist,
     capacityBuffer: row.capacityBuffer,
     creditCost: row.creditCost,
+    cancelWindowHours: row.cancelWindowHours,
     bookedCount: seats.attending,
     attendanceCapacity: attendanceCapacity(row),
     seats,

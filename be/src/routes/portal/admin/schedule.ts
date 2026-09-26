@@ -12,6 +12,7 @@ import { workshopRow } from './workshops'
 import { tenantId } from '../../../middleware/tenant'
 import { classSeatsJson, seatFields, staffBookingJson, staffBookingSchema } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
+import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-window'
 
 const isoDate = z
   .string()
@@ -67,6 +68,8 @@ const createClassSchema = z
     // prices it later from Finance's "Needs pay" filter. An explicit 0 is a
     // price. See be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md.
     instructor_pay_sgd: z.number().min(0).nullable().optional(),
+    // Blank (omitted or null) follows the studio's class window.
+    cancel_window_hours: cancelWindowHoursSchema.optional(),
   })
   .refine(v => v.capacity_online + v.capacity_waitlist + v.capacity_buffer > 0, {
     message: 'capacity must be positive',
@@ -94,6 +97,8 @@ const updateClassSchema = z.object({
   capacity_buffer: z.number().int().min(0).optional(),
   credit_cost: z.number().int().min(0).optional(),
   instructor_pay_sgd: z.number().min(0).nullable().optional(),
+  // Omitted = unchanged; an explicit null puts the class back on the studio's window.
+  cancel_window_hours: cancelWindowHoursSchema.optional(),
 })
 
 const plainDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
@@ -123,6 +128,8 @@ const seriesSchema = z
     capacity_waitlist: z.number().int().min(0).default(0),
     capacity_buffer: z.number().int().min(0).default(0),
     credit_cost: z.number().int().min(0),
+    // Copied onto every class the series creates; blank = the studio's window.
+    cancel_window_hours: cancelWindowHoursSchema.optional(),
     first_date: plainDate,
     last_date: plainDate,
     excluded_dates: z.array(plainDate).default([]),
@@ -157,6 +164,7 @@ function toSeriesInput(b: z.infer<typeof seriesSchema>): seriesSvc.CreateSeriesI
     capacityWaitlist: b.capacity_waitlist,
     capacityBuffer: b.capacity_buffer,
     creditCost: b.credit_cost,
+    cancelWindowHours: b.cancel_window_hours ?? null,
     firstDate: b.first_date,
     lastDate: b.last_date,
     excludedDates: b.excluded_dates,
@@ -182,6 +190,7 @@ function seriesRow(s: seriesSvc.SeriesDetail) {
     capacity_waitlist: s.capacityWaitlist,
     capacity_buffer: s.capacityBuffer,
     credit_cost: s.creditCost,
+    cancel_window_hours: s.cancelWindowHours,
     first_date: s.firstDate,
     last_date: s.lastDate,
     excluded_dates: s.excludedDates,
@@ -244,6 +253,7 @@ async function classRow(tenant: string, c: classesSvc.ClassRow) {
     capacity_buffer: c.capacityBuffer,
     credit_cost: c.creditCost,
     instructor_pay_sgd: c.instructorPaySgd == null ? null : Number(c.instructorPaySgd),
+    ...(await cancelWindowJson(tenant, c)),
     lifecycle: c.lifecycle,
     series_id: c.seriesId,
   }
@@ -290,6 +300,7 @@ const app = new Hono()
       capacity_waitlist: d.capacityWaitlist,
       capacity_buffer: d.capacityBuffer,
       credit_cost: d.creditCost,
+      ...(await cancelWindowJson(tenantId(c), d)),
       ...classSeatsJson(d),
       check_in_state: d.checkInState,
       created_at: d.createdAt.toISOString(),
@@ -368,6 +379,7 @@ const app = new Hono()
       capacityBuffer: body.capacity_buffer,
       creditCost: body.credit_cost,
       instructorPaySgd: body.instructor_pay_sgd ?? null,
+      cancelWindowHours: body.cancel_window_hours ?? null,
       createdByStaffId: staffId,
     })
     c.set('auditTarget' as any, { table: 'classes', id: row.id })
@@ -403,6 +415,9 @@ const app = new Hono()
         ...(body.credit_cost !== undefined ? { creditCost: body.credit_cost } : {}),
         ...(body.instructor_pay_sgd !== undefined
           ? { instructorPaySgd: body.instructor_pay_sgd }
+          : {}),
+        ...(body.cancel_window_hours !== undefined
+          ? { cancelWindowHours: body.cancel_window_hours }
           : {}),
       })
       c.set('auditTarget' as any, { table: 'classes', id })

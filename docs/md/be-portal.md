@@ -160,6 +160,8 @@ Promotions are nested under their parent (class package, PT package, or workshop
 | POST | `/schedule/workshops/:id/cancel` | Admin cancellation of an entire workshop (all days, all tiers) + Stripe refund fanout to attendees — see §3b. **No** workshop create/edit here; those live in `workshops.ts`. |
 | GET | `/schedule/workshops/picker` | Lists workshops in the active workspace that have at least one future `workshop_day`. Powers the "+ Workshop" picker in the scheduler per `admin-restructure.md` §7c — selecting from this list **does not create anything**; it just navigates to the workshop's days. |
 
+**Per-class Cancellation Window** (#313, `be/CONTEXT.md` § Cancellation Window). `POST /schedule/classes`, `PATCH /schedule/classes/:id` and `POST /schedule/series` (and its preview) take an optional `cancel_window_hours`: whole hours from 0, the same bound as the Policy page's class window. Blank (omitted or `null`) on create follows the studio's window; on `PATCH`, omitted leaves it alone and an explicit `null` puts the class back on the studio's. A series copies its value onto every class it creates and every class an extend adds. Class rows — create, update, `GET /schedule/classes/:id`, and the instructor's create and roster — return `cancel_window_hours` (the class's own, nullable) and `effective_cancel_window_hours` (the one that applies now); series rows return `cancel_window_hours`. The instructor's `POST /schedule/classes` takes the same optional field.
+
 ### `merch.ts` (global)
 
 Studio goods the member pays for online and collects in person. No stock count, no location, no fulfilment state: the `merch_orders` row IS the purchase history line the front desk hands the item over against. Admins manage it like every other global surface.

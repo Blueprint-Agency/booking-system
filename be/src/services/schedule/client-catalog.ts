@@ -12,6 +12,7 @@ import { readRosters, type Tx } from './roster'
 import { countSeats, countSeatsByClass, seatsOf, spotsLeft, type SeatCounts } from '../bookings/seats'
 import { lineupsOf } from './lineup'
 import { waitlistSummaries, type WaitlistSummary } from '../waitlist/line'
+import { cancelWindowResolver, classCancelWindow } from '../policy/cancel-window'
 
 export interface LocationLite {
   id: string
@@ -36,6 +37,8 @@ export interface ClassCardPayload {
   booked_count: number
   spots_left: number
   lifecycle: string
+  /** This class's Cancellation Window in hours — its own, else the studio's (policy/cancel-window.ts). */
+  effective_cancel_window_hours: number
   /** The class's line (spec-waitlist.md §9). `my_entry` is null for a signed-out reader. */
   waitlist: WaitlistSummary
 }
@@ -135,6 +138,7 @@ export async function listClassCards(
       creditCost: classes.creditCost,
       capacityOnline: classes.capacityOnline,
       capacityWaitlist: classes.capacityWaitlist,
+      cancelWindowHours: classes.cancelWindowHours,
       lifecycle: classes.lifecycle,
     })
     .from(classes)
@@ -145,6 +149,7 @@ export async function listClassCards(
     .where(and(...conds))
     .orderBy(classes.startsAt)
   const waitlists = await waitlistSummaries(tenantId, rows, clientId)
+  const windowOf = await cancelWindowResolver(tenantId)
 
   const roomIds = Array.from(new Set(rows.map(r => r.roomId).filter((v): v is string => !!v)))
   const roomById = new Map<string, { id: string; name: string }>()
@@ -185,6 +190,7 @@ export async function listClassCards(
       capacity_online: r.capacityOnline,
       ...memberSeats(seatsOf(seats, r.id), r.capacityOnline),
       lifecycle: r.lifecycle,
+      effective_cancel_window_hours: windowOf(r),
       waitlist: waitlists.get(r.id)!,
     }
   })
@@ -227,6 +233,7 @@ export async function getClassDetail(
       creditCost: classes.creditCost,
       capacityOnline: classes.capacityOnline,
       capacityWaitlist: classes.capacityWaitlist,
+      cancelWindowHours: classes.cancelWindowHours,
       lifecycle: classes.lifecycle,
     })
     .from(classes)
@@ -290,6 +297,7 @@ export async function getClassDetail(
     capacity_online: r.capacityOnline,
     ...memberSeats(seats, r.capacityOnline),
     lifecycle: r.lifecycle,
+    effective_cancel_window_hours: await classCancelWindow(tenantId, r),
     // Public route: the line's length, never anyone's place in it.
     waitlist: (await waitlistSummaries(tenantId, [r], null)).get(r.id)!,
   }

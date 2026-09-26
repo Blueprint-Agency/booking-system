@@ -29,6 +29,8 @@ export interface ApiClassCard {
   booked_count: number;
   spots_left: number;
   lifecycle: string;
+  /** This class's Cancellation Window in hours — its own, else the studio's. */
+  effective_cancel_window_hours: number;
   is_booked?: boolean;
   /** The class's line (spec-waitlist.md §9). `my_entry` is null when signed out. */
   waitlist: ApiClassWaitlist;

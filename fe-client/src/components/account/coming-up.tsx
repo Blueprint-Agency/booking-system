@@ -37,7 +37,7 @@ import { cn, formatDate } from "@/lib/utils";
 import { reportError } from "@/lib/report-error";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { useCancellationPolicy, type CancellationPolicy } from "@/lib/cancellation-policy";
+import { useCancellationPolicy } from "@/lib/cancellation-policy";
 import { cancelClosed, canStillCancel } from "@/lib/cancellation-copy";
 import {
   leaveWaitlist,
@@ -50,14 +50,9 @@ type Item =
   | { kind: "booking"; id: string; starts_at: string; booking: ApiBooking }
   | { kind: "waitlist"; id: string; starts_at: string; entry: ApiWaitlistEntry };
 
-/**
- * Whether the member can still cancel this themselves. Until the studio's
- * window is known, anything not yet started, and the server decides.
- */
-function cancellable(b: ApiBooking, policy: CancellationPolicy | null): boolean {
-  return policy
-    ? canStillCancel(b.starts_at, policy.class_window_hours)
-    : new Date(b.starts_at).getTime() > Date.now();
+/** Whether the member can still cancel this themselves, by the class's own window. */
+function cancellable(b: ApiBooking): boolean {
+  return canStillCancel(b.starts_at, b.effective_cancel_window_hours);
 }
 
 function when(iso: string): string {
@@ -174,7 +169,7 @@ export function ComingUp() {
             <NextClassCard
               booking={featured}
               className={items.length > 0 ? "mb-3" : "mb-0"}
-              onCancel={cancellable(featured, policy) ? () => setCancelTarget(featured) : undefined}
+              onCancel={cancellable(featured) ? () => setCancelTarget(featured) : undefined}
             />
           )}
 
@@ -198,7 +193,6 @@ export function ComingUp() {
       {open && (
         <ItemSheet
           item={open}
-          policy={policy}
           onClose={() => setOpen(null)}
           onShowQr={(b) => {
             setOpen(null);
@@ -282,14 +276,12 @@ function ItemCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
 
 function ItemSheet({
   item,
-  policy,
   onClose,
   onShowQr,
   onCancel,
   onLeave,
 }: {
   item: Item;
-  policy: CancellationPolicy | null;
   onClose: () => void;
   onShowQr: (b: ApiBooking) => void;
   onCancel: (b: ApiBooking) => void;
@@ -345,7 +337,7 @@ function ItemSheet({
                   <QrCode className="h-4 w-4" />
                   Show my QR
                 </button>
-                {cancellable(item.booking, policy) ? (
+                {cancellable(item.booking) ? (
                   <button
                     type="button"
                     onClick={() => onCancel(item.booking)}
@@ -355,7 +347,7 @@ function ItemSheet({
                   </button>
                 ) : (
                   <p className="text-center text-xs text-muted">
-                    {policy ? cancelClosed(policy.class_window_hours) : "Cancellation closed"}
+                    {cancelClosed(item.booking.effective_cancel_window_hours)}
                   </p>
                 )}
               </div>

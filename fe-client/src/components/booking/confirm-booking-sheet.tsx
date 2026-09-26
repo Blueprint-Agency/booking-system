@@ -77,7 +77,9 @@ export function ConfirmBookingSheet({
             </span>
           </div>
           <p className={`${NOTE} mt-4 font-semibold`}>{cost}</p>
-          {policy && <p className={SHEET_TEXT}>{classBookingPolicy(policy)}</p>}
+          {policy && (
+            <p className={SHEET_TEXT}>{classBookingPolicy(policy, cls.effective_cancel_window_hours)}</p>
+          )}
           <div className={SHEET_ACTIONS}>
             <button type="button" onClick={close} disabled={booking} className={BTN_SECONDARY}>
               Not now

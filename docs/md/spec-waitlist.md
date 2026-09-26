@@ -72,7 +72,8 @@ Resolves #152 ("Class waitlist: no join, no promotion — build it for v1 or kee
 | **Overbook** | An admin-only staff booking made when every online and buffer seat is taken. |
 | **Waitlist** | The ordered line of members waiting for an online seat. Its length is capped by `capacity_waitlist`. Not a seat. |
 | **Promotion** | Moving the head of the line into a freed online seat, creating a confirmed booking. |
-| **Waitlist open** | Waitlists are enabled for the studio, the class is `active` and not started, `now < starts_at − class_window_hours`, and `waiting < capacity_waitlist`. |
+| **Waitlist open** | Waitlists are enabled for the studio, the class is `active` and not started, `now < starts_at − window`, and `waiting < capacity_waitlist`. |
+| **window** | The class's effective Cancellation Window in hours: its own `classes.cancel_window_hours`, else the studio's `class_window_hours` (`services/policy/cancel-window.ts`, #313). Read at the moment of the join, cancel or promotion, so an edited window applies at once. |
 
 `admin-restructure.md` §7d's `max_capacity = waitlist + online_booking + buffer` is replaced by attendance capacity. SCH-04 ("waitlist 5, online 10, buffer 2 → max capacity 17") is a spec change: the correct reading is 12, with 5 waiting. **This needs a human to approve the scenario edit** per `docs/md/test-guardrails.md`; it is uncovered today, so no test file changes.
 
@@ -117,7 +118,7 @@ Order is `joined_at, id`. Position is `1 + count(waiting rows for the class with
 |---|---|
 | Studio flag `waitlist_enabled` off | 409 `waitlist_disabled` |
 | Class missing / not `active` | 404 `class_not_found` |
-| `now ≥ starts_at − class_window_hours` | 409 `waitlist_closed` (body carries `window_hours`) |
+| `now ≥ starts_at − window` | 409 `waitlist_closed` (body carries that class's `window_hours`) |
 | Member has a confirmed booking on this class | 409 `already_booked` |
 | Member already `waiting` on this class | 409 `already_waitlisted` |
 | `online_used < capacity_online` | 409 `class_not_full` (the app should have shown Book) |
@@ -126,13 +127,13 @@ Order is `joined_at, id`. Position is `1 + count(waiting rows for the class with
 
 No credit is debited and no package is activated at join. Mindbody records the "pending" pricing option at join; we re-select at promotion instead, because packages change between the two moments.
 
-The join check that the class starts outside the window is Mindbody's reason and ours: whoever is promoted must always be able to cancel free. Mindbody has a separate, shorter "waitlist lock window"; we reuse `class_window_hours` and add no new policy field.
+The join check that the class starts outside the window is Mindbody's reason and ours: whoever is promoted must always be able to cancel free. Mindbody has a separate, shorter "waitlist lock window"; we reuse the class's Cancellation Window and add no new policy field. A class with its own window closes its line at that window, not the studio's.
 
 ### 5. Promotion
 
 `promoteFromWaitlist(tx, classId, now)` is called from `cancelBooking` after the booking flips to `cancelled`, inside the same transaction, holding the class lock it already takes (`cancel.ts:92-110`). It also runs after a staff "Remove" of a confirmed booking and after a refund- or complimentary-driven cancel, which already go through `cancelBooking` (`refunds.ts:1203`, `complimentary.ts:357`).
 
-1. If `now ≥ starts_at − class_window_hours`, return. (Mindbody's default: no auto-add inside the window. Its "First to Claim" / "Continue auto-add" modes are SMS features and out of scope.)
+1. If `now ≥ starts_at − window`, return. (Mindbody's default: no auto-add inside the window. Its "First to Claim" / "Continue auto-add" modes are SMS features and out of scope.)
 2. While `online_used < capacity_online`:
    - Take the first `waiting` entry in order that has not been tried in this call.
    - Run `sweepExpired` and `selectPackage` for it. If refused, leave it `waiting` and try the next (Mindbody: "Invalid" clients stay on the list and are re-checked when the next spot opens).
@@ -200,7 +201,7 @@ The instructor session page gets the same roster, Add member (buffer only) and W
 
 ### 11. Notifications
 
-- New slug `class_waitlist_promoted`, variables `client_name, class_name, date, time, location_name, instructor_name, cancel_by` (the moment the window closes). Subject: "You're in — {{class_name}}". Body says a seat opened, they've been booked, the credit used, and that they can cancel free until `{{cancel_by}}`. Seeded in `email-copy.ts`, declared in `TEMPLATE_VARIABLES`, so the slug-parity test in `email-copy.test.ts` covers it.
+- New slug `class_waitlist_promoted`, variables `client_name, class_name, date, time, location_name, instructor_name, cancel_by` (the moment that class's window closes). Subject: "You're in — {{class_name}}". Body says a seat opened, they've been booked, the credit used, and that they can cancel free until `{{cancel_by}}`. Seeded in `email-copy.ts`, declared in `TEMPLATE_VARIABLES`, so the slug-parity test in `email-copy.test.ts` covers it.
 - No email on join, withdraw, removal, expiry, or skip. A skipped member sees "Can't pay" only through what the app already tells them when they try to book.
 - `workshop_waitlist_promoted` stays seeded and unsent (workshops are §12).
 

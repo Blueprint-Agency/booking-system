@@ -46,6 +46,8 @@ export interface SeriesInput {
   capacity_waitlist: number;
   capacity_buffer: number;
   credit_cost: number;
+  /** Copied onto every class the series creates; null = the studio's window. */
+  cancel_window_hours?: number | null;
   first_date: string;
   last_date: string;
   excluded_dates: string[];

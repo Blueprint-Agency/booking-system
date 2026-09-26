@@ -8,6 +8,8 @@ import { SeriesPanel } from "@/components/schedule/series-panel";
 import { ClassRoster, SeatStats, Stat } from "@/components/schedule/class-roster";
 import { WaitlistPanel } from "@/components/schedule/waitlist-panel";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
+import { CancelWindowField } from "@/components/schedule/cancel-window-field";
+import { cancelWindowText, parseCancelWindow } from "@/lib/cancel-window";
 import { useWaitlistsOn } from "@/lib/use-waitlists-on";
 import {
   SupportingInstructorsField,
@@ -294,6 +296,7 @@ function ClassEditor({
   const [startTime, setStartTime] = useState(toHHMM(data.starts_at));
   const [endTime, setEndTime] = useState(toHHMM(data.ends_at));
   const [capacity, setCapacity] = useState<Capacity>(capacityOf(data));
+  const [cancelWindow, setCancelWindow] = useState(cancelWindowText(data.cancel_window_hours));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const onLeave = useInstructorsOnLeave(date);
@@ -316,6 +319,7 @@ function ClassEditor({
     setDate(localDay(data.starts_at));
     setStartTime(toHHMM(data.starts_at));
     setEndTime(toHHMM(data.ends_at));
+    setCancelWindow(cancelWindowText(data.cancel_window_hours));
   }, [data]);
 
   async function handleSave() {
@@ -336,6 +340,11 @@ function ClassEditor({
       capacity.buffer !== data.capacity_buffer;
     if (capacityChanged && capacity.onlineBooking + capacity.waitlist + capacity.buffer === 0) {
       setErr("Give the class at least one online, buffer or waitlist place.");
+      return;
+    }
+    const ownWindow = parseCancelWindow(cancelWindow);
+    if (!ownWindow.ok) {
+      setErr(ownWindow.message);
       return;
     }
     setSaving(true);
@@ -362,6 +371,8 @@ function ClassEditor({
           ? { capacity_waitlist: capacity.waitlist }
           : {}),
         ...(capacity.buffer !== data.capacity_buffer ? { capacity_buffer: capacity.buffer } : {}),
+        // Blank clears it: the class goes back to the studio's window.
+        cancel_window_hours: ownWindow.hours,
       });
       await onSaved();
     } catch (e) {
@@ -482,6 +493,14 @@ function ClassEditor({
         </div>
         <fieldset disabled={disabled || saving} className="min-w-0 disabled:opacity-50 sm:col-span-2">
           <CapacityFields value={capacity} onChange={setCapacity} waitlistsOn={waitlistsOn} />
+        </fieldset>
+        <fieldset disabled={disabled || saving} className="min-w-0 disabled:opacity-50">
+          <CancelWindowField
+            id="cls-cancel-window"
+            value={cancelWindow}
+            onChange={setCancelWindow}
+            hint="Applies to members already booked. Leave blank to follow the studio's cancellation policy."
+          />
         </fieldset>
       </div>
       {err && (

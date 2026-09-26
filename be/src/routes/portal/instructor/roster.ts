@@ -5,6 +5,7 @@ import { getOwnClassDetail } from '../../../services/schedule/detail'
 import { searchClients } from '../../../services/clients/manage'
 import { tenantId } from '../../../middleware/tenant'
 import { classSeatsJson } from '../class-seats'
+import { cancelWindowJson } from '../class-cancel-window'
 
 /**
  * The instructor's session page (spec-waitlist.md §10):
@@ -39,6 +40,7 @@ const app = new Hono()
         capacity_waitlist: d.capacityWaitlist,
         capacity_buffer: d.capacityBuffer,
         credit_cost: d.creditCost,
+        ...(await cancelWindowJson(tenantId(c), d)),
         ...classSeatsJson(d),
         check_in_state: d.checkInState,
       })

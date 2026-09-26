@@ -336,6 +336,10 @@ _Avoid_: recurring class, repeating event, template, schedule rule, recurrence
 A class's two kinds of seat (`bookings.seat`, counted only by `services/bookings/seats.ts`). An Online Seat is one of `capacity_online`, taken by a member booking themselves or by a Promotion. A Buffer Seat is one of `capacity_buffer`, filled only by staff booking a member. **Attendance Capacity** is their sum — the most people the roster holds. An **Overbook** is an admin's booking past both. The waitlist is not a seat.
 _Avoid_: max capacity, total capacity, spots (outside the member app, where `spots_left` means free Online Seats)
 
+**Cancellation Window**:
+How many hours before a class starts a member's cancel stops returning the credit, the class's Waitlist closes, and Promotion stops. Each class has an **effective** one (`services/policy/cancel-window.ts`): its own `cancel_window_hours` if staff set one, otherwise the studio's class window on Global Policy — followed live, so changing the studio's reaches every class without its own. A Class Series carries one too and copies it onto every class it creates, extends included. It is read when the member acts, not when they booked, so an edited window applies to bookings already made. PT sessions have one studio-wide window of their own, never per session.
+_Avoid_: cancellation deadline, notice period, cutoff, booking window
+
 **Waitlist**:
 The ordered line of members waiting for an Online Seat on one full class (`waitlist_entries`, `services/waitlist/`), capped at the class's `capacity_waitlist`. Order is join time; a position is counted, never stored. Joining costs nothing — it only checks the member could pay — and is refused once the class is inside its Cancellation Window. Leaving is not a cancellation. The line is **open** when the studio's `waitlist_enabled` switch is on, the class is active and outside the window, and the line has room. Classes only; workshops and PT sessions have none in v1.
 _Avoid_: queue entry as a booking, waitlisted booking, standby

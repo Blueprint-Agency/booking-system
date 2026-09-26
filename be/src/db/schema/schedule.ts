@@ -55,6 +55,9 @@ export const classes = pgTable(
     capacityWaitlist: integer('capacity_waitlist').notNull().default(0),
     capacityBuffer: integer('capacity_buffer').notNull().default(0),
     creditCost: integer('credit_cost').notNull(),
+    // This class's own Cancellation Window, in hours. NULL = follow the studio's
+    // class window (Global Policy), live — services/policy/cancel-window.ts.
+    cancelWindowHours: integer('cancel_window_hours'),
     // Gross pay to the main instructor for this single class, in SGD. Manually
     // entered at scheduling and editable from the Payroll page. NULL = not priced yet.
     instructorPaySgd: numeric('instructor_pay_sgd', { precision: 10, scale: 2 }),
@@ -109,6 +112,10 @@ export const classes = pgTable(
       sql`${table.capacityOnline} + ${table.capacityWaitlist} + ${table.capacityBuffer} > 0`,
     ),
     creditNonNegative: check('classes_credit_non_negative', sql`${table.creditCost} >= 0`),
+    cancelWindowNonNegative: check(
+      'classes_cancel_window_non_negative',
+      sql`${table.cancelWindowHours} >= 0`,
+    ),
   }),
 )
 
@@ -175,6 +182,9 @@ export const classSeries = pgTable(
     capacityWaitlist: integer('capacity_waitlist').notNull().default(0),
     capacityBuffer: integer('capacity_buffer').notNull().default(0),
     creditCost: integer('credit_cost').notNull(),
+    // Copied onto every class the series creates, extends included. NULL = those
+    // classes follow the studio's class window.
+    cancelWindowHours: integer('cancel_window_hours'),
     firstDate: date('first_date').notNull(),
     // Moves forward on every extend.
     lastDate: date('last_date').notNull(),
@@ -209,6 +219,10 @@ export const classSeries = pgTable(
       sql`${table.capacityOnline} + ${table.capacityWaitlist} + ${table.capacityBuffer} > 0`,
     ),
     creditNonNegative: check('class_series_credit_non_negative', sql`${table.creditCost} >= 0`),
+    cancelWindowNonNegative: check(
+      'class_series_cancel_window_non_negative',
+      sql`${table.cancelWindowHours} >= 0`,
+    ),
   }),
 )
 

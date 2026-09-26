@@ -18,7 +18,7 @@ import { classTypes, locations } from '../../db/schema/catalog'
 import { staffUsers, clients } from '../../db/schema/identity'
 import type { Tx } from '../schedule/roster'
 import { isEnabled } from '../feature-flags'
-import { readCancellationPolicy } from '../policy/evaluate-cancellation'
+import { cancelWindowResolver, classCancelWindow, type HasCancelWindow } from '../policy/cancel-window'
 import { now as clockNow } from '../../lib/clock'
 import { inLine, positions, waitlistOpen, type LineEntry } from './rules'
 
@@ -26,11 +26,6 @@ import { inLine, positions, waitlistOpen, type LineEntry } from './rules'
 export const WAITLIST_FLAG = 'waitlist_enabled'
 
 export const waitlistEnabled = (tenantId: string): boolean => isEnabled(tenantId, WAITLIST_FLAG)
-
-/** The window a waitlist closes at: the class Cancellation Window, no policy of its own (§4). */
-export async function classWindowHours(tenantId: string): Promise<number> {
-  return (await readCancellationPolicy(tenantId)).classWindowHours
-}
 
 type Reader = typeof db | Tx
 
@@ -75,15 +70,19 @@ export interface LineState {
   open: boolean
 }
 
-/** How a class's line stands now: the `class_full` body and a join both read this. */
+/**
+ * How a class's line stands now: the `class_full` body and a join both read
+ * this. The line closes at the class's Cancellation Window — no policy of its
+ * own (§4).
+ */
 export async function lineState(
   reader: Reader,
   tenantId: string,
-  cls: { id: string; lifecycle: string; startsAt: Date; capacityWaitlist: number },
+  cls: { id: string; lifecycle: string; startsAt: Date; capacityWaitlist: number } & HasCancelWindow,
   now: Date,
 ): Promise<LineState> {
   const enabled = waitlistEnabled(tenantId)
-  const windowHours = await classWindowHours(tenantId)
+  const windowHours = await classCancelWindow(tenantId, cls)
   const waiting = (await liveWaiting(reader, tenantId, [cls.id], now)).length
   return {
     enabled,
@@ -105,14 +104,14 @@ export interface WaitlistSummary {
 /** `WaitlistSummary` for every class in a catalogue page, in one read. */
 export async function waitlistSummaries(
   tenantId: string,
-  rows: readonly { id: string; lifecycle: string; startsAt: Date; capacityWaitlist: number }[],
+  rows: readonly ({ id: string; lifecycle: string; startsAt: Date; capacityWaitlist: number } & HasCancelWindow)[],
   clientId: string | null,
   now: Date = clockNow(),
 ): Promise<Map<string, WaitlistSummary>> {
   const out = new Map<string, WaitlistSummary>()
   if (rows.length === 0) return out
   const enabled = waitlistEnabled(tenantId)
-  const windowHours = await classWindowHours(tenantId)
+  const windowOf = await cancelWindowResolver(tenantId)
   const waiting = await liveWaiting(
     db,
     tenantId,
@@ -129,7 +128,7 @@ export async function waitlistSummaries(
       enabled,
       capacity: r.capacityWaitlist,
       waiting: line.length,
-      open: waitlistOpen({ enabled, windowHours, waiting: line.length, now, ...r }),
+      open: waitlistOpen({ enabled, windowHours: windowOf(r), waiting: line.length, now, ...r }),
       my_entry: mine ? { id: mine.id, position: positions(line).get(mine.id)! } : null,
     })
   }

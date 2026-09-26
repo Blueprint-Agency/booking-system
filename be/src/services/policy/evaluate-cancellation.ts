@@ -11,6 +11,7 @@ import { db } from '../../db'
 import { globalPolicy } from '../../db/schema/policy'
 import { cancellations } from '../../db/schema/bookings'
 import { NotFoundError } from '../../shared/errors'
+import { effectiveCancelWindow } from './cancel-window'
 
 export type CancellationKind = 'class' | 'pt'
 
@@ -19,6 +20,12 @@ export interface EvaluateInput {
   clientId: string
   kind: CancellationKind
   sessionStartsAt: Date
+  /**
+   * A class's own Cancellation Window (`classes.cancel_window_hours`); null or
+   * absent = the studio's. A class caller must pass what the row holds, or the
+   * class is judged by the studio's window. Ignored for PT.
+   */
+  classOwnWindowHours?: number | null
   now: Date
 }
 
@@ -67,8 +74,12 @@ export async function evaluateCancellation(input: EvaluateInput): Promise<Evalua
 
   const policy = await readCancellationPolicy(tenantId)
 
-  // Window: the booking must be cancelled at least N hours before it starts.
-  const windowHours = kind === 'class' ? policy.classWindowHours : policy.ptWindowHours
+  // Window: the booking must be cancelled at least N hours before it starts —
+  // for a class, its effective window (./cancel-window).
+  const windowHours =
+    kind === 'class'
+      ? effectiveCancelWindow(input.classOwnWindowHours ?? null, policy.classWindowHours)
+      : policy.ptWindowHours
   const cutoff = new Date(sessionStartsAt.getTime() - windowHours * HOUR_MS)
   const wasWithinWindow = now <= cutoff
 

@@ -9,6 +9,7 @@ import { sgDayWindow, sgToday } from '../../../lib/time'
 import { tenantId } from '../../../middleware/tenant'
 import { seatFields, staffBookingJson, staffBookingSchema } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
+import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-window'
 
 /**
  * Instructor schedule surface.
@@ -50,6 +51,8 @@ const createClassSchema = z
     capacity_waitlist: z.number().int().min(0).default(0),
     capacity_buffer: z.number().int().min(0).default(0),
     credit_cost: z.number().int().min(0),
+    // Blank (omitted or null) follows the studio's class window.
+    cancel_window_hours: cancelWindowHoursSchema.optional(),
   })
   .refine(v => v.capacity_online + v.capacity_waitlist + v.capacity_buffer > 0, {
     message: 'capacity must be positive',
@@ -122,6 +125,7 @@ const app = new Hono()
       capacityBuffer: body.capacity_buffer,
       creditCost: body.credit_cost,
       instructorPaySgd: null, // left unpriced; an admin sets pay from Payroll
+      cancelWindowHours: body.cancel_window_hours ?? null,
       createdByStaffId: self,
     })
     c.set('auditTarget' as any, { table: 'classes', id: row.id })
@@ -139,6 +143,7 @@ const app = new Hono()
         capacity_buffer: row.capacityBuffer,
         credit_cost: row.creditCost,
         instructor_pay_sgd: null,
+        ...(await cancelWindowJson(tenantId(c), row)),
         lifecycle: row.lifecycle,
       },
       201,

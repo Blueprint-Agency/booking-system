@@ -17,6 +17,7 @@ import { staffUsers } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
 import type { ClientPackageKind } from '../../db/enums'
 import { NotFoundError } from '../../shared/errors'
+import { cancelWindowResolver, type HasCancelWindow } from '../policy/cancel-window'
 
 interface NamedRef {
   id: string
@@ -40,6 +41,8 @@ export interface ClassBookingRow {
   state: 'confirmed' | 'cancelled' | 'no_show'
   qrToken: string
   code: string
+  /** The class's Cancellation Window in hours, read now — its own, else the studio's. */
+  effectiveCancelWindowHours: number
 }
 
 const baseSelect = {
@@ -55,6 +58,7 @@ const baseSelect = {
   startsAt: classes.startsAt,
   endsAt: classes.endsAt,
   creditCost: classes.creditCost,
+  cancelWindowHours: classes.cancelWindowHours,
   creditsUsed: bookings.creditsOrSessionsUsed,
   packageKind: clientPackages.kind,
   checkInState: bookings.checkInState,
@@ -76,6 +80,7 @@ type Raw = {
   startsAt: Date
   endsAt: Date
   creditCost: number
+  cancelWindowHours: number | null
   creditsUsed: number | null
   packageKind: string | null
   checkInState: string
@@ -84,7 +89,7 @@ type Raw = {
   code: string
 }
 
-function toRow(r: Raw): ClassBookingRow {
+function toRow(r: Raw, windowOf: (cls: HasCancelWindow) => number): ClassBookingRow {
   const used = r.creditsUsed ?? 0
   return {
     bookingId: r.bookingId,
@@ -103,6 +108,7 @@ function toRow(r: Raw): ClassBookingRow {
     state: r.state as ClassBookingRow['state'],
     qrToken: r.qrToken,
     code: r.code,
+    effectiveCancelWindowHours: windowOf(r),
   }
 }
 
@@ -140,7 +146,8 @@ export async function listClassBookings(
     .where(where)
     .orderBy(scope === 'upcoming' ? asc(classes.startsAt) : desc(classes.startsAt))) as Raw[]
 
-  return rows.map(toRow)
+  const windowOf = await cancelWindowResolver(tenantId)
+  return rows.map(r => toRow(r, windowOf))
 }
 
 export async function getClassBookingDetail(
@@ -167,5 +174,5 @@ export async function getClassBookingDetail(
     )
     .limit(1)) as Raw[]
   if (!row) throw new NotFoundError('booking_not_found')
-  return toRow(row)
+  return toRow(row, await cancelWindowResolver(tenantId))
 }

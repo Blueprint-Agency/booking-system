@@ -91,15 +91,18 @@ export async function cancelBooking(
 
     // 2. Load + lock the session to read its start time (race-safe vs admin bulk cancel).
     let sessionStartsAt: Date
+    // A class's own Cancellation Window, read now: an edit applies to bookings made before it.
+    let classOwnWindowHours: number | null = null
     if (bk.kind === 'class') {
       const [cls] = await tx
-        .select({ startsAt: classes.startsAt })
+        .select({ startsAt: classes.startsAt, cancelWindowHours: classes.cancelWindowHours })
         .from(classes)
         .where(and(eq(classes.tenantId, tenantId), eq(classes.id, bk.classId!)))
         .for('update')
         .limit(1)
       if (!cls) throw new NotFoundError('class_not_found')
       sessionStartsAt = cls.startsAt
+      classOwnWindowHours = cls.cancelWindowHours
     } else {
       const [pt] = await tx
         .select({ startsAt: ptSessions.startsAt })
@@ -121,11 +124,12 @@ export async function cancelBooking(
             clientId: bk.clientId,
             kind: cancelKind,
             sessionStartsAt,
+            classOwnWindowHours,
             now,
           })
 
     // Client self-cancel is a HARD deadline: a member can only cancel up to
-    // `windowHours` (24h for classes) before the session starts. Inside that window
+    // `windowHours` (the class's effective window) before the session starts. Inside that window
     // — or after the session has started — the action is rejected outright (not just
     // forfeited). Admins bypass this and can cancel at any time.
     if (source === 'client' && !evaluation!.wasWithinWindow) {
