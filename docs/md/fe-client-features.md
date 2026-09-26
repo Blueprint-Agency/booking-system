@@ -227,7 +227,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 | Already booked by user | "Booked" (link → `/account/classes`). A booked class never shows a waitlist control. |
 | In this class's line (`waitlist.my_entry`) | "On waitlist · #N" with a secondary "Leave" → confirm dialog → toast *"Left the waitlist."*; the row then reads "Join waitlist" if the line is still open, else "Full" |
 | Logged out, seat available | "Book Now" → `/login?next=/booking/confirmation?sessionId=...` |
-| Logged in, has credits, seat available | "Book Now" (sage, filled) |
+| Logged in, has credits, seat available | "Book Now" (sage, filled) → confirm sheet *"Book {class}?"* (date, time, location, instructor, what pays — "Uses 1 credit" / "Covered by your plan" — and the cancellation policy) → "Book class" books it, "Not now" closes it; nothing is spent until "Book class" |
 | Logged in, no credits / exhausted | Grey "Book Now" → popup *"You need a package to book this class"* → "Buy a Package" CTA → `/packages` |
 | Online seats full + `waitlist.open` (studio switch on, before the Cancellation Window, room in the line) | "Join waitlist" (warning, outlined). Joining debits nothing; the row becomes "On waitlist · #N" without a reload |
 | Online seats full, waitlist off / closed / full | "Full" (muted, disabled) |

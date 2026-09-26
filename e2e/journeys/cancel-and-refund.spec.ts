@@ -22,6 +22,10 @@ test('CXL-01 a member cancels inside the window and the credit comes back', asyn
     .filter({ has: page.getByRole('button', { name: 'Book Now' }) })
     .last()
   await row.getByRole('button', { name: 'Book Now' }).locator('visible=true').click()
+  await page
+    .getByRole('dialog', { name: `Book ${catalogue.cancelClassType}?` })
+    .getByRole('button', { name: 'Book class' })
+    .click()
   await expect(row.getByText('Booked', { exact: true }).locator('visible=true')).toBeVisible()
   await page.reload()
   await expectCredits(page, full - 1)
