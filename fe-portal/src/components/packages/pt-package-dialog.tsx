@@ -54,7 +54,7 @@ export function PtPackageDialog({
                 key={t}
                 type="button"
                 onClick={() => setSessionType(t)}
-                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                className={`min-h-10 flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
                   sessionType === t
                     ? "border-accent bg-accent/10 text-accent"
                     : "border-border bg-paper text-muted hover:bg-warm hover:text-ink"

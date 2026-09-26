@@ -95,13 +95,13 @@ export function WorkshopDaysEditor({
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {(["range", "individual"] as Mode[]).map((m) => (
           <button
             key={m}
             type="button"
             onClick={() => onModeChange(m)}
-            className={`rounded-full border px-3 py-1 text-xs ${
+            className={`rounded-full border px-3 py-1.5 text-xs ${
               mode === m
                 ? "border-accent bg-accent/10 text-ink"
                 : "border-border bg-card text-muted"
@@ -113,7 +113,7 @@ export function WorkshopDaysEditor({
       </div>
 
       {mode === "range" && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label className="text-xs">Start date</Label>
             <Input
@@ -151,15 +151,17 @@ export function WorkshopDaysEditor({
                 <button
                   type="button"
                   onClick={() => removeDay(d.id)}
-                  className="rounded p-1 text-muted hover:text-error"
+                  className="-my-1 rounded p-2 text-muted hover:text-error"
                   aria-label="Remove day"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
+            {/* Below md the date takes its own row and the two times share the
+                next: a native date picker squeezed into half a card clipped. */}
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-              <div className="space-y-1">
+              <div className="col-span-2 min-w-0 space-y-1 md:col-span-1">
                 <Label className="text-xs">Date</Label>
                 <Input
                   type="date"
@@ -169,7 +171,7 @@ export function WorkshopDaysEditor({
                   onChange={(e) => updateDay(d.id, { date: e.target.value })}
                 />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <Label className="text-xs">Start time</Label>
                 <Input
                   type="time"
@@ -177,7 +179,7 @@ export function WorkshopDaysEditor({
                   onChange={(e) => updateDay(d.id, { startTime: e.target.value })}
                 />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <Label className="text-xs">End time</Label>
                 <Input
                   type="time"
@@ -190,7 +192,7 @@ export function WorkshopDaysEditor({
                   <p className="text-xs text-error">End must be after start.</p>
                 )}
               </div>
-              <div className="space-y-1 md:col-span-3">
+              <div className="col-span-2 space-y-1 md:col-span-3">
                 <Label className="text-xs">
                   Room <span className="text-error">*</span>
                 </Label>

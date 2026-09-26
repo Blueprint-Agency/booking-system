@@ -355,7 +355,7 @@ function PackageCard({
       : [];
   return (
     <div
-      className={`rounded-xl border border-border bg-card p-5 shadow-soft transition ${
+      className={`rounded-xl border border-border bg-card p-4 shadow-soft transition sm:p-5 ${
         archived ? "opacity-70" : "hover:border-accent/40"
       }`}
     >

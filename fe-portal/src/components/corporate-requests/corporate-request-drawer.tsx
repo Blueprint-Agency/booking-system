@@ -44,22 +44,24 @@ export function CorporateRequestDrawer({
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-4 top-4 rounded p-1 text-muted hover:bg-paper hover:text-ink"
+          className="absolute right-2 top-2 rounded-md p-2.5 text-muted hover:bg-paper hover:text-ink sm:right-3 sm:top-3"
           aria-label="Close"
         >
           <X className="h-4 w-4" />
         </button>
-        <div className="mb-4 flex items-center gap-3 pr-8">
+        <div className="mb-4 flex items-center gap-3 pr-10">
           <Avatar name={client.name} size={40} />
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-ink">{client.name}</h2>
+            <h2 className="break-words text-base font-semibold text-ink">{client.name}</h2>
             <div className="text-xs text-muted">
               Submitted {formatRelative(request.createdAt)}
             </div>
           </div>
         </div>
         <dl className="space-y-3 border-y border-border py-4 text-sm">
-          <Row label="Customer email">{client.email}</Row>
+          <Row label="Customer email">
+            <span className="break-all">{client.email}</span>
+          </Row>
           <Row label="Package">{pkg.name}</Row>
           {session && (
             <>
@@ -139,7 +141,7 @@ function Row({
   return (
     <div className="flex flex-col gap-1">
       <dt className="text-xs uppercase tracking-wider text-muted">{label}</dt>
-      <dd className="text-ink">{children}</dd>
+      <dd className="min-w-0 break-words text-ink">{children}</dd>
     </div>
   );
 }

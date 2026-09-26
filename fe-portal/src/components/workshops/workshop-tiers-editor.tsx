@@ -65,18 +65,18 @@ export function WorkshopTiersEditor({
         const ebCutoffMissing =
           t.earlyBirdPriceSgd !== null && !t.earlyBirdCutoffAt;
         return (
-          <div key={t.id} className="space-y-3 rounded-lg border border-border bg-paper p-4">
+          <div key={t.id} className="space-y-3 rounded-lg border border-border bg-paper p-3 sm:p-4">
             <div className="flex gap-2">
               <Input
                 value={t.name}
                 onChange={(e) => update(t.id, { name: e.target.value })}
                 placeholder="e.g. Full Event Pass"
-                className="flex-1"
+                className="min-w-0 flex-1"
               />
               <button
                 type="button"
                 onClick={() => remove(t.id)}
-                className="rounded p-2 text-muted hover:text-error"
+                className="shrink-0 rounded p-2.5 text-muted hover:text-error"
                 aria-label="Remove tier"
               >
                 <Trash2 className="h-4 w-4" />
@@ -95,7 +95,7 @@ export function WorkshopTiersEditor({
                 <button
                   type="button"
                   onClick={() => setAllDays(t)}
-                  className="text-xs text-accent hover:underline"
+                  className="-my-1 px-1 py-1.5 text-xs text-accent hover:underline"
                 >
                   All days
                 </button>
@@ -106,7 +106,7 @@ export function WorkshopTiersEditor({
                   return (
                     <label
                       key={d.id}
-                      className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs transition ${
+                      className={`inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-xs transition ${
                         checked
                           ? "border-accent bg-accent/10 text-ink"
                           : "border-border bg-card text-muted"
@@ -131,7 +131,7 @@ export function WorkshopTiersEditor({
                 <p className="mt-1 text-xs text-error">Tier needs at least one day.</p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label className="text-xs">Tier price (SGD)</Label>
                 <Input

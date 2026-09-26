@@ -34,7 +34,7 @@ export function ManageLocationsDialog({ onClose }: { onClose: () => void }) {
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 text-sm text-ink">
-                    <span className="font-medium">{loc.name}</span>
+                    <span className="min-w-0 break-words font-medium">{loc.name}</span>
                     {loc.archivedAt && <Badge tone="neutral">Archived</Badge>}
                   </div>
                   <div className="truncate text-xs text-muted">{loc.address}</div>

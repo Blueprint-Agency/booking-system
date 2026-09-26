@@ -109,7 +109,7 @@ export function SessionsPanel({
       <div className="rounded-xl border border-border bg-card shadow-soft">
         {error ? (
           <div className="flex items-center justify-between gap-2 px-4 py-3 text-sm text-error sm:px-5">
-            {error}
+            <span className="min-w-0 break-words">{error}</span>
             <Button size="sm" variant="ghost" onClick={load}>
               Retry
             </Button>
@@ -132,7 +132,8 @@ export function SessionsPanel({
                       {describeDevice(s.user_agent)}
                       {s.impersonated && <Badge tone="warning">Impersonation</Badge>}
                     </div>
-                    <div className="text-xs text-muted">
+                    {/* break-words: an IPv6 address is one unbreakable run. */}
+                    <div className="break-words text-xs text-muted">
                       Active {formatRelative(s.last_seen_at)} · signed in {formatDate(s.signed_in_at)}
                       {s.ip ? ` · ${s.ip}` : ""}
                     </div>

@@ -26,7 +26,9 @@ export function PasswordInput({ className, ...props }: PasswordInputProps) {
         onClick={() => setShow((s) => !s)}
         aria-label={show ? "Hide password" : "Show password"}
         aria-pressed={show}
-        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted transition-colors hover:text-ink"
+        // p-2 makes the eye a 32px target rather than its bare 16px glyph; it
+        // still fits inside the field's pr-10.
+        className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-2 text-muted transition-colors hover:text-ink"
       >
         {show ? (
           <EyeOff className="h-4 w-4" aria-hidden />

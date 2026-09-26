@@ -84,7 +84,9 @@ export function OtpInput({ value, onChange, length = 6, autoFocus }: OtpInputPro
           onKeyDown={(e) => handleKeyDown(index, e)}
           onPaste={handlePaste}
           aria-label={`Digit ${index + 1}`}
-          className="h-12 w-full rounded-lg border border-border bg-paper text-center text-lg font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          // min-w-0: an input's intrinsic width is wider than a sixth of a
+          // phone-width card, and without it the row overflows the card.
+          className="h-12 w-full min-w-0 rounded-lg border border-border bg-paper text-center text-lg font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
       ))}
     </div>

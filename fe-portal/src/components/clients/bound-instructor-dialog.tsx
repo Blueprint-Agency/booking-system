@@ -78,7 +78,7 @@ export function BoundInstructorDialog({
             disabled={instructors === null || loadError}
             value={choice}
             onChange={(e) => setChoice(e.target.value)}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-60"
+            className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-60"
           >
             <option value="">
               {loadError

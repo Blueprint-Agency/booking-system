@@ -301,7 +301,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
 
       <form
         onSubmit={onSubmit}
-        className="space-y-5 rounded-xl border border-border bg-card p-6 shadow-soft"
+        className="space-y-5 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6"
       >
         {!frozen && (
           <div className="space-y-1.5">
@@ -340,7 +340,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
         <fieldset className="space-y-2" disabled={frozen}>
           <Label>How much comes off</Label>
           <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="flex min-h-10 items-center gap-2 text-sm text-ink sm:min-h-0">
               <input
                 type="radio"
                 name="pc-kind"
@@ -349,7 +349,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
               />
               Fixed amount
             </label>
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="flex min-h-10 items-center gap-2 text-sm text-ink sm:min-h-0">
               <input
                 type="radio"
                 name="pc-kind"
@@ -417,7 +417,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
         <div className="space-y-2">
           <Label>What it applies to</Label>
           <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="flex min-h-10 items-center gap-2 text-sm text-ink sm:min-h-0">
               <input
                 type="radio"
                 name="pc-scope"
@@ -426,7 +426,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
               />
               Everything
             </label>
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="flex min-h-10 items-center gap-2 text-sm text-ink sm:min-h-0">
               <input
                 type="radio"
                 name="pc-scope"
@@ -437,7 +437,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
             </label>
           </div>
           {!appliesToAll && (
-            <div className="space-y-4 rounded-lg border border-border p-4">
+            <div className="space-y-4 rounded-lg border border-border p-3 sm:p-4">
               {PRODUCT_GROUPS.map((group) => {
                 const items = catalogue.filter((p) => p.product_type === group.type);
                 if (items.length === 0) return null;
@@ -449,7 +449,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
                     {items.map((p) => (
                       <label
                         key={refKey(p)}
-                        className="flex items-center gap-2 text-sm text-ink"
+                        className="flex min-h-10 items-center gap-2 break-words text-sm text-ink sm:min-h-0"
                       >
                         <input
                           type="checkbox"

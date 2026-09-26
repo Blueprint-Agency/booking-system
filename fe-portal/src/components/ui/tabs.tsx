@@ -51,7 +51,7 @@ export function TabsTrigger({ value, children }: { value: string; children: Reac
       type="button"
       onClick={() => ctx.onValueChange(value)}
       className={cn(
-        "shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+        "min-h-9 shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors sm:min-h-0",
         active ? "bg-accent text-white" : "text-muted hover:text-ink"
       )}
     >

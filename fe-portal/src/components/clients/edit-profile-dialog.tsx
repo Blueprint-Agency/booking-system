@@ -91,7 +91,7 @@ export function EditProfileDialog({
             id="profile-gender"
             value={gender}
             onChange={(e) => setGender(e.target.value as ClientGender | "")}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+            className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
           >
             <option value="">Not set</option>
             {GENDERS.map((g) => (

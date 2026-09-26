@@ -225,10 +225,10 @@ export default function PrivateSessionsPage() {
       <section>
         <h2 className="mb-3 text-sm font-semibold text-ink">Booking config</h2>
         <form
-          className="rounded-xl border border-border bg-card p-5 shadow-soft"
+          className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5"
           onSubmit={handleSaveConfig}
         >
-          <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="advance">Book in advance (days)</Label>
               <Input
@@ -241,7 +241,9 @@ export default function PrivateSessionsPage() {
                 className="w-32"
               />
             </div>
-            <div className="flex-1 text-xs text-muted">
+            {/* On a phone the hint takes its own line under the field and Save,
+                rather than being crushed to a word-wide column between them. */}
+            <div className="order-last w-full text-xs text-muted sm:order-none sm:w-auto sm:flex-1">
               Maximum number of days ahead a customer can submit a private session request.
             </div>
             <Button type="submit" disabled={!configDirty || savingConfig}>
@@ -341,7 +343,7 @@ function PackageGroup({
         {visible.map((pkg) => (
           <div
             key={pkg.id}
-            className={`rounded-xl border border-border bg-card p-5 shadow-soft transition ${
+            className={`rounded-xl border border-border bg-card p-4 shadow-soft transition sm:p-5 ${
               archived ? "opacity-70" : "hover:border-accent/40"
             }`}
           >

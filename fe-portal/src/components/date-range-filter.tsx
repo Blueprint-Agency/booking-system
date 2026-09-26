@@ -133,7 +133,7 @@ export function DateRangeFilter({
                 setCustomOpen(false);
                 onChange(presetRange(p.key));
               }}
-              className={`rounded-full px-3 py-1.5 font-medium transition ${
+              className={`min-h-9 rounded-full px-3 py-1.5 font-medium transition sm:min-h-0 ${
                 active
                   ? "bg-accent text-white"
                   : "bg-paper text-muted hover:text-ink"
@@ -148,7 +148,7 @@ export function DateRangeFilter({
           aria-pressed={isCustom}
           aria-expanded={showDates}
           onClick={() => setCustomOpen(true)}
-          className={`rounded-full px-3 py-1.5 font-medium transition ${
+          className={`min-h-9 rounded-full px-3 py-1.5 font-medium transition sm:min-h-0 ${
             isCustom ? "bg-accent text-white" : "bg-paper text-muted hover:text-ink"
           }`}
         >
@@ -156,21 +156,23 @@ export function DateRangeFilter({
         </button>
       </div>
       {showDates && (
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        // On a phone the two dates share the row equally; a date input's
+        // intrinsic width would otherwise push the second one off the edge.
+        <div className="flex items-center gap-2 pt-0.5">
           <input
             type="date"
             aria-label="From date"
             value={value?.from ?? ""}
             onChange={(e) => setEndpoint("from", e.target.value)}
-            className="h-9 rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-9 sm:flex-none"
           />
-          <span className="text-xs text-muted">to</span>
+          <span className="shrink-0 text-xs text-muted">to</span>
           <input
             type="date"
             aria-label="To date"
             value={value?.to ?? ""}
             onChange={(e) => setEndpoint("to", e.target.value)}
-            className="h-9 rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-9 sm:flex-none"
           />
         </div>
       )}

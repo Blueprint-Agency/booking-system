@@ -642,6 +642,7 @@ Two staff roles in the system: `admin` and `instructor`. The `staff_role` type h
 - Every admin sees all of the studio's active locations in the topbar `<WorkspaceSwitcher />` (see Overview). There are no per-admin location grants.
 - The Staff list shows only **Admin** and **Instructor** badges. No staff member is "main" or seeded with powers beyond their role.
 - A studio archive taken while the portal still had a third, now-retired staff role restores those staff rows and invitations as admins.
+- **Changing a sign-in email.** An admin can change any staff member's email, another admin's and their own included, from **Change** beside the email in the staff dialog (view or edit). It is verified: a 6-digit code is mailed to the new address and nothing changes until it is entered — for someone else, the admin asks them for it. The code expires in 10 minutes, allows five tries, and a new one can be sent after 30 seconds. On confirming, the same login is re-addressed: password, second factor and sessions stay, a pending invitation moves to the new address, and the old address gets a notice (unless it is a `.invalid` placeholder). Refused: an address another staff member of this studio signs in with, a `.invalid` placeholder, the current address, and a blocked (archived) staff member. Service: `be/src/services/auth/staff-email-change.ts`.
 
 ### 14b. Invitation rules
 

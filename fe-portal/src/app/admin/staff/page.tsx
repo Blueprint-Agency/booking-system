@@ -30,6 +30,7 @@ import {
 import { ApiError } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatDate, formatRelative } from "@/lib/formatters";
+import { isPlaceholderEmail } from "@/lib/placeholder-email";
 import {
   StaffEditDialog,
   type StaffEditPatch,
@@ -90,12 +91,6 @@ interface StaffListResponse {
 // ---------------- Page ----------------
 
 type StaffTab = "admin" | "instructors";
-
-/**
- * A placeholder address on the reserved `.invalid` TLD: someone imported with no
- * email of their own, who teaches and is paid but has no login to send a link to.
- */
-const isPlaceholderEmail = (email: string) => /\.invalid$/i.test(email.trim());
 
 export default function StaffPage() {
   const { api, currentStaff } = useWorkspace();
@@ -390,7 +385,7 @@ export default function StaffPage() {
                   {pendingInvites.map(inv => (
                     <li
                       key={inv.id}
-                      className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3"
+                      className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5"
                     >
                       {/* basis-full below sm so the email and its sent/expires
                           line get the full row width; the badge and the two
@@ -558,7 +553,23 @@ export default function StaffPage() {
                 }
               : undefined,
           }}
+          canChangeEmail={canManageStaff && canEditTarget(editTarget)}
+          isSelf={editTarget.id === currentStaff?.id}
           onSubmit={handleEdit}
+          onEmailChanged={updated => {
+            const row = updated as StaffApiRow;
+            setStaff(prev => prev.map(s => (s.id === row.id ? row : s)));
+            // The open dialog's actions read the target — a placeholder given a
+            // real address can be sent its set-password link straight away.
+            setEditTarget(row);
+            toast.success(
+              editTarget.id === currentStaff?.id
+                ? `You now sign in with ${row.email}.`
+                : `${row.name} now signs in with ${row.email}.`,
+            );
+            // A pending invitation moved with the address; the list shows it.
+            if (row.status === "pending") void refresh();
+          }}
           onClose={() => setEditTarget(null)}
         />
       )}

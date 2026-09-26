@@ -160,11 +160,11 @@ function MerchCard({
   const isArchived = !!item.archived_at;
   return (
     <div
-      className={`flex gap-4 rounded-xl border bg-card p-4 shadow-soft transition ${
+      className={`flex gap-3 rounded-xl border bg-card p-4 shadow-soft transition sm:gap-4 ${
         isArchived ? "border-border opacity-70" : "border-border hover:border-accent/40"
       }`}
     >
-      <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-paper">
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-paper sm:h-20 sm:w-20">
         {item.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={item.image_url} alt={item.title} className="h-full w-full object-cover" />
@@ -175,7 +175,9 @@ function MerchCard({
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="truncate text-base font-semibold text-ink">{item.title}</h3>
+            <h3 className="line-clamp-2 break-words text-base font-semibold text-ink">
+              {item.title}
+            </h3>
             <p className="text-sm text-muted">S${item.price_sgd}</p>
             {isArchived && (
               <Badge tone="neutral" className="mt-1">
@@ -187,7 +189,9 @@ function MerchCard({
         {item.description && (
           <p className="mt-1 line-clamp-2 text-xs text-muted">{item.description}</p>
         )}
-        <div className="mt-2 flex gap-1">
+        {/* Wraps: three labelled buttons beside the photo are wider than a
+            phone-width card. */}
+        <div className="mt-2 flex flex-wrap gap-1">
           <Button size="sm" variant="ghost" onClick={onEdit}>
             Edit
           </Button>

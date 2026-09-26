@@ -262,14 +262,16 @@ export function ScheduleFromRequestDialog({
                   setStartTime(ptSlotStart(s));
                   setEndTime(ptSlotEnd(s));
                 }}
-                className="rounded-full border border-border bg-card px-2.5 py-1 text-xs hover:border-accent/40"
+                className="min-h-9 rounded-full border border-border bg-card px-2.5 py-1 text-xs hover:border-accent/40 sm:min-h-0"
               >
                 {s.proposed_date} · {ptSlotTime(s)}
               </button>
             ))}
           </div>
         )}
-        <div className="grid grid-cols-2 gap-3">
+        {/* One column on a phone: two date/time inputs side by side in a
+            dialog that narrow clip their own values. */}
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>Date</Label>
             <Input
@@ -307,7 +309,7 @@ export function ScheduleFromRequestDialog({
               value={instructorId}
               disabled={refLoading}
               onChange={(e) => setInstructorId(e.target.value)}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-50"
+              className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-50"
             >
               <option value="">Select…</option>
               {instructors.map((i) => (
@@ -349,7 +351,7 @@ export function ScheduleFromRequestDialog({
             <select
               value={locationId}
               onChange={(e) => setLocationId(e.target.value)}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+              className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
             >
               <option value="">Select…</option>
               {activeLocations.map((l) => (
@@ -365,7 +367,7 @@ export function ScheduleFromRequestDialog({
               value={roomId}
               disabled={refLoading || !locationId}
               onChange={(e) => setRoomId(e.target.value)}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-50"
+              className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-50"
             >
               <option value="">{locationId ? "Select room…" : "Pick a location first"}</option>
               {roomsForLocation.map((r) => (

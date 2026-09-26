@@ -266,7 +266,7 @@ export default function PolicyPage() {
       />
 
       <form onSubmit={handleSave} className="space-y-6">
-        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Cancellation cap</h2>
             <p className="mt-0.5 text-xs text-muted">
@@ -299,17 +299,21 @@ export default function PolicyPage() {
               />
             </div>
           </div>
-          <p className="mt-3 inline-flex items-start gap-1.5 text-xs text-muted">
-            <Info className="mt-0.5 h-3 w-3" />
-            Currently:{" "}
-            <span className="font-medium text-ink">
-              {draft.cancelCapCount} cancellations per {draft.cancelCapCycleDays} days
+          {/* The sentence sits in one span: as bare flex children its pieces
+              were separate columns that could not wrap, and ran off a phone. */}
+          <p className="mt-3 flex items-start gap-1.5 text-xs text-muted">
+            <Info className="mt-0.5 h-3 w-3 shrink-0" />
+            <span>
+              Currently:{" "}
+              <span className="font-medium text-ink">
+                {draft.cancelCapCount} cancellations per {draft.cancelCapCycleDays} days
+              </span>
+              . No-shows do not count toward this cap.
             </span>
-            . No-shows do not count toward this cap.
           </p>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Cross-Location Add-On</h2>
             <p className="mt-0.5 text-xs text-muted">
@@ -335,7 +339,7 @@ export default function PolicyPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Part Payment</h2>
             <p className="mt-0.5 text-xs text-muted">
@@ -368,7 +372,7 @@ export default function PolicyPage() {
           </label>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Cancellation windows</h2>
             <p className="mt-0.5 text-xs text-muted">
@@ -403,7 +407,7 @@ export default function PolicyPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Check-in window</h2>
             <p className="mt-0.5 text-xs text-muted">
@@ -432,7 +436,7 @@ export default function PolicyPage() {
           )}
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">PT booking horizon</h2>
             <p className="mt-0.5 text-xs text-muted">
@@ -454,7 +458,7 @@ export default function PolicyPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Leave carry-over</h2>
             <p className="mt-0.5 text-xs text-muted">
@@ -477,13 +481,13 @@ export default function PolicyPage() {
             />
           </div>
           <p className="mt-3 inline-flex items-start gap-1.5 text-xs text-muted">
-            <Info className="mt-0.5 h-3 w-3" />
+            <Info className="mt-0.5 h-3 w-3 shrink-0" />
             Medical leave never carries over, and a change here applies to the next leave year
             onwards — pools already opened do not move.
           </p>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Study leave cap</h2>
             <p className="mt-0.5 text-xs text-muted">
@@ -510,7 +514,7 @@ export default function PolicyPage() {
           )}
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Leave conflicts</h2>
             <p className="mt-0.5 text-xs text-muted">
@@ -533,7 +537,7 @@ export default function PolicyPage() {
                       key={pairKey(p)}
                       className="flex items-center justify-between gap-2 rounded px-2 py-1.5 text-sm text-ink"
                     >
-                      <span>{pair}</span>
+                      <span className="min-w-0 break-words">{pair}</span>
                       <Button
                         type="button"
                         size="sm"
@@ -566,12 +570,12 @@ export default function PolicyPage() {
               add.
             </p>
           ) : (
-            <div className="mt-4 flex flex-wrap items-end gap-3">
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
               <div className="space-y-1.5">
                 <Label htmlFor="conflict-a">Instructor</Label>
                 <select
                   id="conflict-a"
-                  className="w-48 rounded-md border border-border bg-card p-2 text-sm text-ink"
+                  className="h-10 w-full rounded-md border border-border bg-card px-2 text-sm text-ink sm:w-48"
                   value={pickA}
                   onChange={(e) => {
                     setPickA(e.target.value);
@@ -590,7 +594,7 @@ export default function PolicyPage() {
                 <Label htmlFor="conflict-b">Cannot be away with</Label>
                 <select
                   id="conflict-b"
-                  className="w-48 rounded-md border border-border bg-card p-2 text-sm text-ink"
+                  className="h-10 w-full rounded-md border border-border bg-card px-2 text-sm text-ink sm:w-48"
                   value={pickB}
                   disabled={pickA === ""}
                   onChange={(e) => setPickB(e.target.value)}

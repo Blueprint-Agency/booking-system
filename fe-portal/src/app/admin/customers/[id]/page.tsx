@@ -1492,7 +1492,7 @@ function OpenPurchaseList({
         {visible.map((p) => (
           <div
             key={p.id}
-            className="rounded-xl border border-warning/40 bg-warning/5 px-5 py-4 shadow-soft"
+            className="rounded-xl border border-warning/40 bg-warning/5 px-4 py-4 shadow-soft sm:px-5"
           >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
@@ -1628,8 +1628,8 @@ function AdjustmentList({
             <li key={a.id} className="flex items-start gap-3 px-4 py-3 sm:px-5">
               <div className="w-14 shrink-0">{badge}</div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm text-ink">{pkg?.package_name ?? "Package"}</div>
-                <div className="text-xs text-muted">{a.reason}</div>
+                <div className="break-words text-sm text-ink">{pkg?.package_name ?? "Package"}</div>
+                <div className="break-words text-xs text-muted">{a.reason}</div>
               </div>
               <span className="shrink-0 text-xs text-muted">{formatRelative(a.created_at)}</span>
             </li>
@@ -1697,7 +1697,7 @@ function DeleteClientDialog({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="confirm-delete-email">
-            Type <span className="text-ink">{email}</span> to confirm
+            Type <span className="break-all text-ink">{email}</span> to confirm
           </Label>
           <Input
             id="confirm-delete-email"
@@ -1769,7 +1769,7 @@ function BlockClientDialog({
       >
         <div className="space-y-1.5">
           <Label htmlFor="confirm-email">
-            Type <span className="text-ink">{email}</span> to confirm
+            Type <span className="break-all text-ink">{email}</span> to confirm
           </Label>
           <Input
             id="confirm-email"

@@ -173,7 +173,7 @@ export function ClassRoster({
   }
 
   return (
-    <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+    <section className="mt-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink">Booked customers ({rows.length})</h2>
         {rows.length > 0 && (
@@ -231,7 +231,7 @@ export function ClassRoster({
                     aria-label={attended ? "Mark as not attended" : "Mark as attended"}
                     disabled={disabled}
                     onClick={() => toggle(a)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0 sm:px-2.5 ${
                       attended
                         ? "border-sage/40 bg-sage/15 text-sage"
                         : "border-border bg-card text-muted hover:border-accent/40 hover:text-ink"
@@ -359,7 +359,13 @@ function AddMember({
   if (!open) {
     return (
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(true)}>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="h-10 sm:h-8"
+          onClick={() => setOpen(true)}
+        >
           <Plus className="h-4 w-4" /> Add member
         </Button>
         {added && <span className="text-xs text-sage">{added}</span>}
@@ -378,7 +384,14 @@ function AddMember({
           placeholder="Search members by name, email or phone"
           aria-label="Search members"
         />
-        <Button type="button" variant="ghost" size="sm" onClick={close} aria-label="Close">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10"
+          onClick={close}
+          aria-label="Close"
+        >
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -448,6 +461,7 @@ function AddMember({
               type="button"
               size="sm"
               variant="secondary"
+              className="h-10 sm:h-8"
               disabled={busyId !== null}
               onClick={() => book(m)}
             >

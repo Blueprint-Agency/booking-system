@@ -560,7 +560,7 @@ export function WorkshopEditor({
                 setDays((cur) => cur.map((d) => ({ ...d, roomId: "" })));
               }
             }}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+            className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
           >
             <option value="">— select —</option>
             {catalog.locations.map((l) => (
@@ -570,7 +570,7 @@ export function WorkshopEditor({
             ))}
           </select>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="ws-main-instructor">Main instructor</Label>
             <select
@@ -609,7 +609,7 @@ export function WorkshopEditor({
                   key={sid}
                   className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-paper px-3 py-2"
                 >
-                  <span className="min-w-0 flex-1 text-sm text-ink">
+                  <span className="min-w-0 flex-1 break-words text-sm text-ink">
                     {ins?.name ?? "Unknown"}
                   </span>
                   <Input
@@ -625,7 +625,7 @@ export function WorkshopEditor({
                   <button
                     type="button"
                     onClick={() => removeSupporting(sid)}
-                    className="text-muted hover:text-ink"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded text-lg leading-none text-muted hover:bg-warm hover:text-ink"
                     aria-label={`Remove ${ins?.name ?? "instructor"}`}
                   >
                     ×
@@ -640,7 +640,7 @@ export function WorkshopEditor({
                   const v = e.target.value;
                   if (v) setSupportingInstructorIds((prev) => [...prev, v]);
                 }}
-                className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="flex h-10 w-full rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none sm:h-9 sm:w-auto focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <option value="">
                   {supportingInstructorIds.length === 0
@@ -752,7 +752,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-soft">
+    <section className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <h2 className="text-sm font-semibold text-ink">{title}</h2>
         <Badge tone="neutral">{step}</Badge>

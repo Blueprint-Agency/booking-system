@@ -95,15 +95,19 @@ export default function CorporatePackagesListPage() {
                   className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-paper"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium text-ink">{p.name}</div>
+                    <div className="break-words font-medium text-ink">{p.name}</div>
                     <div className="mt-1 text-xs text-muted">
+                      {/* The price column is hidden on a phone; it rides here. */}
+                      <span className="text-ink sm:hidden">
+                        {formatSgd(Number(p.price_sgd))} ·{" "}
+                      </span>
                       Created {formatDate(p.created_at)}
                     </div>
                   </div>
                   <div className="hidden sm:block min-w-[110px] text-right text-sm text-ink">
                     {formatSgd(Number(p.price_sgd))}
                   </div>
-                  <div className="min-w-[80px] text-right">
+                  <div className="shrink-0 text-right sm:min-w-[80px]">
                     {p.status === "archived" ? (
                       <Badge tone="neutral">Archived</Badge>
                     ) : (

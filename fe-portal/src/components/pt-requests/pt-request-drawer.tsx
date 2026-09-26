@@ -32,15 +32,15 @@ export function PtRequestDrawer({
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-4 top-4 rounded p-1 text-muted hover:bg-paper hover:text-ink"
+          className="absolute right-2 top-2 rounded-md p-2.5 text-muted hover:bg-paper hover:text-ink sm:right-4 sm:top-4 sm:p-1"
           aria-label="Close"
         >
           <X className="h-4 w-4" />
         </button>
-        <div className="mb-4 flex items-center gap-3 pr-8">
+        <div className="mb-4 flex items-center gap-3 pr-10 sm:pr-8">
           <Avatar name={request.client.name} size={40} />
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-ink">{request.client.name}</h2>
+            <h2 className="break-words text-base font-semibold text-ink">{request.client.name}</h2>
             <div className="text-xs text-muted">
               Submitted {formatRelative(request.created_at)}
             </div>
@@ -61,8 +61,8 @@ export function PtRequestDrawer({
           </Row>
           {request.session_type === "2on1" && (
             <Row label="Partner">
-              <div className="flex items-center gap-2">
-                <span>{ptPartnerDisplay(request)}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="min-w-0 break-all">{ptPartnerDisplay(request)}</span>
                 {partnerNeedsAccount && <Badge tone="accent">needs account</Badge>}
               </div>
             </Row>
@@ -78,7 +78,7 @@ export function PtRequestDrawer({
           </Row>
           {request.message && (
             <Row label="Message">
-              <blockquote className="rounded-md border-l-2 border-border bg-paper p-2 italic">
+              <blockquote className="break-words rounded-md border-l-2 border-border bg-paper p-2 italic">
                 {request.message}
               </blockquote>
             </Row>

@@ -141,7 +141,7 @@ function SetPasswordForm({ token, email }: { token: string; email: string }) {
 
   return (
     <>
-      <p className="mb-4 rounded-lg border border-border bg-paper px-3 py-2 text-center text-xs text-muted">
+      <p className="mb-4 break-words rounded-lg border border-border bg-paper px-3 py-2 text-center text-xs text-muted">
         Setting up the staff account for <span className="font-medium text-ink">{email}</span>
       </p>
       <h1 className="text-lg font-semibold text-ink">Create your staff account</h1>
@@ -230,7 +230,7 @@ function ExistingAccountForm({ token, email }: { token: string; email: string })
   return (
     <div className="text-center">
       <h1 className="text-base font-semibold text-ink">You already have a password here</h1>
-      <p className="mt-2 text-sm text-muted">
+      <p className="mt-2 break-words text-sm text-muted">
         <span className="font-medium text-ink">{email}</span> already has a password at this studio.
         Accept the invitation, then sign in with it.
       </p>

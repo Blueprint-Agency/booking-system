@@ -16,6 +16,7 @@ import { LeaveCalendar } from "@/components/leave-calendar";
 import { useWorkspace } from "@/lib/workspace-context";
 import { openSignedUrl } from "@/lib/api";
 import { todayIso } from "@/lib/formatters";
+import { cn } from "@/lib/utils";
 import {
   formatLeaveDayRange,
   leaveErrorMessage,
@@ -104,6 +105,55 @@ function BalanceCard({ balance }: { balance: ApiBalance }) {
         </p>
       )}
     </div>
+  );
+}
+
+/** Open the Supporting Document, or pick one to attach when there is none yet. */
+function DocumentButton({
+  request,
+  className,
+  onOpen,
+  onAttach,
+}: {
+  request: ApiLeaveRequest;
+  className?: string;
+  onOpen: () => void;
+  onAttach: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn("flex items-center gap-1 text-xs text-accent hover:underline", className)}
+      onClick={request.has_supporting_document ? onOpen : onAttach}
+    >
+      <Paperclip className="h-3 w-3" />
+      {request.has_supporting_document ? "Document" : "Attach document"}
+    </button>
+  );
+}
+
+/** Withdraw a pending request, or cancel approved leave that hasn't started. */
+function TransitionButton({
+  request,
+  busy,
+  className,
+  onClick,
+}: {
+  request: ApiLeaveRequest;
+  busy: boolean;
+  className?: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button size="sm" variant="ghost" disabled={busy} className={className} onClick={onClick}>
+      {busy ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : request.status === "pending" ? (
+        "Withdraw"
+      ) : (
+        "Cancel"
+      )}
+    </Button>
   );
 }
 
@@ -247,6 +297,8 @@ export default function InstructorLeavePage() {
   // "Not started" mirrors the backend rule: a cancel is only offered for leave
   // that begins after today. The server refuses it either way.
   const notStarted = (r: ApiLeaveRequest) => r.start_date > todayIso();
+  const canTransition = (r: ApiLeaveRequest) =>
+    r.status === "pending" || (r.status === "approved" && notStarted(r));
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -262,14 +314,14 @@ export default function InstructorLeavePage() {
       )}
 
       <div className="mb-4 flex justify-end">
-        <div className="inline-flex items-center rounded-md border border-border bg-paper p-0.5">
+        <div className="grid w-full grid-cols-2 items-center rounded-md border border-border bg-paper p-0.5 sm:inline-flex sm:w-auto">
           {(["requests", "away"] as const).map((v) => (
             <button
               key={v}
               type="button"
               aria-pressed={view === v}
               onClick={() => setView(v)}
-              className={`h-7 rounded px-3 text-xs font-medium transition-colors ${
+              className={`h-9 rounded px-3 text-xs font-medium transition-colors sm:h-7 ${
                 view === v ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink"
               }`}
             >
@@ -297,7 +349,7 @@ export default function InstructorLeavePage() {
 
           <form
             onSubmit={handleSubmit}
-            className="mb-6 space-y-4 rounded-xl border border-border bg-card p-6 shadow-soft"
+            className="mb-6 space-y-4 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6"
           >
             <header>
               <h2 className="text-base font-semibold text-ink">Request leave</h2>
@@ -391,7 +443,11 @@ export default function InstructorLeavePage() {
             )}
 
             <div className="flex justify-end">
-              <Button type="submit" disabled={submitting || !startDate || !reason.trim()}>
+              <Button
+                type="submit"
+                className="w-full sm:w-auto"
+                disabled={submitting || !startDate || !reason.trim()}
+              >
                 {submitting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" /> Submitting…
@@ -412,10 +468,59 @@ export default function InstructorLeavePage() {
               description="Requests you submit appear here with their status."
             />
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
-              {/* min-w so the wrapper scrolls on a phone rather than the table
-                  squeezing its columns to unreadable slivers. */}
-              <table className="w-full min-w-[640px] text-sm">
+            <div className="rounded-xl border border-border bg-card shadow-soft">
+              {/* Below md each request is a stacked row: five columns don't fit a
+                  phone, and a sideways-scrolling table hid the action off-screen. */}
+              <ul className="divide-y divide-border md:hidden">
+                {data.requests.map((r) => (
+                  <li key={r.id} className="space-y-1.5 px-4 py-3 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0 break-words text-ink">
+                        {formatLeaveDayRange(r.start_date, r.end_date)}
+                        {LEAVE_HALF_DAY_SUFFIX[r.half_day]}
+                      </span>
+                      <Badge tone={LEAVE_STATUS_TONE[r.status]}>
+                        {LEAVE_STATUS_LABEL[r.status]}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted">
+                      {LEAVE_TYPE_LABEL[r.type]} · {r.days} {r.days === 1 ? "day" : "days"}
+                    </div>
+                    <p className="break-words text-xs text-muted">{r.reason}</p>
+                    {r.decision_reason && (
+                      <p className="break-words text-xs text-muted">Admin: {r.decision_reason}</p>
+                    )}
+                    {(r.type !== "annual" || canTransition(r)) && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                        {r.type !== "annual" ? (
+                          <DocumentButton
+                            request={r}
+                            className="-ml-1 min-h-10 px-1"
+                            onOpen={() => void openDocument(r.id)}
+                            onAttach={() => {
+                              setAttachTo(r.id);
+                              attachInput.current?.click();
+                            }}
+                          />
+                        ) : (
+                          <span />
+                        )}
+                        {canTransition(r) && (
+                          <TransitionButton
+                            request={r}
+                            busy={busyId === r.id}
+                            className="h-10"
+                            onClick={() =>
+                              handleTransition(r.id, r.status === "pending" ? "withdraw" : "cancel")
+                            }
+                          />
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <table className="hidden w-full text-sm md:table">
                 <thead>
                   <tr className="border-b border-border text-left text-xs text-muted">
                     <th className="px-3 py-2.5 font-medium">Dates</th>
@@ -443,18 +548,15 @@ export default function InstructorLeavePage() {
                       <td className="px-3 py-2.5 text-muted">
                         {LEAVE_TYPE_LABEL[r.type]}
                         {r.type !== "annual" && (
-                          <button
-                            type="button"
-                            className="mt-0.5 flex items-center gap-1 text-xs text-accent hover:underline"
-                            onClick={() =>
-                              r.has_supporting_document
-                                ? void openDocument(r.id)
-                                : (setAttachTo(r.id), attachInput.current?.click())
-                            }
-                          >
-                            <Paperclip className="h-3 w-3" />
-                            {r.has_supporting_document ? "Document" : "Attach document"}
-                          </button>
+                          <DocumentButton
+                            request={r}
+                            className="mt-0.5"
+                            onOpen={() => void openDocument(r.id)}
+                            onAttach={() => {
+                              setAttachTo(r.id);
+                              attachInput.current?.click();
+                            }}
+                          />
                         )}
                       </td>
                       <td className="px-3 py-2.5 tabular-nums text-muted">{r.days}</td>
@@ -464,23 +566,14 @@ export default function InstructorLeavePage() {
                         </Badge>
                       </td>
                       <td className="px-3 py-2.5 text-right">
-                        {r.status === "pending" || (r.status === "approved" && notStarted(r)) ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={busyId === r.id}
+                        {canTransition(r) ? (
+                          <TransitionButton
+                            request={r}
+                            busy={busyId === r.id}
                             onClick={() =>
                               handleTransition(r.id, r.status === "pending" ? "withdraw" : "cancel")
                             }
-                          >
-                            {busyId === r.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : r.status === "pending" ? (
-                              "Withdraw"
-                            ) : (
-                              "Cancel"
-                            )}
-                          </Button>
+                          />
                         ) : (
                           <span className="text-muted">—</span>
                         )}

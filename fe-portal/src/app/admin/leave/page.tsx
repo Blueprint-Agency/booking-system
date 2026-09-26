@@ -153,6 +153,45 @@ export default function AdminLeavePage() {
   // Mirrors the server rule: approved leave is only revocable before it starts.
   const notStarted = (r: ApiAdminLeaveRequest) => r.start_date > todayIso();
 
+  // One decision control, rendered in the phone card and the desktop table.
+  const decision = (r: ApiAdminLeaveRequest) =>
+    busyId === r.id ? (
+      <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted" />
+    ) : r.status === "pending" ? (
+      <div className="flex justify-end gap-1.5">
+        <Button size="sm" onClick={() => decide(r, "approve")}>
+          Approve
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setRejectReason("");
+            setRejecting(r);
+          }}
+        >
+          Reject
+        </Button>
+      </div>
+    ) : r.status === "approved" && notStarted(r) ? (
+      <Button size="sm" variant="ghost" onClick={() => decide(r, "revoke")}>
+        Revoke
+      </Button>
+    ) : (
+      <span className="text-muted">—</span>
+    );
+
+  const documentButton = (r: ApiAdminLeaveRequest) =>
+    r.has_supporting_document && (
+      <button
+        type="button"
+        className="mt-0.5 flex min-h-8 items-center gap-1 text-xs text-accent hover:underline"
+        onClick={() => void openDocument(r.id)}
+      >
+        <Paperclip className="h-3 w-3" /> Document
+      </button>
+    );
+
   return (
     <div className="mx-auto max-w-4xl">
       <PageHeader
@@ -178,7 +217,7 @@ export default function AdminLeavePage() {
                   key={f}
                   type="button"
                   onClick={() => setTab(f)}
-                  className={`rounded-full border px-3 py-1 text-xs transition ${
+                  className={`h-9 rounded-full border px-3 text-xs transition sm:h-8 ${
                     tab === f
                       ? "border-accent bg-accent/10 text-ink"
                       : "border-border bg-card text-muted"
@@ -197,7 +236,7 @@ export default function AdminLeavePage() {
               type="button"
               aria-pressed={view === v}
               onClick={() => setView(v)}
-              className={`h-7 rounded px-3 text-xs font-medium capitalize transition-colors ${
+              className={`h-8 rounded px-3 text-xs font-medium capitalize transition-colors sm:h-7 ${
                 view === v ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink"
               }`}
             >
@@ -224,88 +263,97 @@ export default function AdminLeavePage() {
           }
         />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
-          {/* Without a min-width the wrapper never scrolls — the table just
-              shrinks and the six columns wrap to single characters. */}
-          <table className="w-full min-w-[820px] text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs text-muted">
-                <th className="px-3 py-2.5 font-medium">Instructor</th>
-                <th className="px-3 py-2.5 font-medium">Dates</th>
-                <th className="px-3 py-2.5 font-medium">Type</th>
-                <th className="px-3 py-2.5 font-medium">Days</th>
-                <th className="px-3 py-2.5 font-medium">Status</th>
-                <th className="px-3 py-2.5 text-right font-medium">Decision</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map((r) => (
-                <tr key={r.id} className="align-top hover:bg-warm/40">
-                  <td className="px-3 py-2.5">
-                    <div className="font-medium text-ink">{r.instructor.name}</div>
-                    <div className="text-xs text-muted">{r.instructor.email}</div>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <span className="text-ink">
-                      {formatLeaveDayRange(r.start_date, r.end_date)}
-                      {LEAVE_HALF_DAY_SUFFIX[r.half_day]}
-                    </span>
-                    <p className="mt-0.5 max-w-xs text-xs text-muted">{r.reason}</p>
-                    {r.decision_reason && (
-                      <p className="mt-0.5 max-w-xs text-xs text-muted">
-                        Decision: {r.decision_reason}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-muted">
-                    {LEAVE_TYPE_LABEL[r.type]}
-                    {r.has_supporting_document && (
-                      <button
-                        type="button"
-                        className="mt-0.5 flex items-center gap-1 text-xs text-accent hover:underline"
-                        onClick={() => void openDocument(r.id)}
-                      >
-                        <Paperclip className="h-3 w-3" /> Document
-                      </button>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted">{r.days}</td>
-                  <td className="px-3 py-2.5">
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          {/* Mobile cards — the queue is cleared from a phone too, so the
+              decision buttons sit on the card rather than off-screen in a
+              sideways-scrolling table. */}
+          <ul className="divide-y divide-border md:hidden">
+            {filtered.map((r) => (
+              <li key={r.id} className="space-y-2 px-4 py-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="break-words font-medium text-ink">{r.instructor.name}</div>
+                    <div className="truncate text-xs text-muted">{r.instructor.email}</div>
+                  </div>
+                  <span className="shrink-0">
                     <Badge tone={LEAVE_STATUS_TONE[r.status]}>
                       {LEAVE_STATUS_LABEL[r.status]}
                     </Badge>
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    {busyId === r.id ? (
-                      <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted" />
-                    ) : r.status === "pending" ? (
-                      <div className="flex justify-end gap-1.5">
-                        <Button size="sm" onClick={() => decide(r, "approve")}>
-                          Approve
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setRejectReason("");
-                            setRejecting(r);
-                          }}
-                        >
-                          Reject
-                        </Button>
-                      </div>
-                    ) : r.status === "approved" && notStarted(r) ? (
-                      <Button size="sm" variant="ghost" onClick={() => decide(r, "revoke")}>
-                        Revoke
-                      </Button>
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </td>
+                  </span>
+                </div>
+                <div>
+                  <div className="text-ink">
+                    {formatLeaveDayRange(r.start_date, r.end_date)}
+                    {LEAVE_HALF_DAY_SUFFIX[r.half_day]}
+                  </div>
+                  <div className="text-xs text-muted">
+                    {LEAVE_TYPE_LABEL[r.type]} ·{" "}
+                    <span className="tabular-nums">{r.days}</span> {r.days === 1 ? "day" : "days"}
+                  </div>
+                  {documentButton(r)}
+                  {r.reason && (
+                    <p className="mt-1 break-words text-xs text-muted">{r.reason}</p>
+                  )}
+                  {r.decision_reason && (
+                    <p className="mt-0.5 break-words text-xs text-muted">
+                      Decision: {r.decision_reason}
+                    </p>
+                  )}
+                </div>
+                <div className="flex justify-end">{decision(r)}</div>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden overflow-x-auto md:block">
+            {/* Without a min-width the wrapper never scrolls — the table just
+                shrinks and the six columns wrap to single characters. */}
+            <table className="w-full min-w-[820px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-muted">
+                  <th className="px-3 py-2.5 font-medium">Instructor</th>
+                  <th className="px-3 py-2.5 font-medium">Dates</th>
+                  <th className="px-3 py-2.5 font-medium">Type</th>
+                  <th className="px-3 py-2.5 font-medium">Days</th>
+                  <th className="px-3 py-2.5 font-medium">Status</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Decision</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((r) => (
+                  <tr key={r.id} className="align-top hover:bg-warm/40">
+                    <td className="px-3 py-2.5">
+                      <div className="font-medium text-ink">{r.instructor.name}</div>
+                      <div className="text-xs text-muted">{r.instructor.email}</div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className="text-ink">
+                        {formatLeaveDayRange(r.start_date, r.end_date)}
+                        {LEAVE_HALF_DAY_SUFFIX[r.half_day]}
+                      </span>
+                      <p className="mt-0.5 max-w-xs text-xs text-muted">{r.reason}</p>
+                      {r.decision_reason && (
+                        <p className="mt-0.5 max-w-xs text-xs text-muted">
+                          Decision: {r.decision_reason}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-muted">
+                      {LEAVE_TYPE_LABEL[r.type]}
+                      {documentButton(r)}
+                    </td>
+                    <td className="px-3 py-2.5 tabular-nums text-muted">{r.days}</td>
+                    <td className="px-3 py-2.5">
+                      <Badge tone={LEAVE_STATUS_TONE[r.status]}>
+                        {LEAVE_STATUS_LABEL[r.status]}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2.5 text-right">{decision(r)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

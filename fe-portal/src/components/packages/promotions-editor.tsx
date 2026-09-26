@@ -81,12 +81,12 @@ export function PromotionsEditor({
               value={p.label}
               onChange={(e) => update(p.id, { label: e.target.value })}
               placeholder="e.g. CNY Promo"
-              className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm"
+              className="min-w-0 flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm"
             />
             <button
               type="button"
               onClick={() => remove(p.id)}
-              className="rounded p-2 text-muted hover:text-error"
+              className="shrink-0 rounded p-2.5 text-muted hover:text-error"
               aria-label="Remove promotion"
             >
               <Trash2 className="h-4 w-4" />
@@ -104,7 +104,7 @@ export function PromotionsEditor({
                     priceSgd: m === "price" ? (p.priceSgd ?? 0) : null,
                   })
                 }
-                className={`rounded-full border px-3 py-1 text-xs transition ${
+                className={`rounded-full border px-3 py-1.5 text-xs transition ${
                   p.mode === m
                     ? "border-accent bg-accent/10 text-ink"
                     : "border-border bg-card text-muted"
@@ -121,7 +121,7 @@ export function PromotionsEditor({
                   key={qp}
                   type="button"
                   onClick={() => update(p.id, { percent: qp })}
-                  className="rounded-full border border-border bg-card px-2.5 py-1 text-xs hover:border-accent/40"
+                  className="rounded-full border border-border bg-card px-2.5 py-1.5 text-xs hover:border-accent/40"
                 >
                   {qp}%
                 </button>
@@ -152,7 +152,9 @@ export function PromotionsEditor({
               className="w-40 rounded-md border border-border bg-card px-3 py-2 text-sm"
             />
           )}
-          <div className="grid grid-cols-2 gap-2">
+          {/* Stacked on a phone: two native date pickers side by side inside a
+              dialog clip their own text at that width. */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="space-y-1">
               <Label className="text-xs">Starts</Label>
               <input

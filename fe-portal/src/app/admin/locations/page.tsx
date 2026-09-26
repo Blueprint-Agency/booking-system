@@ -187,20 +187,23 @@ function LocationCard({
   const isArchived = !!location.archivedAt;
   return (
     <div
-      className={`rounded-xl border bg-card p-5 shadow-soft transition ${
+      className={`rounded-xl border bg-card p-4 shadow-soft transition sm:p-5 ${
         isArchived ? "border-border opacity-70" : "border-border hover:border-accent/40"
       }`}
     >
-      <div className="mb-3 flex items-start justify-between gap-3">
+      {/* Wraps: a long name, or an archived card's Restore + Delete, pushes the
+          actions under the name on a phone instead of truncating it to a few
+          letters. */}
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
         <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold text-ink">{location.name}</h3>
+          <h3 className="break-words text-base font-semibold text-ink">{location.name}</h3>
           {isArchived && (
             <Badge tone="neutral" className="mt-1">
               Archived
             </Badge>
           )}
         </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+        <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-1">
           {!isArchived && (
             <Button size="sm" variant="ghost" onClick={onEdit}>
               Edit
@@ -228,7 +231,7 @@ function LocationCard({
         {location.address && (
           <li className="flex items-start gap-2">
             <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>{location.address}</span>
+            <span className="min-w-0 break-words">{location.address}</span>
           </li>
         )}
         {location.phone && (
@@ -244,7 +247,7 @@ function LocationCard({
               href={location.gmapsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="truncate text-xs text-accent hover:underline"
+              className="inline-flex min-h-8 items-center text-xs text-accent hover:underline"
             >
               View on Google Maps
             </a>

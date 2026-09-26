@@ -104,17 +104,20 @@ export default function InstructorPtRequestsPage() {
                 key={r.id}
                 className="rounded-xl border border-border bg-card shadow-soft"
               >
-                <div className="flex items-start justify-between gap-3 px-4 py-3">
+                {/* Stacked on a phone: the details get the full width and the
+                    age + Schedule sit in a row beneath, instead of a narrow
+                    column squeezing the member's message. */}
+                <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-ink">{r.client.name}</span>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="min-w-0 break-words font-medium text-ink">{r.client.name}</span>
                       {r.bound_instructor && (
-                        <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] text-ink">
+                        <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] text-ink">
                           your member
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-muted">
+                    <div className="break-words text-xs text-muted">
                       {r.session_type === "2on1" ? "2-on-1" : "1-on-1"} ·{" "}
                       {ptClassTypeName(r.class_type)} · {r.location.name}
                       {r.co_client
@@ -122,10 +125,10 @@ export default function InstructorPtRequestsPage() {
                         : ""}
                     </div>
                     {r.message && (
-                      <p className="mt-1 text-xs text-ink/80">“{r.message}”</p>
+                      <p className="mt-1 break-words text-xs text-ink/80">“{r.message}”</p>
                     )}
                     {r.slots.length > 0 && (
-                      <div className="mt-1 text-xs text-muted">
+                      <div className="mt-1 break-words text-xs text-muted">
                         Prefers:{" "}
                         {r.slots
                           .map((s) => `${s.proposed_date} ${ptSlotTime(s)}`)
@@ -133,12 +136,12 @@ export default function InstructorPtRequestsPage() {
                       </div>
                     )}
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-2">
+                  <div className="flex shrink-0 items-center justify-between gap-2 sm:flex-col sm:items-end">
                     <span className="text-xs text-muted">
                       {formatRelative(r.created_at)}
                     </span>
                     {schedId !== r.id && (
-                      <Button size="sm" onClick={() => setSchedId(r.id)}>
+                      <Button size="sm" className="h-10 sm:h-8" onClick={() => setSchedId(r.id)}>
                         <CalendarCheck className="h-3.5 w-3.5" /> Schedule
                       </Button>
                     )}
@@ -236,7 +239,7 @@ function ScheduleForm({
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="rounded-md p-1 text-muted hover:text-ink"
+          className="-m-2 rounded-md p-2 text-muted hover:text-ink"
         >
           <X className="h-4 w-4" />
         </button>
@@ -295,7 +298,12 @@ function ScheduleForm({
       {err && <p className="mt-2 text-xs text-error">{err}</p>}
 
       <div className="mt-3 flex justify-end">
-        <Button type="submit" size="sm" disabled={submitting || !canSubmit}>
+        <Button
+          type="submit"
+          size="sm"
+          className="h-10 w-full sm:h-8 sm:w-auto"
+          disabled={submitting || !canSubmit}
+        >
           {submitting ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (

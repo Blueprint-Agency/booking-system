@@ -60,7 +60,7 @@ export function HomeLocationDialog({
             required
             value={locationId}
             onChange={(e) => setLocationId(e.target.value)}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+            className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
           >
             <option value="">Select a studio</option>
             {choices.map((l) => (

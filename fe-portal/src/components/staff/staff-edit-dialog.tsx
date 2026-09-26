@@ -1,8 +1,10 @@
 "use client";
 import { useState } from "react";
-import { Pencil, RotateCcw, ShieldOff } from "lucide-react";
+import { AtSign, Pencil, RotateCcw, ShieldOff } from "lucide-react";
 import { ResendInvitationButton } from "@/components/access/resend-invitation-button";
 import { SessionsPanel } from "@/components/access/sessions-panel";
+import { isPlaceholderEmail } from "@/lib/placeholder-email";
+import { StaffEmailChange } from "./staff-email-change";
 import {
   Badge,
   Button,
@@ -122,8 +124,11 @@ export function StaffEditDialog({
   staff,
   canEdit,
   canChangeRole,
+  canChangeEmail,
+  isSelf,
   access,
   onSubmit,
+  onEmailChanged,
   onClose,
 }: {
   staff: StaffEditableFields;
@@ -133,6 +138,10 @@ export function StaffEditDialog({
   /** Admin viewing someone other than themselves. The last-admin guard is the
    *  server's; its refusal comes back as the save's error. */
   canChangeRole: boolean;
+  /** An admin, for anyone not blocked — themselves included. */
+  canChangeEmail: boolean;
+  /** The viewer is looking at their own row. */
+  isSelf: boolean;
   access: StaffAccessActions;
   /** Returns the PATCHed row (the API echoes the whole staff record, leave
    *  figures included) or null when the save failed. */
@@ -140,12 +149,15 @@ export function StaffEditDialog({
     id: string,
     patch: StaffEditPatch,
   ) => Promise<StaffEditableFields | null>;
+  /** A verified email change landed; the row is the API's echo. */
+  onEmailChanged: (updated: StaffEditableFields) => void;
   onClose: () => void;
 }) {
   // The row the dialog trusts. Seeded from the list, then replaced by the PATCH
   // response so the view shows the server's figures rather than what was typed.
   const [current, setCurrent] = useState(staff);
   const [editing, setEditing] = useState(false);
+  const [changingEmail, setChangingEmail] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function save(patch: StaffEditPatch) {
@@ -162,34 +174,75 @@ export function StaffEditDialog({
   }
 
   const name = [current.first_name, current.last_name].filter(Boolean).join(" ");
+  const shownEmail = isPlaceholderEmail(current.email) ? "No email on file" : current.email;
+  const emailChangeable = canChangeEmail && current.status !== "archived";
 
   return (
     <Dialog
       open
       onOpenChange={o => !o && !submitting && onClose()}
-      title={editing ? "Edit staff profile" : name || current.email}
+      title={
+        changingEmail
+          ? "Change email"
+          : editing
+            ? "Edit staff profile"
+            : name || shownEmail
+      }
       description={
-        editing ? `Update ${current.email}'s profile details.` : current.email
+        changingEmail
+          ? isSelf
+            ? "The email you sign in with. Your password stays the same."
+            : `The email ${name || "this staff member"} signs in with. Their password stays the same.`
+          : editing
+            ? `Update ${name || "this staff member"}'s profile details.`
+            : shownEmail
       }
     >
-      {editing ? (
-        <StaffProfileForm
+      {changingEmail && (
+        <StaffEmailChange
           staff={current}
-          canChangeRole={canChangeRole}
-          submitting={submitting}
-          onSubmit={save}
-          onCancel={() => setEditing(false)}
-        />
-      ) : (
-        <StaffProfileView
-          staff={current}
-          canEdit={canEdit}
-          access={access}
-          onEdit={() => setEditing(true)}
-          onClose={onClose}
+          isSelf={isSelf}
+          onCancel={() => setChangingEmail(false)}
+          onDone={updated => {
+            setCurrent(updated);
+            setChangingEmail(false);
+            onEmailChanged(updated);
+          }}
         />
       )}
+      {/* Kept mounted while the email changes, so the edits typed so far survive
+          the detour — hidden, not unmounted. */}
+      <div className={changingEmail ? "hidden" : undefined}>
+        {editing ? (
+          <StaffProfileForm
+            staff={current}
+            canChangeRole={canChangeRole}
+            onChangeEmail={emailChangeable ? () => setChangingEmail(true) : undefined}
+            submitting={submitting}
+            onSubmit={save}
+            onCancel={() => setEditing(false)}
+          />
+        ) : (
+          <StaffProfileView
+            staff={current}
+            canEdit={canEdit}
+            access={access}
+            onChangeEmail={emailChangeable ? () => setChangingEmail(true) : undefined}
+            onEdit={() => setEditing(true)}
+            onClose={onClose}
+          />
+        )}
+      </div>
     </Dialog>
+  );
+}
+
+/** The inline "Change" beside an email, in the view and the form alike. */
+function ChangeEmailButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button type="button" size="sm" variant="ghost" className="shrink-0" onClick={onClick}>
+      <AtSign className="h-3.5 w-3.5" /> Change
+    </Button>
   );
 }
 
@@ -199,12 +252,14 @@ function StaffProfileView({
   staff,
   canEdit,
   access,
+  onChangeEmail,
   onEdit,
   onClose,
 }: {
   staff: StaffEditableFields;
   canEdit: boolean;
   access: StaffAccessActions;
+  onChangeEmail?: () => void;
   onEdit: () => void;
   onClose: () => void;
 }) {
@@ -219,7 +274,16 @@ function StaffProfileView({
         <Field label="First name">{staff.first_name}</Field>
         <Field label="Last name">{staff.last_name}</Field>
         <Field label="Email" full>
-          {staff.email}
+          <span className="flex items-center justify-between gap-2">
+            <span className="min-w-0 break-all">
+              {isPlaceholderEmail(staff.email) ? (
+                <span className="text-muted">No email — imported without one</span>
+              ) : (
+                staff.email
+              )}
+            </span>
+            {onChangeEmail && <ChangeEmailButton onClick={onChangeEmail} />}
+          </span>
         </Field>
         <Field label="Phone">{staff.phone}</Field>
         <Field label="Gender">{gender}</Field>
@@ -406,12 +470,15 @@ function LeaveRow({
 function StaffProfileForm({
   staff,
   canChangeRole,
+  onChangeEmail,
   submitting,
   onSubmit,
   onCancel,
 }: {
   staff: StaffEditableFields;
   canChangeRole: boolean;
+  /** The email is not a form field: it moves only through its own verified flow. */
+  onChangeEmail?: () => void;
   submitting: boolean;
   onSubmit: (patch: StaffEditPatch) => void | Promise<void>;
   onCancel: () => void;
@@ -497,7 +564,7 @@ function StaffProfileForm({
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="edit-first-name">First name</Label>
           <Input
@@ -520,7 +587,21 @@ function StaffProfileForm({
 
       <div className="space-y-1.5">
         <Label htmlFor="edit-email">Email</Label>
-        <Input id="edit-email" value={staff.email} disabled readOnly />
+        <div className="flex items-center gap-2">
+          <Input
+            id="edit-email"
+            className="min-w-0 flex-1"
+            value={isPlaceholderEmail(staff.email) ? "No email on file" : staff.email}
+            disabled
+            readOnly
+          />
+          {onChangeEmail && <ChangeEmailButton onClick={onChangeEmail} />}
+        </div>
+        {onChangeEmail && (
+          <p className="text-xs text-muted">
+            Changed separately — the new address confirms a code first.
+          </p>
+        )}
       </div>
 
       {canChangeRole && (
@@ -540,7 +621,7 @@ function StaffProfileForm({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="edit-phone">Phone</Label>
           <Input

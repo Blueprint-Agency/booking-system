@@ -85,16 +85,17 @@ export default function InstructorProfilePage() {
         </div>
       ) : (
         <form onSubmit={handleSave} className="space-y-6">
-          <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+          <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
             <h2 className="mb-4 text-sm font-semibold text-ink">Account</h2>
             <dl className="grid gap-3 sm:grid-cols-2">
-              <div>
+              <div className="min-w-0">
                 <dt className="text-xs text-muted">Name</dt>
-                <dd className="text-sm text-ink">{profile.name}</dd>
+                <dd className="break-words text-sm text-ink">{profile.name}</dd>
               </div>
-              <div>
+              <div className="min-w-0">
                 <dt className="text-xs text-muted">Email</dt>
-                <dd className="text-sm text-ink">{profile.email}</dd>
+                {/* An address has no spaces to wrap at; let it break anywhere. */}
+                <dd className="break-all text-sm text-ink">{profile.email}</dd>
               </div>
               <div>
                 <dt className="text-xs text-muted">Role</dt>
@@ -111,7 +112,7 @@ export default function InstructorProfilePage() {
             </p>
           </section>
 
-          <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+          <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
             <h2 className="mb-4 text-sm font-semibold text-ink">Public profile</h2>
             <div className="space-y-4">
               <div className="space-y-1.5">
@@ -138,7 +139,7 @@ export default function InstructorProfilePage() {
           </section>
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
               {saving ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

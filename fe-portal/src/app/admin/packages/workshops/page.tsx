@@ -127,11 +127,11 @@ function Section({
       <div className="rounded-xl border border-border bg-card shadow-soft">
         <ul className="divide-y divide-border">
           {visible.map((w) => (
-            <li key={w.id} className="flex items-center justify-between gap-4 px-4 py-3">
+            <li key={w.id} className="flex items-center justify-between gap-3 px-4 py-3 sm:gap-4">
               <div className="min-w-0">
                 <Link
                   href={`/admin/packages/workshops/${w.id}/edit`}
-                  className="font-medium text-ink hover:text-accent"
+                  className="break-words font-medium text-ink hover:text-accent"
                 >
                   {w.name}
                 </Link>
@@ -143,7 +143,7 @@ function Section({
                   {w.lifecycle === "cancelled" && <Badge tone="neutral">Cancelled</Badge>}
                 </div>
               </div>
-              <Link href={`/admin/packages/workshops/${w.id}/edit`}>
+              <Link href={`/admin/packages/workshops/${w.id}/edit`} className="shrink-0">
                 <Button size="sm" variant="ghost">
                   Edit
                 </Button>

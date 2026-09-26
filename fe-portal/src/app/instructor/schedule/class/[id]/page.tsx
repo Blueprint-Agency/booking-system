@@ -53,7 +53,7 @@ export default function InstructorClassPage({ params }: { params: Promise<{ id: 
     <div className="mx-auto max-w-3xl">
       <Link
         href="/instructor/schedule"
-        className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink"
+        className="mb-2 inline-flex min-h-10 items-center gap-1 text-sm text-muted hover:text-ink sm:min-h-0"
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Back to my schedule
       </Link>
@@ -83,14 +83,16 @@ function ClassPage({ data, onChanged }: { data: InstructorClassDetail; onChanged
 
   return (
     <>
-      <header className="mb-6 border-b border-border pb-6">
-        <div className="mb-2 flex items-center gap-2">
+      <header className="mb-5 border-b border-border pb-5 sm:mb-6 sm:pb-6">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
           <Badge tone="cyan">Class</Badge>
           {state === "cancelled" && <Badge tone="error">Cancelled</Badge>}
           {state === "ongoing" && <Badge tone="warning">Ongoing</Badge>}
           {state === "completed" && <Badge tone="sage">Completed</Badge>}
         </div>
-        <h1 className="text-2xl font-semibold text-ink">{data.class_type?.name ?? "Class"}</h1>
+        <h1 className="break-words text-xl font-semibold text-ink sm:text-2xl">
+          {data.class_type?.name ?? "Class"}
+        </h1>
         <p className="mt-1 text-sm text-muted">
           {[formatDate(data.starts_at), `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`, where]
             .filter(Boolean)

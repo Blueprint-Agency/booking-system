@@ -46,7 +46,7 @@ export function WaitlistPanel({
     return (
       <section
         aria-label="Waitlist"
-        className="mt-6 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-xl border border-dashed border-border bg-card px-5 py-4"
+        className="mt-6 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-xl border border-dashed border-border bg-card px-4 py-4 sm:px-5"
       >
         <h2 className="text-sm font-semibold text-ink">Waitlist</h2>
         <p className="text-xs text-muted">
@@ -147,7 +147,7 @@ function WaitlistEntry({
           <span className="w-6 shrink-0 text-right font-semibold tabular-nums text-muted">
             #{row.position}
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 break-words">
             {role === "admin" ? (
               <Link href={`/admin/customers/${row.client.id}`} className="text-ink hover:text-accent">
                 {row.client.name}
@@ -161,7 +161,14 @@ function WaitlistEntry({
         <Badge tone={canPay ? "neutral" : "warning"}>{paymentStatusLine(row.payment_status)}</Badge>
         {canAct && !confirmRemove && (
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <Button type="button" size="sm" variant="secondary" disabled={busy !== null} onClick={() => add()}>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-10 sm:h-8"
+              disabled={busy !== null}
+              onClick={() => add()}
+            >
               {busy === "add" && <Loader2 className="h-4 w-4 animate-spin" />}
               Add to class
             </Button>
@@ -169,6 +176,7 @@ function WaitlistEntry({
               type="button"
               size="sm"
               variant="ghost"
+              className="h-10 sm:h-8"
               disabled={busy !== null}
               onClick={() => setConfirmRemove(true)}
             >
@@ -177,13 +185,27 @@ function WaitlistEntry({
           </div>
         )}
         {canAct && confirmRemove && (
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          // Wraps: the question plus both buttons is wider than a phone's row.
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             <span className="text-xs text-muted">Remove from the waitlist?</span>
-            <Button type="button" size="sm" variant="secondary" disabled={busy !== null} onClick={remove}>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-10 sm:h-8"
+              disabled={busy !== null}
+              onClick={remove}
+            >
               {busy === "remove" && <Loader2 className="h-4 w-4 animate-spin" />}
               Remove
             </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmRemove(false)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-10 sm:h-8"
+              onClick={() => setConfirmRemove(false)}
+            >
               Keep
             </Button>
           </div>

@@ -217,7 +217,7 @@ function NewSeriesForm() {
       )}
 
       <div className="space-y-6">
-        <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
           <h2 className="mb-4 text-sm font-semibold text-ink">Class details</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -277,7 +277,7 @@ function NewSeriesForm() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
           <h2 className="mb-4 text-sm font-semibold text-ink">Every week</h2>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -324,7 +324,7 @@ function NewSeriesForm() {
           </p>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
           <h2 className="mb-4 text-sm font-semibold text-ink">Capacity & price</h2>
           <div className="space-y-4">
             <CapacityFields value={capacity} onChange={setCapacity} waitlistsOn={waitlistsOn} />
@@ -342,9 +342,9 @@ function NewSeriesForm() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <h2 className="text-sm font-semibold text-ink">Dates</h2>
               <p className="text-xs text-muted">
                 Untick a date to skip it, such as a public holiday.

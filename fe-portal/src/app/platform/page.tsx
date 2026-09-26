@@ -373,7 +373,7 @@ export default function PlatformPage() {
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-ink">{tenant.name}</span>
+                  <span className="min-w-0 break-words font-medium text-ink">{tenant.name}</span>
                   <StatusBadge status={tenant.status} />
                   {/* A studio with no staff is one nobody can sign in to. It is
                       a legitimate step — a studio created to receive an archive
@@ -393,7 +393,7 @@ export default function PlatformPage() {
                   {tenant.slug} · {tenant.timezone}
                 </p>
                 <p
-                  className={`mt-0.5 truncate text-sm ${tenant.term.ended ? "text-error" : "text-muted"}`}
+                  className={`mt-0.5 break-words text-sm sm:truncate ${tenant.term.ended ? "text-error" : "text-muted"}`}
                 >
                   {termLine(tenant)}
                 </p>
@@ -403,7 +403,9 @@ export default function PlatformPage() {
                     payments until it leaves it (#293) — and the account id is
                     the only thing anyone can ever see about a studio's own
                     credentials, so it is the only way to spot the wrong ones. */}
-                <p className="mt-0.5 truncate text-sm text-muted">
+                {/* Wraps rather than truncates on a phone: the account id is
+                    the part that would be cut, and it is the part to check. */}
+                <p className="mt-0.5 wrap-anywhere text-sm text-muted sm:truncate">
                   {tenant.payments.configured
                     ? `Charges on its own account · ${tenant.payments.account_id}`
                     : "Payments not set up"}
@@ -443,7 +445,10 @@ export default function PlatformPage() {
                   on — and everything else behind the menu. Most of these are
                   done once in a studio's life; eight equal buttons on every row
                   made the rare, dangerous ones as loud as the routine ones. */}
-              <div className="flex items-center gap-2">
+              {/* Right-aligned when the row stacks on a phone, so the menu —
+                  which opens leftwards from the trigger — has the row's width
+                  to open into instead of running off the left edge. */}
+              <div className="flex items-center justify-end gap-2">
                 {/* Offered only while the studio has nobody, because that is the
                     only case the backend accepts: adding the rest of a working
                     studio's staff is that studio's own job. For a studio in this
@@ -681,7 +686,7 @@ function RowMenu({ label, busy, groups }: { label: string; busy: boolean; groups
         <div
           role="menu"
           aria-label={label}
-          className="absolute right-0 top-full z-20 mt-1 w-56 rounded-md border border-border bg-card p-1 shadow-soft"
+          className="absolute right-0 top-full z-20 mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-card p-1 shadow-soft"
         >
           {shown.map((group, i) => (
             <div key={i} className={i > 0 ? "mt-1 border-t border-border pt-1" : undefined}>
@@ -695,7 +700,7 @@ function RowMenu({ label, busy, groups }: { label: string; busy: boolean; groups
                     setOpen(false);
                     action.onSelect();
                   }}
-                  className={`flex w-full items-start gap-2.5 rounded px-3 py-2 text-left text-sm hover:bg-paper disabled:pointer-events-none disabled:opacity-60 ${
+                  className={`flex w-full items-start gap-2.5 rounded px-3 py-2.5 text-left text-sm hover:bg-paper sm:py-2 disabled:pointer-events-none disabled:opacity-60 ${
                     action.danger ? "text-error" : "text-ink"
                   }`}
                 >

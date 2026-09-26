@@ -38,11 +38,15 @@ function LocationScopeInfo() {
   }, [open]);
 
   return (
+    // Relative from sm up only: on a phone the panel anchors to the sticky top
+    // bar instead, so it spans the screen rather than hanging off its edge.
     <div
       ref={ref}
-      className="relative"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      className="sm:relative"
+      // Hover opens it for a mouse only. A tap fires pointerenter too, and the
+      // click that follows would toggle it straight back shut.
+      onPointerEnter={(e) => e.pointerType === "mouse" && setOpen(true)}
+      onPointerLeave={(e) => e.pointerType === "mouse" && setOpen(false)}
     >
       <button
         type="button"
@@ -51,7 +55,7 @@ function LocationScopeInfo() {
         aria-describedby="location-scope-info"
         onClick={() => setOpen((o) => !o)}
         onBlur={() => setOpen(false)}
-        className="inline-flex h-9 w-7 items-center justify-center rounded-md text-muted transition-colors hover:text-ink focus-visible:text-ink focus-visible:outline-none"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted transition-colors hover:text-ink focus-visible:text-ink focus-visible:outline-none sm:w-7"
       >
         <Info className="h-4 w-4" />
       </button>
@@ -60,7 +64,7 @@ function LocationScopeInfo() {
         <div
           id="location-scope-info"
           role="tooltip"
-          className="absolute right-0 top-full z-50 mt-2 w-72 rounded-lg border border-border bg-card p-3.5 text-left shadow-modal"
+          className="absolute inset-x-3 top-full z-50 mt-2 rounded-lg border border-border bg-card p-3.5 text-left shadow-modal sm:inset-x-auto sm:right-0 sm:w-72"
         >
           <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-muted">
             Switching location affects
@@ -101,28 +105,41 @@ export function WorkspaceSwitcher() {
 
   useEffect(() => {
     if (!open) return;
-    function onClick(e: MouseEvent) {
+    function onPointerDown(e: PointerEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   return (
-    <div className="flex items-center gap-1">
-      <div className="relative" ref={ref}>
+    <div className="flex min-w-0 items-center gap-1">
+      {/* The switcher sits at the left of the top bar, so a panel anchored to
+          its right edge opened off-screen on a phone and nothing in it could be
+          tapped. Below sm it anchors to the sticky bar and spans the screen. */}
+      <div className="min-w-0 sm:relative" ref={ref}>
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-paper px-3 text-sm text-ink hover:border-accent/40"
+          aria-expanded={open}
+          className="inline-flex h-9 max-w-full items-center gap-2 rounded-md border border-border bg-paper px-3 text-sm text-ink hover:border-accent/40"
         >
-          <MapPin className="h-4 w-4 text-muted" />
-          <span className="font-medium">{activeLocation?.name ?? "No workspace"}</span>
-          <ChevronDown className="h-3.5 w-3.5 text-muted" />
+          <MapPin className="h-4 w-4 shrink-0 text-muted" />
+          <span className="truncate font-medium">{activeLocation?.name ?? "No workspace"}</span>
+          <ChevronDown
+            className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`}
+          />
         </button>
 
         {open && (
-          <div className="absolute right-0 z-40 mt-1 w-64 rounded-lg border border-border bg-card shadow-modal">
+          <div className="absolute inset-x-3 top-full z-40 mt-1 max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-lg border border-border bg-card shadow-modal sm:inset-x-auto sm:left-0 sm:w-64">
             <div className="p-1">
               {accessibleLocations.length === 0 && (
                 <div className="px-3 py-2 text-xs text-muted">No accessible locations.</div>
@@ -135,7 +152,7 @@ export function WorkspaceSwitcher() {
                     setActiveLocationId(loc.id);
                     setOpen(false);
                   }}
-                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-paper"
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm hover:bg-paper sm:py-2"
                 >
                   <span className="flex-1 truncate">{loc.name}</span>
                   {activeLocation?.id === loc.id && <Check className="h-4 w-4 text-accent" />}
@@ -153,7 +170,7 @@ export function WorkspaceSwitcher() {
                       setShowCreate(true);
                       setOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-ink hover:bg-paper"
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm text-ink hover:bg-paper sm:py-2"
                   >
                     <Plus className="h-4 w-4 text-muted" /> Add location
                   </button>
@@ -163,7 +180,7 @@ export function WorkspaceSwitcher() {
                       setShowManage(true);
                       setOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-ink hover:bg-paper"
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm text-ink hover:bg-paper sm:py-2"
                   >
                     <Settings className="h-4 w-4 text-muted" /> Manage locations
                   </button>

@@ -134,7 +134,7 @@ export function SupportingInstructorsField({
                   onClick={() =>
                     onChange(value.filter((row) => row.instructorId !== s.instructorId))
                   }
-                  className="shrink-0 text-muted hover:text-ink disabled:opacity-50"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-lg text-muted hover:bg-paper hover:text-ink disabled:opacity-50"
                   aria-label={`Remove ${name}`}
                 >
                   ×

@@ -136,11 +136,13 @@ export default function UnfinishedPurchasesPage() {
             {visible.map((p) => (
               <div
                 key={p.id}
-                className="rounded-xl border border-warning/40 bg-warning/5 px-5 py-4 shadow-soft"
+                className="rounded-xl border border-warning/40 bg-warning/5 px-4 py-4 shadow-soft sm:px-5"
               >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-ink">{p.item_name}</p>
+                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                  {/* Wraps rather than truncates: on a phone the amount leaves
+                      the name too little room to be read in one line. */}
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm font-medium text-ink">{p.item_name}</p>
                     <p className="mt-1 text-xs text-muted">
                       <Link
                         href={`/admin/customers/${p.client_id}`}

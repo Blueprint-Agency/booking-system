@@ -30,7 +30,7 @@ export default function WaiverPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <form onSubmit={handleSave} className="space-y-4 lg:col-span-2">
-          <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+          <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
               <Label htmlFor="waiver-body">Waiver text</Label>
               <span className="text-[11px] text-muted">
@@ -41,7 +41,7 @@ export default function WaiverPage() {
               id="waiver-body"
               value={draftHtml}
               onChange={(e) => setDraftHtml(e.target.value)}
-              className="font-mono flex min-h-[480px] w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="font-mono flex min-h-[320px] w-full sm:min-h-[480px] rounded-lg border border-border bg-paper px-3 py-2 text-sm placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </section>
 
@@ -80,7 +80,7 @@ export default function WaiverPage() {
           <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
             <h3 className="mb-2 text-sm font-semibold text-ink">Preview</h3>
             <div
-              className="max-h-96 overflow-y-auto rounded-lg border border-border bg-paper p-3 text-xs [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-1 [&_h3]:mt-3 [&_h3]:font-semibold [&_p]:my-1.5"
+              className="max-h-96 overflow-y-auto break-words rounded-lg border border-border bg-paper p-3 text-xs [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-1 [&_h3]:mt-3 [&_h3]:font-semibold [&_p]:my-1.5"
               dangerouslySetInnerHTML={{ __html: draftHtml }}
             />
           </section>

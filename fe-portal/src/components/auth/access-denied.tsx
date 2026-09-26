@@ -56,9 +56,9 @@ export function AccessDenied({
         <div className="mb-6 flex items-center justify-center gap-2.5">
           <StudioMark size="auth" badge="Staff" />
         </div>
-        <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-soft">
+        <div className="rounded-2xl border border-border bg-card p-5 text-center shadow-soft sm:p-6">
           <h1 className="text-base font-semibold text-ink">{copy.title}</h1>
-          <p className="mt-2 text-sm text-muted">
+          <p className="mt-2 break-words text-sm text-muted">
             {!copy.namesAccount ? (
               copy.detail
             ) : email ? (

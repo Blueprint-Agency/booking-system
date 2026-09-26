@@ -188,7 +188,7 @@ function ClassDetail({ id }: { id: string }) {
         </p>
       )}
 
-      <section className="mb-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+      <section className="mb-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
         <h2 className="mb-4 text-sm font-semibold text-ink">Details</h2>
         <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           <DetailField label="Date" value={formatDate(data.starts_at)} />
@@ -395,7 +395,8 @@ function ClassEditor({
             ))}
           </select>
         </div>
-        <div />
+        {/* Empty right column on a wide screen; a blank gap on a phone. */}
+        <div className="hidden sm:block" />
         <div className="space-y-1.5">
           <Label htmlFor="cls-main-ins">Main instructor</Label>
           <select
@@ -640,7 +641,7 @@ function PtDetail({ id }: { id: string }) {
         </p>
       )}
 
-      <section className="mb-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+      <section className="mb-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
         <h2 className="mb-4 text-sm font-semibold text-ink">Details</h2>
         <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           <DetailField label="Date" value={formatDate(data.starts_at)} />
@@ -655,7 +656,7 @@ function PtDetail({ id }: { id: string }) {
         </dl>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+      <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
         <h2 className="mb-3 text-sm font-semibold text-ink">
           Customers ({data.clients.length})
         </h2>
@@ -781,7 +782,7 @@ function PtEditor({
   }
 
   return (
-    <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+    <section className="mt-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
       <h2 className="mb-4 text-sm font-semibold text-ink">Edit private session</h2>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
@@ -797,7 +798,7 @@ function PtEditor({
             <option value="2on1">2-on-1</option>
           </select>
         </div>
-        <div />
+        <div className="hidden sm:block" />
         <div className="space-y-1.5">
           <Label htmlFor="pt-main-ins">Main instructor</Label>
           <select
@@ -996,10 +997,10 @@ function WorkshopDetail({ id }: { id: string }) {
         title={data.name}
         meta={[dateMeta, locName, instructorNames].filter(Boolean)}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Link
               href={`/admin/packages/workshops/${data.id}/edit`}
-              className="rounded-md border border-border bg-card px-3 py-1 text-xs text-muted hover:border-accent/40 hover:text-ink"
+              className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs text-muted hover:border-accent/40 hover:text-ink sm:h-8"
             >
               Edit content
             </Link>
@@ -1030,15 +1031,18 @@ function WorkshopDetail({ id }: { id: string }) {
         </p>
       )}
 
-      <section className="mb-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+      <section className="mb-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
         <h2 className="mb-3 text-sm font-semibold text-ink">Days</h2>
         {sortedDays.length === 0 ? (
           <p className="text-sm text-muted">No days scheduled.</p>
         ) : (
           <ul className="divide-y divide-border">
             {sortedDays.map((d) => (
-              <li key={d.id} className="flex items-center justify-between py-2 text-sm">
-                <div>
+              <li
+                key={d.id}
+                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 text-sm"
+              >
+                <div className="min-w-0">
                   <div className="font-medium text-ink">
                     Day {d.ord} — {formatDate(d.starts_at)}
                   </div>
@@ -1056,7 +1060,7 @@ function WorkshopDetail({ id }: { id: string }) {
         )}
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+      <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
         <h2 className="mb-3 text-sm font-semibold text-ink">Pricing tiers</h2>
         {sortedTiers.length === 0 ? (
           <p className="text-sm text-muted">No tiers configured.</p>
@@ -1064,9 +1068,9 @@ function WorkshopDetail({ id }: { id: string }) {
           <ul className="divide-y divide-border">
             {sortedTiers.map((t) => (
               <li key={t.id} className="py-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium text-ink">{t.name}</div>
-                  <div className="text-ink">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 break-words font-medium text-ink">{t.name}</div>
+                  <div className="shrink-0 text-ink">
                     {formatSgd(Number(t.regular_price_sgd))}
                   </div>
                 </div>
@@ -1167,7 +1171,7 @@ function CorporateDetail({ id }: { id: string }) {
           pkg && (
             <Link
               href={`/admin/packages/corporate/${pkg.id}/edit`}
-              className="rounded-md border border-border bg-card px-3 py-1 text-xs text-muted hover:border-accent/40 hover:text-ink"
+              className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs text-muted hover:border-accent/40 hover:text-ink sm:h-8"
             >
               View package
             </Link>
@@ -1306,7 +1310,7 @@ function CorporateEditor({
   }
 
   return (
-    <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+    <section className="mt-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
       <div className="mb-4 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink">Session</h2>
         {!cancelled && (
@@ -1376,7 +1380,7 @@ function CorporateEditor({
                         prev.filter((x) => x !== sid),
                       )
                     }
-                    className="text-muted hover:text-ink disabled:opacity-50"
+                    className="-my-1 -mr-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-muted hover:text-ink disabled:opacity-50"
                     aria-label={`Remove ${name}`}
                   >
                     ×
@@ -1514,13 +1518,15 @@ function DetailHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <header className="mb-6 border-b border-border pb-6">
-      <div className="mb-2 flex items-center gap-2">
+    <header className="mb-5 border-b border-border pb-5 sm:mb-6 sm:pb-6">
+      {/* Wraps so a workshop's two actions drop under the badges on a phone
+          instead of pushing the row off-screen. */}
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         {badge}
         <StateBadge state={state} />
         {action && <div className="ml-auto">{action}</div>}
       </div>
-      <h1 className="text-2xl font-semibold text-ink">{title}</h1>
+      <h1 className="break-words text-xl font-semibold text-ink sm:text-2xl">{title}</h1>
       {meta.length > 0 && <p className="mt-1 text-sm text-muted">{meta.join(" · ")}</p>}
     </header>
   );
@@ -1561,11 +1567,11 @@ function LoadingDetail({ label }: { label: string }) {
 function ErrorDetail({ kind, message }: { kind: string; message: string }) {
   return (
     <DetailFrame>
-      <header className="mb-6 border-b border-border pb-6">
+      <header className="mb-5 border-b border-border pb-5 sm:mb-6 sm:pb-6">
         <div className="mb-2 flex items-center gap-2">
           <Badge tone="neutral">{kind}</Badge>
         </div>
-        <h1 className="text-2xl font-semibold text-ink">Couldn’t load detail</h1>
+        <h1 className="text-xl font-semibold text-ink sm:text-2xl">Couldn’t load detail</h1>
       </header>
       <div className="rounded-xl border border-error/30 bg-error/5 p-6 text-center text-sm text-error">
         {message}

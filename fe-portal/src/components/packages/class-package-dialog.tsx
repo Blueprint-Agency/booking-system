@@ -65,7 +65,9 @@ export function ClassPackageDialog({
                 key={k}
                 type="button"
                 onClick={() => setKind(k)}
-                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                // Tighter padding on a phone so the three labels keep to one
+                // line each instead of wrapping inside a third of a dialog.
+                className={`min-h-10 min-w-0 flex-1 rounded-lg border px-1.5 py-2 text-sm font-medium leading-tight transition sm:px-3 ${
                   kind === k
                     ? "border-accent bg-accent/10 text-accent"
                     : "border-border bg-paper text-muted hover:bg-warm hover:text-ink"

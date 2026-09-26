@@ -115,7 +115,7 @@ export default function PtRequestsPage() {
               key={f}
               type="button"
               onClick={() => setTab(f)}
-              className={`rounded-full border px-3 py-1 text-xs transition ${
+              className={`h-9 rounded-full border px-3 text-xs transition sm:h-8 ${
                 tab === f
                   ? "border-accent bg-accent/10 text-ink"
                   : "border-border bg-card text-muted"
@@ -162,8 +162,8 @@ export default function PtRequestsPage() {
                   >
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium text-ink">{r.client.name}</div>
-                        <div className="text-xs text-muted">
+                        <div className="break-words font-medium text-ink">{r.client.name}</div>
+                        <div className="break-words text-xs text-muted">
                           {r.session_type.toUpperCase()} · {ptClassTypeName(r.class_type)}
                           {first
                             ? ` · ${first.proposed_date} ${ptSlotTime(first)}`

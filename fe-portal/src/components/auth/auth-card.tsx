@@ -9,7 +9,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
         <div className="mb-6 flex items-center justify-center gap-2.5">
           <StudioMark size="auth" badge="Staff" />
         </div>
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft sm:p-6">
           {children}
         </div>
       </div>

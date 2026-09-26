@@ -125,19 +125,21 @@ function MoneyChain({
   ];
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
-      <div className="grid sm:grid-cols-2 lg:grid-cols-5">
+      {/* Two-up from the smallest screen, Net across the full width beneath:
+          five stacked rows made the sum a scroll long on a phone. */}
+      <div className="grid grid-cols-2 lg:grid-cols-5">
         {terms.map((t) => (
           <div
             key={t.label}
-            className="border-b border-border px-4 py-3 sm:border-r lg:border-b-0"
+            className="min-w-0 border-b border-border px-3 py-3 odd:border-r sm:px-4 lg:border-b-0 lg:border-r"
           >
             <div className="text-xs text-muted">{t.label}</div>
-            <div className="mt-0.5 text-lg font-semibold tabular-nums text-ink">
+            <div className="mt-0.5 break-words text-base font-semibold tabular-nums text-ink sm:text-lg">
               {t.value}
             </div>
           </div>
         ))}
-        <div className="bg-accent/5 px-4 py-3">
+        <div className="col-span-2 bg-accent/5 px-3 py-3 sm:px-4 lg:col-span-1">
           <div className="text-xs font-semibold uppercase tracking-wide text-accent">
             Net
           </div>
@@ -314,7 +316,7 @@ function SalesByCategory({ data }: { data: FinanceOverview }) {
                     </span>
                   )}
                   <span
-                    className={`w-16 shrink-0 text-right text-sm tabular-nums ${
+                    className={`min-w-16 shrink-0 text-right text-sm tabular-nums ${
                       sold ? "font-medium text-ink" : "text-muted"
                     }`}
                   >
@@ -363,13 +365,19 @@ function ByInstructor({ data }: { data: FinanceOverview }) {
       ) : (
         <ul className="space-y-2">
           {rows.map((t) => (
-            <li key={t.instructor_id} className="flex items-center gap-3">
-              <span className="w-32 shrink-0 truncate text-sm text-ink">
+            // On a phone the bar drops to its own full-width line under the
+            // figures: in one row the fixed name and amount columns left it a
+            // few pixels wide, and the amount spilled out of its box.
+            <li
+              key={t.instructor_id}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap"
+            >
+              <span className="min-w-0 flex-1 truncate text-sm text-ink sm:w-32 sm:flex-none sm:shrink-0">
                 {t.instructor_name}
               </span>
               {/* Pay is money out, so it is drawn in the warning tone the rest of
                   the page uses for money leaving, never in the sales indigo. */}
-              <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-warm">
+              <span className="order-last h-1.5 basis-full overflow-hidden rounded-full bg-warm sm:order-none sm:flex-1 sm:basis-auto">
                 <span
                   className="block h-full rounded-full bg-warning"
                   style={{ width: max > 0 ? `${(t.total_sgd / max) * 100}%` : "0%" }}
@@ -378,7 +386,7 @@ function ByInstructor({ data }: { data: FinanceOverview }) {
               <span className="shrink-0 text-[11px] text-muted">
                 {t.session_count} {t.session_count === 1 ? "session" : "sessions"}
               </span>
-              <span className="w-16 shrink-0 text-right text-sm font-medium tabular-nums text-ink">
+              <span className="min-w-16 shrink-0 text-right text-sm font-medium tabular-nums text-ink">
                 {formatSgd(t.total_sgd)}
               </span>
             </li>
@@ -445,11 +453,18 @@ function ClassPopularityPanel({ rows }: { rows: ClassPopularity[] }) {
       ) : (
         <ul className="space-y-2">
           {rows.map((r) => (
-            <li key={r.class_type_id} className="flex items-center gap-3">
-              <span className="w-40 shrink-0 truncate text-sm text-ink" title={r.name}>
+            // Same phone treatment as By instructor: the bar takes its own line.
+            <li
+              key={r.class_type_id}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap"
+            >
+              <span
+                className="min-w-0 flex-1 truncate text-sm text-ink sm:w-40 sm:flex-none sm:shrink-0"
+                title={r.name}
+              >
                 {r.name}
               </span>
-              <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-warm">
+              <span className="order-last h-1.5 basis-full overflow-hidden rounded-full bg-warm sm:order-none sm:flex-1 sm:basis-auto">
                 <span
                   className={`block h-full rounded-full ${trendColor(r)}`}
                   style={{ width: max > 0 ? `${(r.attended / max) * 100}%` : "0%" }}

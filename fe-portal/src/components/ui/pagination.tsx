@@ -66,7 +66,7 @@ export function Pagination({
         <Select
           value={pageSize}
           onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          className="h-7 w-auto py-0 pl-2 pr-7 text-xs"
+          className="h-9 w-auto py-0 pl-2 pr-7 text-xs sm:h-7"
           aria-label={`${noun[0].toUpperCase()}${noun.slice(1)} per page`}
         >
           {PAGE_SIZES.map((n) => (
@@ -80,7 +80,7 @@ export function Pagination({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 w-7 p-0"
+          className="h-9 w-9 p-0 sm:h-7 sm:w-7"
           disabled={page <= 1 || loading}
           onClick={() => onPageChange(page - 1)}
           aria-label="Previous page"
@@ -93,7 +93,7 @@ export function Pagination({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 w-7 p-0"
+          className="h-9 w-9 p-0 sm:h-7 sm:w-7"
           disabled={page >= pageCount || loading}
           onClick={() => onPageChange(page + 1)}
           aria-label="Next page"

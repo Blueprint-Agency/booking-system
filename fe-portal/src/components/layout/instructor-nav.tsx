@@ -141,7 +141,7 @@ export function InstructorMobileNavTrigger() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Open menu"
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-paper lg:hidden"
+        className="-ml-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-ink hover:bg-paper lg:hidden"
       >
         <Menu className="h-5 w-5" />
       </button>
@@ -164,7 +164,7 @@ export function InstructorMobileNavTrigger() {
                     type="button"
                     onClick={() => setOpen(false)}
                     aria-label="Close menu"
-                    className="rounded-md p-2 text-muted hover:bg-paper hover:text-ink"
+                    className="rounded-md p-2.5 text-muted hover:bg-paper hover:text-ink"
                   >
                     <X className="h-5 w-5" />
                   </button>

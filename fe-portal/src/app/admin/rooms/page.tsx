@@ -296,7 +296,7 @@ function RoomList({
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-ink">{room.name}</span>
+                  <span className="min-w-0 break-words text-sm font-medium text-ink">{room.name}</span>
                   {isArchived && <Badge tone="neutral">Archived</Badge>}
                 </div>
                 <div className="mt-0.5 flex items-center gap-1 text-xs text-muted">

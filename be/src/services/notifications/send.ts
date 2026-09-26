@@ -1,4 +1,4 @@
-import { frameTemplatedEmail } from './frame'
+import { frameTemplatedEmail, type FramedEmail } from './frame'
 import { sendMail } from '../../lib/mailer'
 import { tenantMailIdentity } from '../tenants/mail-identity'
 import { db } from '../../db'
@@ -110,9 +110,57 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       template: tpl,
       variables: vars,
     })
-  const email = frame(variables)
-  const loggedEmail = frame(logged)
+  await deliver({ tenantId, slug, recipient, identity, email: frame(variables), loggedEmail: frame(logged) })
+}
 
+/** Mail worded by the platform rather than a studio template, sent in the studio's name. */
+export type SystemMailSlug = 'staff_email_change_code' | 'staff_email_changed_notice'
+
+/**
+ * A studio's mail whose wording is not the studio's to edit — the security
+ * messages around a staff member's sign-in address (`services/auth/
+ * staff-email-change.ts`).
+ *
+ * They are the platform's copy, like the super portal's own mail, because a
+ * template row would have to exist before they could be sent: a studio is
+ * seeded its templates once, when it is created, and nothing refreshes an
+ * existing studio's (`db/seed/email-templates.ts`). They still wear the
+ * studio's name and `Reply-To`, pass the same send gate and file the same
+ * `email_log` row, secrets redacted — only the words are fixed.
+ *
+ * `render` is called twice: once for the message sent, and once with `redact`
+ * set for the copy the log keeps.
+ *
+ * Answers whether the send went out, because a code nobody receives is a flow
+ * that cannot finish — its caller has to be able to say so.
+ */
+export async function sendStudioSystemEmail(input: {
+  tenantId: string
+  slug: SystemMailSlug
+  recipient: TemplateRecipient
+  render: (studioName: string, redact: boolean) => FramedEmail
+}): Promise<boolean> {
+  const identity = await tenantMailIdentity(input.tenantId)
+  return deliver({
+    tenantId: input.tenantId,
+    slug: input.slug,
+    recipient: input.recipient,
+    identity,
+    email: input.render(identity.fromName, false),
+    loggedEmail: input.render(identity.fromName, true),
+  })
+}
+
+/** File the `email_log` row, send, and record how the send went. True when it went. */
+async function deliver(input: {
+  tenantId: string
+  slug: TemplateSlug | SystemMailSlug
+  recipient: TemplateRecipient
+  identity: Awaited<ReturnType<typeof tenantMailIdentity>>
+  email: FramedEmail
+  loggedEmail: FramedEmail
+}): Promise<boolean> {
+  const { tenantId, slug, recipient, identity, email, loggedEmail } = input
   const [logRow] = await db
     .insert(emailLog)
     .values({
@@ -152,6 +200,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
         sentAt: new Date(),
       })
       .where(and(eq(emailLog.tenantId, tenantId), eq(emailLog.id, logRow.id)))
+    return true
   } catch (err) {
     // The error OBJECT, so the stack survives — this is the catch a send fault
     // actually lands in, and callers swallow below it, so it is the last chance
@@ -168,6 +217,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       .set({ status: 'failed', error: msg })
       .where(and(eq(emailLog.tenantId, tenantId), eq(emailLog.id, logRow.id)))
     // Swallow — v1 emails are best-effort; failures show in email_log.
+    return false
   }
 }
 

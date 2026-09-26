@@ -116,7 +116,7 @@ export default function InstructorNewClassPage() {
     <div className="mx-auto max-w-3xl">
       <Link
         href="/instructor/schedule"
-        className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink"
+        className="mb-2 inline-flex min-h-10 items-center gap-1 text-sm text-muted hover:text-ink sm:min-h-0"
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Back to my schedule
       </Link>
@@ -132,7 +132,7 @@ export default function InstructorNewClassPage() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
           <h2 className="mb-4 text-sm font-semibold text-ink">Class details</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -156,10 +156,11 @@ export default function InstructorNewClassPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
           <h2 className="mb-4 text-sm font-semibold text-ink">When</h2>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5">
+          {/* The date takes its own row on a phone; the two times pair up under it. */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div className="col-span-2 space-y-1.5 sm:col-span-1">
               <Label htmlFor="d">Date</Label>
               <Input
                 id="d"
@@ -193,7 +194,7 @@ export default function InstructorNewClassPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
           <h2 className="mb-4 text-sm font-semibold text-ink">Capacity & credits</h2>
           <div className="space-y-4">
             <CapacityFields value={capacity} onChange={setCapacity} waitlistsOn={waitlistsOn} />

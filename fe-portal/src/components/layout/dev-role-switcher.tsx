@@ -33,7 +33,7 @@ export function DevRoleSwitcher() {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 rounded-full border border-border bg-paper px-2 py-1 text-xs sm:px-3 sm:py-1.5"
+        className="flex h-10 items-center gap-2 rounded-full border border-border bg-paper px-2 text-xs sm:h-auto sm:px-3 sm:py-1.5"
       >
         <div className="h-6 w-6 rounded-full bg-accent text-center text-[11px] font-semibold leading-6 text-white">
           {initial.toUpperCase()}
@@ -46,9 +46,9 @@ export function DevRoleSwitcher() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-64 rounded-lg border border-border bg-card shadow-modal">
+        <div className="absolute right-0 z-40 mt-1 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card shadow-modal">
           <div className="border-b border-border px-3 py-2">
-            <div className="text-sm font-medium text-ink">{currentStaff.name}</div>
+            <div className="truncate text-sm font-medium text-ink">{currentStaff.name}</div>
             <div className="truncate text-xs text-muted">{currentStaff.email}</div>
             <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted">
               {currentStaff.role}
@@ -75,7 +75,7 @@ export function DevRoleSwitcher() {
                   }
                   void signOutPortal().finally(() => router.push("/login"));
                 }}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-ink hover:bg-paper"
+                className="flex min-h-10 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-ink hover:bg-paper"
               >
                 <LogOut className="h-4 w-4" /> Sign out
               </button>

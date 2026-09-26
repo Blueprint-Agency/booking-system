@@ -62,7 +62,7 @@ export default function FeatureFlagsPage() {
       ) : (
         <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
           {flags.map((f) => (
-            <li key={f.key} className="flex items-start justify-between gap-4 p-5">
+            <li key={f.key} className="flex items-start justify-between gap-4 p-4 sm:p-5">
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-ink">{f.label}</div>
                 <p className="mt-1 text-sm text-muted">{f.description}</p>
@@ -77,7 +77,9 @@ export default function FeatureFlagsPage() {
                 aria-label={f.label}
                 disabled={busyKey !== null}
                 onClick={() => toggle(f)}
-                className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                // The before: box widens the hit area to thumb size without
+                // growing the switch itself.
+                className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors before:absolute before:-inset-2 before:content-[''] disabled:opacity-50 ${
                   f.enabled ? "bg-accent" : "bg-border"
                 }`}
               >

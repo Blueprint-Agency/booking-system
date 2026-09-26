@@ -169,7 +169,7 @@ export default function EditCorporatePackagePage() {
         title="Edit corporate package"
         description="B2B offering. Not visible to members."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {isArchived ? (
               <Badge tone="neutral">Archived</Badge>
             ) : (
@@ -202,7 +202,7 @@ export default function EditCorporatePackagePage() {
 
       <form
         onSubmit={onSave}
-        className="space-y-5 rounded-xl border border-border bg-card p-6 shadow-soft"
+        className="space-y-5 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6"
       >
         <div className="space-y-1.5">
           <Label htmlFor="cp-name">Name</Label>

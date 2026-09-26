@@ -92,10 +92,18 @@ export default function PromoCodesListPage() {
                   className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-paper"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium text-ink">{c.code}</div>
-                    <div className="mt-1 text-xs text-muted">
+                    <div className="break-words font-medium text-ink">{c.code}</div>
+                    <div className="mt-1 break-words text-xs text-muted">
                       {c.label} · {c.applies_to_all ? "Everything" : `${c.products.length} product${c.products.length === 1 ? "" : "s"}`}
                       {c.expires_at ? ` · Expires ${formatDate(c.expires_at)}` : " · Never expires"}
+                    </div>
+                    {/* The columns hidden on a narrow screen, folded under the
+                        code rather than dropped. */}
+                    <div className="mt-0.5 text-xs text-ink sm:hidden">
+                      {moneyOff(c)} <span className="text-muted">· {claimed(c)}</span>
+                    </div>
+                    <div className="mt-0.5 hidden text-xs text-muted sm:block md:hidden">
+                      {claimed(c)}
                     </div>
                   </div>
                   <div className="hidden sm:block min-w-[110px] text-right text-sm text-ink">
@@ -104,7 +112,7 @@ export default function PromoCodesListPage() {
                   <div className="hidden md:block min-w-[140px] text-right text-xs text-muted">
                     {claimed(c)}
                   </div>
-                  <div className="min-w-[80px] text-right">
+                  <div className="shrink-0 text-right sm:min-w-[80px]">
                     {c.status === "archived" ? (
                       <Badge tone="neutral">Archived</Badge>
                     ) : (

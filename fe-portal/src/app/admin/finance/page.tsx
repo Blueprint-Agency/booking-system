@@ -236,6 +236,62 @@ export default function FinancePage() {
     }
   }
 
+  /**
+   * The Money out cell: the inline pay box on an editable row, a dash on the
+   * rest. One render for the phone cards and the table both, so the two can't
+   * drift in what they let a reader edit. The box and the delete button grow
+   * to thumb size below md, where they are tapped rather than clicked.
+   */
+  function renderMoneyOut(row: FinanceRow) {
+    if (!row.editable) return <span className="text-muted">—</span>;
+    const key = rowKey(row);
+    const draft = drafts[key] ?? (row.pay_sgd == null ? "" : String(row.pay_sgd));
+    return (
+      <div className="flex items-center justify-end gap-2">
+        {savingKey === key && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />}
+        <div className="relative">
+          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">
+            S$
+          </span>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            inputMode="decimal"
+            placeholder="—"
+            aria-label={`Pay for ${row.variant ?? FINANCE_TYPE_LABEL[row.type]}${
+              row.user_name ? ` — ${row.user_name}` : ""
+            }`}
+            value={draft}
+            onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
+            onBlur={() => void saveAmount(row)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+            }}
+            className={`h-10 w-28 rounded-lg border py-1 pl-7 pr-2 text-right text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:h-9 ${
+              row.unpriced ? "border-warning/50 bg-warning/10" : "border-border bg-paper"
+            }`}
+          />
+        </div>
+        {row.kind === "manual" && (
+          <button
+            type="button"
+            aria-label="Delete entry"
+            disabled={deletingId === row.id}
+            onClick={() => void handleDeleteManual(row)}
+            className="rounded-md p-3 text-muted hover:bg-error/10 hover:text-error disabled:opacity-50 md:p-1.5"
+          >
+            {deletingId === row.id ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+          </button>
+        )}
+      </div>
+    );
+  }
+
   async function handleExport() {
     if (!api) return;
     setExporting(true);
@@ -254,7 +310,7 @@ export default function FinancePage() {
         title="Finance"
         description="Every transaction for the period — purchases, refunds and instructor pay. Pay rows are editable inline; purchases and refunds are the payment record and can't be changed here."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               variant="secondary"
@@ -292,7 +348,9 @@ export default function FinancePage() {
       <h2 className="mt-8 mb-2 text-sm font-semibold text-ink">Transactions</h2>
 
       {/* Filters — these narrow the table only, never the figures above. */}
-      <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card p-3 shadow-soft">
+      {/* On a phone each filter takes the full row — side by side they either
+          overflowed the card or wrapped into ragged half-width leftovers. */}
+      <div className="mb-4 flex flex-col gap-3 rounded-xl border border-border bg-card p-3 shadow-soft sm:flex-row sm:flex-wrap sm:items-end">
         <div className="space-y-1.5">
           <label htmlFor="fin-user" className="block text-xs font-medium text-muted">
             User
@@ -307,7 +365,7 @@ export default function FinancePage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Customer or instructor…"
-            className="h-9 min-w-[12rem] rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="h-10 w-full rounded-lg border sm:h-9 sm:w-auto sm:min-w-[12rem] border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />
         </div>
         <FilterSelect
@@ -338,7 +396,7 @@ export default function FinancePage() {
           allLabel="All methods"
           options={METHOD_CATEGORIES.map((m) => ({ val: m, label: METHOD_CATEGORY_LABEL[m] }))}
         />
-        <label className="flex h-9 items-center gap-2 text-xs font-medium text-muted">
+        <label className="flex h-10 items-center gap-2 text-xs font-medium text-muted sm:h-9">
           <input
             type="checkbox"
             checked={needsPay}
@@ -379,9 +437,62 @@ export default function FinancePage() {
         />
       ) : (
         <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
-          <div className="overflow-x-auto">
+          {/* Phones get one card per transaction: twelve columns scrolled
+              sideways put the pay box — the one thing to edit here — a long
+              swipe away from the name it belongs to. Same fields, stacked. */}
+          <ul className="divide-y divide-border md:hidden">
+            {visible.map((row) => (
+              <li key={rowKey(row)} className="space-y-2 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="break-words text-sm font-medium text-ink">
+                    {row.user_name ?? <span className="text-muted">—</span>}
+                  </div>
+                  <div className="text-xs text-muted">
+                    {formatDate(row.occurred_at)} · {formatTime(row.occurred_at)}
+                  </div>
+                  <div className="mt-1.5 leading-6">
+                    <RowTags row={row} />
+                  </div>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                  <MobileField label="Variant" wide>
+                    <span className="break-words text-ink">
+                      {row.variant ?? <span className="text-muted">—</span>}
+                    </span>
+                  </MobileField>
+                  <MobileField label="Price">
+                    <span className="text-muted">
+                      {row.list_price_sgd == null ? "—" : formatSgd(row.list_price_sgd)}
+                    </span>
+                  </MobileField>
+                  <MobileField label="Discount">
+                    <Discount row={row} />
+                  </MobileField>
+                  <MobileField label="Location">
+                    <span className="break-words text-muted">
+                      <LocationName row={row} />
+                    </span>
+                  </MobileField>
+                  <MobileField label="Code">
+                    <PromoCode row={row} />
+                  </MobileField>
+                  <MobileField label="Money in">
+                    <MoneyIn row={row} />
+                  </MobileField>
+                  <MobileField label="Method">
+                    <span className="text-muted">{row.method_label ?? "—"}</span>
+                  </MobileField>
+                </dl>
+                <div className="flex items-center justify-between gap-3 border-t border-border pt-2">
+                  <span className="text-xs text-muted">Money out</span>
+                  {renderMoneyOut(row)}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto md:block">
             {/* min-w makes the wrapper's overflow-x-auto actually do something:
-                a plain w-full table shrinks to the phone instead of scrolling,
+                a plain w-full table shrinks to the pane instead of scrolling,
                 and twelve columns then wrap one character per line. */}
             <table className="w-full min-w-[1080px] text-sm">
               <thead>
@@ -401,140 +512,44 @@ export default function FinancePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {visible.map((row) => {
-                  const key = rowKey(row);
-                  const draft =
-                    drafts[key] ?? (row.pay_sgd == null ? "" : String(row.pay_sgd));
-                  return (
-                    <tr key={key} className="hover:bg-warm/40">
-                      <td className="whitespace-nowrap px-3 py-2.5 text-muted">
-                        {formatDate(row.occurred_at)}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-muted">
-                        {formatTime(row.occurred_at)}
-                      </td>
-                      <td className="px-3 py-2.5 text-ink">
-                        {row.user_name ?? <span className="text-muted">—</span>}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5">
-                        <TypeTag row={row} />
-                        {row.refunded && row.kind !== "refund" && (
-                          <span className="ml-1.5 rounded-full border border-error/40 bg-error/10 px-1.5 py-0.5 text-[10px] text-error">
-                            Refunded
-                          </span>
-                        )}
-                        {/* Given by an admin, never sold (#176). Said on the
-                            row because the numbers beside it — a real list
-                            price against S$0 — otherwise read as a sale
-                            discounted to nothing, which is what the backend's
-                            marker exists to tell apart. It counts towards no
-                            total, here or in the tiles. */}
-                        {row.complimentary && (
-                          <span className="ml-1.5 rounded-full border border-border bg-paper px-1.5 py-0.5 text-[10px] text-muted">
-                            Free
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-ink">
-                        {row.variant ?? <span className="text-muted">—</span>}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-muted">
-                        {row.list_price_sgd == null ? "—" : formatSgd(row.list_price_sgd)}
-                      </td>
-                      <td className="px-3 py-2.5 text-muted">
-                        {row.unattributed ? (
-                          <span className="text-muted/60">Unattributed</span>
-                        ) : (
-                          row.location_name
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
-                        {row.discount_sgd == null || row.discount_sgd === 0 ? (
-                          <span className="text-muted">—</span>
-                        ) : (
-                          <span className="text-accent">
-                            −{formatSgd(row.discount_sgd)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {row.promo_code ? (
-                          <span className="rounded border border-border bg-paper px-1.5 py-0.5 text-[10px] text-ink">
-                            {row.promo_code}
-                          </span>
-                        ) : (
-                          <span className="text-muted">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
-                        {row.paid_sgd == null ? (
-                          <span className="text-muted">—</span>
-                        ) : (
-                          <span className={row.paid_sgd < 0 ? "text-error" : "text-ink"}>
-                            {formatSgd(row.paid_sgd)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-muted">
-                        {row.method_label ?? "—"}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        {row.editable ? (
-                          <div className="flex items-center justify-end gap-2">
-                            {savingKey === key && (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
-                            )}
-                            <div className="relative">
-                              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">
-                                S$
-                              </span>
-                              <input
-                                type="number"
-                                min={0}
-                                step="0.01"
-                                inputMode="decimal"
-                                placeholder="—"
-                                aria-label={`Pay for ${row.variant ?? FINANCE_TYPE_LABEL[row.type]}${
-                                  row.user_name ? ` — ${row.user_name}` : ""
-                                }`}
-                                value={draft}
-                                onChange={(e) =>
-                                  setDrafts((d) => ({ ...d, [key]: e.target.value }))
-                                }
-                                onBlur={() => void saveAmount(row)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") e.currentTarget.blur();
-                                }}
-                                className={`h-9 w-28 rounded-lg border py-1 pl-7 pr-2 text-right text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                                  row.unpriced
-                                    ? "border-warning/50 bg-warning/10"
-                                    : "border-border bg-paper"
-                                }`}
-                              />
-                            </div>
-                            {row.kind === "manual" && (
-                              <button
-                                type="button"
-                                aria-label="Delete entry"
-                                disabled={deletingId === row.id}
-                                onClick={() => void handleDeleteManual(row)}
-                                className="rounded-md p-1.5 text-muted hover:bg-error/10 hover:text-error disabled:opacity-50"
-                              >
-                                {deletingId === row.id ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-muted">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {visible.map((row) => (
+                  <tr key={rowKey(row)} className="hover:bg-warm/40">
+                    <td className="whitespace-nowrap px-3 py-2.5 text-muted">
+                      {formatDate(row.occurred_at)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-muted">
+                      {formatTime(row.occurred_at)}
+                    </td>
+                    <td className="px-3 py-2.5 text-ink">
+                      {row.user_name ?? <span className="text-muted">—</span>}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <RowTags row={row} />
+                    </td>
+                    <td className="px-3 py-2.5 text-ink">
+                      {row.variant ?? <span className="text-muted">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-muted">
+                      {row.list_price_sgd == null ? "—" : formatSgd(row.list_price_sgd)}
+                    </td>
+                    <td className="px-3 py-2.5 text-muted">
+                      <LocationName row={row} />
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      <Discount row={row} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <PromoCode row={row} />
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      <MoneyIn row={row} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-muted">
+                      {row.method_label ?? "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">{renderMoneyOut(row)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -590,6 +605,85 @@ function TypeTag({ row }: { row: FinanceRow }) {
   );
 }
 
+/** The Type cell's tags: the type itself, then any Refunded / Free marker. */
+function RowTags({ row }: { row: FinanceRow }) {
+  return (
+    <>
+      <TypeTag row={row} />
+      {row.refunded && row.kind !== "refund" && (
+        <span className="ml-1.5 rounded-full border border-error/40 bg-error/10 px-1.5 py-0.5 text-[10px] text-error">
+          Refunded
+        </span>
+      )}
+      {/* Given by an admin, never sold (#176). Said on the row because the
+          numbers beside it — a real list price against S$0 — otherwise read as
+          a sale discounted to nothing, which is what the backend's marker
+          exists to tell apart. It counts towards no total, here or in the
+          tiles. */}
+      {row.complimentary && (
+        <span className="ml-1.5 rounded-full border border-border bg-paper px-1.5 py-0.5 text-[10px] text-muted">
+          Free
+        </span>
+      )}
+    </>
+  );
+}
+
+function LocationName({ row }: { row: FinanceRow }) {
+  return row.unattributed ? (
+    <span className="text-muted/60">Unattributed</span>
+  ) : (
+    <>{row.location_name}</>
+  );
+}
+
+function Discount({ row }: { row: FinanceRow }) {
+  return row.discount_sgd == null || row.discount_sgd === 0 ? (
+    <span className="text-muted">—</span>
+  ) : (
+    <span className="text-accent">−{formatSgd(row.discount_sgd)}</span>
+  );
+}
+
+function PromoCode({ row }: { row: FinanceRow }) {
+  return row.promo_code ? (
+    <span className="rounded border border-border bg-paper px-1.5 py-0.5 text-[10px] text-ink">
+      {row.promo_code}
+    </span>
+  ) : (
+    <span className="text-muted">—</span>
+  );
+}
+
+function MoneyIn({ row }: { row: FinanceRow }) {
+  return row.paid_sgd == null ? (
+    <span className="text-muted">—</span>
+  ) : (
+    <span className={row.paid_sgd < 0 ? "text-error" : "text-ink"}>
+      {formatSgd(row.paid_sgd)}
+    </span>
+  );
+}
+
+/** One labelled figure on a phone ledger card. */
+function MobileField({
+  label,
+  wide,
+  children,
+}: {
+  label: string;
+  /** Spans both columns — for free text that would wrap a half-width cell. */
+  wide?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`min-w-0 ${wide ? "col-span-2" : ""}`}>
+      <dt className="text-muted">{label}</dt>
+      <dd className="mt-0.5 break-words tabular-nums">{children}</dd>
+    </div>
+  );
+}
+
 function FilterSelect({
   label,
   value,
@@ -609,7 +703,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-9 min-w-[10rem] rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="h-10 w-full rounded-lg border sm:h-9 sm:w-auto sm:min-w-[10rem] border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <option value="">{allLabel}</option>
         {options.map((o) => (

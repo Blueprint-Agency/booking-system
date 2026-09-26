@@ -104,26 +104,32 @@ export function LeaveCalendar() {
     <section className="mb-6">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h2 className="mr-auto text-base font-semibold text-ink">Who is away</h2>
-        {loading && <Loader2 className="h-4 w-4 animate-spin text-muted" />}
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label="Previous month"
-          onClick={() => setCursor((c) => addMonths(c, -1))}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <span className="min-w-[9rem] text-center text-sm font-semibold text-ink">
-          {formatDateFns(cursor, "MMMM yyyy")}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label="Next month"
-          onClick={() => setCursor((c) => addMonths(c, 1))}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
+        {/* One group, so on a phone the month stepper wraps as a whole to the
+            right instead of stranding an arrow on its own line. */}
+        <div className="ml-auto flex items-center gap-1">
+          {loading && <Loader2 className="h-4 w-4 animate-spin text-muted" />}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Previous month"
+            className="h-10 w-10 sm:h-8 sm:w-8"
+            onClick={() => setCursor((c) => addMonths(c, -1))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="min-w-[8.5rem] text-center text-sm font-semibold text-ink">
+            {formatDateFns(cursor, "MMMM yyyy")}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Next month"
+            className="h-10 w-10 sm:h-8 sm:w-8"
+            onClick={() => setCursor((c) => addMonths(c, 1))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {error && (

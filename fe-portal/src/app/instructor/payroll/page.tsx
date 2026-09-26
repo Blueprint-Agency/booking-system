@@ -13,7 +13,9 @@ import {
   fetchInstructorPayroll,
   payrollErrorMessage,
   type ApiInstructorPayrollResponse,
+  type ApiPayrollRow,
 } from "@/lib/payroll";
+import { cn } from "@/lib/utils";
 
 export default function InstructorPayrollPage() {
   const { api } = useWorkspace();
@@ -93,10 +95,26 @@ export default function InstructorPayrollPage() {
           description="Classes and private sessions you've taught appear here once they've finished."
         />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
-          {/* min-w so the wrapper scrolls on a phone instead of the columns
-              collapsing. */}
-          <table className="w-full min-w-[560px] text-sm">
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          {/* Below md each session is a stacked row — four columns don't fit a
+              phone, and a sideways-scrolling table hides the pay off-screen. */}
+          <ul className="divide-y divide-border md:hidden">
+            {data.rows.map((row) => (
+              <li key={`${row.kind}:${row.id}`} className="px-4 py-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="break-words text-ink">{row.label}</div>
+                    {row.kind === "pt" && <PrivateChip row={row} className="mt-1 inline-block" />}
+                  </div>
+                  <PayCell pay={row.instructor_pay_sgd} className="shrink-0" />
+                </div>
+                <div className="mt-1 text-xs text-muted">
+                  {formatDate(row.starts_at)} · <RowDuration row={row} />
+                </div>
+              </li>
+            ))}
+          </ul>
+          <table className="hidden w-full text-sm md:table">
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted">
                 <th className="px-3 py-2.5 font-medium">Class taught</th>
@@ -110,24 +128,14 @@ export default function InstructorPayrollPage() {
                 <tr key={`${row.kind}:${row.id}`} className="hover:bg-warm/40">
                   <td className="px-3 py-2.5">
                     <span className="text-ink">{row.label}</span>
-                    {row.kind === "pt" && (
-                      <span className="ml-2 rounded-full border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">
-                        Private · {row.session_type === "2on1" ? "2-on-1" : "1-on-1"}
-                      </span>
-                    )}
+                    {row.kind === "pt" && <PrivateChip row={row} className="ml-2" />}
                   </td>
                   <td className="px-3 py-2.5 text-muted">{formatDate(row.starts_at)}</td>
                   <td className="px-3 py-2.5 text-muted">
-                    {row.kind === "workshop"
-                      ? `${formatDate(row.starts_at)} – ${formatDate(row.ends_at)}`
-                      : formatDuration(row.starts_at, row.ends_at)}
+                    <RowDuration row={row} />
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">
-                    {row.instructor_pay_sgd == null ? (
-                      <span className="text-muted">—</span>
-                    ) : (
-                      <span className="text-ink">{formatSgd(row.instructor_pay_sgd)}</span>
-                    )}
+                  <td className="px-3 py-2.5 text-right">
+                    <PayCell pay={row.instructor_pay_sgd} />
                   </td>
                 </tr>
               ))}
@@ -136,5 +144,37 @@ export default function InstructorPayrollPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function PrivateChip({ row, className }: { row: ApiPayrollRow; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "rounded-full border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent",
+        className,
+      )}
+    >
+      Private · {row.session_type === "2on1" ? "2-on-1" : "1-on-1"}
+    </span>
+  );
+}
+
+/** A workshop's "duration" is its whole span of dates, not a length of time. */
+function RowDuration({ row }: { row: ApiPayrollRow }) {
+  return (
+    <>
+      {row.kind === "workshop"
+        ? `${formatDate(row.starts_at)} – ${formatDate(row.ends_at)}`
+        : formatDuration(row.starts_at, row.ends_at)}
+    </>
+  );
+}
+
+function PayCell({ pay, className }: { pay: number | null; className?: string }) {
+  return (
+    <span className={cn("tabular-nums", pay == null ? "text-muted" : "text-ink", className)}>
+      {pay == null ? "—" : formatSgd(pay)}
+    </span>
   );
 }

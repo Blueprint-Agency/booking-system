@@ -183,7 +183,7 @@ function NewClassForm() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
           <h2 className="mb-4 text-sm font-semibold text-ink">Class details</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -196,7 +196,9 @@ function NewClassForm() {
                 options={classTypes.map((c) => ({ val: c.id, label: c.name }))}
               />
             </div>
-            <div />
+            {/* Holds the right column empty on a wide screen; on a phone it
+                would only add a blank gap. */}
+            <div className="hidden sm:block" />
             <div className="space-y-1.5">
               <Label htmlFor="ins">Main instructor</Label>
               <SelectField
@@ -257,7 +259,7 @@ function NewClassForm() {
                     type="button"
                     key={d}
                     onClick={() => setDifficulty(d)}
-                    className={`rounded-full border px-3 py-1 text-xs transition ${
+                    className={`min-h-9 rounded-full border px-3.5 py-1 text-xs transition sm:min-h-8 ${
                       difficulty === d
                         ? "border-accent bg-accent/10 text-ink"
                         : "border-border bg-card text-muted hover:border-accent/40"
@@ -274,7 +276,7 @@ function NewClassForm() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
           <h2 className="mb-4 text-sm font-semibold text-ink">When</h2>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -311,7 +313,7 @@ function NewClassForm() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
           <h2 className="mb-4 text-sm font-semibold text-ink">Capacity & price</h2>
           <div className="space-y-4">
             <CapacityFields value={capacity} onChange={setCapacity} waitlistsOn={waitlistsOn} />

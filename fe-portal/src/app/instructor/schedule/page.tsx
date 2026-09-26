@@ -217,7 +217,7 @@ export default function InstructorSchedulePage() {
                       ) : (
                         <div className="truncate font-medium text-ink">{e.label}</div>
                       )}
-                      <div className="text-xs text-muted">
+                      <div className="break-words text-xs text-muted">
                         {formatTime(e.starts_at)}–{formatTime(e.ends_at)}
                         {e.location_id
                           ? ` · ${locName.get(e.location_id) ?? "Studio"}`
@@ -244,7 +244,7 @@ export default function InstructorSchedulePage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-9 text-error hover:bg-error/5 sm:h-8"
+                          className="h-10 text-error hover:bg-error/5 sm:h-8"
                           onClick={() => {
                             setCancelling(e);
                             setReason("");

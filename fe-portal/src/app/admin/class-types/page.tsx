@@ -356,7 +356,7 @@ function ClassTypeRow({
         {indent && <CornerDownRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />}
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-ink">{ct.name}</span>
+            <span className="min-w-0 break-words text-sm font-medium text-ink">{ct.name}</span>
             <Badge tone={ct.difficulty === "general" ? "neutral" : "accent"}>
               {DIFFICULTY_LABEL[ct.difficulty]}
             </Badge>
@@ -459,7 +459,7 @@ function ClassTypeDialog({
             id="ct-difficulty"
             value={difficulty}
             onChange={(e) => setDifficulty(e.target.value as ClassTypeDifficulty)}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
+            className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
           >
             {DIFFICULTY_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
@@ -478,7 +478,7 @@ function ClassTypeDialog({
             id="ct-parent"
             value={parentId}
             onChange={(e) => setParentId(e.target.value)}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
+            className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
           >
             <option value="">— None (top-level) —</option>
             {parents.map((p) => (

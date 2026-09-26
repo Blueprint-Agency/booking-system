@@ -326,13 +326,16 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
     );
   }
 
-  const linkButton = "font-medium text-accent hover:text-accent-deep";
+  // The before: box stretches each text link's hit area to thumb height
+  // without moving anything around it.
+  const linkButton =
+    "relative font-medium text-accent hover:text-accent-deep before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-['']";
 
   if (view === "mfa") {
     return (
       <>
         <h1 className="mb-1 text-lg font-semibold text-ink">Verify your sign in</h1>
-        <p className="mb-5 text-sm text-muted">
+        <p className="mb-5 break-words text-sm text-muted">
           {factor === "totp"
             ? "Enter the code from your authenticator app."
             : factor === "backup"
@@ -354,7 +357,7 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
             Verify and continue
           </Button>
         </form>
-        <div className="mt-4 flex flex-wrap gap-3 text-sm">
+        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-3 text-sm">
           {methods.includes("otp") && (
             <button type="button" onClick={emailMeACode} disabled={submitting} className={linkButton}>
               {factor === "otp" ? "Resend code" : "Email me a code"}
@@ -379,7 +382,7 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
     return (
       <>
         <h1 className="mb-1 text-lg font-semibold text-ink">Reset your password</h1>
-        <p className="mb-5 text-sm text-muted">
+        <p className="mb-5 break-words text-sm text-muted">
           Enter your email and we&apos;ll send you a link to choose a new password.
         </p>
         <form onSubmit={handleRequestReset} className="space-y-4">
@@ -410,7 +413,7 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
     return (
       <>
         <h1 className="mb-1 text-lg font-semibold text-ink">Check your email</h1>
-        <p className="mb-5 text-sm text-muted">
+        <p className="mb-5 break-words text-sm text-muted">
           If {email.trim()} has {superPortal ? "an operator" : "a staff"} account here, a link to choose a new password is on its way.
           It works once, for one hour.
         </p>
@@ -425,7 +428,7 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
     return (
       <>
         <h1 className="mb-1 text-lg font-semibold text-ink">Choose a new password</h1>
-        <p className="mb-5 text-sm text-muted">You&apos;ll sign in with it next.</p>
+        <p className="mb-5 break-words text-sm text-muted">You&apos;ll sign in with it next.</p>
         <form onSubmit={handleReset} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="newPassword">New password</Label>
@@ -472,7 +475,7 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
     return (
       <>
         <h1 className="mb-1 text-lg font-semibold text-ink">Check your email</h1>
-        <p className="mb-5 text-sm text-muted">
+        <p className="mb-5 break-words text-sm text-muted">
           If {email.trim()} can sign in here, we sent it a link to set your password. It works once, for one hour.
           Once your password is set, you&apos;re in.
         </p>
@@ -498,7 +501,7 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
     return (
       <>
         <h1 className="mb-1 text-lg font-semibold text-ink">Check your email</h1>
-        <p className="mb-5 text-sm text-muted">
+        <p className="mb-5 break-words text-sm text-muted">
           This is your first sign-in. We sent a link to {email.trim()} to set your password. It works once, for
           one hour. Once your password is set, sign in with it here.
         </p>

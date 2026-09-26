@@ -164,7 +164,7 @@ export function GivePackageDialog({
               setCrossLocation(false);
               setInstructorId("");
             }}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+            className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
           >
             <option value="">
               {loadError
@@ -193,7 +193,7 @@ export function GivePackageDialog({
               required
               value={locationId}
               onChange={(e) => setLocationId(e.target.value)}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+              className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
             >
               <option value="">Select a studio</option>
               {studios.map((l) => (
@@ -202,7 +202,7 @@ export function GivePackageDialog({
                 </option>
               ))}
             </select>
-            <label className="flex items-center gap-2 text-xs text-muted">
+            <label className="flex min-h-9 items-center gap-2 text-xs text-muted">
               <input
                 type="checkbox"
                 checked={crossLocation}
@@ -221,7 +221,7 @@ export function GivePackageDialog({
               required
               value={instructorId}
               onChange={(e) => setInstructorId(e.target.value)}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+              className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
             >
               <option value="">Select an instructor</option>
               {instructors.map((i) => (

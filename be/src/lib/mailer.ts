@@ -43,6 +43,7 @@ const CREDENTIAL_SLUGS: ReadonlySet<string> = new Set([
   'sign_in_code',
   'staff_two_factor_code',
   'staff_password_reset',
+  'staff_email_change_code',
   'platform_two_factor_code',
   'platform_password_reset',
 ])

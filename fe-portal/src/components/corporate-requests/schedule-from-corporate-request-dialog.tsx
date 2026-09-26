@@ -160,7 +160,7 @@ export function ScheduleFromCorporateRequestDialog({
       title="Schedule corporate session"
     >
       <form className="space-y-4" onSubmit={handleSubmit}>
-        <div className="rounded-md bg-paper p-3 text-xs text-muted">
+        <div className="break-words rounded-md bg-paper p-3 text-xs text-muted">
           <span className="font-medium text-ink">{request.client.name}</span>{" "}
           · {request.package.name}
         </div>
@@ -171,7 +171,9 @@ export function ScheduleFromCorporateRequestDialog({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        {/* One column on a phone: two leave the instructor select too narrow
+            to read a name. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>Date</Label>
             <Input
@@ -186,7 +188,7 @@ export function ScheduleFromCorporateRequestDialog({
             <select
               value={mainInstructorId}
               onChange={(e) => setMainInstructorId(e.target.value)}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+              className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
             >
               <option value="">Select…</option>
               {instructors.map((i) => (
@@ -219,14 +221,14 @@ export function ScheduleFromCorporateRequestDialog({
 
         {/* Location: a studio (with optional room) or the client's own off-site venue. */}
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Label>Location</Label>
             <div className="inline-flex rounded-md border border-border p-0.5 text-xs">
               <button
                 type="button"
                 onClick={() => setLocationMode("studio")}
                 className={cn(
-                  "rounded px-2.5 py-1 transition-colors",
+                  "h-8 rounded px-2.5 transition-colors sm:h-7",
                   !isCustomLocation ? "bg-ink text-paper" : "text-muted hover:text-ink",
                 )}
               >
@@ -236,7 +238,7 @@ export function ScheduleFromCorporateRequestDialog({
                 type="button"
                 onClick={() => setLocationMode("custom")}
                 className={cn(
-                  "rounded px-2.5 py-1 transition-colors",
+                  "h-8 rounded px-2.5 transition-colors sm:h-7",
                   isCustomLocation ? "bg-ink text-paper" : "text-muted hover:text-ink",
                 )}
               >
@@ -260,7 +262,7 @@ export function ScheduleFromCorporateRequestDialog({
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <LocationRoomFields
                 idPrefix="corp-req"
                 rooms={rooms}
@@ -294,7 +296,7 @@ export function ScheduleFromCorporateRequestDialog({
                         prev.filter((x) => x !== sid),
                       )
                     }
-                    className="text-muted hover:text-ink"
+                    className="-my-1 -mr-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-muted hover:text-ink"
                     aria-label={`Remove ${name}`}
                   >
                     ×

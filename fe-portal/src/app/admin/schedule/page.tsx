@@ -316,7 +316,7 @@ export default function SchedulePage() {
                   setType("all");
                   setInstructorId("all");
                 }}
-                className="ml-auto text-xs font-medium text-muted hover:text-ink"
+                className="ml-auto min-h-9 px-1 text-xs font-medium text-muted hover:text-ink sm:min-h-8"
               >
                 Clear all
               </button>

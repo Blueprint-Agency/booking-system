@@ -568,7 +568,7 @@ function Roster({
       data-testid="check-in-roster"
     >
       <header className="border-b border-border px-4 py-3 sm:px-5">
-        <h3 className="text-sm font-semibold text-ink">
+        <h3 className="break-words text-sm font-semibold text-ink">
           {session.name} · {sessionLine(session)}
         </h3>
         <p className="mt-0.5 text-xs text-muted">

@@ -30,9 +30,9 @@ export default function Error({
           An unexpected error occurred while loading this page.
         </p>
         {error.digest && (
-          <p className="mt-3 text-xs text-muted">Reference: {error.digest}</p>
+          <p className="mt-3 wrap-anywhere text-xs text-muted">Reference: {error.digest}</p>
         )}
-        <div className="mt-6 flex items-center justify-center gap-3">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <Button onClick={reset}>Try again</Button>
           <Link
             href="/"

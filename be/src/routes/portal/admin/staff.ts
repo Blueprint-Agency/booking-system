@@ -17,7 +17,17 @@ import {
   resendStaffSetPassword,
   signStaffOutEverywhere,
 } from '../../../services/auth/account-access'
+import {
+  cancelStaffEmailChange,
+  confirmStaffEmailChange,
+  EMAIL_CHANGE_RESEND_AFTER_MS,
+  startStaffEmailChange,
+} from '../../../services/auth/staff-email-change'
 import { sessionView } from '../session-view'
+
+// Trimming and lower-casing are the service's, so a refusal can name what was typed.
+const emailChangeSchema = z.object({ email: z.string().email().max(254) })
+const emailChangeCodeSchema = z.object({ code: z.string().trim().regex(/^\d{6}$/) })
 
 const inviteSchema = z.object({
   email: z.string().email().max(254),
@@ -189,6 +199,45 @@ const app = new Hono()
     })
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json(serializeStaff(row))
+  })
+  // The sign-in email, anyone's the admin may edit, their own included: a code
+  // mailed to the new address, then that code back before anything moves.
+  .post('/:id/email', zValidator('param', idParam), zValidator('json', emailChangeSchema), async c => {
+    const { id } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const pending = await startStaffEmailChange({
+      tenantId: tenantId(c),
+      targetStaffId: id,
+      actorStaffId: c.get('staffUserId'),
+      email: body.email,
+    })
+    c.set('auditTarget' as any, { table: 'staff_users', id })
+    return c.json({
+      pending_email: pending.email,
+      expires_at: pending.expiresAt,
+      resend_after_seconds: EMAIL_CHANGE_RESEND_AFTER_MS / 1000,
+    })
+  })
+  .post('/:id/email/confirm', zValidator('param', idParam), zValidator('json', emailChangeCodeSchema), async c => {
+    const { id } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const row = await confirmStaffEmailChange({
+      tenantId: tenantId(c),
+      targetStaffId: id,
+      actorStaffId: c.get('staffUserId'),
+      code: body.code,
+    })
+    c.set('auditTarget' as any, { table: 'staff_users', id })
+    return c.json(serializeStaff(row))
+  })
+  .delete('/:id/email', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    await cancelStaffEmailChange({
+      tenantId: tenantId(c),
+      targetStaffId: id,
+      actorStaffId: c.get('staffUserId'),
+    })
+    return c.body(null, 204)
   })
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')

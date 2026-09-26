@@ -244,7 +244,13 @@ function Panel({
 }
 
 function Line({ children }: { children: ReactNode }) {
-  return <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">{children}</div>;
+  // wrap-anywhere: an archive's file name is one long unbroken word, and on a
+  // phone it otherwise pushes the line past the edge of the row.
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 wrap-anywhere text-sm">
+      {children}
+    </div>
+  );
 }
 
 function DismissButton({ onClick }: { onClick: () => void }) {
@@ -253,7 +259,7 @@ function DismissButton({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       aria-label="Dismiss"
-      className="rounded p-1 text-muted hover:bg-warm hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      className="-m-1 shrink-0 rounded p-2 text-muted hover:bg-warm hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       <X className="h-4 w-4" />
     </button>
