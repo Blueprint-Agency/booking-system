@@ -1,6 +1,6 @@
 import { ConfigError, OFFLINE_METHODS, type CatalogueEntry, type OfflineMethod, type StudioConfig } from './config'
 import { fold, type ConfigLookups } from './lookups'
-import { planHome } from './packages'
+import { optionHome, planHome } from './packages'
 import type { MemberListRow, OptionSaleRow, PromotionRow, SaleMethodRow, SaleRow } from './readers'
 import { registerCandidates } from './register'
 import {
@@ -234,7 +234,16 @@ function saleMethods(rows: SaleMethodRow[], table: Record<string, OfflineMethod>
 }
 
 /** A past purchase as history needs it, to point a past visit at the package that paid for it. */
-export type PastSlot = { clientId: string; entry: CatalogueEntry; id: string; kind: string; from: number; to: number }
+export type PastSlot = {
+  clientId: string
+  entry: CatalogueEntry
+  /** The Location the option bought names, for a plan sold once per Location (`optionHome`). */
+  home: string | null
+  id: string
+  kind: string
+  from: number
+  to: number
+}
 
 type Sold = Exclude<CatalogueEntry, { migrate: 'skip' } | { kind: 'access_pass' }>
 
@@ -342,6 +351,7 @@ export function pastPackages(input: {
     if (entry.kind === 'trial') trials.add(sale.clientId)
 
     const day = isoDay(sale.soldAt)
+    const home = optionHome(config, entry, sale.description)
     let key = `past/${sale.clientId}/${day}/${entry.name}`
     for (let n = 2; taken.has(key); n++) key = `past/${sale.clientId}/${day}/${entry.name}#${n}`
     taken.add(key)
@@ -362,9 +372,12 @@ export function pastPackages(input: {
       source_class_package_id: entry.kind === 'pt' ? null : catalogueId,
       source_pt_package_id: entry.kind === 'pt' ? catalogueId : null,
       // Only a plan holds a Location here, and it must: its Home Location is
-      // where it was sold, where that is a Location.
+      // the one the option bought names, where Mindbody sold it once per
+      // Location; else where it was sold, where that is a Location.
       location_id:
-        entry.kind === 'unlimited' ? ids.locations![input.lookups.locations.get(fold(sale.location)) ?? planHome(config, entry)] : null,
+        entry.kind === 'unlimited'
+          ? ids.locations![home ?? input.lookups.locations.get(fold(sale.location)) ?? planHome(config, entry)]
+          : null,
       ...(entry.kind === 'unlimited'
         ? { duration_months: entry.durationMonths, validity_days: null }
         : { duration_months: null, validity_days: entry.validityDays }),
@@ -383,6 +396,7 @@ export function pastPackages(input: {
     slots.push({
       clientId: sale.clientId,
       entry,
+      home,
       id: row.id as string,
       kind: entry.kind,
       from: dayNumber(register?.activation ?? sale.soldAt),

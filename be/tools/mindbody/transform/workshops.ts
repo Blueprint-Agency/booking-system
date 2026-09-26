@@ -254,6 +254,14 @@ export function mapWorkshops(input: {
     input.schedule.filter(r => !workshopCategories.has(fold(r.serviceCategory))).map(r => `${isoDay(r.date)} ${isoClock(r.start)}`),
   )
 
+  /** Options held under more than one service category: "1 Day" buys a day of whichever workshop it was sold for. */
+  const shared = new Set(
+    [...input.holdings.reduce((m, h) => {
+      const o = normaliseOptionName(h.option)
+      return m.set(o, (m.get(o) ?? new Set<string>()).add(fold(h.serviceCategory)))
+    }, new Map<string, Set<string>>())].flatMap(([o, categories]) => (categories.size > 1 ? [o] : [])),
+  )
+
   const workshopOptionsOf = (w: StudioConfig['workshops'][number]) =>
     new Set(w.tiers.flatMap(t => t.mindbodyNames).map(normaliseOptionName))
 
@@ -465,12 +473,14 @@ export function mapWorkshops(input: {
     // Sales before a run the window leaves out were for that run, not the first one in it.
     const before = heldRuns.filter(run => !runs.includes(run))
     let heldBefore: number | null = before.length > 0 ? lastOf(before.at(-1)!) : null
+    const pastIds = new Set<string>()
     for (const run of runs) {
       const days = [...run.values()].sort((a, b) => occurrenceKey(a).localeCompare(occurrenceKey(b)))
       const first = isoDay(days[0]!.date)
       const lastDay = dayNumber(days.at(-1)!.date)
       const name = several ? `${w.name} (${first})` : w.name
       const made = writeWorkshop(w, `${w.category}/${first}`, name, run, true)
+      pastIds.add(made.workshopId)
       const startOf = (day: Occurrence) => instant(day.date, day.start)
 
       // Who came: every visit on one of its days, under one of its names.
@@ -485,8 +495,11 @@ export function mapWorkshops(input: {
       }
 
       // What each attendee bought of it: sold after the run before it and by its
-      // last day — unless what the sale bought runs on well past this run, when
-      // it was a place on a later one (a deposit paid ahead).
+      // last day — unless what the sale bought runs on well past this run and
+      // the category runs again, when it was a place on a later one (a deposit
+      // paid ahead). With no later run it can only be this one's: a retreat's
+      // place is often good for months after it.
+      const later = run !== heldRuns.at(-1) || future.size > 0
       const salesOf = (clientId: string) =>
         input.sales.sold.filter(j => {
           const sold = dayNumber(j.sale.soldAt)
@@ -495,18 +508,32 @@ export function mapWorkshops(input: {
             made.tierOf.has(normaliseOptionName(j.sale.description)) &&
             sold <= lastDay &&
             (heldBefore === null || sold > heldBefore) &&
-            !forLater(j, lastDay)
+            !(later && forLater(j, lastDay))
           )
         })
 
+      // Whoever paid for a place and has no visit on its days comes across too,
+      // confirmed, its attendance not recorded: Mindbody keeps a retreat as a
+      // placeholder slot nobody is signed in to. Only by an option sold for
+      // this workshop alone, though, where anyone's visit is on its days — one
+      // like "1 Day", held under several workshops, may have bought another.
+      const buyers = new Set(
+        input.sales.sold.flatMap(j => {
+          const o = normaliseOptionName(j.sale.description)
+          return j.sale.clientId && made.tierOf.has(o) && (visits.size === 0 || !shared.has(o)) ? [j.sale.clientId] : []
+        }),
+      )
       let unsold = 0
-      for (const clientId of [...visits.keys()].sort()) {
-        const mine = visits.get(clientId)!
+      let unseen = 0
+      for (const clientId of [...new Set([...visits.keys(), ...buyers])].sort()) {
+        const mine = visits.get(clientId) ?? []
+        const sold = salesOf(clientId)
+        // A buyer of none of this run's places, or one who was given all of it back.
+        if (mine.length === 0 && (sold.length === 0 || sold.every(j => j.returnedBy))) continue
         if (!memberNames.has(clientId)) {
-          notes.push(`${clientId}: came to ${name} and is not in the member list`)
+          notes.push(`${clientId}: ${mine.length > 0 ? 'came to' : 'paid for a place on'} ${name} and is not in the member list`)
           continue
         }
-        const sold = salesOf(clientId)
         const tier = dearest(
           [...mine.map(v => v.option), ...sold.map(j => j.sale.description)].flatMap(o => made.tierOf.get(normaliseOptionName(o)) ?? []),
         )
@@ -519,7 +546,8 @@ export function mapWorkshops(input: {
         const paid = sold.reduce((sum, j) => sum + j.sale.total + (j.returnedBy?.total ?? 0), 0)
         const discount = sold.reduce((sum, j) => sum + j.discount, 0)
         if (sold.length === 0) unsold++
-        const outcome = mine.map(v => v.outcome).sort((a, b) => STRENGTH[a] - STRENGTH[b])[0]!
+        if (mine.length === 0) unseen++
+        const outcome = mine.map(v => v.outcome).sort((a, b) => STRENGTH[a] - STRENGTH[b])[0] ?? 'booked'
         const settlement = SETTLEMENT[outcome]
         const came = mine.filter(v => v.outcome === 'attended').map(v => startOf(v.day)).sort((a, b) => a.getTime() - b.getTime())[0]
         const firstDay = startOf(days[0]!)
@@ -548,6 +576,9 @@ export function mapWorkshops(input: {
       }
       if (unsold > 0) {
         notes.push(`${name}: ${unsold} place(s) have no sale of its options in Big Spenders, so they came across paid 0.00`)
+      }
+      if (unseen > 0) {
+        notes.push(`${name}: ${unseen} place(s) were paid for and nobody was signed in to its days in Mindbody, so they came across confirmed with no attendance recorded`)
       }
 
       // What Payroll paid for its days is its instructors' pay, whoever was paid.
@@ -590,7 +621,10 @@ export function mapWorkshops(input: {
       // Nobody's paid place vanishes unsaid. Its pricing options are excluded
       // from the catalogue and the preflight on the promise that they come
       // across as bookings; with no day to book, this is where that is said.
+      // A member who has their place on a past run of it has it, whatever Mindbody still shows as unspent.
+      const placed = new Set(bookings.filter(b => pastIds.has(String(b.workshop_id))).map(b => String(b.client_id)))
       for (const [clientId, paid] of paidTowards(w, input.holdings, today)) {
+        if (placed.has(ids.clients![clientId] ?? '')) continue
         notes.push(
           `${clientId} ${nameOf(clientId)}: holds a place on ${w.name} worth ${money(paid)}, which did not come across`,
         )
@@ -674,6 +708,12 @@ export function mapWorkshops(input: {
   }
 
   if (problems.length > 0) throw new ConfigError(problems)
+
+  // A workshop seats at least everyone who has a place on it: the config's
+  // capacity is read before the places are, and a full workshop is still sold out.
+  const confirmedOn = new Map<string, number>()
+  for (const b of bookings) if (b.state === 'confirmed') confirmedOn.set(String(b.workshop_id), (confirmedOn.get(String(b.workshop_id)) ?? 0) + 1)
+  for (const d of workshopDays) d.capacity_online = Math.max(Number(d.capacity_online), confirmedOn.get(String(d.workshop_id)) ?? 0)
 
   return {
     workshops,

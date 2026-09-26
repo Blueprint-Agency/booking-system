@@ -1,7 +1,7 @@
 import { isLive } from './catalogue'
 import { ConfigError, type CatalogueEntry, type StudioConfig } from './config'
 import type { AccountBalanceRow, AttendanceRow, HoldingRow, MemberListRow, MembershipRow, OptionSaleRow, RetentionRow } from './readers'
-import { fold } from './lookups'
+import { fold, locationNamedIn } from './lookups'
 import { registerMatcher } from './register'
 import { packageMoney, type JoinedSales } from './sales'
 import {
@@ -84,11 +84,13 @@ type Held = {
   suffix: string
   /** What a promotion took off its one purchase (Promotions); 0 where none did, or it is several combined. */
   discount: number
+  /** The Location the option it was bought as names (`optionHome`), for a plan Mindbody sold once per Location. */
+  home: string | null
 }
 
 const count = (s: HoldingRow['remaining']) => (s && !s.unlimited ? s.count : 0)
 
-function combine(clientId: string, entry: Sold, holdings: HoldingRow[]): Held {
+function combine(clientId: string, entry: Sold, holdings: HoldingRow[], home: string | null = null): Held {
   const started = holdings.flatMap(h => (h.firstActivation ? [h.firstActivation] : []))
   const ends = holdings.map(h => h.lastExpiration!)
   const by = (pick: (a: number, b: number) => number, dates: LocalDateTime[]) =>
@@ -104,6 +106,7 @@ function combine(clientId: string, entry: Sold, holdings: HoldingRow[]): Held {
     bookedAhead: unlimited ? 0 : holdings.reduce((sum, h) => sum + Math.max(0, count(h.remaining) - count(h.unbooked)), 0),
     suffix: '',
     discount: 0,
+    home,
   }
 }
 
@@ -143,6 +146,7 @@ function split(combined: Held, holdings: HoldingRow[], purchases: OptionSaleRow[
       bookedAhead: taken,
       suffix: i === 0 ? '' : `#${i + 1}`,
       discount: discountOf(p),
+      home: combined.home,
     }
   })
 }
@@ -163,9 +167,28 @@ export function planHome(config: StudioConfig, entry: { name: string; mindbodyNa
   return homeFromPlan(config, entry) ?? config.defaultLocation
 }
 
+/**
+ * The Location a member's plan covers, read off the option they bought, where
+ * Mindbody sold the plan once per Location (`Unlimited 6`, `Unlimited 6 -
+ * <Location>`) and the catalogue holds it as one package (`foldLocationVariants`
+ * in `./fill.ts`): the Location the spelling names, else — the unlabelled one —
+ * the entry's own Location, else the default. Every purchase in Mindbody was
+ * bound to the Location it was bought for, so this beats anything the reports
+ * say of the member. Null for any other option: a plan whose spellings name no
+ * Location is homed from the member (`memberHomes`), and only a plan has a home.
+ */
+export function optionHome(config: StudioConfig, entry: CatalogueEntry, option: string): string | null {
+  if (entry.migrate === 'skip' || entry.kind !== 'unlimited') return null
+  const named = locationNamedIn(config.locations, option)
+  if (named) return named
+  if (!entry.mindbodyNames.some(n => locationNamedIn(config.locations, n))) return null
+  return entry.location ?? config.defaultLocation
+}
+
 /** Where a member's Home Location was read from, most trusted first. */
-export const HOME_SOURCES = ['retention', 'membership', 'sold', 'plan', 'default'] as const
+export const HOME_SOURCES = ['option', 'retention', 'membership', 'sold', 'plan', 'default'] as const
 export type HomeSource = (typeof HOME_SOURCES)[number]
+type MemberSource = Exclude<HomeSource, 'option' | 'plan' | 'default'>
 
 /**
  * The Location each member belongs to, by what the reports say of them rather
@@ -176,11 +199,11 @@ export type HomeSource = (typeof HOME_SOURCES)[number]
 export function memberHomes(
   config: StudioConfig,
   reports: { retention: RetentionRow[]; membership: MembershipRow[]; attendance: AttendanceRow[] },
-): Map<string, { location: string; source: Exclude<HomeSource, 'plan' | 'default'> }> {
+): Map<string, { location: string; source: MemberSource }> {
   const fold = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
   const byId = new Map(config.locations.flatMap(l => l.mindbodyIds.map(id => [id.trim(), l.key] as const)))
   const byName = new Map(config.locations.flatMap(l => [l.name, ...l.mindbodyNames].map(n => [fold(n), l.key] as const)))
-  const homes = new Map<string, { location: string; source: Exclude<HomeSource, 'plan' | 'default'> }>()
+  const homes = new Map<string, { location: string; source: MemberSource }>()
 
   const sold = new Map<string, Map<string, number>>()
   for (const v of reports.attendance) {
@@ -311,10 +334,16 @@ export function mapPackages(input: {
   // register. The register does not say how much of it is booked ahead, so all
   // of it is: the mapper gives back whatever no imported booking accounts for.
   const whoBought = registerMatcher(input.members)
+  // A member's holdings of one catalogue entry are one group — every trial is
+  // one — except a plan sold once per Location: each Location's is its own.
+  const slotOf = (entry: CatalogueEntry, option: string) => {
+    if (entry.migrate !== 'skip' && entry.kind === 'trial') return 'trial'
+    const home = optionHome(config, entry, option)
+    return home ? `${catalogueKey(entry)}@${home}` : catalogueKey(entry)
+  }
   const groupOf = (option: string) => {
     const entry = entryOf.get(normaliseOptionName(option))
-    if (!entry) return normaliseOptionName(option)
-    return entry.migrate !== 'skip' && entry.kind === 'trial' ? 'trial' : catalogueKey(entry)
+    return entry ? slotOf(entry, option) : normaliseOptionName(option)
   }
   const categoryOf = new Map(input.holdings.map(h => [normaliseOptionName(h.option), h.serviceCategory]))
   const heldInReport = new Set(input.holdings.map(h => `${h.clientId}/${groupOf(h.option)}`))
@@ -375,7 +404,7 @@ export function mapPackages(input: {
   // Per member: their packages by catalogue entry, and their access passes.
   // Every trial is one entry here, whatever it was called — a member has one
   // trial, ever, and two spellings of it must not arrive as two.
-  const grouped = new Map<string, Map<string, { entry: Sold; holdings: HoldingRow[] }>>()
+  const grouped = new Map<string, Map<string, { entry: Sold; holdings: HoldingRow[]; home: string | null }>>()
   const passes = new Map<string, HoldingRow[]>()
   for (const h of live) {
     const entry = entryOf.get(normaliseOptionName(h.option))!
@@ -384,9 +413,9 @@ export function mapPackages(input: {
     else if (inAWorkshopCategory(h)) leftBehind(h, `a place on a workshop or retreat (${h.serviceCategory}), not a package`)
     else if (entry.kind === 'access_pass') passes.set(h.clientId, [...(passes.get(h.clientId) ?? []), h])
     else {
-      const mine = grouped.get(h.clientId) ?? new Map<string, { entry: Sold; holdings: HoldingRow[] }>()
-      const key = entry.kind === 'trial' ? 'trial' : catalogueKey(entry)
-      const group = mine.get(key) ?? { entry, holdings: [] }
+      const mine = grouped.get(h.clientId) ?? new Map<string, { entry: Sold; holdings: HoldingRow[]; home: string | null }>()
+      const key = slotOf(entry, h.option)
+      const group = mine.get(key) ?? { entry, holdings: [], home: optionHome(config, entry, h.option) }
       group.holdings.push(h)
       mine.set(key, group)
       grouped.set(h.clientId, mine)
@@ -394,13 +423,17 @@ export function mapPackages(input: {
   }
 
   const homeSources = new Map<HomeSource, number>(HOME_SOURCES.map(s => [s, 0]))
-  /** Where the member belongs, whatever the plan is called; failing that, what the plan says; failing that, the default. */
-  const homeOf = (clientId: string, entry: Extract<Sold, { kind: 'unlimited' }>): string => {
-    const member = input.homes.get(clientId)
-    const plan = member ? null : homeFromPlan(config, entry)
-    const source: HomeSource = member ? member.source : plan ? 'plan' : 'default'
+  /**
+   * The Location the option it was bought as names; failing that, where the
+   * member belongs, whatever the plan is called; failing that, what the plan
+   * says; failing that, the default.
+   */
+  const homeOf = (clientId: string, entry: Extract<Sold, { kind: 'unlimited' }>, bought: string | null): string => {
+    const member = bought ? null : input.homes.get(clientId)
+    const plan = bought || member ? null : homeFromPlan(config, entry)
+    const source: HomeSource = bought ? 'option' : member ? member.source : plan ? 'plan' : 'default'
     homeSources.set(source, homeSources.get(source)! + 1)
-    return member?.location ?? plan ?? config.defaultLocation
+    return bought ?? member?.location ?? plan ?? config.defaultLocation
   }
   const passLocation = (h: HoldingRow) =>
     (entryOf.get(normaliseOptionName(h.option)) as Extract<Migrated, { kind: 'access_pass' }>).location
@@ -423,7 +456,7 @@ export function mapPackages(input: {
     if (!left || dayNumber(sale.expiration) < dayNumber(today)) continue
     const match = whoBought(sale)
     if (match.outcome !== 'matched') continue
-    const key = `${match.clientId}/${entry.kind === 'trial' ? 'trial' : catalogueKey(entry)}`
+    const key = `${match.clientId}/${slotOf(entry, sale.option)}`
     livePurchases.set(key, [...(livePurchases.get(key) ?? []), sale])
   }
   const discountOf = (p: OptionSaleRow) => input.sales.saleOf.get(p)?.discount ?? 0
@@ -435,7 +468,7 @@ export function mapPackages(input: {
   for (const clientId of [...grouped.keys()].sort()) {
     const held = [...grouped.get(clientId)!.entries()]
       .flatMap(([groupKey, g]) => {
-        const combined = combine(clientId, g.entry, g.holdings)
+        const combined = combine(clientId, g.entry, g.holdings, g.home)
         const purchases = livePurchases.get(`${clientId}/${groupKey}`) ?? []
         const parts = split(combined, g.holdings, purchases, discountOf)
         if (parts) {
@@ -460,6 +493,7 @@ export function mapPackages(input: {
         (a, b) =>
           dayNumber(a.lastExpiration) - dayNumber(b.lastExpiration) ||
           catalogueKey(a.entry).localeCompare(catalogueKey(b.entry)) ||
+          (a.home ?? '').localeCompare(b.home ?? '') ||
           a.suffix.localeCompare(b.suffix),
       )
     const running = new Set<'class' | 'pt'>()
@@ -484,7 +518,7 @@ export function mapPackages(input: {
       let home: string | null = null
       let addOn: string | null = null
       if (entry.kind === 'unlimited') {
-        home = homeOf(clientId, entry)
+        home = homeOf(clientId, entry, h.home)
         // A pass into the Location the plan is homed at opens nothing the plan does not: it is covered, not left behind.
         passes.set(clientId, (passes.get(clientId) ?? []).filter(p => passLocation(p) !== home))
         const elsewhere = passes.get(clientId)!
@@ -498,8 +532,9 @@ export function mapPackages(input: {
       }
 
       const started = h.firstActivation ? zonedToInstant(h.firstActivation, tz) : asOf
-      // A second or later purchase of a split holding is `…#2`: history finds it by the name before the `#`.
-      const key = `${clientId}/${entry.kind === 'trial' ? 'trial' : entry.name}${h.suffix}`
+      // A second or later purchase of a split holding is `…#2`: history finds it
+      // by the name before the `#`. A plan sold once per Location is `…@<Location>`.
+      const key = `${clientId}/${entry.kind === 'trial' ? 'trial' : entry.name}${h.home ? `@${h.home}` : ''}${h.suffix}`
       const row = {
         id: id('client-package', key),
         tenant_id: tenantId,
@@ -537,7 +572,8 @@ export function mapPackages(input: {
     notes.push(
       `packages: Unlimited Plan Home Locations: ${n('retention')} from Retention Management, ${n('membership')} from Membership, ` +
         `${n('sold')} from where the member's visits were sold, ${n('plan')} from the plan, ${n('default')} at defaultLocation` +
-        (n('default') > 0 ? ' — a guess: confirm those with the studio' : ''),
+        (n('default') > 0 ? ' — a guess: confirm those with the studio' : '') +
+        (n('option') > 0 ? `; and ${n('option')} from the Location named by the option bought (a plan sold once per Location)` : ''),
     )
   }
   if (pricedFromRegister > 0) {

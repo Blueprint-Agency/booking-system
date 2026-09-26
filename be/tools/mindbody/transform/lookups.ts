@@ -14,6 +14,18 @@ import { normaliseClassName } from './values'
 /** Collapse runs of space and fold case: how a Room, Location or category name is matched. */
 export const fold = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
+export type LocationSpelling = { key: string; name: string; mindbodyNames?: string[] }
+
+/**
+ * The Location a pricing option's name names — `Unlimited 6 - <Location>` — by
+ * the Location's name or any spelling Mindbody writes it with; null where it
+ * names none.
+ */
+export function locationNamedIn(locations: LocationSpelling[], option: string): string | null {
+  const name = fold(option.normalize('NFKC'))
+  return locations.find(l => [l.name, ...(l.mindbodyNames ?? [])].some(n => fold(n) !== '' && name.includes(fold(n))))?.key ?? null
+}
+
 type Room = { id: string; location: string; capacity: number }
 
 export type ConfigLookups = {

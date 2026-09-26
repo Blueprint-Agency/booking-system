@@ -37,6 +37,31 @@ export type ReportFacts = {
    * proposal for the answers file's `paymentMethods`, never read by the transform.
    */
   paymentMethods: Record<string, OfflineMethod | null>
+  /** Per service category, what its timetable and its sales say — for `fill` to complete a workshop entry. */
+  workshops: WorkshopFact[]
+}
+
+/**
+ * What the reports say of one service category taken as a workshop: no report
+ * holds a workshop's own settings, so each is read back from its days and from
+ * what was sold under it.
+ */
+export type WorkshopFact = {
+  category: string
+  /** The class name its days were held under most: the workshop's title, where the category's is cut short. */
+  title: string | null
+  /** The Mindbody Location its days were held at most. */
+  location: string | null
+  /** How many occurrences it has on the timetable. */
+  days: number
+  /** The most members who came to one run of it (days no more than a month apart), or who hold a place on it now. */
+  capacity: number
+  /**
+   * The room types it was sold as: the pricing options held under the
+   * category, each on the one category it was held under most. The price is
+   * the commonest paid for one (Sales), else the commonest paid for a holding.
+   */
+  tiers: { name: string; mindbodyNames: string[]; priceSgd: number; held: number }[]
 }
 
 export type CancellationWindow = {
@@ -164,7 +189,148 @@ export function reportFacts(
     everySold,
     classWindow: cancellationWindow(r.cancellations),
     paymentMethods,
+    workshops: workshopFacts(r, asOf),
   }
+}
+
+/** The value seen most often; between equals the first in sort order, so report order never decides. */
+function commonest<T extends string | number>(values: T[]): T | null {
+  const counts = new Map<T, number>()
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1)
+  return [...counts].sort(([a, n], [b, m]) => m - n || (a < b ? -1 : a > b ? 1 : 0))[0]?.[0] ?? null
+}
+
+/** A day's class name as a workshop's title: plain letters, no "Day 1", "Session 2:" or "Batch 1", no stray separators. */
+function titleOfDay(description: string): string {
+  return description
+    .normalize('NFKC')
+    .replace(/\b(day|session|batch)\s*\d+\w*\s*:?/gi, ' ')
+    .replace(/\s*[|:–—-]\s*(?=[|:–—-]|$)/g, ' ')
+    .replace(/^[\s|:–—-]+|[\s|:–—-]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * A run's title: what its days are all called, or the words they all begin
+ * with (two at least) — "Hip Opening" and "Arm Balance" days of one
+ * "Enhanced Practice Workshop". Null where they share nothing.
+ */
+function titleOfRun(descriptions: string[]): string | null {
+  const titles = [...new Set(descriptions.map(titleOfDay).filter(Boolean))]
+  if (titles.length === 0) return null
+  if (titles.length === 1) return titles[0]!
+  const words = titles.map(t => t.split(' '))
+  const shared: string[] = []
+  for (let i = 0; words.every(w => i < w.length && w[i]!.toLowerCase() === words[0]![i]!.toLowerCase()); i++) shared.push(words[0]![i]!)
+  const title = shared.join(' ').replace(/[\s|:–—&+-]+$/, '')
+  return title.split(' ').length >= 2 ? title : null
+}
+
+function workshopFacts(r: MindbodyReports, asOf: CalendarDate): WorkshopFact[] {
+  const fold = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
+  const today = dayNumber(asOf)
+  const spelled = new Map<string, string>()
+  const note = (category: string) => {
+    const k = fold(category)
+    if (k && !spelled.has(k)) spelled.set(k, category.trim())
+    return k
+  }
+
+  // Its days, and who came to each: a visit is on a category's day by its date, start and class name.
+  const rows = new Map<string, typeof r.schedule>()
+  const dayOf = new Map<string, string>()
+  const visitKey = (d: CalendarDate, t: { hour: number; minute: number }, name: string) =>
+    `${dayNumber(d)} ${t.hour}:${t.minute} ${normaliseClassName(name)}`
+  for (const s of r.schedule) {
+    const k = note(s.serviceCategory)
+    if (!k) continue
+    rows.set(k, [...(rows.get(k) ?? []), s])
+    dayOf.set(visitKey(s.date, s.start, s.description), `${k}\n${dayNumber(s.date)} ${s.start.hour}:${s.start.minute}`)
+  }
+  const cameOn = new Map<string, Set<string>>()
+  for (const a of r.attendance) {
+    if (/early/i.test(a.status)) continue
+    const day = dayOf.get(visitKey(a.date, a.start, a.description))
+    if (!day) continue
+    cameOn.set(day, (cameOn.get(day) ?? new Set()).add(a.clientId))
+  }
+
+  // Each option on the one category it was held under most.
+  const categoriesOf = new Map<string, string[]>()
+  for (const h of r.holdings) {
+    const k = note(h.serviceCategory)
+    if (!k) continue
+    const o = normaliseOptionName(h.option)
+    categoriesOf.set(o, [...(categoriesOf.get(o) ?? []), k])
+  }
+  const optionsOf = new Map<string, string[]>()
+  for (const [o, ks] of categoriesOf) {
+    const k = commonest(ks)!
+    optionsOf.set(k, [...(optionsOf.get(k) ?? []), o])
+  }
+  const salePrices = new Map<string, number[]>()
+  for (const s of r.sales) {
+    if (s.quantity !== 1 || s.total <= 0) continue
+    const o = normaliseOptionName(s.description)
+    salePrices.set(o, [...(salePrices.get(o) ?? []), s.total])
+  }
+
+  return [...spelled.keys()].sort().map(k => {
+    const days = rows.get(k) ?? []
+    const tiers = (optionsOf.get(k) ?? []).sort().map(o => {
+      const held = r.holdings.filter(h => normaliseOptionName(h.option) === o)
+      const heldPaid = held.map(h => h.totalPaid).filter(p => p > 0)
+      return {
+        name: commonest(held.map(h => h.option))!,
+        mindbodyNames: [...new Set(held.map(h => h.option))].sort(),
+        priceSgd: commonest(salePrices.get(o) ?? []) ?? commonest(heldPaid) ?? 0,
+        held: held.length,
+      }
+    })
+    const options = new Set(optionsOf.get(k) ?? [])
+    const holders = new Set(
+      r.holdings
+        .filter(h => options.has(normaliseOptionName(h.option)) && h.lastExpiration !== null && dayNumber(h.lastExpiration) >= today)
+        .map(h => h.clientId),
+    )
+    // Past places are one per member per run (days no more than a month apart), so a run's capacity is everyone who came to it.
+    const came = [...cameOn]
+      .filter(([day]) => day.startsWith(`${k}\n`))
+      .map(([day, who]) => ({ on: Number(day.split('\n')[1]!.split(' ')[0]), who }))
+      .sort((a, b) => a.on - b.on)
+    let mostInARun = 0
+    let run = new Set<string>()
+    let last: number | null = null
+    for (const d of came) {
+      if (last !== null && d.on - last > 31) run = new Set()
+      for (const c of d.who) run.add(c)
+      mostInARun = Math.max(mostInARun, run.size)
+      last = d.on
+    }
+    // One title for every run, or none: a category that ran different workshops keeps its own name.
+    const runTitles = new Set<string | null>()
+    let runDays: string[] = []
+    let lastDay: number | null = null
+    for (const s of [...days].sort((a, b) => dayNumber(a.date) - dayNumber(b.date))) {
+      if (lastDay !== null && dayNumber(s.date) - lastDay > 31) {
+        runTitles.add(titleOfRun(runDays))
+        runDays = []
+      }
+      runDays.push(s.description)
+      lastDay = dayNumber(s.date)
+    }
+    if (runDays.length > 0) runTitles.add(titleOfRun(runDays))
+    const [title] = runTitles.size === 1 ? [...runTitles] : [null]
+    return {
+      category: spelled.get(k)!,
+      title: title ?? null,
+      location: commonest(days.map(s => s.location.trim()).filter(Boolean)),
+      days: new Set(days.map(s => `${dayNumber(s.date)} ${s.start.hour}:${s.start.minute}`)).size,
+      capacity: Math.max(mostInARun, holders.size),
+      tiers,
+    }
+  })
 }
 
 export type StaffFact = {

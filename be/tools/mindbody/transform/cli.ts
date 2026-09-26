@@ -129,7 +129,8 @@ async function main() {
     const outDir = values['out-dir'] ?? exportFolder() ?? path.dirname(required('starter'))
     await writeFile(path.join(outDir, 'report-facts.json'), json(facts))
     await writeFile(path.join(outDir, 'staff-facts.json'), json(staff))
-    for (const [name, config] of Object.entries(fillConfigs(starter, answers, facts, staff))) {
+    const fillNotes: string[] = []
+    for (const [name, config] of Object.entries(fillConfigs(starter, answers, facts, staff, fillNotes))) {
       const file = path.join(outDir, `config.${name}.json`)
       await writeFile(file, json(config))
       const catalogue = config.catalogue as { migrate: string }[]
@@ -139,6 +140,7 @@ async function main() {
           `${config.series.filter((s: { migrate: boolean }) => s.migrate).length} series on.`,
       )
     }
+    for (const note of fillNotes) console.log(note)
     const w = facts.classWindow
     console.log(
       w

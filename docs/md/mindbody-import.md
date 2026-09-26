@@ -46,7 +46,7 @@ the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be
 | 11 | Members with no email | Real email, fixed in Mindbody before the final download | Placeholder email, fixed later by an admin |
 | 12 | Members sharing an email | Which member keeps it; real emails for the others | The one whose last visit (attendance history) is latest keeps it; others get placeholders |
 | 13 | Two live packages at once | Accept "the one ending soonest runs, the others wait with their days left" | Accepted |
-| 14 | Unlimited Home Location | Location for a member no report places | Retention Management's location, then Membership's, then where their visits were sold, then the plan's name, then the main Location — the preflight counts each |
+| 14 | Unlimited Home Location | Location for a member no report places | A plan Mindbody sold once per Location: the Location the option bought names (unlabelled: the main Location). Any other plan: Retention Management's location, then Membership's, then where their visits were sold, then the plan's name, then the main Location — the preflight counts each |
 | 15 | Workshops and retreats, to come and past | Which to migrate (one `migrate` covers a category's days to come and its past runs inside `history`); tier (room type) prices; which days a tier grants, where not all; how instalments count | All with paid attendees; price = amount paid; every tier grants every day |
 | 16 | Teacher pay | Use the pay-rate report's per-class amount for future classes; what to pay a per-head teacher's classes | Per-class rate, else Unpriced; PT at the trainer's Payroll PT rate |
 | 17 | History | How far back; whether past purchases appear in Finance; with purchases, how each of Mindbody's payment methods is filed here (`paymentMethods`) | None on a quick rehearsal; classes and bookings from opening, purchases off |
@@ -291,7 +291,12 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   sale price. A person sets `migrate` on each — `sell` (active, at `priceSgd`), `legacy`
   (archived: honoured, not sold) or `skip` (not a package: workshop places, mat storage) — and
   corrects the rest. Merge an option and its copy by moving spellings into one entry's
-  `mindbodyNames`. `transform` refuses a live holding whose option is not listed. `kind:
+  `mindbodyNames`. An option Mindbody sold once per Location (`Unlimited 6` and `Unlimited 6 -
+  <Location>`) is one package here, where the member picks the Location when buying: `fill`
+  folds each copy whose name names a Location into the unlabelled entry of the same kind
+  (`foldLocationVariants`, printing each fold), and that entry's terms stand. Every member's plan,
+  live or past, keeps the Location named by the option they bought (`optionHome`); a member
+  holding both keeps two plans, one per Location. `transform` refuses a live holding whose option is not listed. `kind:
   "access_pass"` is no catalogue row: beside an Unlimited Plan homed elsewhere it becomes that
   plan's Cross-Location Add-On, and alone it is listed in the preflight.
 - **Live packages** come from Visits Remaining (Detail): something left, and not expired on the
@@ -365,7 +370,15 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
 - **Workshops and retreats to come** are one config entry per Mindbody **service category** — a
   workshop, a retreat or a course has one of its own — proposed by `starter` for every workshop
   category on the timetable, past or to come, and for every one members hold a pricing option of
-  (a paid retreat with no timetable row still gets an entry). A person sets `migrate`, the Location, the seats per day and the
+  (a paid retreat with no timetable row still gets an entry). `fill` adds an entry for every
+  category in `workshopCategories` the starter has none for, sets `migrate` from the answers'
+  `workshopsMigrate`, and completes each one coming across from the reports: its name (the class
+  name its days carry, without "Day 1" or "Session 2:", where every run shares one; else the
+  category's), the Location its days were held at, a capacity seating everyone who came to a run
+  or holds a place, and each tier's price (what one place most often sold for). Each pricing
+  option held under the category becomes a tier, on the one category it was held under most, and
+  its catalogue entry is `skip`. An entry nothing was ever sold under has no tier and does not
+  come across. A person can still set `migrate`, the Location, the seats per day and the
   price of each **tier** (room type: twin, single, non-resident), which Mindbody sells as pricing
   options; a deposit or a top-up sold under its own option is moved into the tier it buys
   (`tiers[].mindbodyNames`). The category must also be in `workshopCategories`, or its days would
@@ -388,10 +401,16 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   `migrate: true`. Its days from `history.from` up to the download are split into runs wherever
   more than 31 days pass between two, and each run is a Workshop of its own (named by its first
   day where the category has more than one), with its Days, Tiers and instructors as above. Its
-  attendees are the members the Attendance report has on its days: one booking each, at the
+  attendees are the members the Attendance report has on its days, and whoever paid for a place
+  with no visit on them — every buyer where nobody was signed in to the run at all (Mindbody keeps
+  a retreat as a quarter-hour placeholder slot), else a buyer of an option sold for this workshop
+  alone (an option like "1 Day", held under several categories, may have bought another). A buyer
+  with no visit is `confirmed` with no attendance recorded, and counted in the preflight. One booking each, at the
   dearest tier their visits or sale lines name, `attended` and checked in if they came on any
   day (else a no-show, a late cancel, or a seat never marked, as a class visit is). What they paid
-  is their Big Spenders sale lines of its options since the run before it — returns taken off, a
+  is their Big Spenders sale lines of its options since the run before it and by its last day,
+  except one whose purchase runs a month past it while the category runs again (a deposit on the
+  next run); a retreat's place is often good for months after it — returns taken off, a
   promotion's discount added back for List Price — dated on the first sale. That money is on the
   place whether or not `history.purchases` is on, as a place to come carries its money: a
   workshop booking always does. What Payroll paid on its days (lines at one of its start times,
@@ -400,6 +419,9 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   and not a Manual Payroll Entry, so Instructor Pay adds up to the same total. `verify` counts a
   workshop's pay on its first day, as Payroll does, and names a past attendee lost on the way in
   by member and by workshop.
+- Every Workshop seats at least its confirmed places: `capacity_online` is raised to that count
+  where the config's is lower. A Workshop still to come whose capacity is its places is sold out to
+  members until an admin raises it.
 - A workshop category with `migrate: false` (or with no `workshops` entry) writes nothing, and,
   with `history`, is a preflight line counting its past visits, sale lines and payroll inside the
   window. Its payroll still arrives, as Manual Payroll Entries.

@@ -3,6 +3,7 @@ import type { CatalogueEntry, StudioConfig } from './config'
 import { fold, roomFor, type ConfigLookups } from './lookups'
 import { ptAppointmentRows, ptClients } from './pt'
 import { personKey } from './register'
+import { optionHome } from './packages'
 import { pastPackages, type JoinedSale, type JoinedSales } from './sales'
 import type {
   AttendanceRow,
@@ -183,8 +184,9 @@ export function mapHistory(input: {
    * bought. `paidBy` reads it.
    */
   const packagesByOption = new Map<string, { id: string; kind: string; from: number; to: number }[]>()
-  const optionSlot = (clientId: string, entry: CatalogueEntry) =>
-    `${clientId}/${entry.migrate !== 'skip' && entry.kind === 'trial' ? 'trial' : entry.name}`
+  // A plan sold once per Location is one slot per Location (`…@<Location>`), as the live packages are keyed.
+  const optionSlot = (clientId: string, entry: CatalogueEntry, home: string | null) =>
+    `${clientId}/${entry.migrate !== 'skip' && entry.kind === 'trial' ? 'trial' : entry.name}${home ? `@${home}` : ''}`
 
   const mappedById = new Map(input.clientPackages.map(p => [String(p.id), p]))
   for (const [key, packageId] of Object.entries(ids.client_packages ?? {})) {
@@ -221,7 +223,7 @@ export function mapHistory(input: {
     purchases.push(...past.purchases)
     notes.push(...past.notes)
     for (const s of past.slots) {
-      const slot = optionSlot(s.clientId, s.entry)
+      const slot = optionSlot(s.clientId, s.entry, s.home)
       packagesByOption.set(slot, [...(packagesByOption.get(slot) ?? []), { id: s.id, kind: s.kind, from: s.from, to: s.to }])
     }
   }
@@ -235,7 +237,7 @@ export function mapHistory(input: {
   const paidBy = (clientId: string, option: string, on: CalendarDate) => {
     const entry = entryOf.get(normaliseOptionName(option))
     if (!entry || entry.migrate === 'skip' || entry.kind === 'access_pass') return undefined
-    const held = packagesByOption.get(optionSlot(clientId, entry))
+    const held = packagesByOption.get(optionSlot(clientId, entry, optionHome(config, entry, option)))
     if (!held) return undefined
     const day = dayNumber(on)
     // A purchase whose own run covered the day answers it exactly; failing

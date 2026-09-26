@@ -1,5 +1,6 @@
 import type { OfflineMethod } from './config'
 import type { ReportFacts, StaffFact } from './facts'
+import { locationNamedIn, type LocationSpelling } from './lookups'
 import { normaliseClassName, normaliseStaffName, paymentMethodKey } from './values'
 
 /**
@@ -90,8 +91,110 @@ const pattern = (source: string) => new RegExp(source, 'i')
 /** One key per name the way a person reads it: NFKC-folded, single-spaced, case-folded. */
 const nameKey = (s: string) => s.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase()
 
+/**
+ * An option Mindbody sells once per Location — `Unlimited 6` and `Unlimited 6 -
+ * <Location>` — is one package here, where the member picks the Location when
+ * they buy. Each entry whose name names a Location folds into the one entry of
+ * the same kind whose name, with the Location taken out, is the same (spacing
+ * and separators aside) and names none: its spellings join that entry's
+ * `mindbodyNames`, and that entry's terms stand. Which Location a member's plan
+ * covers is read off the spelling they bought (`optionHome` in `./packages.ts`).
+ * An access pass is never folded: it is the other Location, not a copy.
+ */
+export function foldLocationVariants(catalogue: Json[], locations: Json[]): { into: string; from: string[] }[] {
+  const spellings = locations.flatMap((l: Json) => [l.name, ...(l.mindbodyNames ?? [])]).filter(Boolean).map(nameKey)
+  const bare = (name: string) => {
+    let s = nameKey(name)
+    for (const l of spellings) s = s.split(l).join(' ')
+    return s.replace(/[^\p{L}\p{N}+]+/gu, '')
+  }
+  const foldable = (e: Json) => e.migrate !== 'skip' && e.kind !== 'access_pass' && typeof e.name === 'string'
+  const targets = new Map<string, Json[]>()
+  for (const e of catalogue) {
+    if (!foldable(e) || locationNamedIn(locations as LocationSpelling[], e.name)) continue
+    const k = `${e.kind}/${bare(e.name)}`
+    targets.set(k, [...(targets.get(k) ?? []), e])
+  }
+  const folded = new Map<Json, string[]>()
+  for (const e of [...catalogue]) {
+    if (!foldable(e) || !locationNamedIn(locations as LocationSpelling[], e.name)) continue
+    const into = targets.get(`${e.kind}/${bare(e.name)}`)
+    // None, or two it could be: left as it is, homed by its own name.
+    if (into?.length !== 1) continue
+    const target = into[0]!
+    target.mindbodyNames = [...new Set([...target.mindbodyNames, ...e.mindbodyNames])]
+    folded.set(target, [...(folded.get(target) ?? []), e.name])
+    catalogue.splice(catalogue.indexOf(e), 1)
+  }
+  return [...folded].map(([t, from]) => ({ into: t.name, from })).sort((a, b) => a.into.localeCompare(b.into))
+}
+
+/**
+ * Decision 15, by rule: every workshop category has an entry, and every entry
+ * coming across is complete. The starter proposes workshops from the download
+ * it was made from; a workshop the studio has run since, or one only its past
+ * knows, gets an entry here. What the entry leaves open is read off the reports
+ * (`WorkshopFact`): its title, the Location it was held at, a capacity that
+ * seats everyone who came or holds a place, and each room type's price.
+ *
+ * A room type's pricing options buy a place, never a package, so the catalogue
+ * entry of any of them is `skip`. One option is one workshop's tier: an option
+ * two entries both list stays with the first. An entry with nothing ever sold
+ * under it has no tier to book, and does not come across.
+ */
+function completeWorkshops(c: Json, answers: StudioAnswers, facts: ReportFacts, notes?: string[]) {
+  const factOf = new Map((facts.workshops ?? []).map(f => [nameKey(f.category), f]))
+  const listed = new Set(c.workshops.map((w: Json) => nameKey(w.category)))
+  for (const category of c.workshopCategories as string[]) {
+    if (listed.has(nameKey(category))) continue
+    c.workshops.push({ category, name: category, location: null, capacity: null, migrate: answers.workshopsMigrate, tiers: [] })
+  }
+
+  const names = new Set<string>()
+  const claimed = new Set<string>()
+  for (const w of c.workshops) {
+    if (w.migrate !== true) continue
+    const f = factOf.get(nameKey(w.category))
+    // The category's own name is cut short in Mindbody; its days carry the whole one.
+    if ((w.name == null || w.name === w.category) && f?.title && !names.has(nameKey(f.title))) w.name = f.title
+    if (w.name == null || names.has(nameKey(w.name))) w.name = w.category
+    names.add(nameKey(w.name))
+    if (w.location == null) w.location = (f?.location && locationNamedIn(answers.locations as LocationSpelling[], f.location)) || answers.defaultLocation
+    if (w.capacity == null) w.capacity = Math.max(1, f?.capacity ?? 0)
+
+    const priceOf = new Map((f?.tiers ?? []).flatMap(t => t.mindbodyNames.map(n => [nameKey(n), t.priceSgd] as const)))
+    const had = new Set((w.tiers as Json[]).flatMap(t => t.mindbodyNames.map(nameKey)))
+    const tiers: Json[] = [...(w.tiers as Json[]), ...(f?.tiers ?? []).filter(t => !t.mindbodyNames.some(n => had.has(nameKey(n))))]
+    w.tiers = tiers.flatMap(t => {
+      // One spelling per option: they are matched case-folded, so "1 Day" and "1 day" are one.
+      const mindbodyNames = [...new Map((t.mindbodyNames as string[]).map(n => [nameKey(n), n])).entries()]
+        .filter(([k]) => !claimed.has(k))
+        .map(([, n]) => n)
+      if (mindbodyNames.length === 0) return []
+      for (const n of mindbodyNames) claimed.add(nameKey(n))
+      const priceSgd = t.priceSgd ?? mindbodyNames.map(n => priceOf.get(nameKey(n))).find(p => p != null) ?? 0
+      return [{ ...(t.days ? { days: t.days } : {}), name: t.name, mindbodyNames, priceSgd }]
+    })
+    if (w.tiers.length === 0) {
+      w.migrate = false
+      notes?.push(`workshop ${w.name}: nothing was ever sold under "${w.category}", so it has no room type to book and is not migrated`)
+    }
+  }
+
+  for (const e of c.catalogue) {
+    if (e.migrate !== 'skip' && e.mindbodyNames.some((n: string) => claimed.has(nameKey(n)))) e.migrate = 'skip'
+  }
+  const coming = c.workshops.filter((w: Json) => w.migrate === true)
+  if (coming.length > 0) {
+    notes?.push(
+      `workshops: ${coming.length} coming across; each tier priced at what one place most often sold for, and each capacity ` +
+        `seats everyone who came to a run or holds a place — check the ones still to come before members book`,
+    )
+  }
+}
+
 /** Starter + answers + facts → one filled config (before `outputs` are applied). */
-export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportFacts, staff: StaffFact[]): Json {
+export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportFacts, staff: StaffFact[], notes?: string[]): Json {
   const c = structuredClone(starter) as Json
   const norm = normaliseStaffName
   const optionKey = nameKey
@@ -211,10 +314,14 @@ export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportF
     c.catalogue.push({ ...e, migrate: e.migrate === 'skip' ? 'skip' : null })
     for (const n of e.mindbodyNames) listed.add(optionKey(n))
   }
+  for (const e of c.catalogue) if (e.name == null) e.name = e.mindbodyNames[0]
+  for (const folded of foldLocationVariants(c.catalogue, answers.locations)) {
+    if (folded.from.some(n => sell.has(optionKey(n)))) sell.add(optionKey(folded.into))
+    notes?.push(`catalogue: "${folded.from.join('", "')}" folded into "${folded.into}" (one package here; the member's plan keeps the Location its option names)`)
+  }
   const d = answers.catalogue.defaults
   for (const e of c.catalogue) {
     if (e.migrate === 'skip') continue
-    if (e.name == null) e.name = e.mindbodyNames[0]
     if (e.kind == null) e.kind = 'credit_bundle'
     if (e.kind === 'access_pass') {
       e.migrate = 'legacy' // never sold alone
@@ -230,6 +337,9 @@ export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportF
     if (e.kind === 'pt' && e.sessionType == null) e.sessionType = d.ptSessionType
     if (e.kind === 'unlimited' && e.durationMonths == null) e.durationMonths = d.unlimitedMonths
   }
+
+  // 15. Workshops: one entry per workshop category, each coming across completed from its reports.
+  completeWorkshops(c, answers, facts, notes)
 
   // 19. Series: on, where led by someone coming across as an active instructor.
   const instructors = new Set(c.staff.filter((s: Json) => s.migrate === 'active' && s.role === 'instructor').map((s: Json) => norm(s.mindbodyName)))
@@ -258,10 +368,17 @@ export function unmappedPaymentMethods(answers: StudioAnswers, facts: ReportFact
 }
 
 /** Every config the answers ask for, by output name. */
-export function fillConfigs(starter: Json, answers: StudioAnswers, facts: ReportFacts, staff: StaffFact[]): Record<string, Json> {
+export function fillConfigs(
+  starter: Json,
+  answers: StudioAnswers,
+  facts: ReportFacts,
+  staff: StaffFact[],
+  /** Collects what a person should check — once, however many outputs. */
+  notes?: string[],
+): Record<string, Json> {
   return Object.fromEntries(
-    Object.entries(answers.outputs).map(([name, out]) => {
-      const c = fillConfig(starter, answers, facts, staff)
+    Object.entries(answers.outputs).map(([name, out], i) => {
+      const c = fillConfig(starter, answers, facts, staff, i === 0 ? notes : undefined)
       c.studio.slug = out.slug
       if (out.originPatterns !== undefined) c.originPatterns = out.originPatterns
       return [name, c]
