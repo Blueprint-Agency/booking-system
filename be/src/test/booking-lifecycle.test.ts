@@ -274,17 +274,23 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
     assert.equal(cancellation.refundFired, true)
   })
 
-  test('CXL-17 a member cannot cancel once the window has closed: refused, booking and credit untouched', async () => {
-    // The service treats the window as a hard deadline for members (cancel.ts),
-    // not a forfeit — the refusal is what is asserted here. The specs say
-    // forfeit; which one is right is #151.
+  test('CXL-17 a member cannot cancel once the class has started: refused, booking and credit untouched', async () => {
+    // Inside the window a member's cancel goes through as a Late cancel
+    // (#318, late-cancel.test.ts); it is the class starting that closes it.
     const cal = await member(one, 'cal')
-    const { classWindowHours } = await policyOf(one)
-    const classId = await addClass(one, (classWindowHours / 2) * HOUR)
+    const classId = await addClass(one, HOUR)
     const bookingId = await bookOk(cal, classId)
     const booked = await bookingRow(bookingId)
 
-    await expectStatus(await cancel(cal, bookingId), 422)
+    harness.clock.set(new Date(Date.now() + 2 * HOUR))
+    try {
+      const refused = await cancel(cal, bookingId)
+      const body = await refused.text()
+      assert.equal(refused.status, 422, body)
+      assert.equal((JSON.parse(body) as { error: string }).error, 'class_started')
+    } finally {
+      harness.clock.reset()
+    }
 
     assert.deepEqual(await bookingRow(bookingId), booked)
     assert.equal(booked.state, 'confirmed')

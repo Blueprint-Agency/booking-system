@@ -38,7 +38,7 @@ import { reportError } from "@/lib/report-error";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
-import { cancelClosed, canStillCancel } from "@/lib/cancellation-copy";
+import { canCancelClass, cancelDeadlineLine, isLate } from "@/lib/cancellation-copy";
 import {
   leaveWaitlist,
   listWaitlist,
@@ -50,9 +50,9 @@ type Item =
   | { kind: "booking"; id: string; starts_at: string; booking: ApiBooking }
   | { kind: "waitlist"; id: string; starts_at: string; entry: ApiWaitlistEntry };
 
-/** Whether the member can still cancel this themselves, by the class's own window. */
+/** Whether the member can still cancel this themselves: until it starts, late or not. */
 function cancellable(b: ApiBooking): boolean {
-  return canStillCancel(b.starts_at, b.effective_cancel_window_hours);
+  return canCancelClass(b.starts_at);
 }
 
 function when(iso: string): string {
@@ -337,18 +337,19 @@ function ItemSheet({
                   <QrCode className="h-4 w-4" />
                   Show my QR
                 </button>
-                {cancellable(item.booking) ? (
-                  <button
-                    type="button"
-                    onClick={() => onCancel(item.booking)}
-                    className={cn(BTN_SECONDARY, "text-error hover:border-error/40")}
-                  >
-                    Cancel booking
-                  </button>
-                ) : (
-                  <p className="text-center text-xs text-muted">
-                    {cancelClosed(item.booking.effective_cancel_window_hours)}
-                  </p>
+                {cancellable(item.booking) && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onCancel(item.booking)}
+                      className={cn(BTN_SECONDARY, "text-error hover:border-error/40")}
+                    >
+                      Cancel booking
+                    </button>
+                    <p className="text-center text-xs text-muted">
+                      {cancelDeadlineLine(isLate(item.booking.cancel_deadline), when(item.booking.cancel_deadline))}
+                    </p>
+                  </>
                 )}
               </div>
             </>

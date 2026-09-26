@@ -24,6 +24,15 @@ Status: ready for agent. Source: grilling session 2026-08-10.
 > binding on both. `docs/md/spec-pre-launch-batch.md` §16–§17 is the authority on the
 > detail; what follows is only enough that this document is not misleading read on its
 > own.
+>
+> **Further superseded (2026-09-26, #315).** Leave is no longer instructors only. It
+> belongs to a **staff member**: an admin files leave exactly as an instructor does,
+> holds the same Assigned Days and Pools, and appears in the same queue, where any admin
+> decides any request, their own included. Requests and Pools reference `staff_users`,
+> and the Assigned Days live there. **Leave Conflicts and the Leave Cap stay
+> instructor-only**, because they protect teaching cover. The self-service routes are
+> one mount for both roles, `/api/v1/portal/leave`. `be/docs/adr/0009-leave-belongs-to-a-staff-member.md`
+> is the authority. The sections below are corrected where they said otherwise.
 
 ## Problem Statement
 
@@ -112,13 +121,13 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 
 ### Scope
 
-- Instructors only. Admins do not apply for leave in this system; their absence has no effect on the schedule.
+- ~~Instructors only. Admins do not apply for leave in this system; their absence has no effect on the schedule.~~ **Superseded (2026-09-26, #315).** Every staff member applies, admins included. An admin's leave still has no effect on the schedule, because an admin teaches nothing: the clash check finds only their own leave, and Leave Conflicts and the Leave Cap never count them.
 - ~~Two leave types: annual and medical.~~ **Superseded (2026-08-17).** A third Leave Type, **study**, has shipped — see "Study leave, and the two Leave Caps" below. No unpaid type, no compassionate type.
 - Quota only. Nothing in this feature reads or writes pay, payroll entries, or any money field. An instructor on leave simply has no classes, and per-class pay already handles that by producing nothing.
 
 ### Leave request model
 
-- One new table of leave requests, keyed to the instructor (the staff user id that the instructors table extends).
+- One new table of leave requests, ~~keyed to the instructor (the staff user id that the instructors table extends)~~ keyed to the staff user (`staff_user_id`, since #315 — the same values, because an instructor's key is its staff user id).
 - Columns carry: type (annual, medical); a start date and an end date, both plain dates in Asia/Singapore, not timestamps; a half-day marker (none, morning, afternoon); the number of days the request consumes, as a one-decimal numeric; the leave year it counts against; a status; the instructor's stated reason; the decision reason; the deciding staff user and the time of decision; and a nullable object key for a medical certificate.
 - Status values: pending, approved, rejected, withdrawn, cancelled, revoked. Withdrawn is the instructor abandoning a pending request; cancelled is the instructor giving back approved leave; revoked is an admin taking approved leave away.
 - The leave year is stored on the row, not derived at read time, so that changing an instructor's Assigned Days, or crossing a year boundary, cannot alter what a past request counted against.
@@ -128,7 +137,7 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 
 **Rewritten 2026-08-12.** The detail lives in `spec-instructor-leave-pools.md`; what follows is only enough that this document is not misleading read on its own.
 
-- The yearly figure is **Assigned Days** — two integer columns on `instructors`, one annual, one medical, defaulting to 14 each and set per instructor on the staff profile by an admin. It is not on the global policy singleton and it is not one number for everyone.
+- The yearly figure is **Assigned Days** — ~~two integer columns on `instructors`~~ integer columns on `staff_users` since #315 (annual, medical, study; 14 / 14 / 7), set per staff member on the staff profile by an admin. It is not on the global policy singleton and it is not one number for everyone.
 - Each Leave Year an instructor is given a **Pool**: their Assigned Days plus any **Carried Days** from the year before, capped by the one studio-wide carry-over cap that *does* live on the policy singleton. The Pool is stored — one row per instructor, per Leave Type, per Leave Year — and frozen the first time that year is read. Medical never carries.
 - **The Pool is a stored grant, not a stored balance.** **Taken** (approved days) and **Committed** (approved plus pending) are still derived by summing requests. No counter can drift, no restore-on-cancel logic is needed, and a new year opens on first read rather than by a scheduled job.
 - **Remaining is Pool minus Committed** — pending counts, which is what an instructor is shown and what a new request is measured against. It is not clamped: a figure lowered below what is already Committed shows an honest negative.
@@ -204,21 +213,22 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 ### Access and visibility
 
 - Every staff member — admin or instructor — can see the leave calendar, showing who is away on which dates.
-- Colleagues see the person and the dates only. The leave type, the instructor's reason, the decision reason and the Supporting Document are visible to admins only, and to the instructor for his own requests. A cap-exceeded flag on a medical entry is visible to the same audience — the redaction is the same object, so it costs nothing extra to withhold.
-- Approve, reject and revoke are admin. Withdraw and cancel are the owning instructor.
+- Colleagues see the person and the dates only. The leave type, the instructor's reason, the decision reason and the Supporting Document are visible to admins only, and to the instructor for his own requests. A cap-exceeded flag on a medical entry is visible to the same audience — the redaction is the same object, so it costs nothing extra to withhold. An admin's leave shows on the calendar under the same rules (#315); its cap-exceeded flag is always false.
+- Approve, reject and revoke are admin — any admin, on any request, their own included; there is no self-decision guard (#315). Withdraw and cancel are the person who filed it.
 - Read paths must not leak the restricted fields to instructor callers — this is a serialisation decision in the read module, not something the frontend hides.
 
 ### Notifications and audit
 
 - Email admins when a request is submitted — the submission email carries an extra, otherwise-empty line naming the Leave Conflict a medical request has breached, or the Leave Cap it has pushed the studio over. Email the instructor when it is approved or rejected. Email admins when an instructor cancels a class. All of these go through the existing email template and send infrastructure; no new transport.
 - A rejection reason is mandatory and is included in the instructor's email.
+- Since #315 the submission email goes to every active admin **except the applicant**, and the decision email is skipped when the admin deciding is the applicant.
 - Every state transition on a leave request, and every instructor class cancellation, writes an audit log entry.
 
 ### Portal surfaces
 
 - An admin leave page: the pending queue plus a calendar, reusing the existing schedule calendar component rather than introducing a second calendar implementation.
-- An instructor leave page: the **three** Pools with their Remaining figures (annual, medical, study), the submission form, the instructor's own request history, and the same all-staff read-only calendar.
-- Assigned Days are set per instructor on the staff profile, which an admin can open — the person who approves the leave is the person who sets the number. That profile also shows the Leave Year's Carried, Pool and Remaining, and Remaining is directly editable for the current year, bounded by that year's Pool.
+- An instructor leave page: the **three** Pools with their Remaining figures (annual, medical, study), the submission form, the instructor's own request history, and the same all-staff read-only calendar. Since #315 an admin has the same page as **My leave** in the People group of the admin nav; both render one shared component, and the queue labels each request with the applicant's role.
+- Assigned Days are set per staff member (admins included, since #315) on the staff profile, which an admin can open — the person who approves the leave is the person who sets the number. That profile also shows the Leave Year's Carried, Pool and Remaining, and Remaining is directly editable for the current year, bounded by that year's Pool.
 - The policy screen keeps the studio-wide carry-over cap, and gains the `study_leave_cap` field plus a **Leave conflicts** section: a bounded list of declared pairs, each removable, with two instructor pickers and an Add button beneath it. The pickers exclude the person chosen on the other side and every already-declared combination, so an invalid pair cannot be constructed. Conflict edits are draft state — they make the page dirty, Reset abandons them, and one Save applies the pairs and the numeric fields together or not at all. All admin-only like every other setting on it.
 - The leave calendar marks a medical entry that breaches a conflict or the cap so an admin can see the pressure as well as be told about it in the submission email.
 - A cancel action on the instructor's schedule screen, with a required reason and a confirmation that states how many members will be refunded.

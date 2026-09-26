@@ -89,7 +89,7 @@ A staff member who runs the studio: its catalogue, locations, policy, waiver, no
 _Avoid_: studio owner, manager
 
 **Instructor**:
-A staff member who teaches. Reaches the instructor surfaces only, is refused every admin-only surface, and is the only role that applies for leave.
+A staff member who teaches. Reaches the instructor surfaces only and is refused every admin-only surface. Applies for leave as an Admin does, and is the only role that Leave Conflicts and the Leave Cap apply to.
 _Avoid_: teacher, coach, trainer
 
 **Last-admin guard**:
@@ -337,8 +337,20 @@ A class's two kinds of seat (`bookings.seat`, counted only by `services/bookings
 _Avoid_: max capacity, total capacity, spots (outside the member app, where `spots_left` means free Online Seats)
 
 **Cancellation Window**:
-How many hours before a class starts a member's cancel stops returning the credit, the class's Waitlist closes, and Promotion stops. Each class has an **effective** one (`services/policy/cancel-window.ts`): its own `cancel_window_hours` if staff set one, otherwise the studio's class window on Global Policy — followed live, so changing the studio's reaches every class without its own. A Class Series carries one too and copies it onto every class it creates, extends included. It is read when the member acts, not when they booked, so an edited window applies to bookings already made. PT sessions have one studio-wide window of their own, never per session.
+How many hours before a class starts a member's cancel stops returning the credit — a cancel inside it is a **Late cancel** — the class's Waitlist closes, and Promotion stops. `cancel_deadline` on a member's booking is the instant it opens. Each class has an **effective** one (`services/policy/cancel-window.ts`): its own `cancel_window_hours` if staff set one, otherwise the studio's class window on Global Policy — followed live, so changing the studio's reaches every class without its own. A Class Series carries one too and copies it onto every class it creates, extends included. It is read when the member acts, not when they booked, so an edited window applies to bookings already made. PT sessions have one studio-wide window of their own, never per session.
 _Avoid_: cancellation deadline, notice period, cutoff, booking window
+
+**Late cancel**:
+A member's cancel of a class inside its Cancellation Window, before the class starts (#318). It goes through — the place is freed — but the credit is kept (`refund_outcome` `forfeited`, or `n_a` when an Unlimited Plan spent nothing), it is recorded with `was_within_window` false, and it counts toward the Cancellation Cap. Once the class has started a member cannot cancel at all (`class_started`). A PT session has no late cancel: inside its window the member is refused. The admin member profile's "Late cancels" count is every class cancel whose outcome is `forfeited`, so it takes in over-cap cancels too — and a staff cancel's Keep credit.
+_Avoid_: late cancellation fee, no-show (a no-show never cancelled)
+
+**Staff cancel**:
+A staff member cancelling one member's class booking from the portal (#320): an admin on any class, an instructor on a class they lead. The staff member always chooses — **Return credit** (back to the package that paid) or **Keep credit** (`forfeited`, recorded as a late cancel) — and neither the Cancellation Window nor the Cap decides for them. It never counts toward the member's Cancellation Cap; its `cancellations` row (`source` `admin` or `instructor`) still records whether it came inside the window. A booking that spent nothing is `n_a` either way.
+_Avoid_: force-cancel, admin override
+
+**Cancellation Cap**:
+How many of a member's own cancellations in a rolling cycle return the credit or session — `cancel_cap_count` per `cancel_cap_cycle_days` on Global Policy, one count shared by classes and PT, Late cancels included; staff cancels and no-shows never count. An in-time cancel past it goes through with the credit kept. The studio can switch it off (`cancel_cap_enabled`); then every in-time cancel returns. Cancels are recorded either way, so switching it back on counts the ones already inside the cycle. A new studio starts with it on at 10 per 30 days.
+_Avoid_: cancellation allowance, free cancels, cancel limit
 
 **Waitlist**:
 The ordered line of members waiting for an Online Seat on one full class (`waitlist_entries`, `services/waitlist/`), capped at the class's `capacity_waitlist`. Order is join time; a position is counted, never stored. Joining costs nothing — it only checks the member could pay — and is refused once the class is inside its Cancellation Window. Leaving is not a cancellation. The line is **open** when the studio's `waitlist_enabled` switch is on, the class is active and outside the window, and the line has room. Classes only; workshops and PT sessions have none in v1.
@@ -358,14 +370,14 @@ _Avoid_: attendance marking, sign-in, arrival
 How early check-in opens — the Tenant's `check_in_opens_minutes_before` on its policy row, so a member who arrives ten minutes early is ticked at the door. A scan also closes with the session's own day in the Tenant's timezone; a manual tick never closes, because cleaning up a roster afterwards is what it is for. A **no-show** is not moved by the window: nobody is a no-show before the session begins.
 _Avoid_: grace period, early check-in, arrival window
 
-### Instructor leave
+### Staff leave
 
 **Leave Request**:
-An instructor's application to be absent for one or more dates, of one Leave Type.
+A staff member's application to be absent for one or more dates, of one Leave Type. It belongs to the person, not their role: an Admin files one exactly as an Instructor does, and an Instructor promoted to Admin keeps every request and balance they had. Any Admin decides any request, their own included.
 _Avoid_: leave, absence, time off, holiday
 
 **Leave Type**:
-Annual, medical or study. The three are entirely separate — days never move between them, and each has its own Assigned Days on the instructor's profile.
+Annual, medical or study. The three are entirely separate — days never move between them, and each has its own Assigned Days on the staff member's profile.
 _Avoid_: leave category, leave kind, study leave allowance
 
 **Leave Year**:
@@ -373,7 +385,7 @@ The calendar year a Leave Request counts against, fixed at submission from its f
 _Avoid_: leave period, entitlement year
 
 **Assigned Days**:
-The yearly figure set on an instructor's own profile, one per Leave Type — 14 annual, 14 medical, 7 study by default, changeable per instructor. It is the input to next year's Pool, not the Pool itself.
+The yearly figure set on a staff member's own profile, one per Leave Type — 14 annual, 14 medical, 7 study by default, changeable per person, Admins included. It is the input to next year's Pool, not the Pool itself.
 _Avoid_: allowance, entitlement, quota, allocation
 
 **Carried Days**:
@@ -381,7 +393,7 @@ Unused annual days moved into the following Leave Year, capped by a studio-wide 
 _Avoid_: rollover, accrual, carry-forward, banked days
 
 **Pool**:
-Assigned Days plus Carried Days, for one instructor, one Leave Type, one Leave Year. The number leave is drawn from, fixed for the year once the year begins. An admin can move it, but nothing else does.
+Assigned Days plus Carried Days, for one staff member, one Leave Type, one Leave Year. The number leave is drawn from, fixed for the year once the year begins. An admin can move it, but nothing else does.
 _Avoid_: allowance, entitlement, grant, balance, budget
 
 **Committed**:
@@ -389,11 +401,11 @@ Days on Leave Requests that are pending or approved. Both count — a pending re
 _Avoid_: held, reserved, on hold, provisional, soft-booked
 
 **Taken**:
-Days on approved Leave Requests only. What an instructor has actually used, as distinct from Committed.
+Days on approved Leave Requests only. What a staff member has actually used, as distinct from Committed.
 _Avoid_: used, consumed
 
 **Remaining**:
-Pool minus Committed — what an instructor can still apply for. It can go negative when a Pool is lowered below what is already Committed, and it is shown negative rather than hidden.
+Pool minus Committed — what a staff member can still apply for. It can go negative when a Pool is lowered below what is already Committed, and it is shown negative rather than hidden.
 _Avoid_: balance, available, left, unused
 
 **Half Day**:
@@ -401,7 +413,7 @@ Morning or afternoon, costing 0.5 days, permitted only on a Leave Request coveri
 _Avoid_: partial day, AM/PM leave
 
 **Supporting Document**:
-One optional file an instructor attaches to a medical or study Leave Request — never to an annual one, which has nothing to evidence. JPG, PNG or PDF up to 5MB, handed back to admins and to its own instructor through a short-lived signed link (the bucket itself is public, so the two-UUID key is the real protection — see backend-architecture.md §6c). One request holds one; a second upload replaces the first.
+One optional file a staff member attaches to a medical or study Leave Request — never to an annual one, which has nothing to evidence. JPG, PNG or PDF up to 5MB, handed back to admins and to the person who filed it through a short-lived signed link (the bucket itself is public, so the two-UUID key is the real protection — see backend-architecture.md §6c). One request holds one; a second upload replaces the first.
 _Avoid_: medical certificate, MC, attachment, proof
 
 **Occupying**:
@@ -409,11 +421,11 @@ The property that makes an instructor unschedulable on a date. Pending and appro
 _Avoid_: blocking, unavailable, busy
 
 **Leave Conflict**:
-Two instructors an admin has declared cannot be away at the same time. Unordered — naming them either way round is the same declaration, and the database enforces that rather than trusting a caller to normalise. It counts every Leave Type, because the point of the pair is cover and the studio has lost that instructor whatever the reason. It grants nothing and takes nothing away, and it is never retroactive: declaring a pair refuses their next overlapping request and leaves approved leave exactly where it is.
+Two instructors an admin has declared cannot be away at the same time. Instructors only: an Admin is never in a pair, and a pair naming someone since promoted to Admin stays stored but refuses nothing. Unordered — naming them either way round is the same declaration, and the database enforces that rather than trusting a caller to normalise. It counts every Leave Type, because the point of the pair is cover and the studio has lost that instructor whatever the reason. It grants nothing and takes nothing away, and it is never retroactive: declaring a pair refuses their next overlapping request and leaves approved leave exactly where it is.
 _Avoid_: cover group, pairing, no-overlap rule, blackout
 
 **Leave Cap**:
-The greatest number of instructors who may be on **study** leave at the same moment. The studio sets it. It is measured as a peak across instants, not a headcount over dates, so leave that never coincides never reaches it. It counts study leave only, across every instructor — counting all leave would make study leave nearly unobtainable. Medical leave counts toward it and is never refused by it. Who may not be away *with whom* is not a headcount and is not this: that is a Leave Conflict.
+The greatest number of instructors who may be on **study** leave at the same moment. The studio sets it. It is measured as a peak across instants, not a headcount over dates, so leave that never coincides never reaches it. It counts study leave only, across every instructor — counting all leave would make study leave nearly unobtainable. An Admin's leave neither counts toward it nor is refused by it. Medical leave counts toward it and is never refused by it. Who may not be away *with whom* is not a headcount and is not this: that is a Leave Conflict.
 _Avoid_: limit, quota, threshold, max concurrent leave
 
 **Cover Group** — _removed 2026-08-17_:

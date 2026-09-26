@@ -23,7 +23,7 @@ import {
   memberAttendanceSummary,
   type MemberBookingRow,
 } from '../../../services/bookings/member-history'
-import { adminCancelNotice } from '../../../services/bookings/admin-cancel-notice'
+import { staffCancelPreviewJson } from '../../../services/bookings/staff-cancel-preview'
 import { issuedRefundView } from './refund-view'
 import { listMemberPayments, type MemberPaymentView } from '../../../services/billing/member-payments'
 import {
@@ -286,8 +286,8 @@ function memberBookingView(b: MemberBookingRow) {
     booked_at: b.bookedAt,
     cancelled_at: b.cancelledAt,
     // Null when the portal offers no "Cancel booking" on it; otherwise what the
-    // cancel will do with the credit, for the confirm dialog (#272).
-    cancel_notice: adminCancelNotice(b),
+    // cancel dialog asks the Return / Keep credit choice from (#320).
+    cancel_preview: staffCancelPreviewJson(b.cancelPreview),
   }
 }
 

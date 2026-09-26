@@ -624,6 +624,34 @@
       "when": 1790418019915,
       "tag": "0088_class_cancel_window",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1790418804043,
+      "tag": "0089_staff_assigned_leave_days",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1790418909447,
+      "tag": "0090_staff_assigned_leave_days_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1790418974062,
+      "tag": "0091_leave_belongs_to_staff",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1790430250145,
+      "tag": "0092_global_policy_cancel_cap_enabled",
+      "breakpoints": true
     }
   ]
 }

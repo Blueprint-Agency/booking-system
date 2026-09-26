@@ -11,6 +11,7 @@ import Link from "next/link";
 import { Check, Loader2, Plus, Search, X } from "lucide-react";
 import { Badge, Button, Input } from "@/components/ui";
 import { UntickConfirmDialog } from "@/components/check-in/untick-confirm-dialog";
+import { CancelBookingDialog, type StaffCancelTarget } from "@/components/bookings/cancel-booking-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { checkInErrorMessage } from "@/lib/check-in";
 import {
@@ -134,7 +135,7 @@ export function ClassRoster({
   cancelled: boolean;
   /** Add member is offered only while the class can still be booked. */
   canAdd: boolean;
-  /** A member was added: reload the class so the stats and roster agree. */
+  /** A member was added or cancelled: reload the class so the stats and roster agree. */
   onChanged: () => void;
 }) {
   const { api } = useWorkspace();
@@ -143,6 +144,8 @@ export function ClassRoster({
   const [err, setErr] = useState<string | null>(null);
   /** The attended member whose untick is waiting on the confirmation. */
   const [unticking, setUnticking] = useState<ScheduleClassAttendee | null>(null);
+  /** The booking whose cancel is waiting on the Return / Keep credit choice. */
+  const [cancelling, setCancelling] = useState<StaffCancelTarget | null>(null);
 
   // Re-sync when the parent reloads the class.
   useEffect(() => setRows(attendees), [attendees]);
@@ -233,6 +236,21 @@ export function ClassRoster({
                 </div>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                   {noShow && !attended && <Badge tone="error">No-show</Badge>}
+                  {/* Confirmed and not attended: the backend sends a preview only then. */}
+                  {!cancelled && a.cancel_preview && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-10 text-error hover:bg-error/10 hover:text-error sm:h-8"
+                      disabled={busyId === a.booking_id}
+                      onClick={() =>
+                        setCancelling({ bookingId: a.booking_id, name: a.client.name, preview: a.cancel_preview! })
+                      }
+                    >
+                      Cancel…
+                    </Button>
+                  )}
                   <button
                     type="button"
                     role="checkbox"
@@ -270,6 +288,15 @@ export function ClassRoster({
         name={(a) => a.client.name}
         onClose={() => setUnticking(null)}
         onUnmark={(a) => void mark(a, false)}
+      />
+      <CancelBookingDialog
+        role={role}
+        target={cancelling}
+        onClose={() => setCancelling(null)}
+        onCancelled={() => {
+          setCancelling(null);
+          onChanged();
+        }}
       />
     </section>
   );

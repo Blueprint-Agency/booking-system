@@ -32,6 +32,15 @@ export async function cancelWindowResolver(tenantId: string): Promise<(cls: HasC
   return cls => effectiveCancelWindow(cls.cancelWindowHours, classWindowHours)
 }
 
+/**
+ * Whether a cancel at `now` falls inside the window — later than `windowHours`
+ * before the start. For a member's cancel that is a Late cancel; a staff cancel
+ * only has it recorded and shown.
+ */
+export function insideCancelWindow(startsAt: Date, windowHours: number, now: Date): boolean {
+  return now.getTime() > startsAt.getTime() - windowHours * 3_600_000
+}
+
 /** One class's effective window, in hours. */
 export async function classCancelWindow(tenantId: string, cls: HasCancelWindow): Promise<number> {
   return (await cancelWindowResolver(tenantId))(cls)

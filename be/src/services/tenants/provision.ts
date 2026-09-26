@@ -2,7 +2,8 @@
  * Creating a studio, end to end.
  *
  * A Tenant is not one row. It is a row in `tenants`, a row in `tenant_settings`,
- * its own transactional email copy, and — when one is named — its first admin:
+ * its own transactional email copy, its cancellation policy, and — when one is
+ * named — its first admin:
  * a `staff` pool account, a pending `staff_users` row linked to it, and an
  * invitation mailed to them. All of it is ours, in one database, so none of it
  * waits on anyone else's API.
@@ -27,6 +28,7 @@
 import { and, isNull, ne, sql } from 'drizzle-orm'
 import { currentTenantId, db, withTenant } from '../../db'
 import { seedEmailTemplates } from '../../db/seed/email-templates'
+import { seedPolicy } from '../../db/seed/policy'
 import { emailTemplates } from '../../db/schema/content'
 import { staffUsers } from '../../db/schema/identity'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
@@ -214,6 +216,11 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       // archive is coming.
       if (adminEmail) await seedEmailTemplates(tx, tenant)
 
+      // Its cancellation policy (#318), held back for the same reason: without
+      // one, cancelling, the waitlist and the Policy page all answer
+      // `policy_not_seeded`, and an archive brings the studio's own.
+      if (adminEmail) await seedPolicy(tx, tenant)
+
       // Skipped entirely when no first admin was named. An empty
       // `staff_users` is a legitimate end state — it is the only one an
       // archive can be imported into.
@@ -328,6 +335,10 @@ export async function inviteFirstAdmin(
         timezone: tenant.timezone,
       })
     }
+    // The default cancellation policy (#318), likewise. A policy an archive
+    // brought is the studio's own and stays: the seed writes nothing over a row
+    // that is there.
+    await seedPolicy(db, tenant)
 
     try {
       return await writePendingStaff(db, { tenantId, email, name, role: 'admin', invitedByStaffId: null })

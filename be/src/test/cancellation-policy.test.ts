@@ -215,8 +215,13 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
   const cancel = (who: Member, bookingId: string) =>
     harness.app.request(`/api/v1/me/bookings/${bookingId}`, { method: 'DELETE', headers: who.headers })
 
+  /** An admin's cancel, choosing Return credit — what every admin cancel did before #320 asked. */
   const adminCancel = (as: Record<string, string>, bookingId: string) =>
-    harness.app.request(`/api/v1/portal/admin/bookings/${bookingId}/cancel`, { method: 'POST', headers: as })
+    harness.app.request(`/api/v1/portal/admin/bookings/${bookingId}/cancel`, {
+      method: 'POST',
+      headers: { ...as, ...json },
+      body: JSON.stringify({ credit: 'return' }),
+    })
 
   const adminCancelClass = (as: Record<string, string>, classId: string) =>
     harness.app.request(`/api/v1/portal/admin/schedule/classes/${classId}/cancel`, { method: 'POST', headers: as })
@@ -504,11 +509,13 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     assert.equal(await balanceOf(bundle), 1)
     await assertLedger(bundle)
 
-    // Too late to move the other: the cancel is refused like any late cancel.
+    // Too late to move the other for free: it is a late cancel like any other
+    // (#318) — the place is freed and the credit stays spent.
     harness.clock.set(shifted(t0, 5 * DAY - classWindowHours * HOUR + MINUTE))
-    await expectStatus(await cancel(dee, lateBooking), 422, 'cancellation_window_passed')
-    assert.equal((await bookingRow(lateBooking)).state, 'confirmed')
-    assert.equal(await cancellationOf(lateBooking), undefined)
+    const lateCancel = await expectStatus(await cancel(dee, lateBooking), 200)
+    assert.equal(lateCancel.refund_outcome, 'forfeited')
+    assert.equal((await bookingRow(lateBooking)).state, 'cancelled')
+    assert.equal((await cancellationOf(lateBooking))?.wasWithinWindow, false)
     assert.equal(await balanceOf(bundle), 1)
     await assertLedger(bundle)
   })
@@ -530,12 +537,12 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
       { allowed: true, refund: 'full', reason: 'within_window_within_cap', wasWithinWindow: true, wasWithinCap: true, windowHours: classWindowHours },
     )
     const late = await bookOk(eve, await addClass(one, startsAt, { creditCost: 2 }))
-    // Late, under the cap: the reason is `late`, and a member's late cancel is refused.
+    // Late, under the cap: the reason is `late`, and nothing comes back. The
+    // cancel itself is made below, once the member is over the cap too — made
+    // now, it would count toward the cap the in-time cancels below spend.
     harness.clock.set(lateAt)
     assert.equal((await judge(lateAt)).reason, 'late')
     assert.equal((await judge(lateAt)).refund, 'forfeit')
-    await expectStatus(await cancel(eve, late), 422, 'cancellation_window_passed')
-    assert.equal((await bookingRow(late)).state, 'confirmed')
 
     harness.clock.set(t0)
     const inTime = await cancelInTime(one, eve, t0, cancelCapCount, { use_credits: true })
@@ -563,13 +570,22 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     assert.equal(record.wasWithinCap, false)
     assert.equal(record.refundFired, false)
 
-    // Late and over the cap: both reasons, and still refused outright.
+    // Late and over the cap: both reasons, and the late cancel goes through
+    // (#318) with nothing — not even part of the two credits — coming back.
     harness.clock.set(lateAt)
     assert.equal((await judge(lateAt)).reason, 'late_and_over_cap')
     assert.equal((await judge(lateAt)).refund, 'forfeit')
-    await expectStatus(await cancel(eve, late), 422, 'cancellation_window_passed')
-    assert.equal((await bookingRow(late)).state, 'confirmed')
-    assert.equal(await cancellationOf(late), undefined)
+    const balanceBeforeLate = await balanceOf(bundle)
+    const lateRes = await expectStatus(await cancel(eve, late), 200)
+    assert.equal(lateRes.refund_outcome, 'forfeited')
+    assert.equal(lateRes.refund_fired, false)
+    assert.equal((await bookingRow(late)).state, 'cancelled')
+    const lateRecord = await cancellationOf(late)
+    assert.ok(lateRecord)
+    assert.equal(lateRecord.wasWithinWindow, false)
+    assert.equal(lateRecord.wasWithinCap, false)
+    assert.equal(lateRecord.refundFired, false)
+    assert.equal(await balanceOf(bundle), balanceBeforeLate)
     await assertLedger(bundle)
   })
 
@@ -885,7 +901,7 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
 
   /* ── an Admin's cancel ──────────────────────────────────────────────── */
 
-  test('CXL-24 an admin force-cancel inside the window, or over the cap, returns the credits in full and records source admin', async () => {
+  test('CXL-24 an admin cancel choosing Return credit, inside the window or over the cap, returns the credits in full and records source admin', async () => {
     const t0 = aWeekOut()
     harness.clock.set(t0)
     const { cancelCapCount, classWindowHours } = await policyOf(one)
@@ -901,9 +917,8 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     const res = await expectStatus(await adminCancel(one.admin.headers, overCap), 200)
     assert.equal(res.refund_outcome, 'credit_returned')
     assert.equal(res.refund_fired, true)
-    // Inside the window, where the member themself would be refused.
+    // Inside the window, where the member's own cancel would keep the credit.
     harness.clock.set(shifted(insideStart, -classWindowHours * HOUR + HOUR))
-    await expectStatus(await cancel(quin, inside), 422, 'cancellation_window_passed')
     await expectStatus(await adminCancel(one.admin.headers, inside), 200)
 
     for (const id of [overCap, inside]) {
@@ -915,6 +930,9 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
       assert.equal(record.source, 'admin')
       assert.equal(record.refundFired, true)
     }
+    // The window is recorded as it was, though it decided nothing.
+    assert.equal((await cancellationOf(overCap))!.wasWithinWindow, true)
+    assert.equal((await cancellationOf(inside))!.wasWithinWindow, false)
     assert.equal(await balanceOf(bundle), 10)
     const adminRefunds = (await refundsOn(bundle)).filter(a => a.reason === 'admin_cancellation_refund')
     assert.deepEqual(adminRefunds.map(a => [a.delta, a.actedByStaffId]), [[2, one.admin.id], [2, one.admin.id]])
@@ -988,8 +1006,8 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     assert.equal(await balanceOf(salBundle), 8)
     assert.equal(await balanceOf(tamBundle), 2)
 
+    // Tam is now inside the window, where their own cancel would keep the credit.
     harness.clock.set(shifted(startsAt, -classWindowHours * HOUR + HOUR))
-    await expectStatus(await cancel(tam, tamBooking), 422, 'cancellation_window_passed')
 
     const res = await expectStatus(await adminCancelClass(one.admin.headers, classId), 200)
     assert.equal(res.total_bookings, 3)

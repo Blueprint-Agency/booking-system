@@ -506,7 +506,7 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     const classId = await addClass(one, 3 * DAY)
     const jun = await bookedMember(one, 'Jun Forced', classId)
 
-    const res = await ok(send(`/portal/admin/bookings/${jun.bookingId}/cancel`, adminAtOne.headers))
+    const res = await ok(send(`/portal/admin/bookings/${jun.bookingId}/cancel`, adminAtOne.headers, 'POST', { credit: 'return' }))
 
     const item = await onlyItem('bookingId', jun.bookingId)
     assert.equal(item.type, 'admin_cancel_class_pt')
@@ -541,7 +541,10 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     // A member, and an instructor, on the admin cancel.
     assert.equal((await send(`/portal/admin/schedule/classes/${classId}/cancel`, mo.headers)).status, 401)
     assert.equal((await send(`/portal/admin/schedule/classes/${classId}/cancel`, teacherAtOne.headers)).status, 403)
-    assert.equal((await send(`/portal/admin/bookings/${mo.bookingId}/cancel`, teacherAtOne.headers)).status, 403)
+    assert.equal(
+      (await send(`/portal/admin/bookings/${mo.bookingId}/cancel`, teacherAtOne.headers, 'POST', { credit: 'return' })).status,
+      403,
+    )
     // An instructor who does not teach it.
     const notTheirs = await send(`/portal/instructor/schedule/classes/${classId}/cancel`, otherTeacherAtOne.headers, 'POST', {
       reason: 'Not mine',
@@ -549,7 +552,10 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     assert.equal(notTheirs.status, 403, JSON.stringify(notTheirs.body))
     // Another studio's admin, naming this studio's class and booking.
     assert.equal((await send(`/portal/admin/schedule/classes/${classId}/cancel`, adminAtTwo.headers)).status, 404)
-    assert.equal((await send(`/portal/admin/bookings/${mo.bookingId}/cancel`, adminAtTwo.headers)).status, 404)
+    assert.equal(
+      (await send(`/portal/admin/bookings/${mo.bookingId}/cancel`, adminAtTwo.headers, 'POST', { credit: 'return' })).status,
+      404,
+    )
     // …or carrying their session to this studio.
     const crossed = { ...adminAtTwo.headers, 'X-Tenant-Slug': one.slug }
     assert.ok([401, 403].includes((await send(`/portal/admin/schedule/classes/${classId}/cancel`, crossed)).status))

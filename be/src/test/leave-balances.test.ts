@@ -13,7 +13,7 @@ type LeaveType = (typeof LEAVE_TYPES)[number]
  * Leave Pools, balances, Assigned Days, the carry-over cap and the Global Policy
  * leave settings, over real HTTP against a real Postgres (#204).
  *
- * The routes: the instructor's own `GET /portal/instructor/leave`, the admin
+ * The routes: the instructor's own `GET /portal/leave`, the admin
  * staff profile (`/portal/admin/staff`, which carries Assigned Days and this
  * Leave Year's figures), and the admin Global Policy (`/portal/admin/policy`).
  *
@@ -90,7 +90,7 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
     await harness.db.insert(schema.leavePools).values(
       LEAVE_TYPES.map(type => ({
         tenantId: at.id,
-        instructorId: who.staffId,
+        staffUserId: who.staffId,
         type,
         leaveYear: year,
         days: days[type].toFixed(1),
@@ -116,7 +116,7 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
       .insert(schema.leaveRequests)
       .values({
         tenantId: at.id,
-        instructorId: who.staffId,
+        staffUserId: who.staffId,
         type: r.type,
         startDate: r.start,
         endDate: r.end ?? r.start,
@@ -137,7 +137,7 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
     harness.db
       .select()
       .from(schema.leavePools)
-      .where(and(eq(schema.leavePools.instructorId, who.staffId), eq(schema.leavePools.leaveYear, year)))
+      .where(and(eq(schema.leavePools.staffUserId, who.staffId), eq(schema.leavePools.leaveYear, year)))
 
   async function storedPools(who: Staff, year: number): Promise<Record<string, { days: number; carried: number }>> {
     const out: Record<string, { days: number; carried: number }> = {}
@@ -175,7 +175,7 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
   }
 
   async function ownLeave(who: Staff, year?: number): Promise<OwnLeave> {
-    const res = await call(who.headers, 'GET', `/api/v1/portal/instructor/leave${year === undefined ? '' : `?year=${year}`}`)
+    const res = await call(who.headers, 'GET', `/api/v1/portal/leave${year === undefined ? '' : `?year=${year}`}`)
     assert.equal(res.status, 200, JSON.stringify(res.body))
     return res.body as OwnLeave
   }
@@ -208,8 +208,8 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
   async function assigned(who: Staff) {
     const [row] = await harness.db
       .select()
-      .from(schema.instructors)
-      .where(eq(schema.instructors.staffUserId, who.staffId))
+      .from(schema.staffUsers)
+      .where(eq(schema.staffUsers.id, who.staffId))
     assert.ok(row)
     return { annual: row.annualLeaveDays, medical: row.medicalLeaveDays, study: row.studyLeaveDays }
   }
@@ -293,8 +293,8 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
     const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
     await harness.db.execute(sql`UPDATE global_policy SET updated_by_staff_id = NULL WHERE updated_by_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
-    await harness.db.execute(sql`DELETE FROM leave_requests WHERE instructor_id IN (${staffIds})`)
-    await harness.db.execute(sql`DELETE FROM leave_pools WHERE instructor_id IN (${staffIds})`)
+    await harness.db.execute(sql`DELETE FROM leave_requests WHERE staff_user_id IN (${staffIds})`)
+    await harness.db.execute(sql`DELETE FROM leave_pools WHERE staff_user_id IN (${staffIds})`)
     await harness.db.execute(
       sql`DELETE FROM leave_conflicts WHERE instructor_a_id IN (${staffIds}) OR instructor_b_id IN (${staffIds})`,
     )
@@ -341,9 +341,9 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
   test('LEV-03 a mid-year joiner with non-default Assigned Days gets their full Assigned figure as the Pool', async () => {
     const jo = await instructor('Jo Joiner')
     await harness.db
-      .update(schema.instructors)
+      .update(schema.staffUsers)
       .set({ annualLeaveDays: 9, medicalLeaveDays: 5, studyLeaveDays: 3 })
-      .where(eq(schema.instructors.staffUserId, jo.staffId))
+      .where(eq(schema.staffUsers.id, jo.staffId))
 
     const leave = await ownLeave(jo)
 
@@ -479,7 +479,7 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
     assert.equal(profile.study_leave_days, 7)
   })
 
-  test('LEV-23 the staff profile carries Assigned, Carried, Pool and Remaining for an instructor, and no leave fields at all for anyone else', async () => {
+  test('LEV-23 the staff profile carries Assigned, Carried, Pool and Remaining for an instructor and an admin alike: leave belongs to the staff member', async () => {
     const tia = await instructor('Tia Figures')
     await storeRequest(one, tia, { type: 'study', start: `${Y}-03-03`, days: 1, status: 'approved' })
 
@@ -488,16 +488,18 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
     const office = list.find(s => s.id === officeAtOne.staffId)
     assert.ok(teacher && office)
 
-    for (const type of LEAVE_TYPES) {
-      for (const field of ['leave_days', 'carried_days', 'pool_days', 'remaining_days']) {
-        assert.equal(typeof teacher[`${type}_${field}`], 'number', `${type}_${field} on the instructor`)
+    for (const [who, row] of [['instructor', teacher], ['admin', office]] as const) {
+      for (const type of LEAVE_TYPES) {
+        for (const field of ['leave_days', 'carried_days', 'pool_days', 'remaining_days']) {
+          assert.equal(typeof row[`${type}_${field}`], 'number', `${type}_${field} on the ${who}`)
+        }
       }
     }
     assert.equal(teacher.study_pool_days, 7)
     assert.equal(teacher.study_remaining_days, 6)
     assert.equal(teacher.annual_carried_days, 0)
-    const leaveKeys = Object.keys(office).filter(k => /leave|carried|pool|remaining/.test(k))
-    assert.deepEqual(leaveKeys, [], 'a non-instructor has no leave keys — not even nulls')
+    assert.equal(office.study_pool_days, 7)
+    assert.equal(office.study_remaining_days, 7, 'the admin has taken nothing')
   })
 
   test('LEV-02 an Assigned Days figure below 0 or above 365 is refused and nothing changes; 0 and 365 are accepted', async () => {
@@ -606,12 +608,17 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
     assert.equal(balanceOf(await ownLeave(xan), 'annual').remaining_days, 0)
   })
 
-  test('LEV-22 Assigned or Remaining figures sent for a non-instructor staff member are refused', async () => {
-    for (const body of [{ annual_leave_days: 10 }, { study_leave_days: 3 }, { annual_remaining_days: 3 }, { medical_remaining_days: 1 }]) {
-      const res = await patchStaff(adminAtOne, officeAtOne, body)
-      assert.equal(res.status, 400, `${JSON.stringify(body)} → ${JSON.stringify(res.body)}`)
-      assert.equal(res.body.error, 'leave_days_instructor_only')
-    }
+  test('LEV-22 Assigned or Remaining figures sent for an admin staff member are saved, as they are for an instructor', async () => {
+    const res = await patchStaff(adminAtOne, officeAtOne, { annual_leave_days: 10, study_leave_days: 3 })
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    assert.equal(res.body.annual_leave_days, 10)
+    assert.equal(res.body.study_leave_days, 3)
+    assert.deepEqual(await assigned(officeAtOne), { annual: 10, medical: 14, study: 3 })
+
+    const remaining = await patchStaff(adminAtOne, officeAtOne, { medical_remaining_days: 1 })
+    assert.equal(remaining.status, 200, JSON.stringify(remaining.body))
+    assert.equal(remaining.body.medical_remaining_days, 1)
+
     const rows = await harness.db.select().from(schema.instructors).where(eq(schema.instructors.staffUserId, officeAtOne.staffId))
     assert.equal(rows.length, 0, 'no instructor row was made for them')
   })
@@ -800,7 +807,7 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
 
   test('a member is refused the instructor leave read and the admin staff and policy routes', async () => {
     for (const [method, path, body] of [
-      ['GET', '/api/v1/portal/instructor/leave', undefined],
+      ['GET', '/api/v1/portal/leave', undefined],
       ['GET', '/api/v1/portal/admin/staff', undefined],
       ['PATCH', `/api/v1/portal/admin/staff/${officeAtOne.staffId}`, { annual_leave_days: 3 }],
       ['GET', '/api/v1/portal/admin/policy', undefined],
@@ -813,11 +820,12 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
     }
   })
 
-  test('an admin (no instructor row) reading the instructor leave route is refused, not handed a Pool', async () => {
-    const res = await call(adminAtOne.headers, 'GET', '/api/v1/portal/instructor/leave')
-    assert.equal(res.status, 403, JSON.stringify(res.body))
-    const rows = await harness.db.select().from(schema.leavePools).where(eq(schema.leavePools.instructorId, adminAtOne.staffId))
-    assert.equal(rows.length, 0)
+  test('LEV-123 an admin (no instructor row) reading their own leave is handed a Pool like any staff member', async () => {
+    const res = await call(adminAtOne.headers, 'GET', '/api/v1/portal/leave')
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    assert.deepEqual(await assigned(adminAtOne), { annual: 14, medical: 14, study: 7 })
+    const rows = await harness.db.select().from(schema.leavePools).where(eq(schema.leavePools.staffUserId, adminAtOne.staffId))
+    assert.equal(rows.length, 3, 'one Pool per Leave Type')
   })
 
   // ── Cross-Tenant ──────────────────────────────────────────────────────────
@@ -859,7 +867,7 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
       Origin: `http://${two.slug}.portal.localhost:3001`,
       'X-Tenant-Slug': two.slug,
     }
-    const res = await call(elsewhere, 'GET', '/api/v1/portal/instructor/leave')
+    const res = await call(elsewhere, 'GET', '/api/v1/portal/leave')
     // Signed in on the first studio: logins are per studio, so the other one cannot see the session.
     assert.equal(res.status, 401, JSON.stringify(res.body))
     assert.equal(res.body.error, 'invalid_token')

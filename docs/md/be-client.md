@@ -43,7 +43,7 @@ Unauthenticated. Cache-friendly (HTTP `Cache-Control: public, max-age=60` where 
 | GET | `/workshops/:id` | Detail incl. tiers (each with derived seats-left + effective price), `tier_days{}` (which tier covers which days), images (presigned R2 URLs), instructors, description. |
 | GET | `/packages` | List active class_packages + pt_packages. Each row carries resolved promotion fields. **Trial Pass first, then credit bundles, then unlimited, then PT** (matches fe-client `/packages` ordering per `fe-client-features.md` §6.1). |
 | GET | `/corporate-packages` | List active `corporate_packages`. Shape: `{ corporate_packages: [{ id, name, description, price_sgd, status }] }`. Same shape as the authenticated `/me/corporate-packages`. |
-| GET | `/cancellation-policy` | The studio's cancellation rules as `global_policy` holds them: `{ class_window_hours, pt_window_hours, cancel_cap_count, cancel_cap_cycle_days }`. The same row `evaluateCancellation` judges a cancel by, so what fe-client states and what the server enforces cannot drift. Not cached — a changed window reaches members on their next page load. These are the studio's defaults: a class with its own Cancellation Window says so in its `effective_cancel_window_hours` (below). |
+| GET | `/cancellation-policy` | The studio's cancellation rules as `global_policy` holds them: `{ class_window_hours, pt_window_hours, cancel_cap_enabled, cancel_cap_count, cancel_cap_cycle_days }` — with `cancel_cap_enabled` false the count and cycle are not applied and the member app says nothing of a cap (#318). The same row `evaluateCancellation` judges a cancel by, so what fe-client states and what the server enforces cannot drift. Not cached — a changed window reaches members on their next page load. These are the studio's defaults: a class with its own Cancellation Window says so in its `effective_cancel_window_hours` (below). |
 | GET | `/online-payments` | Whether this studio takes card payments online: `{ online_payments }`, false until it has supplied its own payment account (#293). fe-client shows "This studio isn't taking online payments yet." in place of a paid buy button when false; a $0 purchase keeps its button. The same lookup a charge makes. Not cached. |
 | GET | `/merch` | List merch items where `archived_at IS NULL`, title-ordered. Shape: `{ merch: [{ id, title, description, price_sgd, image_url, archived_at }] }` — `image_url` is the unsigned R2 public URL (null when unset or storage unconfigured). Browse-only and priced the same for everyone, so there is no authenticated variant. |
 
@@ -122,10 +122,10 @@ Same shape as `routes/public/catalog.ts` but adds:
 ### `bookings.ts` (verification gate applies)
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/bookings/upcoming` | `bookings WHERE client_id=me AND state='confirmed' AND session.starts_at >= now()`, joined to session detail |
+| GET | `/bookings/upcoming` | `bookings WHERE client_id=me AND state='confirmed' AND session.starts_at >= now()`, joined to session detail. Every booking row (here, `/past` and `/:id`) carries `cancel_deadline`: the instant the class's Cancellation Window opens, `starts_at − effective_cancel_window_hours`; a cancel after it is a Late cancel (#318) |
 | GET | `/bookings/past` | `bookings WHERE client_id=me AND session.starts_at < now()`, any `state` — attended, no-show and cancelled all appear, each with its `state` and `check_in_state` (fe-client-features §8.3) |
 | GET | `/bookings/attendance` | `?period=month\|quarter\|year\|all` (default `month`) — the "Your practice" summary (#317, fe-client-features §8.1). `{ period, from, to, attended, previous_attended, buckets: [{ starts_on, attended }], top_class_types: [{ name, attended }], last_attended_at }`. Counts `kind='class'` bookings with `check_in_state='attended'` — from `bookings`, not `check_ins`, so imported history counts; PT and workshops are other kinds, corporate sessions are not bookings. Grouped by the class's start on the Tenant's own calendar, today from the shared clock. `month`: this calendar month in Monday weeks; `quarter`: this month and the two before, in weeks; `year`: this calendar year by month; `all`: by year from the first attended class. The first bucket is clipped to the period's first day; `from`/`to` and `starts_on` are plain dates, `to` inclusive. `previous_attended` is the equal-length period before (last month, the three months before, last year), `null` for `all`. `top_class_types` is at most 3, most attended first, then by name. `last_attended_at` is the start of the most recent attended class in any period. Service: `services/bookings/attendance.ts`, calendar `attendance-periods.ts` |
-| GET | `/bookings/:id` | Detail incl. `qr_token` + `code`. The app draws the QR from the token itself; there is no server-rendered QR image (#192) |
+| GET | `/bookings/:id` | Detail incl. `qr_token` + `code`. The app draws the QR from the token itself; there is no server-rendered QR image (#192). Also `cancel_preview: { late, credit_back, credits, unlimited } \| null` (#318): what `DELETE /bookings/:id` would do now — the same evaluation and settlement, without writing. `null` when the member could not cancel it now (not confirmed, attended, or the class has started). Service: `services/bookings/cancel-preview.ts` |
 | POST | `/bookings/class` | `{ class_id, use_credits? }` — see §4a class booking flow. The server picks the package; `use_credits: true` is the one exception (spec §2), asking to pay with credits for a class the member's Unlimited Plan does not cover. |
 | POST | `/bookings/workshop` | `{ workshop_id, workshop_tier_id }` — initiates Stripe checkout; see §4b |
 | DELETE | `/bookings/:id` | Self-cancel — see §4c |
@@ -303,22 +303,24 @@ services/bookings/cancel.ts:cancel({ booking_id, source: 'client' })
   ↓
 tx start
 1. SELECT booking FOR UPDATE WHERE id=X AND client_id=me AND state='confirmed'
-2. session = load class | workshop_tier | pt_session by booking.kind
-3. If now() >= session.starts_at: 422 session_already_started
-4. evaluation = services/policy/evaluate-cancellation({
-     clientId: me, kind: booking.kind === 'workshop' ? 'class' : booking.kind,
-     sessionStartsAt: session.starts_at,
+2. session = load class | pt_session by booking.kind
+3. evaluation = services/policy/evaluate-cancellation({
+     clientId: me, kind: booking.kind,
+     sessionStartsAt: session.starts_at, classOwnWindowHours,
      now()
    })
-   → { refund: 'full' | 'forfeit', reason }
-5. Apply refund decision:
-   - kind='class' AND refund='full': UPDATE client_packages SET credits_or_sessions_remaining += booking.credits_or_sessions_used (only if kind='credit_bundle' — unlimited has no return)
-     refund_outcome='credit_returned'
-   - kind='class' AND refund='forfeit': refund_outcome='forfeited'
-   - kind='pt' AND refund='full': UPDATE client_packages SET credits_or_sessions_remaining += 1
-     refund_outcome='session_returned'
-   - kind='pt' AND refund='forfeit': refund_outcome='forfeited'
-   - kind='workshop': self-cancel of workshop NOT allowed in v1 (only admin can cancel a workshop and trigger refund). Return 422 workshop_self_cancel_unsupported.
+   → { refund: 'full' | 'forfeit', reason, wasWithinWindow, wasWithinCap }
+   - kind='class' AND now() >= starts_at: 422 class_started (the evaluation throws it)
+   - kind='pt' AND inside the PT window (or started): 422 cancellation_window_passed { window_hours }
+   A class cancel inside its window is NOT refused: it is a Late cancel (#318) —
+   refund='forfeit', wasWithinWindow=false. In time, refund='full' while under the
+   cap, or always when cancel_cap_enabled is false.
+4. Settle (services/bookings/refund-outcome.ts:settleCancel — the preview's settlement too):
+   - refund='full', something spent, a package to return it to: credits_or_sessions_used
+     go back; refund_outcome='credit_returned' | 'session_returned'
+   - nothing spent (Unlimited) on a refund='full' or a late cancel: refund_outcome='n_a'
+   - otherwise: refund_outcome='forfeited'
+   - kind='workshop': self-cancel of workshop NOT allowed in v1 (only admin can cancel a workshop and trigger refund). Return 400 workshop_cancel_unsupported.
 6. UPDATE booking: state='cancelled', cancelled_at, refund_outcome
 7. INSERT cancellations: source='client', was_within_window, was_within_cap, refund_fired (boolean per outcome), kind
 8. INSERT inbox_items: type='client_cancellation', payload={ ... }
@@ -333,7 +335,7 @@ tx commit
 
 Every cancel of a class booking goes through this service — admin single-cancel, and the Refund and complimentary-removal unwinds (`packageVoided`) — so each promotes the same way.
 
-The cap evaluation (step 4) is the load-bearing call. It reads `cancellations WHERE client_id=me AND source='client' AND cancelled_at >= now() - cycle_days` and counts. The admin path (`be-portal.md` §3b) bypasses this — admins always get full refund and admin cancellations are excluded from cap by the `source='admin'` filter.
+The cap evaluation (step 3) is the load-bearing call. It reads `cancellations WHERE client_id=me AND source='client' AND cancelled_at >= now() - cycle_days` and counts — late cancels included, since every member cancel writes its row. With `global_policy.cancel_cap_enabled` false every cancel is within the cap; the rows are still written, so switching it back on counts the ones already in the cycle. The admin path (`be-portal.md` §3b) bypasses this — admins always get full refund and admin cancellations are excluded from cap by the `source='admin'` filter.
 
 ### 4d. PT Request submission
 

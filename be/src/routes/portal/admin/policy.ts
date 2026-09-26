@@ -32,6 +32,11 @@ const explainInvalid = (result: { success: boolean; error?: unknown }) => {
 // the first issue's message straight to an admin — a field left with zod's
 // default would answer them with "Number must be less than or equal to 365".
 const globalPatch = z.object({
+  // The Cancellation Cap switch (#318). Off leaves the count and cycle stored,
+  // unread, for when it is switched back on.
+  cancel_cap_enabled: z
+    .boolean({ message: 'The cancellation cap is either on or off.' })
+    .optional(),
   cancel_cap_count: bounded('A cancellation cap must be 0 or more.', 0),
   cancel_cap_cycle_days: bounded('A cancellation cycle must be at least 1 day.', 1),
   class_window_hours: bounded('A class booking window must be 0 hours or more.', 0),
@@ -73,6 +78,7 @@ const ptPatch = z.object({
 
 function serializeGlobal(r: svc.GlobalPolicyRow) {
   return {
+    cancel_cap_enabled: r.cancelCapEnabled,
     cancel_cap_count: r.cancelCapCount,
     cancel_cap_cycle_days: r.cancelCapCycleDays,
     class_window_hours: r.classWindowHours,
@@ -118,6 +124,7 @@ const app = new Hono()
     const row = await svc.updateGlobalPolicy(
       tenantId(c),
       {
+        ...(body.cancel_cap_enabled !== undefined ? { cancelCapEnabled: body.cancel_cap_enabled } : {}),
         ...(body.cancel_cap_count !== undefined ? { cancelCapCount: body.cancel_cap_count } : {}),
         ...(body.cancel_cap_cycle_days !== undefined
           ? { cancelCapCycleDays: body.cancel_cap_cycle_days }

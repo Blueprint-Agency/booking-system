@@ -301,6 +301,9 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 | name | text | not null |
 | role | enum `staff_role` | not null — `admin`, `instructor`. Rank is admin > instructor: nobody edits a staff member who outranks them, and only an admin changes a role (`services/auth/staff-rank.ts`). See `be/docs/adr/0006-two-staff-roles.md`. |
 | status | enum `staff_status` | not null, default `'pending'` — `pending`, `active`, `archived` |
+| annual_leave_days | int | not null, default 14 — **Assigned Days**, annual. Per staff member, admins included, set on the staff profile by an admin. The input to next year's Pool, not a balance (#315). |
+| medical_leave_days | int | not null, default 14 — Assigned Days, medical. |
+| study_leave_days | int | not null, default 7 — Assigned Days, study. |
 | archived_at | timestamptz | nullable |
 | archived_by_staff_id | uuid | FK → staff_users.id, nullable |
 | invited_at, accepted_at | timestamptz | nullable |
@@ -361,9 +364,8 @@ id, name (text, not null), description (text, nullable — short blurb shown to 
 | photo_r2_key | text | nullable |
 | bio | text | nullable |
 | phone | text | nullable — overrides staff_users.phone if needed (admin doc §3 lists this) |
-| annual_leave_days | int | not null, default 14 — **Assigned Days**, annual. Per instructor, set on the staff profile by an admin. The input to next year's Pool, not a balance. |
-| medical_leave_days | int | not null, default 14 — Assigned Days, medical. |
-| study_leave_days | int | not null, default 7 — Assigned Days, study. The third Leave Type; backfilled on every existing row rather than granted per instructor, because study leave is for everyone. |
+
+The **Assigned Days** (`annual_leave_days`, `medical_leave_days`, `study_leave_days`; 14 / 14 / 7) used to be columns here. Since migration 0091 (#315) they live on `staff_users`, because leave belongs to a staff member, admins included (`be/docs/adr/0009-leave-belongs-to-a-staff-member.md`).
 
 #### `leave_conflicts` — declared **Leave Conflicts** (§17)
 
@@ -380,7 +382,7 @@ The two constraints together are what make symmetry a **database guarantee rathe
 
 The list is saved as **one replacement set** in the same transaction as the numeric Global Policy fields — `PATCH /portal/admin/policy/global` carries `leave_conflicts` — so a half-applied save cannot leave a cap raised over a set that never changed. That transaction takes every `instructors` row lock in staff-user-id order first, matching the order a leave submission takes its locks in, so the two cannot deadlock.
 
-The leave tables themselves (`leave_requests`, `leave_pools`) are specified in `spec-instructor-leave.md` and `spec-instructor-leave-pools.md`, with `be/CONTEXT.md` binding on the vocabulary; `be/docs/adr/0001-per-instructor-leave-pools-with-carry-over.md` records why a Pool is stored.
+The leave tables themselves (`leave_requests`, `leave_pools`) are specified in `spec-instructor-leave.md` and `spec-instructor-leave-pools.md`, with `be/CONTEXT.md` binding on the vocabulary; `be/docs/adr/0001-per-instructor-leave-pools-with-carry-over.md` records why a Pool is stored. Both are keyed by `staff_user_id` → `staff_users.id` (0091, #315; `be/docs/adr/0009-leave-belongs-to-a-staff-member.md`): an admin files leave too, and a role change keeps a person's history.
 
 #### `instructor_class_types` — M:N eligibility (§3)
 
@@ -1074,7 +1076,7 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
   - For a Supporting Document the key is the only protection, which is why `supportingDocumentKey` is `supporting-documents/{instructorId}/{requestId}.{ext}` — two UUIDs — and why no read path serialises it. That is obscurity, not access control. Splitting the documents back into a bucket with public access disabled is the fix if this is ever judged insufficient. Objects written before the rename keep their `medical-certificates/…` path: the key is stored per request, never recomputed.
 - **Two upload flows.** Which one applies is a property of the caller, not of the bucket.
 - **Imagery — presigned PUT (intended, not yet built).** Backend issues presigned PUT URL with content-type and 5 MB cap → fe uploads directly → fe POSTs the returned key back to backend, backend stores in `instructors.photo_r2_key` / `workshops.cover_r2_key` / `workshop_images.r2_key`. No code writes these keys yet; instructor photo upload is deferred (`spec-instructor-leave.md` Out of Scope).
-- **Supporting Documents — server-side upload (implemented).** The file is POSTed to the API as multipart, field `file` (`POST /portal/instructor/leave/:id/document`), and is accepted on a medical or study request and never on an annual one → Hono's `bodyLimit` refuses an oversized body before it is buffered at all → the service validates the declared content type and the *real* byte length against the allow-list (`image/jpeg`, `image/png`, `application/pdf`; 5 MB) → `lib/r2.ts#putObject` writes the object → the key is written to `leave_requests.supporting_document_r2_key` only once the object is safely in the bucket.
+- **Supporting Documents — server-side upload (implemented).** The file is POSTed to the API as multipart, field `file` (`POST /portal/leave/:id/document`, the self-service mount both roles share since #315), and is accepted on a medical or study request and never on an annual one → Hono's `bodyLimit` refuses an oversized body before it is buffered at all → the service validates the declared content type and the *real* byte length against the allow-list (`image/jpeg`, `image/png`, `application/pdf`; 5 MB) → `lib/r2.ts#putObject` writes the object → the key is written to `leave_requests.supporting_document_r2_key` only once the object is safely in the bucket.
   - **Why this one is not presigned.** Type and size are checked at a trust boundary the server controls rather than announced to a browser.
 - **Supporting Document reads — signed GET.** `lib/r2.ts#signedObjectUrl` mints a 5-minute signed URL per request, generated on demand and never stored, after the service has decided the caller may see the row (the owning instructor, or any admin). On a public bucket the expiry is a courtesy: the same object is reachable unsigned through `R2_PUBLIC_URL`.
 

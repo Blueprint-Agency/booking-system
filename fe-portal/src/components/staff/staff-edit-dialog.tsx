@@ -58,11 +58,11 @@ export interface StaffEditableFields {
   languages: string[] | null;
   role: "admin" | "instructor";
   status: "pending" | "active" | "archived";
-  /** Assigned Days — sent by the API for instructors only. */
+  /** Assigned Days — every staff member's, admins included. */
   annual_leave_days?: number;
   medical_leave_days?: number;
   study_leave_days?: number;
-  /** This Leave Year's figures — instructors only. Remaining is editable;
+  /** This Leave Year's figures, for every staff member. Remaining is editable;
    *  Carried and Pool are shown as the context it is bounded by. */
   annual_carried_days?: number;
   annual_pool_days?: number;
@@ -263,7 +263,6 @@ function StaffProfileView({
   onEdit: () => void;
   onClose: () => void;
 }) {
-  const isInstructor = staff.role === "instructor";
   const gender = staff.gender
     ? (GENDER_OPTIONS.find(o => o.value === staff.gender)?.label ?? staff.gender)
     : null;
@@ -307,7 +306,8 @@ function StaffProfileView({
         </Field>
       </dl>
 
-      {isInstructor && <LeaveView staff={staff} />}
+      {/* Every staff member takes leave, admins included. */}
+      <LeaveView staff={staff} />
 
       <SessionsPanel
         path={`/portal/admin/staff/${staff.id}`}
@@ -372,7 +372,7 @@ function LeaveView({ staff }: { staff: StaffEditableFields }) {
       {!assigned && !year ? (
         <p className="text-xs text-muted">
           Leave figures unavailable — the API did not report them for this
-          instructor.
+          staff member.
         </p>
       ) : (
         <>
@@ -491,14 +491,12 @@ function StaffProfileForm({
   const [gender, setGender] = useState(staff.gender ?? "");
   const [bio, setBio] = useState(staff.bio ?? "");
   const [languages, setLanguages] = useState((staff.languages ?? []).join(", "));
-  // Assigned Days exist for instructors only — the dialog is shared with the
-  // Admin tab, where a leave figure would mean nothing. And even for an
-  // instructor the figures may be missing from the response, in which case
-  // there is nothing to prefill and nothing to send: an input seeded with an
-  // invented default would PATCH that invention back as an admin's choice.
-  const isInstructor = staff.role === "instructor";
-  const assigned = isInstructor && hasAssigned(staff);
-  const year = isInstructor && hasLeaveYear(staff);
+  // Every staff member has Assigned Days, admins included. The figures may
+  // still be missing from the response, in which case there is nothing to
+  // prefill and nothing to send: an input seeded with an invented default
+  // would PATCH that invention back as an admin's choice.
+  const assigned = hasAssigned(staff);
+  const year = hasLeaveYear(staff);
   const [annualLeave, setAnnualLeave] = useState(staff.annual_leave_days ?? 0);
   const [medicalLeave, setMedicalLeave] = useState(staff.medical_leave_days ?? 0);
   const [studyLeave, setStudyLeave] = useState(staff.study_leave_days ?? 0);
@@ -676,124 +674,122 @@ function StaffProfileForm({
         />
       </div>
 
-      {isInstructor && (
-        <div className="space-y-3 rounded-lg border border-border bg-paper p-3">
-          <div>
-            <h3 className="text-sm font-medium text-ink">Leave</h3>
-            <p className="mt-0.5 text-xs text-muted">
-              Assigned days apply from the next leave year. Remaining corrects
-              this one. The three types are separate — none eats into another.
-            </p>
-          </div>
-          {!assigned && !year ? (
-            <p className="text-xs text-muted">
-              Leave figures unavailable — the API did not report them for this
-              instructor, so there is nothing to edit here.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {assigned && (
-                <>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-annual-leave">Assigned annual (days)</Label>
-                    <Input
-                      id="edit-annual-leave"
-                      type="number"
-                      min={0}
-                      max={365}
-                      value={annualLeave}
-                      onChange={e => setAnnualLeave(Number(e.target.value))}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-medical-leave">Assigned medical (days)</Label>
-                    <Input
-                      id="edit-medical-leave"
-                      type="number"
-                      min={0}
-                      max={365}
-                      value={medicalLeave}
-                      onChange={e => setMedicalLeave(Number(e.target.value))}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-study-leave">Assigned study (days)</Label>
-                    <Input
-                      id="edit-study-leave"
-                      type="number"
-                      min={0}
-                      max={365}
-                      value={studyLeave}
-                      onChange={e => setStudyLeave(Number(e.target.value))}
-                    />
-                  </div>
-                </>
-              )}
-              {year && (
-                <>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-annual-remaining">Remaining annual (days)</Label>
-                    <Input
-                      id="edit-annual-remaining"
-                      type="number"
-                      step={0.5}
-                      min={0}
-                      max={annualCeiling}
-                      value={annualRemaining}
-                      onChange={e => setAnnualRemaining(Number(e.target.value))}
-                    />
-                    <p className="text-xs text-muted">
-                      {poolNote(
-                        staff.annual_pool_days,
-                        staff.annual_carried_days,
-                        annualCeiling,
-                      )}
-                    </p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-medical-remaining">Remaining medical (days)</Label>
-                    <Input
-                      id="edit-medical-remaining"
-                      type="number"
-                      step={0.5}
-                      min={0}
-                      max={medicalCeiling}
-                      value={medicalRemaining}
-                      onChange={e => setMedicalRemaining(Number(e.target.value))}
-                    />
-                    <p className="text-xs text-muted">
-                      {poolNote(
-                        staff.medical_pool_days,
-                        staff.medical_carried_days,
-                        medicalCeiling,
-                      )}
-                    </p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-study-remaining">Remaining study (days)</Label>
-                    <Input
-                      id="edit-study-remaining"
-                      type="number"
-                      step={0.5}
-                      min={0}
-                      max={studyCeiling}
-                      value={studyRemaining}
-                      onChange={e => setStudyRemaining(Number(e.target.value))}
-                    />
-                    <p className="text-xs text-muted">
-                      {poolNote(
-                        staff.study_pool_days,
-                        staff.study_carried_days,
-                        studyCeiling,
-                      )}
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+      <div className="space-y-3 rounded-lg border border-border bg-paper p-3">
+        <div>
+          <h3 className="text-sm font-medium text-ink">Leave</h3>
+          <p className="mt-0.5 text-xs text-muted">
+            Assigned days apply from the next leave year. Remaining corrects
+            this one. The three types are separate — none eats into another.
+          </p>
         </div>
-      )}
+        {!assigned && !year ? (
+          <p className="text-xs text-muted">
+            Leave figures unavailable — the API did not report them for this
+            staff member, so there is nothing to edit here.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {assigned && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-annual-leave">Assigned annual (days)</Label>
+                  <Input
+                    id="edit-annual-leave"
+                    type="number"
+                    min={0}
+                    max={365}
+                    value={annualLeave}
+                    onChange={e => setAnnualLeave(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-medical-leave">Assigned medical (days)</Label>
+                  <Input
+                    id="edit-medical-leave"
+                    type="number"
+                    min={0}
+                    max={365}
+                    value={medicalLeave}
+                    onChange={e => setMedicalLeave(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-study-leave">Assigned study (days)</Label>
+                  <Input
+                    id="edit-study-leave"
+                    type="number"
+                    min={0}
+                    max={365}
+                    value={studyLeave}
+                    onChange={e => setStudyLeave(Number(e.target.value))}
+                  />
+                </div>
+              </>
+            )}
+            {year && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-annual-remaining">Remaining annual (days)</Label>
+                  <Input
+                    id="edit-annual-remaining"
+                    type="number"
+                    step={0.5}
+                    min={0}
+                    max={annualCeiling}
+                    value={annualRemaining}
+                    onChange={e => setAnnualRemaining(Number(e.target.value))}
+                  />
+                  <p className="text-xs text-muted">
+                    {poolNote(
+                      staff.annual_pool_days,
+                      staff.annual_carried_days,
+                      annualCeiling,
+                    )}
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-medical-remaining">Remaining medical (days)</Label>
+                  <Input
+                    id="edit-medical-remaining"
+                    type="number"
+                    step={0.5}
+                    min={0}
+                    max={medicalCeiling}
+                    value={medicalRemaining}
+                    onChange={e => setMedicalRemaining(Number(e.target.value))}
+                  />
+                  <p className="text-xs text-muted">
+                    {poolNote(
+                      staff.medical_pool_days,
+                      staff.medical_carried_days,
+                      medicalCeiling,
+                    )}
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-study-remaining">Remaining study (days)</Label>
+                  <Input
+                    id="edit-study-remaining"
+                    type="number"
+                    step={0.5}
+                    min={0}
+                    max={studyCeiling}
+                    value={studyRemaining}
+                    onChange={e => setStudyRemaining(Number(e.target.value))}
+                  />
+                  <p className="text-xs text-muted">
+                    {poolNote(
+                      staff.study_pool_days,
+                      staff.study_carried_days,
+                      studyCeiling,
+                    )}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       <DialogFooter>
         <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>

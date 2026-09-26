@@ -21,14 +21,22 @@ import { sgFormat } from '../../lib/time'
 import * as rules from './rules'
 
 /**
- * Leave requests an instructor files for themselves.
+ * Leave requests a staff member files for themselves — an instructor or an
+ * admin, on equal terms (be/docs/adr/0009).
  *
  * Every rule lives in `./rules.ts`; this module only fetches what those rules
  * need and writes the row. The one rule it can't ask a pure function for is the
  * clash, and even that reuses machinery: `findOccupancyConflicts` is the same
  * lookup that stops an instructor being double-booked, asked in reverse. It
  * already excludes cancelled and non-active events, so a cancelled class
- * correctly does not block leave.
+ * correctly does not block leave. An admin teaches nothing, so for them it
+ * finds only their own leave.
+ *
+ * **Leave Conflicts and the study Leave Cap are instructor-only.** They protect
+ * teaching cover, which an admin is not part of: an admin's leave is never
+ * refused by them, never counted toward them, and never in a conflict pair.
+ * Which of the two someone is comes from their role, not from whether an
+ * `instructors` row exists — an instructor promoted to admin keeps theirs.
  *
  * Approve / reject / revoke live here too (`decideLeaveRequest`), but are only
  * ever reachable through the admin route subtree — see routes/portal/admin/leave.ts.
@@ -36,14 +44,14 @@ import * as rules from './rules'
 
 export type LeaveRequestRow = typeof leaveRequests.$inferSelect
 
-/** One Leave Type's year as the instructor's own page reads it. The three grant
- *  figures are shown apart so a one-off surplus is distinguishable from the
- *  yearly figure: Assigned is what the profile says, Carried is what survived
- *  last year, and Pool is what leave is actually drawn from — after an admin's
- *  adjustment the Pool need not equal the other two summed. */
+/** One Leave Type's year as the staff member's own page reads it. The three
+ *  grant figures are shown apart so a one-off surplus is distinguishable from
+ *  the yearly figure: Assigned is what the profile says, Carried is what
+ *  survived last year, and Pool is what leave is actually drawn from — after an
+ *  admin's adjustment the Pool need not equal the other two summed. */
 export interface LeaveBalance {
   type: rules.LeaveType
-  /** The yearly figure on the instructor's profile. */
+  /** The yearly figure on the staff member's profile. */
   assigned_days: number
   /** Of the Pool, how much came from last year. Only annual ever carries. */
   carried_days: number
@@ -79,7 +87,7 @@ interface LeavePool {
 }
 
 /**
- * This instructor's Pool for `leaveYear`, every Leave Type — materialised on
+ * This staff member's Pool for `leaveYear`, every Leave Type — materialised on
  * this read if the year has never been read before. There is no 1 January job;
  * this IS the job, and it runs when someone first asks, which is also why a new
  * Leave Type needs no backfill: the missing row is written the first time
@@ -92,23 +100,26 @@ interface LeavePool {
  * the two is `rules.poolDays`.
  *
  * Carried comes from the previous year's **stored** Pool minus its Committed
- * days. No stored Pool for that year — a new instructor, or a year nobody ever
+ * days. No stored Pool for that year — a new joiner, or a year nobody ever
  * opened — carries 0 and looks no further back, which is what makes the chain
  * finite rather than recursive to the beginning of time.
  *
  * A **future** Leave Year is computed and NOT written. Annual leave must start
- * after today, so an instructor filing next January's leave in August would
+ * after today, so someone filing next January's leave in August would
  * otherwise freeze next year's Pool at Carried = 0 and the real rollover could
  * never apply their carry. The figure is honest to submit against; it becomes a
  * row when the year arrives.
  *
  * Three things about the transaction:
  *
- *  - The locked select of the instructor row is the FIRST statement, and it is
- *    the same lock the submission path already takes — not a second one. It is
- *    one row per instructor, so two instructors never wait on each other.
- *  - It doubles as the permission check: admins have no
- *    `instructors` row and no leave concept at all.
+ *  - The locked select of the staff row is the FIRST statement that touches
+ *    this person's leave. It is one row per person, so two people never wait on
+ *    each other. `no key update`, not `update`: it serialises this person's
+ *    leave writes against each other without blocking the foreign-key checks
+ *    every other insert naming this staff member takes.
+ *  - The tenant filter doubles as the permission check: a staff id belonging to
+ *    another studio is `staff_not_found` here, so no Pool of theirs is ever
+ *    read, materialised or adjusted from this tenant's side.
  *  - Insert-ignoring-conflicts and re-reading (rather than trusting the insert)
  *    means a concurrent first read cannot produce a second Pool or a failure —
  *    whichever writer won, this returns the Pool that is actually stored.
@@ -116,26 +127,23 @@ interface LeavePool {
 async function leavePoolsFor(
   tx: Tx,
   tenantId: string,
-  instructorId: string,
+  staffUserId: string,
   leaveYear: number,
 ): Promise<Record<rules.LeaveType, LeavePool>> {
-  // The tenant filter doubles the permission check: an instructor id belonging
-  // to another studio is `not_an_instructor` here, so no Pool of theirs is ever
-  // read, materialised or adjusted from this tenant's side.
-  const [instructor] = await tx
+  const [person] = await tx
     .select({
-      annual: instructors.annualLeaveDays,
-      medical: instructors.medicalLeaveDays,
-      study: instructors.studyLeaveDays,
+      annual: staffUsers.annualLeaveDays,
+      medical: staffUsers.medicalLeaveDays,
+      study: staffUsers.studyLeaveDays,
     })
-    .from(instructors)
-    .where(and(eq(instructors.tenantId, tenantId), eq(instructors.staffUserId, instructorId)))
-    .for('update')
+    .from(staffUsers)
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, staffUserId)))
+    .for('no key update')
     .limit(1)
-  if (!instructor) throw new ForbiddenError('not_an_instructor')
+  if (!person) throw new NotFoundError('staff_not_found')
 
   // `global_policy` is one row per tenant, so the carry-over cap has to be read
-  // for the instructor's own studio; an unqualified `limit(1)` would apply
+  // for the staff member's own studio; an unqualified `limit(1)` would apply
   // whichever studio's row came back first.
   const [policy] = await tx
     .select({ carryOverCapDays: globalPolicy.leaveCarryOverCapDays })
@@ -154,7 +162,7 @@ async function leavePoolsFor(
         .where(
           and(
             eq(leavePools.tenantId, tenantId),
-            eq(leavePools.instructorId, instructorId),
+            eq(leavePools.staffUserId, staffUserId),
             eq(leavePools.leaveYear, previousYear),
           ),
         )
@@ -171,7 +179,7 @@ async function leavePoolsFor(
             .where(
               and(
                 eq(leaveRequests.tenantId, tenantId),
-                eq(leaveRequests.instructorId, instructorId),
+                eq(leaveRequests.staffUserId, staffUserId),
                 eq(leaveRequests.leaveYear, previousYear),
               ),
             )
@@ -186,11 +194,11 @@ async function leavePoolsFor(
       policy.carryOverCapDays,
     )
   }
-  // One shape per type, off the instructor row — the Assigned figure for every
-  // type is a column on that row, which is what keeps this uniform.
+  // One shape per type, off the staff row — the Assigned figure for every type
+  // is a column on that row, which is what keeps this uniform.
   const freshFor = (type: rules.LeaveType): LeavePool => {
     const carried = carriedInto(type)
-    const assigned = instructor[type]
+    const assigned = person[type]
     return { assigned, pool: rules.poolDays(assigned, carried), carried }
   }
   const fresh: Record<rules.LeaveType, LeavePool> = {
@@ -207,7 +215,7 @@ async function leavePoolsFor(
     .values(
       LEAVE_TYPES.map(type => ({
         tenantId,
-        instructorId,
+        staffUserId,
         type,
         leaveYear,
         days: fresh[type].pool.toFixed(1),
@@ -234,13 +242,13 @@ async function leavePoolsFor(
         .where(
           and(
             eq(leavePools.tenantId, tenantId),
-            eq(leavePools.instructorId, instructorId),
+            eq(leavePools.staffUserId, staffUserId),
             eq(leavePools.leaveYear, leaveYear),
           ),
         )
     ).map(r => [
       r.type,
-      { assigned: instructor[r.type], pool: Number(r.days), carried: Number(r.carriedDays) },
+      { assigned: person[r.type], pool: Number(r.days), carried: Number(r.carriedDays) },
     ]),
   )
   return {
@@ -250,7 +258,7 @@ async function leavePoolsFor(
   }
 }
 
-// ── The admin's view of one instructor's year ──────────────────────────────
+// ── The admin's view of one staff member's year ───────────────────────────
 
 /** One Leave Type's year as the admin staff profile RESPONSE carries it —
  *  snake_case, a subset, and an API contract. `rules.LeavePoolFigures` is the
@@ -263,13 +271,13 @@ export interface LeaveFiguresResponse {
   pool_days: number
   remaining_days: number
 }
-export type InstructorLeaveFigures = Record<rules.LeaveType, LeaveFiguresResponse>
+export type StaffLeaveFigures = Record<rules.LeaveType, LeaveFiguresResponse>
 
 /** Which Leave Year "now" is. The only one an admin may adjust: a future year
  *  has no stored Pool and a past one is frozen history. */
 const currentLeaveYear = () => rules.leaveYearOf(rules.sgToday(new Date()))
 
-async function yearRows(tx: Tx, tenantId: string, instructorId: string, leaveYear: number) {
+async function yearRows(tx: Tx, tenantId: string, staffUserId: string, leaveYear: number) {
   return (
     await tx
       .select()
@@ -277,7 +285,7 @@ async function yearRows(tx: Tx, tenantId: string, instructorId: string, leaveYea
       .where(
         and(
           eq(leaveRequests.tenantId, tenantId),
-          eq(leaveRequests.instructorId, instructorId),
+          eq(leaveRequests.staffUserId, staffUserId),
           eq(leaveRequests.leaveYear, leaveYear),
         ),
       )
@@ -287,11 +295,11 @@ async function yearRows(tx: Tx, tenantId: string, instructorId: string, leaveYea
 async function figuresFor(
   tx: Tx,
   tenantId: string,
-  instructorId: string,
+  staffUserId: string,
   leaveYear: number,
-): Promise<InstructorLeaveFigures> {
-  const pools = await leavePoolsFor(tx, tenantId, instructorId, leaveYear)
-  const rows = await yearRows(tx, tenantId, instructorId, leaveYear)
+): Promise<StaffLeaveFigures> {
+  const pools = await leavePoolsFor(tx, tenantId, staffUserId, leaveYear)
+  const rows = await yearRows(tx, tenantId, staffUserId, leaveYear)
   const of = (type: rules.LeaveType): LeaveFiguresResponse => {
     const f = rules.leavePoolFigures(type, pools[type].pool, rows, leaveYear)
     return { carried_days: pools[type].carried, pool_days: f.pool, remaining_days: f.remaining }
@@ -300,45 +308,58 @@ async function figuresFor(
 }
 
 /**
- * This Leave Year's figures for each of these instructors — what the admin staff
- * list shows so the edit form prefills without a second call.
+ * This Leave Year's figures for each of these staff members — what the admin
+ * staff list shows so the edit form prefills without a second call.
  *
  * A read that writes, like every Pool read: it goes through `leavePoolsFor`,
- * so the year is materialised under the usual per-instructor lock rather than
- * being guessed at.
+ * so the year is materialised under the usual per-person lock rather than
+ * being guessed at. The locks are taken in id order, the same order
+ * `assertNotLastAdmin` locks admin rows in, so a staff list and a demotion
+ * running together cannot deadlock.
+ *
+ * A studio with no policy row yet has no carry-over cap to compose a Pool
+ * with, so it gets no figures rather than a failed read: this runs under the
+ * staff list and every staff profile, which must keep working for a studio
+ * whose policy has not been seeded. The portal says the figures are
+ * unavailable.
  */
 async function currentLeaveFigures(
   tenantId: string,
-  instructorIds: readonly string[],
-): Promise<Map<string, InstructorLeaveFigures>> {
-  if (instructorIds.length === 0) return new Map()
+  staffUserIds: readonly string[],
+): Promise<Map<string, StaffLeaveFigures>> {
+  if (staffUserIds.length === 0) return new Map()
+  const [policy] = await db
+    .select({ id: globalPolicy.id })
+    .from(globalPolicy)
+    .where(eq(globalPolicy.tenantId, tenantId))
+    .limit(1)
+  if (!policy) return new Map()
   const leaveYear = currentLeaveYear()
   return db.transaction(async tx => {
-    const out = new Map<string, InstructorLeaveFigures>()
-    // ponytail: one round trip per instructor. Batch the pool/request reads if
-    // the staff list ever gets long enough to notice.
-    for (const id of instructorIds) out.set(id, await figuresFor(tx, tenantId, id, leaveYear))
+    const out = new Map<string, StaffLeaveFigures>()
+    // ponytail: one round trip per staff member. Batch the pool/request reads
+    // if the staff list ever gets long enough to notice.
+    for (const id of [...staffUserIds].sort()) out.set(id, await figuresFor(tx, tenantId, id, leaveYear))
     return out
   })
 }
 
 /**
- * Attach this Leave Year's Carried / Pool / Remaining to every instructor in a
- * list of staff rows, so the admin edit form prefills without a second call.
- * A row with no Assigned Days is not an instructor and is passed through
- * untouched — an admin has no leave concept to have figures for.
+ * Attach this Leave Year's Carried / Pool / Remaining to every row in a list of
+ * staff rows, so the admin edit form prefills without a second call. Every
+ * staff member has leave, admins included, so every row gets figures.
  *
  * Generic over the row rather than importing the staff profile type: leave knows
  * what leave figures are, and nothing here needs to know what else a staff row
  * carries.
  */
-export async function withLeaveFigures<T extends { id: string; annualLeaveDays?: number }>(
+export async function withLeaveFigures<T extends { id: string }>(
   tenantId: string,
   rows: T[],
-): Promise<(T & { leave?: InstructorLeaveFigures })[]> {
+): Promise<(T & { leave?: StaffLeaveFigures })[]> {
   const figures = await currentLeaveFigures(
     tenantId,
-    rows.filter(r => r.annualLeaveDays !== undefined).map(r => r.id),
+    rows.map(r => r.id),
   )
   return rows.map(r => {
     const leave = figures.get(r.id)
@@ -346,28 +367,9 @@ export async function withLeaveFigures<T extends { id: string; annualLeaveDays?:
   })
 }
 
-/** One instructor's **Assigned Days**, or nothing at all if this staff user is
- *  not an instructor — the caller spreads it onto a staff row, so absent beats
- *  null. */
-export async function assignedLeaveDays(
-  tenantId: string,
-  staffUserId: string,
-): Promise<{ annualLeaveDays?: number; medicalLeaveDays?: number; studyLeaveDays?: number }> {
-  const [row] = await db
-    .select({
-      annualLeaveDays: instructors.annualLeaveDays,
-      medicalLeaveDays: instructors.medicalLeaveDays,
-      studyLeaveDays: instructors.studyLeaveDays,
-    })
-    .from(instructors)
-    .where(and(eq(instructors.tenantId, tenantId), eq(instructors.staffUserId, staffUserId)))
-    .limit(1)
-  return row ?? {}
-}
-
 export interface AdjustRemainingInput {
-  instructorId: string
-  /** The Remaining the instructor should have. Omitted types are left alone. */
+  staffUserId: string
+  /** The Remaining this staff member should have. Omitted types are left alone. */
   annual?: number
   medical?: number
   study?: number
@@ -376,7 +378,7 @@ export interface AdjustRemainingInput {
 /**
  * An admin correcting a live Leave Year: they type the Remaining, and the Pool
  * is back-solved from it (`rules.poolForRemaining`) so that the number they typed
- * is the number the instructor then sees.
+ * is the number the staff member then sees.
  *
  * Carried is left exactly as stored. Assigned, Carried and the new Pool are then
  * three honest numbers whose sum no longer has to agree — which is the point of
@@ -387,18 +389,18 @@ export interface AdjustRemainingInput {
  * writes would make it a one-way ratchet — a figure typed too low could never be
  * put back until January. See `rules.checkRemainingAdjustment`.
  *
- * Runs under the SAME per-instructor lock the submission path takes, taken by
+ * Runs under the SAME per-person lock the submission path takes, taken by
  * `leavePoolsFor` as the transaction's first statement: an adjustment and a
  * submission cannot both read the same "before".
  */
 export async function adjustRemainingDays(
   tenantId: string,
   input: AdjustRemainingInput,
-): Promise<InstructorLeaveFigures> {
+): Promise<StaffLeaveFigures> {
   const leaveYear = currentLeaveYear()
   return db.transaction(async tx => {
-    const pools = await leavePoolsFor(tx, tenantId, input.instructorId, leaveYear)
-    const rows = await yearRows(tx, tenantId, input.instructorId, leaveYear)
+    const pools = await leavePoolsFor(tx, tenantId, input.staffUserId, leaveYear)
+    const rows = await yearRows(tx, tenantId, input.staffUserId, leaveYear)
 
     for (const type of LEAVE_TYPES) {
       const desired = input[type]
@@ -420,13 +422,13 @@ export async function adjustRemainingDays(
         .where(
           and(
             eq(leavePools.tenantId, tenantId),
-            eq(leavePools.instructorId, input.instructorId),
+            eq(leavePools.staffUserId, input.staffUserId),
             eq(leavePools.type, type),
             eq(leavePools.leaveYear, leaveYear),
           ),
         )
     }
-    return figuresFor(tx, tenantId, input.instructorId, leaveYear)
+    return figuresFor(tx, tenantId, input.staffUserId, leaveYear)
   })
 }
 
@@ -451,28 +453,28 @@ function balances(
   })
 }
 
-/** The instructor's own page: every type's balance for `leaveYear`, plus their whole
- *  history (all years — the balances are the year-scoped part).
+/** The staff member's own page: every type's balance for `leaveYear`, plus their
+ *  whole history (all years — the balances are the year-scoped part).
  *
  *  Which year "no year" means is a domain question, so it is answered here and
  *  not in the route: the leave year the Singapore-local today falls in.
  *
  *  A read that writes: this is where a Leave Year's Pool is first materialised,
- *  so it runs in a transaction under the instructor's lock. */
+ *  so it runs in a transaction under the staff member's lock. */
 export async function getOwnLeave(
   tenantId: string,
-  instructorId: string,
+  staffUserId: string,
   leaveYear = rules.leaveYearOf(rules.sgToday(new Date())),
 ): Promise<{ leave_year: number; balances: LeaveBalance[]; requests: LeaveRequestRow[] }> {
   return db.transaction(async tx => {
-    const pool = await leavePoolsFor(tx, tenantId, instructorId, leaveYear)
+    const pool = await leavePoolsFor(tx, tenantId, staffUserId, leaveYear)
     const rows = await tx
       .select()
       .from(leaveRequests)
       .where(
         and(
           eq(leaveRequests.tenantId, tenantId),
-          eq(leaveRequests.instructorId, instructorId),
+          eq(leaveRequests.staffUserId, staffUserId),
         ),
       )
       .orderBy(desc(leaveRequests.startDate), desc(leaveRequests.createdAt))
@@ -485,7 +487,7 @@ export async function getOwnLeave(
 }
 
 export interface SubmitLeaveInput {
-  instructorId: string
+  staffUserId: string
   type: rules.LeaveType
   startDate: rules.PlainDate
   endDate: rules.PlainDate
@@ -496,14 +498,17 @@ export interface SubmitLeaveInput {
 
 /**
  * The Pool read, the clash check and the insert are one transaction,
- * serialised per instructor by locking that instructor's OWN row as the first
- * statement in it. Without that, two requests that each fit the remaining
+ * serialised per person by locking that person's OWN staff row (inside
+ * `leavePoolsFor`). Without that, two requests that each fit the remaining
  * Remaining can both read the same "before" and both be accepted — the very
  * over-commitment "pending counts against your Pool" exists to stop.
  *
- * The lock is on `instructors`, not on the leave rows: what has to be kept out
- * is a row that does not exist yet, and an absent row cannot be locked. It is
- * one row per instructor, so two instructors never wait on each other.
+ * The lock is on a row, not on the leave rows: what has to be kept out is a row
+ * that does not exist yet, and an absent row cannot be locked.
+ *
+ * An instructor's submission takes one lock before that: the rule lock on
+ * `instructors`, which is what the Leave Conflicts and the study Leave Cap are
+ * serialised by. An admin is subject to neither and takes only their own.
  */
 export async function submitLeaveRequest(
   tenantId: string,
@@ -514,90 +519,95 @@ export async function submitLeaveRequest(
   const halfDay = input.halfDay ?? 'none'
 
   const filed = await db.transaction(async tx => {
-    // The applicant is an instructor OF THIS STUDIO. Read first because the
+    // The applicant is a staff member OF THIS STUDIO. Read first because the
     // caps, the declared pairs and the study-leave lock below are all
-    // per-tenant, and a study request that locked *every* instructor row on the
-    // platform would serialise submissions across studios that share nothing.
+    // per-tenant — and only apply to an instructor.
     const [applicant] = await tx
-      .select({ id: instructors.staffUserId })
-      .from(instructors)
-      .where(
-        and(eq(instructors.tenantId, tenantId), eq(instructors.staffUserId, input.instructorId)),
-      )
+      .select({ id: staffUsers.id, role: staffUsers.role })
+      .from(staffUsers)
+      .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, input.staffUserId)))
       .limit(1)
-    if (!applicant) throw new ForbiddenError('not_an_instructor')
+    if (!applicant) throw new NotFoundError('staff_not_found')
+    const teaches = applicant.role === 'instructor'
 
     // Who this instructor is in a declared **Leave Conflict** with. An ARCHIVED
-    // partner is not in the set — their conflicts refuse nothing — which the
-    // join to an active staff row is what enforces. Read before the lock,
-    // because it is what decides which rows the lock has to cover.
+    // partner is not in the set — their conflicts refuse nothing — and nor is
+    // one since promoted to admin; the join to an active instructor staff row
+    // is what enforces both. Read before the lock, because it is what decides
+    // which rows the lock has to cover.
     // ponytail: unlocked, so a pair declared by a policy save running RIGHT NOW
     // can be missed by a submission already in flight — the same window in which
     // "declaring a conflict never revokes leave already approved" applies, one
     // request wide. Closing it needs the lock before the read, which cannot be
     // ordered by staff user id and so trades this for a deadlock. Take a table
     // lock on `leave_conflicts` here if it ever matters.
-    const partnerIds = (
-      await tx
-        .select({ id: staffUsers.id })
-        .from(leaveConflicts)
-        .innerJoin(
-          staffUsers,
-          or(
-            and(
-              eq(leaveConflicts.instructorAId, input.instructorId),
-              eq(staffUsers.id, leaveConflicts.instructorBId),
-            ),
-            and(
-              eq(leaveConflicts.instructorBId, input.instructorId),
-              eq(staffUsers.id, leaveConflicts.instructorAId),
-            ),
-          ),
-        )
-        .where(and(eq(leaveConflicts.tenantId, tenantId), eq(staffUsers.status, 'active')))
-    ).map(r => r.id)
+    const partnerIds = !teaches
+      ? []
+      : (
+          await tx
+            .select({ id: staffUsers.id })
+            .from(leaveConflicts)
+            .innerJoin(
+              staffUsers,
+              or(
+                and(
+                  eq(leaveConflicts.instructorAId, input.staffUserId),
+                  eq(staffUsers.id, leaveConflicts.instructorBId),
+                ),
+                and(
+                  eq(leaveConflicts.instructorBId, input.staffUserId),
+                  eq(staffUsers.id, leaveConflicts.instructorAId),
+                ),
+              ),
+            )
+            .where(
+              and(
+                eq(leaveConflicts.tenantId, tenantId),
+                eq(staffUsers.status, 'active'),
+                eq(staffUsers.role, 'instructor'),
+              ),
+            )
+        ).map(r => r.id)
 
-    // THE FIRST write-blocking statement: the rule lock. Locking only the
-    // applicant's own instructor row is not enough — two instructors in a
+    // An instructor's FIRST write-blocking statement: the rule lock. Locking
+    // only the applicant's own row is not enough — two instructors in a
     // declared pair submitting the same dates take two different locks, both
     // read a clear calendar and both pass. So the applicant AND their partners
     // are locked, in staff-user-id order so two transactions cannot deadlock —
     // the same order the policy save takes its instructor locks in
     // (services/policy/update.ts). A study request serialises study submissions
-    // studio-wide, because that cap counts every instructor. The applicant's own
-    // row is always inside the set, so the narrower lock `leavePoolsFor` takes
-    // next is already held, and an instructor with no declared conflicts locks
-    // nothing but themselves.
-    await tx
-      .select({ id: instructors.staffUserId })
-      .from(instructors)
-      .where(
-        input.type === 'study'
-          ? eq(instructors.tenantId, tenantId)
-          : and(
-              eq(instructors.tenantId, tenantId),
-              inArray(instructors.staffUserId, [input.instructorId, ...partnerIds]),
-            ),
-      )
-      .orderBy(asc(instructors.staffUserId))
-      .for('update')
+    // studio-wide, because that cap counts every instructor. An instructor with
+    // no declared conflicts locks nothing but themselves.
+    if (teaches) {
+      await tx
+        .select({ id: instructors.staffUserId })
+        .from(instructors)
+        .where(
+          input.type === 'study'
+            ? eq(instructors.tenantId, tenantId)
+            : and(
+                eq(instructors.tenantId, tenantId),
+                inArray(instructors.staffUserId, [input.staffUserId, ...partnerIds]),
+              ),
+        )
+        .orderBy(asc(instructors.staffUserId))
+        .for('update')
+    }
 
-    // FIRST statement, and the reason there is a transaction at all: its first
-    // statement takes this instructor's row lock, and it is also the permission
-    // check — admins have no `instructors` row. It returns the
-    // Pool this submission is measured against, materialising it if this is the
-    // first anyone has touched `leaveYear`, all under that one lock.
-    const pool = await leavePoolsFor(tx, tenantId, input.instructorId, leaveYear)
+    // Takes this person's own row lock and returns the Pool this submission is
+    // measured against, materialising it if this is the first anyone has
+    // touched `leaveYear`, all under that one lock.
+    const pool = await leavePoolsFor(tx, tenantId, input.staffUserId, leaveYear)
 
-    // The query narrows to this tenant, instructor and leave year; which
-    // statuses and which type count is the pure rule's business.
+    // The query narrows to this tenant, person and leave year; which statuses
+    // and which type count is the pure rule's business.
     const existing = await tx
       .select()
       .from(leaveRequests)
       .where(
         and(
           eq(leaveRequests.tenantId, tenantId),
-          eq(leaveRequests.instructorId, input.instructorId),
+          eq(leaveRequests.staffUserId, input.staffUserId),
           eq(leaveRequests.leaveYear, leaveYear),
         ),
       )
@@ -617,73 +627,79 @@ export async function submitLeaveRequest(
     })
     if (!check.ok) throw new BadRequestError(check.code, { message: check.message })
 
-    // The **Leave Conflicts** and the **Leave Cap**. The queries narrow — this
-    // instructor's declared partners, the study cap, and every OTHER
-    // instructor's occupying leave overlapping the requested dates — and
-    // `rules.checkLeaveCaps` decides which of those rows each rule counts, and
-    // whether the peak clears it.
-    const [caps] = await tx
-      .select({ study: globalPolicy.studyLeaveCap })
-      .from(globalPolicy)
-      .where(eq(globalPolicy.tenantId, tenantId))
-      .limit(1)
-    if (!caps) throw new NotFoundError('policy_not_seeded')
-    const peers = (
-      await tx
-        .select({
-          instructorId: leaveRequests.instructorId,
-          name: staffUsers.name,
-          type: leaveRequests.type,
-          startDate: leaveRequests.startDate,
-          endDate: leaveRequests.endDate,
-          halfDay: leaveRequests.halfDay,
-        })
-        .from(leaveRequests)
-        .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.instructorId))
-        .where(
-          and(
-            // The peers a cap counts are this studio's. Another studio's
-            // absences must never make a class here impossible to staff.
-            eq(leaveRequests.tenantId, tenantId),
-            ne(leaveRequests.instructorId, input.instructorId),
-            // Pending counts, exactly as it does for the Pool: the first to
-            // submit holds the day. A rejection frees it at that moment.
-            inArray(leaveRequests.status, [...rules.OCCUPYING_STATUSES]),
-            lte(leaveRequests.startDate, input.endDate),
-            gte(leaveRequests.endDate, input.startDate),
-          ),
-        )
-    ).map(p => ({
-      instructorId: p.instructorId,
-      instructorName: p.name,
-      type: p.type,
-      ...rules.leaveWindow(p.startDate, p.endDate, p.halfDay),
-    }))
-    const capInput = {
-      type: input.type,
-      conflictPartnerIds: partnerIds,
-      window: rules.leaveWindow(input.startDate, input.endDate, halfDay),
-      peers,
-      studyCap: caps.study,
+    // The **Leave Conflicts** and the **Leave Cap** — an instructor's only. The
+    // queries narrow — this instructor's declared partners, the study cap, and
+    // every OTHER instructor's occupying leave overlapping the requested dates —
+    // and `rules.checkLeaveCaps` decides which of those rows each rule counts,
+    // and whether the peak clears it. An admin's leave is not among the peers:
+    // it is never counted toward the cap.
+    let capWarning = ''
+    if (teaches) {
+      const [caps] = await tx
+        .select({ study: globalPolicy.studyLeaveCap })
+        .from(globalPolicy)
+        .where(eq(globalPolicy.tenantId, tenantId))
+        .limit(1)
+      if (!caps) throw new NotFoundError('policy_not_seeded')
+      const peers = (
+        await tx
+          .select({
+            staffUserId: leaveRequests.staffUserId,
+            name: staffUsers.name,
+            type: leaveRequests.type,
+            startDate: leaveRequests.startDate,
+            endDate: leaveRequests.endDate,
+            halfDay: leaveRequests.halfDay,
+          })
+          .from(leaveRequests)
+          .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.staffUserId))
+          .where(
+            and(
+              // The peers a cap counts are this studio's. Another studio's
+              // absences must never make a class here impossible to staff.
+              eq(leaveRequests.tenantId, tenantId),
+              ne(leaveRequests.staffUserId, input.staffUserId),
+              eq(staffUsers.role, 'instructor'),
+              // Pending counts, exactly as it does for the Pool: the first to
+              // submit holds the day. A rejection frees it at that moment.
+              inArray(leaveRequests.status, [...rules.OCCUPYING_STATUSES]),
+              lte(leaveRequests.startDate, input.endDate),
+              gte(leaveRequests.endDate, input.startDate),
+            ),
+          )
+      ).map(p => ({
+        instructorId: p.staffUserId,
+        instructorName: p.name,
+        type: p.type,
+        ...rules.leaveWindow(p.startDate, p.endDate, p.halfDay),
+      }))
+      const capInput = {
+        type: input.type,
+        conflictPartnerIds: partnerIds,
+        window: rules.leaveWindow(input.startDate, input.endDate, halfDay),
+        peers,
+        studyCap: caps.study,
+      }
+      const capped = rules.checkLeaveCaps(capInput)
+      if (!capped.ok) throw new ConflictError(capped.code, { message: capped.message })
+      // Medical is never refused, so a breached Leave Conflict — or an over-cap
+      // medical absence — has to reach the admins another way, in time to
+      // arrange cover (§17). The same measurement the refusal above uses, as a
+      // sentence — empty for everything that cleared.
+      capWarning = rules.leaveCapWarning(capInput)
     }
-    const capped = rules.checkLeaveCaps(capInput)
-    if (!capped.ok) throw new ConflictError(capped.code, { message: capped.message })
-    // Medical is never refused, so a breached Leave Conflict — or an over-cap
-    // medical absence — has to reach the admins another way, in time to arrange
-    // cover (§17). The same measurement the refusal above uses, as a sentence —
-    // empty for everything that cleared.
-    const capWarning = rules.leaveCapWarning(capInput)
 
-    // The clash rule, in reverse: ask occupancy what this instructor is already on
+    // The clash rule, in reverse: ask occupancy what this person is already on
     // across the requested days (only the requested HALF, if it is a half day),
-    // and keep only what has yet to finish.
+    // and keep only what has yet to finish. An admin is on no sessions, so for
+    // them this finds only their own leave.
     // Runs on THIS transaction's connection, not the pool. A transaction that
     // awaits a second connection deadlocks the pool once enough of them are in
     // flight at once, and a wedged pool takes down every route, not just leave.
     const conflicts = rules.futureConflicts(
       await findOccupancyConflicts(
         tenantId,
-        { kind: 'instructor', id: input.instructorId },
+        { kind: 'instructor', id: input.staffUserId },
         rules.leaveWindow(input.startDate, input.endDate, halfDay),
         undefined,
         tx,
@@ -691,7 +707,7 @@ export async function submitLeaveRequest(
       now,
     )
     if (conflicts.length > 0) {
-      // Leave occupies an instructor, so their OWN pending/approved leave comes back
+      // Leave occupies a person, so their OWN pending/approved leave comes back
       // here too. That is not a booking to cancel, so it gets its own sentence —
       // and a real event, being the actionable one, wins when both turn up.
       const events = conflicts.filter(c => c.kind !== 'leave')
@@ -710,7 +726,7 @@ export async function submitLeaveRequest(
       .insert(leaveRequests)
       .values({
         tenantId,
-        instructorId: input.instructorId,
+        staffUserId: input.staffUserId,
         type: input.type,
         startDate: input.startDate,
         endDate: input.endDate,
@@ -735,7 +751,7 @@ export async function submitLeaveRequest(
 export async function transitionOwnLeaveRequest(
   tenantId: string,
   action: 'withdraw' | 'cancel',
-  instructorId: string,
+  staffUserId: string,
   id: string,
 ): Promise<LeaveRequestRow> {
   const [row] = await db
@@ -745,7 +761,7 @@ export async function transitionOwnLeaveRequest(
       and(
         eq(leaveRequests.tenantId, tenantId),
         eq(leaveRequests.id, id),
-        eq(leaveRequests.instructorId, instructorId),
+        eq(leaveRequests.staffUserId, staffUserId),
       ),
     )
     .limit(1)
@@ -780,16 +796,17 @@ function requireBucket(): void {
 }
 
 /**
- * Attach (or replace) the Supporting Document on the instructor's OWN request.
+ * Attach (or replace) the Supporting Document on the caller's OWN request.
  *
- * The row is fetched by id AND instructor, so there is no request but their own to
- * attach to. What the file may be is `rules.checkSupportingDocument`'s call, and
- * the key is written only after the object is safely in the bucket — a failed
- * upload leaves the row pointing at nothing rather than at a missing object.
+ * The row is fetched by id AND staff member, so there is no request but their
+ * own to attach to. What the file may be is `rules.checkSupportingDocument`'s
+ * call, and the key is written only after the object is safely in the bucket —
+ * a failed upload leaves the row pointing at nothing rather than at a missing
+ * object.
  */
 export async function attachSupportingDocument(input: {
   tenantId: string
-  instructorId: string
+  staffUserId: string
   id: string
   contentType: string
   bytes: Uint8Array
@@ -801,7 +818,7 @@ export async function attachSupportingDocument(input: {
       and(
         eq(leaveRequests.tenantId, input.tenantId),
         eq(leaveRequests.id, input.id),
-        eq(leaveRequests.instructorId, input.instructorId),
+        eq(leaveRequests.staffUserId, input.staffUserId),
       ),
     )
     .limit(1)
@@ -817,7 +834,7 @@ export async function attachSupportingDocument(input: {
 
   const key = rules.supportingDocumentKey(
     input.tenantId,
-    row.instructorId,
+    row.staffUserId,
     row.id,
     check.extension,
   )
@@ -845,14 +862,14 @@ export async function supportingDocumentUrl(
   id: string,
 ): Promise<{ url: string; expires_in: number }> {
   const [row] = await db
-    .select({ instructorId: leaveRequests.instructorId, key: leaveRequests.supportingDocumentR2Key })
+    .select({ staffUserId: leaveRequests.staffUserId, key: leaveRequests.supportingDocumentR2Key })
     .from(leaveRequests)
     .where(and(eq(leaveRequests.tenantId, viewer.tenantId), eq(leaveRequests.id, id)))
     .limit(1)
   if (!row) throw new NotFoundError('leave_request_not_found')
-  if (viewer.role === 'instructor' && row.instructorId !== viewer.staffUserId) {
+  if (viewer.role === 'instructor' && row.staffUserId !== viewer.staffUserId) {
     throw new ForbiddenError('leave_not_yours', {
-      message: 'A Supporting Document is visible to its own instructor and to admins only.',
+      message: 'A Supporting Document is visible to the person who filed it and to admins only.',
     })
   }
   if (!row.key) throw new NotFoundError('document_not_found')
@@ -868,11 +885,13 @@ export async function supportingDocumentUrl(
 
 export interface AdminLeaveRequest {
   row: LeaveRequestRow
-  instructor: { id: string; name: string; email: string }
+  /** Who filed it. The role is shown beside the name, because the queue holds
+   *  admins' requests alongside instructors'. */
+  applicant: { id: string; name: string; email: string; role: 'admin' | 'instructor' }
 }
 
-/** Every instructor's requests, latest dates first (same order as the
- *  instructor's own list). `status` omitted means all of them. */
+/** Every staff member's requests, latest dates first (same order as each
+ *  person's own list). `status` omitted means all of them. */
 export async function listLeaveRequestsForAdmin(
   tenantId: string,
   status?: rules.LeaveStatus,
@@ -880,10 +899,15 @@ export async function listLeaveRequestsForAdmin(
   return db
     .select({
       row: leaveRequests,
-      instructor: { id: staffUsers.id, name: staffUsers.name, email: staffUsers.email },
+      applicant: {
+        id: staffUsers.id,
+        name: staffUsers.name,
+        email: staffUsers.email,
+        role: staffUsers.role,
+      },
     })
     .from(leaveRequests)
-    .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.instructorId))
+    .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.staffUserId))
     .where(
       and(
         eq(leaveRequests.tenantId, tenantId),
@@ -905,7 +929,8 @@ export async function listLeaveRequestsForAdmin(
  */
 export interface LeaveCalendarEntry {
   id: string
-  instructor: { id: string; name: string }
+  /** Who is away — an instructor or an admin, under the same rules. */
+  staff: { id: string; name: string }
   start_date: rules.PlainDate
   end_date: rules.PlainDate
   half_day: LeaveRequestRow['halfDay']
@@ -926,7 +951,8 @@ export interface LeaveCalendarEntry {
      *  is refused at submission — but a cap lowered or a pair declared afterwards
      *  is never retroactive, so an approved row can become breaching too, and
      *  that is equally worth seeing. Inside `detail` because it refers to a cap,
-     *  so it is redacted exactly as the rest is. */
+     *  so it is redacted exactly as the rest is. Always false on an admin's
+     *  leave: the caps are instructor-only. */
     over_cap: boolean
   } | null
 }
@@ -939,8 +965,8 @@ export interface LeaveCalendarViewer {
   tenantId: string
 }
 
-/** The caller as every leave read wants him. Assembled here, next to the type,
- *  so the three leave routes don't each rebuild the same pair of fields. */
+/** The caller as every leave read wants them. Assembled here, next to the type,
+ *  so the leave routes don't each rebuild the same pair of fields. */
 export const leaveViewer = (staff: typeof staffUsers.$inferSelect): LeaveCalendarViewer => ({
   staffUserId: staff.id,
   role: staff.role,
@@ -968,11 +994,12 @@ export async function listLeaveCalendar(
   const rows = await db
     .select({
       row: leaveRequests,
-      instructorName: staffUsers.name,
+      staffName: staffUsers.name,
+      staffRole: staffUsers.role,
       deciderName: decider.name,
     })
     .from(leaveRequests)
-    .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.instructorId))
+    .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.staffUserId))
     .leftJoin(decider, eq(decider.id, leaveRequests.decidedByStaffId))
     .where(
       and(
@@ -991,7 +1018,9 @@ export async function listLeaveCalendar(
   // count — every absence OVERLAPPING [from, to], including one that began
   // before the window opened and is still running inside it — so each entry is
   // measured against the others by the same pure peak function the refusal uses,
-  // with no second query for peers, only the cap and the declared pairs.
+  // with no second query for peers, only the cap and the declared pairs. Only
+  // instructors' leave is measured, or measured against: the caps protect
+  // teaching cover, and an admin's absence neither uses a place nor breaches one.
   //
   // The measured window is the entry clipped to [from, to]: inside it every
   // overlapping absence is present, so the peak is exact, while outside it the
@@ -1004,7 +1033,8 @@ export async function listLeaveCalendar(
     .limit(1)
   // Every declared **Leave Conflict** between two ACTIVE instructors, as the map
   // the rule wants: an archived instructor's conflicts refuse nothing at
-  // submission, so they flag nothing here either.
+  // submission, and nor do those of one since promoted to admin, so they flag
+  // nothing here either.
   const conflictA = alias(staffUsers, 'conflict_a')
   const conflictB = alias(staffUsers, 'conflict_b')
   const partners = new Map<string, string[]>()
@@ -1018,44 +1048,47 @@ export async function listLeaveCalendar(
         eq(leaveConflicts.tenantId, viewer.tenantId),
         eq(conflictA.status, 'active'),
         eq(conflictB.status, 'active'),
+        eq(conflictA.role, 'instructor'),
+        eq(conflictB.role, 'instructor'),
       ),
     )) {
     partners.set(p.a, [...(partners.get(p.a) ?? []), p.b])
     partners.set(p.b, [...(partners.get(p.b) ?? []), p.a])
   }
   const view = rules.leaveWindow(from, to)
-  const peers = rows.map(({ row, instructorName }) => ({
-    instructorId: row.instructorId,
-    instructorName,
+  const peers = rows.map(({ row, staffName }) => ({
+    instructorId: row.staffUserId,
+    instructorName: staffName,
     type: row.type,
     ...rules.leaveWindow(row.startDate, row.endDate, row.halfDay),
   }))
+  const teaching = new Set(rows.filter(r => r.staffRole === 'instructor').map(r => r.row.staffUserId))
   // ponytail: O(n²) over one calendar window's rows, which is a handful of
-  // instructors' leave in a month. Bucket by day if a studio ever grows into it.
+  // people's leave in a month. Bucket by day if a studio ever grows into it.
   const overCap = peers.map(self =>
-    caps
+    caps && teaching.has(self.instructorId)
       ? rules.leaveCapExceedance({
           type: self.type,
           conflictPartnerIds: partners.get(self.instructorId) ?? [],
           window: rules.clipWindow(self, view),
-          // Excluded by INSTRUCTOR, as the submission path excludes them — one
+          // Excluded by PERSON, as the submission path excludes them — one
           // person's own overlapping rows (a backdated medical over leave that
           // has already ended) are one instructor away, not two.
-          peers: peers.filter(p => p.instructorId !== self.instructorId),
+          peers: peers.filter(p => p.instructorId !== self.instructorId && teaching.has(p.instructorId)),
           studyCap: caps.study,
         }) !== null
       : false,
   )
 
-  return rows.map(({ row, instructorName, deciderName }, i) => ({
+  return rows.map(({ row, staffName, deciderName }, i) => ({
     id: row.id,
-    instructor: { id: row.instructorId, name: instructorName },
+    staff: { id: row.staffUserId, name: staffName },
     start_date: row.startDate,
     end_date: row.endDate,
     half_day: row.halfDay,
     status: row.status,
     detail:
-      seesEverything || row.instructorId === viewer.staffUserId
+      seesEverything || row.staffUserId === viewer.staffUserId
         ? {
             type: row.type,
             days: Number(row.days),
@@ -1074,7 +1107,7 @@ export interface DecideLeaveInput {
   id: string
   /** The deciding admin — recorded on the row and used as the audit actor. */
   actorStaffId: string
-  /** Mandatory for a rejection: it is what the instructor is told and emailed. */
+  /** Mandatory for a rejection: it is what the applicant is told and emailed. */
   reason?: string
 }
 
@@ -1082,8 +1115,12 @@ export interface DecideLeaveInput {
  * Approve, reject or revoke — the admin's three transitions.
  *
  * Whether the transition is allowed is `rules.checkAdminLeaveDecision`'s call;
- * this only fetches the row, writes the outcome and tells the instructor. No
+ * this only fetches the row, writes the outcome and tells the applicant. No
  * Pool is touched on any path — see the note on the rule.
+ *
+ * Any admin may decide any request, their own included. There is deliberately
+ * no self-decision guard: a studio with one admin would otherwise have nobody
+ * able to approve that admin's leave.
  */
 export async function decideLeaveRequest(
   tenantId: string,
@@ -1094,7 +1131,7 @@ export async function decideLeaveRequest(
   // without saying why.
   if (input.action === 'reject' && !reason) {
     throw new BadRequestError('reason_required', {
-      message: 'A rejection needs a reason — the instructor is sent it.',
+      message: 'A rejection needs a reason — the applicant is sent it.',
     })
   }
 
@@ -1132,15 +1169,18 @@ export async function decideLeaveRequest(
     .returning()
   if (!updated) throw new NotFoundError('leave_request_not_found')
 
-  // All three transitions are told to the instructor. A silent revocation is the
+  // All three transitions are told to the applicant. A silent revocation is the
   // one way this feature can leave someone expecting a day off that no longer
-  // exists, so it names who took it back and when.
-  await emailInstructorOfDecision(
-    tenantId,
-    updated,
-    reason,
-    revoking ? { staffId: input.actorStaffId, at: now } : undefined,
-  )
+  // exists, so it names who took it back and when. An admin deciding their own
+  // request already knows, and is not emailed about it.
+  if (updated.staffUserId !== input.actorStaffId) {
+    await emailApplicantOfDecision(
+      tenantId,
+      updated,
+      reason,
+      revoking ? { staffId: input.actorStaffId, at: now } : undefined,
+    )
+  }
   return updated
 }
 
@@ -1175,8 +1215,12 @@ async function staffName(tenantId: string, staffUserId: string, fallback: string
 }
 
 /** `capWarning` is the §17 line: empty unless this request breaches a declared
- *  **Leave Conflict** or the study **Leave Cap**, which only medical ever does —
- *  everything else was refused at submission. */
+ *  **Leave Conflict** or the study **Leave Cap**, which only an instructor's
+ *  medical leave ever does — everything else was refused at submission.
+ *
+ *  Every active admin but the applicant: an admin who files leave is not told
+ *  they filed it. The template's `instructor_name` is the applicant's name,
+ *  whichever role they hold — the variable is named for the copy that shipped. */
 async function emailAdminsOfSubmission(
   tenantId: string,
   row: LeaveRequestRow,
@@ -1186,7 +1230,7 @@ async function emailAdminsOfSubmission(
     tenantId,
     'leave_request_submitted',
     async () => ({
-      instructor_name: await staffName(tenantId, row.instructorId, 'An instructor'),
+      instructor_name: await staffName(tenantId, row.staffUserId, 'A staff member'),
       leave_type: row.type,
       dates: formatDates(row),
       days: String(Number(row.days)),
@@ -1194,16 +1238,17 @@ async function emailAdminsOfSubmission(
       cap_warning: capWarning,
     }),
     { leaveRequestId: row.id },
+    { exceptStaffId: row.staffUserId },
   )
 }
 
 /** "…on 10 August 2026 at 15:42" — a revocation is a moment, not just a day:
- *  an instructor may lose and refile leave inside one afternoon. */
+ *  someone may lose and refile leave inside one afternoon. */
 const revokedAtFormat = sgFormat('en-GB', { dateStyle: 'long', timeStyle: 'short' })
 
 /** Approved, rejected or revoked — one recipient, one shape. `revokedBy` is set
  *  on a revocation only, and is what that template's extra two lines render. */
-async function emailInstructorOfDecision(
+async function emailApplicantOfDecision(
   tenantId: string,
   row: LeaveRequestRow,
   reason: string,
@@ -1213,7 +1258,7 @@ async function emailInstructorOfDecision(
     const [staff] = await db
       .select({ id: staffUsers.id, name: staffUsers.name, email: staffUsers.email })
       .from(staffUsers)
-      .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, row.instructorId)))
+      .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, row.staffUserId)))
       .limit(1)
     if (!staff) return
 
@@ -1241,6 +1286,6 @@ async function emailInstructorOfDecision(
       },
     })
   } catch (err) {
-    reportError(err, 'leave decision: instructor notification failed', { leaveRequestId: row.id })
+    reportError(err, 'leave decision: applicant notification failed', { leaveRequestId: row.id })
   }
 }

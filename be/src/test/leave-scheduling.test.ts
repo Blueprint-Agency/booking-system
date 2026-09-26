@@ -152,7 +152,7 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
       .insert(schema.leaveRequests)
       .values({
         tenantId: tenant.id,
-        instructorId: who.id,
+        staffUserId: who.id,
         type: 'annual',
         startDate: date,
         endDate: date,
@@ -413,7 +413,7 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
     if (roomIds.length) await attempt(() => db.delete(schema.rooms).where(inArray(schema.rooms.id, roomIds)))
     await cleanup(sql`DELETE FROM clients WHERE email LIKE ${`%@${DOMAIN}`}`)
     if (staffIds.length) {
-      await attempt(() => db.delete(schema.leaveRequests).where(inArray(schema.leaveRequests.instructorId, staffIds)))
+      await attempt(() => db.delete(schema.leaveRequests).where(inArray(schema.leaveRequests.staffUserId, staffIds)))
       await attempt(() => db.delete(schema.auditLog).where(inArray(schema.auditLog.actorStaffId, staffIds)))
       await attempt(() => db.delete(schema.instructors).where(inArray(schema.instructors.staffUserId, staffIds)))
       await attempt(() => db.delete(schema.staffUsers).where(inArray(schema.staffUsers.id, staffIds)))

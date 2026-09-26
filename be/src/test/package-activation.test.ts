@@ -270,7 +270,7 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
     // A member cancels the class the first bundle paid for: the credit comes
     // back, but the second bundle holds the family's slot, so the first
     // waits again rather than tripping the index.
-    await cancelSvc.cancelBooking(tenantId, { bookingId, source: 'admin', actorStaffId: staffId })
+    await cancelSvc.cancelBooking(tenantId, { bookingId, source: 'admin', actorStaffId: staffId, credit: 'return' })
     const refunded = await row(first)
     assert.equal(refunded.creditsOrSessionsRemaining, 1)
     assert.equal(refunded.active, true, 'the credit is spendable again')

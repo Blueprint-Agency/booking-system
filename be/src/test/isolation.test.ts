@@ -223,7 +223,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
 
     const leaveStart = plainDate(new Date(Date.now() + 200 * 24 * HOUR))
     const leave = await leaveSvc.submitLeaveRequest(tenantId, {
-      instructorId: staff.id,
+      staffUserId: staff.id,
       type: 'annual',
       startDate: leaveStart,
       endDate: leaveStart,
@@ -332,12 +332,12 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     `)
     await harness.db.execute(sql`DELETE FROM workshops WHERE name LIKE '% Retreat' AND ${own}`)
     await harness.db.execute(sql`
-      DELETE FROM leave_requests WHERE instructor_id IN (
+      DELETE FROM leave_requests WHERE staff_user_id IN (
         SELECT id FROM staff_users WHERE email LIKE '%@isolation.test'
       )
     `)
     await harness.db.execute(sql`
-      DELETE FROM leave_pools WHERE instructor_id IN (
+      DELETE FROM leave_pools WHERE staff_user_id IN (
         SELECT id FROM staff_users WHERE email LIKE '%@isolation.test'
       )
     `)
@@ -989,7 +989,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
 
   test("a tenant cannot cancel, tick or no-show another tenant's booking", async () => {
     for (const attempt of [
-      () => cancelSvc.cancelBooking(two.tenantId, { bookingId: one.bookingId, source: 'admin' }),
+      () => cancelSvc.cancelBooking(two.tenantId, { bookingId: one.bookingId, source: 'admin', credit: 'return' }),
       () =>
         checkInSvc.markAttendance(two.tenantId, {
           bookingId: one.bookingId,
@@ -1340,27 +1340,27 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
 
   // ── leave (#62) ───────────────────────────────────────────────────────────
 
-  test("leave pools and requests belong to the instructor's own studio", async () => {
-    // A Pool is materialised under the instructor's lock, so a cross-tenant read
-    // would not merely leak — it would write a Pool for somebody else's staff.
+  test("leave pools and requests belong to the staff member's own studio", async () => {
+    // A Pool is materialised under the staff member's lock, so a cross-tenant
+    // read would not merely leak — it would write a Pool for somebody else's staff.
     await assert.rejects(
       () => leaveSvc.getOwnLeave(two.tenantId, one.instructorId),
-      (err: { code?: string }) => err.code === 'not_an_instructor',
+      (err: { code?: string }) => err.code === 'staff_not_found',
     )
     await assert.rejects(
       () =>
         leaveSvc.submitLeaveRequest(two.tenantId, {
-          instructorId: one.instructorId,
+          staffUserId: one.instructorId,
           type: 'annual',
           startDate: plainDate(new Date(Date.now() + 250 * 24 * HOUR)),
           endDate: plainDate(new Date(Date.now() + 250 * 24 * HOUR)),
           reason: 'trespass',
         }),
-      (err: { code?: string }) => err.code === 'not_an_instructor',
+      (err: { code?: string }) => err.code === 'staff_not_found',
     )
     await assert.rejects(
-      () => leaveSvc.adjustRemainingDays(two.tenantId, { instructorId: one.instructorId, annual: 1 }),
-      (err: { code?: string }) => err.code === 'not_an_instructor',
+      () => leaveSvc.adjustRemainingDays(two.tenantId, { staffUserId: one.instructorId, annual: 1 }),
+      (err: { code?: string }) => err.code === 'staff_not_found',
     )
 
     // Now the same read from the instructor's OWN studio, which is what actually
@@ -1372,7 +1372,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     const pools = await harness.db
       .select()
       .from(schema.leavePools)
-      .where(eq(schema.leavePools.instructorId, one.instructorId))
+      .where(eq(schema.leavePools.staffUserId, one.instructorId))
     assert.ok(pools.length > 0, 'the instructor’s own read did not materialise a Pool')
     assert.ok(
       pools.every(p => p.tenantId === one.tenantId),

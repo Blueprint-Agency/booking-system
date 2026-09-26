@@ -162,14 +162,8 @@ export const instructors = pgTable('instructors', {
     .primaryKey()
     .references(() => staffUsers.id, { onDelete: 'cascade' }),
   photoR2Key: text('photo_r2_key'),
-  // Assigned Days: this instructor's yearly leave figures, set on their own
-  // profile. Not a balance — the input to a Leave Year's Pool. 14/14/7 unless an
-  // admin says otherwise, which is why the defaults live on the columns — study
-  // leave is for every instructor, not something granted per person, so the
-  // column default is also the backfill.
-  annualLeaveDays: integer('annual_leave_days').notNull().default(14),
-  medicalLeaveDays: integer('medical_leave_days').notNull().default(14),
-  studyLeaveDays: integer('study_leave_days').notNull().default(7),
+  // Assigned Days are not here: leave belongs to a staff member, admins
+  // included, so they live on `staff_users` (be/docs/adr/0009).
 }, table => ({
   tenantIdFkIdx: index('instructors_tenant_id_fk_idx').on(table.tenantId),
 }))

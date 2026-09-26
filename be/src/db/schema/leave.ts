@@ -12,11 +12,11 @@ import {
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
 import { staffUsers } from './identity'
-import { instructors } from './catalog'
 import { leaveTypeEnum, leaveStatusEnum, leaveHalfDayEnum } from '../enums'
 
 /**
- * Instructor leave requests — see docs/md/spec-instructor-leave-pools.md.
+ * Staff leave requests — see docs/md/spec-instructor-leave-pools.md. Leave
+ * belongs to a staff member, admin or instructor (be/docs/adr/0009).
  *
  * There is deliberately NO counter of days used anywhere. Taken and Committed
  * are derived by summing `days` over this table (see services/leave/rules.ts),
@@ -24,8 +24,8 @@ import { leaveTypeEnum, leaveStatusEnum, leaveHalfDayEnum } from '../enums'
  * yearly grant — see `leavePools` below — and storing a grant is not storing a
  * balance: nothing has to be written back when a request ends.
  *
- * `leaveYear` is stored rather than derived at read time so that changing an
- * instructor's Assigned Days or adjusting a Pool, or crossing a year boundary,
+ * `leaveYear` is stored rather than derived at read time so that changing a
+ * staff member's Assigned Days or adjusting a Pool, or crossing a year boundary,
  * cannot alter what a past request counted against.
  *
  * Dates are plain `date` — Asia/Singapore calendar days, not instants.
@@ -35,10 +35,11 @@ export const leaveRequests = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // Keyed to the instructor extension table: only instructors take leave.
-    instructorId: uuid('instructor_id')
+    // Keyed to the staff row, not the instructor extension table: admins take
+    // leave too, and a role change must not strand anyone's history.
+    staffUserId: uuid('staff_user_id')
       .notNull()
-      .references(() => instructors.staffUserId, { onDelete: 'cascade' }),
+      .references(() => staffUsers.id, { onDelete: 'cascade' }),
     type: leaveTypeEnum('type').notNull(),
     startDate: date('start_date').notNull(),
     endDate: date('end_date').notNull(),
@@ -62,9 +63,9 @@ export const leaveRequests = pgTable(
   },
   table => ({
     decidedByStaffIdFkIdx: index('leave_requests_decided_by_staff_id_fk_idx').on(table.decidedByStaffId),
-    instructorIdFkIdx: index('leave_requests_instructor_id_fk_idx').on(table.instructorId),
-    // The balance query: one instructor's rows for one leave year.
-    balanceIdx: index('leave_requests_instructor_year_idx').on(table.tenantId, table.instructorId, table.leaveYear),
+    staffUserIdFkIdx: index('leave_requests_staff_user_id_fk_idx').on(table.staffUserId),
+    // The balance query: one staff member's rows for one leave year.
+    balanceIdx: index('leave_requests_staff_user_year_idx').on(table.tenantId, table.staffUserId, table.leaveYear),
     // The calendar / clash queries: everything overlapping a date window.
     datesIdx: index('leave_requests_dates_idx').on(table.tenantId, table.startDate, table.endDate),
     statusIdx: index('leave_requests_status_idx').on(table.tenantId, table.status),
@@ -72,7 +73,7 @@ export const leaveRequests = pgTable(
 )
 
 /**
- * The **Pool** for one instructor, one Leave Type, one Leave Year — Assigned
+ * The **Pool** for one staff member, one Leave Type, one Leave Year — Assigned
  * Days plus Carried Days, frozen the first time that year is read.
  *
  * A stored **grant**, NOT a stored balance. Taken and Committed stay derived by
@@ -82,11 +83,11 @@ export const leaveRequests = pgTable(
  * holding Taken or Remaining would give that property up and should be refused.
  *
  * Stored rather than derived because carry-over makes a year's Pool depend on
- * the previous year's Remaining: derived, editing an instructor's Assigned Days
+ * the previous year's Remaining: derived, editing someone's Assigned Days
  * would reach backwards through every year they have worked. See
  * docs/adr/0001-per-instructor-leave-pools-with-carry-over.md.
  *
- * The primary key is the (instructor, type, year) triple, which is what makes
+ * The primary key is the (staff member, type, year) triple, which is what makes
  * lazy materialisation idempotent: two concurrent first-reads on 1 January
  * conflict on it instead of writing two Pools.
  */
@@ -94,9 +95,9 @@ export const leavePools = pgTable(
   'leave_pools',
   {
     tenantId: tenantIdColumn(),
-    instructorId: uuid('instructor_id')
+    staffUserId: uuid('staff_user_id')
       .notNull()
-      .references(() => instructors.staffUserId, { onDelete: 'cascade' }),
+      .references(() => staffUsers.id, { onDelete: 'cascade' }),
     type: leaveTypeEnum('type').notNull(),
     leaveYear: integer('leave_year').notNull(),
     /** Days granted, one decimal — NOT an integer. Back-solving a Pool from a
@@ -114,6 +115,6 @@ export const leavePools = pgTable(
   },
   table => ({
     tenantIdFkIdx: index('leave_pools_tenant_id_fk_idx').on(table.tenantId),
-    pk: primaryKey({ columns: [table.instructorId, table.type, table.leaveYear] }),
+    pk: primaryKey({ columns: [table.staffUserId, table.type, table.leaveYear] }),
   }),
 )

@@ -17,6 +17,11 @@ export const globalPolicy = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    // The **Cancellation Cap** switch (#318). Off, every member cancel made in
+    // time returns the credit however many there are; the count and cycle stay
+    // stored but unread. Cancellations are recorded either way, so switching it
+    // back on counts the ones already inside the cycle.
+    cancelCapEnabled: boolean('cancel_cap_enabled').notNull().default(true),
     cancelCapCount: integer('cancel_cap_count').notNull(),
     cancelCapCycleDays: integer('cancel_cap_cycle_days').notNull(),
     classWindowHours: integer('class_window_hours').notNull(),

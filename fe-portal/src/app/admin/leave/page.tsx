@@ -28,17 +28,20 @@ import {
 } from "@/lib/leave";
 
 /**
- * The leave queue — every instructor's requests, and the decision on each.
+ * The leave queue — every staff member's requests, admins' beside
+ * instructors', and the decision on each.
  *
  * Admins land here; the backend gates the mount, so there is
- * no role branch in this file. Whether a request can be approved, rejected or
- * revoked is the server's call — the buttons below mirror those rules so the
- * common mistake is hard to make, and the server refuses regardless.
+ * no role branch in this file. Any admin decides any request, their own
+ * included. Whether a request can be approved, rejected or revoked is the
+ * server's call — the buttons below mirror those rules so the common mistake is
+ * hard to make, and the server refuses regardless.
  */
 
 interface ApiAdminLeaveRequest {
   id: string;
-  instructor: { id: string; name: string; email: string };
+  /** Who filed it. */
+  applicant: { id: string; name: string; email: string; role: "admin" | "instructor" };
   type: LeaveType;
   start_date: string;
   end_date: string;
@@ -59,8 +62,25 @@ const FILTERS: Filter[] = ["pending", "approved", "rejected", "all"];
 
 const FILTER_LABEL: Record<Filter, string> = { ...LEAVE_STATUS_LABEL, all: "All" };
 
+const ROLE_LABEL = { admin: "Admin", instructor: "Instructor" } as const;
+const ROLE_TONE = { admin: "accent", instructor: "cyan" } as const;
+
+/** The applicant's name, role and email. The role is shown because the queue
+ *  holds admins' requests alongside instructors'. */
+function Applicant({ applicant }: { applicant: ApiAdminLeaveRequest["applicant"] }) {
+  return (
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="break-words font-medium text-ink">{applicant.name}</span>
+        <Badge tone={ROLE_TONE[applicant.role]}>{ROLE_LABEL[applicant.role]}</Badge>
+      </div>
+      <div className="truncate text-xs text-muted">{applicant.email}</div>
+    </div>
+  );
+}
+
 export default function AdminLeavePage() {
-  const { api } = useWorkspace();
+  const { api, currentStaff } = useWorkspace();
   const [requests, setRequests] = useState<ApiAdminLeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +125,7 @@ export default function AdminLeavePage() {
     if (
       action === "revoke" &&
       !confirm(
-        `Revoke ${r.instructor.name}'s approved leave on ${formatLeaveDayRange(r.start_date, r.end_date)}? The days go back into their balance.`,
+        `Revoke ${r.applicant.name}'s approved leave on ${formatLeaveDayRange(r.start_date, r.end_date)}? The days go back into their balance.`,
       )
     )
       return;
@@ -128,7 +148,12 @@ export default function AdminLeavePage() {
       await api.post(`/portal/admin/leave/${rejecting.id}/reject`, {
         reason: rejectReason.trim(),
       });
-      toast.success("Request rejected. The instructor has been emailed the reason.");
+      // Deciding your own request sends no email — the backend skips it.
+      toast.success(
+        rejecting.applicant.id === currentStaff?.id
+          ? "Request rejected."
+          : "Request rejected. They have been emailed the reason.",
+      );
       setRejecting(null);
       setRejectReason("");
       await load();
@@ -196,7 +221,7 @@ export default function AdminLeavePage() {
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="Leave"
-        description="Instructor leave requests. Approving makes the absence binding — an instructor on approved leave can no longer be scheduled."
+        description="Leave requests from instructors and admins. Any admin can decide any request, their own included. Approving makes the absence binding — an instructor on approved leave can no longer be scheduled."
       />
 
       {error && (
@@ -271,10 +296,7 @@ export default function AdminLeavePage() {
             {filtered.map((r) => (
               <li key={r.id} className="space-y-2 px-4 py-3 text-sm">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="break-words font-medium text-ink">{r.instructor.name}</div>
-                    <div className="truncate text-xs text-muted">{r.instructor.email}</div>
-                  </div>
+                  <Applicant applicant={r.applicant} />
                   <span className="shrink-0">
                     <Badge tone={LEAVE_STATUS_TONE[r.status]}>
                       {LEAVE_STATUS_LABEL[r.status]}
@@ -311,7 +333,7 @@ export default function AdminLeavePage() {
             <table className="w-full min-w-[820px] text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs text-muted">
-                  <th className="px-3 py-2.5 font-medium">Instructor</th>
+                  <th className="px-3 py-2.5 font-medium">Staff member</th>
                   <th className="px-3 py-2.5 font-medium">Dates</th>
                   <th className="px-3 py-2.5 font-medium">Type</th>
                   <th className="px-3 py-2.5 font-medium">Days</th>
@@ -323,8 +345,7 @@ export default function AdminLeavePage() {
                 {filtered.map((r) => (
                   <tr key={r.id} className="align-top hover:bg-warm/40">
                     <td className="px-3 py-2.5">
-                      <div className="font-medium text-ink">{r.instructor.name}</div>
-                      <div className="text-xs text-muted">{r.instructor.email}</div>
+                      <Applicant applicant={r.applicant} />
                     </td>
                     <td className="px-3 py-2.5">
                       <span className="text-ink">
@@ -363,7 +384,7 @@ export default function AdminLeavePage() {
         title="Reject leave request"
         description={
           rejecting
-            ? `${rejecting.instructor.name} — ${formatLeaveDayRange(rejecting.start_date, rejecting.end_date)}`
+            ? `${rejecting.applicant.name} — ${formatLeaveDayRange(rejecting.start_date, rejecting.end_date)}`
             : undefined
         }
       >
@@ -375,9 +396,9 @@ export default function AdminLeavePage() {
             maxLength={500}
             value={rejectReason}
             onChange={(e) => setRejectReason(e.target.value)}
-            placeholder="Why the request is being turned down — the instructor is emailed this."
+            placeholder="Why the request is being turned down — the person who filed it is emailed this."
           />
-          <p className="text-xs text-muted">Required. It is sent to the instructor.</p>
+          <p className="text-xs text-muted">Required. It is sent to the person who filed it.</p>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => setRejecting(null)}>

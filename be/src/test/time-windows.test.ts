@@ -217,7 +217,7 @@ describe('time-window rules over HTTP', { skip: integrationTestsEnabled ? false 
   for (const which of ['one', 'two'] as const) {
     const at = () => studios[which === 'one' ? 0 : 1]!
 
-    test(`CXL-09, CXL-01, CXL-17 a cancel exactly at the cutoff returns the credit; a millisecond later it is refused (tenant ${which})`, async () => {
+    test(`CXL-09, CXL-01, CXL-39, CXL-17 a cancel exactly at the cutoff returns the credit; a millisecond later it is a late cancel; at the start it is refused (tenant ${which})`, async () => {
       const { classWindowHours } = await policyOf(at())
       const t0 = aWeekOut()
       const startsAt = new Date(t0.getTime() + 3 * DAY)
@@ -225,11 +225,13 @@ describe('time-window rules over HTTP', { skip: integrationTestsEnabled ? false 
       const ana = await member(at(), `ana-${which}`)
       const onTime = await addClass(at(), startsAt)
       const late = await addClass(at(), startsAt)
+      const started = await addClass(at(), startsAt)
 
       harness.clock.set(t0)
       const onTimeBooking = await bookOk(ana, onTime)
       const lateBooking = await bookOk(ana, late)
-      assert.equal((await packageOf(ana)).creditsOrSessionsRemaining, 8)
+      const startedBooking = await bookOk(ana, started)
+      assert.equal((await packageOf(ana)).creditsOrSessionsRemaining, 7)
 
       harness.clock.set(cutoff)
       await expectStatus(await cancel(ana, onTimeBooking), 200)
@@ -241,16 +243,28 @@ describe('time-window rules over HTTP', { skip: integrationTestsEnabled ? false 
       assert.ok(onTimeCancellation)
       assert.equal(onTimeCancellation.wasWithinWindow, true)
       assert.equal(onTimeCancellation.refundFired, true)
-      assert.equal((await packageOf(ana)).creditsOrSessionsRemaining, 9)
+      assert.equal((await packageOf(ana)).creditsOrSessionsRemaining, 8)
 
-      // Past the cutoff a member's cancel is refused outright rather than
-      // forfeited (cancel.ts); whether it should forfeit instead is #151.
+      // Past the cutoff a member's cancel is a Late cancel (#318): it goes
+      // through, recorded late, and the credit is kept.
       harness.clock.set(new Date(cutoff.getTime() + 1))
-      const refused = JSON.parse(await expectStatus(await cancel(ana, lateBooking), 422)) as { error: string }
-      assert.equal(refused.error, 'cancellation_window_passed')
-      assert.equal((await bookingRow(lateBooking)).state, 'confirmed')
-      assert.equal(await cancellationOf(lateBooking), undefined)
-      assert.equal((await packageOf(ana)).creditsOrSessionsRemaining, 9)
+      await expectStatus(await cancel(ana, lateBooking), 200)
+      const lateRow = await bookingRow(lateBooking)
+      assert.equal(lateRow.state, 'cancelled')
+      assert.equal(lateRow.refundOutcome, 'forfeited')
+      const lateCancellation = await cancellationOf(lateBooking)
+      assert.ok(lateCancellation)
+      assert.equal(lateCancellation.wasWithinWindow, false)
+      assert.equal(lateCancellation.refundFired, false)
+      assert.equal((await packageOf(ana)).creditsOrSessionsRemaining, 8)
+
+      // Once the class starts, cancelling is refused outright.
+      harness.clock.set(startsAt)
+      const refused = JSON.parse(await expectStatus(await cancel(ana, startedBooking), 422)) as { error: string }
+      assert.equal(refused.error, 'class_started')
+      assert.equal((await bookingRow(startedBooking)).state, 'confirmed')
+      assert.equal(await cancellationOf(startedBooking), undefined)
+      assert.equal((await packageOf(ana)).creditsOrSessionsRemaining, 8)
     })
 
     test(`CXL-12, CXL-16 over the cap an in-time cancel forfeits; once the cycle has passed the same cancel returns the credit (tenant ${which})`, async () => {

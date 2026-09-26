@@ -130,7 +130,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
   ): Promise<{ id: string; reason: string; start: string; end: string }> {
     const dates = opts.start ? { start: opts.start, end: opts.end ?? opts.start } : nextDates(opts.days ?? 1)
     const reason = opts.reason ?? `${type} reason ${run} ${Math.random().toString(36).slice(2, 8)}`
-    const res = await call(who, 'POST', '/instructor/leave', {
+    const res = await call(who, 'POST', '/leave', {
       type,
       start_date: dates.start,
       end_date: dates.end,
@@ -144,8 +144,8 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
   const reject = (who: Staff | Member, id: string, reason?: string) =>
     call(who, 'POST', `/admin/leave/${id}/reject`, reason === undefined ? {} : { reason })
   const revoke = (who: Staff | Member, id: string) => call(who, 'POST', `/admin/leave/${id}/revoke`)
-  const withdraw = (who: Staff | Member, id: string) => call(who, 'POST', `/instructor/leave/${id}/withdraw`)
-  const cancel = (who: Staff | Member, id: string) => call(who, 'POST', `/instructor/leave/${id}/cancel`)
+  const withdraw = (who: Staff | Member, id: string) => call(who, 'POST', `/leave/${id}/withdraw`)
+  const cancel = (who: Staff | Member, id: string) => call(who, 'POST', `/leave/${id}/cancel`)
 
   async function row(id: string) {
     const [r] = await harness.db.select().from(schema.leaveRequests).where(eq(schema.leaveRequests.id, id))
@@ -155,7 +155,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
 
   /** The instructor's own Remaining for one Leave Type in this run's year. */
   async function remaining(who: Staff, type: LeaveType, year = YEAR): Promise<number> {
-    const res = await call(who, 'GET', `/instructor/leave?year=${year}`)
+    const res = await call(who, 'GET', `/leave?year=${year}`)
     assert.equal(res.status, 200, res.text)
     const balance = (res.body.balances as { type: string; remaining_days: number }[]).find(b => b.type === type)
     assert.ok(balance, `a ${type} balance`)
@@ -165,7 +165,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
   async function upload(who: Staff | Member, id: string, bytes: Uint8Array, type: string, filename = 'document'): Promise<Res> {
     const form = new FormData()
     form.append('file', new File([bytes], filename, { type }))
-    const res = await harness.app.request(`/api/v1/portal/instructor/leave/${id}/document`, {
+    const res = await harness.app.request(`/api/v1/portal/leave/${id}/document`, {
       method: 'POST',
       headers: who.headers,
       body: form,
@@ -281,8 +281,8 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     const ours = `%@${DOMAIN}`
     const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
-    await harness.db.execute(sql`DELETE FROM leave_requests WHERE instructor_id IN (${staffIds})`)
-    await harness.db.execute(sql`DELETE FROM leave_pools WHERE instructor_id IN (${staffIds})`)
+    await harness.db.execute(sql`DELETE FROM leave_requests WHERE staff_user_id IN (${staffIds})`)
+    await harness.db.execute(sql`DELETE FROM leave_pools WHERE staff_user_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
     // Submissions mail every admin of the studio — theirs too, not only ours —
     // so those log rows are found by this run's id in what was rendered.
@@ -433,7 +433,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
       refused(await revoke(caller, toRevoke.id), 403, 'forbidden_role', 'revoke')
       // There is no decision route under the instructor's own subtree either.
       for (const action of ['approve', 'reject', 'revoke']) {
-        const res = await call(caller, 'POST', `/instructor/leave/${pending.id}/${action}`, { reason: 'x' })
+        const res = await call(caller, 'POST', `/leave/${pending.id}/${action}`, { reason: 'x' })
         assert.equal(res.status, 404, `${action} under /instructor: ${res.text}`)
       }
     }
@@ -587,7 +587,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
   })
 
   test('LEV-67 medical leave with no Supporting Document is accepted — the document is optional', async () => {
-    const res = await call(ben, 'POST', '/instructor/leave', {
+    const res = await call(ben, 'POST', '/leave', {
       type: 'medical',
       start_date: sgToday(),
       end_date: sgToday(),
@@ -670,7 +670,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     const bytes = fileBytes(1234, 4)
     assert.equal((await upload(ben, req.id, bytes, 'image/png', 'mc.png')).status, 200)
 
-    const res = await call(ben, 'GET', `/instructor/leave/${req.id}/document`)
+    const res = await call(ben, 'GET', `/leave/${req.id}/document`)
 
     assert.equal(res.status, 200, res.text)
     assert.deepEqual(followSignedUrl(res.body.url).object?.bytes, bytes)
@@ -681,8 +681,8 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal((await upload(ada, withDoc.id, fileBytes(500), 'application/pdf', 'x.pdf')).status, 200)
     const withoutDoc = await file(ada, 'medical')
 
-    const a = await call(ben, 'GET', `/instructor/leave/${withDoc.id}/document`)
-    const b = await call(ben, 'GET', `/instructor/leave/${withoutDoc.id}/document`)
+    const a = await call(ben, 'GET', `/leave/${withDoc.id}/document`)
+    const b = await call(ben, 'GET', `/leave/${withoutDoc.id}/document`)
 
     assert.equal(a.status, 403, a.text)
     assert.equal(a.body.error, 'leave_not_yours')
@@ -690,10 +690,10 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.deepEqual(b.body, a.body)
     assert.ok(!a.text.includes('supporting-documents') && !a.text.includes('url'), 'no key, no URL')
 
-    const m = await call(memberOne, 'GET', `/instructor/leave/${withDoc.id}/document`)
+    const m = await call(memberOne, 'GET', `/leave/${withDoc.id}/document`)
     refusedAsMember(m, 'member')
     assert.ok(!m.text.includes('X-Amz'), 'no URL')
-    for (const path of [`/admin/leave/${withDoc.id}/document`, `/instructor/leave/${withDoc.id}/document`]) {
+    for (const path of [`/admin/leave/${withDoc.id}/document`, `/leave/${withDoc.id}/document`]) {
       const other = await call(path.startsWith('/admin') ? adminTwo : dee, 'GET', path)
       assert.equal(other.status, 404, `another studio on ${path}: ${other.text}`)
       assert.ok(!other.text.includes('X-Amz'), 'no URL')
@@ -709,7 +709,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     const queue = await call(adminOne, 'GET', '/admin/leave?status=all')
     const adminCal = await call(adminOne, 'GET', `/leave-calendar?from=${YEAR}-01-01&to=${YEAR}-12-31`)
     const ownCal = await call(cal, 'GET', `/leave-calendar?from=${YEAR}-01-01&to=${YEAR}-12-31`)
-    const own = await call(cal, 'GET', `/instructor/leave?year=${YEAR}`)
+    const own = await call(cal, 'GET', `/leave?year=${YEAR}`)
 
     for (const [label, res] of [['queue', queue], ['admin calendar', adminCal], ['own calendar', ownCal], ['own history', own]] as const) {
       assert.equal(res.status, 200, `${label}: ${res.text}`)
@@ -769,7 +769,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
       assert.equal(entry.type, type)
       assert.equal(entry.reason, req.reason)
       assert.equal(entry.has_supporting_document, doc)
-      assert.equal(entry.instructor.id, who.staffId)
+      assert.equal(entry.applicant.id, who.staffId)
     }
     assert.ok(res.body.leave_requests.every((r: any) => r.status === 'pending'), 'only pending')
     assert.ok(!byId.has(deeAnnual.id), 'another studio’s request is not in the queue')
@@ -827,7 +827,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(mine.detail.reason, pending.reason)
     assert.ok('decision_reason' in mine.detail)
 
-    const history = await call(ada, 'GET', `/instructor/leave?year=${YEAR}`)
+    const history = await call(ada, 'GET', `/leave?year=${YEAR}`)
     assert.equal(history.status, 200, history.text)
     const h = history.body.requests.find((r: any) => r.id === rejected.id)
     assert.equal(h.type, 'annual')
@@ -854,8 +854,8 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     ] as const) {
       const e = res.body.leave.find((x: any) => x.id === req.id)
       assert.ok(e, `${who.name}'s leave is on the calendar`)
-      assert.equal(e.instructor.id, who.staffId)
-      assert.equal(e.instructor.name, who.name)
+      assert.equal(e.staff.id, who.staffId)
+      assert.equal(e.staff.name, who.name)
       assert.equal(e.start_date, req.start)
       assert.equal(e.end_date, req.end)
       assert.equal(e.detail, null, 'no detail on a colleague’s entry')
@@ -864,7 +864,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
       }
       assert.ok(!res.text.includes(req.reason), 'the colleague’s reason is nowhere in the body')
     }
-    const colleagueEntries = res.body.leave.filter((e: any) => e.instructor.id !== ada.staffId)
+    const colleagueEntries = res.body.leave.filter((e: any) => e.staff.id !== ada.staffId)
     assert.ok(colleagueEntries.length >= 2)
     assert.ok(colleagueEntries.every((e: any) => e.detail === null))
   })
@@ -878,7 +878,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     let res: Res
     const dates = nextDates()
     try {
-      res = await call(ada, 'POST', '/instructor/leave', {
+      res = await call(ada, 'POST', '/leave', {
         type: 'annual',
         start_date: dates.start,
         end_date: dates.end,

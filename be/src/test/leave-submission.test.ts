@@ -33,7 +33,7 @@ const sgDate = (offsetDays: number) =>
 
 /**
  * Instructor leave SUBMISSION over real HTTP (#204): the instructor's own
- * `POST /portal/instructor/leave`, against real Postgres and a real sign-in.
+ * `POST /portal/leave`, against real Postgres and a real sign-in.
  *
  * What is proven here is every rule that can refuse a request at the moment it
  * is filed — the Pool (pending counts), the clash with his own assignments, a
@@ -102,16 +102,21 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
       .where(eq(schema.staffAuthUsers.email, email))
     const [row] = await harness.db
       .insert(schema.staffUsers)
-      .values({ tenantId: at.id, email, name, role, status: 'active', authUserId: authUser!.id })
-      .returning({ id: schema.staffUsers.id })
-    if (role === 'instructor') {
-      await harness.db.insert(schema.instructors).values({
+      .values({
         tenantId: at.id,
-        staffUserId: row!.id,
+        email,
+        name,
+        role,
+        status: 'active',
+        authUserId: authUser!.id,
+        // Assigned Days live on the staff row, whatever the role (be/docs/adr/0009).
         ...(assigned?.annual !== undefined ? { annualLeaveDays: assigned.annual } : {}),
         ...(assigned?.medical !== undefined ? { medicalLeaveDays: assigned.medical } : {}),
         ...(assigned?.study !== undefined ? { studyLeaveDays: assigned.study } : {}),
       })
+      .returning({ id: schema.staffUsers.id })
+    if (role === 'instructor') {
+      await harness.db.insert(schema.instructors).values({ tenantId: at.id, staffUserId: row!.id })
     }
     return { staffId: row!.id, name, headers }
   }
@@ -142,14 +147,14 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
     half_day?: 'none' | 'morning' | 'afternoon'
   }
   const submit = (who: Staff, leave: LeaveBody) =>
-    call(who, 'POST', '/api/v1/portal/instructor/leave', {
+    call(who, 'POST', '/api/v1/portal/leave', {
       end_date: leave.start_date,
       reason: `leave submission test ${run}`,
       ...leave,
     })
 
   const leaveRowsOf = (s: Staff) =>
-    harness.db.select().from(schema.leaveRequests).where(eq(schema.leaveRequests.instructorId, s.staffId))
+    harness.db.select().from(schema.leaveRequests).where(eq(schema.leaveRequests.staffUserId, s.staffId))
 
   async function setPolicy(body: Record<string, unknown>): Promise<void> {
     const res = await call(adminAtOne, 'PATCH', '/api/v1/portal/admin/policy/global', body)
@@ -291,8 +296,8 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
       const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
       const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
       const classIds = sql`SELECT id FROM classes WHERE created_by_staff_id IN (${staffIds})`
-      await harness.db.execute(sql`DELETE FROM leave_requests WHERE instructor_id IN (${staffIds})`)
-      await harness.db.execute(sql`DELETE FROM leave_pools WHERE instructor_id IN (${staffIds})`)
+      await harness.db.execute(sql`DELETE FROM leave_requests WHERE staff_user_id IN (${staffIds})`)
+      await harness.db.execute(sql`DELETE FROM leave_pools WHERE staff_user_id IN (${staffIds})`)
       await harness.db.execute(
         sql`DELETE FROM leave_conflicts WHERE instructor_a_id IN (${staffIds}) OR instructor_b_id IN (${staffIds})`,
       )
@@ -351,13 +356,13 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
     assert.equal(overNewYear.body.days, 4)
 
     // His own page counts both against that year's annual Pool, as pending.
-    const own = await call(ivy, 'GET', `/api/v1/portal/instructor/leave?year=${YEAR}`)
+    const own = await call(ivy, 'GET', `/api/v1/portal/leave?year=${YEAR}`)
     assert.equal(own.status, 200, JSON.stringify(own.body))
     const annual = own.body.balances.find((b: { type: string }) => b.type === 'annual')
     assert.equal(annual.pool_days, 14)
     assert.equal(annual.pending_days, 7)
     assert.equal(annual.remaining_days, 7)
-    const nextYear = await call(ivy, 'GET', `/api/v1/portal/instructor/leave?year=${YEAR + 1}`)
+    const nextYear = await call(ivy, 'GET', `/api/v1/portal/leave?year=${YEAR + 1}`)
     const nextAnnual = nextYear.body.balances.find((b: { type: string }) => b.type === 'annual')
     assert.equal(nextAnnual.pending_days, 0, 'the request spilling into next year does not draw on next year')
   })
@@ -367,7 +372,7 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
   test('a member cannot reach the instructor leave route at all', async () => {
     const email = emailFor('Member Mo')
     const headers = await harness.signInAs('client', email, one)
-    const res = await call({ headers }, 'POST', '/api/v1/portal/instructor/leave', {
+    const res = await call({ headers }, 'POST', '/api/v1/portal/leave', {
       type: 'annual',
       start_date: dayOf(50),
       end_date: dayOf(50),
@@ -381,14 +386,14 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
     assert.equal(filed.length, 0)
   })
 
-  test('an admin with no instructor row passes the role gate but is refused leave: admins have no leave', async () => {
+  test('LEV-123 an admin with no instructor row files leave like any staff member: leave belongs to the staff member', async () => {
     const res = await submit(adminAtOne, { type: 'annual', start_date: dayOf(51) })
-    assert.equal(res.status, 403, JSON.stringify(res.body))
-    assert.equal(res.body.error, 'not_an_instructor')
-    assert.equal((await leaveRowsOf(adminAtOne)).length, 0)
+    assert.equal(res.status, 201, JSON.stringify(res.body))
+    assert.equal((await leaveRowsOf(adminAtOne)).length, 1)
 
-    const own = await call(adminAtOne, 'GET', '/api/v1/portal/instructor/leave')
-    assert.equal(own.status, 403, JSON.stringify(own.body))
+    const own = await call(adminAtOne, 'GET', '/api/v1/portal/leave')
+    assert.equal(own.status, 200, JSON.stringify(own.body))
+    assert.equal(own.body.requests.length, 1)
   })
 
   // ── the Pool ────────────────────────────────────────────────────────────
@@ -411,7 +416,7 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
     // Exactly the Remaining is fine.
     const exact = await submit(pat, { type: 'annual', start_date: dayOf(70), end_date: dayOf(71) })
     assert.equal(exact.status, 201, JSON.stringify(exact.body))
-    const own = await call(pat, 'GET', `/api/v1/portal/instructor/leave?year=${YEAR}`)
+    const own = await call(pat, 'GET', `/api/v1/portal/leave?year=${YEAR}`)
     const annual = own.body.balances.find((b: { type: string }) => b.type === 'annual')
     assert.equal(annual.remaining_days, 0)
   })
@@ -453,7 +458,7 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
     assert.equal((await leaveRowsOf(rae)).length, 1)
     assert.equal((await leaveRowsOf(sol)).length, 1)
     for (const s of [rae, sol]) {
-      const own = await call(s, 'GET', `/api/v1/portal/instructor/leave?year=${YEAR}`)
+      const own = await call(s, 'GET', `/api/v1/portal/leave?year=${YEAR}`)
       const annual = own.body.balances.find((x: { type: string }) => x.type === 'annual')
       assert.equal(annual.pending_days, 5, "one instructor's request does not count against the other")
     }
@@ -475,7 +480,7 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
       harness.db
         .select()
         .from(schema.leavePools)
-        .where(and(eq(schema.leavePools.instructorId, tam.staffId), eq(schema.leavePools.leaveYear, year)))
+        .where(and(eq(schema.leavePools.staffUserId, tam.staffId), eq(schema.leavePools.leaveYear, year)))
     assert.equal((await pools()).length, 0, 'no Pool before the submission')
 
     const res = await submit(tam, { type: 'medical', start_date: date })
@@ -487,7 +492,7 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
 
     // The premise: the balance read for this year does store a Pool, so the
     // absence above is the rollback's doing and not a year that never stores one.
-    const read = await call(tam, 'GET', `/api/v1/portal/instructor/leave?year=${year}`)
+    const read = await call(tam, 'GET', `/api/v1/portal/leave?year=${year}`)
     assert.equal(read.status, 200, JSON.stringify(read.body))
     assert.equal((await pools()).length, 3, "a read outside a refused submission stores this year's Pool")
   })
@@ -843,7 +848,7 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
           and(
             eq(schema.leaveRequests.tenantId, one.id),
             eq(schema.leaveRequests.type, 'study'),
-            inArray(schema.leaveRequests.instructorId, [gus.staffId, hal.staffId, ina.staffId]),
+            inArray(schema.leaveRequests.staffUserId, [gus.staffId, hal.staffId, ina.staffId]),
           ),
         )
       assert.equal(onStudy.length, 2, 'the cap of 2 is never exceeded')
@@ -889,14 +894,14 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
       const res = await submit(jo, { type: 'study', start_date: dayOf(190), end_date: dayOf(191) })
       assert.equal(res.status, 201, JSON.stringify(res.body))
 
-      const own = await call(jo, 'GET', `/api/v1/portal/instructor/leave?year=${YEAR}`)
+      const own = await call(jo, 'GET', `/api/v1/portal/leave?year=${YEAR}`)
       const study = own.body.balances.find((b: { type: string }) => b.type === 'study')
       assert.equal(study.pending_days, 2, "only Jo's own request counts against Jo's Pool")
       assert.ok(!own.body.requests.some((r: { id: string }) => r.id === kitAway.body.id))
 
       // And studio two's request id is nothing to him.
       for (const action of ['withdraw', 'cancel']) {
-        const acted = await call(jo, 'POST', `/api/v1/portal/instructor/leave/${kitAway.body.id}/${action}`)
+        const acted = await call(jo, 'POST', `/api/v1/portal/leave/${kitAway.body.id}/${action}`)
         assert.equal(acted.status, 404, `${action}: ${JSON.stringify(acted.body)}`)
       }
       const [kitRow] = await harness.db

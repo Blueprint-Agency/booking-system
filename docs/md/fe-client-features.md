@@ -19,7 +19,7 @@ These show up in many features. Understanding them up front makes the rest read 
 - **Credit** = currency for **group classes only**. Earned by purchasing a Bundle, or held implicitly by an Unlimited package.
 - A user can hold a Bundle **OR** Unlimited at a time, **never both** at the same time.
 - A class booking deducts **1 credit** at the moment of confirmation.
-- Cancelling before the studio's window returns the credit while the member is under the cancellation cap, and loses it once they are over; inside the window a member cannot cancel (§0.6).
+- Cancelling before the class's window returns the credit while the member is under the cancellation cap (or always, with the cap switched off), and loses it once they are over; inside the window the cancel is a **late cancellation** and the credit is kept; once the class starts it cannot be cancelled (§0.6).
 - Workshops do **not** consume credits — they're paid directly per workshop.
 
 ### 0.2 Session entitlement (private training)
@@ -55,18 +55,20 @@ These show up in many features. Understanding them up front makes the rest read 
 
 ### 0.6 Cancellation policy (set in admin)
 
-The studio sets a class window, a PT window, and a cap: how many cancellations a member may make per cycle (class and PT share one count). The **window** is a deadline: a member may cancel up to that many hours before the session starts, and not after — inside it the server refuses (`422 cancellation_window_passed`) and the member has to contact the studio. The **cap** decides what comes back.
+The studio sets a class window, a PT window, and a **cap**: how many cancellations a member may make per cycle and still get the credit back (class and PT share one count). The cap can be switched off on the Policy page; then every cancel made in time returns, and nothing a member sees mentions a cap. A class may carry its own window (#313).
 
-| Booking type | Cancelled in time, under the cap | Cancelled in time, over the cap | Inside the window |
-|---|---|---|---|
-| Class (credit-paid) | Credit returned | Cancelled, credit lost | Refused |
-| Class (Unlimited) | Place freed, nothing to return | Place freed, nothing to return | Refused |
-| Private (pending) | Sessions returned | Sessions returned | Sessions returned |
-| Private (scheduled) | Session returned | Cancelled, session lost | Refused |
+A member can cancel a **class** until it starts (`422 class_started` after). The class's **window** decides whether the credit comes back: inside it the cancel is a **late cancellation** — it goes through, the credit is kept, and it counts toward the cap (#318). A scheduled **PT session** is different: its window is a deadline, and inside it the server refuses (`422 cancellation_window_passed`) and the member has to contact the studio.
 
-Workshops are not cancelled by members (non-refundable). Unlimited cancellations still count toward the cap.
+| Booking type | Cancelled in time, under the cap (or cap off) | Cancelled in time, over the cap | Inside the window | After the start |
+|---|---|---|---|---|
+| Class (credit-paid) | Credit returned | Cancelled, credit lost | Late cancellation, credit lost | Refused |
+| Class (Unlimited) | Place freed, nothing to return | Place freed, nothing to return | Late cancellation, place freed | Refused |
+| Private (pending) | Sessions returned | Sessions returned | Sessions returned | — |
+| Private (scheduled) | Session returned | Cancelled, session lost | Refused | Refused |
 
-fe-client reads the numbers from `GET /public/cancellation-policy` — none are compiled in — and states them on the schedule before a member books, in the cancel dialogs, and in the PT footnote. Member-facing copy never says "refund" for a credit or session coming back; a refund is money. Copy lives in `fe-client/src/lib/cancellation-copy.ts`.
+Workshops are not cancelled by members (non-refundable). Every member cancel is recorded and counts toward the cap — Unlimited ones and late ones included — and they are recorded with the cap off too, so switching it back on counts the ones already in the cycle.
+
+fe-client reads the numbers from `GET /public/cancellation-policy` — none are compiled in — and states them on the schedule before a member books, in the cancel dialogs, and in the PT footnote. Each upcoming class booking carries `cancel_deadline` and says "Cancel by {time} to avoid a late cancellation." (or "Cancelling now is a late cancellation."); Cancel is offered on every confirmed booking until the class starts. The class cancel dialog reads the booking's `cancel_preview` from `GET /me/bookings/:id` when it opens — the server's own answer, cap included — and warns "This is a late cancellation — your credit won't be returned." when it applies. Member-facing copy never says "refund" for a credit or session coming back; a refund is money. Copy lives in `fe-client/src/lib/cancellation-copy.ts`.
 
 Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 
@@ -275,7 +277,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 5. Success dialog: *"Your booking is confirmed! Please arrive 15 minutes before class."* → CTA "I will attend on time" → routes to `/account/classes`.
 
 **Where admin comes in**
-- Admin sets the studio's cancellation window, and staff may give any class (or weekly series) its own. The confirm sheet, the booking cards' cancel button and "Cancellation closed" line all use that class's `effective_cancel_window_hours` (#313).
+- Admin sets the studio's cancellation window, and staff may give any class (or weekly series) its own. The confirm sheet uses that class's `effective_cancel_window_hours`, and the booking cards its `cancel_deadline` (#313, #318).
 - Admin sees who reserved and credit-source per booking (audit trail).
 
 ---
@@ -702,7 +704,8 @@ These are the in-app and channel touchpoints triggered by booking and payment ev
 | Class reserved | Modal dialog | "Your booking is confirmed! Please arrive 15 minutes before class." + CTA "I will attend on time" |
 | Class cancelled by user (in time, under the cap) | Banner | "Booking cancelled · 1 credit returned." |
 | Class cancelled by user (in time, over the cap) | Banner | "Booking cancelled · the credit wasn't returned, because you've used up your cancellations this cycle." |
-| Class cancel refused (inside the window) | Banner | "This class starts within [window], so it can no longer be cancelled in the app. Please contact the studio." |
+| Class cancelled by user (inside the window — a late cancellation) | Banner | "Booking cancelled · a late cancellation, so the credit wasn't returned." |
+| Class cancel refused (the class has started) | Banner | "This class has already started, so it can no longer be cancelled." |
 | Workshop purchased | Confirmation page | "You're registered for [workshop]. We've emailed your receipt." |
 | Package purchased | Confirmation page | "[Package name] is now active. Start booking from /classes." |
 | Private session requested | Confirmation page | "Your request is pending. We will update you within 12 hours." |

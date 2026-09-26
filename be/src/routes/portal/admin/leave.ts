@@ -5,16 +5,18 @@ import * as svc from '../../../services/leave/requests'
 import { tenantId } from '../../../middleware/tenant'
 
 /**
- * The admin leave queue — read every instructor's requests, and decide them.
+ * The admin leave queue — read every staff member's requests, admins' among
+ * instructors', and decide them.
  *
- * Approve / reject / revoke are mounted HERE and nowhere else. The instructor
- * subtree (routes/portal/instructor/leave.ts) carries withdraw and cancel and
- * nothing more, so an instructor has no route to decide anything — including his
- * own request. Role gating for this mount (admin) sits with the
- * rest in ./index.ts.
+ * Approve / reject / revoke are mounted HERE and nowhere else. The shared
+ * self-service mount (routes/portal/leave.ts) carries withdraw and cancel and
+ * nothing more, so an instructor has no route to decide anything — including
+ * their own request. An admin may decide any request, their own included: there
+ * is no self-decision guard (be/docs/adr/0009). Role gating for this mount
+ * (admin) sits with the rest in ./index.ts.
  *
  * This is the admin view, so it serialises the restricted fields — leave type,
- * the instructor's reason, the decision reason — which the all-staff calendar
+ * the applicant's reason, the decision reason — which the all-staff calendar
  * must not.
  */
 
@@ -32,7 +34,8 @@ function serialize(v: svc.AdminLeaveRequest) {
   const r = v.row
   return {
     id: r.id,
-    instructor: v.instructor,
+    // Who filed it, with their role: the queue holds admins' requests too.
+    applicant: v.applicant,
     type: r.type,
     start_date: r.startDate,
     end_date: r.endDate,
@@ -61,8 +64,8 @@ const app = new Hono()
     return c.json({ leave_requests: rows.map(serialize) })
   })
   // A short-lived signed GET for the Supporting Document. Same service the
-  // instructor's own route calls — an admin caller passes its ownership check,
-  // so there is one rule and no second copy of it.
+  // self-service route calls — an admin caller passes its ownership check, so
+  // there is one rule and no second copy of it.
   .get('/:id/document', zValidator('param', idParam), async c =>
     c.json(
       await svc.supportingDocumentUrl(
@@ -82,7 +85,7 @@ const app = new Hono()
     return c.json({ ok: true })
   })
   // The reason is required by the schema AND by the service — it is what the
-  // instructor is emailed, so it can't be optional at either layer.
+  // applicant is emailed, so it can't be optional at either layer.
   .post('/:id/reject', zValidator('param', idParam), zValidator('json', rejectSchema), async c => {
     const { id } = c.req.valid('param')
     await svc.decideLeaveRequest(tenantId(c), {

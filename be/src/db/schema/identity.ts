@@ -2,6 +2,7 @@ import {
   pgTable,
   uuid,
   text,
+  integer,
   timestamp,
   date,
   index,
@@ -87,6 +88,13 @@ export const staffUsers = pgTable(
     languages: text('languages').array().notNull().default(sql`'{}'`),
     role: staffRoleEnum('role').notNull(),
     status: staffStatusEnum('status').notNull().default('pending'),
+    // Assigned Days: this staff member's yearly leave figures. Not a balance —
+    // the input to a Leave Year's Pool. 14/14/7 unless an admin says otherwise.
+    // On the staff row, not `instructors`, because admins take leave too and a
+    // role change must not move anyone's days (be/docs/adr/0009).
+    annualLeaveDays: integer('annual_leave_days').notNull().default(14),
+    medicalLeaveDays: integer('medical_leave_days').notNull().default(14),
+    studyLeaveDays: integer('study_leave_days').notNull().default(7),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     archivedByStaffId: uuid('archived_by_staff_id'),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),

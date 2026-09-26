@@ -3,6 +3,14 @@
 Supersedes the allowance model in `spec-instructor-leave.md`. See `be/docs/adr/0001-per-instructor-leave-pools-with-carry-over.md` for why the Pool is stored, and `be/CONTEXT.md` for the vocabulary used throughout — **Assigned Days**, **Carried Days**, **Pool**, **Committed**, **Taken**, **Remaining** are all defined there and are not interchangeable with the words they replaced.
 
 > **Partly superseded (2026-08-17).** This document was written when there were two Leave Types, annual and medical. A third, **study**, has shipped — one more Assigned figure (`instructors.study_leave_days`, default 7), one more row in the Pool triple per instructor per Leave Year, drawn from and Committed against by exactly the machinery this document describes. Study never carries, same as medical. Nothing about *how* a Pool is built, materialised or spent changed — the carry function, the lazy-open-on-first-read, the per-instructor row lock and the derived Committed/Taken/Remaining are all unchanged and apply to study as a third row rather than a special case. Everywhere below that names "annual and medical" as the two types, read it as "the type list", now three long. Full detail on study leave, the Leave Cap and the Leave Conflicts it ships alongside is `docs/md/spec-pre-launch-batch.md` §16–§17.
+>
+> **Further superseded (2026-09-26, #315).** Pools and Assigned Days are no longer
+> per instructor but **per staff member**, admins included. The Assigned Days moved from
+> `instructors` to `staff_users`, `leave_pools` and `leave_requests` are keyed by
+> `staff_user_id`, and a person's Pool is serialised by their `staff_users` row lock.
+> Everything about how a Pool is built, frozen, carried and spent is unchanged — read
+> "instructor" below as "staff member". `be/docs/adr/0009-leave-belongs-to-a-staff-member.md`
+> is the authority; the lines below that said otherwise are corrected.
 
 > **Partly superseded (2026-09-16).** This document was written when the portal had a staff role above admin. It now has exactly two, **admin** and **instructor**, ranked admin > instructor, and admin holds every power the higher role had — see `be/docs/adr/0006-two-staff-roles.md`. The permissions below are rewritten to match: what was reserved for the higher role is now admin's, rank still refuses editing someone who outranks you (so an instructor cannot edit an admin), role changes require admin, and location grants are gone.
 
@@ -67,7 +75,7 @@ The Remaining figure is corrected everywhere to subtract Committed days — pend
 28. As an admin, I want to be refused when I set a Remaining figure above that year's Pool, so that granting extra days is a deliberate act rather than a typo.
 29. As an admin, I want the Remaining I type to be what the instructor then sees, so that I am not doing arithmetic in my head against days already taken.
 30. As an admin, I want to see an instructor's Assigned, Carried, Pool and Remaining figures when I open their profile, so that I can see the whole picture before changing anything.
-31. As an admin, I want the leave figures to appear only for instructors, so that a staff profile that can never take leave is not cluttered with numbers that mean nothing.
+31. ~~As an admin, I want the leave figures to appear only for instructors, so that a staff profile that can never take leave is not cluttered with numbers that mean nothing.~~ *(Reversed 2026-09-26, #315: every staff member takes leave, so every profile shows the figures.)*
 32. As an admin, I want to set the studio-wide carry-over cap on the Global Policy screen, so that there is one place that decides how much surplus anyone can bank.
 33. As an admin, I want the carry-over cap expressed in days, so that I do not have to reason about multipliers.
 34. As an admin, I want changing the carry-over cap to affect future year boundaries only, so that Pools already opened do not move.
@@ -109,7 +117,7 @@ The glossary in `be/CONTEXT.md` is binding on identifiers, API fields and UI cop
 
 ### Schema
 
-- The `instructors` table gains `annual_leave_days` and `medical_leave_days`, integer, not null, default 14, validated 0–365 in line with the existing policy validation. These are the Assigned Days. They live on `instructors` rather than `staff_users` because leave is keyed to instructors throughout and a non-instructor staff member has no leave concept at all. (A third column, `study_leave_days`, default 7, landed alongside the same validation when the third Leave Type shipped — see the banner above.)
+- The `instructors` table gains `annual_leave_days` and `medical_leave_days`, integer, not null, default 14, validated 0–365 in line with the existing policy validation. These are the Assigned Days. ~~They live on `instructors` rather than `staff_users` because leave is keyed to instructors throughout and a non-instructor staff member has no leave concept at all.~~ *(Moved to `staff_users` by migration 0091, #315: admins take leave too.)* (A third column, `study_leave_days`, default 7, landed alongside the same validation when the third Leave Type shipped — see the banner above.)
 - A new table holds one Pool per instructor, per Leave Type, per Leave Year, with a uniqueness constraint on that triple. Its day count is **numeric with one decimal place**, not an integer: back-solving a Pool from a Remaining figure when half days have been taken produces halves.
 - `global_policy` gains a carry-over cap in days, integer, not null, default 14, and loses `annual_leave_days` and `medical_leave_days`.
 - No column stores Taken, Committed or Remaining. The Pool is a stored *grant*, not a stored balance.
@@ -140,8 +148,8 @@ Where no previous year's Pool exists — a newly onboarded instructor, or the fi
 
 ### API contracts
 
-- The admin staff update endpoint accepts the two Assigned figures and two Remaining figures for instructors. Assigned values are stored as-is and take effect from the next Leave Year. Remaining values are back-solved against the current Leave Year's Pool and Committed days, and are refused above that Pool or below zero. Sending leave figures for a non-instructor staff member is refused.
-- The admin staff read path returns Assigned, Carried, Pool and Remaining for instructors so the edit form can prefill without a second call. Non-instructors omit them entirely rather than returning nulls.
+- The admin staff update endpoint accepts the two Assigned figures and two Remaining figures for instructors. Assigned values are stored as-is and take effect from the next Leave Year. Remaining values are back-solved against the current Leave Year's Pool and Committed days, and are refused above that Pool or below zero. ~~Sending leave figures for a non-instructor staff member is refused.~~ *(Since #315 they are accepted for any staff member.)*
+- The admin staff read path returns Assigned, Carried, Pool and Remaining for instructors so the edit form can prefill without a second call. ~~Non-instructors omit them entirely rather than returning nulls.~~ *(Since #315 every staff member carries them; they are omitted only when the studio has no policy row to compose a Pool with.)*
 - The global policy endpoint loses the two allowance keys and gains the carry-over cap.
 - The instructor leave read path replaces `allowance` in each balance with Assigned, Carried and Pool, keeping Taken, pending and Remaining. This is a breaking response change consumed only by the portal, which ships in the same change.
 
@@ -155,7 +163,7 @@ Where no previous year's Pool exists — a newly onboarded instructor, or the fi
 
 ### Portal surfaces
 
-- The staff profile edit gains a leave section, rendered only for instructors: Assigned and Remaining for each of the three Leave Types (annual, medical, study), with Pool and Carried shown as read-only context so an admin can see the ceiling they are editing against.
+- The staff profile edit gains a leave section, ~~rendered only for instructors~~ rendered for every staff member since #315: Assigned and Remaining for each of the three Leave Types (annual, medical, study), with Pool and Carried shown as read-only context so an admin can see the ceiling they are editing against.
 - The Global Policy screen's "Instructor leave allowance" section becomes a carry-over section with a single day-count field. The two allowance inputs are removed.
 - The instructor balance card keeps its shape and corrects its numbers, reading as "9 of 24 days left" over "3 approved, 2 awaiting a decision", with carried days named when non-zero. The existing shared leave presentation module remains the only place the portal formats leave, and nothing is calculated there.
 
@@ -181,7 +189,7 @@ The portal is verified as the repo already verifies it: `tsc --noEmit`, a produc
 
 ## Out of Scope
 
-- Leave for admins or any non-instructor staff.
+- ~~Leave for admins or any non-instructor staff.~~ **Shipped 2026-09-26 (#315)** — see the banner above.
 - Accrual, and pro-rating for mid-year joiners. An instructor gets their full Assigned figure on day one and on every 1 January.
 - Carry-over for medical or study leave.
 - A per-instructor carry-over cap. One studio-wide cap covers everyone; an exception is handled by adjusting that person's Remaining.

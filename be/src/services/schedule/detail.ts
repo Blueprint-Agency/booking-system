@@ -14,6 +14,7 @@ import {
   clients,
   bookings,
   clientPackages,
+  classPackages,
   waitlistEntries,
 } from '../../db/schema'
 import type { BookingSeat, ClassDifficulty, ClientPackageKind } from '../../db/enums'
@@ -22,6 +23,9 @@ import { sessionCheckInState, type SessionCheckInState } from '../bookings/sessi
 import { attendanceCapacity, countSeats, type SeatCounts } from '../bookings/seats'
 import { waitlistEnabled } from '../waitlist/line'
 import { waitlistPanel, type WaitlistPanelRow } from '../waitlist/staff'
+import { staffCancelPreview, type StaffCancelPreview } from '../bookings/staff-cancel-preview'
+import { classCancelWindow } from '../policy/cancel-window'
+import { now as clockNow } from '../../lib/clock'
 
 export interface NamedRef {
   id: string
@@ -39,6 +43,8 @@ export interface ClassAttendee {
   seat: BookingSeat
   /** The booking was made by a waitlist promotion, automatic or by staff. */
   promotedFromWaitlist: boolean
+  /** What the staff cancel dialog asks from; null on a row it is not offered on (#320). */
+  cancelPreview: StaffCancelPreview | null
 }
 
 export interface ClassDetail {
@@ -128,7 +134,9 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       clientId: bookings.clientId,
       clientName: clients.name,
       packageKind: clientPackages.kind,
+      packageName: classPackages.name,
       creditsUsed: bookings.creditsOrSessionsUsed,
+      state: bookings.state,
       checkInState: bookings.checkInState,
       code: bookings.code,
       seat: bookings.seat,
@@ -137,6 +145,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     .from(bookings)
     .innerJoin(clients, eq(clients.id, bookings.clientId))
     .leftJoin(clientPackages, eq(clientPackages.id, bookings.clientPackageId))
+    .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
     .leftJoin(
       waitlistEntries,
       and(eq(waitlistEntries.tenantId, bookings.tenantId), eq(waitlistEntries.bookingId, bookings.id)),
@@ -149,16 +158,34 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       ),
     )
     .orderBy(bookings.bookedAt)
-  const attendees: ClassAttendee[] = attendeeRows.map(r => ({
-    bookingId: r.bookingId,
-    client: { id: r.clientId, name: r.clientName ?? 'Member' },
-    packageKind: (r.packageKind as ClientPackageKind | null) ?? null,
-    creditsUsed: r.creditsUsed ?? 0,
-    checkInState: r.checkInState as ClassAttendee['checkInState'],
-    code: r.code,
-    seat: r.seat,
-    promotedFromWaitlist: r.promotedEntryId !== null,
-  }))
+  const windowHours = await classCancelWindow(tenantId, row)
+  const now = clockNow()
+  const attendees: ClassAttendee[] = attendeeRows.map(r => {
+    const checkInState = r.checkInState as ClassAttendee['checkInState']
+    return {
+      bookingId: r.bookingId,
+      client: { id: r.clientId, name: r.clientName ?? 'Member' },
+      packageKind: (r.packageKind as ClientPackageKind | null) ?? null,
+      creditsUsed: r.creditsUsed ?? 0,
+      checkInState,
+      code: r.code,
+      seat: r.seat,
+      promotedFromWaitlist: r.promotedEntryId !== null,
+      cancelPreview: staffCancelPreview(
+        {
+          kind: 'class',
+          state: r.state as 'confirmed' | 'no_show',
+          checkInState,
+          creditsUsed: r.creditsUsed,
+          packageName: r.packageName,
+          packageKind: r.packageKind,
+          startsAt: row.startsAt,
+        },
+        windowHours,
+        now,
+      ),
+    }
+  })
 
   const waitlist = await waitlistPanel(tenantId, {
     id: row.id,

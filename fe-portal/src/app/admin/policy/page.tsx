@@ -7,6 +7,8 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 
 interface PolicyState {
+  /** Whether cancellations past the count keep their credit (#318). */
+  cancelCapEnabled: boolean;
   cancelCapCount: number;
   cancelCapCycleDays: number;
   classWindowHours: number;
@@ -24,6 +26,7 @@ interface PolicyState {
 
 interface ApiPolicy {
   global_policy: {
+    cancel_cap_enabled: boolean;
     cancel_cap_count: number;
     cancel_cap_cycle_days: number;
     class_window_hours: number;
@@ -67,6 +70,7 @@ interface StaffRow {
 
 function emptyPolicy(): PolicyState {
   return {
+    cancelCapEnabled: true,
     cancelCapCount: 0,
     cancelCapCycleDays: 0,
     classWindowHours: 0,
@@ -83,6 +87,8 @@ function emptyPolicy(): PolicyState {
 
 function diffGlobal(saved: PolicyState, draft: PolicyState) {
   const out: Record<string, number | boolean> = {};
+  if (saved.cancelCapEnabled !== draft.cancelCapEnabled)
+    out.cancel_cap_enabled = draft.cancelCapEnabled;
   if (saved.cancelCapCount !== draft.cancelCapCount)
     out.cancel_cap_count = draft.cancelCapCount;
   if (saved.cancelCapCycleDays !== draft.cancelCapCycleDays)
@@ -133,6 +139,7 @@ export default function PolicyPage() {
       setPickA("");
       setPickB("");
       const next: PolicyState = {
+        cancelCapEnabled: r.global_policy.cancel_cap_enabled,
         cancelCapCount: r.global_policy.cancel_cap_count,
         cancelCapCycleDays: r.global_policy.cancel_cap_cycle_days,
         classWindowHours: r.global_policy.class_window_hours,
@@ -181,6 +188,7 @@ export default function PolicyPage() {
     draft.crossLocationRateSgd !== policy.crossLocationRateSgd ||
     draft.partPaymentEnabled !== policy.partPaymentEnabled ||
     draft.checkInOpensMinutesBefore !== policy.checkInOpensMinutesBefore ||
+    draft.cancelCapEnabled !== policy.cancelCapEnabled ||
     draft.cancelCapCount !== policy.cancelCapCount ||
     draft.cancelCapCycleDays !== policy.cancelCapCycleDays ||
     draft.classWindowHours !== policy.classWindowHours ||
@@ -270,9 +278,37 @@ export default function PolicyPage() {
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Cancellation cap</h2>
             <p className="mt-0.5 text-xs text-muted">
-              How many cancellations a customer gets per cycle. Applies universally — no per-customer overrides. Counts class + PT together.
+              How many cancellations return the credit per cycle. Applies universally — no per-customer overrides. Counts class + PT together, late cancellations included.
             </p>
           </header>
+          <label className="mb-4 flex max-w-xl cursor-pointer items-start gap-3">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={draft.cancelCapEnabled}
+              aria-labelledby="cap-enabled-label"
+              onClick={() => setDraft({ ...draft, cancelCapEnabled: !draft.cancelCapEnabled })}
+              // The before: box widens the hit area to thumb size without growing the switch.
+              className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors before:absolute before:-inset-2 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                draft.cancelCapEnabled ? "bg-accent" : "bg-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                  draft.cancelCapEnabled ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+            <span className="min-w-0">
+              <span id="cap-enabled-label" className="block text-sm font-medium text-ink">
+                Limit refunded cancellations
+              </span>
+              <span className="mt-0.5 block text-xs text-muted">
+                Cancellations are still recorded while this is off, so switching it back on counts
+                the ones already made in the current cycle.
+              </span>
+            </span>
+          </label>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="cap-count">Max cancellations</Label>
@@ -280,6 +316,7 @@ export default function PolicyPage() {
                 id="cap-count"
                 type="number"
                 min={0}
+                disabled={!draft.cancelCapEnabled}
                 value={draft.cancelCapCount}
                 onChange={(e) =>
                   setDraft({ ...draft, cancelCapCount: Number(e.target.value) })
@@ -292,6 +329,7 @@ export default function PolicyPage() {
                 id="cap-cycle"
                 type="number"
                 min={1}
+                disabled={!draft.cancelCapEnabled}
                 value={draft.cancelCapCycleDays}
                 onChange={(e) =>
                   setDraft({ ...draft, cancelCapCycleDays: Number(e.target.value) })
@@ -303,13 +341,19 @@ export default function PolicyPage() {
               were separate columns that could not wrap, and ran off a phone. */}
           <p className="mt-3 flex items-start gap-1.5 text-xs text-muted">
             <Info className="mt-0.5 h-3 w-3 shrink-0" />
-            <span>
-              Currently:{" "}
-              <span className="font-medium text-ink">
-                {draft.cancelCapCount} cancellations per {draft.cancelCapCycleDays} days
+            {draft.cancelCapEnabled ? (
+              <span>
+                Currently:{" "}
+                <span className="font-medium text-ink">
+                  {draft.cancelCapCount} cancellations per {draft.cancelCapCycleDays} days
+                </span>
+                . No-shows do not count toward this cap.
               </span>
-              . No-shows do not count toward this cap.
-            </span>
+            ) : (
+              <span className="font-medium text-ink">
+                No cap — every cancellation made in time returns the credit.
+              </span>
+            )}
           </p>
         </section>
 
@@ -376,7 +420,7 @@ export default function PolicyPage() {
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Cancellation windows</h2>
             <p className="mt-0.5 text-xs text-muted">
-              How far in advance customers must cancel to get their credit or session back. Cancellation itself is always allowed; the window only gates whether credits/sessions are returned.
+              Customers can always cancel a class before it starts; the window decides whether the credit comes back. A class cancelled inside it is a late cancellation: the credit is kept, and it counts toward the cap. A PT session can only be cancelled by the customer before its window. A class can set its own window, which replaces the class window here.
             </p>
           </header>
           <div className="grid gap-4 sm:grid-cols-2">

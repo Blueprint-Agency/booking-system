@@ -354,7 +354,7 @@ async function cancelFutureBookingsOn(
     try {
       // `packageVoided` is the same arm a refund's unwind uses: the credit is
       // not handed back, because the package it would go to is being removed.
-      await cancelBooking(tenantId, { bookingId: r.id, source: 'admin', packageVoided: true })
+      await cancelBooking(tenantId, { bookingId: r.id, source: 'admin', credit: 'return', packageVoided: true })
       cancelled += 1
     } catch (err) {
       // A booking that will not cancel is reported and left: the transaction

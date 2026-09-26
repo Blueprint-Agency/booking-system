@@ -15,12 +15,13 @@ import {
 const policy = (over: Partial<CancellationPolicy> = {}): CancellationPolicy => ({
   class_window_hours: 48,
   pt_window_hours: 12,
+  cancel_cap_enabled: true,
   cancel_cap_count: 3,
   cancel_cap_cycle_days: 30,
   ...over,
 });
 
-test("the cancel button follows the studio's window, not a fixed 24 hours", () => {
+test("a PT session's cancel button follows the studio's window, not a fixed 24 hours", () => {
   const now = Date.parse("2026-09-25T00:00:00Z");
   const in30h = new Date(now + 30 * 3_600_000).toISOString();
   // 30 hours out: open under a 24h window, closed under a 48h one.
@@ -33,6 +34,8 @@ test("the cancel button follows the studio's window, not a fixed 24 hours", () =
 });
 
 test("the window in every sentence is the studio's", () => {
+  // Only a PT session closes to cancelling at its window; a class stays open
+  // until it starts (#318, late-cancel-copy.test.ts).
   assert.equal(cancelClosed(48), "Cancellation closed · within 48 hours of start");
   assert.equal(cancelClosed(1), "Cancellation closed · within 1 hour of start");
   assert.match(windowRefusal("session", 12), /within 12 hours/);
@@ -41,15 +44,24 @@ test("the window in every sentence is the studio's", () => {
 });
 
 test("a credit comes back only while the member is under the cap", () => {
+  // Without the booking's own preview the dialog states the whole rule.
   const notice = classCancelNotice(policy(), false);
   assert.equal(
     notice,
-    "You'll get your credit back if you haven't used up your cancellations this cycle " +
-      "(3 cancellations every 30 days). Otherwise you lose the credit.",
+    "Cancel a class up to 48 hours before it starts and your credit comes back, for up to " +
+      "3 cancellations every 30 days; after that, cancelling doesn't return it. Cancelling later " +
+      "is a late cancellation: allowed until the class starts, but the credit isn't returned.",
   );
   assert.match(classBookingPolicy(policy()), /up to 3 cancellations every 30 days/);
+  assert.match(
+    ptCancelPrompt("scheduled", policy()),
+    /session back if you haven't used up your cancellations this cycle \(3 cancellations every 30 days\)\. Otherwise you lose the session\./,
+  );
   // A cap of nothing returns nothing, and says so instead of promising.
-  assert.equal(classCancelNotice(policy({ cancel_cap_count: 0 }), false), "Cancelling doesn't return your credit.");
+  assert.equal(
+    classCancelNotice(policy({ cancel_cap_count: 0 }), false),
+    "You can cancel a class any time before it starts. Cancelling doesn't return the credit.",
+  );
   assert.match(classBookingPolicy(policy({ cancel_cap_count: 0 })), /doesn't return the credit/);
 });
 

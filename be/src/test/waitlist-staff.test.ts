@@ -346,7 +346,7 @@ describe('staff waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
 
     harness.clock.set(new Date(Date.now() + 3 * DAY - 20 * HOUR))
     try {
-      const cancelled = await send('POST', `/portal/admin/bookings/${seated[0]!.bookingId}/cancel`, one.admin.headers)
+      const cancelled = await send('POST', `/portal/admin/bookings/${seated[0]!.bookingId}/cancel`, one.admin.headers, { credit: 'return' })
       assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body))
       assert.equal((await entryRow(entry.entry_id)).status, 'waiting', 'nobody moves inside the window')
 
@@ -385,7 +385,7 @@ describe('staff waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
       .update(schema.clientPackages)
       .set({ creditsOrSessionsRemaining: 0 })
       .where(eq(schema.clientPackages.clientId, broke.clientId))
-    await send('POST', `/portal/admin/bookings/${seated[0]!.bookingId}/cancel`, one.admin.headers)
+    await send('POST', `/portal/admin/bookings/${seated[0]!.bookingId}/cancel`, one.admin.headers, { credit: 'return' })
 
     const res = await addToClass(one.admin, 'admin', classId, entry.entry_id)
     assert.equal(res.status, 409, JSON.stringify(res.body))
@@ -437,7 +437,7 @@ describe('staff waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     assert.equal(across.status, 404, JSON.stringify(across.body))
     assert.equal((await entryRow(entry.entry_id)).status, 'waiting')
 
-    await send('POST', `/portal/admin/bookings/${seated[0]!.bookingId}/cancel`, one.admin.headers)
+    await send('POST', `/portal/admin/bookings/${seated[0]!.bookingId}/cancel`, one.admin.headers, { credit: 'return' })
     // The cancel was outside the window, so the line already filled the seat.
     assert.equal((await entryRow(entry.entry_id)).status, 'promoted')
 

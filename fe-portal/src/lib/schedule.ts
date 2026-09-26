@@ -56,6 +56,7 @@ export function slotFromParams(params: URLSearchParams): Slot | null {
 import { ApiError, type Api } from "@/lib/api";
 import type { BookingSeat, ClassSeats } from "@/lib/class-seats";
 import type { ClassWaitlist } from "@/lib/class-waitlist";
+import type { StaffCancelPreview } from "@/lib/staff-cancel";
 
 export interface NamedRef {
   id: string;
@@ -74,6 +75,8 @@ export interface ScheduleClassAttendee {
   seat: BookingSeat;
   /** Booked by a waitlist promotion, automatic or by staff. */
   promoted_from_waitlist: boolean;
+  /** What the cancel dialog asks from; null on a row Cancel is not offered on (#320). */
+  cancel_preview: StaffCancelPreview | null;
 }
 
 export interface ScheduleClassDetail extends ClassSeats, ClassWaitlist {

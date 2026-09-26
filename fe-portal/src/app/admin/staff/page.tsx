@@ -54,11 +54,11 @@ interface StaffApiRow {
   invited_at: string | null;
   accepted_at: string | null;
   archived_at: string | null;
-  /** Assigned Days — sent for instructors only, absent on everyone else. */
+  /** Assigned Days — every staff member's, admins included. */
   annual_leave_days?: number;
   medical_leave_days?: number;
   study_leave_days?: number;
-  /** This Leave Year's figures, instructors only. Remaining is what an admin
+  /** This Leave Year's figures, for every staff member. Remaining is what an admin
    *  edits; Carried and Pool are the context they edit against. */
   annual_carried_days?: number;
   annual_pool_days?: number;

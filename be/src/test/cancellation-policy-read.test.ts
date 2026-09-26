@@ -42,12 +42,13 @@ describe('the studio cancellation policy, as a member reads it', { skip: integra
     try {
       await harness.db
         .update(schema.globalPolicy)
-        .set({ classWindowHours: 48, ptWindowHours: 12, cancelCapCount: 5, cancelCapCycleDays: 14 })
+        .set({ classWindowHours: 48, ptWindowHours: 12, cancelCapEnabled: false, cancelCapCount: 5, cancelCapCycleDays: 14 })
         .where(eq(schema.globalPolicy.tenantId, one.id))
 
       assert.deepEqual(await read(one.slug), {
         class_window_hours: 48,
         pt_window_hours: 12,
+        cancel_cap_enabled: false,
         cancel_cap_count: 5,
         cancel_cap_cycle_days: 14,
       })
@@ -58,6 +59,7 @@ describe('the studio cancellation policy, as a member reads it', { skip: integra
         .set({
           classWindowHours: prior.classWindowHours,
           ptWindowHours: prior.ptWindowHours,
+          cancelCapEnabled: prior.cancelCapEnabled,
           cancelCapCount: prior.cancelCapCount,
           cancelCapCycleDays: prior.cancelCapCycleDays,
         })

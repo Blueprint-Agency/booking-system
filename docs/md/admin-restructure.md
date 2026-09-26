@@ -46,7 +46,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 - **Finance**: Finance (§20) — first, because it is the surface an owner opens most and the one every other page eventually reports into.
 - **Config**: Class Types, Promo Codes. **A Promo Code sits in Config, not Packages**: it crosses products, so it belongs with the building blocks rather than inside any one catalogue (contrast a Promotion, which belongs to exactly one product and is edited there).
 - **Packages**: Classes, Workshops, Private Sessions, Corporate, Merch (global, shared across locations). Merch is shop-floor stock (mats, props, apparel) rather than catalogue governance, but like the rest of Packages it is managed by admins.
-- **People**: Customers, Corporate Requests, Staff, Leave (members + staff accounts). **Corporate Requests sits here, not in the workspace zone** — a request records no `location_id` until it is scheduled, so there is nothing for the switcher to filter it by; it is a person asking, which is what People is.
+- **People**: Customers, Corporate Requests, Staff, Leave, My leave (members + staff accounts). **Leave** is the queue of every staff member's requests, each labelled with the applicant's role, where any admin decides any request, their own included. **My leave** (`/admin/my-leave`) is the admin's own balances, request form, documents and history, the same page instructors have at `/instructor/leave` (#315). **Corporate Requests sits here, not in the workspace zone** — a request records no `location_id` until it is scheduled, so there is nothing for the switcher to filter it by; it is a person asking, which is what People is.
 - **Settings**: Global Policy, Waiver (location-independent policy + config). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
 - **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
 
@@ -201,7 +201,8 @@ No location assignment in v1. No pay rate in app (handled externally).
 Single source of truth for client-initiated class and PT cancellation. Workshops and package purchases are non-refundable and not cancellable by the client (see §7c, §12).
 
 **Cancellation Cap:**
-- Admin sets two values: maximum number of cancellations + cycle duration (e.g. 3 cancellations per month).
+- A switch, **"Limit refunded cancellations"** (#318). On (the default), the two values below apply. Off, every cancellation made in time returns the credit, however many; the count and cycle fields are disabled and the summary reads "No cap — every cancellation made in time returns the credit." Cancellations are still recorded while it is off, so switching it back on counts the ones already inside the cycle — the page says so beside the switch.
+- Admin sets two values: maximum number of cancellations + cycle duration. A new studio starts at 10 cancellations per 30 days.
 - Applies universally to all clients — no per-client customisation.
 - Cap covers **class + PT bookings together** (one shared bucket).
 - Cap counts **cancellations only** — no-shows do not count toward the cap (no-shows already self-punish via full forfeit).
@@ -210,7 +211,7 @@ Single source of truth for client-initiated class and PT cancellation. Workshops
 - Admin sets two values:
   - **Class cancellation window** (e.g. 12 hours before class start)
   - **PT cancellation window** (e.g. 24 hours before session start)
-- Cancelling outside the window forfeits the credit/session regardless of cap state.
+- Cancelling inside the window forfeits the credit/session regardless of cap state. A member can always cancel a class until it starts: inside the window it is a **late cancel** — it goes through, keeps the credit and counts toward the cap. A PT session cannot be cancelled by the member inside its window. A class may carry its own window (#313).
 
 **Refund rule (combined cap + window):**
 
@@ -221,10 +222,10 @@ Single source of truth for client-initiated class and PT cancellation. Workshops
 | No | No | Forfeit (cap blocks the refund, not the cancellation) |
 | No | Yes | Forfeit |
 
-- Cancellation itself is **always allowed** — the cap and window only gate whether credits/sessions are refunded.
+- Cancelling a class is **always allowed** until it starts — the cap and window only gate whether the credit is returned. With the cap switched off, "Within cap" is always Yes.
 - All-or-nothing: full refund or zero. No partial refunds.
 - Cycle resets per the configured duration; both cap counter and refund eligibility reset together.
-- No admin override per booking.
+- A member's own cancel has no per-booking override. A **staff cancel** of one booking (§12, #320) is not judged by this table at all: the staff member chooses Return credit or Keep credit every time, and it never counts toward the member's cap. Its `cancellations` row still records, truthfully, whether it came inside the class's window.
 
 **No-show:**
 - Hardcoded full forfeit. Not configurable. Does not count toward the cap.
@@ -526,6 +527,7 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 - Check-in column on the roster (QR scan / code entry / manual tick — see §11)
 - Check-in state chip: `pending` / `completed` (manual flip — see §11)
 - Cancel-this-instance action (admin) → triggers full credit refund + Inbox notification
+- **Cancel…** on each confirmed, not-attended roster row (admin on any class; instructor on a class they lead) → the staff cancel dialog, Return credit or Keep credit (§12)
 
 **Workshop detail page additions:**
 - Per-tier breakdown (which tier each attendee bought)
@@ -614,6 +616,22 @@ Consolidated reference for all cancellation paths.
 
 - Always 100%, overrides cap and window.
 - Generates an Inbox notification (§13).
+
+**Staff-initiated — one member's class booking** (#320):
+
+An admin cancels any member's class booking — from the class roster (§10) or the member's profile; an instructor cancels a member's booking on a class they lead, from its roster (anyone else's is refused `not_your_session`). Adding members from the roster is unchanged.
+
+Every staff cancel asks, in one shared dialog, with **neither option pre-selected**:
+
+- **"Return 1 credit to {package}"** (plural "Return 2 credits to …") — the credits go back to the package that paid (`credit_returned`).
+- **"Keep the credit — recorded as a late cancel"** — nothing moves (`forfeited`), and the member's history counts it as a late cancel.
+
+**Cancel booking** stays disabled until one is picked. Under the title the dialog says "Their place is released." and whether the class is already inside its cancellation window ("The class is already inside its cancellation window." / "…is not yet inside…"). A booking that spent nothing — an Unlimited plan's — offers no choice and says so instead ("Their plan is unlimited, so no credit was spent — nothing to return or keep."); its outcome is `n_a` either way.
+
+- A staff cancel **never counts toward the member's Cancellation Cap** (§4).
+- A booking marked attended is refused (`booking_attended`) until it is unticked (§11); a workshop is refunded, not cancelled; a private session is cancelled as a PT request.
+- A freed online seat goes to the head of the waitlist under the usual rules and the class's effective window.
+- No member email.
 
 **Refund inbox: does not exist as a separate actionable queue.** All refunds (credit, session, money) are automated. The Inbox surfaces them informationally only.
 

@@ -142,7 +142,7 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
     await harness.db.execute(sql`DELETE FROM rooms WHERE id = ${roomId}`)
     await harness.db.delete(schema.clients).where(like(schema.clients.email, `%@${DOMAIN}`))
     if (staffIds.length) {
-      await harness.db.delete(schema.leaveRequests).where(inArray(schema.leaveRequests.instructorId, staffIds))
+      await harness.db.delete(schema.leaveRequests).where(inArray(schema.leaveRequests.staffUserId, staffIds))
       await harness.db.delete(schema.auditLog).where(inArray(schema.auditLog.actorStaffId, staffIds))
       await harness.db.delete(schema.instructors).where(inArray(schema.instructors.staffUserId, staffIds))
       await harness.db.delete(schema.staffUsers).where(inArray(schema.staffUsers.id, staffIds))
@@ -201,7 +201,7 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
     )
     await harness.db.insert(schema.leaveRequests).values({
       tenantId: one.id,
-      instructorId: helper.id,
+      staffUserId: helper.id,
       type: 'annual',
       startDate: monday(2),
       endDate: monday(2),

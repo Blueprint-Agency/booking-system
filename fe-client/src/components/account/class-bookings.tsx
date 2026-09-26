@@ -35,7 +35,7 @@ import { formatDate, cn } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
-import { cancelClosed, canStillCancel } from "@/lib/cancellation-copy";
+import { canCancelClass, cancelDeadlineLine, isLate } from "@/lib/cancellation-copy";
 
 export interface ApiBooking {
   booking_id: string;
@@ -56,6 +56,8 @@ export interface ApiBooking {
   code: string;
   /** This class's Cancellation Window in hours, as the server applies it now. */
   effective_cancel_window_hours: number;
+  /** When that window opens: a cancel after it is a late cancellation. */
+  cancel_deadline: string;
 }
 
 interface ListResponse {
@@ -316,8 +318,9 @@ function UpcomingCard({
   ongoing?: boolean;
   onCancel: (b: ApiBooking) => void;
 }) {
-  // The class's own window, as the server will judge the cancel by it.
-  const open = canStillCancel(booking.starts_at, booking.effective_cancel_window_hours);
+  // A class can be cancelled until it starts; inside its window it is a late cancel.
+  const open = canCancelClass(booking.starts_at);
+  const deadline = `${formatDate(booking.cancel_deadline)} · ${formatClassTime(booking.cancel_deadline)}`;
   return (
     <div
       className={cn(
@@ -347,6 +350,11 @@ function UpcomingCard({
           <p className="font-semibold text-ink break-words leading-snug">{booking.name}</p>
           <p className="mt-0.5 text-sm font-medium text-ink/80">{formatClassTime(booking.starts_at)}</p>
           <MetaLine booking={booking} />
+          {open && (
+            <p className="mt-1 text-xs text-muted">
+              {cancelDeadlineLine(isLate(booking.cancel_deadline), deadline)}
+            </p>
+          )}
         </div>
         <QrBadge
           value={booking.qr_token}
@@ -356,7 +364,7 @@ function UpcomingCard({
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-ink/5 px-4 min-h-[48px]">
         <span className="text-xs text-muted font-mono tracking-wide">{booking.code}</span>
-        {open ? (
+        {open && (
           <button
             onClick={() => onCancel(booking)}
             className="-mr-2 inline-flex items-center gap-1.5 min-h-[44px] rounded-full px-3 text-sm font-semibold text-muted hover:bg-error/5 hover:text-error transition-colors"
@@ -364,10 +372,6 @@ function UpcomingCard({
             <X className="w-4 h-4" />
             Cancel
           </button>
-        ) : (
-          <span className="text-xs text-muted text-right">
-            {cancelClosed(booking.effective_cancel_window_hours)}
-          </span>
         )}
       </div>
     </div>

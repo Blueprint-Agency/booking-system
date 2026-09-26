@@ -45,7 +45,7 @@ const updateStaffSchema = z.object({
   bio: z.string().max(4000).nullable().optional(),
   languages: z.array(z.string().trim().min(1).max(60)).optional(),
   role: z.enum(['admin', 'instructor']).optional(),
-  // Assigned Days — instructors only; the service refuses them on anyone else.
+  // Assigned Days — any staff member's, admins included.
   annual_leave_days: z.number().int().min(0).max(365).optional(),
   medical_leave_days: z.number().int().min(0).max(365).optional(),
   study_leave_days: z.number().int().min(0).max(365).optional(),
@@ -77,15 +77,11 @@ function serializeStaff(row: StaffProfileRow) {
     invited_at: row.invitedAt,
     accepted_at: row.acceptedAt,
     archived_at: row.archivedAt,
-    // Assigned Days: present on instructors, absent on everyone else rather
-    // than null — a non-instructor has no leave figure to report.
-    ...(row.annualLeaveDays !== undefined
-      ? {
-          annual_leave_days: row.annualLeaveDays,
-          medical_leave_days: row.medicalLeaveDays,
-          study_leave_days: row.studyLeaveDays,
-        }
-      : {}),
+    // Assigned Days: every staff member's, admins included — leave belongs to
+    // a staff member, not an instructor profile.
+    annual_leave_days: row.annualLeaveDays,
+    medical_leave_days: row.medicalLeaveDays,
+    study_leave_days: row.studyLeaveDays,
     // This Leave Year's Carried, Pool and Remaining, so the edit form prefills
     // the Remaining fields and can show what they are bounded by.
     ...(row.leave

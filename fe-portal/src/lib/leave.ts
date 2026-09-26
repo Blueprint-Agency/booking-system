@@ -1,10 +1,14 @@
 // How leave reads on screen — the labels, the date formatting and the refusal
-// sentence, shared by the instructor leave page, the admin leave queue and the
+// sentence, shared by both "My leave" pages, the admin leave queue and the
 // leave calendar. Presentation only: nothing here decides anything. Every rule
 // (balance, backdating, clashes, half-day boundary) lives in the backend.
 
 import { formatDate } from "./formatters";
 import { ApiError } from "./api";
+
+/** The self-service leave mount, one for both roles: leave belongs to a staff
+ *  member, admin or instructor. */
+export const OWN_LEAVE_PATH = "/portal/leave";
 
 export type LeaveType = "annual" | "medical" | "study";
 
@@ -17,6 +21,38 @@ export type LeaveStatus =
   | "revoked";
 
 export type HalfDay = "none" | "morning" | "afternoon";
+
+/** One Leave Type's year, as `GET /portal/leave` sends it. */
+export interface ApiLeaveBalance {
+  type: LeaveType;
+  /** The yearly figure on my profile. */
+  assigned_days: number;
+  /** Part of the Pool, brought in from last year. Only annual ever carries. */
+  carried_days: number;
+  /** What leave is drawn from this year. Normally assigned + carried, but an
+   *  admin's adjustment can move it, so it is sent rather than added up here. */
+  pool_days: number;
+  taken_days: number;
+  pending_days: number;
+  remaining_days: number;
+}
+
+/** One of my own requests, as `GET /portal/leave` sends it. */
+export interface ApiOwnLeaveRequest {
+  id: string;
+  type: LeaveType;
+  start_date: string;
+  end_date: string;
+  half_day: HalfDay;
+  days: number;
+  leave_year: number;
+  status: LeaveStatus;
+  reason: string;
+  decision_reason: string | null;
+  created_at: string;
+  /** The key is never sent — only whether there is a Supporting Document. */
+  has_supporting_document: boolean;
+}
 
 export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = {
   annual: "Annual",

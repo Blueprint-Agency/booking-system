@@ -1200,7 +1200,8 @@ async function cancelFutureBookings(
   const cancelled: CancelledSession[] = []
   for (const t of targets) {
     try {
-      await cancelBooking(tenantId, { bookingId: t.id, source: 'admin', packageVoided: true })
+      // A Voided package takes nothing back whichever way `credit` points: `n_a`.
+      await cancelBooking(tenantId, { bookingId: t.id, source: 'admin', credit: 'return', packageVoided: true })
       cancelled.push({ name: t.name, startsAt: t.startsAt })
     } catch (err) {
       // One booking that will not cancel — checked in between the read and the

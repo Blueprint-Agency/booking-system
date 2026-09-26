@@ -137,7 +137,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 - **Credit** = currency for **group classes only**. Earned by purchasing a Bundle, or held implicitly by an Unlimited package.
 - A user holds a Bundle **OR** an Unlimited at any moment — never both. See §3.6 for mutex resolution.
 - A class booking deducts **1 credit at confirmation**.
-- Cancelling within the policy window returns the credit; outside the window it is forfeited (see §3.5).
+- Cancelling before the class's window returns the credit (while the member is under the Cancellation Cap, if it is on); cancelling inside the window is a **late cancel** — allowed until the class starts, credit forfeited (see §3.5).
 - **Workshops never use credits** — paid directly per workshop.
 - **No-show = forfeit** (same treatment as outside-window cancel). Admin can manually return the credit on the booking detail page with a mandatory reason. No automatic "first no-show forgiveness" in v1.
 
@@ -172,14 +172,18 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 
 ### 3.5 Cancellation policy
 
-Defaults a studio starts with (admin-editable, per Tenant):
+Defaults a studio starts with (admin-editable, per Tenant; written when the studio is provisioned, #318):
 
-| Booking | Window (free) | Outside window |
+| Booking | Cancelled in time | Cancelled late |
 |---|---|---|
-| Class | 4h before start | Credit forfeited (no fee) |
+| Class | Up to 24h before start: credit returned, within the cap | Inside 24h, until the class starts: a **late cancel** — allowed, credit forfeited (no fee), counts toward the cap. After the start: refused |
 | Workshop | 7 days before | Refund request (out-of-app); 50% policy retention |
 | Private (unconfirmed) | Always free | n/a |
-| Private (confirmed) | 24h before | Session forfeited |
+| Private (confirmed) | Up to 24h before: session returned, within the cap | Refused — contact the studio |
+
+**Cancellation Cap** — how many member cancellations per cycle return the credit (or session); class and PT share one count, and late cancels count too. Default **on, 10 per 30 days**. A studio can switch it off: then every cancel made in time returns, however many. Cancels are recorded either way, so switching it back on counts the ones already in the current cycle. Existing studios keep the count they had.
+
+A class (or weekly series) may carry its own window; left blank it follows the studio's.
 
 Reschedule = cancel + rebook, re-evaluated against policy.
 

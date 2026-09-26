@@ -65,6 +65,8 @@ export type E2eStudio = {
     buyClassType: string
     /** Journey 3's class — the canceller books and cancels it. */
     cancelClassType: string
+    /** The late cancel journey's class — hours away, inside the window, already booked. */
+    lateCancelClassType: string
     /** Journey 2's class type, with nothing scheduled: the admin schedules it. */
     portalClassType: string
     /** Journey 4's class — starting minutes from now, inside the Check-in Window. */
@@ -80,6 +82,7 @@ export type E2eStudio = {
   classes: {
     buy: { id: string; startsAt: string }
     cancel: { id: string; startsAt: string }
+    lateCancel: { id: string; startsAt: string }
     checkIn: { id: string; startsAt: string }
     waitlist: { id: string; startsAt: string }
     staffWaitlist: { id: string; startsAt: string }
@@ -91,6 +94,8 @@ export type E2eStudio = {
     buyer: { email: string; token: string }
     /** Signed in, registered, holding the plan. */
     canceller: { email: string; token: string }
+    /** Signed in, registered, holding the plan, with the late cancel class booked on it. */
+    lateCanceller: { email: string; token: string }
     /** Signed in, registered, holding the plan: books the check-in class and is checked in. */
     arriver: { email: string; token: string }
     /** Signed in, registered, holding the plan: joins the waitlist class's line and leaves it. */
@@ -103,6 +108,8 @@ const DAY = 24 * HOUR
 const PACKAGE_CREDITS = 5
 /** Long enough for the journey to book it before it starts, short enough to be inside the window. */
 const CHECK_IN_CLASS_STARTS_IN = 15 * 60 * 1000
+/** Well inside the policy's 24-hour cancellation window, and hours from starting. */
+const LATE_CANCEL_CLASS_STARTS_IN = 3 * HOUR
 
 /** Resend's sink: accepted and reported delivered, never sent to a person. */
 const addressFor = (slug: string, who: string) => `delivered+${slug}-${who}@resend.dev`
@@ -204,6 +211,7 @@ export async function createE2eStudio({
     packagePriceSgd: '10.00',
     buyClassType: 'E2E buy class',
     cancelClassType: 'E2E cancel class',
+    lateCancelClassType: 'E2E late cancel class',
     portalClassType: 'E2E portal class',
     checkInClassType: 'E2E check-in class',
     waitlistClassType: 'E2E waitlist class',
@@ -220,6 +228,7 @@ export async function createE2eStudio({
     classTypes: {
       buy: await createClassType(tenant.id, { name: catalogue.buyClassType }),
       cancel: await createClassType(tenant.id, { name: catalogue.cancelClassType }),
+      lateCancel: await createClassType(tenant.id, { name: catalogue.lateCancelClassType }),
       portal: await createClassType(tenant.id, { name: catalogue.portalClassType }),
       checkIn: await createClassType(tenant.id, { name: catalogue.checkInClassType }),
       waitlist: await createClassType(tenant.id, { name: catalogue.waitlistClassType }),
@@ -256,6 +265,8 @@ export async function createE2eStudio({
     // Days out, so both are well outside the policy's 24-hour cancellation window.
     buy: await addClass(classTypes.buy.id, hourFromNow(3)),
     cancel: await addClass(classTypes.cancel.id, hourFromNow(4)),
+    // Hours out: inside the window, so cancelling it is a late cancel.
+    lateCancel: await addClass(classTypes.lateCancel.id, new Date(Date.now() + LATE_CANCEL_CLASS_STARTS_IN)),
     // Minutes out: bookable (it has not started) and already inside the
     // seeded Check-in Window, so the desk can check its member in today.
     checkIn: await addClass(classTypes.checkIn.id, new Date(Date.now() + CHECK_IN_CLASS_STARTS_IN)),
@@ -303,6 +314,7 @@ export async function createE2eStudio({
   }
   const buyer = await register('buyer', 'Buyer')
   const canceller = await register('canceller', 'Canceller')
+  const lateCanceller = await register('latecanceller', 'Late Canceller')
   const arriver = await register('arriver', 'Arriver')
   const waiter = await register('waiter', 'Waiter')
   // Not handed to the journeys: they only need the seat taken, and the line filled.
@@ -310,7 +322,7 @@ export async function createE2eStudio({
   const queued = [await register('queued1', 'Queuer One'), await register('queued2', 'Queuer Two')]
 
   const clientIds: Record<string, string> = {}
-  for (const member of [canceller, arriver, waiter, seated, ...queued]) {
+  for (const member of [canceller, lateCanceller, arriver, waiter, seated, ...queued]) {
     const [row] = await db
       .select({ id: schema.clients.id })
       .from(schema.clients)
@@ -326,6 +338,11 @@ export async function createE2eStudio({
       }),
     )
   }
+  // The late cancel class, booked on the member's plan: the journey starts from
+  // the booking, one credit spent.
+  await withTenant(tenant.id, () =>
+    bookClass(tenant.id, { clientId: clientIds[lateCanceller.email]!, classId: classes.lateCancel.id }),
+  )
   // The waitlist class's one online seat, booked the way the member would book it.
   await withTenant(tenant.id, () =>
     bookClass(tenant.id, { clientId: clientIds[seated.email]!, classId: classes.waitlist.id }),
@@ -366,7 +383,7 @@ export async function createE2eStudio({
     catalogue,
     classes,
     staffWaitlistLine,
-    members: { buyer, canceller, arriver, waiter },
+    members: { buyer, canceller, lateCanceller, arriver, waiter },
   }
 }
 

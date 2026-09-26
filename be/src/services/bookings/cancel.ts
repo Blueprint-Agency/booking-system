@@ -1,14 +1,22 @@
 /**
- * Single-booking cancellation — both client self-cancel and admin force-cancel.
- * See be-client.md §4c (client) and be-portal.md §3b (admin).
+ * Single-booking cancellation — client self-cancel and staff cancel.
+ * See be-client.md §4c (client) and be-portal.md §3b (staff).
  *
  * Class + PT only (credit/session bookings). Workshops refund via Stripe and are handled
- * elsewhere. Cancellation is ALWAYS allowed; window/cap only gate whether a refund fires.
+ * elsewhere.
  *
- *   - Admin source: always full refund (bypasses window/cap).
- *   - Client source: refund only if within window AND within cap (evaluateCancellation).
+ *   - Staff source (#320): an admin, on any booking, or an instructor, on a class
+ *     they may work (`not_your_session` otherwise). Staff choose the credit every
+ *     time — `return` puts it back, `keep` moves nothing (`forfeited`). The window
+ *     and the cap never decide it, and a staff cancel never counts toward the cap;
+ *     the window is still recorded, truthfully, on the cancellations row.
+ *   - Client source, class: allowed until the class starts (`class_started` after).
+ *     Inside the window it is a Late cancel — the credit is kept. In time, the credit
+ *     comes back while the member is under the cap, or always with the cap off
+ *     (evaluateCancellation).
+ *   - Client source, PT: refused inside the PT window (`cancellation_window_passed`).
  *   - Unlimited bookings debited 0 credits → nothing to return; seat is released and the
- *     outcome is recorded as `n_a` (not `credit_returned`).
+ *     outcome is recorded as `n_a` (not `credit_returned`). See `settleCancel`.
  *
  * Everything runs in one transaction. The class/PT row is locked FOR UPDATE so a self-cancel
  * can't race an admin bulk class-cancel.
@@ -19,21 +27,24 @@ import { bookings, cancellations } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { inboxItems } from '../../db/schema/inbox'
 import { refundCredits } from '../packages/ledger'
-import { decideOutcome, type RefundOutcome } from './refund-outcome'
-import { evaluateCancellation } from '../policy/evaluate-cancellation'
+import {
+  settleCancel,
+  type CancelSource,
+  type RefundOutcome,
+  type StaffCancelSource,
+  type StaffCredit,
+} from './refund-outcome'
+import { cancelWindowHoursFor, evaluateCancellation, readCancellationPolicy } from '../policy/evaluate-cancellation'
+import { insideCancelWindow } from '../policy/cancel-window'
 import { promoteFromWaitlist, sendPromotionEmails } from '../waitlist/promote'
+import { assertMayWorkClass } from '../waitlist/staff'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
 
-export type CancelSource = 'client' | 'admin'
+export type { CancelSource, StaffCancelSource, StaffCredit }
 
-export interface CancelInput {
+interface CancelBase {
   bookingId: string
-  source: CancelSource
-  /** Required for client self-cancel — asserts the booking belongs to this client. */
-  clientId?: string
-  /** Staff actor for admin cancels (also written to the credit-adjustment ledger). */
-  actorStaffId?: string
   /**
    * The package that paid for this booking has been **Voided** by a Refund
    * (§14). The seat is released as usual (and promotes from the waitlist like any other), but nothing
@@ -45,6 +56,25 @@ export interface CancelInput {
   packageVoided?: boolean
 }
 
+export type CancelInput =
+  | (CancelBase & {
+      source: 'client'
+      /** Asserts the booking belongs to this client. */
+      clientId?: string
+    })
+  | (CancelBase & {
+      source: 'admin'
+      /** Written to the credit-adjustment ledger; absent for a system cancel (a Refund's). */
+      actorStaffId?: string
+      credit: StaffCredit
+    })
+  | (CancelBase & {
+      source: 'instructor'
+      /** The instructor cancelling — who the class must be led by. */
+      actorStaffId: string
+      credit: StaffCredit
+    })
+
 export interface CancelResult {
   refundOutcome: RefundOutcome
   refundFired: boolean
@@ -54,7 +84,10 @@ export async function cancelBooking(
   tenantId: string,
   input: CancelInput,
 ): Promise<CancelResult> {
-  const { bookingId, source, clientId, actorStaffId, packageVoided } = input
+  const { bookingId, source, packageVoided } = input
+  const clientId = input.source === 'client' ? input.clientId : undefined
+  const actorStaffId = input.source === 'client' ? undefined : input.actorStaffId
+  const credit = input.source === 'client' ? undefined : input.credit
 
   const { result, promotions } = await db.transaction(async tx => {
     // 1. Lock the booking row.
@@ -80,6 +113,11 @@ export async function cancelBooking(
     if (source === 'client' && clientId && bk.clientId !== clientId) {
       throw new ForbiddenError('not_your_booking')
     }
+    // An instructor cancels on the classes they lead; a private session's
+    // booking is cancelled as a PT request, not here.
+    if (source === 'instructor' && bk.kind !== 'class') {
+      throw new ForbiddenError('not_your_session', { message: 'This booking is for a session you are not teaching.' })
+    }
     if (bk.state !== 'confirmed') throw new ConflictError('not_cancellable')
     if (bk.kind === 'workshop') throw new BadRequestError('workshop_cancel_unsupported')
     // Attendance keeps state='confirmed', so the check above lets an admin refund
@@ -95,12 +133,17 @@ export async function cancelBooking(
     let classOwnWindowHours: number | null = null
     if (bk.kind === 'class') {
       const [cls] = await tx
-        .select({ startsAt: classes.startsAt, cancelWindowHours: classes.cancelWindowHours })
+        .select({
+          startsAt: classes.startsAt,
+          cancelWindowHours: classes.cancelWindowHours,
+          mainInstructorId: classes.mainInstructorId,
+        })
         .from(classes)
         .where(and(eq(classes.tenantId, tenantId), eq(classes.id, bk.classId!)))
         .for('update')
         .limit(1)
       if (!cls) throw new NotFoundError('class_not_found')
+      if (source === 'instructor') assertMayWorkClass({ role: 'instructor', staffId: actorStaffId! }, cls)
       sessionStartsAt = cls.startsAt
       classOwnWindowHours = cls.cancelWindowHours
     } else {
@@ -117,7 +160,7 @@ export async function cancelBooking(
     // 3. Evaluate the refund decision.
     const now = clockNow()
     const evaluation =
-      source === 'admin'
+      source !== 'client'
         ? undefined
         : await evaluateCancellation({
             tenantId,
@@ -128,36 +171,36 @@ export async function cancelBooking(
             now,
           })
 
-    // Client self-cancel is a HARD deadline: a member can only cancel up to
-    // `windowHours` (the class's effective window) before the session starts. Inside that window
-    // — or after the session has started — the action is rejected outright (not just
-    // forfeited). Admins bypass this and can cancel at any time.
-    if (source === 'client' && !evaluation!.wasWithinWindow) {
+    // A member's PT session is a HARD deadline: inside its window — or after it
+    // has started — the cancel is rejected outright. A class is not (#318): inside
+    // its window it goes through as a Late cancel, and only a class that has
+    // started is refused, by the evaluation above. Staff bypass both.
+    if (source === 'client' && cancelKind === 'pt' && !evaluation!.wasWithinWindow) {
       throw new AppError(422, 'cancellation_window_passed', {
         window_hours: evaluation!.windowHours,
       })
     }
 
     const used = bk.used ?? 0
-    const wantsRefund = source === 'admin' || evaluation!.refund === 'full'
 
     // Unlimited bookings used 0 credits → nothing to return; record n_a, not
     // credit_returned. A Voided package takes the same arm for the same reason:
     // there is no longer anything to return the credit to.
     // Nothing here touches `expires_at`: Activation is one-way (§3), from any actor.
     // Staff return a plan to Dormant by hand through the portal expiry dialog.
-    let refundOutcome: RefundOutcome
-    let refundFired: boolean
-    if (wantsRefund && used > 0 && bk.clientPackageId && !packageVoided) {
-      refundOutcome = decideOutcome(bk.kind, source, evaluation)
-      refundFired = true
-    } else if (wantsRefund) {
-      refundOutcome = 'n_a' // seat released, no credit/session to return (unlimited)
-      refundFired = false
-    } else {
-      refundOutcome = 'forfeited'
-      refundFired = false
-    }
+    const { refundOutcome, refundFired } = settleCancel({
+      kind: cancelKind,
+      source,
+      evaluation,
+      credit,
+      used,
+      returnable: bk.clientPackageId !== null && !packageVoided,
+    })
+
+    // Whether the cancel came in time, judged against the same window a
+    // member's would be. A staff cancel's is recorded, never acted on.
+    const wasWithinWindow =
+      evaluation?.wasWithinWindow ?? (await staffCancelInTime(tenantId, cancelKind, sessionStartsAt, classOwnWindowHours, now))
 
     // 4. Return the credit/session to the originating package. The ledger also
     // re-derives `active`, so a bundle emptied to zero becomes spendable again
@@ -169,19 +212,20 @@ export async function cancelBooking(
         clientId: bk.clientId,
         clientPackageId: bk.clientPackageId!,
         amount: used,
-        reason: source === 'admin' ? 'admin_cancellation_refund' : 'client_cancellation_refund',
+        reason: `${source}_cancellation_refund`,
         actedByStaffId: actorStaffId ?? null,
       })
     }
 
-    // 5. Record the cancellation (counts toward the client's cap regardless of refund outcome).
+    // 5. Record the cancellation. Only `source='client'` rows count toward the
+    // member's cap, whatever the refund outcome; a staff row never does.
     await tx.insert(cancellations).values({
       tenantId,
       bookingId: bk.id,
       clientId: bk.clientId,
       kind: cancelKind,
       source,
-      wasWithinWindow: evaluation?.wasWithinWindow ?? true,
+      wasWithinWindow,
       wasWithinCap: evaluation?.wasWithinCap ?? true,
       refundFired,
       cancelledAt: now,
@@ -193,16 +237,17 @@ export async function cancelBooking(
       .set({ state: 'cancelled', refundOutcome, checkInState: 'n_a', cancelledAt: now })
       .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
 
-    // 7. Admin single-cancel raises an inbox item (client self-cancel also notifies admins).
+    // 7. A staff single-cancel raises an inbox item (client self-cancel also notifies admins).
     await tx.insert(inboxItems).values({
       tenantId,
-      type: source === 'admin' ? 'admin_cancel_class_pt' : 'client_cancellation',
+      type: source === 'client' ? 'client_cancellation' : 'admin_cancel_class_pt',
       payload: {
         bookingId: bk.id,
         clientId: bk.clientId,
         kind: cancelKind,
         refundOutcome,
         refundFired,
+        ...(source === 'client' ? {} : { source }),
         ...(actorStaffId ? { actorStaffId } : {}),
         at: now.toISOString(),
       },
@@ -220,4 +265,16 @@ export async function cancelBooking(
 
   await sendPromotionEmails(tenantId, promotions)
   return result
+}
+
+/** Whether a staff cancel came before the window a member's would be judged by. */
+async function staffCancelInTime(
+  tenantId: string,
+  kind: 'class' | 'pt',
+  startsAt: Date,
+  classOwnWindowHours: number | null,
+  now: Date,
+): Promise<boolean> {
+  const windowHours = cancelWindowHoursFor(await readCancellationPolicy(tenantId), kind, classOwnWindowHours)
+  return !insideCancelWindow(startsAt, windowHours, now)
 }

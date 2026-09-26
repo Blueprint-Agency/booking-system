@@ -511,17 +511,11 @@ export async function listStaffAndInvitations(
 ): Promise<ListStaffResult> {
   const includeArchived = opts?.includeArchived ?? false
 
-  // Left-joined so the Assigned Days ride along on the instructors and are
-  // simply absent on everyone else — see StaffProfileRow.
+  // Assigned Days are columns on the staff row, and every staff member has
+  // this Leave Year's figures attached — admins take leave too.
   const staffRows = await db
-    .select({
-      staff: staffUsers,
-      annualLeaveDays: instructors.annualLeaveDays,
-      medicalLeaveDays: instructors.medicalLeaveDays,
-      studyLeaveDays: instructors.studyLeaveDays,
-    })
+    .select()
     .from(staffUsers)
-    .leftJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
     .where(
       and(
         eq(staffUsers.tenantId, tenantId),
@@ -531,19 +525,7 @@ export async function listStaffAndInvitations(
     )
     .orderBy(desc(staffUsers.createdAt))
 
-  const staff = await withLeaveFigures(
-    tenantId,
-    staffRows.map(r =>
-      r.annualLeaveDays === null || r.medicalLeaveDays === null || r.studyLeaveDays === null
-        ? r.staff
-        : {
-            ...r.staff,
-            annualLeaveDays: r.annualLeaveDays,
-            medicalLeaveDays: r.medicalLeaveDays,
-            studyLeaveDays: r.studyLeaveDays,
-          },
-    ),
-  )
+  const staff = await withLeaveFigures(tenantId, staffRows)
 
   // Denormalise inviter name via a correlated subquery.
   const invitations = await db

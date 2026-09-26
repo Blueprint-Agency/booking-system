@@ -2,6 +2,7 @@ export * from "./button";
 export * from "./input";
 export * from "./textarea";
 export * from "./label";
+export * from "./radio-group";
 export * from "./select";
 export * from "./dialog";
 export * from "./sheet";

@@ -44,6 +44,36 @@ test('CXL-01 a member cancels inside the window and the credit comes back', asyn
   await expectCredits(page, full)
 })
 
+/**
+ * The late cancel (#318): a member cancels a class hours away, inside its
+ * window. The cancel goes through — they are warned first — and the credit it
+ * spent stays spent. The class is booked for them when the studio is made, so
+ * the balance is read before and after the cancel alone.
+ */
+test('CXL-39 a member cancels inside the window: a late cancel, and the credit stays spent', async ({ page }) => {
+  const { urls, catalogue, members } = studio()
+  await signInMember(page, members.lateCanceller)
+  const booked = catalogue.packageCredits - 1
+
+  await page.goto(urls.client)
+  await expectCredits(page, booked)
+
+  await page.goto(`${urls.client}/account/classes`)
+  const booking = page
+    .locator('div')
+    .filter({ has: page.getByText(catalogue.lateCancelClassType, { exact: true }) })
+    .filter({ has: page.getByRole('button', { name: 'Cancel', exact: true }) })
+    .last()
+  await booking.getByRole('button', { name: 'Cancel', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Cancel this booking?' })
+  await expect(dialog.getByText("This is a late cancellation — your credit won't be returned.")).toBeVisible()
+  await dialog.getByRole('button', { name: 'Confirm cancellation' }).click()
+  await expect(page.getByText("Booking cancelled · a late cancellation, so the credit wasn't returned.")).toBeVisible()
+
+  await page.goto(urls.client)
+  await expectCredits(page, booked)
+})
+
 /** The balance in the member app's top bar, which reads it fresh on each page load. */
 async function expectCredits(page: Page, credits: number) {
   await expect(page.getByTitle('Class credits').locator('visible=true').first()).toHaveText(

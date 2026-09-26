@@ -440,7 +440,7 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     const other = await bookOk(jo, await addClass(one, { startsIn: 7 * DAY }))
     const adminStamped = (await pkg(adminPlan)).expiresAt
     assert.ok(adminStamped)
-    await expectStatus(await post(one.admin.headers, `/api/v1/portal/admin/bookings/${other}/cancel`), 200)
+    await expectStatus(await post(one.admin.headers, `/api/v1/portal/admin/bookings/${other}/cancel`, { credit: 'return' }), 200)
     assert.equal((await bookingRow(other)).state, 'cancelled')
     const [adminCancellation] = await harness.db.select().from(schema.cancellations).where(eq(schema.cancellations.bookingId, other))
     assert.equal(adminCancellation?.source, 'admin')

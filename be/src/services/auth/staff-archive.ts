@@ -23,7 +23,6 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
-import { instructors } from '../../db/schema/catalog'
 import { joinName } from '../../lib/name'
 import {
   BadRequestError,
@@ -34,9 +33,8 @@ import {
 import { logger } from '../../shared/logger'
 import {
   adjustRemainingDays,
-  assignedLeaveDays,
   withLeaveFigures,
-  type InstructorLeaveFigures,
+  type StaffLeaveFigures,
 } from '../leave/requests'
 import { endStaffSessionsAt } from './auth-users'
 import { recordStaffAct } from './staff-acts'
@@ -45,16 +43,12 @@ import { isTopRank, STAFF_EDIT_REFUSAL_MESSAGE, staffEditRefusal, TOP_RANK_ROLES
 export type StaffUserRow = typeof staffUsers.$inferSelect
 
 /**
- * A staff row as the portal reads it. Assigned Days live on `instructors`, so
- * they are present for instructors and ABSENT — not null — for everyone else:
- * an admin has no leave concept to have a figure for. `leave` is the same story
- * for this Leave Year's Carried, Pool and Remaining.
+ * A staff row as the portal reads it. Assigned Days are columns on the row
+ * itself — every staff member takes leave, admins included. `leave` is this
+ * Leave Year's Carried, Pool and Remaining, attached by `withLeaveFigures`.
  */
 export type StaffProfileRow = StaffUserRow & {
-  annualLeaveDays?: number
-  medicalLeaveDays?: number
-  studyLeaveDays?: number
-  leave?: InstructorLeaveFigures
+  leave?: StaffLeaveFigures
 }
 
 /**
@@ -285,11 +279,11 @@ export interface UpdateStaffProfileInput {
     languages?: string[]
     role?: StaffUserRow['role']
     /** Assigned Days. Deliberately NOT privilege fields — an admin may set
-     *  them — and they land on `instructors`, so an instructor target only. */
+     *  them, on any staff member, another admin included. */
     annualLeaveDays?: number
     medicalLeaveDays?: number
     studyLeaveDays?: number
-    /** The Remaining this instructor should have for the CURRENT Leave Year.
+    /** The Remaining this staff member should have for the CURRENT Leave Year.
      *  Not a privilege field either. Back-solves that year's Pool — see
      *  services/leave/requests.ts. */
     annualRemainingDays?: number
@@ -367,38 +361,24 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
   if (patch.bio !== undefined) set.bio = patch.bio
   if (patch.languages !== undefined) set.languages = patch.languages
   if (patch.role !== undefined) set.role = patch.role
+  // Assigned Days are columns on the staff row, so they ride along with the
+  // rest of the profile. They apply from the NEXT Leave Year.
+  if (patch.annualLeaveDays !== undefined) set.annualLeaveDays = patch.annualLeaveDays
+  if (patch.medicalLeaveDays !== undefined) set.medicalLeaveDays = patch.medicalLeaveDays
+  if (patch.studyLeaveDays !== undefined) set.studyLeaveDays = patch.studyLeaveDays
 
-  const assigned = {
-    ...(patch.annualLeaveDays !== undefined ? { annualLeaveDays: patch.annualLeaveDays } : {}),
-    ...(patch.medicalLeaveDays !== undefined ? { medicalLeaveDays: patch.medicalLeaveDays } : {}),
-    ...(patch.studyLeaveDays !== undefined ? { studyLeaveDays: patch.studyLeaveDays } : {}),
-  }
   const remaining = {
     ...(patch.annualRemainingDays !== undefined ? { annual: patch.annualRemainingDays } : {}),
     ...(patch.medicalRemainingDays !== undefined ? { medical: patch.medicalRemainingDays } : {}),
     ...(patch.studyRemainingDays !== undefined ? { study: patch.studyRemainingDays } : {}),
   }
-  const touchesLeave = Object.keys(assigned).length + Object.keys(remaining).length > 0
-  if (touchesLeave && target.role !== 'instructor') {
-    throw new BadRequestError('leave_days_instructor_only', {
-      message: 'Only an instructor has leave days.',
-    })
-  }
   // The adjustment goes first because it is the only write here that can be
   // refused (above the Pool, or below zero), and a refusal that has already
-  // written half the profile has nothing to roll it back with. Order is
-  // otherwise immaterial: Assigned Days apply from the NEXT Leave Year, the
-  // adjustment only to this one.
+  // written half the profile has nothing to roll it back with. It reads the
+  // Assigned Days the row holds BEFORE this save: its ceiling is this year's
+  // Assigned + Carried, and a new Assigned figure only applies from next year.
   if (Object.keys(remaining).length > 0) {
-    await adjustRemainingDays(tenantId, { instructorId: targetStaffId, ...remaining })
-  }
-  if (Object.keys(assigned).length > 0) {
-    await db
-      .update(instructors)
-      .set(assigned)
-      .where(
-        and(eq(instructors.tenantId, tenantId), eq(instructors.staffUserId, targetStaffId)),
-      )
+    await adjustRemainingDays(tenantId, { staffUserId: targetStaffId, ...remaining })
   }
 
   let row = target
@@ -412,8 +392,6 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
     if (!updated) throw new ConflictError('staff_update_failed')
     row = updated
   }
-  const [profile] = await withLeaveFigures(tenantId, [
-    { ...row, ...(await assignedLeaveDays(tenantId, targetStaffId)) },
-  ])
+  const [profile] = await withLeaveFigures(tenantId, [row])
   return profile ?? row
 }

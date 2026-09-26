@@ -4,7 +4,7 @@ import { tenantMailIdentity } from '../tenants/mail-identity'
 import { db } from '../../db'
 import { emailTemplates, emailLog } from '../../db/schema/content'
 import { staffUsers } from '../../db/schema/identity'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { reportError } from '../../shared/logger'
 
 export type TemplateSlug =
@@ -235,12 +235,16 @@ async function deliver(input: {
  * announces is committed, so nothing here may undo — or fail — that work. A
  * failure is reported (shared/logger.ts) rather than thrown, so a swallowed
  * notification is never a silent one.
+ *
+ * `exceptStaffId` leaves one admin out: the one whose own action this is. An
+ * admin who files leave is not told they filed it.
  */
 export async function emailEveryAdmin(
   tenantId: string,
   slug: TemplateSlug,
   variables: () => Promise<Record<string, string>>,
   context?: Record<string, unknown>,
+  options: { exceptStaffId?: string } = {},
 ): Promise<void> {
   try {
     const vars = await variables()
@@ -252,6 +256,7 @@ export async function emailEveryAdmin(
           eq(staffUsers.tenantId, tenantId),
           eq(staffUsers.role, 'admin'),
           eq(staffUsers.status, 'active'),
+          ...(options.exceptStaffId ? [ne(staffUsers.id, options.exceptStaffId)] : []),
         ),
       )
 

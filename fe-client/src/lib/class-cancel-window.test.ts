@@ -11,6 +11,7 @@ import { classBookingPolicy, type CancellationPolicy } from "./cancellation-copy
 const policy: CancellationPolicy = {
   class_window_hours: 24,
   pt_window_hours: 12,
+  cancel_cap_enabled: true,
   cancel_cap_count: 3,
   cancel_cap_cycle_days: 30,
 };

@@ -51,6 +51,8 @@ export async function partPaymentEnabled(tenantId: string): Promise<boolean> {
 }
 
 export interface UpdateGlobalPolicyInput {
+  /** The Cancellation Cap switch (#318); off, every in-time member cancel returns. */
+  cancelCapEnabled?: boolean
   cancelCapCount?: number
   cancelCapCycleDays?: number
   classWindowHours?: number
@@ -193,6 +195,9 @@ async function validatedConflictPairs(
           eq(instructors.tenantId, tenantId),
           inArray(instructors.staffUserId, ids),
           eq(staffUsers.status, 'active'),
+          // By role, not by the row alone: an instructor promoted to admin keeps
+          // their `instructors` row, and an admin is in no conflict pair.
+          eq(staffUsers.role, 'instructor'),
         ),
       )
     if (active.length !== ids.length) {

@@ -134,7 +134,11 @@ describe('a Mindbody studio\'s waitlists, transformed and imported', { skip: int
       .from(schema.bookings)
       .where(and(eq(schema.bookings.classId, studio.classId), eq(schema.bookings.state, 'confirmed')))
     const owner = await harness.signInAs('staff', 'owner@example.test', studio)
-    const cancelled = await harness.app.request(`/api/v1/portal/admin/bookings/${pat!.id}/cancel`, { method: 'POST', headers: owner })
+    const cancelled = await harness.app.request(`/api/v1/portal/admin/bookings/${pat!.id}/cancel`, {
+      method: 'POST',
+      headers: { ...owner, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credit: 'return' }),
+    })
     assert.equal(cancelled.status, 200, await cancelled.clone().text())
 
     // Jane, first in line, now holds the seat, paid from her imported Class Pack; Rick moves up.

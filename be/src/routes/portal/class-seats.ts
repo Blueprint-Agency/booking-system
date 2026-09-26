@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { BookClassResult } from '../../services/bookings/book'
 import type { ClassDetail } from '../../services/schedule/detail'
 import type { ScheduleEntryRow } from '../../services/schedule/timetable'
+import { staffCancelPreviewJson } from '../../services/bookings/staff-cancel-preview'
 
 /**
  * The seat shapes the admin and instructor portals share (spec-waitlist.md §2,
@@ -49,6 +50,8 @@ export function classSeatsJson(d: ClassDetail) {
       code: a.code,
       seat: a.seat,
       promoted_from_waitlist: a.promotedFromWaitlist,
+      // Null on a row "Cancel booking" is not offered on (#320).
+      cancel_preview: staffCancelPreviewJson(a.cancelPreview),
     })),
     waiting: d.waitlist.length,
     waitlist_enabled: d.waitlistEnabled,

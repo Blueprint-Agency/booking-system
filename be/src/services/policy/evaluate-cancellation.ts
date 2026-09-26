@@ -5,13 +5,19 @@
  *
  * The cap is a SHARED bucket across class + PT client cancellations (one count, both kinds).
  * No-shows are NOT cancellations, so they never land in this table and never count.
+ * With the cap switched off every cancel is within it — they are still recorded,
+ * so switching it back on counts the ones already inside the cycle.
+ *
+ * A member's class cancel is decided here (#318): once the class has started it
+ * is refused `class_started`; inside the window it is a **Late cancel** — let
+ * through, the credit kept, and counted toward the cap like any other.
  */
 import { and, eq, gte, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { globalPolicy } from '../../db/schema/policy'
 import { cancellations } from '../../db/schema/bookings'
-import { NotFoundError } from '../../shared/errors'
-import { effectiveCancelWindow } from './cancel-window'
+import { AppError, NotFoundError } from '../../shared/errors'
+import { effectiveCancelWindow, insideCancelWindow } from './cancel-window'
 
 export type CancellationKind = 'class' | 'pt'
 
@@ -39,11 +45,12 @@ export interface EvaluateResult {
   windowHours: number
 }
 
-const HOUR_MS = 3_600_000
 const DAY_MS = 86_400_000
 
-/** The four numbers a member's cancellation is judged by. */
+/** What a member's cancellation is judged by. */
 export interface CancellationPolicy {
+  /** Off: every cancel is within the cap, whatever the count says. */
+  cancelCapEnabled: boolean
   cancelCapCount: number
   cancelCapCycleDays: number
   classWindowHours: number
@@ -57,6 +64,7 @@ export interface CancellationPolicy {
 export async function readCancellationPolicy(tenantId: string): Promise<CancellationPolicy> {
   const [policy] = await db
     .select({
+      cancelCapEnabled: globalPolicy.cancelCapEnabled,
       cancelCapCount: globalPolicy.cancelCapCount,
       cancelCapCycleDays: globalPolicy.cancelCapCycleDays,
       classWindowHours: globalPolicy.classWindowHours,
@@ -69,19 +77,35 @@ export async function readCancellationPolicy(tenantId: string): Promise<Cancella
   return policy
 }
 
+/**
+ * The window a cancel of this kind is judged by, in hours: a class's effective
+ * window (its own, else the studio's), or the studio's PT window. A staff
+ * cancel records it the same way a member's is decided by it.
+ */
+export function cancelWindowHoursFor(
+  policy: CancellationPolicy,
+  kind: CancellationKind,
+  classOwnWindowHours: number | null,
+): number {
+  return kind === 'class' ? effectiveCancelWindow(classOwnWindowHours, policy.classWindowHours) : policy.ptWindowHours
+}
+
+/**
+ * Judge a member's cancel. Throws `class_started` for a class that has begun —
+ * a member can cancel a class until it starts, never after. A PT session is
+ * refused earlier, at its window, by its callers (`cancellation_window_passed`).
+ */
 export async function evaluateCancellation(input: EvaluateInput): Promise<EvaluateResult> {
   const { tenantId, clientId, kind, sessionStartsAt, now } = input
+
+  if (kind === 'class' && now >= sessionStartsAt) throw new AppError(422, 'class_started')
 
   const policy = await readCancellationPolicy(tenantId)
 
   // Window: the booking must be cancelled at least N hours before it starts —
   // for a class, its effective window (./cancel-window).
-  const windowHours =
-    kind === 'class'
-      ? effectiveCancelWindow(input.classOwnWindowHours ?? null, policy.classWindowHours)
-      : policy.ptWindowHours
-  const cutoff = new Date(sessionStartsAt.getTime() - windowHours * HOUR_MS)
-  const wasWithinWindow = now <= cutoff
+  const windowHours = cancelWindowHoursFor(policy, kind, input.classOwnWindowHours ?? null)
+  const wasWithinWindow = !insideCancelWindow(sessionStartsAt, windowHours, now)
 
   // Cap: count this client's cancellations (class + PT, client-initiated) in the rolling cycle.
   const cycleStart = new Date(now.getTime() - policy.cancelCapCycleDays * DAY_MS)
@@ -97,7 +121,7 @@ export async function evaluateCancellation(input: EvaluateInput): Promise<Evalua
       ),
     )
   const priorCount = Number(counted?.n ?? 0)
-  const wasWithinCap = priorCount < policy.cancelCapCount
+  const wasWithinCap = !policy.cancelCapEnabled || priorCount < policy.cancelCapCount
 
   const refund: EvaluateResult['refund'] = wasWithinWindow && wasWithinCap ? 'full' : 'forfeit'
   const reason: EvaluateResult['reason'] =

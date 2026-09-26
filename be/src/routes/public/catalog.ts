@@ -133,6 +133,7 @@ const app = new Hono()
     return c.json({
       class_window_hours: p.classWindowHours,
       pt_window_hours: p.ptWindowHours,
+      cancel_cap_enabled: p.cancelCapEnabled,
       cancel_cap_count: p.cancelCapCount,
       cancel_cap_cycle_days: p.cancelCapCycleDays,
     })

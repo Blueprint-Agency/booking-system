@@ -43,6 +43,12 @@ export interface ClassBookingRow {
   code: string
   /** The class's Cancellation Window in hours, read now — its own, else the studio's. */
   effectiveCancelWindowHours: number
+  /** When that window opens: a cancel after this instant is a Late cancel (#318). */
+  cancelDeadline: Date
+  /** The class's own window, null for the studio's — what a cancel is judged by. */
+  cancelWindowHours: number | null
+  /** The package that paid; null when none did. */
+  clientPackageId: string | null
 }
 
 const baseSelect = {
@@ -60,6 +66,7 @@ const baseSelect = {
   creditCost: classes.creditCost,
   cancelWindowHours: classes.cancelWindowHours,
   creditsUsed: bookings.creditsOrSessionsUsed,
+  clientPackageId: bookings.clientPackageId,
   packageKind: clientPackages.kind,
   checkInState: bookings.checkInState,
   state: bookings.state,
@@ -82,6 +89,7 @@ type Raw = {
   creditCost: number
   cancelWindowHours: number | null
   creditsUsed: number | null
+  clientPackageId: string | null
   packageKind: string | null
   checkInState: string
   state: string
@@ -89,8 +97,11 @@ type Raw = {
   code: string
 }
 
+const HOUR_MS = 3_600_000
+
 function toRow(r: Raw, windowOf: (cls: HasCancelWindow) => number): ClassBookingRow {
   const used = r.creditsUsed ?? 0
+  const windowHours = windowOf(r)
   return {
     bookingId: r.bookingId,
     classId: r.classId,
@@ -108,7 +119,10 @@ function toRow(r: Raw, windowOf: (cls: HasCancelWindow) => number): ClassBooking
     state: r.state as ClassBookingRow['state'],
     qrToken: r.qrToken,
     code: r.code,
-    effectiveCancelWindowHours: windowOf(r),
+    effectiveCancelWindowHours: windowHours,
+    cancelDeadline: new Date(r.startsAt.getTime() - windowHours * HOUR_MS),
+    cancelWindowHours: r.cancelWindowHours,
+    clientPackageId: r.clientPackageId,
   }
 }
 

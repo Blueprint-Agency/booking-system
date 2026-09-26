@@ -1163,7 +1163,8 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     await expectStatus(
       await harness.app.request(`/api/v1/portal/admin/bookings/${againBooking!.id}/cancel`, {
         method: 'POST',
-        headers: adminAtOne.headers,
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credit: 'return' }),
       }),
       200,
     )

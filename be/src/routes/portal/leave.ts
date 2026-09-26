@@ -2,19 +2,24 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import * as svc from '../../../services/leave/requests'
-import { SUPPORTING_DOCUMENT_MAX_BYTES } from '../../../services/leave/rules'
-import { BadRequestError } from '../../../shared/errors'
-import { ERROR_CODES } from '../../../shared/error-codes'
-import { tenantId } from '../../../middleware/tenant'
+import * as svc from '../../services/leave/requests'
+import { SUPPORTING_DOCUMENT_MAX_BYTES } from '../../services/leave/rules'
+import { BadRequestError } from '../../shared/errors'
+import { ERROR_CODES } from '../../shared/error-codes'
+import { tenantId } from '../../middleware/tenant'
 
 /**
- * Instructor leave — the caller's OWN requests only.
+ * /api/v1/portal/leave — the caller's OWN leave, whichever role they hold.
  *
- * The acting instructor is always `staffUserId` from the auth context and is
+ * Leave belongs to a staff member, admin or instructor (be/docs/adr/0009), so
+ * this is mounted at the portal ROOT like the leave calendar, not in either
+ * role's subtree: the parent's staffAuth + requireActiveStaff is its access
+ * control (see routes/portal/index.ts).
+ *
+ * The acting staff member is always `staffUserId` from the auth context and is
  * never read from the body or the query, so nobody can file, withdraw or read
- * leave as someone else. Approve / reject / revoke are the admin's and are not
- * mounted here.
+ * leave as someone else. Approve / reject / revoke are the admin queue's
+ * (routes/portal/admin/leave.ts) and are not mounted here.
  */
 
 /** Headroom over the file limit for the multipart framing around the file. */
@@ -71,7 +76,7 @@ const app = new Hono()
   .post('/', zValidator('json', submitSchema), async c => {
     const body = c.req.valid('json')
     const row = await svc.submitLeaveRequest(tenantId(c), {
-      instructorId: c.get('staffUserId'), // forced — never from the body
+      staffUserId: c.get('staffUserId'), // forced — never from the body
       type: body.type,
       startDate: body.start_date,
       endDate: body.end_date,
@@ -119,7 +124,7 @@ const app = new Hono()
       }
       const row = await svc.attachSupportingDocument({
         tenantId: tenantId(c),
-        instructorId: c.get('staffUserId'), // forced — his own request only
+        staffUserId: c.get('staffUserId'), // forced — their own request only
         id,
         contentType: file.type,
         bytes: new Uint8Array(await file.arrayBuffer()),
@@ -128,8 +133,8 @@ const app = new Hono()
       return c.json(serialize(row))
     },
   )
-  // A signed GET, minted per click. The service refuses anyone but the owning
-  // instructor (admins reach the same service through the admin route).
+  // A signed GET, minted per click. The service refuses an instructor anyone's
+  // but their own; an admin passes, as through the admin queue's route.
   .get('/:id/document', zValidator('param', z.object({ id: z.string().uuid() })), async c =>
     c.json(
       await svc.supportingDocumentUrl(

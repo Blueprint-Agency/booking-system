@@ -43,6 +43,8 @@ import { RefundDialog } from "@/components/clients/refund-dialog";
 import { REFUND_REFUSALS } from "@/lib/refund-refusals";
 import { GivePackageDialog, type GivePackagePayload } from "@/components/clients/give-package-dialog";
 import { RemovePackageDialog } from "@/components/clients/remove-package-dialog";
+import { CancelBookingDialog } from "@/components/bookings/cancel-booking-dialog";
+import type { StaffCancelPreview } from "@/lib/staff-cancel";
 import { ChangeEmailDialog } from "@/components/clients/change-email-dialog";
 import { EditProfileDialog } from "@/components/clients/edit-profile-dialog";
 import { SendSetPasswordButton } from "@/components/access/send-set-password-button";
@@ -159,10 +161,10 @@ interface ApiBooking {
   booked_at: string;
   cancelled_at: string | null;
   /**
-   * Backend-composed — what an admin cancel does with the credit ("1 credit goes
-   * back to …"). Null when the booking cannot be cancelled from here.
+   * What the cancel dialog asks Return / Keep credit from (#320). Null when the
+   * booking cannot be cancelled from here.
    */
-  cancel_notice: string | null;
+  cancel_preview: StaffCancelPreview | null;
 }
 
 interface ApiAttendance {
@@ -951,16 +953,25 @@ export default function ClientProfilePage({
         />
       )}
 
-      {canEdit && cancelBookingFor && (
+      {canEdit && profile && (
         <CancelBookingDialog
-          booking={cancelBookingFor}
-          onConfirm={() =>
-            runEdit(
-              () => api!.post(`/portal/admin/bookings/${cancelBookingFor.booking_id}/cancel`),
-              "Booking cancelled.",
-            )
+          role="admin"
+          target={
+            cancelBookingFor?.cancel_preview
+              ? {
+                  bookingId: cancelBookingFor.booking_id,
+                  name: profile.name,
+                  detail: bookingWhat(cancelBookingFor),
+                  preview: cancelBookingFor.cancel_preview,
+                }
+              : null
           }
           onClose={() => setCancelBookingFor(null)}
+          onCancelled={() => {
+            toast.success("Booking cancelled.");
+            setCancelBookingFor(null);
+            void load();
+          }}
         />
       )}
 
@@ -1955,7 +1966,7 @@ function BookingRow({
       </div>
       <div className="flex w-full items-center justify-end gap-2 pl-[5.75rem] sm:w-auto sm:shrink-0 sm:pl-0">
         <Badge tone={outcome.tone}>{outcome.label}</Badge>
-        {onCancel && upcoming && b.cancel_notice && (
+        {onCancel && upcoming && b.cancel_preview && (
           <Button
             size="sm"
             variant="ghost"
@@ -1970,59 +1981,12 @@ function BookingRow({
   );
 }
 
-/**
- * An admin's cancel of one class booking (#272). Always allowed and always
- * returns what the booking spent — the dialog says which, in the backend's
- * words, before the admin commits.
- */
-function CancelBookingDialog({
-  booking,
-  onConfirm,
-  onClose,
-}: {
-  booking: ApiBooking;
-  onConfirm: () => Promise<void>;
-  onClose: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const when = booking.starts_at
-    ? ` on ${formatDate(booking.starts_at, "EEE d MMM, h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())}`
+/** "Vinyasa Flow on Tue 6 Oct, 7:00am" — the cancel dialog's line under its title. */
+function bookingWhat(b: ApiBooking): string {
+  const when = b.starts_at
+    ? ` on ${formatDate(b.starts_at, "EEE d MMM, h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())}`
     : "";
-  return (
-    <Dialog
-      open
-      onOpenChange={(o) => !o && !busy && onClose()}
-      title={`Cancel ${bookingTitle(booking)}${when}?`}
-      description={`Their place is released. ${booking.cancel_notice ?? ""}`}
-    >
-      <DialogFooter>
-        <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
-          Keep booking
-        </Button>
-        <Button
-          type="button"
-          disabled={busy}
-          className="bg-error text-white hover:bg-error/90"
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await onConfirm();
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          {busy ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Cancelling…
-            </>
-          ) : (
-            "Cancel booking"
-          )}
-        </Button>
-      </DialogFooter>
-    </Dialog>
-  );
+  return `${bookingTitle(b)}${when}`;
 }
 
 /**

@@ -348,7 +348,7 @@ export async function findOccupancyConflicts(
       .where(
         and(
           eq(leaveRequests.tenantId, tenantId),
-          eq(leaveRequests.instructorId, subject.id),
+          eq(leaveRequests.staffUserId, subject.id),
           inArray(leaveRequests.status, [...OCCUPYING_STATUSES]),
         ),
       ),

@@ -10,8 +10,8 @@ import { localDay } from "@/lib/local-day";
 import { LEAVE_HALF_DAY_SHORT, LEAVE_TYPE_LABEL, type LeaveType } from "@/lib/leave";
 
 /**
- * Who is away, for everybody on staff — the same widget on the admin leave page
- * and the instructor one.
+ * Who is away, for everybody on staff — admins and instructors alike — and the
+ * same widget on the admin leave queue and on both "My leave" pages.
  *
  * The backend decides what this can show: `detail` arrives null for a
  * colleague's leave when an instructor is looking, so the type, the reason, the
@@ -21,7 +21,7 @@ import { LEAVE_HALF_DAY_SHORT, LEAVE_TYPE_LABEL, type LeaveType } from "@/lib/le
 
 interface ApiLeaveCalendarEntry {
   id: string;
-  instructor: { id: string; name: string };
+  staff: { id: string; name: string };
   start_date: string;
   end_date: string;
   half_day: "none" | "morning" | "afternoon";
@@ -49,7 +49,7 @@ const CHIP_TONE = {
 
 function tooltip(e: ApiLeaveCalendarEntry): string {
   const head =
-    `${e.instructor.name} — ${e.status === "pending" ? "pending" : "on leave"}` +
+    `${e.staff.name} — ${e.status === "pending" ? "pending" : "on leave"}` +
     (e.half_day === "morning" ? " (morning)" : e.half_day === "afternoon" ? " (afternoon)" : "");
   if (!e.detail) return head;
   const bits = [
@@ -157,7 +157,7 @@ export function LeaveCalendar() {
                   >
                     {/* Only ever on a row whose detail this viewer may see. */}
                     {e.detail?.over_cap && <span aria-label="Breaches a leave conflict or the study leave cap">⚠️</span>}
-                    <span className="truncate">{e.instructor.name}</span>
+                    <span className="truncate">{e.staff.name}</span>
                     {/* The type is restricted; which half is not — a colleague
                         may see "(AM)" without seeing what kind of leave it is. */}
                     {(e.detail || e.half_day !== "none") && (

@@ -8,7 +8,7 @@ import ptRequests from './pt-requests'
 import profile from './profile'
 import payroll from './payroll'
 import catalog from './catalog'
-import leave from './leave'
+import bookings from './bookings'
 
 const app = new Hono()
   .use('*', requireRole('instructor', 'admin'))
@@ -19,6 +19,6 @@ const app = new Hono()
   .route('/profile', profile)
   .route('/payroll', payroll)
   .route('/catalog', catalog)
-  .route('/leave', leave)
+  .route('/bookings', bookings)
 
 export default app

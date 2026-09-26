@@ -30,6 +30,7 @@ export type Studio = {
     packagePriceSgd: string
     buyClassType: string
     cancelClassType: string
+    lateCancelClassType: string
     portalClassType: string
     checkInClassType: string
     waitlistClassType: string
@@ -38,6 +39,7 @@ export type Studio = {
   classes: {
     buy: { id: string; startsAt: string }
     cancel: { id: string; startsAt: string }
+    lateCancel: { id: string; startsAt: string }
     checkIn: { id: string; startsAt: string }
     waitlist: { id: string; startsAt: string }
     staffWaitlist: { id: string; startsAt: string }
@@ -47,6 +49,7 @@ export type Studio = {
   members: {
     buyer: { email: string; token: string }
     canceller: { email: string; token: string }
+    lateCanceller: { email: string; token: string }
     arriver: { email: string; token: string }
     waiter: { email: string; token: string }
   }

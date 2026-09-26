@@ -1,6 +1,6 @@
 # Per-instructor leave Pools, with carry-over
 
-**Status**: accepted (2026-08-12) — reverses the "no per-instructor allowances" and "no carry-forward" non-goals in `docs/md/spec-instructor-leave.md`.
+**Status**: accepted (2026-08-12) — reverses the "no per-instructor allowances" and "no carry-forward" non-goals in `docs/md/spec-instructor-leave.md`. Amended by `0009-leave-belongs-to-a-staff-member.md` (2026-09-26): Pools and Assigned Days are now per staff member, admins included.
 
 Leave was built with one studio-wide pair of numbers on the global policy singleton, no per-instructor override and no carry-forward, so that a balance could be a pure derived sum — allowance minus the days on that instructor's requests — with no counter to drift and no scheduled job to reset. The owner has since decided that leave is a term of an individual instructor's engagement rather than a studio policy, and that unused annual days should not evaporate on 31 December. We are therefore moving the assigned figure onto each instructor's profile and storing each year's **Pool** (Assigned Days plus Carried Days) as a row per instructor, per Leave Type, per Leave Year.
 

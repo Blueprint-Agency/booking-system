@@ -38,7 +38,7 @@ import { staffInvitations, staffUsers } from '../../db/schema/identity'
 import { auditLog } from '../../db/schema/ledger'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { reportError } from '../../shared/logger'
-import { assignedLeaveDays, withLeaveFigures } from '../leave/requests'
+import { withLeaveFigures } from '../leave/requests'
 import { emailCode, emailHeading, emailNote, emailParagraph, escapeHtml, renderEmail } from '../mail/layout'
 import { sendStudioSystemEmail } from '../notifications/send'
 import { isPlaceholderEmail } from './account-access'
@@ -375,9 +375,7 @@ export async function confirmStaffEmailChange(input: ConfirmStaffEmailChangeInpu
     }).catch(err => reportError(err, 'staff email change notice failed', { scope: 'staff-email-change' }))
   }
 
-  const [profile] = await withLeaveFigures(input.tenantId, [
-    { ...updated, ...(await assignedLeaveDays(input.tenantId, target.id)) },
-  ])
+  const [profile] = await withLeaveFigures(input.tenantId, [updated])
   return profile ?? updated
 }
 

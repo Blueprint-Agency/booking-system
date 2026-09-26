@@ -451,7 +451,7 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     // since a member can no longer.
     harness.clock.set(new Date(Date.now() + 3 * DAY - 20 * HOUR))
     try {
-      const res = await send('POST', `/portal/admin/bookings/${seated[0]!.bookingId}/cancel`, one.admin.headers)
+      const res = await send('POST', `/portal/admin/bookings/${seated[0]!.bookingId}/cancel`, one.admin.headers, { credit: 'return' })
       assert.equal(res.status, 200, JSON.stringify(res.body))
     } finally {
       harness.clock.reset()
@@ -511,7 +511,7 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     const entry = await joined(waiter, classId)
 
     for (const id of [staffBooked.body.booking_id, overbooked.body.booking_id]) {
-      const res = await send('POST', `/portal/admin/bookings/${id}/cancel`, one.admin.headers)
+      const res = await send('POST', `/portal/admin/bookings/${id}/cancel`, one.admin.headers, { credit: 'return' })
       assert.equal(res.status, 200, JSON.stringify(res.body))
     }
     assert.equal((await confirmedOn(waiter, classId)).length, 0)

@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { bookClass } from '../../services/bookings/book'
 import { cancelBooking } from '../../services/bookings/cancel'
+import { previewMemberClassCancel } from '../../services/bookings/cancel-preview'
 import { listClassBookings, getClassBookingDetail, type ClassBookingRow } from '../../services/bookings/list'
 import { memberAttendance } from '../../services/bookings/attendance'
 import { ATTENDANCE_PERIODS } from '../../services/bookings/attendance-periods'
@@ -27,6 +28,7 @@ function bookingRow(b: ClassBookingRow) {
     qr_token: b.qrToken,
     code: b.code,
     effective_cancel_window_hours: b.effectiveCancelWindowHours,
+    cancel_deadline: b.cancelDeadline.toISOString(),
   }
 }
 
@@ -64,7 +66,16 @@ const app = new Hono()
     const clientId = c.get('clientId')
     const { id } = c.req.valid('param')
     const row = await getClassBookingDetail(tenantId(c), clientId, id)
-    return c.json(bookingRow(row))
+    const preview = await previewMemberClassCancel(tenantId(c), clientId, row)
+    return c.json({
+      ...bookingRow(row),
+      cancel_preview: preview && {
+        late: preview.late,
+        credit_back: preview.creditBack,
+        credits: preview.credits,
+        unlimited: preview.unlimited,
+      },
+    })
   })
   .post(
     '/class',

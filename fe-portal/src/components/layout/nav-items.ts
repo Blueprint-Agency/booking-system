@@ -10,6 +10,7 @@ import {
   GraduationCap,
   CalendarDays,
   CalendarOff,
+  CalendarMinus,
   QrCode,
   HandHeart,
   Users,
@@ -88,9 +89,12 @@ export const NAV_ITEMS: NavItem[] = [
   { group: "People", label: "Corporate Requests", href: "/admin/corporate-requests", icon: HandHeart, scope: "both", badgeKey: "corporateRequestsPending" },
   // Admins manage all staff here: invite, edit, change role, archive, delete.
   { group: "People", label: "Staff", href: "/admin/staff", icon: UserCog, scope: "both" },
-  // Leave is instructor-wide and has no location, so it is not workspace-scoped.
-  // Both roles decide requests (spec-instructor-leave.md § Access and visibility).
+  // Leave is studio-wide and has no location, so it is not workspace-scoped.
+  // The queue holds every staff member's requests, admins' among them, and any
+  // admin decides any of them (spec-instructor-leave.md § Access and visibility).
   { group: "People", label: "Leave", href: "/admin/leave", icon: CalendarOff, scope: "both" },
+  // An admin's own leave: the same balances, form and history instructors have.
+  { group: "People", label: "My leave", href: "/admin/my-leave", icon: CalendarMinus, scope: "both" },
 
   // --- Settings (location-independent policy + config) ---
   { group: "Settings", label: "Global Policy", href: "/admin/policy", icon: Shield, scope: "global" },

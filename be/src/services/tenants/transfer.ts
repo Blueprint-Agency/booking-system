@@ -7,6 +7,7 @@ import { loadFeatureFlags } from '../feature-flags'
 import { buildIdentityMap, remapRow } from './transfer-identity'
 import { orderTables, type ForeignKey } from './transfer-order'
 import { studioTables } from './transfer-tables'
+import { upgradeArchiveRows } from './transfer-upgrade'
 import { ARCHIVE_VERSION, type TenantArchive, type TenantManifest } from './transfer-shape'
 import { loadTenantById } from './tenants'
 import { ConflictError, NotFoundError } from '../../shared/errors'
@@ -305,8 +306,9 @@ export async function importTenant(
   const written: Record<string, number> = {}
 
   // A shallow copy, so ensuring accounts below replaces tables in this import's
-  // view of the archive rather than in the caller's object.
-  const rows = { ...archive.rows }
+  // view of the archive rather than in the caller's object — brought up to the
+  // current schema first, for an archive taken before a column moved.
+  const rows = upgradeArchiveRows(archive.rows)
   const settings = rows.tenant_settings?.[0]
   const columnKinds = await columnKindsByTable()
   const plain: ColumnKinds = new Map()

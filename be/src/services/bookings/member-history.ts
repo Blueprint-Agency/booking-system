@@ -14,6 +14,9 @@
  */
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
+import { now as clockNow } from '../../lib/clock'
+import { cancelWindowResolver } from '../policy/cancel-window'
+import { staffCancelPreview, type StaffCancelPreview } from './staff-cancel-preview'
 
 export type MemberBookingKind = 'class' | 'workshop' | 'pt'
 
@@ -40,6 +43,8 @@ export interface MemberBookingRow {
   packageName: string | null
   /** That package's kind — `unlimited` spends no credit. Null when no package paid. */
   packageKind: string | null
+  /** What the staff cancel dialog asks from; null where no cancel is offered (#320). */
+  cancelPreview: StaffCancelPreview | null
   code: string
   bookedAt: Date
   cancelledAt: Date | null
@@ -61,6 +66,7 @@ type Raw = {
   credits_used: number | null
   package_name: string | null
   package_kind: string | null
+  cancel_window_hours: number | null
   code: string
   booked_at: string | Date
   cancelled_at: string | Date | null
@@ -106,6 +112,7 @@ export async function listMemberBookings(
       b.credits_or_sessions_used as credits_used,
       coalesce(cpk.name, ppk.name) as package_name,
       cp.kind as package_kind,
+      c.cancel_window_hours,
       b.code,
       b.booked_at,
       b.cancelled_at
@@ -136,26 +143,34 @@ export async function listMemberBookings(
     limit ${limit}
   `)
 
-  return Array.from(rows).map(r => ({
-    bookingId: r.booking_id,
-    kind: r.kind,
-    title: r.title,
-    tierName: r.tier_name,
-    sessionType: r.session_type,
-    startsAt: toDate(r.starts_at),
-    endsAt: toDate(r.ends_at),
-    location: r.location,
-    instructor: r.instructor,
-    state: r.state,
-    checkInState: r.check_in_state,
-    refundOutcome: r.refund_outcome,
-    creditsUsed: r.credits_used,
-    packageName: r.package_name,
-    packageKind: r.package_kind,
-    code: r.code,
-    bookedAt: new Date(r.booked_at),
-    cancelledAt: toDate(r.cancelled_at),
-  }))
+  const windowOf = await cancelWindowResolver(tenantId)
+  const now = clockNow()
+  return Array.from(rows).map(r => {
+    const row = {
+      bookingId: r.booking_id,
+      kind: r.kind,
+      title: r.title,
+      tierName: r.tier_name,
+      sessionType: r.session_type,
+      startsAt: toDate(r.starts_at),
+      endsAt: toDate(r.ends_at),
+      location: r.location,
+      instructor: r.instructor,
+      state: r.state,
+      checkInState: r.check_in_state,
+      refundOutcome: r.refund_outcome,
+      creditsUsed: r.credits_used,
+      packageName: r.package_name,
+      packageKind: r.package_kind,
+      code: r.code,
+      bookedAt: new Date(r.booked_at),
+      cancelledAt: toDate(r.cancelled_at),
+    }
+    return {
+      ...row,
+      cancelPreview: staffCancelPreview(row, windowOf({ cancelWindowHours: r.cancel_window_hours }), now),
+    }
+  })
 }
 
 /**

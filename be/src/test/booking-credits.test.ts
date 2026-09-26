@@ -246,7 +246,11 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
     harness.app.request(`/api/v1/me/bookings/${bookingId}`, { method: 'DELETE', headers: who.headers })
 
   const adminCancelBooking = (as: Record<string, string>, bookingId: string) =>
-    harness.app.request(`/api/v1/portal/admin/bookings/${bookingId}/cancel`, { method: 'POST', headers: as })
+    harness.app.request(`/api/v1/portal/admin/bookings/${bookingId}/cancel`, {
+      method: 'POST',
+      headers: { ...as, ...json },
+      body: JSON.stringify({ credit: 'return' }),
+    })
 
   const adminCancelClass = (as: Record<string, string>, classId: string) =>
     harness.app.request(`/api/v1/portal/admin/schedule/classes/${classId}/cancel`, { method: 'POST', headers: as })

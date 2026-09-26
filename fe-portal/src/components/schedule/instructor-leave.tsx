@@ -39,15 +39,15 @@ export function useInstructorsOnLeave(date: string): InstructorLeave {
     void (async () => {
       try {
         const res = await api.get<{
-          leave: { instructor: { id: string }; half_day: HalfDay }[];
+          leave: { staff: { id: string }; half_day: HalfDay }[];
         }>("/portal/leave-calendar", { from: date, to: date });
         if (cancelled) return;
         const map = new Map<string, HalfDay>();
         for (const e of res.leave ?? []) {
-          const prev = map.get(e.instructor.id);
+          const prev = map.get(e.staff.id);
           // Two requests on one date (a pending one on top of an approved one, or
           // both halves) — the stricter reading wins.
-          map.set(e.instructor.id, prev === undefined || prev === e.half_day ? e.half_day : "none");
+          map.set(e.staff.id, prev === undefined || prev === e.half_day ? e.half_day : "none");
         }
         setOnLeave(map);
       } catch {

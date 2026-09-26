@@ -706,11 +706,11 @@ export function checkSupportingDocument(input: {
  *  the old prefix keep resolving and only new uploads take this one. */
 export function supportingDocumentKey(
   tenantId: string,
-  instructorId: string,
+  staffUserId: string,
   requestId: string,
   extension: string,
 ): string {
-  return tenantKey(tenantId, `supporting-documents/${instructorId}/${requestId}.${extension}`)
+  return tenantKey(tenantId, `supporting-documents/${staffUserId}/${requestId}.${extension}`)
 }
 
 // ── The instructor's own transitions ───────────────────────────────────────
