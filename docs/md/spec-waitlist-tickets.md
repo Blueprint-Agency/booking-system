@@ -64,7 +64,7 @@ None.
 
 ### Note on tests
 
-`be/src/test/booking-lifecycle.test.ts` proves today's behaviour ("full class refuses; freed seat is bookable"). Those assertions stay true — a member who never joined the waitlist still gets the freed seat by booking. The promotion journey from #140 is added as new tests, not by editing existing ones. If any existing assertion has to change, stop and list it for `.claude/test-edits.allow`.
+`be/src/test/booking-lifecycle.test.ts` proves today's behaviour ("full class refuses; freed seat is bookable"). Those assertions stay true — a member who never joined the waitlist still gets the freed seat by booking. The promotion journey from #140 is added as new tests, not by editing existing ones. If any existing assertion has to change, stop and say so.
 
 ### Acceptance criteria
 

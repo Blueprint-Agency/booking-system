@@ -48,7 +48,8 @@ import { emailButton, emailHeading, emailNote, emailParagraph, escapeHtml, rende
 import { sendStudioSystemEmail } from '../notifications/send'
 import { requireTenantUrl } from '../tenants/urls'
 import { isPlaceholderEmail } from './account-access'
-import { STAFF_EDIT_REFUSAL_MESSAGE, staffEditRefusal } from './staff-rank'
+import type { StaffRole } from '../../db/enums'
+import { STAFF_EDIT_REFUSAL_MESSAGE, isTopRank, staffEditRefusal } from './staff-rank'
 
 export const EMAIL_CHANGE_LINK_TTL_MS = 24 * 60 * 60_000
 /** How soon another link may be sent for the same person. */
@@ -352,13 +353,45 @@ async function changeForToken(tenantId: string, token: string) {
   if (!row) return null
   const pending = JSON.parse(row.value) as PendingChange
   if (!secretMatches(pending, parsed.staffId, parsed.secret)) return null
-  const [target] = await db
+  const people = await db
     .select()
     .from(staffUsers)
-    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, parsed.staffId), isNull(staffUsers.deletedAt)))
-    .limit(1)
+    .where(
+      and(
+        eq(staffUsers.tenantId, tenantId),
+        inArray(staffUsers.id, [parsed.staffId, pending.requestedByStaffId]),
+        isNull(staffUsers.deletedAt),
+      ),
+    )
+  const target = people.find(r => r.id === parsed.staffId)
   if (!target) return null
-  return { row, pending, target, expired: row.expiresAt.getTime() <= now().getTime() }
+  const requester = people.find(r => r.id === pending.requestedByStaffId)
+  return {
+    row,
+    pending,
+    target,
+    requester,
+    requesterStillEntitled: requesterStillEntitled(requester, target),
+    expired: row.expiresAt.getTime() <= now().getTime(),
+  }
+}
+
+/**
+ * Nobody signs in to confirm, so the admin who sent the link must still be
+ * one who could send it now: not blocked, not deleted, still an admin, still
+ * allowed to edit the target. Otherwise an admin blocked for cause could click
+ * a link they had sent to their own inbox and take over someone else's login.
+ */
+function requesterStillEntitled(
+  requester: { role: StaffRole; status: string } | undefined,
+  target: { role: StaffRole },
+): boolean {
+  if (!requester || requester.status === 'archived') return false
+  // The route is admin-only, and the rank rule is the one `editableTarget` applied.
+  return (
+    isTopRank(requester.role) &&
+    staffEditRefusal({ actorRole: requester.role, targetRole: target.role, touchesPrivilegeFields: false }) === null
+  )
 }
 
 export type StaffEmailChangeLinkStatus = 'valid' | 'expired' | 'invalid'
@@ -372,7 +405,7 @@ export async function lookupStaffEmailChange(
   token: string,
 ): Promise<{ status: StaffEmailChangeLinkStatus; email: string | null }> {
   const change = await changeForToken(tenantId, token)
-  if (!change) return { status: 'invalid', email: null }
+  if (!change || !change.requesterStillEntitled) return { status: 'invalid', email: null }
   return { status: change.expired ? 'expired' : 'valid', email: change.pending.email }
 }
 
@@ -387,7 +420,7 @@ export async function confirmStaffEmailChange(input: { tenantId: string; token: 
   await lockPending(parsed.staffId)
   const change = await changeForToken(input.tenantId, input.token)
   if (!change) throw linkInvalid()
-  const { row, pending, target } = change
+  const { row, pending, target, requester } = change
   if (change.expired) {
     throw new BadRequestError('email_change_link_expired', {
       message: 'This link has expired. Ask an admin to send a new one.',
@@ -395,6 +428,8 @@ export async function confirmStaffEmailChange(input: { tenantId: string; token: 
   }
   // Blocked since the link was sent: the account is closed to changes.
   assertNotBlocked(target)
+  // The admin who sent it has since lost the right to: the link dies with it.
+  if (!change.requesterStillEntitled) throw linkInvalid()
   // Checked again: the address may have been taken while the link was out.
   await assertAddressFree(input.tenantId, target, pending.email)
   const previousEmail = target.email
@@ -455,20 +490,13 @@ export async function confirmStaffEmailChange(input: { tenantId: string; token: 
     })
 
   if (!isPlaceholderEmail(previousEmail)) {
-    const [requester] =
-      pending.requestedByStaffId === target.id
-        ? []
-        : await db
-            .select({ name: staffUsers.name })
-            .from(staffUsers)
-            .where(and(eq(staffUsers.tenantId, input.tenantId), eq(staffUsers.id, pending.requestedByStaffId)))
-            .limit(1)
+    const changedBy = requester && requester.id !== target.id ? requester.name : null
     // Best-effort: the change is committed, and a notice that fails to send must not undo it.
     await sendStudioSystemEmail({
       tenantId: input.tenantId,
       slug: 'staff_email_changed_notice',
       recipient: { email: previousEmail, userId: target.id, userKind: 'staff' },
-      render: studio => emailChangedNotice(studio, target.name, pending.email, requester?.name ?? null),
+      render: studio => emailChangedNotice(studio, target.name, pending.email, changedBy),
     }).catch(err => reportError(err, 'staff email change notice failed', { scope: 'staff-email-change' }))
   }
 

@@ -400,6 +400,24 @@ describe('staff email change', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.equal((await staffRow(raced.id)).email, raced.email)
   })
 
+  test('STF-26 a link sent by an admin who has since been blocked confirms nothing', async () => {
+    const studio = await freshStudio()
+    const admin = await staffAt(studio, 'admin', 'admin')
+    const rogue = await staffAt(studio, 'rogue', 'admin')
+    const peer = await staffAt(studio, 'peer', 'admin')
+    const rogueInbox = `rogue-inbox@${studio.slug}.test`
+
+    await expectStatus(await send(emailPath(peer.id), { body: { email: rogueInbox }, headers: rogue.headers }), 200)
+    const token = linkMailedTo(rogueInbox)
+    await expectStatus(await send(`/api/v1/portal/admin/staff/${rogue.id}/archive`, { body: {}, headers: admin.headers }), 200)
+
+    // Nobody signs in to confirm, so the sender's authority is what the link carries.
+    assert.equal((await lookup(studio, token)).status, 'invalid')
+    await expectStatus(await confirm(studio, token), 400, 'email_change_link_invalid')
+    assert.equal((await staffRow(peer.id)).email, peer.email)
+    assert.equal(await signInStatus(studio, peer.email), 200)
+  })
+
   test('STF-26 an instructor cannot change anyone\'s email', async () => {
     const studio = await freshStudio()
     await staffAt(studio, 'admin', 'admin')
