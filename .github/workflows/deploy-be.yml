@@ -26,12 +26,18 @@ name: BE Deploy
 on:
   push:
     branches: [staging, main]
+    # A push touching only `e2e/` or the journeys' workflows still runs: on
+    # `staging` it runs the journeys it changed (`journeys-pr`), and every other
+    # job skips on the `changes` filter below, so nothing deploys.
     paths:
       - 'be/**'
       - 'fe-client/**'
       - 'fe-portal/**'
+      - 'e2e/**'
       - 'scripts/check-error-codes*'
       - '.github/workflows/deploy-be.yml'
+      - '.github/workflows/e2e-local.yml'
+      - '.github/workflows/e2e.yml'
   pull_request:
     branches: [staging, main]
   workflow_dispatch:
