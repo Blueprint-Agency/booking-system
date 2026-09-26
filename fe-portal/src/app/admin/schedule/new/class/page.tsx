@@ -2,11 +2,20 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Loader2, Repeat, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
 import { CancelWindowField } from "@/components/schedule/cancel-window-field";
+import {
+  RepeatRangeFields,
+  RepeatWeeklySwitch,
+  SERIES_WINDOW_HINT,
+  SeriesDatesSection,
+  useSeriesDates,
+} from "@/components/schedule/repeat-weekly";
 import { parseCancelWindow } from "@/lib/cancel-window";
+import { createClassesLabel, repeatWeeklyFromParams } from "@/lib/repeat-weekly";
+import { weekdayOf, type SeriesInput } from "@/lib/series";
 import {
   SupportingInstructorsField,
   type SupportingRow,
@@ -32,7 +41,6 @@ import {
 import type { Capacity, ClassTypeDifficulty } from "@/types";
 
 const DIFFICULTIES: ClassTypeDifficulty[] = ["general", "beginner", "intermediate", "advanced"];
-
 export default function NewClassPage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-paper" />}>
@@ -46,8 +54,11 @@ function NewClassForm() {
   const { api, activeLocationId } = useWorkspace();
   const waitlistsOn = useWaitlistsOn("admin");
   // Picking a slot on the timetable links here with that slot, so the form
-  // opens on the day and time the admin already chose.
-  const slot = slotFromParams(useSearchParams());
+  // opens on the day and time the admin already chose. The retired series
+  // screen's URL lands here with Repeat weekly on.
+  const params = useSearchParams();
+  const slot = slotFromParams(params);
+  const [repeat, setRepeat] = useState(() => repeatWeeklyFromParams(params));
 
   const [classTypes, setClassTypes] = useState<CatalogClassType[]>([]);
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
@@ -60,7 +71,9 @@ function NewClassForm() {
   const [supporting, setSupporting] = useState<SupportingRow[]>([]);
   const [locationId, setLocationId] = useState(activeLocationId ?? "");
   const [roomId, setRoomId] = useState("");
+  // With Repeat weekly on, `date` is the series' first date.
   const [date, setDate] = useState(slot?.date ?? "");
+  const [lastDate, setLastDate] = useState("");
   const [startTime, setStartTime] = useState(slot?.start ?? currentHourTime());
   const [endTime, setEndTime] = useState(slot?.end ?? currentHourTime(1));
   const [capacity, setCapacity] = useState<Capacity>({
@@ -116,9 +129,48 @@ function NewClassForm() {
     if (roomId && !roomsForLocation.some((r) => r.id === roomId)) setRoomId("");
   }, [roomId, roomsForLocation]);
 
+  /** The series as the API takes it, or a sentence saying what is missing. */
+  function buildSeries(): SeriesInput | string {
+    if (!classTypeId || !mainInstructorId || !locationId || !roomId) {
+      return "Pick a class type, main instructor and room.";
+    }
+    if (!date || !lastDate) return "Pick a first and a last date.";
+    if (endTime <= startTime) return "End time must be after start time.";
+    const ownWindow = parseCancelWindow(cancelWindow);
+    if (!ownWindow.ok) return ownWindow.message;
+    return {
+      class_type_id: classTypeId,
+      main_instructor_id: mainInstructorId,
+      instructor_pay_sgd: payOrNull(mainPay),
+      supporting_instructors: supporting.map((s) => ({
+        instructor_id: s.instructorId,
+        pay_sgd: payOrNull(s.pay),
+      })),
+      location_id: locationId,
+      room_id: roomId,
+      weekday: weekdayOf(date),
+      start_time: startTime,
+      end_time: endTime,
+      capacity_online: capacity.onlineBooking,
+      capacity_waitlist: capacity.waitlist,
+      capacity_buffer: capacity.buffer,
+      credit_cost: Number(creditCost),
+      cancel_window_hours: ownWindow.hours,
+      first_date: date,
+      last_date: lastDate,
+      excluded_dates: [],
+    };
+  }
+
+  const series = useSeriesDates(api, "admin", repeat ? buildSeries() : "Repeat weekly is off.");
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!api) return;
+    if (repeat) {
+      if (await series.create()) router.push("/admin/schedule");
+      return;
+    }
     if (!classTypeId || !mainInstructorId || !locationId || !roomId) return;
     if (!date || !startTime || !endTime) return;
     void difficulty;
@@ -173,7 +225,11 @@ function NewClassForm() {
       </Link>
       <PageHeader
         title="New class"
-        description="Single class instance. The class will appear on the timetable and occupy the instructor's availability slot."
+        description={
+          repeat
+            ? "A weekly class set up once. Every week in the range becomes an ordinary class you can still edit, cancel or restaff on its own."
+            : "Single class instance. The class will appear on the timetable and occupy the instructor's availability slot."
+        }
       />
 
       {catalogError && (
@@ -218,7 +274,9 @@ function NewClassForm() {
               </SelectField>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="main-pay">Main instructor pay (S$) · optional</Label>
+              <Label htmlFor="main-pay">
+                Main instructor pay{repeat ? " per class" : ""} (S$) · optional
+              </Label>
               <Input
                 id="main-pay"
                 type="number"
@@ -278,10 +336,13 @@ function NewClassForm() {
         </section>
 
         <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
-          <h2 className="mb-4 text-sm font-semibold text-ink">When</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-ink">When</h2>
+            <RepeatWeeklySwitch checked={repeat} onChange={setRepeat} />
+          </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <Label htmlFor="d">Date</Label>
+              <Label htmlFor="d">{repeat ? "First date" : "Date"}</Label>
               <Input
                 id="d"
                 required
@@ -311,6 +372,9 @@ function NewClassForm() {
                 onChange={(e) => setEndTime(e.target.value)}
               />
             </div>
+            {repeat && (
+              <RepeatRangeFields firstDate={date} lastDate={lastDate} onLastDateChange={setLastDate} />
+            )}
           </div>
         </section>
 
@@ -331,13 +395,19 @@ function NewClassForm() {
               />
               <p className="text-xs text-muted">Credits charged per booking on this instance.</p>
             </div>
-            <CancelWindowField value={cancelWindow} onChange={setCancelWindow} />
+            <CancelWindowField
+              value={cancelWindow}
+              onChange={setCancelWindow}
+              {...(repeat ? { hint: SERIES_WINDOW_HINT } : {})}
+            />
           </div>
         </section>
 
-        {submitError && (
+        {repeat && <SeriesDatesSection dates={series} />}
+
+        {(repeat ? series.error : submitError) && (
           <div className="rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-            {submitError}
+            {repeat ? series.error : submitError}
           </div>
         )}
 
@@ -347,13 +417,16 @@ function NewClassForm() {
               Cancel
             </Button>
           </Link>
-          <Button type="submit" disabled={submitting}>
-            {submitting ? (
+          {/* With Repeat weekly on, nothing is created until the dates are previewed. */}
+          <Button type="submit" disabled={repeat ? !series.canCreate : submitting}>
+            {(repeat ? series.busy === "create" : submitting) ? (
               <Loader2 className="h-4 w-4 animate-spin" />
+            ) : repeat ? (
+              <Repeat className="h-4 w-4" />
             ) : (
               <Save className="h-4 w-4" />
             )}
-            Create class
+            {createClassesLabel(repeat, series.creating)}
           </Button>
         </div>
       </form>

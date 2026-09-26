@@ -1,7 +1,9 @@
 // Class Series: a weekly repeating class, defined once, that creates ordinary
-// classes. Shapes mirror the /portal/admin/schedule/series routes in
-// be/src/routes/portal/admin/schedule.ts. Create and extend are both a preview
-// (every date with its clashes) followed by a commit of the same input.
+// classes. Shapes mirror the /portal/{admin,instructor}/schedule/series routes
+// in be/src/routes/portal/{admin,instructor}/schedule.ts. Create and extend are
+// both a preview (every date with its clashes) followed by a commit of the same
+// input. Staff create one from the class screen's Repeat weekly switch; only an
+// admin extends or ends one.
 
 import { ApiError, type Api } from "@/lib/api";
 import { scheduleErrorMessage } from "@/lib/schedule";
@@ -23,6 +25,13 @@ export const WEEKDAYS: { value: IsoWeekday; label: string; plural: string }[] = 
 export function weekdayOf(date: string): IsoWeekday {
   const js = new Date(`${date}T00:00:00Z`).getUTCDay();
   return (js === 0 ? 7 : js) as IsoWeekday;
+}
+
+/** "Every Tuesday": the weekday a Repeat weekly class takes from its first date. */
+export function repeatsEvery(firstDate: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(firstDate)) return null;
+  const day = WEEKDAYS.find((w) => w.value === weekdayOf(firstDate));
+  return day ? `Every ${day.label}` : null;
 }
 
 /** "Mondays 19:00–20:00". */
@@ -52,6 +61,17 @@ export interface SeriesInput {
   last_date: string;
   excluded_dates: string[];
 }
+
+/**
+ * An instructor's series: no instructors and no pay. The route makes the caller
+ * the main instructor and leaves pay for an admin to set.
+ */
+export type OwnSeriesInput = Omit<
+  SeriesInput,
+  "main_instructor_id" | "instructor_pay_sgd" | "supporting_instructors"
+>;
+
+export type SeriesRole = "admin" | "instructor";
 
 export interface Series extends SeriesInput {
   id: string;
@@ -86,11 +106,14 @@ export interface EndResult {
 
 const BASE = "/portal/admin/schedule/series";
 
-export const previewSeries = (api: Api, input: SeriesInput) =>
-  api.post<Preview>(`${BASE}/preview`, input);
+/** The create routes for either role: an admin sends a `SeriesInput`, an instructor an `OwnSeriesInput`. */
+const createBase = (role: SeriesRole) => `/portal/${role}/schedule/series`;
 
-export const createSeries = (api: Api, input: SeriesInput) =>
-  api.post<{ series: Series; class_ids: string[] }>(BASE, input);
+export const previewSeries = (api: Api, role: SeriesRole, input: SeriesInput | OwnSeriesInput) =>
+  api.post<Preview>(`${createBase(role)}/preview`, input);
+
+export const createSeries = (api: Api, role: SeriesRole, input: SeriesInput | OwnSeriesInput) =>
+  api.post<{ series: Series; class_ids: string[] }>(createBase(role), input);
 
 export const getSeries = (api: Api, id: string) => api.get<Series>(`${BASE}/${id}`);
 

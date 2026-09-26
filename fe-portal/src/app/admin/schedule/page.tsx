@@ -38,7 +38,7 @@ import { slotHref, type Slot } from "@/lib/schedule";
 import { waitingTag } from "@/lib/class-waitlist";
 
 type View = "day" | "week" | "month";
-type AddKind = "class" | "series" | "workshop" | "corporate" | "pt";
+type AddKind = "class" | "workshop" | "corporate" | "pt";
 type FilterType = "all" | "class" | "workshop" | "pt" | "corporate";
 type Entry = ScheduleEntry;
 type Resolver = {
@@ -64,7 +64,6 @@ const TOTAL_HEIGHT = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
 
 const ADD_KINDS: { kind: AddKind; label: string }[] = [
   { kind: "class", label: "Class" },
-  { kind: "series", label: "Class series" },
   { kind: "workshop", label: "Workshop" },
   { kind: "corporate", label: "Corporate" },
   { kind: "pt", label: "PT Session" },
@@ -72,9 +71,9 @@ const ADD_KINDS: { kind: AddKind; label: string }[] = [
 
 /** Kinds created on their own page; the rest open a picker over the grid. */
 const NEW_PAGE: Partial<Record<AddKind, string>> = {
+  // A weekly series starts here too, with Repeat weekly: the slot picked becomes
+  // its first date (and so its weekday) and times.
   class: "/admin/schedule/new/class",
-  // The slot picked becomes the series' weekday, times and first date.
-  series: "/admin/schedule/new/series",
   workshop: "/admin/packages/workshops/new",
 };
 

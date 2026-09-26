@@ -2,11 +2,20 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Loader2, Repeat, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
 import { CancelWindowField } from "@/components/schedule/cancel-window-field";
+import {
+  RepeatRangeFields,
+  RepeatWeeklySwitch,
+  SERIES_WINDOW_HINT,
+  SeriesDatesSection,
+  useSeriesDates,
+} from "@/components/schedule/repeat-weekly";
 import { parseCancelWindow } from "@/lib/cancel-window";
+import { createClassesLabel } from "@/lib/repeat-weekly";
+import { weekdayOf, type OwnSeriesInput } from "@/lib/series";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useWaitlistsOn } from "@/lib/use-waitlists-on";
@@ -37,7 +46,10 @@ export default function InstructorNewClassPage() {
   const [classTypeId, setClassTypeId] = useState("");
   const [locationId, setLocationId] = useState(activeLocationId ?? "");
   const [roomId, setRoomId] = useState("");
+  const [repeat, setRepeat] = useState(false);
+  // With Repeat weekly on, `date` is the series' first date.
   const [date, setDate] = useState("");
+  const [lastDate, setLastDate] = useState("");
   const [startTime, setStartTime] = useState(currentHourTime());
   const [endTime, setEndTime] = useState(currentHourTime(1));
   const [capacity, setCapacity] = useState<Capacity>({
@@ -81,9 +93,43 @@ export default function InstructorNewClassPage() {
     setLocationId((prev) => prev || activeLocationId || "");
   }, [activeLocationId]);
 
+  /**
+   * The series as the API takes it, or a sentence saying what is missing. No
+   * instructors or pay: the caller teaches every class, and an admin prices them.
+   */
+  function buildSeries(): OwnSeriesInput | string {
+    if (!classTypeId || !locationId || !roomId) return "Pick a class type, location and room.";
+    if (!date || !lastDate) return "Pick a first and a last date.";
+    if (endTime <= startTime) return "End time must be after start time.";
+    const ownWindow = parseCancelWindow(cancelWindow);
+    if (!ownWindow.ok) return ownWindow.message;
+    return {
+      class_type_id: classTypeId,
+      location_id: locationId,
+      room_id: roomId,
+      weekday: weekdayOf(date),
+      start_time: startTime,
+      end_time: endTime,
+      capacity_online: capacity.onlineBooking,
+      capacity_waitlist: capacity.waitlist,
+      capacity_buffer: capacity.buffer,
+      credit_cost: Number(creditCost),
+      cancel_window_hours: ownWindow.hours,
+      first_date: date,
+      last_date: lastDate,
+      excluded_dates: [],
+    };
+  }
+
+  const series = useSeriesDates(api, "instructor", repeat ? buildSeries() : "Repeat weekly is off.");
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!api) return;
+    if (repeat) {
+      if (await series.create()) router.push("/instructor/schedule");
+      return;
+    }
     if (!classTypeId || !locationId || !roomId) return;
     if (!date || !startTime || !endTime) return;
 
@@ -131,7 +177,11 @@ export default function InstructorNewClassPage() {
       </Link>
       <PageHeader
         title="New class"
-        description="The class is scheduled under your name. Pay is left for an admin to set later."
+        description={
+          repeat
+            ? "One class every week in the range, each scheduled under your name. Pay is left for an admin to set later."
+            : "The class is scheduled under your name. Pay is left for an admin to set later."
+        }
       />
 
       {catalogError && (
@@ -166,11 +216,14 @@ export default function InstructorNewClassPage() {
         </section>
 
         <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
-          <h2 className="mb-4 text-sm font-semibold text-ink">When</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-ink">When</h2>
+            <RepeatWeeklySwitch checked={repeat} onChange={setRepeat} />
+          </div>
           {/* The date takes its own row on a phone; the two times pair up under it. */}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <div className="col-span-2 space-y-1.5 sm:col-span-1">
-              <Label htmlFor="d">Date</Label>
+              <Label htmlFor="d">{repeat ? "First date" : "Date"}</Label>
               <Input
                 id="d"
                 required
@@ -200,6 +253,9 @@ export default function InstructorNewClassPage() {
                 onChange={(e) => setEndTime(e.target.value)}
               />
             </div>
+            {repeat && (
+              <RepeatRangeFields firstDate={date} lastDate={lastDate} onLastDateChange={setLastDate} />
+            )}
           </div>
         </section>
 
@@ -222,13 +278,19 @@ export default function InstructorNewClassPage() {
                 Credits charged per booking on this class.
               </p>
             </div>
-            <CancelWindowField value={cancelWindow} onChange={setCancelWindow} />
+            <CancelWindowField
+              value={cancelWindow}
+              onChange={setCancelWindow}
+              {...(repeat ? { hint: SERIES_WINDOW_HINT } : {})}
+            />
           </div>
         </section>
 
-        {submitError && (
+        {repeat && <SeriesDatesSection dates={series} />}
+
+        {(repeat ? series.error : submitError) && (
           <div className="rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-            {submitError}
+            {repeat ? series.error : submitError}
           </div>
         )}
 
@@ -238,13 +300,16 @@ export default function InstructorNewClassPage() {
               Cancel
             </Button>
           </Link>
-          <Button type="submit" disabled={submitting}>
-            {submitting ? (
+          {/* With Repeat weekly on, nothing is created until the dates are previewed. */}
+          <Button type="submit" disabled={repeat ? !series.canCreate : submitting}>
+            {(repeat ? series.busy === "create" : submitting) ? (
               <Loader2 className="h-4 w-4 animate-spin" />
+            ) : repeat ? (
+              <Repeat className="h-4 w-4" />
             ) : (
               <Save className="h-4 w-4" />
             )}
-            Create class
+            {createClassesLabel(repeat, series.creating)}
           </Button>
         </div>
       </form>

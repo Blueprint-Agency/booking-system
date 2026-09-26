@@ -16,8 +16,10 @@
  * where it came from, which is also what keeps extend from ever creating a
  * second class on a date the series already has.
  *
- * Admin only: nothing here takes an audience, and the routes live under
- * /portal/admin.
+ * Nothing here takes an audience. Admins and instructors both create a series
+ * (/portal/{admin,instructor}/schedule/series); the instructor route makes the
+ * caller the main instructor with no supporting instructors and no pay, as it
+ * does for a single class. Extend and end are routed for admins only.
  */
 import { and, eq, gte, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'

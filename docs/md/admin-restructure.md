@@ -358,9 +358,18 @@ Fields:
 - **Capacity** — structured, see §7d below.
 - Credit cost (set manually per class instance — varies by class type but entered at scheduling time)
 
-### 7b-bis. Class Series (admin only)
+### 7b-bis. Class Series — "+ Class" with Repeat weekly
 
-`+ Class series` on the Schedule arms the grid like `+ Class`; the slot picked seeds the weekday, times and first date of `/admin/schedule/new/series`. The form takes the same fields as a class plus weekday, first and last date (at most a year). **Preview dates** lists every date with its clashes (room, instructor, leave); clashing dates start unticked, and unticking any date skips it (a public holiday). **Create N classes** is enabled only when no ticked date clashes, and creates all or nothing.
+There is one `+ Class` on the Schedule; the slot picked seeds the date and times of `/admin/schedule/new/class`. The class screen has a **Repeat weekly** switch, off by default. Off, it makes one class. On, it makes a Class Series:
+
+- **Date** becomes **First date**; the weekday is taken from it and shown read-only ("Every Tuesday"); **Last date** appears, at most a year after the first date.
+- **Preview dates** is required before anything is created. It lists every date with its clashes (room, instructor, leave); clashing dates start unticked, and unticking any date skips it (a public holiday). Any change to the form makes the preview stale, and a create refused with `409` previews again, keeping the dates already unticked.
+- The submit reads **Create N classes** and is enabled only when no ticked date clashes; it creates all or nothing.
+- Pay reads "Main instructor pay per class (S$) · optional". The optional **Cancellation window (hours)** is copied onto every class.
+
+The retired `/admin/schedule/new/series` redirects to the class screen with Repeat weekly on (`?repeat=weekly`), keeping any slot.
+
+**Instructors** have the same switch on `/instructor/schedule/new/class`. As with their single classes, they are forced as main instructor, name no supporting instructors, see no pay field (every class is Unpriced for an admin to set from Finance), and pick the location and room on the form. Instructors cannot extend or end a series.
 
 Classes made by a series show a repeat mark on the Schedule. Their detail page shows the series ("Mondays 19:00–20:00 · 1 Oct to 31 Dec") with **Extend** (a new last date → preview → add classes; never repeats a date) and **End series** (from a date: unbooked classes are cancelled, booked ones are listed with a link to cancel each, which refunds). Everything else about a class from a series is edited on the class itself.
 

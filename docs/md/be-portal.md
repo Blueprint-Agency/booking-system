@@ -160,6 +160,8 @@ Promotions are nested under their parent (class package, PT package, or workshop
 | POST | `/schedule/workshops/:id/cancel` | Admin cancellation of an entire workshop (all days, all tiers) + Stripe refund fanout to attendees — see §3b. **No** workshop create/edit here; those live in `workshops.ts`. |
 | GET | `/schedule/workshops/picker` | Lists workshops in the active workspace that have at least one future `workshop_day`. Powers the "+ Workshop" picker in the scheduler per `admin-restructure.md` §7c — selecting from this list **does not create anything**; it just navigates to the workshop's days. |
 
+Series create (preview and commit) is also on the instructor schedule (§4); extend and end are admin only. The body's wire shape is shared by both mounts in `routes/portal/class-series.ts`.
+
 **Per-class Cancellation Window** (#313, `be/CONTEXT.md` § Cancellation Window). `POST /schedule/classes`, `PATCH /schedule/classes/:id` and `POST /schedule/series` (and its preview) take an optional `cancel_window_hours`: whole hours from 0, the same bound as the Policy page's class window. Blank (omitted or `null`) on create follows the studio's window; on `PATCH`, omitted leaves it alone and an explicit `null` puts the class back on the studio's. A series copies its value onto every class it creates and every class an extend adds. Class rows — create, update, `GET /schedule/classes/:id`, and the instructor's create and roster — return `cancel_window_hours` (the class's own, nullable) and `effective_cancel_window_hours` (the one that applies now); series rows return `cancel_window_hours`. The instructor's `POST /schedule/classes` takes the same optional field.
 
 ### `merch.ts` (global)
@@ -593,6 +595,9 @@ Scoped to the authenticated instructor. The middleware loads `staff_users` then 
 |---|---|---|
 | GET | `/schedule` | All `classes` + confirmed `pt_sessions` + `workshops` where the instructor is assigned, with `event_state` computed |
 | GET | `/schedule/today` | Same, filtered to today (SGT) |
+| POST | `/schedule/classes` | Create a class. The admin body without `main_instructor_id`, supporting instructors or `instructor_pay_sgd`: the caller is forced as main instructor, nobody supports, and pay is `null` (Unpriced). Those fields, if sent, are ignored. |
+| POST | `/schedule/series/preview` | **Class Series** preview — the admin contract (§2 `schedule.ts`) with the same forcing as a single class: the caller is the main instructor, no supporting instructors, pay `null`. Location and room come from the body. `main_instructor_id`, `instructor_pay_sgd` and `supporting_instructors`, if sent, are ignored. |
+| POST | `/schedule/series` | Commit the same body, all or nothing: `201 { series, class_ids }`, `409 series_conflict { dates }`. There is no instructor extend or end: those are admin only (`403` on the admin routes). |
 | POST | `/schedule/classes/:id/bookings` | Book a member onto a class the caller is the **main** instructor of — the admin route's booking, into a **buffer** seat only. `overbook` in the body is ignored: an instructor never overbooks, so a full buffer is `409 class_full`. Another instructor's class is `403 not_your_session`. |
 | POST | `/schedule/classes/:id/waitlist` | The admin route's staff join, on a class the caller is the main instructor of. `403 not_your_session` otherwise. |
 | POST | `/schedule/classes/:id/waitlist/:entryId/promote` | The admin route's **Add to class**, on the caller's own class: online seat, else buffer, else `409 class_full`. `overbook` in the body is ignored. |

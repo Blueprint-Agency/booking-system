@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as timetable from '../../../services/schedule/timetable'
 import * as classesSvc from '../../../services/schedule/classes'
+import * as seriesSvc from '../../../services/schedule/series'
 import { cancelClass } from '../../../services/bookings/cancel-class'
 import { staffBookClass } from '../../../services/bookings/book'
 import { sgDayWindow, sgToday } from '../../../lib/time'
@@ -10,6 +11,7 @@ import { tenantId } from '../../../middleware/tenant'
 import { seatFields, staffBookingJson, staffBookingSchema } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
 import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-window'
+import { hasCapacity, NO_CAPACITY, previewJson, seriesRow, seriesTemplateFields, toSeriesInput } from '../class-series'
 
 /**
  * Instructor schedule surface.
@@ -22,6 +24,11 @@ import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-windo
  *                           to the acting instructor, there are no supporting
  *                           instructors, and instructor_pay_sgd is left null
  *                           (an admin prices it later from Payroll).
+ *   POST /schedule/series/preview, POST /schedule/series — a weekly repeat
+ *                           (Class Series), preview then commit, the admin
+ *                           contract with the same forcing as a single class:
+ *                           the caller is the main instructor, nobody supports,
+ *                           and pay is null. Extend and end stay admin only.
  *   POST /schedule/classes/:id/bookings — book a member onto a class the caller
  *                           is the MAIN instructor of, into a buffer seat.
  *   POST /schedule/classes/:id/cancel — cancel a class the caller is the MAIN
@@ -61,6 +68,16 @@ const createClassSchema = z
   .refine(v => new Date(v.ends_at) > new Date(v.starts_at), {
     message: 'ends_at must be after starts_at',
     path: ['ends_at'],
+  })
+
+// No instructors or pay: an admin's fields sent here are dropped by the parse.
+const seriesSchema = seriesTemplateFields.refine(hasCapacity, NO_CAPACITY)
+
+const ownSeriesInput = (b: z.infer<typeof seriesSchema>, self: string) =>
+  toSeriesInput(b, {
+    mainInstructorId: self, // forced: instructors can only schedule themselves
+    instructorPaySgd: null, // left unpriced; an admin sets pay from Finance
+    supportingInstructors: [], // instructors can't assign other instructors
   })
 
 function entryRow(e: timetable.ScheduleEntryRow) {
@@ -148,6 +165,20 @@ const app = new Hono()
       },
       201,
     )
+  })
+  // ── Class Series ── preview, then commit the same input; see services/schedule/series.ts.
+  .post('/series/preview', zValidator('json', seriesSchema), async c => {
+    const input = ownSeriesInput(c.req.valid('json'), c.get('staffUserId'))
+    return c.json(previewJson(await seriesSvc.previewSeries(tenantId(c), input)))
+  })
+  .post('/series', zValidator('json', seriesSchema), async c => {
+    const self = c.get('staffUserId')
+    const res = await seriesSvc.createSeries(tenantId(c), {
+      ...ownSeriesInput(c.req.valid('json'), self),
+      createdByStaffId: self,
+    })
+    c.set('auditTarget' as any, { table: 'class_series', id: res.series.id })
+    return c.json({ series: seriesRow(res.series), class_ids: res.classIds }, 201)
   })
   // Book a member onto a class the caller teaches: a buffer seat only. An
   // instructor never overbooks, so `overbook` in the body changes nothing.
