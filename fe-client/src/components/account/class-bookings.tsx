@@ -13,7 +13,6 @@ import {
   X,
   CheckCircle2,
   XCircle,
-  Loader2,
   MapPin,
   UserRound,
   Hourglass,
@@ -30,21 +29,13 @@ import {
   type ApiWaitlistEntry,
 } from "@/lib/waitlist";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Portal } from "@/components/ui/portal";
 import { ContentLoading } from "@/components/ui/content-loading";
+import { CancelBookingDialog, type CancelOutcome } from "@/components/account/cancel-booking-dialog";
 import { formatDate, cn } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
-import { ERROR_CODES } from "@/lib/error-codes";
-import { useClientPackages } from "@/lib/use-client-packages";
-import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useCancellationPolicy, type CancellationPolicy } from "@/lib/cancellation-policy";
-import {
-  cancelClosed,
-  canStillCancel,
-  classCancelNotice,
-  windowRefusal,
-} from "@/lib/cancellation-copy";
+import { cancelClosed, canStillCancel } from "@/lib/cancellation-copy";
 
 export interface ApiBooking {
   booking_id: string;
@@ -77,19 +68,8 @@ const TAB_LABEL: Record<Tab, string> = {
   past: "Past",
 };
 
-/** A number the refusal body carried, e.g. the window it was refused under. */
-function errNumber(err: unknown, key: string): number | null {
-  if (err instanceof ApiError && err.body && typeof err.body === "object") {
-    const v = (err.body as Record<string, unknown>)[key];
-    if (typeof v === "number") return v;
-  }
-  return null;
-}
-
-
 export function ClassBookings() {
   const api = useApi();
-  const { refetch: refetchPackages } = useClientPackages();
   const policy = useCancellationPolicy();
 
   const [upcoming, setUpcoming] = useState<ApiBooking[]>([]);
@@ -101,8 +81,6 @@ export function ClassBookings() {
   const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState<Tab>("upcoming");
   const [cancelTarget, setCancelTarget] = useState<ApiBooking | null>(null);
-  const [cancelling, setCancelling] = useState(false);
-  useBodyScrollLock(Boolean(cancelTarget));
   const [banner, setBanner] = useState<
     { tone: "ok" | "warn" | "error"; text: string } | null
   >(null);
@@ -130,53 +108,14 @@ export function ClassBookings() {
     reload();
   }, [reload]);
 
-  async function confirmCancel() {
-    if (!cancelTarget) return;
+  async function onCancelled(outcome: CancelOutcome) {
     const target = cancelTarget;
-    setCancelling(true);
-    try {
-      const res = await api.del<{ refund_outcome: string; refund_fired: boolean }>(
-        `/me/bookings/${target.booking_id}`,
-      );
+    setCancelTarget(null);
+    setBanner({ tone: outcome.tone, text: outcome.text });
+    if (outcome.cancelled && target) {
       setUpcoming((prev) => prev.filter((b) => b.booking_id !== target.booking_id));
-      if (res.refund_outcome === "credit_returned") {
-        const n = target.credits_used || 1;
-        setBanner({
-          tone: "ok",
-          text: `Booking cancelled · ${n} credit${n === 1 ? "" : "s"} returned.`,
-        });
-      } else if (res.refund_outcome === "forfeited") {
-        setBanner({
-          tone: "warn",
-          text: "Booking cancelled · the credit wasn't returned, because you've used up your cancellations this cycle.",
-        });
-      } else {
-        setBanner({ tone: "ok", text: "Booking cancelled." });
-      }
-      await refetchPackages();
-    } catch (err) {
-      const code = errCode(err);
-      if (code === ERROR_CODES.cancellation_window_passed) {
-        // The window the server refused under — the one that was actually applied.
-        const hours = errNumber(err, "window_hours") ?? policy?.class_window_hours;
-        setBanner({
-          tone: "error",
-          text:
-            hours !== undefined
-              ? windowRefusal("class", hours)
-              : "This class can no longer be cancelled in the app. Please contact the studio.",
-        });
-        await reload();
-      } else if (code === ERROR_CODES.not_cancellable) {
-        setBanner({ tone: "error", text: "This booking can no longer be cancelled." });
-        await reload();
-      } else {
-        setBanner({ tone: "error", text: "Couldn't cancel this booking. Please try again." });
-      }
-    } finally {
-      setCancelling(false);
-      setCancelTarget(null);
     }
+    if (outcome.stale) await reload();
   }
 
   async function confirmLeave() {
@@ -332,46 +271,12 @@ export function ClassBookings() {
       )}
 
       {cancelTarget && (
-        <Portal>
-        <div
-          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-ink/40 p-3 sm:p-4"
-          onClick={() => !cancelling && setCancelTarget(null)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="cancel-booking-title"
-            className="w-full max-w-md max-h-[85dvh] overflow-y-auto rounded-2xl bg-card p-6 shadow-modal animate-fade-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 id="cancel-booking-title" className="text-lg font-bold text-ink">Cancel this booking?</h3>
-            <p className="mt-1 text-sm text-muted">
-              {cancelTarget.name} · {formatDate(cancelTarget.starts_at)} ·{" "}
-              {formatClassTime(cancelTarget.starts_at)}
-            </p>
-            <div className="mt-4 rounded-xl bg-ink/[0.04] p-3 text-sm text-ink">
-              {classCancelNotice(policy, cancelTarget.was_unlimited)}
-            </div>
-            <div className="mt-6 flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">
-              <button
-                onClick={() => setCancelTarget(null)}
-                disabled={cancelling}
-                className="flex-1 min-h-[48px] rounded-full border border-ink/10 px-4 text-sm font-semibold hover:border-ink/30 transition-colors disabled:opacity-60"
-              >
-                Keep booking
-              </button>
-              <button
-                onClick={confirmCancel}
-                disabled={cancelling}
-                className="flex-1 min-h-[48px] inline-flex items-center justify-center gap-1.5 rounded-full bg-error px-4 text-sm font-semibold text-inverse hover:bg-error/90 transition-colors disabled:opacity-70 disabled:cursor-wait"
-              >
-                {cancelling && <Loader2 className="h-4 w-4 animate-spin" />}
-                {cancelling ? "Cancelling…" : "Confirm cancellation"}
-              </button>
-            </div>
-          </div>
-        </div>
-        </Portal>
+        <CancelBookingDialog
+          booking={cancelTarget}
+          policy={policy}
+          onDone={onCancelled}
+          onClose={() => setCancelTarget(null)}
+        />
       )}
     </div>
   );

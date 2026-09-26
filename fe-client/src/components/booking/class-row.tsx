@@ -33,6 +33,7 @@ import {
 } from "@/lib/waitlist";
 import { toast } from "sonner";
 import { LeaveWaitlistDialog } from "@/components/booking/leave-waitlist-dialog";
+import { ConfirmBookingSheet } from "@/components/booking/confirm-booking-sheet";
 
 const credits = (n: number) => `${n} credit${n === 1 ? "" : "s"}`;
 
@@ -66,6 +67,8 @@ export function ClassRow({
   const [booked, setBooked] = useState(cls.is_booked ?? false);
   const [spotsLeft, setSpotsLeft] = useState(cls.spots_left);
   const [booking, setBooking] = useState(false);
+  // The confirmation open, and whether the member chose to pay with credits.
+  const [confirmBook, setConfirmBook] = useState<{ useCredits: boolean } | null>(null);
   const [myEntry, setMyEntry] = useState<WaitlistPlace | null>(cls.waitlist.my_entry);
   const [waitlistOpen, setWaitlistOpen] = useState(cls.waitlist.open);
   const [joining, setJoining] = useState(false);
@@ -115,7 +118,8 @@ export function ClassRow({
         }
       : null;
 
-  const handleBookClick = async (e: React.MouseEvent, useCredits = false) => {
+  /** A tap on Book: the checks that need no server, then the confirmation. */
+  const requestBook = (e: React.MouseEvent, useCredits = false) => {
     e.preventDefault();
     if (!isSignedIn) {
       router.push(`/login?next=${encodeURIComponent("/")}`);
@@ -125,6 +129,12 @@ export function ClassRow({
       setShowNoPackage(true);
       return;
     }
+    if (booking || booked) return;
+    setConfirmBook({ useCredits });
+  };
+
+  const handleBookClick = async (e: React.MouseEvent | null, useCredits = false) => {
+    e?.preventDefault();
     if (booking || booked) return;
     setBooking(true);
     try {
@@ -174,6 +184,7 @@ export function ClassRow({
       }
     } finally {
       setBooking(false);
+      setConfirmBook(null);
     }
   };
 
@@ -286,7 +297,7 @@ export function ClassRow({
       </span>
     ) : (
       <button
-        onClick={handleBookClick}
+        onClick={(e) => requestBook(e)}
         disabled={booking}
         className={cn(
           shape,
@@ -367,7 +378,7 @@ export function ClassRow({
               <span aria-hidden className="text-ink/20"> · </span>
               {addOn && "or "}
               <button
-                onClick={(e) => handleBookClick(e, true)}
+                onClick={(e) => requestBook(e, true)}
                 disabled={booking}
                 className="underline underline-offset-2 hover:text-ink transition-colors disabled:cursor-wait"
               >
@@ -376,6 +387,22 @@ export function ClassRow({
             </>
           )}
         </div>
+      )}
+
+      {confirmBook && (
+        <ConfirmBookingSheet
+          cls={cls}
+          cost={
+            // An Unlimited plan pays for a class at a studio it covers; credits
+            // pay otherwise, and whenever the member chose them.
+            planLocation && !notCovered && !confirmBook.useCredits
+              ? "Covered by your Unlimited plan"
+              : `Uses ${credits(cls.credit_cost)}`
+          }
+          booking={booking}
+          onConfirm={() => handleBookClick(null, confirmBook.useCredits)}
+          onClose={() => setConfirmBook(null)}
+        />
       )}
 
       {confirmLeave && myEntry && (

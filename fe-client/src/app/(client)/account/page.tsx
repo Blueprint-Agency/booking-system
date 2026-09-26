@@ -1,27 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, CalendarPlus, ChevronRight, Ticket, UserRound } from "lucide-react";
-import { cn, formatDate, formatExpiryDate, formatSgd } from "@/lib/utils";
-import { formatClassTime, useLocations } from "@/lib/classes";
+import { ArrowRight, CalendarPlus, ChevronRight, MapPin, Ticket, UserRound } from "lucide-react";
+import { cn, formatExpiryDate, formatSgd } from "@/lib/utils";
+import { useLocations } from "@/lib/classes";
 import { ContentLoading } from "@/components/ui/content-loading";
-import { QrBadge } from "@/components/account/qr-badge";
-import { DateStub } from "@/components/account/date-stub";
-import { MyNextClass } from "@/components/account/next-class-card";
+import { ComingUp } from "@/components/account/coming-up";
 import { AccountHeader } from "@/components/account/account-header";
 import { ACCOUNT_SECTIONS } from "@/components/account/account-nav-items";
 import { SignOutButton } from "@/components/account/sign-out-button";
 import { useAppUser } from "@/lib/auth";
-import { useApi } from "@/lib/api";
-import { reportError } from "@/lib/report-error";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
-import type { ApiBooking } from "@/components/account/class-bookings";
 import { OpenPurchases } from "@/components/account/open-purchases";
 import { CancelledBanner } from "@/components/checkout/cancelled-banner";
 import { usePartPaymentOptions, useOpenPurchases } from "@/lib/open-purchases";
-
-const PAGE_SIZE = 5;
 
 /** What a Dormant package says on both member surfaces (spec §8). */
 const ACTIVATION_LINE = "Starts when you book your first class";
@@ -64,7 +56,6 @@ function SectionTitle({
 
 export default function AccountOverview() {
   const { user } = useAppUser();
-  const api = useApi();
   const {
     classCredits,
     isUnlimited: unlimited,
@@ -83,35 +74,7 @@ export default function AccountOverview() {
   const partPayment = usePartPaymentOptions();
   const ptSessionsRemaining = pt1on1 + pt2on1;
   const firstName = user?.firstName || "there";
-  const [nextUpVisible, setNextUpVisible] = useState(PAGE_SIZE);
 
-  const [upcoming, setUpcoming] = useState<ApiBooking[]>([]);
-  const [upcomingLoading, setUpcomingLoading] = useState(true);
-  // The booking the ticket at the top already shows, so the list below
-  // doesn't repeat it.
-  const [featuredId, setFeaturedId] = useState<string | null>(null);
-  const onFeatured = useCallback((id: string | null) => setFeaturedId(id), []);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setUpcomingLoading(true);
-      try {
-        const res = await api.get<{ bookings: ApiBooking[] }>("/me/bookings/upcoming");
-        if (!cancelled) setUpcoming(res.bookings ?? []);
-      } catch (err) {
-        reportError(err, { scope: "upcoming-bookings" });
-        if (!cancelled) setUpcoming([]);
-      } finally {
-        if (!cancelled) setUpcomingLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
-
-  const comingUp = upcoming.filter((b) => b.booking_id !== featuredId);
   const packages = livePackages.filter(
     (p) => p.kind === "credit_bundle" || p.kind === "unlimited" || p.kind === "pt",
   );
@@ -140,8 +103,9 @@ export default function AccountOverview() {
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-x-8">
         <div className="min-w-0">
-          {/* The class running now or next, with its check-in QR one tap away (#192). */}
-          <MyNextClass onResolved={onFeatured} />
+          {/* The class running now or next as the ticket, with its check-in QR
+              one tap away (#192); the rest beside it, swiped through. */}
+          <ComingUp />
 
           {/* Balances — side by side even on a phone; they're read together. */}
           <div className="xl:hidden mb-6">
@@ -164,62 +128,6 @@ export default function AccountOverview() {
             />
           </div>
 
-          <section aria-labelledby="coming-up" className="mb-8">
-            <SectionTitle action={upcoming.length > 0 ? { href: "/account/classes", label: "All classes" } : undefined}>
-              <span id="coming-up">Coming up</span>
-            </SectionTitle>
-            {upcomingLoading ? (
-              <ContentLoading label="Loading upcoming classes" className="min-h-48" />
-            ) : comingUp.length === 0 ? (
-              <div className={cn(cardClass, "p-5 flex flex-col sm:flex-row sm:items-center gap-4 justify-between")}>
-                <div>
-                  <p className="font-semibold text-ink">
-                    {upcoming.length === 0 ? "No classes booked" : "Nothing else booked yet"}
-                  </p>
-                  <p className="text-sm text-muted mt-0.5">Pick a class from the schedule to hold your spot.</p>
-                </div>
-                <Link
-                  href="/"
-                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border border-ink/10 px-5 min-h-[44px] text-sm font-semibold text-ink hover:border-accent hover:text-accent-deep transition-colors"
-                >
-                  See the schedule
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
-            ) : (
-              <div className={cn(cardClass, "divide-y divide-ink/5")}>
-                {comingUp.slice(0, nextUpVisible).map((b) => (
-                  <div key={b.booking_id} className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4">
-                    <DateStub iso={b.starts_at} />
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-ink truncate">{b.name}</p>
-                      <p className="text-sm text-muted truncate">
-                        {formatClassTime(b.starts_at)}
-                        {b.instructor ? ` · ${b.instructor.name}` : ""}
-                      </p>
-                      {b.location && (
-                        <p className="text-xs text-muted truncate">{b.location.name}</p>
-                      )}
-                    </div>
-                    <QrBadge
-                      value={b.qr_token}
-                      label={b.name}
-                      subLabel={`${formatDate(b.starts_at)} · ${b.code}`}
-                    />
-                  </div>
-                ))}
-                {comingUp.length > nextUpVisible && (
-                  <button
-                    type="button"
-                    onClick={() => setNextUpVisible((v) => v + PAGE_SIZE)}
-                    className="w-full min-h-[48px] text-sm font-semibold text-accent-deep hover:bg-ink/[0.02] rounded-b-2xl transition-colors"
-                  >
-                    Show more
-                  </button>
-                )}
-              </div>
-            )}
-          </section>
         </div>
 
         <aside className="min-w-0">
@@ -402,6 +310,16 @@ function AccountMenu() {
   );
 }
 
+function LocationChip({ name, until }: { name: string; until?: string | null }) {
+  return (
+    <li className="inline-flex max-w-full items-center gap-1 rounded-full border border-ink/10 bg-ink/[0.03] px-2 py-0.5 text-xs font-medium text-ink">
+      <MapPin className="h-3 w-3 shrink-0 text-ink/40" aria-hidden />
+      <span className="truncate">{name}</span>
+      {until && <span className="shrink-0 text-muted">· until {until}</span>}
+    </li>
+  );
+}
+
 function PackageCard({
   pkg,
   otherLocationName,
@@ -444,25 +362,18 @@ function PackageCard({
               <span className="text-ink">{pkg.boundInstructor.name}</span>
             </p>
           )}
-          {/* What this plan Covers, and when cross-location coverage ends —
-              losing it is never silent (§5). */}
+          {/* What this plan Covers, one chip per Location. The added one says
+              when its coverage ends — losing it is never silent (§5). */}
           {isUnlimited && pkg.location && (
-            <p className="text-xs text-muted mt-1">
-              {pkg.crossLocationPaidSgd !== null ? (
-                pkg.expiresAt ? (
-                  <>
-                    Both studios until {formatExpiryDate(pkg.expiresAt)}, then{" "}
-                    <span className="text-ink">{pkg.location.name}</span> only.
-                  </>
-                ) : (
-                  <>Both studios, for the length of this plan.</>
-                )
-              ) : (
-                <>
-                  <span className="text-ink">{pkg.location.name}</span> only.
-                </>
+            <ul aria-label="Covers" className="mt-2 flex flex-wrap gap-1.5">
+              <LocationChip name={pkg.location.name} />
+              {pkg.crossLocationPaidSgd !== null && (
+                <LocationChip
+                  name={otherLocationName ?? "Both studios"}
+                  until={pkg.expiresAt ? formatExpiryDate(pkg.expiresAt) : null}
+                />
               )}
-            </p>
+            </ul>
           )}
         </div>
         <div className="text-right shrink-0">

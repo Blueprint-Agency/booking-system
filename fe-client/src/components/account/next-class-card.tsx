@@ -17,7 +17,7 @@ import { CheckCircle2, MapPin, QrCode, UserRound } from "lucide-react";
 import { QrFullScreen } from "@/components/account/qr-badge";
 import { DateStub } from "@/components/account/date-stub";
 import type { ApiBooking } from "@/components/account/class-bookings";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { useApi } from "@/lib/api";
 import { useMemberSession } from "@/lib/member-auth";
@@ -27,7 +27,7 @@ import { reportError } from "@/lib/report-error";
  * A confirmed class running now (started, not ended), else the soonest
  * upcoming one. Sorted here rather than trusting the order it arrived in.
  */
-function nextClass(upcoming: ApiBooking[], past: ApiBooking[], now: number): ApiBooking | null {
+export function nextClass(upcoming: ApiBooking[], past: ApiBooking[], now: number): ApiBooking | null {
   const byStart = (a: ApiBooking, b: ApiBooking) => a.starts_at.localeCompare(b.starts_at);
   const running = past
     .filter((b) => b.state === "confirmed" && new Date(b.ends_at).getTime() > now)
@@ -36,7 +36,19 @@ function nextClass(upcoming: ApiBooking[], past: ApiBooking[], now: number): Api
   return running[0] ?? next[0] ?? null;
 }
 
-function NextClassCard({ booking }: { booking: ApiBooking }) {
+/**
+ * `onCancel` adds a Cancel beside the QR — passed only where the member can
+ * still cancel, so the ticket never offers what the server will refuse.
+ */
+export function NextClassCard({
+  booking,
+  onCancel,
+  className = "mb-6",
+}: {
+  booking: ApiBooking;
+  onCancel?: () => void;
+  className?: string;
+}) {
   const [qrOpen, setQrOpen] = useState(false);
   const closeQr = useCallback(() => setQrOpen(false), []);
 
@@ -48,7 +60,7 @@ function NextClassCard({ booking }: { booking: ApiBooking }) {
     <section
       data-testid="next-class-card"
       aria-labelledby="next-class-heading"
-      className="relative mb-6 overflow-hidden rounded-2xl bg-accent text-inverse p-5 sm:p-6 shadow-hover"
+      className={cn("relative overflow-hidden rounded-2xl bg-accent text-inverse p-5 sm:p-6 shadow-hover", className)}
     >
       {/* The perforation between stub and ticket: two notches and a dashed
           seam, so the card reads as the ticket it stands in for. */}
@@ -95,16 +107,28 @@ function NextClassCard({ booking }: { booking: ApiBooking }) {
           </div>
         </div>
       </div>
-      <button
-        type="button"
-        data-testid="next-class-show-qr"
-        onClick={() => setQrOpen(true)}
-        aria-haspopup="dialog"
-        className="mt-5 inline-flex w-full min-h-[48px] items-center justify-center gap-2 rounded-full bg-inverse px-5 text-base font-bold text-accent-deep hover:bg-inverse/90 transition-colors sm:w-auto focus-visible:outline-inverse"
-      >
-        <QrCode className="h-5 w-5" />
-        Show my QR
-      </button>
+      <div className="mt-5 flex gap-2">
+        <button
+          type="button"
+          data-testid="next-class-show-qr"
+          onClick={() => setQrOpen(true)}
+          aria-haspopup="dialog"
+          className="inline-flex flex-1 min-h-[48px] items-center justify-center gap-2 rounded-full bg-inverse px-5 text-base font-bold text-accent-deep hover:bg-inverse/90 transition-colors sm:flex-none focus-visible:outline-inverse"
+        >
+          <QrCode className="h-5 w-5" />
+          Show my QR
+        </button>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-haspopup="dialog"
+            className="inline-flex shrink-0 min-h-[48px] items-center justify-center rounded-full border border-inverse/30 px-5 text-sm font-semibold text-inverse hover:bg-inverse/10 transition-colors focus-visible:outline-inverse"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
 
       {qrOpen && (
         <QrFullScreen
