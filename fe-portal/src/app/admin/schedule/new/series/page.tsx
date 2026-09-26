@@ -16,6 +16,7 @@ import { useWaitlistsOn } from "@/lib/use-waitlists-on";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
 import { slotFromParams } from "@/lib/schedule";
+import { PAY_OPTIONAL_HINT, payOrNull } from "@/lib/pay";
 import {
   WEEKDAYS,
   createSeries,
@@ -115,17 +116,13 @@ function NewSeriesForm() {
     }
     if (!firstDate || !lastDate) return "Pick a first and a last date.";
     if (endTime <= startTime) return "End time must be after start time.";
-    if (mainPay.trim() === "") return "Enter the main instructor's pay.";
-    if (supporting.some((s) => s.pay.trim() === "")) {
-      return "Enter the pay for every supporting instructor.";
-    }
     return {
       class_type_id: classTypeId,
       main_instructor_id: mainInstructorId,
-      instructor_pay_sgd: Number(mainPay),
+      instructor_pay_sgd: payOrNull(mainPay),
       supporting_instructors: supporting.map((s) => ({
         instructor_id: s.instructorId,
-        pay_sgd: Number(s.pay),
+        pay_sgd: payOrNull(s.pay),
       })),
       location_id: locationId,
       room_id: roomId,
@@ -255,7 +252,7 @@ function NewSeriesForm() {
               </SelectField>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="main-pay">Main instructor pay per class (S$)</Label>
+              <Label htmlFor="main-pay">Main instructor pay per class (S$) · optional</Label>
               <Input
                 id="main-pay"
                 type="number"
@@ -264,7 +261,11 @@ function NewSeriesForm() {
                 inputMode="decimal"
                 value={mainPay}
                 onChange={(e) => setMainPay(e.target.value)}
+                aria-describedby="main-pay-hint"
               />
+              <p id="main-pay-hint" className="text-xs text-muted">
+                {PAY_OPTIONAL_HINT}
+              </p>
             </div>
             <SupportingInstructorsField
               instructors={instructors}

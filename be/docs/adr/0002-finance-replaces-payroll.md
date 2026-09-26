@@ -1,6 +1,6 @@
 # One Finance surface replaces the admin Payroll page
 
-**Status**: accepted (2026-08-17) — supersedes the split between the Revenue report and the Teaching log report in `docs/md/prd.md` §8, and retires the admin Payroll page described in `docs/md/be-portal.md` §Payroll.
+**Status**: accepted (2026-08-17) — supersedes the split between the Revenue report and the Teaching log report in `docs/md/prd.md` §8, and retires the admin Payroll page described in `docs/md/be-portal.md` §Payroll. Its section "Instructor Pay becomes required" is superseded by `0008-instructor-pay-is-optional-when-scheduling.md` (2026-09-26): pay is optional again, and Needs pay is how it gets priced.
 
 The platform records money in five places and reports it in none. `stripe_payments` holds what was charged, `client_packages` holds List Price against amount paid, `promo_code_redemptions` holds what each Promo Code took off, the refund webhook flips a purchase to refunded, and the payroll surface totals what instructors are owed. An owner asking "what did August make" has to open four screens and a Stripe dashboard, and the only screen that adds anything up — Payroll — adds up the one figure that is money going out.
 

@@ -31,16 +31,11 @@ export interface CreateClassInput {
   capacityBuffer: number
   creditCost: number
   /**
-   * Gross pay to the main instructor for this class, in SGD. null = Unpriced.
-   *
-   * Deliberately still nullable HERE. Pay is required of an admin scheduling a
-   * class, and that is enforced on the admin route — but an instructor may
-   * schedule their own class and must never see pay rates, so that path creates
-   * the class Unpriced and an admin prices it from Finance's "Needs pay" filter.
-   * Who must supply a figure is an audience rule, not a domain invariant, which
-   * is why it is not stated here. (The roster module's `instructor_pay_required`
-   * rule still covers everyone JOINING a roster later, both audiences alike.)
-   * See be/docs/adr/0002-finance-replaces-payroll.md.
+   * Gross pay to the main instructor for this class, in SGD. null = Unpriced,
+   * never S$0: an admin may leave it blank, and an instructor scheduling their
+   * own class never sees pay at all. Either way an admin prices it later from
+   * Finance's "Needs pay" filter. See
+   * be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md.
    */
   instructorPaySgd?: number | null
   createdByStaffId: string

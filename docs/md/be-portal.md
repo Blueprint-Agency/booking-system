@@ -284,12 +284,9 @@ Only Instructor Pay and Manual Entries are writable. There is deliberately no en
 | DELETE | `/finance/manual/:id` | Remove a stray Manual Entry. |
 | PATCH | `/finance/pay/:kind/:id` | `kind ∈ {class, pt, workshop, manual}`. Body `{ instructor_pay_sgd: number\|null, instructor_id? }` — sets or (with `null`) clears one instructor's pay on that session. `instructor_id` is required for workshops and needed wherever a session has supporting instructors. |
 
-**Instructor Pay is required**, in two places for two different reasons:
+**Instructor Pay is optional** when scheduling (`be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md`). The admin create routes — `POST /schedule/classes`, `POST /schedule/series` (main and each supporting instructor), `POST /pt-requests/:id/schedule`, `POST /workshops` (main and each supporting instructor) — take pay as optional and nullable, and a roster arrival with no pay is stored `null` by `services/schedule/roster.replaceRoster`. Blank is **Unpriced**, never S$0; an explicit `0` is a price. The instructor equivalents never take pay at all — an instructor must never see pay rates.
 
-- **Joining a roster** (a supporting instructor, a swapped main) is refused as `instructor_pay_required` by `services/schedule/roster.replaceRoster` — the one write path every scheduling and roster-edit route passes through. Corporate sessions are exempt: neither corporate table has a pay column. Instructors already on the event are never "arrivals", so a session that predates the rule can still have its roster edited.
-- **The main instructor at creation** is written onto the session row at insert and so is invisible to that rule. It is required by the zod schema on the **admin** create routes (`POST /schedule/classes`, `POST /pt-requests/:id/schedule`, `POST /workshops`) and deliberately NOT on the instructor equivalents — an instructor scheduling their own session must never see pay rates, so that session is created Unpriced.
-
-Unpriced sessions therefore still occur by design. They are cleared by hand through Finance's `?needs_pay=true` filter, and Net says so while any remain.
+Unpriced sessions are therefore ordinary. They are priced through Finance's `?needs_pay=true` filter, and Net says so while any remain.
 
 ### `check-in.ts`
 | Method | Path | Effect |

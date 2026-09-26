@@ -114,8 +114,9 @@ export function SupportingInstructorsField({
                   min={0}
                   step="0.01"
                   inputMode="decimal"
-                  placeholder="Optional"
-                  aria-label={`${name} pay (S$)`}
+                  // Blank leaves them Unpriced, priced later from Finance.
+                  placeholder="Pay (S$) · optional"
+                  aria-label={`${name} pay (S$) · optional`}
                   value={s.pay}
                   disabled={disabled || saving}
                   onChange={(e) =>

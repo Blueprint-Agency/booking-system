@@ -223,7 +223,9 @@ export const classSeriesSupportingInstructors = pgTable(
     instructorId: uuid('instructor_id')
       .notNull()
       .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
-    paySgd: numeric('pay_sgd', { precision: 10, scale: 2 }).notNull(),
+    // null = Unpriced: an admin may schedule before the rate is agreed, and every
+    // class the series makes then carries that supporting instructor Unpriced.
+    paySgd: numeric('pay_sgd', { precision: 10, scale: 2 }),
   },
   table => ({
     instructorIdFkIdx: index('class_series_supporting_instructors_instructor_id_fk_idx').on(table.instructorId),

@@ -43,7 +43,7 @@ import { instructors } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import type { ErrorCode } from '../../shared/error-codes'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
-import { mergeRoster, unpricedArrivals, type RosterEntry, type RosterPatch } from './roster-merge'
+import { mergeRoster, type RosterEntry, type RosterPatch } from './roster-merge'
 
 export type { RosterAssignment, RosterEntry, RosterPatch, RosterRole } from './roster-merge'
 
@@ -304,14 +304,9 @@ export async function replaceRoster(
   if (!merged.ok) throw new BadRequestError(merged.refusal)
   const roster = merged.roster
 
-  // Instructor Pay is required of anyone joining a roster — this is the single
-  // gate every scheduling and roster-edit path passes through, so the rule is
-  // stated once rather than in each route. Corporate sessions are exempt: neither
-  // corporate table has a pay column, so every entry on one is unpriced by
-  // construction and none of them is money the studio owes.
-  if (ref.kind !== 'corporate_session' && unpricedArrivals(existing, roster).length > 0) {
-    throw new BadRequestError('instructor_pay_required')
-  }
+  // Anyone may join a roster without pay: they are stored Unpriced (null), never
+  // S$0, and priced later from Finance's "Needs pay" filter. An explicit 0 is a
+  // price. See be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md.
 
   // Only ids the CALLER named: an instructor already on the event has a valid FK
   // by construction, and re-validating them would make a pay-only edit fail on a

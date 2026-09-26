@@ -20,6 +20,7 @@ import {
 } from "@/lib/catalog";
 import { atLocalTime, localDay } from "@/lib/local-day";
 import { scheduleErrorMessage, type Slot } from "@/lib/schedule";
+import { PAY_OPTIONAL_HINT, payOrNull } from "@/lib/pay";
 import { WORKSHOP_CANCEL_CONFIRM } from "@/lib/workshop-cancel";
 import {
   hasPromotionOverlap,
@@ -184,14 +185,14 @@ async function createWorkshopWithChildren(
     locationId: string;
     descriptionHtml: string;
     mainInstructorId: string;
-    mainInstructorPaySgd: number;
-    supportingInstructors: { instructor_id: string; pay_sgd: number }[];
+    /** null = Unpriced, priced later from Finance's Needs pay filter. */
+    mainInstructorPaySgd: number | null;
+    supportingInstructors: { instructor_id: string; pay_sgd: number | null }[];
     days: WorkshopDay[];
     tiers: WorkshopTier[];
   },
 ) {
-  // 1. POST basics. Pay goes in the CREATE now rather than a follow-up PATCH:
-  // the backend refuses a roster whose instructors arrive with no price on them.
+  // 1. POST basics, pay included — blank pay goes as null (Unpriced).
   const basics = await api.post<{ id: string }>("/portal/admin/workshops", {
     name: args.name,
     location_id: args.locationId,
@@ -283,11 +284,6 @@ async function saveDaysAndTiers(
       await api.post(`/portal/admin/workshops/${workshopId}/tiers`, payload);
     }
   }
-}
-
-function parsePay(v: string): number | null {
-  const t = v.trim();
-  return t === "" ? null : Number(t);
 }
 
 export function WorkshopEditor({
@@ -428,16 +424,6 @@ export function WorkshopEditor({
     if (hasPromotionOverlap(promotions)) {
       return setError("Promotions overlap in time — each day can have at most one active promotion.");
     }
-    // Pay is required of everyone joining a roster (the backend refuses
-    // otherwise), and on a NEW workshop everyone is joining.
-    if (!isEdit) {
-      if (mainPay.trim() === "") {
-        return setError("Enter the main instructor's pay.");
-      }
-      if (supportingInstructorIds.some((iid) => (supportingPay[iid] ?? "").trim() === "")) {
-        return setError("Enter the pay for every supporting instructor.");
-      }
-    }
     setError(null);
     setSaving(true);
     try {
@@ -447,10 +433,10 @@ export function WorkshopEditor({
           location_id: locationId,
           description_html: descriptionHtml || null,
           main_instructor_id: mainInstructorId,
-          main_instructor_pay_sgd: parsePay(mainPay),
+          main_instructor_pay_sgd: payOrNull(mainPay),
           supporting_instructors: supportingInstructorIds.map((iid) => ({
             instructor_id: iid,
-            pay_sgd: parsePay(supportingPay[iid] ?? ""),
+            pay_sgd: payOrNull(supportingPay[iid] ?? ""),
           })),
         });
         await saveDaysAndTiers(
@@ -472,10 +458,10 @@ export function WorkshopEditor({
           locationId,
           descriptionHtml,
           mainInstructorId,
-          mainInstructorPaySgd: Number(mainPay),
+          mainInstructorPaySgd: payOrNull(mainPay),
           supportingInstructors: supportingInstructorIds.map((iid) => ({
             instructor_id: iid,
-            pay_sgd: Number(supportingPay[iid] ?? ""),
+            pay_sgd: payOrNull(supportingPay[iid] ?? ""),
           })),
           days: [...days].sort((a, b) => a.date.localeCompare(b.date)),
           tiers: prunedTiers,
@@ -588,15 +574,18 @@ export function WorkshopEditor({
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="ws-main-pay">Main instructor pay (SGD)</Label>
+            <Label htmlFor="ws-main-pay">Main instructor pay (S$) · optional</Label>
             <Input
               id="ws-main-pay"
               type="number"
               min={0}
-              placeholder="Optional"
               value={mainPay}
               onChange={(e) => setMainPay(e.target.value)}
+              aria-describedby="ws-main-pay-hint"
             />
+            <p id="ws-main-pay-hint" className="text-xs text-muted">
+              {PAY_OPTIONAL_HINT}
+            </p>
           </div>
         </div>
         <div className="space-y-1.5">
@@ -615,7 +604,8 @@ export function WorkshopEditor({
                   <Input
                     type="number"
                     min={0}
-                    placeholder="Pay (SGD)"
+                    placeholder="Pay (S$) · optional"
+                    aria-label={`${ins?.name ?? "Instructor"} pay (S$) · optional`}
                     value={supportingPay[sid] ?? ""}
                     onChange={(e) =>
                       setSupportingPay((prev) => ({ ...prev, [sid]: e.target.value }))

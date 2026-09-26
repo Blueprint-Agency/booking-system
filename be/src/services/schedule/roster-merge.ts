@@ -69,20 +69,14 @@ export type RosterRefusal = 'supporting_instructor_duplicates_main'
 /**
  * Who on this merged roster has newly arrived with no pay on them.
  *
- * Instructor Pay is required the moment someone joins a roster — at scheduling,
- * or on a later supporting add — because Net on the Finance page is only as
- * true as the pay behind it (be/docs/adr/0002-finance-replaces-payroll.md).
- *
- * Reported here rather than refused here, because whether it MATTERS depends on
- * the event kind, which this pure merge deliberately doesn't know: a corporate
- * session has no pay column on either of its tables, so every entry on one is
- * unpriced by construction and nothing is owed. `replaceRoster` knows the kind
- * and makes the call.
+ * Nothing refuses on this any more: joining a roster without pay is allowed and
+ * leaves the arrival Unpriced, cleared later through Finance's "Needs pay"
+ * filter (be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md, which
+ * reverses the required-pay rule of 0002). No production caller reads it now;
+ * it stays as the pure statement of what "an unpriced arrival" is.
  *
  * It names ONLY instructors newly joining. Someone already on the event keeps
- * whatever is recorded for them, Unpriced included, so a roster edit on a
- * session scheduled before this rule still saves — those get cleared through
- * Finance's "Needs pay" filter, never by inventing a figure here.
+ * whatever is recorded for them, Unpriced included — never an invented figure.
  */
 export function unpricedArrivals(
   existing: RosterEntry[],

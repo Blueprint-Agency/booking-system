@@ -32,27 +32,23 @@ const priceField = z.union([z.string(), z.number()]).transform(v => {
 
 const isoDate = z.string().datetime({ offset: true })
 
+const workshopInstructorSchema = z.object({
+  instructor_id: z.string().uuid(),
+  pay_sgd: z.number().min(0).nullable().optional(),
+})
+
 const createBasicsSchema = z.object({
   name: z.string().min(1).max(200),
   location_id: z.string().uuid(),
   description_html: z.string().max(20000).nullish(),
   cover_r2_key: z.string().max(500).nullish(),
   main_instructor_id: z.string().uuid(),
-  // Required, not optional: every instructor joining a roster arrives with a
-  // price on them, so Finance's Net is never flattered by an unpriced session
-  // (be/docs/adr/0002-finance-replaces-payroll.md).
-  main_instructor_pay_sgd: z.number().min(0),
-  // Bare ids would mean "leave pay alone", which on a brand-new workshop means
-  // "unpriced" — so creation takes the per-instructor shape with pay required.
-  supporting_instructors: z
-    .array(z.object({ instructor_id: z.string().uuid(), pay_sgd: z.number().min(0) }))
-    .default([]),
+  // Optional: blank (omitted or null) leaves that instructor Unpriced, priced
+  // later from Finance's "Needs pay" filter; an explicit 0 is a price
+  // (be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md).
+  main_instructor_pay_sgd: z.number().min(0).nullable().optional(),
+  supporting_instructors: z.array(workshopInstructorSchema).default([]),
   image_r2_keys: z.array(z.string().max(500)).default([]),
-})
-
-const workshopInstructorSchema = z.object({
-  instructor_id: z.string().uuid(),
-  pay_sgd: z.number().min(0).nullable().optional(),
 })
 
 const updateBasicsSchema = z.object({
@@ -243,10 +239,10 @@ const app = new Hono()
       descriptionHtml: body.description_html ?? null,
       coverR2Key: body.cover_r2_key ?? null,
       mainInstructorId: body.main_instructor_id,
-      mainInstructorPaySgd: body.main_instructor_pay_sgd,
+      mainInstructorPaySgd: body.main_instructor_pay_sgd ?? null,
       supportingInstructors: body.supporting_instructors.map(s => ({
         instructorId: s.instructor_id,
-        paySgd: s.pay_sgd,
+        paySgd: s.pay_sgd ?? null,
       })),
       imageR2Keys: body.image_r2_keys,
       createdByStaffId: staffId,

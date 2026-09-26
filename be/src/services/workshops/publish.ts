@@ -22,10 +22,10 @@ export interface CreateWorkshopInput {
   descriptionHtml?: string | null
   coverR2Key?: string | null
   mainInstructorId: string
-  /** Required at creation — see replaceRoster's instructor_pay_required rule. */
-  mainInstructorPaySgd: number
-  /** Each with their pay; bare ids would mean "unpriced" on a new workshop. */
-  supportingInstructors?: { instructorId: string; paySgd: number }[]
+  /** null = Unpriced, priced later from Finance's "Needs pay" filter. */
+  mainInstructorPaySgd: number | null
+  /** Each with their pay; null leaves that instructor Unpriced. */
+  supportingInstructors?: { instructorId: string; paySgd: number | null }[]
   imageR2Keys?: string[]
   createdByStaffId: string
 }

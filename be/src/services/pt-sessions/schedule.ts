@@ -48,8 +48,7 @@ export interface SchedulePtRequestInput {
   /**
    * Gross pay to the instructor for this session, in SGD. null = Unpriced.
    * Nullable for the same reason as `CreateClassInput.instructorPaySgd`: an
-   * admin must supply it (enforced on the admin route), an instructor
-   * self-scheduling cannot and must not.
+   * admin may leave it blank, and an instructor self-scheduling never sees it.
    */
   instructorPaySgd?: number | null
   actorStaffId: string

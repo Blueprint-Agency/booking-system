@@ -28,7 +28,7 @@ Ledger filters: Type, User (one search box over members and instructors both), L
 
 **Method** (#282). Every money-in row carries how it was paid: a Stripe-backed row its payments' methods, a package sale its Purchase's payments' methods (or the Purchase's offline method, for a migrated sale), a Refund the method of the payment it returned. Money-out rows and Complimentary Packages carry none. The column reads "Visa ··4242", or "Visa ··4242 + PayNow" for a Part Payment, and the CSV has the same text in a `method` column. The filter offers six categories — card, PayNow, wallet, bank transfer, cash, other — into which `services/finance/methods.ts` files the provider's method names; a row paid two ways matches either.
 
-Instructor Pay becomes required when an **admin** schedules a session and when anyone is added to a roster, so Unpriced sessions become rare. They do not stop entirely: an instructor scheduling their own class or PT session must never see pay rates, so that path still creates the session Unpriced. Those, and the ones that predate the rule, are surfaced through a "Needs pay" filter and cleared by hand.
+Instructor Pay is optional when a session is scheduled and when anyone is added to a roster (`be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md`, reversing the required-pay rule this spec first shipped with). A blank pay leaves the assignment Unpriced — never S$0 — and an instructor scheduling their own class or PT session is never shown pay at all. Every Unpriced assignment is surfaced through the "Needs pay" filter and priced there.
 
 ## User Stories
 
@@ -62,10 +62,10 @@ Instructor Pay becomes required when an **admin** schedules a session and when a
 28. As a studio owner, I want the export to contain exactly what the filters selected, so that I never have to reconcile the file against the screen.
 29. As a studio owner, I want Net to warn me when any session in the range is Unpriced, so that I do not trust a figure that is still incomplete.
 30. As a studio owner, I want Unpriced sessions excluded from the pay total rather than counted as zero, so that the total never understates what I owe.
-31. As an admin, I want a "Needs pay" filter, so that I can find and clear the Unpriced sessions that predate the new rule.
-32. As an admin, I want to be required to enter pay when I schedule a class, PT session or workshop, so that a session I create never goes Unpriced.
+31. As an admin, I want a "Needs pay" filter, so that I can find and price every Unpriced session from one place.
+32. As an admin, I want the pay field to be optional when I schedule a class, weekly series, PT session or workshop, so that I can schedule before the rate is agreed — a blank field leaves it Unpriced, never S$0. _(Reversed #314: this story first read "required to enter pay".)_
 32a. As an instructor, I want to schedule my own class without being asked for pay, so that I am never shown or asked to decide a rate — the session lands on the admin's "Needs pay" list instead.
-33. As an admin, I want to be required to enter pay when I add a supporting instructor to a roster, so that the requirement cannot be sidestepped by editing the roster afterwards.
+33. As an admin, I want each supporting instructor's pay to be optional, at scheduling or later on the roster, so that one unknown rate doesn't block the whole schedule. _(Reversed #314: this story first read "required to enter pay".)_
 34. As an admin, I want an existing session's pay to survive a roster edit, so that a figure I entered is never silently lost.
 35. As an instructor, I want to see my own sessions and my own pay, so that I can check my month against what I am paid.
 36. As an instructor, I want never to see studio totals, other instructors, or any money coming in, so that the page shows me my work and nothing about the business.
@@ -125,9 +125,13 @@ The existing save-reason vocabulary is kept: a save that did not happen answers 
 
 ### Required pay
 
-Enforced in the service layer, not in each route, so both the scheduling paths and the roster-edit path are covered by one rule. Existing rows with no pay are left alone; the "Needs pay" filter is how they get cleared.
+Reversed (#314, `be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md`): pay is **optional** on every scheduling and roster path. It was first enforced here, in the roster module's one write path, as `instructor_pay_required`; that gate and the code are gone.
 
-The DB column stays nullable. Making it NOT NULL would require inventing values for existing rows, which is the thing this decision explicitly refuses to do.
+- An admin may schedule a class, weekly series, PT session or workshop without the main instructor's pay, and add supporting instructors — at scheduling or later on the roster — without theirs.
+- A blank pay is stored `null` (Unpriced), never S$0. An explicit 0 is a price.
+- Every Unpriced assignment shows under the "Needs pay" filter once its session is held, and is priced there. Existing rows with no pay are left alone, as before.
+
+Every pay column is nullable, `class_series_supporting_instructors.pay_sgd` included, so a series can carry an Unpriced supporting instructor onto each class it makes. Making any of them NOT NULL would mean inventing values, which is the thing this spec refuses to do.
 
 ### API
 
@@ -159,7 +163,7 @@ A good test here asserts on figures a person would check on the screen, given a 
 
 Prior art is `services/payroll/totals.test.ts`, which is this exact style — construct rows, call the pure function, assert the totals — and `services/payroll/save-reasons.test.ts` for the save-failure vocabulary, which carries over unchanged.
 
-The required-pay rule is tested at the service that enforces it: scheduling without pay is refused, adding a supporting instructor without pay is refused, and an existing pay figure survives a roster edit. That last one is a regression the roster work already identified.
+Optional pay is tested over HTTP as an admin (`be/src/test/optional-instructor-pay.test.ts`): a class, series, PT session or workshop scheduled without pay is stored Unpriced and appears under Needs pay, a supporting instructor added on the roster without pay does too, and an explicit 0 is priced at zero. An existing pay figure surviving a roster edit is still a regression the roster work identified.
 
 Not tested: the query layer, which has no arithmetic; the CSV serializer, which is a projection of already-tested rows.
 
@@ -181,4 +185,4 @@ The two mutabilities in one table are the main risk. If a purchase row ever grow
 
 Super-admin editing Finance contradicts a stated PRD principle. That is a deliberate reversal, recorded here and struck from the PRD rather than quietly ignored.
 
-The Unpriced warning on Net should become unreachable once pay is required. Keeping it is cheap and it is the only way a bypass would announce itself.
+The Unpriced warning on Net is load-bearing: with pay optional when scheduling, Unpriced sessions are ordinary, and the warning plus the Needs pay filter are what get them priced.

@@ -34,8 +34,9 @@ export function seriesCadence(s: { weekday: number; start_time: string; end_time
 export interface SeriesInput {
   class_type_id: string;
   main_instructor_id: string;
-  instructor_pay_sgd: number;
-  supporting_instructors: { instructor_id: string; pay_sgd: number }[];
+  /** null = Unpriced, priced later from Finance's Needs pay filter. */
+  instructor_pay_sgd: number | null;
+  supporting_instructors: { instructor_id: string; pay_sgd: number | null }[];
   location_id: string;
   room_id: string;
   weekday: IsoWeekday;

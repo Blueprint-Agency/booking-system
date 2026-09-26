@@ -12,6 +12,7 @@ import {
   type CatalogRoom,
 } from "@/lib/catalog";
 import { scheduleErrorMessage, type Slot } from "@/lib/schedule";
+import { PAY_OPTIONAL_HINT, payOrNull } from "@/lib/pay";
 import {
   InstructorOption,
   useInstructorsOnLeave,
@@ -185,8 +186,7 @@ export function ScheduleFromRequestDialog({
         room_id: roomId,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
-        instructor_pay_sgd:
-          instructorPay.trim() === "" ? undefined : Number(instructorPay),
+        instructor_pay_sgd: payOrNull(instructorPay),
       });
       onScheduled();
     } catch (e) {
@@ -335,16 +335,20 @@ export function ScheduleFromRequestDialog({
             )}
           </div>
           <div className="space-y-1.5">
-            <Label>Instructor pay (S$)</Label>
+            <Label htmlFor="pt-instructor-pay">Instructor pay (S$) · optional</Label>
             <Input
+              id="pt-instructor-pay"
               type="number"
               min={0}
               step="0.01"
               inputMode="decimal"
-              placeholder="Optional"
               value={instructorPay}
               onChange={(e) => setInstructorPay(e.target.value)}
+              aria-describedby="pt-instructor-pay-hint"
             />
+            <p id="pt-instructor-pay-hint" className="text-xs text-muted">
+              {PAY_OPTIONAL_HINT}
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label>Location</Label>

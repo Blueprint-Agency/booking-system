@@ -35,9 +35,9 @@ const scheduleSchema = z
     room_id: z.string().uuid(),
     starts_at: isoDate,
     ends_at: isoDate,
-    // Required on the ADMIN path only — see the note on the admin class-create
-    // schema in ./schedule.ts.
-    instructor_pay_sgd: z.number().min(0),
+    // Optional: blank leaves the session Unpriced — see the note on the admin
+    // class-create schema in ./schedule.ts.
+    instructor_pay_sgd: z.number().min(0).nullable().optional(),
   })
   .refine(v => new Date(v.ends_at) > new Date(v.starts_at), {
     message: 'ends_at must be after starts_at',

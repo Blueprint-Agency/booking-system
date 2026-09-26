@@ -18,6 +18,7 @@ import { useWaitlistsOn } from "@/lib/use-waitlists-on";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
 import { scheduleErrorMessage, slotFromParams } from "@/lib/schedule";
+import { PAY_OPTIONAL_HINT, payOrNull } from "@/lib/pay";
 import {
   fetchActiveClassTypes,
   fetchActiveInstructors,
@@ -117,16 +118,6 @@ function NewClassForm() {
     if (!api) return;
     if (!classTypeId || !mainInstructorId || !locationId || !roomId) return;
     if (!date || !startTime || !endTime) return;
-    // Every instructor joining this class arrives with a price on them — the
-    // backend refuses otherwise, and saying so here beats a round-trip 400.
-    if (mainPay.trim() === "") {
-      setSubmitError("Enter the main instructor's pay.");
-      return;
-    }
-    if (supporting.some((s) => s.pay.trim() === "")) {
-      setSubmitError("Enter the pay for every supporting instructor.");
-      return;
-    }
     void difficulty;
 
     const startsAt = new Date(`${date}T${startTime}:00`);
@@ -144,7 +135,7 @@ function NewClassForm() {
         main_instructor_id: mainInstructorId,
         supporting_instructors: supporting.map((s) => ({
           instructor_id: s.instructorId,
-          pay_sgd: s.pay.trim() === "" ? null : Number(s.pay),
+          pay_sgd: payOrNull(s.pay),
         })),
         location_id: locationId,
         room_id: roomId,
@@ -154,7 +145,7 @@ function NewClassForm() {
         capacity_waitlist: capacity.waitlist,
         capacity_buffer: capacity.buffer,
         credit_cost: Number(creditCost),
-        instructor_pay_sgd: Number(mainPay),
+        instructor_pay_sgd: payOrNull(mainPay),
       });
       router.push("/admin/schedule");
     } catch (err) {
@@ -218,19 +209,20 @@ function NewClassForm() {
               </SelectField>
             </div>
             <div className="space-y-1.5">
-              {/* Required since Finance shipped: an unpriced session makes Net
-                  read better than the studio actually did. */}
-              <Label htmlFor="main-pay">Main instructor pay (S$)</Label>
+              <Label htmlFor="main-pay">Main instructor pay (S$) · optional</Label>
               <Input
                 id="main-pay"
                 type="number"
                 min={0}
                 step="0.01"
                 inputMode="decimal"
-                required
                 value={mainPay}
                 onChange={(e) => setMainPay(e.target.value)}
+                aria-describedby="main-pay-hint"
               />
+              <p id="main-pay-hint" className="text-xs text-muted">
+                {PAY_OPTIONAL_HINT}
+              </p>
             </div>
             <SupportingInstructorsField
               instructors={instructors}

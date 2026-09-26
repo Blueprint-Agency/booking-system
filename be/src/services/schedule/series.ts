@@ -51,9 +51,10 @@ export const MAX_RANGE_DAYS = 366
 export interface SeriesTemplate {
   classTypeId: string
   mainInstructorId: string
-  /** Null only on a series imported with no known rate: its classes are Unpriced. */
+  /** null = Unpriced: every class of the series is made Unpriced for the main. */
   instructorPaySgd: number | null
-  supportingInstructors: { instructorId: string; paySgd: number }[]
+  /** null = Unpriced, copied as null onto each class's supporting row. */
+  supportingInstructors: { instructorId: string; paySgd: number | null }[]
   locationId: string
   roomId: string
   weekday: IsoWeekday
@@ -151,7 +152,7 @@ export async function createSeries(
           tenantId,
           seriesId: row.id,
           instructorId: s.instructorId,
-          paySgd: s.paySgd.toFixed(2),
+          paySgd: s.paySgd?.toFixed(2) ?? null,
         })),
       )
     }
@@ -412,7 +413,10 @@ async function loadSeries(tenantId: string, seriesId: string, tx?: Tx): Promise<
     mainInstructorId: row.mainInstructorId,
     instructorPaySgd: row.instructorPaySgd == null ? null : Number(row.instructorPaySgd),
     supportingInstructors: supporting
-      .map(s => ({ instructorId: s.instructorId, paySgd: Number(s.paySgd) }))
+      .map(s => ({
+        instructorId: s.instructorId,
+        paySgd: s.paySgd == null ? null : Number(s.paySgd),
+      }))
       .sort((a, b) => a.instructorId.localeCompare(b.instructorId)),
     locationId: row.locationId,
     roomId: row.roomId,
@@ -506,7 +510,8 @@ async function createClasses(
     .returning({ id: classes.id })
 
   // Supporting instructors join each class through the roster module, like any
-  // class's — its pay rule and instructor checks are the ones that apply.
+  // class's — its instructor checks are the ones that apply. A null pay is passed
+  // explicitly, so each class's supporting row is stored Unpriced.
   if (template.supportingInstructors.length) {
     for (const { id } of rows) {
       await replaceRoster(tx, tenantId, { kind: 'class', id }, {

@@ -610,6 +610,13 @@
       "when": 1790372226633,
       "tag": "0086_waitlist_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790417834766,
+      "tag": "0087_series_supporting_pay_optional",
+      "breakpoints": true
     }
   ]
 }

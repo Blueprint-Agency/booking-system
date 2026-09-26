@@ -63,11 +63,10 @@ const createClassSchema = z
     capacity_waitlist: z.number().int().min(0).default(0),
     capacity_buffer: z.number().int().min(0).default(0),
     credit_cost: z.number().int().min(0),
-    // Required on the ADMIN path only. An instructor scheduling their own class
-    // creates it Unpriced — they must never see pay rates — and an admin prices
-    // it later from Finance's "Needs pay" filter. See
-    // be/docs/adr/0002-finance-replaces-payroll.md.
-    instructor_pay_sgd: z.number().min(0),
+    // Optional: blank (omitted or null) leaves the class Unpriced, and an admin
+    // prices it later from Finance's "Needs pay" filter. An explicit 0 is a
+    // price. See be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md.
+    instructor_pay_sgd: z.number().min(0).nullable().optional(),
   })
   .refine(v => v.capacity_online + v.capacity_waitlist + v.capacity_buffer > 0, {
     message: 'capacity must be positive',
@@ -104,9 +103,16 @@ const seriesSchema = z
   .object({
     class_type_id: z.string().uuid(),
     main_instructor_id: z.string().uuid(),
-    instructor_pay_sgd: z.number().min(0),
+    // Optional, as on a single class: blank leaves every class of the series
+    // Unpriced for that instructor.
+    instructor_pay_sgd: z.number().min(0).nullable().optional(),
     supporting_instructors: z
-      .array(z.object({ instructor_id: z.string().uuid(), pay_sgd: z.number().min(0) }))
+      .array(
+        z.object({
+          instructor_id: z.string().uuid(),
+          pay_sgd: z.number().min(0).nullable().optional(),
+        }),
+      )
       .default([]),
     location_id: z.string().uuid(),
     room_id: z.string().uuid(),
@@ -137,10 +143,10 @@ function toSeriesInput(b: z.infer<typeof seriesSchema>): seriesSvc.CreateSeriesI
   return {
     classTypeId: b.class_type_id,
     mainInstructorId: b.main_instructor_id,
-    instructorPaySgd: b.instructor_pay_sgd,
+    instructorPaySgd: b.instructor_pay_sgd ?? null,
     supportingInstructors: b.supporting_instructors.map(s => ({
       instructorId: s.instructor_id,
-      paySgd: s.pay_sgd,
+      paySgd: s.pay_sgd ?? null,
     })),
     locationId: b.location_id,
     roomId: b.room_id,

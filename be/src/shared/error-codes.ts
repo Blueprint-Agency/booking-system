@@ -127,7 +127,6 @@ export const ERROR_CODES = {
   instructor_not_assigned: 'instructor_not_assigned',
   instructor_not_found: 'instructor_not_found',
   instructor_only_applies_to_bound_pt: 'instructor_only_applies_to_bound_pt',
-  instructor_pay_required: 'instructor_pay_required',
   instructor_required: 'instructor_required',
   insufficient_credits: 'insufficient_credits',
   insufficient_leave_balance: 'insufficient_leave_balance',
