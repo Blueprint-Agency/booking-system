@@ -59,6 +59,8 @@ export const CHECKS: Record<string, Record<string, Rule>> = {
     classes_capacity_buffer_non_negative: r => num(r.capacity_buffer, n => n >= 0),
     classes_capacity_sum_positive: capacity,
     classes_credit_non_negative: r => num(r.credit_cost, n => n >= 0),
+    // A per-class Cancellation Window override (#313); null follows the studio's.
+    classes_cancel_window_non_negative: r => isNull(r.cancel_window_hours) || num(r.cancel_window_hours, n => n >= 0),
   },
   pt_sessions: {
     pt_sessions_ends_after_starts: r => after(r.ends_at, r.starts_at),
@@ -72,6 +74,8 @@ export const CHECKS: Record<string, Record<string, Rule>> = {
       num(r.capacity_online, n => n >= 0) && num(r.capacity_waitlist, n => n >= 0) && num(r.capacity_buffer, n => n >= 0),
     class_series_capacity_sum_positive: capacity,
     class_series_credit_non_negative: r => num(r.credit_cost, n => n >= 0),
+    class_series_cancel_window_non_negative: r =>
+      isNull(r.cancel_window_hours) || num(r.cancel_window_hours, n => n >= 0),
     class_series_ends_after_starts: r => String(r.end_time) > String(r.start_time),
     class_series_last_not_before_first: r => isNull(r.last_date) || String(r.last_date) >= String(r.first_date),
     class_series_weekday_range: r => num(r.weekday, n => n >= 1 && n <= 7),
