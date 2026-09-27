@@ -29,16 +29,17 @@ export const SHEET_TEXT = "mt-1 text-sm text-muted leading-relaxed";
 /** Stacked on a phone with the main action on top; side by side from `sm`. */
 export const SHEET_ACTIONS = "mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:gap-3 [&>*]:flex-1";
 
-// The wide overlay, for reading rather than confirming: a full-height sheet on
-// a phone, whose body scrolls between a fixed header and a fixed action bar,
-// and a centred wide panel from `sm` up. Same backdrop layer as the sheet, so
-// a sheet opened from it stacks the same way.
+// The wide overlay, for reading rather than confirming: on a phone a bottom
+// sheet over the dimmed page, as tall as its content up to 90% of the screen,
+// whose body scrolls between a fixed header and a fixed action bar; a centred
+// wide panel from `sm` up. Same backdrop layer as the sheet, so a sheet opened
+// from it stacks the same way.
 export const OVERLAY_BACKDROP =
-  "fixed inset-0 z-[70] flex items-stretch justify-center bg-ink/40 backdrop-blur-sm animate-fade-in sm:items-center sm:p-6";
+  "fixed inset-0 z-[70] flex items-end justify-center bg-ink/40 backdrop-blur-sm animate-fade-in sm:items-center sm:p-6";
 export const OVERLAY_PANEL =
-  "flex h-[100dvh] w-full flex-col overflow-hidden bg-card shadow-modal outline-none animate-fade-up sm:h-auto sm:max-h-[85dvh] sm:max-w-2xl sm:rounded-2xl";
+  "flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-card shadow-modal outline-none animate-fade-up sm:max-h-[85dvh] sm:max-w-2xl sm:rounded-2xl";
 export const OVERLAY_HEADER =
-  "flex items-start gap-3 border-b border-ink/5 px-5 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] sm:px-6 sm:pt-5";
+  "flex items-start gap-3 border-b border-ink/5 px-5 pb-4 pt-5 sm:px-6";
 /** The scrolling middle; `min-h-0` lets it shrink inside the flex column. */
 export const OVERLAY_BODY = "min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6";
 export const OVERLAY_ACTIONS =

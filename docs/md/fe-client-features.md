@@ -329,6 +329,11 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 - Optional **waitlist** per `WorkshopDay` (capacity now decomposed into `waitlist + online_booking + buffer` — see admin spec).
 - Promotions on workshops follow the same best-price-wins resolution as packages (§6.1).
 
+**List layout**
+- An **ended** workshop is left off the list: there is nothing left to book. The location chips list only locations with a workshop still to come.
+- The rest is grouped: **Happening now** (started, not yet over), then one group per **month** of start date in studio time ("This month", then "October", with the year only when it differs), then **Dates to be announced**.
+- The groups are an accordion, **one open at a time**, the same as the class schedule (§3.1). The first group opens by default, each collapsed group shows its workshop count, and opening one closes the other. If a location filter empties the open group, the first remaining group opens.
+
 **User journey**
 1. List rendered as **expandable accordion cards**. Card header shows title, instructor, level badge (colour-coded), date, **"X of N spots left"** counter, *"From S$X"* on the collapsed view.
 2. Tapping the header expands the card inline → bio, full description, all pricing tiers as individual rows.

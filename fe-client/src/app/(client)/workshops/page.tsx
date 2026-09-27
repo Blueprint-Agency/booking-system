@@ -19,6 +19,8 @@ import {
   formatSgd,
   useWorkshops,
 } from "@/lib/workshops";
+import { groupWorkshops, isEnded } from "@/lib/workshop-groups";
+import { OneOpenAccordion } from "@/components/booking/one-open-accordion";
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -26,8 +28,15 @@ export default function WorkshopsPage() {
   const { data, loading, error } = useWorkshops();
   const [selectedLocation, setSelectedLocation] = useState<string>("all");
 
-  const workshops = useMemo(() => data ?? [], [data]);
+  const nowMs = useMemo(() => Date.now(), []);
+  // An ended workshop has nothing left to book, so the page leaves it out.
+  const workshops = useMemo(
+    () => (data ?? []).filter((w) => !isEnded(w, nowMs)),
+    [data, nowMs],
+  );
 
+  // Only locations with something still to book: a chip that can only lead to
+  // an empty page is a dead end.
   const locations: ApiLocationLite[] = useMemo(() => {
     const map = new Map<string, ApiLocationLite>();
     for (const w of workshops) {
@@ -36,10 +45,25 @@ export default function WorkshopsPage() {
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [workshops]);
 
-  const filtered = useMemo(() => {
-    if (selectedLocation === "all") return workshops;
-    return workshops.filter((w) => w.location?.id === selectedLocation);
-  }, [workshops, selectedLocation]);
+  const groups = useMemo(() => {
+    const here =
+      selectedLocation === "all"
+        ? workshops
+        : workshops.filter((w) => w.location?.id === selectedLocation);
+    return groupWorkshops(here, nowMs);
+  }, [workshops, selectedLocation, nowMs]);
+
+  // One month open at a time, the soonest first.
+  const sections = useMemo(
+    () =>
+      groups.map((g) => ({
+        key: g.key,
+        label: g.label,
+        summary: `${g.items.length} ${g.items.length === 1 ? "workshop" : "workshops"}`,
+      })),
+    [groups],
+  );
+  const itemsByKey = useMemo(() => new Map(groups.map((g) => [g.key, g.items])), [groups]);
 
   return (
     <BookingSurface>
@@ -69,11 +93,11 @@ export default function WorkshopsPage() {
         </div>
       )}
 
-      {!loading && !error && filtered.length === 0 && (
+      {!loading && !error && groups.length === 0 && (
         <div className={CARD}>
           <EmptyState
             icon={GraduationCap}
-            title={selectedLocation === "all" ? "No workshops scheduled" : "No workshops here"}
+            title={selectedLocation === "all" ? "No upcoming workshops" : "No upcoming workshops here"}
             description={
               selectedLocation === "all"
                 ? "New workshops show up here when they open."
@@ -83,14 +107,18 @@ export default function WorkshopsPage() {
         </div>
       )}
 
-      {!loading && !error && filtered.length > 0 && (
-        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((workshop) => (
-            <li key={workshop.id} className="flex">
-              <WorkshopCard workshop={workshop} />
-            </li>
-          ))}
-        </ul>
+      {!loading && !error && groups.length > 0 && (
+        <OneOpenAccordion sections={sections} idPrefix="workshops">
+          {(key) => (
+            <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {(itemsByKey.get(key) ?? []).map((workshop) => (
+                <li key={workshop.id} className="flex">
+                  <WorkshopCard workshop={workshop} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </OneOpenAccordion>
       )}
     </BookingSurface>
   );
@@ -107,10 +135,6 @@ function firstLine(text: string | null): string {
 }
 
 function WorkshopCard({ workshop }: { workshop: ApiWorkshopCard }) {
-  const now = Date.now();
-  const endsAt = workshop.ends_at ? new Date(workshop.ends_at) : null;
-  const isPast = endsAt ? endsAt.getTime() < now : false;
-
   const summary = firstLine(workshop.description_html);
   const dateRange = formatDayRange(workshop.starts_at, workshop.ends_at);
   const minPrice = workshop.min_price_sgd;
@@ -129,12 +153,7 @@ function WorkshopCard({ workshop }: { workshop: ApiWorkshopCard }) {
   // when there is one, beside the title when there isn't — an empty picture
   // frame is a screenful of nothing on a phone.
   const stub = (className?: string) => (
-    <DateStub iso={workshop.starts_at} tone={isPast ? "muted" : "default"} className={className} />
-  );
-  const ended = isPast && (
-    <span className="shrink-0 rounded-full bg-ink/5 px-2.5 py-1 text-xs font-semibold text-muted">
-      Ended
-    </span>
+    <DateStub iso={workshop.starts_at} className={className} />
   );
 
   const body = (
@@ -146,10 +165,7 @@ function WorkshopCard({ workshop }: { workshop: ApiWorkshopCard }) {
             alt=""
             fill
             sizes="(min-width: 1280px) 30vw, (min-width: 640px) 45vw, 100vw"
-            className={cn(
-              "object-cover transition-transform duration-500 md:group-hover:scale-[1.03]",
-              isPast && "grayscale",
-            )}
+            className="object-cover transition-transform duration-500 md:group-hover:scale-[1.03]"
           />
           {stub("absolute left-3 top-3 bg-card/95 shadow-soft backdrop-blur-sm")}
         </div>
@@ -159,10 +175,7 @@ function WorkshopCard({ workshop }: { workshop: ApiWorkshopCard }) {
         <div className="flex items-start gap-3">
           {!workshop.cover_url && stub()}
           <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <h2 className="font-bold leading-snug text-ink">{workshop.name}</h2>
-              {ended}
-            </div>
+            <h3 className="font-bold leading-snug text-ink">{workshop.name}</h3>
             <p className="mt-0.5 text-sm text-muted">{dateRange}</p>
             {workshop.location && (
               <p className="mt-0.5 flex items-center gap-1 text-xs text-muted">
@@ -185,25 +198,20 @@ function WorkshopCard({ workshop }: { workshop: ApiWorkshopCard }) {
               {shape}
             </span>
           </p>
-          {!isPast && (
-            <ChevronRight
-              className="h-5 w-5 shrink-0 text-ink/30 transition-colors group-hover:text-ink"
-              aria-hidden
-            />
-          )}
+          <ChevronRight
+            className="h-5 w-5 shrink-0 text-ink/30 transition-colors group-hover:text-ink"
+            aria-hidden
+          />
         </div>
       </div>
     </>
   );
 
-  const card = cn(CARD, "group flex w-full flex-col overflow-hidden");
-
-  // A workshop that has ended has nothing to book, so it isn't a link.
-  if (isPast) {
-    return <div className={cn(card, "opacity-75")}>{body}</div>;
-  }
   return (
-    <Link href={`/workshops/${workshop.id}`} className={cn(card, "transition-shadow md:hover:shadow-hover")}>
+    <Link
+      href={`/workshops/${workshop.id}`}
+      className={cn(CARD, "group flex w-full flex-col overflow-hidden transition-shadow md:hover:shadow-hover")}
+    >
       {body}
     </Link>
   );

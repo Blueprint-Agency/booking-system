@@ -92,6 +92,26 @@ export function Select({
     return () => document.removeEventListener("pointerdown", onDown);
   }, [open]);
 
+  // The list grows to its longest option, which can be wider than the trigger.
+  // Near the right of the screen that would run past the edge and widen the
+  // page, so before it paints, slide it left by just enough to keep a 16px
+  // margin, never past the same margin on the left.
+  const [shiftX, setShiftX] = useState(0);
+  useLayoutEffect(() => {
+    if (!open) {
+      setShiftX(0);
+      return;
+    }
+    const root = rootRef.current?.getBoundingClientRect();
+    const list = listRef.current;
+    if (!root || !list) return;
+    const gutter = 16;
+    const viewport = document.documentElement.clientWidth;
+    const overflow = root.left + list.offsetWidth - (viewport - gutter);
+    const room = root.left - gutter;
+    setShiftX(overflow > 0 ? -Math.min(overflow, Math.max(0, room)) : 0);
+  }, [open]);
+
   // Keep the highlighted option in view as the keyboard moves through a long list.
   useLayoutEffect(() => {
     if (!open || active < 0) return;
@@ -198,8 +218,9 @@ export function Select({
           role="listbox"
           aria-labelledby={baseId}
           tabIndex={-1}
+          style={{ left: shiftX }}
           className={cn(
-            "absolute left-0 z-50 max-h-72 min-w-full w-max max-w-[min(22rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain",
+            "absolute z-50 max-h-72 min-w-full w-max max-w-[min(22rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain",
             "rounded-xl border border-ink/5 bg-card p-1 shadow-modal animate-drop-in",
             upward ? "bottom-full mb-1.5 origin-bottom" : "top-full mt-1.5 origin-top",
           )}
