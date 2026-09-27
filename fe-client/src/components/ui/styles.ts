@@ -13,6 +13,18 @@ export const BTN_PRIMARY =
 export const BTN_SECONDARY =
   "inline-flex min-h-[48px] items-center justify-center gap-1.5 rounded-full border border-ink/10 px-5 text-sm font-semibold text-ink hover:border-ink/30 transition-colors disabled:opacity-50";
 
+/** Booking a place — every "Book now" wears the studio's accent, wherever it sits. */
+export const BOOK_FILL =
+  "bg-accent text-inverse hover:bg-accent-deep transition-colors disabled:opacity-70 disabled:cursor-wait";
+export const BTN_BOOK = `inline-flex min-h-[48px] items-center justify-center gap-1.5 rounded-full px-5 text-sm font-semibold ${BOOK_FILL}`;
+
+/**
+ * Cancelling something the member holds — a booking, a request, a place in
+ * line. Always red, so it never passes for a way out of a dialog.
+ */
+export const BTN_CANCEL =
+  "inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full border border-error/30 px-4 text-sm font-semibold text-error hover:bg-error/10 transition-colors disabled:opacity-60 disabled:cursor-wait";
+
 /** A short note inside a page or dialog — a rule, a heads-up. Not an error. */
 export const NOTE = "rounded-xl bg-ink/[0.04] px-4 py-3 text-sm text-ink";
 

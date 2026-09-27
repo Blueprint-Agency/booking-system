@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/booking/page-header";
 import { DateStub } from "@/components/account/date-stub";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ContentLoading } from "@/components/ui/content-loading";
-import { BTN_PRIMARY, CARD } from "@/components/ui/styles";
+import { BTN_BOOK, BTN_PRIMARY, CARD } from "@/components/ui/styles";
 import { BuyButton } from "@/components/checkout/buy-button";
 import { cn } from "@/lib/utils";
 import {
@@ -314,7 +314,7 @@ export default function WorkshopDetailPage() {
                 // NaN, not 0: an absent price must fall to the paid branch.
                 // Coercing it to 0 would post-and-grant the workshop for free.
                 priceSgd={priceForSelected?.amount ?? NaN}
-                className={cn(BTN_PRIMARY, "w-full")}
+                className={cn(BTN_BOOK, "w-full")}
                 loadingLabel="Redirecting…"
               >
                 {isFree ? "Book for free" : "Book now"}

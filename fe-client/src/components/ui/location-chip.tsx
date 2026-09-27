@@ -25,6 +25,18 @@ export function AllLocationsRow({ className }: { className?: string }) {
   );
 }
 
+/**
+ * An Unlimited plan's Covers row in the shop, before a Home Location is
+ * picked: the plan covers one, chosen at checkout.
+ */
+export function HomeStudioRow({ className }: { className?: string }) {
+  return (
+    <CoversRow className={className}>
+      <LocationChip name="One home studio, chosen at checkout" />
+    </CoversRow>
+  );
+}
+
 export function LocationChip({ name, until }: { name: string; until?: string | null }) {
   return (
     <li className="inline-flex max-w-full items-center gap-1 rounded-full border border-ink/10 bg-ink/[0.03] px-2 py-0.5 text-xs font-medium text-ink">

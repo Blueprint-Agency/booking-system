@@ -13,10 +13,8 @@ import { SignOutButton, SigningOutContext } from "./sign-out-button";
 
 /**
  * The frame around every account page. From `lg` up it is a sidebar beside the
- * page. Below that there is no sidebar: the overview carries the account menu
- * (`AccountMenu`) and every section heads itself with a link back to it, so a
- * phone gets the page's content first rather than a profile card and a row of
- * chips to scroll past.
+ * page; below that the same sections are a row of tabs above it
+ * (`AccountTabs`), so a phone and a desktop reach every section the same way.
  */
 export function AccountShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -70,14 +68,51 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
           </nav>
           <div className="mt-2 pt-2 border-t border-ink/5">
             <SignOutButton
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-muted hover:bg-error/10 hover:text-error transition-colors"
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-error hover:bg-error/10 transition-colors"
             />
           </div>
         </div>
       </aside>
 
-      <div className="min-w-0 animate-fade-in">{children}</div>
+      <div className="min-w-0 animate-fade-in">
+        <AccountTabs pathname={pathname} />
+        {children}
+      </div>
     </div>
     </SigningOutContext.Provider>
+  );
+}
+
+/**
+ * The account's sections below `lg`, where there is no sidebar: the same
+ * items in the same order, as a row of tabs that scrolls sideways rather than
+ * wrapping. Sign out sits at the foot of Profile & security on a phone.
+ */
+function AccountTabs({ pathname }: { pathname: string }) {
+  return (
+    <nav aria-label="Account" className="lg:hidden -mx-4 mb-5 overflow-x-auto px-4 no-scrollbar md:-mx-8 md:px-8">
+      <ul className="flex w-max gap-2">
+        {[ACCOUNT_OVERVIEW, ...ACCOUNT_SECTIONS].map(({ href, label, icon: Icon, isActive }) => {
+          const active = isActive(pathname);
+          return (
+            <li key={href}>
+              <Link
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-sm font-semibold transition-colors",
+                  active
+                    ? "border-accent/20 bg-accent/10 text-accent-deep"
+                    : "border-ink/10 bg-card text-muted hover:border-ink/25 hover:text-ink",
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" strokeWidth={active ? 2.3 : 1.8} aria-hidden />
+                {label}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
   );
 }

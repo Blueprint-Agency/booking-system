@@ -10,10 +10,11 @@ import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { OneOpenAccordion } from "@/components/booking/one-open-accordion";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { BTN_SECONDARY, CARD } from "@/components/ui/styles";
-import { MyNextClass } from "@/components/account/next-class-card";
+import { ComingUp } from "@/components/account/coming-up";
+import { PolicyNotice } from "@/components/booking/policy-notice";
 import { cn } from "@/lib/utils";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
-import { classBookingPolicy } from "@/lib/cancellation-copy";
+import { classPolicyPoints } from "@/lib/cancellation-copy";
 
 /** Today and the nine days after it. */
 const WINDOW_DAYS = 10;
@@ -117,8 +118,9 @@ export function ClassFeed() {
     <BookingSurface>
       <PageHeader title="Schedule" />
       <ScheduleSegments />
-      {/* A signed-in member's soonest class and its check-in QR (#192). */}
-      <MyNextClass />
+      {/* A signed-in member's next booking, its check-in QR (#192) and its
+          Cancel — the same ticket "Your bookings" leads with. */}
+      <ComingUp variant="schedule" onChanged={refresh} />
 
       <div className="grid grid-cols-2 gap-2 mb-3 sm:flex">
         <FilterSelect
@@ -139,11 +141,7 @@ export function ClassFeed() {
 
       {/* The rules a member agrees to by booking, stated before they do. Left
           out rather than guessed while the studio's policy is still loading. */}
-      {policy && (
-        <p className="mb-6 text-xs text-muted leading-relaxed">
-          {classBookingPolicy(policy)}
-        </p>
-      )}
+      {policy && <PolicyNotice title="Cancellation policy" points={classPolicyPoints(policy)} className="mb-6" />}
 
       {loading ? (
         <ContentLoading label="Loading schedule" />

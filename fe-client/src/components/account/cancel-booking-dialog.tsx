@@ -123,7 +123,8 @@ export function CancelBookingDialog({
           </p>
           <div
             className={
-              preview?.late && !preview.unlimited
+              // Amber whenever the credit stays spent: late, or over the cap.
+              preview && !preview.unlimited && (preview.late || !preview.credit_back)
                 ? "mt-4 rounded-xl bg-warning/10 p-3 text-sm font-medium text-ink"
                 : "mt-4 rounded-xl bg-ink/[0.04] p-3 text-sm text-ink"
             }

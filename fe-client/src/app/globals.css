@@ -399,6 +399,17 @@
   animation-play-state: paused;
 }
 
+/* While a navigation is on its way the page being left fades out, so the
+   spinner never sits over a screen that looks finished. The header and tab
+   bar stay; sheets and dialogs are portalled outside `main` and are unaffected. */
+main {
+  transition: opacity 0.15s ease-out;
+}
+
+body:has(.page-loader[data-navigating="true"]) main {
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(*),
   ::view-transition-new(*),

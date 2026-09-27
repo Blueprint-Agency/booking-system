@@ -1,310 +1,378 @@
 "use client";
 
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, CalendarPlus, ChevronRight } from "lucide-react";
-import { cn, formatExpiryDate, formatSgd } from "@/lib/utils";
-import { coversAllLocations } from "@/lib/package-coverage";
-import { AllLocationsRow, CoversRow, LocationChip } from "@/components/ui/location-chip";
-import { useLocations } from "@/lib/classes";
-import { ContentLoading } from "@/components/ui/content-loading";
+import { useSearchParams } from "next/navigation";
+import { CalendarPlus, CalendarX, X } from "lucide-react";
+import { AccountPageHeader } from "@/components/account/account-page-header";
+import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { ComingUp } from "@/components/account/coming-up";
-import { AccountHeader } from "@/components/account/account-header";
-import { ACCOUNT_SECTIONS } from "@/components/account/account-nav-items";
-import { SignOutButton } from "@/components/account/sign-out-button";
-import { useAppUser } from "@/lib/auth";
-import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
 import { OpenPurchases } from "@/components/account/open-purchases";
+import { WaitlistCard, type ApiBooking } from "@/components/account/class-bookings";
+import type { ApiWorkshopBooking } from "@/components/account/workshop-bookings";
+import {
+  ClassBookingCard,
+  CorporateBookingCard,
+  PtBookingCard,
+  WorkshopBookingCard,
+} from "@/components/account/booking-cards";
+import { CancelBookingDialog, type CancelOutcome } from "@/components/account/cancel-booking-dialog";
+import { LeaveWaitlistDialog } from "@/components/booking/leave-waitlist-dialog";
 import { CancelledBanner } from "@/components/checkout/cancelled-banner";
+import { FilterChips } from "@/components/ui/filter-chips";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ContentLoading } from "@/components/ui/content-loading";
+import { BTN_BOOK, BTN_SECONDARY, CARD } from "@/components/ui/styles";
+import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { reportError } from "@/lib/report-error";
+import { makePtSessionsApi, type RawPtRequest } from "@/lib/pt-sessions";
+import type { ApiCorporateRequest } from "@/lib/corporate";
+import { leaveWaitlist, listWaitlist, waitlistRefusal, type ApiWaitlistEntry } from "@/lib/waitlist";
+import { useCancellationPolicy } from "@/lib/cancellation-policy";
+import { ptCancelResult, ptPolicyNote } from "@/lib/cancellation-copy";
+import { useClientPackages } from "@/lib/use-client-packages";
 import { usePartPaymentOptions, useOpenPurchases } from "@/lib/open-purchases";
+import {
+  bookingItems,
+  sortForPhase,
+  type BookingItem,
+  type BookingPhase,
+  type BookingSources,
+  type BookingType,
+} from "@/lib/my-bookings";
 
-/**
- * What a Dormant package promises, with the length attached. Every kind
- * waits Dormant until the first booking it pays for; a PT package starts when
- * the studio schedules the first session it pays for, not when the member
- * asks for one (be/docs/adr/0011). With another package running, that is the
- * booking the member picks it on.
- */
-function dormantLine(pkg: LivePackage): string {
-  const start =
-    pkg.kind === "pt"
-      ? "Starts when the studio schedules your first session with it"
-      : "Starts the first time you book with it";
-  if (pkg.validityDays == null) return start;
-  return `${start} · valid ${pkg.validityDays} ${pkg.validityDays === 1 ? "day" : "days"} from then`;
-}
+type TypeFilter = "all" | BookingType;
 
-const cardClass = "rounded-2xl bg-card border border-ink/5 shadow-soft";
+const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "class", label: "Classes" },
+  { value: "pt", label: "Private" },
+  { value: "workshop", label: "Workshops" },
+  { value: "corporate", label: "Corporate" },
+];
 
-function SectionTitle({
-  children,
-  action,
-}: {
-  children: React.ReactNode;
-  action?: { href: string; label: string };
-}) {
+const PHASES: { value: BookingPhase; label: string }[] = [
+  { value: "upcoming", label: "Upcoming" },
+  { value: "ongoing", label: "Ongoing" },
+  { value: "past", label: "Past" },
+];
+
+const isType = (v: string | null): v is TypeFilter => TYPE_OPTIONS.some((o) => o.value === v);
+const isPhase = (v: string | null): v is BookingPhase => PHASES.some((o) => o.value === v);
+
+/** What a request just sent is told, on arrival from its form. */
+const SUBMITTED: Record<string, string> = {
+  pt: "Your request is in. We'll reach you on WhatsApp shortly to confirm the time.",
+  corporate: "Your request is in. We'll arrange the date, place and instructor with you on WhatsApp.",
+};
+
+type Banner = { tone: "ok" | "warn" | "error"; text: string };
+
+export default function YourBookingsPage() {
   return (
-    <div className="mb-3 flex items-baseline justify-between gap-3">
-      <h2 className="text-base font-bold text-ink">{children}</h2>
-      {action && (
-        <Link
-          href={action.href}
-          className="inline-flex items-center gap-0.5 text-sm font-semibold text-accent-deep hover:text-accent"
-        >
-          {action.label}
-          <ChevronRight className="h-4 w-4" />
-        </Link>
-      )}
-    </div>
+    <Suspense fallback={<ContentLoading label="Loading your bookings" />}>
+      <YourBookings />
+    </Suspense>
   );
 }
 
-export default function AccountOverview() {
-  const { user } = useAppUser();
-  const { packages: livePackages, crossLocation, loading: pkgLoading } = useClientPackages();
-  const { data: locations } = useLocations();
-  // A balance the member left outstanding (#93). It sits above the packages
-  // because it is the one thing on this page waiting on them.
+/**
+ * "Your bookings": every class, PT session or request, workshop and corporate
+ * request the member holds, in one list — filtered by kind, and by Upcoming,
+ * Ongoing or Past (`lib/my-bookings.ts`). The next one leads as the ticket.
+ * `?type=` and `?when=` open it filtered; the old per-kind pages redirect here.
+ */
+function YourBookings() {
+  const params = useSearchParams();
+  const api = useApi();
+  const policy = useCancellationPolicy();
+  const { refetch: refetchPackages } = useClientPackages();
   const { purchases: openPurchases, failed: openPurchasesFailed } = useOpenPurchases();
   const partPayment = usePartPaymentOptions();
-  const firstName = user?.firstName || "there";
 
-  // Every live package, each on its own card: several of a Family may run at
-  // once (be/docs/adr/0010), so none is singled out as "the current one". The
-  // running ones lead, soonest-ending first, then those still waiting to start.
-  // A Trial is listed too: it can run beside a bundle.
-  const packages = [...livePackages]
-    .sort(
-      (a, b) =>
-        Number(a.dormant) - Number(b.dormant) ||
-        (a.expiresAt ?? "").localeCompare(b.expiresAt ?? ""),
-    );
+  const [type, setType] = useState<TypeFilter>(() => {
+    const t = params.get("type");
+    return isType(t) ? t : "all";
+  });
+  const [phase, setPhase] = useState<BookingPhase>(() => {
+    const w = params.get("when");
+    return isPhase(w) ? w : "upcoming";
+  });
+  const submitted = SUBMITTED[params.get("submitted") ?? ""] ?? null;
+
+  const [src, setSrc] = useState<BookingSources | null>(null);
+  const [waitlisted, setWaitlisted] = useState<ApiWaitlistEntry[]>([]);
+  const [loadError, setLoadError] = useState(false);
+  const [banner, setBanner] = useState<Banner | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<ApiBooking | null>(null);
+  const [leaveTarget, setLeaveTarget] = useState<ApiWaitlistEntry | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  // The ticket above the list: what it shows is left out of the list, and a
+  // change in either re-reads the other.
+  const [ticketKey, setTicketKey] = useState<string | null>(null);
+  const [ticketRefresh, setTicketRefresh] = useState(0);
+
+  const reload = useCallback(async () => {
+    setLoadError(false);
+    // Only the class lists are essential: a failed PT, workshop, corporate or
+    // waitlist read must not blank the member's classes.
+    const optional = <T,>(p: Promise<T>, fallback: T, scope: string) =>
+      p.catch((err) => {
+        reportError(err, { scope });
+        return fallback;
+      });
+    try {
+      const [upcoming, past, pt, workshops, corporate, waitlist] = await Promise.all([
+        api.get<{ bookings: ApiBooking[] }>("/me/bookings/upcoming"),
+        api.get<{ bookings: ApiBooking[] }>("/me/bookings/past"),
+        optional(makePtSessionsApi(api).listRequests(), { pt_requests: [] as RawPtRequest[] }, "bookings-pt"),
+        optional(
+          api.get<{ workshop_bookings: ApiWorkshopBooking[] }>("/me/workshop-bookings"),
+          { workshop_bookings: [] },
+          "bookings-workshops",
+        ),
+        optional(
+          api.get<{ corporate_requests: ApiCorporateRequest[] }>("/me/corporate-requests"),
+          { corporate_requests: [] },
+          "bookings-corporate",
+        ),
+        optional(listWaitlist(api), [] as ApiWaitlistEntry[], "bookings-waitlist"),
+      ]);
+      setSrc({
+        upcoming: upcoming.bookings ?? [],
+        past: past.bookings ?? [],
+        pt: pt.pt_requests ?? [],
+        workshops: workshops.workshop_bookings ?? [],
+        corporate: corporate.corporate_requests ?? [],
+      });
+      setWaitlisted(waitlist);
+    } catch (err) {
+      reportError(err, { scope: "bookings" });
+      setLoadError(true);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const items = useMemo(() => (src ? bookingItems(src, Date.now()) : []), [src]);
+  const ofType = useMemo(
+    () => items.filter((i) => (type === "all" || i.type === type) && i.key !== ticketKey),
+    [items, type, ticketKey],
+  );
+  const counts = useMemo(() => {
+    const c: Record<BookingPhase, number> = { upcoming: 0, ongoing: 0, past: 0 };
+    for (const i of ofType) c[i.phase] += 1;
+    return c;
+  }, [ofType]);
+  const rows = useMemo(() => sortForPhase(ofType.filter((i) => i.phase === phase), phase), [ofType, phase]);
+  const showWaitlist = phase === "upcoming" && (type === "all" || type === "class") && waitlisted.length > 0;
+
+  const changed = async () => {
+    await reload();
+    setTicketRefresh((n) => n + 1);
+  };
+
+  async function onClassCancelled(outcome: CancelOutcome) {
+    setCancelTarget(null);
+    setBanner({ tone: outcome.tone, text: outcome.text });
+    if (outcome.cancelled || outcome.stale) await changed();
+  }
+
+  async function confirmLeave() {
+    if (!leaveTarget) return;
+    setLeaving(true);
+    try {
+      await leaveWaitlist(api, leaveTarget.id);
+      setBanner({ tone: "ok", text: "Left the waitlist." });
+    } catch (err) {
+      const out = waitlistRefusal(errCode(err), err instanceof ApiError ? err.body : null);
+      setBanner({
+        tone: "error",
+        text: out?.kind === "message" ? out.msg : "Couldn't leave the waitlist. Please try again.",
+      });
+    } finally {
+      // Everyone behind the member moves up, so positions are re-read, not guessed.
+      await reload();
+      setLeaving(false);
+      setLeaveTarget(null);
+    }
+  }
 
   return (
     <div>
-      <header className="mb-5 md:mb-6 flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-muted">Welcome back</p>
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-ink truncate">
-            Hi, {firstName}
-          </h1>
+      <AccountPageHeader
+        title="Your bookings"
+        action={
+          <Link href="/" className={cn(BTN_BOOK, "hidden sm:inline-flex min-h-[44px]")}>
+            <CalendarPlus className="h-4 w-4" aria-hidden />
+            Book a class
+          </Link>
+        }
+      />
+
+      {/* Back from a payment page the member left (#274). */}
+      <CancelledBanner className="mb-5" />
+      {submitted && (
+        <div role="status" className="mb-5 rounded-xl border border-sage/30 bg-sage/10 px-4 py-3 text-sm text-ink">
+          {submitted}
         </div>
-        <Link
-          href="/"
-          className="hidden sm:inline-flex shrink-0 items-center gap-2 rounded-full bg-ink px-5 min-h-[44px] text-sm font-semibold text-paper hover:bg-ink/90 transition-colors"
+      )}
+
+      {/* Money paid that has granted nothing yet — the one thing here waiting on the member. */}
+      <div className="mb-6 empty:hidden [&>*:first-child]:mt-0">
+        <OpenPurchases purchases={openPurchases} partPayment={partPayment} failed={openPurchasesFailed} />
+      </div>
+
+      <ComingUp refreshKey={ticketRefresh} onChanged={reload} onResolved={setTicketKey} />
+
+      {banner && (
+        <div
+          role="status"
+          className={cn(
+            "mb-4 flex items-start justify-between gap-3 rounded-xl border p-3 text-sm text-ink",
+            banner.tone === "ok" && "border-sage/25 bg-sage/10",
+            banner.tone === "warn" && "border-warning/30 bg-warning/10",
+            banner.tone === "error" && "border-error/25 bg-error/10",
+          )}
         >
-          <CalendarPlus className="h-4 w-4" />
-          Book a class
-        </Link>
-      </header>
-
-      {/* Back from a payment page the member left — a standalone Add-On, or
-          paying more towards an unfinished purchase (#274). */}
-      <CancelledBanner className="mb-6" />
-
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-x-8">
-        <div className="min-w-0">
-          {/* The class running now or next as the ticket, with its check-in QR
-              one tap away (#192); the rest beside it, swiped through. */}
-          <ComingUp />
-
-          {/* Unfinished purchases — money paid that has granted nothing yet. */}
-          <div className="[&>*:first-child]:mt-0 mb-6 empty:hidden">
-            <OpenPurchases
-              purchases={openPurchases}
-              partPayment={partPayment}
-              failed={openPurchasesFailed}
-            />
-          </div>
-
+          <span>{banner.text}</span>
+          <button
+            type="button"
+            onClick={() => setBanner(null)}
+            aria-label="Dismiss"
+            className="shrink-0 text-muted hover:text-ink transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
+      )}
 
-        <aside className="min-w-0">
-          {/* Every package the member holds, running or still waiting for its
-              first booking — each card says which, so a Dormant one is never
-              passed off as active. */}
-          <section aria-labelledby="packages-heading" className="mb-8">
-            <SectionTitle action={{ href: "/packages", label: "Buy more" }}>
-              <span id="packages-heading">Your packages</span>
-            </SectionTitle>
-            {pkgLoading ? (
-              <ContentLoading label="Loading your packages" className="min-h-24" />
-            ) : packages.length === 0 ? (
-              <div className={cn(cardClass, "p-5")}>
-                <p className="font-semibold text-ink">No packages yet</p>
-                <p className="text-sm text-muted mt-0.5">
-                  A class bundle, unlimited pass or PT package unlocks booking.
-                </p>
-                <Link
-                  href="/packages"
-                  className="mt-4 inline-flex items-center justify-center rounded-full bg-ink px-5 min-h-[44px] text-sm font-semibold text-paper hover:bg-ink/90 transition-colors"
-                >
-                  Browse packages
-                </Link>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-3">
-                {packages.map((p) => (
-                  <PackageCard
-                    key={p.id}
-                    pkg={p}
-                    // The studio has exactly two Locations, so the one this plan
-                    // does not Cover is simply the other row. Presentation only —
-                    // `covers()` in the backend stays the enforcement.
-                    otherLocationName={
-                      p.kind === "pt"
-                        ? null
-                        : locations?.find((l) => l.id !== p.location?.id)?.name ?? null
-                    }
-                    rateSgd={crossLocation.rateSgd}
-                  />
+      <h2 className="mb-3 text-base font-bold text-ink">All bookings</h2>
+      <FilterChips label="Booking type" options={TYPE_OPTIONS} value={type} onChange={setType} className="mb-3" />
+      <SegmentedTabs label="When" tabs={PHASES} value={phase} onChange={setPhase} counts={src ? counts : undefined} />
+
+      {!src && !loadError ? (
+        <ContentLoading label="Loading your bookings" />
+      ) : loadError ? (
+        <div className={cn(CARD, "p-8 text-center")}>
+          <p className="text-sm text-muted">Couldn&apos;t load your bookings.</p>
+          <button type="button" onClick={reload} className={cn(BTN_SECONDARY, "mt-4 min-h-[44px]")}>
+            Try again
+          </button>
+        </div>
+      ) : (
+        <>
+          {showWaitlist && (
+            <section aria-labelledby="waitlisted-heading" className="mb-5">
+              <h3 id="waitlisted-heading" className="mb-2 text-xs font-bold uppercase tracking-wider text-muted">
+                Waitlisted
+              </h3>
+              <div className="space-y-3">
+                {waitlisted.map((e) => (
+                  <WaitlistCard key={e.id} entry={e} onLeave={setLeaveTarget} />
                 ))}
               </div>
-            )}
-          </section>
-        </aside>
-      </div>
-
-      <AccountMenu />
-    </div>
-  );
-}
-
-/**
- * The account's sections as a menu, for phones and tablets where there is no
- * sidebar. It closes the overview rather than opening it: what the member came
- * to see — the next session, their packages — comes first.
- */
-function AccountMenu() {
-  return (
-    <section aria-labelledby="account-menu-heading" className="lg:hidden">
-      <h2 id="account-menu-heading" className="mb-3 text-base font-bold text-ink">
-        Your account
-      </h2>
-      <div className={cn(cardClass, "overflow-hidden")}>
-        <Link
-          href="/account/profile"
-          className="flex items-center justify-between gap-3 p-4 border-b border-ink/5 hover:bg-ink/[0.02] transition-colors"
-        >
-          <AccountHeader size="lg" />
-          <ChevronRight className="h-5 w-5 shrink-0 text-muted" />
-        </Link>
-        <nav aria-label="Account">
-          <ul className="divide-y divide-ink/5">
-            {ACCOUNT_SECTIONS.map(({ href, label, hint, icon: Icon }) => (
-              <li key={href}>
-                <Link
-                  href={href}
-                  className="flex items-center gap-3 px-4 py-3 min-h-[60px] hover:bg-ink/[0.02] transition-colors"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/8 text-accent-deep">
-                    <Icon className="h-[18px] w-[18px]" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-ink">{label}</span>
-                    <span className="block text-xs text-muted truncate">{hint}</span>
-                  </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      </div>
-      <SignOutButton className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-ink/10 bg-card min-h-[52px] text-sm font-semibold text-error hover:bg-error/5 transition-colors" />
-    </section>
-  );
-}
-
-function PackageCard({
-  pkg,
-  otherLocationName,
-  rateSgd,
-}: {
-  pkg: LivePackage;
-  /** The Location this plan does not already Cover, for the Add-On offer. */
-  otherLocationName?: string | null;
-  rateSgd?: string;
-}) {
-  const isUnlimited = pkg.kind === "unlimited";
-  const isPt = pkg.kind === "pt";
-  const unitLabel = isPt ? "sessions" : "credits";
-  // Held back until the rate has loaded, so the card never offers it at S$0.
-  const offerAddOn = otherLocationName && Number(rateSgd) > 0;
-  return (
-    <div className={cn(cardClass, "p-4 sm:p-5")}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className={cn(
-                "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                isPt ? "bg-cyan/15 text-cyan-deep" : "bg-accent/10 text-accent-deep",
-              )}
-            >
-              {isPt ? "Private" : isUnlimited ? "Unlimited" : "Classes"}
-            </span>
-            {/* Running, or Dormant until its first booking: said outright, so a
-                package that has not started never reads as active. */}
-            <span
-              className={cn(
-                "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                pkg.dormant ? "bg-ink/[0.06] text-muted" : "bg-sage/15 text-sage",
-              )}
-            >
-              {pkg.dormant ? "Not started" : "Active"}
-            </span>
-          </div>
-          <p className="mt-1.5 font-semibold text-ink break-words">{pkg.name}</p>
-          <p className="text-xs text-muted mt-1">
-            {pkg.dormant
-              ? dormantLine(pkg)
-              : `Expires ${formatExpiryDate(pkg.expiresAt!)}`}
-          </p>
-          {/* Who this package's sessions are with. Shown only when the backend
-              says it is bound — an open package says nothing rather than
-              claiming "any instructor", which is a promise nobody made. */}
-          {pkg.boundInstructor && (
-            <p className="text-xs text-muted mt-1">
-              Sessions with{" "}
-              <span className="text-ink">{pkg.boundInstructor.name}</span>
-            </p>
+            </section>
           )}
-          {/* What this plan Covers, one chip per Location. The added one says
-              when its coverage ends — losing it is never silent (§5). */}
-          {isUnlimited && pkg.location && (
-            <CoversRow className="mt-2">
-              <LocationChip name={pkg.location.name} />
-              {pkg.crossLocationPaidSgd !== null && (
-                <LocationChip
-                  name={otherLocationName ?? "Both studios"}
-                  until={pkg.expiresAt ? formatExpiryDate(pkg.expiresAt) : null}
+
+          {rows.length === 0 ? (
+            showWaitlist ? null : (
+              <div className={CARD}>
+                <EmptyState icon={CalendarX} {...emptyCopy(type, phase)} />
+              </div>
+            )
+          ) : (
+            <ul className="space-y-3">
+              {rows.map((i) => (
+                <BookingRow
+                  key={i.key}
+                  item={i}
+                  policy={policy}
+                  onCancelClass={setCancelTarget}
+                  onPtCancelled={async (result) => {
+                    const r = ptCancelResult(result.refundOutcome, result.refundedSessions);
+                    setBanner({ tone: r.tone, text: r.text });
+                    await changed();
+                    await refetchPackages();
+                  }}
                 />
-              )}
-            </CoversRow>
+              ))}
+            </ul>
           )}
-          {/* A bundle — a Trial arrives as one — works at every Location. */}
-          {coversAllLocations(pkg.kind) && <AllLocationsRow className="mt-2" />}
-        </div>
-        <div className="text-right shrink-0">
-          <p className="text-2xl font-extrabold text-ink tabular-nums leading-none">
-            {isUnlimited ? "∞" : pkg.creditsOrSessionsRemaining}
-          </p>
-          <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
-            {isUnlimited ? "Unlimited" : unitLabel}
-          </p>
-        </div>
-      </div>
-      {isUnlimited && pkg.location && pkg.crossLocationPaidSgd === null && offerAddOn && (
-        <Link
-          href={`/checkout?add_on=${pkg.id}`}
-          className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-accent/5 px-3 min-h-[44px] text-sm font-semibold text-accent-deep hover:bg-accent/10 transition-colors"
-        >
-          <span className="min-w-0">
-            Add {otherLocationName} for {formatSgd(rateSgd!)}/month
-          </span>
-          <ArrowRight className="h-4 w-4 shrink-0" />
-        </Link>
+        </>
+      )}
+
+      {(type === "pt" || type === "all") && src && src.pt.length > 0 && (
+        <p className="mt-8 text-xs leading-relaxed text-muted">{ptPolicyNote(policy)}</p>
+      )}
+
+      {cancelTarget && (
+        <CancelBookingDialog
+          booking={cancelTarget}
+          policy={policy}
+          onDone={onClassCancelled}
+          onClose={() => setCancelTarget(null)}
+        />
+      )}
+
+      {leaveTarget && (
+        <LeaveWaitlistDialog
+          classTitle={leaveTarget.name}
+          startsAt={leaveTarget.starts_at}
+          position={leaveTarget.position}
+          leaving={leaving}
+          onConfirm={confirmLeave}
+          onClose={() => setLeaveTarget(null)}
+        />
       )}
     </div>
   );
+}
+
+function BookingRow({
+  item,
+  policy,
+  onCancelClass,
+  onPtCancelled,
+}: {
+  item: BookingItem;
+  policy: ReturnType<typeof useCancellationPolicy>;
+  onCancelClass: (b: ApiBooking) => void;
+  onPtCancelled: Parameters<typeof PtBookingCard>[0]["onCancelled"];
+}) {
+  switch (item.type) {
+    case "class":
+      return <ClassBookingCard booking={item.booking} ongoing={item.phase === "ongoing"} onCancel={onCancelClass} />;
+    case "pt":
+      return <PtBookingCard request={item.request} policy={policy} onCancelled={onPtCancelled} />;
+    case "workshop":
+      return <WorkshopBookingCard booking={item.booking} phase={item.phase} />;
+    case "corporate":
+      return <CorporateBookingCard request={item.request} />;
+  }
+}
+
+/** An empty list is a way in: to the page where that kind is booked. */
+function emptyCopy(type: TypeFilter, phase: BookingPhase) {
+  const noun = {
+    all: "bookings",
+    class: "classes",
+    pt: "private sessions",
+    workshop: "workshops",
+    corporate: "corporate requests",
+  }[type];
+  const title =
+    phase === "upcoming" ? `No upcoming ${noun}` : phase === "ongoing" ? `No ${noun} in progress` : `No past ${noun}`;
+  const cta =
+    type === "pt"
+      ? { href: "/private-sessions", label: "Request a session" }
+      : type === "workshop"
+        ? { href: "/workshops", label: "Browse workshops" }
+        : type === "corporate"
+          ? { href: "/packages#corporate", label: "See corporate packages" }
+          : { href: "/", label: "See the schedule" };
+  return phase === "upcoming" ? { title, cta } : { title };
 }

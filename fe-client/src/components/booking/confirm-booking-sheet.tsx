@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, MapPin, UserRound } from "lucide-react";
 import { Portal } from "@/components/ui/portal";
 import {
+  BTN_BOOK,
   BTN_PRIMARY,
   BTN_SECONDARY,
   NOTE,
@@ -244,7 +245,7 @@ export function ConfirmBookingSheet({
                 type="button"
                 onClick={() => pickedPkg && onConfirm(pickedPkg.id, packages.length)}
                 disabled={booking || !pickedPkg}
-                className={BTN_PRIMARY}
+                className={BTN_BOOK}
               >
                 {booking && <Loader2 className="h-4 w-4 animate-spin" />}
                 {booking ? "Booking…" : "Book class"}

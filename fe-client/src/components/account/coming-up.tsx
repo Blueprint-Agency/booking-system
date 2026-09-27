@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * "Coming up" on the account overview: the one booking the member walks into
- * next — a class, a PT session or a workshop, whichever starts first — as the
- * ticket, with its QR and (where the member may still cancel) its Cancel.
- * Everything after it lives on its own page; this screen shows only what is
- * next.
+ * "Up next": the one booking the member walks into next — a class, a PT
+ * session or a workshop, whichever starts first — as the ticket, with its QR
+ * and (where the member may still cancel) its Cancel. Shown above the
+ * schedule and at the top of "Your bookings".
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
+import { useMemberSession } from "@/lib/member-auth";
 import { toast } from "sonner";
 import { Portal } from "@/components/ui/portal";
 import { ContentLoading } from "@/components/ui/content-loading";
@@ -108,7 +108,50 @@ export function nextUp(
   return candidates[0] ?? null;
 }
 
-export function ComingUp() {
+/** The `my-bookings` key of what the ticket shows, so a list beside it can leave it out. */
+function keyOf(next: Next): string {
+  if ("booking" in next) return `class:${next.booking.booking_id}`;
+  if ("pt" in next) return `pt:${next.pt.id}`;
+  return `workshop:${next.workshop.id}`;
+}
+
+/**
+ * The ticket for the member's next booking, with its QR and (where the member
+ * may still cancel) its Cancel — the one component both the schedule and
+ * "Your bookings" show.
+ *
+ *  - `variant="schedule"`: above the class feed; nothing at all while it
+ *    loads, when signed out, or with nothing booked.
+ *  - `refreshKey`: bump it to re-read (the list beside it changed).
+ *  - `onChanged`: a cancel from the ticket went through.
+ */
+export function ComingUp({
+  variant = "account",
+  refreshKey = 0,
+  onChanged,
+  onResolved,
+}: {
+  variant?: "account" | "schedule";
+  refreshKey?: number;
+  onChanged?: () => void;
+  onResolved?: (key: string | null) => void;
+} = {}) {
+  const { isSignedIn } = useMemberSession();
+  if (variant === "schedule" && !isSignedIn) return null;
+  return <ComingUpTicket variant={variant} refreshKey={refreshKey} onChanged={onChanged} onResolved={onResolved} />;
+}
+
+function ComingUpTicket({
+  variant,
+  refreshKey,
+  onChanged,
+  onResolved,
+}: {
+  variant: "account" | "schedule";
+  refreshKey: number;
+  onChanged?: () => void;
+  onResolved?: (key: string | null) => void;
+}) {
   const api = useApi();
   const policy = useCancellationPolicy();
   const { refetch: refetchPackages } = useClientPackages();
@@ -116,6 +159,11 @@ export function ComingUp() {
   const [next, setNext] = useState<Next | null>(null);
   const [cancelClass, setCancelClass] = useState<ApiBooking | null>(null);
   const [cancelPt, setCancelPt] = useState<RawPtRequest | null>(null);
+
+  const resolvedKey = loading ? undefined : next ? keyOf(next) : null;
+  useEffect(() => {
+    if (resolvedKey !== undefined) onResolved?.(resolvedKey);
+  }, [onResolved, resolvedKey]);
 
   const reload = useCallback(async () => {
     try {
@@ -154,13 +202,16 @@ export function ComingUp() {
 
   useEffect(() => {
     reload();
-  }, [reload]);
+  }, [reload, refreshKey]);
 
   async function onClassCancelled(outcome: CancelOutcome) {
     setCancelClass(null);
     const say = outcome.tone === "ok" ? toast.success : outcome.tone === "warn" ? toast.warning : toast.error;
     say(outcome.text);
-    if (outcome.cancelled || outcome.stale) await reload();
+    if (outcome.cancelled || outcome.stale) {
+      await reload();
+      onChanged?.();
+    }
   }
 
   async function onPtDone(result: { tone: "ok" | "warn" | "error"; text: string }) {
@@ -169,6 +220,7 @@ export function ComingUp() {
     say(result.text);
     await reload();
     await refetchPackages();
+    onChanged?.();
   }
 
   // Cancel is offered only where the server would take it: a class until it
@@ -189,40 +241,8 @@ export function ComingUp() {
     onCancel = () => setCancelPt(r);
   }
 
-  return (
-    <section aria-labelledby="coming-up" className="mb-6">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 id="coming-up" className="text-base font-bold text-ink">
-          Coming up
-        </h2>
-        {next && (
-          <Link
-            href="/account/classes"
-            className="inline-flex items-center gap-0.5 text-sm font-semibold text-accent-deep hover:text-accent"
-          >
-            Your classes
-            <ChevronRight className="h-4 w-4" />
-          </Link>
-        )}
-      </div>
-
-      {loading ? (
-        <ContentLoading label="Loading what's coming up" className="min-h-32" />
-      ) : !next ? (
-        <div className={cn(CARD, "flex items-center justify-between gap-3 p-4")}>
-          <p className="text-sm text-muted">Nothing booked yet.</p>
-          <Link
-            href="/"
-            className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-accent-deep hover:text-accent"
-          >
-            Book a class
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-      ) : (
-        <NextTicketCard ticket={next.ticket} className="mb-0" onCancel={onCancel} />
-      )}
-
+  const dialogs = (
+    <>
       {cancelClass && (
         <CancelBookingDialog
           booking={cancelClass}
@@ -241,6 +261,44 @@ export function ComingUp() {
           onClose={() => setCancelPt(null)}
         />
       )}
+    </>
+  );
+
+  // On the schedule the ticket is an extra: no placeholder, no empty state.
+  if (variant === "schedule") {
+    if (!next) return dialogs;
+    return (
+      <>
+        <NextTicketCard ticket={next.ticket} onCancel={onCancel} />
+        {dialogs}
+      </>
+    );
+  }
+
+  return (
+    <section aria-labelledby="coming-up" className="mb-6">
+      <h2 id="coming-up" className="mb-3 text-base font-bold text-ink">
+        Up next
+      </h2>
+
+      {loading ? (
+        <ContentLoading label="Loading what's coming up" className="min-h-32" />
+      ) : !next ? (
+        <div className={cn(CARD, "flex items-center justify-between gap-3 p-4")}>
+          <p className="text-sm text-muted">Nothing booked yet.</p>
+          <Link
+            href="/"
+            className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-accent-deep hover:text-accent"
+          >
+            Book a class
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      ) : (
+        <NextTicketCard ticket={next.ticket} className="mb-0" onCancel={onCancel} />
+      )}
+
+      {dialogs}
     </section>
   );
 }

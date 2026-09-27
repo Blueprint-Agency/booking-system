@@ -1,5 +1,6 @@
-import { WorkshopBookings } from "@/components/account/workshop-bookings";
+import { redirect } from "next/navigation";
 
+/** Workshops are one filter of "Your bookings"; an old link lands on it. */
 export default function AccountWorkshopsPage() {
-  return <WorkshopBookings />;
+  redirect("/account?type=workshop");
 }

@@ -60,6 +60,8 @@ export interface ClientPackagesData {
   };
   ptSessions: { oneOnOne: number; twoOnOne: number };
   packages: LivePackage[];
+  /** Packages that have run out: expired, or every credit or session used. */
+  ended: LivePackage[];
   /** Every live Unlimited Plan, running ones first. Several may be homed at different Locations. */
   unlimitedPlans: UnlimitedPlanCoverage[];
   /** The Cross-Location Add-On, as the backend states it (§5). */
@@ -86,6 +88,8 @@ export interface ClientPackagesValue {
   pt1on1: number;
   pt2on1: number;
   packages: LivePackage[];
+  /** Packages that have run out: expired, or every credit or session used. */
+  endedPackages: LivePackage[];
   loading: boolean;
   refetch: () => Promise<void>;
 }
@@ -173,25 +177,26 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
     }
   }
 
-  const packages: LivePackage[] = pkgs
-    .filter(isActive)
-    .map((p) => ({
-      id: p.id,
-      // Trial credits live in the class-credit wallet; surface them as a bundle.
-      kind: p.kind === "trial" ? "credit_bundle" : p.kind,
-      name: p.package_name,
-      creditsOrSessionsRemaining: p.credits_or_sessions_remaining,
-      expiresAt: p.expires_at,
-      purchasedAt: p.purchased_at,
-      amountPaidSgd: p.amount_paid_sgd,
-      active: p.active,
-      dormant: p.dormant,
-      validityDays: p.validity_days ?? null,
-      crossLocationPaidSgd: p.cross_location_paid_sgd,
-      location: p.unlimited_location ?? null,
-      sessionType: p.session_type,
-      boundInstructor: p.bound_instructor ?? null,
-    }));
+  const toPackage = (p: RawClientPackage): LivePackage => ({
+    id: p.id,
+    // Trial credits live in the class-credit wallet; surface them as a bundle.
+    kind: p.kind === "trial" ? "credit_bundle" : p.kind,
+    name: p.package_name,
+    creditsOrSessionsRemaining: p.credits_or_sessions_remaining,
+    expiresAt: p.expires_at,
+    purchasedAt: p.purchased_at,
+    amountPaidSgd: p.amount_paid_sgd,
+    active: p.active,
+    dormant: p.dormant,
+    validityDays: p.validity_days ?? null,
+    crossLocationPaidSgd: p.cross_location_paid_sgd,
+    location: p.unlimited_location ?? null,
+    sessionType: p.session_type,
+    boundInstructor: p.bound_instructor ?? null,
+  });
+  const packages = pkgs.filter(isActive).map(toPackage);
+  // Expired or used up: the Your packages page lists them under Ended.
+  const ended = pkgs.filter((p) => !isActive(p)).map(toPackage);
 
   return {
     classCredits: {
@@ -203,6 +208,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
     },
     ptSessions: { oneOnOne: ent.pt_1on1_remaining ?? 0, twoOnOne: ent.pt_2on1_remaining ?? 0 },
     packages,
+    ended,
     unlimitedPlans: ent.unlimited_plans ?? [],
     crossLocation: {
       planId: ent.unlimited_plan_id ?? null,
@@ -290,6 +296,7 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
     pt1on1: data?.ptSessions?.oneOnOne ?? 0,
     pt2on1: data?.ptSessions?.twoOnOne ?? 0,
     packages: data?.packages ?? [],
+    endedPackages: data?.ended ?? [],
     loading,
     refetch: load,
   };

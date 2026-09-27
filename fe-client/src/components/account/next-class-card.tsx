@@ -8,21 +8,16 @@
  * A class already running comes first: a member who arrives late still has
  * something to show the desk, and the desk can still scan it until the day is
  * out. `/me/bookings/upcoming` stops at the start time, so a running class is
- * found the way My Classes finds its Ongoing tab — in `/past`, not yet ended.
- *
- * `MyNextClass` loads both lists for a signed-in member and renders nothing
- * without a booking to show.
+ * found the way Your bookings finds its Ongoing ones — in `/past`, not yet
+ * ended. `ComingUp` (`coming-up.tsx`) loads it and adds the Cancel.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { CheckCircle2, MapPin, QrCode, UserRound } from "lucide-react";
 import { QrFullScreen } from "@/components/account/qr-badge";
 import { DateStub } from "@/components/account/date-stub";
 import type { ApiBooking } from "@/components/account/class-bookings";
 import { cn, formatDate } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
-import { useApi } from "@/lib/api";
-import { useMemberSession } from "@/lib/member-auth";
-import { reportError } from "@/lib/report-error";
 
 /**
  * A confirmed class running now (started, not ended), else the soonest
@@ -69,11 +64,6 @@ export function classTicket(b: ApiBooking): Ticket {
     code: b.code,
     attended: b.check_in_state === "attended",
   };
-}
-
-/** The class ticket, as the schedule shows it above the feed. */
-export function NextClassCard({ booking, className }: { booking: ApiBooking; className?: string }) {
-  return <NextTicketCard ticket={classTicket(booking)} className={className} />;
 }
 
 /**
@@ -187,50 +177,4 @@ export function NextTicketCard({
       )}
     </section>
   );
-}
-
-/**
- * The card, loading the member's bookings itself. `onResolved` hears which
- * booking it settled on (or null), so a list beside it can leave that one out.
- */
-export function MyNextClass({
-  onResolved,
-}: {
-  onResolved?: (bookingId: string | null) => void;
-} = {}) {
-  const api = useApi();
-  const { isSignedIn } = useMemberSession();
-  const [booking, setBooking] = useState<ApiBooking | null>(null);
-
-  const resolvedId = booking?.booking_id ?? null;
-  useEffect(() => {
-    onResolved?.(resolvedId);
-  }, [onResolved, resolvedId]);
-
-  useEffect(() => {
-    if (!isSignedIn) {
-      setBooking(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const [upcoming, past] = await Promise.all([
-          api.get<{ bookings: ApiBooking[] }>("/me/bookings/upcoming"),
-          api.get<{ bookings: ApiBooking[] }>("/me/bookings/past"),
-        ]);
-        if (!cancelled) setBooking(nextClass(upcoming.bookings ?? [], past.bookings ?? [], Date.now()));
-      } catch (err) {
-        // The card is an extra on a page that works without it: say nothing.
-        reportError(err, { scope: "next-class" });
-        if (!cancelled) setBooking(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [api, isSignedIn]);
-
-  if (!isSignedIn || !booking) return null;
-  return <NextClassCard booking={booking} />;
 }

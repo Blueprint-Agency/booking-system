@@ -15,7 +15,7 @@ import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { FilterChips } from "@/components/ui/filter-chips";
 import { Portal } from "@/components/ui/portal";
 import { ContentLoading } from "@/components/ui/content-loading";
-import { AllLocationsRow } from "@/components/ui/location-chip";
+import { AllLocationsRow, HomeStudioRow } from "@/components/ui/location-chip";
 import { coversAllLocations } from "@/lib/package-coverage";
 import {
   BTN_PRIMARY,
@@ -557,7 +557,7 @@ function PackageCard({
   badge,
   price,
   features,
-  allLocations = false,
+  covers = null,
   highlight = false,
   children,
 }: {
@@ -567,8 +567,8 @@ function PackageCard({
   badge?: string | null;
   price: React.ReactNode;
   features?: string[];
-  /** A Covers row under the validity line holding one "All locations" chip. */
-  allLocations?: boolean;
+  /** Where it can be used, as chips under the validity line. */
+  covers?: "all" | "home" | null;
   highlight?: boolean;
   /** The action. */
   children: React.ReactNode;
@@ -585,7 +585,8 @@ function PackageCard({
       </div>
       <p className="mt-2 text-3xl font-extrabold tracking-tight text-ink leading-none">{headline}</p>
       {sub && <p className="mt-1.5 text-sm text-muted">{sub}</p>}
-      {allLocations && <AllLocationsRow className="mt-2" />}
+      {covers === "all" && <AllLocationsRow className="mt-2.5" />}
+      {covers === "home" && <HomeStudioRow className="mt-2.5" />}
       <div className="mt-4">{price}</div>
       {features && features.length > 0 && (
         <ul className="mt-4 space-y-1.5 border-t border-ink/5 pt-4 text-sm text-ink/80">
@@ -600,6 +601,16 @@ function PackageCard({
       <div className="mt-auto pt-5">{children}</div>
     </div>
   );
+}
+
+/**
+ * How long a package lasts and when its clock starts: never at purchase, but
+ * at the first class booked with it — for PT, the first session the studio
+ * schedules (§3). The number is the studio's own `validity_days`.
+ */
+function validityLine(days: number | null | undefined, first: "class" | "session"): string {
+  if (days == null) return "No expiry";
+  return `Use within ${days} ${days === 1 ? "day" : "days"} of your first ${first}`;
 }
 
 const promo = (pkg: ApiClassPackage | ApiPtPackage) => (hasDiscount(pkg) ? "Promo" : null);
@@ -636,15 +647,12 @@ function BundleCard({
   disabledReason: string;
 }) {
   const credits = pkg.credits ?? 0;
-  // The days count from the member's first class, not from purchase (§3).
-  const validity =
-    pkg.validity_days != null ? `Valid ${pkg.validity_days} days from your first class` : "No expiry";
   return (
     <PackageCard
       name={pkg.name}
       headline={`${credits} ${credits === 1 ? "credit" : "credits"}`}
-      sub={validity}
-      allLocations={coversAllLocations(pkg.kind)}
+      sub={validityLine(pkg.validity_days, "class")}
+      covers={coversAllLocations(pkg.kind) ? "all" : null}
       badge={promo(pkg)}
       price={<PriceBlock pkg={pkg} />}
     >
@@ -682,10 +690,11 @@ function UnlimitedCard({
     <PackageCard
       name={pkg.name}
       headline={months}
-      sub="Unlimited group classes"
+      sub="Starts at your first class"
+      covers="home"
       badge={promo(pkg)}
       price={<PriceBlock pkg={pkg} />}
-      features={["No weekly class limit", "One home studio, chosen at checkout"]}
+      features={["Unlimited group classes", "No weekly class limit"]}
     >
       {disabled ? (
         <DisabledButton>{disabledReason}</DisabledButton>
@@ -725,8 +734,6 @@ function TrialCard({
   const credits = pkg.credits ?? 1;
   const isFree = Number(pkg.effective_price_sgd) === 0;
   const onlinePayments = useOnlinePayments();
-  const validity =
-    pkg.validity_days != null ? `Valid ${pkg.validity_days} days from your first class` : "No expiry";
 
   const ctaClass = cn(CARD_BUTTON, isClaiming && "opacity-70 cursor-wait");
 
@@ -734,8 +741,8 @@ function TrialCard({
     <PackageCard
       name={pkg.name}
       headline={`${credits} ${credits === 1 ? "credit" : "credits"}`}
-      sub={validity}
-      allLocations={coversAllLocations(pkg.kind)}
+      sub={validityLine(pkg.validity_days, "class")}
+      covers={coversAllLocations(pkg.kind) ? "all" : null}
       badge="Trial"
       highlight
       price={<PriceBlock pkg={pkg} />}
@@ -835,7 +842,8 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
     <PackageCard
       name={pkg.name}
       headline={`${pkg.num_sessions} ${pkg.num_sessions === 1 ? "session" : "sessions"}`}
-      sub={`Valid ${pkg.validity_days} ${pkg.validity_days === 1 ? "day" : "days"} from your first scheduled session`}
+      sub={validityLine(pkg.validity_days, "session")}
+      covers="all"
       badge={promo(pkg)}
       price={
         <div className="flex items-baseline justify-between gap-2">
@@ -849,7 +857,6 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
         // is open to any instructor, so the old unconditional promise was one
         // the studio had not made.
         pkg.instructor_bound ? "The same instructor every session" : "Any instructor",
-        "Any location",
       ]}
     >
       <BuyButton

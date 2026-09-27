@@ -209,6 +209,9 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 - **No dollar price shown** — credits only. (A user without a Bundle/Unlimited can still book a single class via the **One-time Pass** under `/packages`, which acts as the drop-in path.)
 
 **Layout & controls**
+- _As built:_ a signed-in member's next booking leads the schedule as the same ticket "Your bookings" opens with (§8.1, `ComingUp`), Cancel included; a cancel there re-reads the feed.
+- _As built:_ the cancellation rules sit under the filters in a **yellow-framed "Cancellation policy" notice**, one short line each (`classPolicyPoints`): the window ("Cancel at least 2 hours before class to get your credit back."), the cap and what going over it costs ("Limit: 3 cancellations per 30 days. Go over it and the credit isn't returned, even in time."), and the late rule ("Cancel later and the credit isn't returned."). The Book sheet keeps the full sentence (`classBookingPolicy`). The cancel dialog frames its notice amber whenever the credit will stay spent — late, or over the cap — and names the cap.
+- _As built:_ each row is time · class and instructor · location · cost · action; from `md` up the location and the cost are columns of their own, so they line up down the day whatever the instructor's name. Every **Book Now** (row, class detail, Book sheet's "Book class", workshop "Book now") wears the studio accent (`BTN_BOOK`).
 - The schedule shows the next **10 days** (today and the nine after it), grouped by day. Past classes and days with no classes are left out.
 - The days are an **accordion, at most one open**. The soonest day with classes opens by default; each collapsed day shows its label ("Today", "Tomorrow", or the weekday, with the date) and its class count. Tapping a collapsed day opens it and closes the one that was open; tapping the open day closes it, leaving none open. Days slide open and shut (no slide with reduced motion). The open day's header stays pinned under the top bar while its classes scroll.
 - After a day opens, the page scrolls so its first class sits a quarter of the way down the screen (or as near as the foot of the page allows). After the open day is closed, if its header is above the screen, the page scrolls it back to just under the top bar.
@@ -438,7 +441,8 @@ Fields, in order:
   2. **Credit Bundles** — N credits, validity in days, fixed SGD price. Examples: Bundle of 10 (S$300 / 90d), Bundle of 20 (S$550 / 180d), Bundle of 30/50/100.
   3. **Unlimited** — duration-based (1 / 3 / 6 months) at a fixed price; lets the holder book unlimited group classes **at one Home Location, chosen at checkout** (§7) — never both, unless the plan also carries a paid Cross-Location Add-On. The card reads "Covers one studio — you choose at checkout," not "Valid across both locations."
   4. **VIP Private Sessions** — 1-on-1 or 2-on-1 packs with a session count.
-- **Where a package works.** A Trial Pass or Credit Bundle card carries a "Covers" row under its validity line holding one map-pin **All locations** chip — the same pill an Unlimited plan uses for its Locations, and the same wording at a studio with one Location. The Account's active packages card shows it in the same row where an Unlimited plan lists its Locations. The shop's Unlimited card and PT cards carry no chip.
+- **Where a package works.** A Trial Pass or Credit Bundle card carries a "Covers" row under its validity line holding one map-pin **All locations** chip — the same pill an Unlimited plan uses for its Locations, and the same wording at a studio with one Location. The Account's active packages card shows it in the same row where an Unlimited plan lists its Locations. _As built:_ the shop's Unlimited card carries one **One home studio, chosen at checkout** chip in that row, and a PT card an **All locations** chip (it replaced the "Any location" feature line), so every card answers "where?" in the same place.
+- **How long it lasts.** The line under the headline reads **"Use within N days of your first class"** (PT: "…of your first session"; an Unlimited card: "Starts at your first class"). N is the studio's own `validity_days`, printed as stored — to show 60 rather than 59, the studio edits the package's validity in the portal.
 - A user holding a Bundle cannot purchase Unlimited (and vice versa) until the existing one expires or is exhausted. UI flags this and blocks purchase with copy. Trial Pass and VIP are independent and can co-exist with any other holding.
 - Trial sits at the top of the page above the Credits / Unlimited toggle. VIP sits as an independent fourth section.
 - Who may buy a trial, and what happens if they turn out not to qualify, is **studio policy** and so studio data: `tenant_settings.copy->>'trial.terms'` (plain text). When set, it shows above the trial cards and in an acknowledgement dialog before checkout, whose checkbox reads `trial.acknowledgement` (a neutral "I have read and accept these terms." when unset). When `trial.terms` is unset there is no notice and no dialog.
@@ -562,9 +566,25 @@ Every purchase succeeds even if the email fails to send — the send is a fire-a
 
 ## 8. Account portal `/account/*`
 
-The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pages share an `AccountShell`.
+The account section is a sticky sidebar (desktop, from `lg`) / a sideways-scrolling row of tabs above the page (below `lg`) — the same four items in the same order: **Your bookings** (`/account`), **Your packages** (`/account/packages`), **Merch**, **Profile & security**. All sub-pages share an `AccountShell`. **Sign out** is red: at the foot of the sidebar, and at the foot of Profile & security below `lg`.
 
-### 8.1 Dashboard `/account`
+### 8.1 Your bookings `/account` (as built)
+
+Every booking and request the member holds, in one list (`lib/my-bookings.ts`, tested in `my-bookings.test.ts`):
+
+- **Up next** leads: the one ticket of §8.1's "Coming up" below — the same component the schedule shows above its feed (`ComingUp`), with **Show my QR** and a red **Cancel**. What it shows is left out of the list.
+- **Filters**: booking type chips — **All / Classes / Private / Workshops / Corporate** — and **Upcoming / Ongoing / Past** tabs with counts. `?type=` (`class`, `pt`, `workshop`, `corporate`) and `?when=` open it filtered.
+- **Placing**: a class is Upcoming until it starts, Ongoing while it runs, Past once it ends or is cancelled. A **pending PT or corporate request is Upcoming** (it can still be cancelled); a scheduled one follows its session; attended or cancelled is Past. A workshop with no dates yet is Upcoming; a cancelled one is Past.
+- **One card for every kind** (`booking-cards.tsx`): date stub, a kind tag (class accent, PT gold, workshop green, corporate cyan) and a status tag, the name, the time, then instructor / location / room / partner / tier as chips, the QR where there is one, and the check-in code with the action in the footer. Every cancel is **red** (`BTN_CANCEL`): Cancel on a class, Cancel request / Cancel on a PT request, Leave waitlist.
+- **Waitlisted** places sit above the Upcoming list (All or Classes).
+- Unfinished purchases (#93) and the checkout-cancelled banner (#274) sit at the top, as they did on the old dashboard.
+- The old per-kind pages — `/account/classes`, `/account/private-sessions`, `/account/workshops`, `/account/corporate` — redirect here with their filter set (`?submitted=1` from a PT request becomes the "Your request is in" banner).
+
+### 8.1a Your packages `/account/packages` (as built)
+
+Every package the member has bought, each marked **Active**, **Not started** (Dormant until its first booking) or, once run out, **Expired** / **Used up**. Tabs **Current** (the default: Active and Not started) / **Active** / **Not started** / **Ended**, with counts. Current ones show their balance and Covers chips (an Unlimited plan its Home Location and any Add-On; a bundle, trial or PT package "All locations"), and the Add-On offer where it applies. Ended ones come from the same `GET /me/packages` read (the rows `active` is false for, or whose expiry has passed), shown dimmed without a balance.
+
+### 8.1-old Dashboard `/account` (superseded by §8.1 / §8.1a above)
 
 **Business logic**
 - Summary / hub view that consolidates:
@@ -611,6 +631,8 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 
 ### 8.3 My Classes `/account/classes`
 
+> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account?type=class`.
+
 **Business logic**
 - Tabs: **Upcoming** / **Past**.
 - Upcoming row: class title, instructor, date/time, location, QR action, cancel/reschedule actions (gated by cancellation policy).
@@ -625,6 +647,8 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 
 ### 8.4 My Workshops `/account/workshops`
 
+> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account?type=workshop`.
+
 **Business logic**
 - Same upcoming/past split, scoped to workshops.
 - Includes refund status if a past workshop was cancelled.
@@ -633,6 +657,8 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 - Admin manages refunds and roster. Can move attendees between dates.
 
 ### 8.5 My Private Sessions `/account/private-sessions`
+
+> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account?type=pt`. Pending requests list under Upcoming, cancelled ones under Past.
 
 **Business logic**
 - Four groupings visible to the user: **Pending** (awaiting studio), **Confirmed** (scheduled upcoming), **Past** (attended), **Cancelled** (rolls up both `cancelled_before_scheduled` and `cancelled_after_scheduled`).
@@ -674,6 +700,8 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 - Admin sets the reward amount; can blacklist abusive codes; can manually mark a conversion.
 
 ### 8.8 My Corporate `/account/corporate`
+
+> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account?type=corporate`.
 
 **Business logic**
 - Lists the user's corporate requests, one card per request, with a status that the FE reflects back from the backend:

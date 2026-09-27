@@ -16,6 +16,7 @@ import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { formatClassTime, type ApiClassCard, type ClassEntitlements } from "@/lib/classes";
 import { credits, planCoverage } from "@/lib/package-picker";
 import {
+  BOOK_FILL,
   BTN_PRIMARY,
   BTN_SECONDARY,
   SHEET_ACTIONS,
@@ -115,6 +116,7 @@ export function ClassRow({
   const bookErrorTrapRef = useFocusTrap<HTMLDivElement>(Boolean(bookError));
   useBodyScrollLock(showNoPackage || Boolean(bookError));
   const isFull = spotsLeft <= 0;
+  const fewLeft = !isFull && !booked && spotsLeft <= 3;
   const locationName = cls.location?.name ?? null;
 
   // The member's Unlimited Plans cover other studios, and none this one (§2).
@@ -377,7 +379,7 @@ export function ClassRow({
             setConfirmLeave(true);
           }}
           disabled={leaving}
-          className="min-h-[40px] px-2 text-xs font-medium text-muted underline underline-offset-2 hover:text-error transition-colors disabled:cursor-wait"
+          className="min-h-[40px] px-2 text-xs font-semibold text-error underline underline-offset-2 hover:text-error/80 transition-colors disabled:cursor-wait"
         >
           Leave
         </button>
@@ -410,10 +412,7 @@ export function ClassRow({
       <button
         onClick={(e) => requestBook(e)}
         disabled={booking}
-        className={cn(
-          shape,
-          "bg-ink text-paper hover:bg-ink/90 transition-colors disabled:opacity-70 disabled:cursor-wait",
-        )}
+        className={cn(shape, BOOK_FILL)}
       >
         {booking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         {booking ? "Booking…" : "Book Now"}
@@ -445,49 +444,55 @@ export function ClassRow({
           <div className="text-xs text-muted">{formatClassTime(cls.ends_at)}</div>
         </div>
 
+        {/* The class and who teaches it. From `md` up the location and the
+            cost leave this block for columns of their own, so they line up
+            down the day however long a name runs. */}
         <div className="min-w-0 flex-1">
           <p className="sm:hidden text-xs font-semibold text-ink/70 tabular-nums">{timeRange}</p>
           <h3 className="font-semibold text-ink leading-snug break-words">
             {cls.class_type.name}
           </h3>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
             <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
-              <UserRound className="h-3.5 w-3.5 shrink-0 text-ink/30" />
+              <UserRound className="h-3.5 w-3.5 shrink-0 text-ink/30" aria-hidden />
               <span className="truncate">{cls.instructor.name}</span>
             </span>
             {showLocation && locationName && (
-              <>
-                <span aria-hidden className="text-ink/20">·</span>
-                <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
-                  <MapPin className="h-3.5 w-3.5 shrink-0 text-ink/30" />
-                  <span className="truncate">{locationName}</span>
-                </span>
-              </>
+              <span className="md:hidden inline-flex items-center gap-1 min-w-0 max-w-full">
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-ink/30" aria-hidden />
+                <span className="truncate">{locationName}</span>
+              </span>
             )}
-            {!isFull && !booked && spotsLeft <= 3 && (
-              <>
-                <span aria-hidden className="text-ink/20">·</span>
-                <span className="font-medium text-accent-deep">
-                  {spotsLeft} left
-                </span>
-              </>
-            )}
-            <span aria-hidden className="text-ink/20">·</span>
-            <span className="tabular-nums">{credits(cls.credit_cost)}</span>
+            <span className="md:hidden tabular-nums">
+              {credits(cls.credit_cost)}
+              {fewLeft && <span className="font-semibold text-accent-deep"> · {spotsLeft} left</span>}
+            </span>
             {/* The class takes only some packages; which ones is in the detail. */}
             {cls.restricted && (
-              <>
-                <span aria-hidden className="text-ink/20">·</span>
-                <span className="inline-flex items-center gap-1 font-medium text-ink/70">
-                  <Ticket className="h-3.5 w-3.5 shrink-0 text-ink/30" aria-hidden />
-                  {RESTRICTED_HINT}
-                </span>
-              </>
+              <span className="inline-flex items-center gap-1 font-medium text-ink/70">
+                <Ticket className="h-3.5 w-3.5 shrink-0 text-ink/30" aria-hidden />
+                {RESTRICTED_HINT}
+              </span>
             )}
           </div>
         </div>
 
-        <div className="pointer-events-auto shrink-0">{cta}</div>
+        {showLocation && (
+          <div className="hidden md:flex w-36 shrink-0 items-center gap-1.5 text-sm text-muted">
+            {locationName && (
+              <>
+                <MapPin className="h-4 w-4 shrink-0 text-ink/30" aria-hidden />
+                <span className="truncate">{locationName}</span>
+              </>
+            )}
+          </div>
+        )}
+        <div className="hidden md:block w-20 shrink-0 text-sm tabular-nums">
+          <div className="text-muted">{credits(cls.credit_cost)}</div>
+          {fewLeft && <div className="text-xs font-semibold text-accent-deep">{spotsLeft} left</div>}
+        </div>
+
+        <div className="pointer-events-auto flex shrink-0 justify-end md:min-w-32">{cta}</div>
       </div>
 
       {/* The one offer on a class no plan covers: the Add-On. Credits, where

@@ -1,0 +1,106 @@
+/**
+ * "Your bookings": everything a member holds at the studio — classes, PT
+ * sessions and requests, workshops, corporate requests — as one list, each
+ * placed in Upcoming, Ongoing or Past. Pure, so the placing is tested
+ * (`my-bookings.test.ts`) apart from the page that draws it.
+ *
+ * A request still waiting on the studio (a pending PT or corporate request)
+ * counts as Upcoming: it is something coming, and it can still be cancelled.
+ */
+import type { ApiBooking } from "@/components/account/class-bookings";
+import type { ApiWorkshopBooking } from "@/components/account/workshop-bookings";
+import type { RawPtRequest } from "@/lib/pt-sessions";
+import type { ApiCorporateRequest } from "@/lib/corporate";
+
+export type BookingType = "class" | "pt" | "workshop" | "corporate";
+export type BookingPhase = "upcoming" | "ongoing" | "past";
+
+interface Base {
+  /** Unique across types: `${type}:${id}`. */
+  key: string;
+  phase: BookingPhase;
+  /** What the list sorts by. */
+  at: string;
+}
+
+export type BookingItem =
+  | (Base & { type: "class"; booking: ApiBooking })
+  | (Base & { type: "pt"; request: RawPtRequest })
+  | (Base & { type: "workshop"; booking: ApiWorkshopBooking })
+  | (Base & { type: "corporate"; request: ApiCorporateRequest });
+
+export interface BookingSources {
+  /** `GET /me/bookings/upcoming` — classes not yet started. */
+  upcoming: ApiBooking[];
+  /** `GET /me/bookings/past` — classes started, running or ended. */
+  past: ApiBooking[];
+  pt: RawPtRequest[];
+  workshops: ApiWorkshopBooking[];
+  corporate: ApiCorporateRequest[];
+}
+
+const ms = (iso: string) => new Date(iso).getTime();
+
+/** By its times: not started, running, or over. */
+function byTime(startsAt: string, endsAt: string | null, now: number): BookingPhase {
+  if (ms(startsAt) > now) return "upcoming";
+  if (endsAt && ms(endsAt) > now) return "ongoing";
+  return "past";
+}
+
+/** A PT request's first proposed slot, as an instant at midday studio time. */
+function firstSlot(r: RawPtRequest): string | null {
+  const s = r.slots[0];
+  return s ? `${s.proposed_date.slice(0, 10)}T12:00:00+08:00` : null;
+}
+
+export function bookingItems(src: BookingSources, now: number): BookingItem[] {
+  const items: BookingItem[] = [];
+
+  for (const b of src.upcoming) {
+    items.push({ type: "class", key: `class:${b.booking_id}`, phase: "upcoming", at: b.starts_at, booking: b });
+  }
+  for (const b of src.past) {
+    const running = b.state === "confirmed" && ms(b.ends_at) > now;
+    items.push({
+      type: "class",
+      key: `class:${b.booking_id}`,
+      phase: running ? "ongoing" : "past",
+      at: b.starts_at,
+      booking: b,
+    });
+  }
+
+  for (const r of src.pt) {
+    const at = r.session?.starts_at ?? firstSlot(r) ?? r.created_at;
+    let phase: BookingPhase;
+    if (r.status === "pending") phase = "upcoming";
+    else if (r.status === "scheduled" && r.session) phase = byTime(r.session.starts_at, r.session.ends_at, now);
+    else phase = "past";
+    items.push({ type: "pt", key: `pt:${r.id}`, phase, at, request: r });
+  }
+
+  for (const w of src.workshops) {
+    let phase: BookingPhase;
+    if (w.state === "cancelled") phase = "past";
+    else if (!w.starts_at) phase = "upcoming";
+    else phase = byTime(w.starts_at, w.ends_at ?? w.starts_at, now);
+    items.push({ type: "workshop", key: `workshop:${w.id}`, phase, at: w.starts_at ?? w.booked_at, booking: w });
+  }
+
+  for (const r of src.corporate) {
+    let phase: BookingPhase;
+    if (r.status === "pending") phase = "upcoming";
+    else if (r.status === "scheduled") phase = r.session ? byTime(r.session.starts_at, r.session.ends_at, now) : "upcoming";
+    else phase = "past";
+    items.push({ type: "corporate", key: `corporate:${r.id}`, phase, at: r.session?.starts_at ?? r.created_at, request: r });
+  }
+
+  return items;
+}
+
+/** Soonest first while it is still to come; most recent first once it is over. */
+export function sortForPhase(items: BookingItem[], phase: BookingPhase): BookingItem[] {
+  const dir = phase === "past" ? -1 : 1;
+  return [...items].sort((a, b) => dir * a.at.localeCompare(b.at));
+}

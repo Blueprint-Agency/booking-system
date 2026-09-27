@@ -5,6 +5,7 @@ import { Lock } from "lucide-react";
 import { ChangePasswordCard } from "@/components/account/change-password-card";
 import { SavedCardsCard } from "@/components/account/saved-cards-card";
 import { AccountPageHeader } from "@/components/account/account-page-header";
+import { SignOutButton } from "@/components/account/sign-out-button";
 import { Select } from "@/components/ui/select";
 import { ApiError, useApi } from "@/lib/api";
 import { refreshAppUser } from "@/lib/auth";
@@ -247,6 +248,9 @@ export default function ProfilePage() {
         <SavedCardsCard />
 
         <ChangePasswordCard />
+
+        {/* Below `lg` there is no sidebar to hold it. */}
+        <SignOutButton className="lg:hidden flex w-full items-center justify-center gap-2 rounded-2xl border border-error/30 bg-card min-h-[52px] text-sm font-semibold text-error hover:bg-error/5 transition-colors" />
       </div>
     </div>
   );

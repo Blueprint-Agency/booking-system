@@ -79,13 +79,13 @@ test('CXL-39 a member cancels inside the window: a late cancel, and the credit s
 })
 
 /**
- * The balance on the member's one package card on /account, read fresh on
- * each visit; the page the journey was on is returned to after.
+ * The balance on the member's one package card on /account/packages, read
+ * fresh on each visit; the page the journey was on is returned to after.
  */
 async function expectCredits(page: Page, credits: number) {
   const { urls, catalogue } = studio()
   const back = page.url()
-  await page.goto(`${urls.client}/account`)
+  await page.goto(`${urls.client}/account/packages`)
   // The innermost card holding both the package's name and its balance.
   const card = page
     .locator('div')

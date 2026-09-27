@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Portal } from "@/components/ui/portal";
 import {
+  BTN_BOOK,
   BTN_PRIMARY,
   BTN_SECONDARY,
   OVERLAY_ACTIONS,
@@ -378,7 +379,7 @@ function PrimaryAction({
   switch (action) {
     case "book":
       return (
-        <button type="button" onClick={onBook} className={BTN_PRIMARY}>
+        <button type="button" onClick={onBook} className={BTN_BOOK}>
           Book Now
         </button>
       );

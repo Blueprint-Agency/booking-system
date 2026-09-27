@@ -36,6 +36,9 @@ export function AppLoader() {
   // The pathname effect below lets go a tick after mount — the same handover a
   // navigation makes to the page's own holds.
   const [navLoading, setNavLoading] = useState(true);
+  // A navigation from a click, as against the first load: only then is there
+  // an old page on screen to hide behind the spinner.
+  const [leaving, setLeaving] = useState(false);
   const [contentShown, setContentShown] = useState(false);
   const shown = navLoading || contentShown;
   const shownRef = useRef(shown);
@@ -61,7 +64,10 @@ export function AppLoader() {
       pending.current = true;
       if (showTimer.current) clearTimeout(showTimer.current);
       showTimer.current = setTimeout(() => {
-        if (pending.current) setNavLoading(true);
+        if (pending.current) {
+          setNavLoading(true);
+          setLeaving(true);
+        }
       }, SHOW_AFTER_MS);
       // A link whose own handler cancels the navigation never changes the
       // pathname: don't leave the spinner hanging for it.
@@ -69,6 +75,7 @@ export function AppLoader() {
       giveUpTimer.current = setTimeout(() => {
         pending.current = false;
         setNavLoading(false);
+        setLeaving(false);
       }, GIVE_UP_AFTER_MS);
     };
     document.addEventListener("click", onClick, true);
@@ -88,6 +95,8 @@ export function AppLoader() {
     pending.current = false;
     if (showTimer.current) clearTimeout(showTimer.current);
     if (giveUpTimer.current) clearTimeout(giveUpTimer.current);
+    // The new page is what is on screen now: nothing left to hide.
+    setLeaving(false);
     const t = setTimeout(() => setNavLoading(false), 0);
     return () => clearTimeout(t);
   }, [pathname]);
@@ -132,5 +141,5 @@ export function AppLoader() {
     return () => clearTimeout(t);
   }, [shown]);
 
-  return <PageLoader state={visible ? "loading" : "idle"} />;
+  return <PageLoader state={visible ? "loading" : "idle"} navigating={leaving} />;
 }

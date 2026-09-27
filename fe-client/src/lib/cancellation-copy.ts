@@ -137,6 +137,32 @@ export function classBookingPolicy(
   return `${inTime} Cancelling later is a late cancellation: allowed until the class starts, but the credit isn't returned.`;
 }
 
+/**
+ * The same rule as `classBookingPolicy`, cut into short lines for the
+ * schedule's policy notice: one fact per line, each readable at a glance.
+ */
+export function classPolicyPoints(
+  policy: CancellationPolicy,
+  windowHours: number = policy.class_window_hours,
+): string[] {
+  if (capped(policy) && policy.cancel_cap_count === 0) {
+    return ["Cancel any time before class starts.", "Cancelled credits aren't returned."];
+  }
+  const points = [
+    windowHours === 0
+      ? "Cancel any time before class starts to get your credit back."
+      : `Cancel at least ${hoursText(windowHours)} before class to get your credit back.`,
+  ];
+  if (capped(policy)) {
+    const cycle = policy.cancel_cap_cycle_days === 1 ? "day" : `${policy.cancel_cap_cycle_days} days`;
+    points.push(
+      `Limit: ${plural(policy.cancel_cap_count, "cancellation")} per ${cycle}. Go over it and the credit isn't returned, even in time.`,
+    );
+  }
+  if (windowHours > 0) points.push("Cancel later and the credit isn't returned.");
+  return points;
+}
+
 /** The warning before a member confirms a late cancel of a class they paid a credit for. */
 export const LATE_CANCEL_LINE = "This is a late cancellation — your credit won't be returned.";
 
