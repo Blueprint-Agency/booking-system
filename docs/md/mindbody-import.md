@@ -673,6 +673,10 @@ rehearsal passed and the preflight has been answered.
 
    Provisioning *with* an admin email seeds templates and a staff row, and the import would
    refuse the Tenant as not empty.
+
+   If the Tenant already exists on this environment — an earlier build went into it — do not
+   delete it and provision again: copy its id and use **Replace from archive** in step 7. A
+   delete takes every login with it; a replace keeps them.
 6. **Transform**, for that Tenant id:
 
    ```bash
@@ -687,6 +691,16 @@ rehearsal passed and the preflight has been answered.
    all-or-nothing: a failure leaves the Tenant empty and you import again. The owner's staff row
    arrives active, and the Tenant opens at that moment. Allow a couple of minutes for a studio
    with history, and do not assume it has hung.
+
+   Into a Tenant that already has a build (step 5's second paragraph): the Tenant's ⋯ menu →
+   **Replace from archive**, choose the zip and type the Tenant's slug. Every row the Tenant holds
+   is deleted and the new build written in its place, in one transaction — a failure leaves the
+   previous build as it was. Everyone who already set a password on the Tenant keeps it, and their
+   second factor; a person new in this build gets a login with no password, as on a first import.
+   Branding, settings, payment account and status are left as they were: a replace never opens a
+   suspended Tenant, so reactivate it by hand if that is the next step. From a script, the same
+   is `POST /api/v1/platform/tenants/<id>/import` with `mode=replace` and `confirm_slug=<slug>`
+   beside the `archive` file.
 8. **Verify**, before anybody books. Super portal → the Tenant → **Export**, then:
 
    ```bash
@@ -737,8 +751,10 @@ a hand-edited one gives something nobody can reproduce.
    snapshots live again, then swaps the two in one transaction, so the failed attempt is kept
    until it is dropped.
 3. Fix the cause — nearly always the config, or a report that came back short.
-4. Provision a **fresh empty Tenant** and import into that. Re-importing into a Tenant that
-   already has rows is refused, and rightly.
+4. Provision a **fresh empty Tenant** and import into that — the snapshot predates step 5, so
+   the Tenant is gone with the restore. (A Tenant that survived, because only its build was
+   wrong, takes the fixed build by **Replace from archive**, step 7; a plain import into a Tenant
+   that already has rows is refused, and rightly.)
 5. Verify again. The freeze lifts only when it passes.
 
 If the restore itself misbehaves, every refusal it can give is documented in the infrastructure
@@ -756,6 +772,12 @@ step 9. Two differences and nothing else:
   least one with the real cutoff, which doubles as the production-sized dataset.
 - Mindbody is not frozen, so the figures move under you. That is fine: verify compares the
   archive with what was imported, not with Mindbody.
+
+Each new build goes over the **same** rehearsal Tenant, with **Replace from archive** (step 7),
+never a delete and a fresh provision. Build it with `--tenant` set to that Tenant's id, so its ids
+are kept and verify compares like with like. The staff who set a password on the rehearsal
+studio — the owner checking the schedule, anyone trying the portal — keep that password, their
+second factor and any session they have open through every rebuild.
 
 Record, on the rehearsal's ticket: how long the download took — and, apart, how long its Class
 Waitlists scrape took, since it opens a screen per future class and grows with the timetable —

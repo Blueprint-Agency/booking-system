@@ -11,6 +11,7 @@ import {
   openImports,
   receiveArchive,
   startImport,
+  type ImportRequest,
 } from '../../services/tenants/import-jobs'
 import { loadTenantById } from '../../services/tenants/tenants'
 import { ERROR_CODES } from '../../shared/error-codes'
@@ -68,7 +69,22 @@ app.get('/tenants/:id/export', async c => {
 })
 
 /**
- * Put an archive back into an empty studio, in one request.
+ * How an import meets the studio: `restore` (the default) into an empty one, or
+ * `replace` (#339) over one that has rows, confirmed by its current Slug. The
+ * same fields on the one-request form and the job's start.
+ */
+const importRequest = z
+  .object({
+    mode: z.enum(['restore', 'replace']).default('restore'),
+    confirm_slug: z.string().max(255).optional(),
+  })
+  .transform((body): ImportRequest =>
+    body.mode === 'replace' ? { mode: 'replace', confirmSlug: body.confirm_slug ?? '' } : { mode: 'restore' },
+  )
+
+/**
+ * Put an archive back into an empty studio — or, with `mode=replace`, over the
+ * studio's rows — in one request.
  *
  * The target is named in the URL and never read from the archive: restoring is
  * always *into* a studio the operator picked, so an archive can be renamed,
@@ -91,6 +107,7 @@ app.post('/tenants/:id/import', async c => {
   if (!(file instanceof File)) {
     return c.json({ error: ERROR_CODES.archive_required, message: 'Attach the studio zip as `archive`.' }, 400)
   }
+  const request = importRequest.parse({ mode: form.mode, confirm_slug: form.confirm_slug })
 
   let summary
   try {
@@ -99,6 +116,7 @@ app.post('/tenants/:id/import', async c => {
       fileName: file.name || 'archive.zip',
       bytes: Buffer.from(await file.arrayBuffer()),
       by: c.get('platformAdminEmail'),
+      request,
     })
   } catch (err) {
     if (err instanceof ArchiveError) {
@@ -115,6 +133,7 @@ app.post('/tenants/:id/import', async c => {
   logger.info(
     {
       tenant: tenant.slug,
+      mode: summary.mode,
       from: summary.from.slug,
       rows: summary.imported,
       opened: summary.opened,
@@ -136,6 +155,8 @@ const uuid = z.string().uuid()
 const startBody = z.object({
   file_name: z.string().trim().min(1).max(255),
   size: z.number().int().positive(),
+  mode: z.enum(['restore', 'replace']).optional(),
+  confirm_slug: z.string().max(255).optional(),
 })
 
 /** Every studio's import that is running, or finished and not yet dismissed. */
@@ -153,6 +174,7 @@ app.post('/tenants/:id/imports', zValidator('json', startBody), async c => {
     fileName: body.file_name,
     size: body.size,
     by: c.get('platformAdminEmail'),
+    request: importRequest.parse({ mode: body.mode, confirm_slug: body.confirm_slug }),
   })
   return c.json({ job }, 201)
 })

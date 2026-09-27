@@ -11,6 +11,7 @@ import {
   PenLine,
   Play,
   Plus,
+  Replace,
   Trash2,
   Upload,
   UserPlus,
@@ -22,6 +23,7 @@ import { CreateTenantDialog } from "@/components/platform/create-tenant-dialog";
 import { DeleteTenantDialog } from "@/components/platform/delete-tenant-dialog";
 import { InviteFirstAdminDialog } from "@/components/platform/invite-first-admin-dialog";
 import { RenameTenantDialog } from "@/components/platform/rename-tenant-dialog";
+import { ReplaceTenantDialog } from "@/components/platform/replace-tenant-dialog";
 import { PaymentCredentialsDialog } from "@/components/platform/payment-credentials-dialog";
 import { TenantTermDialog } from "@/components/platform/tenant-term-dialog";
 import { ImportProgress } from "@/components/platform/import-progress";
@@ -39,6 +41,7 @@ import {
   startImport,
   uploadImportArchive,
   type ImportJob,
+  type ImportRequest,
   type PlatformTenant,
 } from "@/lib/platform";
 
@@ -46,7 +49,7 @@ import {
 const POLL_MS = 1500;
 
 /** A refusal from the import routes: a sentence, and the job in the way if any. */
-type RefusalBody = { message?: string; job?: ImportJob } | null;
+type RefusalBody = { error?: string; message?: string; job?: ImportJob } | null;
 
 /** One line saying how long a studio is paid for, and whether that has run out. */
 function termLine(tenant: PlatformTenant): string {
@@ -87,6 +90,8 @@ export default function PlatformPage() {
   const [termFor, setTermFor] = useState<PlatformTenant | null>(null);
   /** The studio the delete dialog is open for, or null. */
   const [deleting, setDeleting] = useState<PlatformTenant | null>(null);
+  /** The studio the replace dialog is open for, or null. */
+  const [replacing, setReplacing] = useState<PlatformTenant | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   /** One file input serves every row; this is the studio the picker is for. */
   const [importTarget, setImportTarget] = useState<PlatformTenant | null>(null);
@@ -190,14 +195,8 @@ export default function PlatformPage() {
     setImports(current => ({ ...current, [job.tenant_id]: job }));
   }, []);
 
-  /**
-   * Restore an archive, as a server-side job.
-   *
-   * Only the upload needs this page: once the file has arrived the server runs
-   * the import on its own, and the poll below follows it — from this page load
-   * or the next one.
-   */
-  async function uploadArchive(file: File) {
+  /** The file picker's choice: a restore, confirmed. */
+  function restoreFromPicker(file: File) {
     const tenant = importTarget;
     if (!tenant) return;
     setImportTarget(null);
@@ -209,16 +208,33 @@ export default function PlatformPage() {
     ) {
       return;
     }
+    void uploadArchive(tenant, file, { mode: "restore" });
+  }
 
+  /**
+   * Restore or replace from an archive, as a server-side job.
+   *
+   * Only the upload needs this page: once the file has arrived the server runs
+   * the import on its own, and the poll below follows it — from this page load
+   * or the next one.
+   */
+  async function uploadArchive(tenant: PlatformTenant, file: File, request: ImportRequest) {
     let job: ImportJob;
     try {
-      ({ job } = await startImport(api, tenant.id, file));
+      ({ job } = await startImport(api, tenant.id, file, request));
     } catch (err) {
       // Refused with a sentence — an import already running, a file too big —
-      // and the refusal names the running import, so the row can show it.
+      // and the refusal names the running import, so the row can show it. A
+      // replace's mistyped address is refused by code.
       const body = err instanceof ApiError && typeof err.body === "object" ? (err.body as RefusalBody) : null;
       if (body?.job) putJob(body.job);
-      toast.error(body?.message ?? `Could not start the import into ${tenant.name}.`);
+      toast.error(
+        body?.message ??
+          (body?.error && TENANT_REFUSALS[body.error]) ??
+          (request.mode === "replace"
+            ? `Could not start replacing ${tenant.name}.`
+            : `Could not start the import into ${tenant.name}.`),
+      );
       return;
     }
 
@@ -414,7 +430,11 @@ export default function PlatformPage() {
                   studioName={tenant.name}
                   job={imports[tenant.id] ?? null}
                   localUpload={uploads[tenant.id] ?? null}
-                  onChooseFile={() => pickArchiveFor(tenant)}
+                  // A failed replace is retried as a replace: it asks for the
+                  // address again rather than falling back to a restore.
+                  onChooseFile={() =>
+                    imports[tenant.id]?.mode === "replace" ? setReplacing(tenant) : pickArchiveFor(tenant)
+                  }
                   onDismiss={job => void dismiss(job)}
                 />
                 <div className="mt-2 flex flex-wrap gap-3 text-sm">
@@ -488,6 +508,13 @@ export default function PlatformPage() {
                         disabledReason: importBlocked(tenant.id),
                         onSelect: () => pickArchiveFor(tenant),
                       },
+                      {
+                        icon: Replace,
+                        label: "Replace from archive",
+                        danger: true,
+                        disabledReason: importBlocked(tenant.id),
+                        onSelect: () => setReplacing(tenant),
+                      },
                     ],
                     [
                       ...(tenant.status !== "archived"
@@ -530,7 +557,7 @@ export default function PlatformPage() {
         onChange={event => {
           const file = event.target.files?.[0];
           event.target.value = "";
-          if (file) void uploadArchive(file);
+          if (file) restoreFromPicker(file);
         }}
       />
 
@@ -583,6 +610,19 @@ export default function PlatformPage() {
         onDeleted={gone => {
           setDeleting(null);
           setTenants(rows => (rows ?? []).filter(row => row.id !== gone.id));
+        }}
+      />
+
+      <ReplaceTenantDialog
+        // Keyed on the studio, so the file and the confirmation start empty each time.
+        key={`replace:${replacing?.id ?? "none"}`}
+        tenant={replacing}
+        onOpenChange={open => {
+          if (!open) setReplacing(null);
+        }}
+        onConfirm={(tenant, file, confirmSlug) => {
+          setReplacing(null);
+          void uploadArchive(tenant, file, { mode: "replace", confirmSlug });
         }}
       />
 

@@ -251,7 +251,15 @@ export function clearPaymentCredentials(api: Api, id: string) {
   return api.del<{ tenant: PlatformTenant }>(`/platform/tenants/${id}/payment-credentials`);
 }
 
+/**
+ * `restore` writes an archive into an empty studio. `replace` deletes the
+ * studio's rows and writes the archive's in their place, keeping its people's
+ * logins, its settings, payment account and status (#339).
+ */
+export type ImportMode = "restore" | "replace";
+
 export interface ImportSummary {
+  mode: ImportMode;
   imported: number;
   tables: Record<string, number>;
   from: { slug: string; name: string };
@@ -287,6 +295,7 @@ export type ImportPhase =
   | "uploading"
   | "unpacking"
   | "checking"
+  | "clearing"
   | "accounts"
   | "writing"
   | "linking"
@@ -299,6 +308,8 @@ export interface ImportJob {
   id: string;
   tenant_id: string;
   status: ImportStatus;
+  /** Null for a job the server can no longer say (it restarted since). */
+  mode: ImportMode | null;
   phase: ImportPhase;
   file_name: string;
   upload_bytes: number;
@@ -330,11 +341,24 @@ export function latestImport(api: Api, tenantId: string) {
   return api.get<{ job: ImportJob | null }>(`/platform/tenants/${tenantId}/imports/latest`);
 }
 
-/** Step one: the job, waiting for its file. Refused (409) while another is running. */
-export function startImport(api: Api, tenantId: string, file: File) {
+/** What to do with the file: restore into an empty studio, or replace one confirmed by its Slug. */
+export type ImportRequest = { mode: "restore" } | { mode: "replace"; confirmSlug: string };
+
+/**
+ * Step one: the job, waiting for its file. Refused (409) while another is
+ * running, and a replace (400 `confirmation_mismatch`) whose Slug is not the studio's.
+ */
+export function startImport(
+  api: Api,
+  tenantId: string,
+  file: File,
+  request: ImportRequest = { mode: "restore" },
+) {
   return api.post<{ job: ImportJob }>(`/platform/tenants/${tenantId}/imports`, {
     file_name: file.name,
     size: file.size,
+    mode: request.mode,
+    ...(request.mode === "replace" ? { confirm_slug: request.confirmSlug } : {}),
   });
 }
 

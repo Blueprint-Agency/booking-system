@@ -56,7 +56,7 @@ import { tenantKey } from '../../lib/object-key'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { forgetCachedTenants } from './tenants'
-import { tenantTableOrder } from './transfer'
+import { clearStudioRows, slugConfirmed, tenantTableOrder } from './transfer'
 
 /** The statuses a studio may be deleted from. Never `active`. */
 const DELETABLE = new Set(['suspended', 'archived'])
@@ -93,7 +93,7 @@ export async function deleteTenant(input: DeleteTenantInput): Promise<DeletedTen
   // inside it, so a studio reactivated in between is not deleted.
   const [before] = await db.select().from(tenants).where(eq(tenants.id, input.tenantId)).limit(1)
   if (!before) throw new NotFoundError('not_found')
-  if (input.confirmSlug.trim().toLowerCase() !== before.slug) {
+  if (!slugConfirmed(input.confirmSlug, before.slug)) {
     throw new BadRequestError('confirmation_mismatch')
   }
   if (!DELETABLE.has(before.status)) throw new ConflictError('tenant_not_suspended')
@@ -108,24 +108,9 @@ export async function deleteTenant(input: DeleteTenantInput): Promise<DeletedTen
     if (!locked) throw new NotFoundError('not_found')
     if (!DELETABLE.has(locked.status)) throw new ConflictError('tenant_not_suspended')
 
-    // References no ordering can satisfy (a table pointing at itself, or a
-    // cycle) are cleared first, so the children-first deletes below never
-    // meet a row still pointed at by one that goes later.
-    for (const [table, columns] of Object.entries(deferred)) {
-      await db.execute(sql`
-        UPDATE ${sql.identifier(table)}
-        SET ${sql.join(columns.map(c => sql`${sql.identifier(c)} = NULL`), sql`, `)}
-        WHERE tenant_id = ${id}
-      `)
-    }
-
-    // Children first: the reverse of the order an archive is written back in.
-    for (const table of [...order].reverse()) {
-      const gone = await db.execute(
-        sql`DELETE FROM ${sql.identifier(table)} WHERE tenant_id = ${id} RETURNING 1`,
-      )
-      tables[table] = gone.length
-    }
+    // Every studio row, children first, its self- and cyclic references
+    // cleared before any delete meets them.
+    Object.assign(tables, await clearStudioRows(id, order, deferred))
 
     const settings = await db
       .delete(tenantSettings)

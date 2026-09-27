@@ -9,6 +9,7 @@ const PHASE_LABELS: Record<ImportPhase, string> = {
   uploading: "Receiving the file",
   unpacking: "Reading the archive",
   checking: "Checking the studio is empty",
+  clearing: "Deleting the studio’s current records",
   accounts: "Creating sign-in accounts",
   writing: "Writing the studio’s records",
   linking: "Linking records together",
@@ -142,13 +143,15 @@ export function ImportProgress({
     );
   }
 
+  const replacing = job.mode === "replace";
+
   if (job.status === "processing") {
     const known = job.total !== null && job.total > 0;
     return (
       <Panel tone="neutral" live>
         <Line>
           <span className="font-medium text-ink">
-            Importing {job.file_name} · {PHASE_LABELS[job.phase] ?? job.phase}
+            {replacing ? "Replacing from" : "Importing"} {job.file_name} · {PHASE_LABELS[job.phase] ?? job.phase}
           </span>
           {known && (
             <span className="tabular-nums text-muted">
@@ -181,7 +184,8 @@ export function ImportProgress({
         <Line>
           <span className="flex items-center gap-1.5 font-medium text-ink">
             <CheckCircle2 className="h-4 w-4 text-sage" aria-hidden />
-            {s.remapped ? "Copied" : "Restored"} {s.imported.toLocaleString()} records from {s.from.name}
+            {s.mode === "replace" ? "Replaced" : s.remapped ? "Copied" : "Restored"} {s.imported.toLocaleString()}{" "}
+            records from {s.from.name}
           </span>
           <DismissButton onClick={() => onDismiss(job)} />
         </Line>
@@ -191,7 +195,8 @@ export function ImportProgress({
           </p>
         )}
         <p className="text-xs text-muted">
-          {s.remapped ? `${s.from.name} is untouched. ` : ""}
+          {s.mode === "replace" ? "Everyone’s sign-in was kept. " : ""}
+          {s.remapped && s.mode !== "replace" ? `${s.from.name} is untouched. ` : ""}
           {s.opened ? `${studioName} is now open.` : ""}
           {job.finished_at ? ` Finished ${new Date(job.finished_at).toLocaleString()}.` : ""}
         </p>
@@ -206,7 +211,9 @@ export function ImportProgress({
       <Line>
         <span className="flex items-center gap-1.5 font-medium text-error">
           <AlertTriangle className="h-4 w-4" aria-hidden />
-          {interrupted ? "Upload interrupted — choose the file again" : `Import of ${job.file_name} failed`}
+          {interrupted
+            ? "Upload interrupted — choose the file again"
+            : `${replacing ? "Replace from" : "Import of"} ${job.file_name} failed`}
         </span>
         <DismissButton onClick={() => onDismiss(job)} />
       </Line>

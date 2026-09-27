@@ -5,7 +5,7 @@ import { isUniqueViolation } from '../../db/unique-violation'
 import { AppError, BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { activateAfterFirstStaff, loadTenantById } from './tenants'
-import { importTenant, type ImportPhase as WritePhase } from './transfer'
+import { importTenant, slugConfirmed, type ImportMode, type ImportPhase as WritePhase } from './transfer'
 import { ArchiveError, unpackArchive } from './transfer-archive'
 
 /**
@@ -67,11 +67,27 @@ export const SERVER_STOPPED =
 /** The jobs this process is holding right now: never expired as stale by it. */
 const live = new Set<string>()
 
+/**
+ * What each job this process started was asked to do, and — for a replace —
+ * the confirmation to carry into the write. Held here rather than on the row
+ * because the job table has no column for it (#339 adds no migration): a job is
+ * started, uploaded and run by this one process, and a job whose process died
+ * is failed by its heartbeat anyway. A succeeded job's mode is on its summary,
+ * so its entry goes then; a failed one's stays until it is dismissed, so its
+ * retry is offered as the same mode. An upload for a job this process has no
+ * record of runs as a restore, as it did before replace existed — the safe
+ * reading, since a restore refuses a studio that has rows.
+ */
+export type ImportRequest = { mode: 'restore' } | { mode: 'replace'; confirmSlug: string }
+const requestByJob = new Map<string, ImportRequest>()
+
 /** A job as the super portal sees it. */
 export interface ImportJobView {
   id: string
   tenant_id: string
   status: ImportStatus
+  /** Restore or replace; null for a job neither this process nor its summary can say. */
+  mode: ImportMode | null
   phase: ImportJobPhase
   file_name: string
   upload_bytes: number
@@ -90,26 +106,29 @@ export interface ImportJobView {
 
 /** What a finished restore says — the body the synchronous route has always answered with. */
 export interface RestoreSummary {
+  mode: ImportMode
   imported: number
   tables: Record<string, number>
   from: { slug: string; name: string }
   remapped: boolean
-  /** True when the archive is what let this studio open for business. */
+  /** True when the archive is what let this studio open for business. Never after a replace. */
   opened: boolean
 }
 
 function view(row: TenantImportRow): ImportJobView {
+  const summary = (row.summary as RestoreSummary | null) ?? null
   return {
     id: row.id,
     tenant_id: row.tenantId,
     status: row.status as ImportStatus,
+    mode: requestByJob.get(row.id)?.mode ?? summary?.mode ?? null,
     phase: row.phase as ImportJobPhase,
     file_name: row.fileName,
     upload_bytes: row.uploadBytes,
     received_bytes: row.receivedBytes,
     processed: row.processed,
     total: row.total,
-    summary: (row.summary as RestoreSummary | null) ?? null,
+    summary,
     error_code: row.errorCode,
     error: row.error,
     started_by: row.startedBy,
@@ -189,15 +208,18 @@ export async function importNow(input: {
   fileName: string
   bytes: Buffer
   by: string
+  request?: ImportRequest
 }): Promise<RestoreSummary> {
   const { tenantId, bytes } = input
-  const job = await startImport({ tenantId, fileName: input.fileName, size: bytes.byteLength, by: input.by })
+  const request = input.request ?? { mode: 'restore' }
+  const job = await startImport({ tenantId, fileName: input.fileName, size: bytes.byteLength, by: input.by, request })
   // Live for the whole request, so expiry never takes it for a dead upload.
   live.add(job.id)
   try {
     await patchJob(tenantId, job.id, { status: 'processing', phase: 'unpacking', receivedBytes: bytes.byteLength })
-    const summary = await restoreArchive(tenantId, bytes)
+    const summary = await restoreArchive(tenantId, bytes, { request, by: input.by })
     await patchJob(tenantId, job.id, { status: 'succeeded', phase: 'done', summary, finishedAt: new Date() })
+    requestByJob.delete(job.id)
     return summary
   } catch (err) {
     const { code, message } = describeFailure(err)
@@ -213,15 +235,24 @@ export async function importNow(input: {
   }
 }
 
-/** Step 1: a job, `uploading`, waiting for its bytes. */
+/**
+ * Step 1: a job, `uploading`, waiting for its bytes. A replace's typed Slug is
+ * checked here, before anything is uploaded, and again when the rows are
+ * written.
+ */
 export async function startImport(input: {
   tenantId: string
   fileName: string
   size: number
   by: string
+  request?: ImportRequest
 }): Promise<ImportJobView> {
+  const request = input.request ?? { mode: 'restore' }
   const tenant = await loadTenantById(input.tenantId)
   if (!tenant) throw new NotFoundError('not_found')
+  if (request.mode === 'replace' && !slugConfirmed(request.confirmSlug, tenant.slug)) {
+    throw new BadRequestError('confirmation_mismatch')
+  }
   if (input.size > MAX_ARCHIVE_BYTES) {
     throw new BadRequestError('archive_required', {
       message: `That file is ${formatBytes(input.size)}; an archive can be at most ${formatBytes(MAX_ARCHIVE_BYTES)}.`,
@@ -247,6 +278,7 @@ export async function startImport(input: {
           startedBy: input.by,
         })
         .returning()
+      requestByJob.set(row!.id, request)
       return view(row!)
     } catch (err) {
       // Two starts at once: the partial unique index is the arbiter.
@@ -285,6 +317,7 @@ export async function receiveArchive(input: {
   if (!input.body) {
     throw new BadRequestError('archive_required', { message: 'Send the studio zip as the request body.' })
   }
+  const request = requestByJob.get(jobId) ?? { mode: 'restore' }
 
   live.add(jobId)
   const progress = new ProgressWriter(tenantId, jobId)
@@ -357,16 +390,22 @@ export async function receiveArchive(input: {
   }
 
   // Handed off: nothing below waits on this request, or on the browser.
-  void runImport(tenantId, jobId, Buffer.concat(chunks), job.startedBy)
+  void runImport(tenantId, jobId, Buffer.concat(chunks), job.startedBy, request)
   return view(row!)
 }
 
 /** Step 3, in the background. Always ends the job one way or the other. */
-async function runImport(tenantId: string, jobId: string, archive: Buffer, by: string): Promise<void> {
+async function runImport(
+  tenantId: string,
+  jobId: string,
+  archive: Buffer,
+  by: string,
+  request: ImportRequest,
+): Promise<void> {
   const progress = new ProgressWriter(tenantId, jobId)
   const heartbeat = setInterval(() => progress.touch(), HEARTBEAT_MS)
   try {
-    const summary = await restoreArchive(tenantId, archive, p =>
+    const summary = await restoreArchive(tenantId, archive, { request, by }, p =>
       progress.set({ phase: p.phase, processed: p.processed, total: p.total }),
     )
     clearInterval(heartbeat)
@@ -377,7 +416,11 @@ async function runImport(tenantId: string, jobId: string, archive: Buffer, by: s
       summary,
       finishedAt: new Date(),
     })
-    logger.info({ tenantId, jobId, rows: summary.imported, opened: summary.opened, by }, 'tenant imported')
+    requestByJob.delete(jobId)
+    logger.info(
+      { tenantId, jobId, mode: summary.mode, rows: summary.imported, opened: summary.opened, by },
+      'tenant imported',
+    )
   } catch (err) {
     clearInterval(heartbeat)
     await progress.close()
@@ -395,17 +438,23 @@ async function runImport(tenantId: string, jobId: string, archive: Buffer, by: s
 }
 
 /**
- * Unpack an archive, write it into the studio and open the studio if it
- * brought staff — what both the job and the synchronous route do.
+ * Unpack an archive, write it into the studio and — for a restore — open the
+ * studio if it brought staff: what both the job and the synchronous route do.
  */
 export async function restoreArchive(
   tenantId: string,
   bytes: Buffer,
+  { request, by }: { request: ImportRequest; by: string },
   onProgress: (p: { phase: ImportJobPhase; processed: number; total: number | null }) => void = () => {},
 ): Promise<RestoreSummary> {
   onProgress({ phase: 'unpacking', processed: 0, total: null })
   const archive = await unpackArchive(bytes)
-  const summary = await importTenant(tenantId, archive, onProgress)
+  const summary = await importTenant(
+    tenantId,
+    archive,
+    onProgress,
+    request.mode === 'replace' ? { mode: 'replace', confirmSlug: request.confirmSlug, by } : {},
+  )
 
   onProgress({ phase: 'finishing', processed: summary.total, total: summary.total })
   // A studio provisioned to receive an archive opens `suspended`, because until
@@ -413,8 +462,11 @@ export async function restoreArchive(
   // the studio's own staff, so the reason for the suspension is gone.
   // The rows are already committed by here, so failing to open is not a failed
   // import: say so as `opened: false` and let the operator open it by hand.
+  //
+  // Never after a replace: a studio being replaced already had its people, and
+  // one that is suspended was suspended by someone, for a reason this is not.
   let opened = false
-  if ((summary.written.staff_users ?? 0) > 0) {
+  if (summary.mode === 'restore' && (summary.written.staff_users ?? 0) > 0) {
     try {
       opened = Boolean(await activateAfterFirstStaff(tenantId))
     } catch (err) {
@@ -423,6 +475,7 @@ export async function restoreArchive(
   }
 
   return {
+    mode: summary.mode,
     imported: summary.total,
     tables: summary.written,
     from: { slug: summary.sourceTenant.slug, name: summary.sourceTenant.name },
@@ -539,7 +592,10 @@ export async function dismissImport(tenantId: string, jobId: string): Promise<Im
         ),
       )
       .returning()
-    if (row) return view(row)
+    if (row) {
+      requestByJob.delete(jobId)
+      return view(row)
+    }
     const job = await loadJob(tenantId, jobId)
     if (!job) throw new NotFoundError('not_found')
     if (RUNNING.includes(job.status as ImportStatus)) {

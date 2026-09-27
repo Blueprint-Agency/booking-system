@@ -514,6 +514,21 @@ immediately. The record is the `platform: tenant deleted` log line (who, which
 studio, row count) — there is no platform audit table, and the studio's own
 `audit_log` is deleted with it. Integration test: `be/src/test/tenant-delete.test.ts`.
 
+**Replace from archive** (#339; `importTenant` in `be/src/services/tenants/transfer.ts`).
+The studio import — `POST /api/v1/platform/tenants/:id/import` (form fields) or the job's
+`POST /api/v1/platform/tenants/:id/imports` (JSON) — takes `mode`: `restore` (the
+default; empty studio only) or `replace`, which needs `confirm_slug` equal to the current
+slug (`400 confirmation_mismatch`, checked at start and again under a row lock). From any
+status. One transaction: every studio table emptied children first (the same
+`clearStudioRows` a deletion uses), then the archive written as a restore writes it. Kept:
+the studio's logins — each archive `clients` / `staff_users` row is linked to the login the
+studio already has for its email, so passwords, second factors and sessions carry on —
+`tenant_settings` (the archive's is not applied), payment credentials, the `tenants` row
+and `former_slugs`. It never reactivates a suspended studio. Recorded in the studio's own
+`audit_log` as `tenant.replaced_from_archive` (`system` actor, the operator's email, the
+archive's source and counts). One import or replace per studio at a time (the
+`tenant_imports` partial unique index). Integration test: `be/src/test/tenant-replace.test.ts`.
+
 ## Env-var note
 
 Per repo convention: any BE env var added/renamed in this work must update

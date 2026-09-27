@@ -1,5 +1,7 @@
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { db, withTenant } from '../../db'
+import { auditLog } from '../../db/schema/ledger'
+import { tenants } from '../../db/schema/tenancy'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { ensureAuthUser } from '../auth/auth-users'
 import { INVITE_TTL_MS } from '../auth/invitations'
@@ -10,7 +12,7 @@ import { studioTables } from './transfer-tables'
 import { upgradeArchiveRows } from './transfer-upgrade'
 import { ARCHIVE_VERSION, type TenantArchive, type TenantManifest } from './transfer-shape'
 import { loadTenantById } from './tenants'
-import { ConflictError, NotFoundError } from '../../shared/errors'
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 // Re-exported so a caller that already reaches for the service keeps working.
 // The declarations live in `transfer-shape.ts`, which carries no database
@@ -174,7 +176,7 @@ export async function exportTenant(tenantId: string): Promise<TenantArchive> {
  * every phase — accounts ensured, rows written, rows linked, settings — so it
  * only ever goes up. `phase` is what it is doing now, for a label.
  */
-export type ImportPhase = 'checking' | 'accounts' | 'writing' | 'linking' | 'settings' | 'committing'
+export type ImportPhase = 'checking' | 'clearing' | 'accounts' | 'writing' | 'linking' | 'settings' | 'committing'
 export type ImportProgress = { phase: ImportPhase; processed: number; total: number }
 /**
  * Called synchronously from inside the import's transaction, often — once per
@@ -184,9 +186,42 @@ export type ImportProgress = { phase: ImportPhase; processed: number; total: num
  */
 export type ImportProgressListener = (progress: ImportProgress) => void
 
+/**
+ * How an archive meets the studio it is written to.
+ *
+ *  - `restore` — the studio must be empty, and the archive is the whole of it:
+ *    rows, settings and all.
+ *  - `replace` — the studio's rows are deleted and the archive's written in
+ *    their place, in one transaction. What the archive cannot supply is kept:
+ *    its people's logins, its settings, its payment credentials and the Tenant
+ *    row itself (#339). The operator repeats the studio's Slug to confirm it.
+ */
+export type ImportMode = 'restore' | 'replace'
+
+export type ImportOptions =
+  | { mode?: 'restore' }
+  | {
+      mode: 'replace'
+      /** The studio's current Slug, as the operator typed it. */
+      confirmSlug: string
+      /** The platform administrator's email, for the studio's audit log. */
+      by: string
+    }
+
+/**
+ * What a replace leaves alone although it has a `tenant_id` and travels in an
+ * archive: the studio's own payment account. A build of the studio's rows is
+ * no reason to change whose account its money lands in, and a platform export
+ * of another studio would otherwise hand this one that studio's keys.
+ */
+const KEPT_ON_REPLACE = new Set(['tenant_payment_credentials'])
+
 export type ImportSummary = {
+  mode: ImportMode
   /** Rows written, per table. */
   written: Record<string, number>
+  /** Rows a replace deleted first, per table; empty for a restore. */
+  cleared: Record<string, number>
   /** Total rows written. */
   total: number
   /** The studio the archive came from, which is not the one it was written to. */
@@ -264,14 +299,32 @@ const ACCOUNT_TABLES = { clients: 'client', staff_users: 'staff' } as const
  * What a member holds is unaffected either way — see above — so the cost of
  * renumbering is only to references held outside this database, and only a
  * studio being restored in place has any.
+ *
+ * **A replace (#339) is the other way in, and is not a merge.** Instead of
+ * refusing a studio that has rows, it deletes them — children first, in the
+ * same transaction as the writes, so a failure part-way leaves the studio as it
+ * was — and then writes the archive exactly as a restore would, ids kept by the
+ * same rule: once the rows are gone, this studio's own ids are free again. What
+ * it does not touch is everything the archive cannot supply: the logins (each
+ * `clients` / `staff_users` row is linked to the login this studio already has
+ * for its email, so passwords, second factors and open sessions carry on), the
+ * `tenant_settings` row (the archive's is not applied), the payment credentials
+ * (`KEPT_ON_REPLACE`), the Tenant row and its former Slugs. It is recorded in
+ * the studio's own audit log, written after the rows so the archive's own log
+ * does not take it with it.
  */
 export async function importTenant(
   targetTenantId: string,
   archive: TenantArchive,
   onProgress: ImportProgressListener = () => {},
+  options: ImportOptions = {},
 ): Promise<ImportSummary> {
   const target = await loadTenantById(targetTenantId)
   if (!target) throw new NotFoundError('not_found')
+  const replace = options.mode === 'replace' ? options : null
+  if (replace && !slugConfirmed(replace.confirmSlug, target.slug)) {
+    throw new BadRequestError('confirmation_mismatch')
+  }
 
   if (archive.manifest.version !== ARCHIVE_VERSION) {
     throw importRefused(
@@ -302,30 +355,36 @@ export async function importTenant(
     }
   }
 
-  const { order, deferred } = await tenantTableOrder()
+  const tableOrder = await tenantTableOrder()
+  // What this import writes, and — for a replace — what it deletes first.
+  const order = replace ? tableOrder.order.filter(t => !KEPT_ON_REPLACE.has(t)) : tableOrder.order
+  const deferred = Object.fromEntries(Object.entries(tableOrder.deferred).filter(([t]) => order.includes(t)))
   const written: Record<string, number> = {}
+  const cleared: Record<string, number> = {}
 
   // A shallow copy, so ensuring accounts below replaces tables in this import's
   // view of the archive rather than in the caller's object — brought up to the
   // current schema first, for an archive taken before a column moved.
   const rows = upgradeArchiveRows(archive.rows)
-  const settings = rows.tenant_settings?.[0]
+  // A replace keeps the studio's own branding, copy and mail identity.
+  const settings = replace ? undefined : rows.tenant_settings?.[0]
   const columnKinds = await columnKindsByTable()
   const plain: ColumnKinds = new Map()
 
   // Copy or restore? See the note on this function. Restoring in place is the
   // one case where the archive's ids are provably free, because the emptiness
-  // check above has just established that this studio holds none of them.
+  // check below (or, for a replace, the delete) establishes that this studio
+  // holds none of them.
   const inPlace = archive.manifest.tenant.id === targetTenantId
   const identity = inPlace ? new Map<string, string>() : buildIdentityMap(order, rows)
 
   // One count across every step below, so a listener can draw a single bar that
-  // only moves forward: the accounts ensured, every row written, every row pass
-  // two revisits, and the settings.
+  // only moves forward: the tables a replace clears, the accounts ensured, every
+  // row written, every row pass two revisits, and the settings.
   const accountRows = Object.keys(ACCOUNT_TABLES).reduce((n, table) => n + (rows[table]?.length ?? 0), 0)
   const rowCount = order.reduce((n, table) => n + (rows[table]?.length ?? 0), 0)
   const deferredRows = Object.keys(deferred).reduce((n, table) => n + (rows[table]?.length ?? 0), 0)
-  const total = accountRows + rowCount + deferredRows + (settings ? 1 : 0)
+  const total = (replace ? order.length : 0) + accountRows + rowCount + deferredRows + (settings ? 1 : 0)
   let processed = 0
   const step = (phase: ImportPhase, by = 0) => {
     processed += by
@@ -333,15 +392,34 @@ export async function importTenant(
   }
 
   await withTenant(targetTenantId, async () => {
-    step('checking')
-    for (const table of order) {
-      const [existing] = await db.execute<{ n: number }>(
-        sql`SELECT count(*)::int AS n FROM ${sql.identifier(table)}`,
-      )
-      if ((existing?.n ?? 0) > 0) {
-        throw importRefused(
-          `${target.slug} already has rows in ${table} — import only into an empty studio`,
+    if (replace) {
+      step('clearing')
+      // Locked, as a rename or a delete locks it, and the Slug confirmed again
+      // under the lock: a studio renamed since the operator typed its Slug is
+      // not the one they confirmed.
+      const [locked] = await db
+        .select({ slug: tenants.slug })
+        .from(tenants)
+        .where(eq(tenants.id, targetTenantId))
+        .for('update')
+        .limit(1)
+      if (!locked) throw new NotFoundError('not_found')
+      if (!slugConfirmed(replace.confirmSlug, locked.slug)) throw new BadRequestError('confirmation_mismatch')
+
+      // The login tables, `tenant_settings`, `tenant_imports` and the Tenant row
+      // are not in `order` at all, so they stay.
+      Object.assign(cleared, await clearStudioRows(targetTenantId, order, deferred, () => step('clearing', 1)))
+    } else {
+      step('checking')
+      for (const table of order) {
+        const [existing] = await db.execute<{ n: number }>(
+          sql`SELECT count(*)::int AS n FROM ${sql.identifier(table)}`,
         )
+        if ((existing?.n ?? 0) > 0) {
+          throw importRefused(
+            `${target.slug} already has rows in ${table} — import only into an empty studio`,
+          )
+        }
       }
     }
 
@@ -482,6 +560,31 @@ export async function importTenant(
       written.tenant_settings = 1
       step('settings', 1)
     }
+
+    // The lasting record of a replace, in the studio's own trail and inside the
+    // same transaction as the rows. `system`, with no staff actor, as a Slug
+    // rename is: the platform administrator is nobody on the studio's staff.
+    if (replace) {
+      await db.insert(auditLog).values({
+        tenantId: targetTenantId,
+        actorStaffId: null,
+        actorType: 'system',
+        action: 'tenant.replaced_from_archive',
+        targetTable: 'tenants',
+        targetId: targetTenantId,
+        payload: {
+          replacedBy: replace.by,
+          source: {
+            ...archive.manifest.tenant,
+            exportedAt: archive.manifest.exportedAt,
+            builtOutside,
+          },
+          counts: written,
+          cleared: Object.values(cleared).reduce((a, b) => a + b, 0),
+          remapped: identity.size > 0,
+        },
+      })
+    }
     // Everything is written; what is left is the commit, which for a large
     // studio is not instant.
     step('committing')
@@ -492,7 +595,9 @@ export async function importTenant(
   await withTenant(targetTenantId, loadFeatureFlags)
 
   return {
+    mode: replace ? 'replace' : 'restore',
     written,
+    cleared,
     total: Object.values(written).reduce((a, b) => a + b, 0),
     sourceTenant: archive.manifest.tenant,
     remapped: identity.size > 0,
@@ -524,6 +629,43 @@ function duplicateExplained(err: unknown, table: string, sourceSlug: string): Er
       `platform-wide rather than per-Tenant. Delete ${sourceSlug} first, or import into a database ` +
       `that does not have it.`,
   )
+}
+
+/**
+ * Delete a studio's rows in `tables`, inside the caller's `withTenant` — what
+ * a replace and `deleteTenant` both do first. The references no ordering can
+ * satisfy (`deferred`) are cleared first, then children before parents: the
+ * reverse of the write order. Each statement names the Tenant as well as
+ * running under its Row-Level Security. Rows deleted, per table.
+ */
+export async function clearStudioRows(
+  tenantId: string,
+  tables: readonly string[],
+  deferred: Record<string, string[]>,
+  onTable: () => void = () => {},
+): Promise<Record<string, number>> {
+  for (const [table, columns] of Object.entries(deferred)) {
+    await db.execute(sql`
+      UPDATE ${sql.identifier(table)}
+      SET ${sql.join(columns.map(c => sql`${sql.identifier(c)} = NULL`), sql`, `)}
+      WHERE tenant_id = ${tenantId}
+    `)
+  }
+  const cleared: Record<string, number> = {}
+  for (const table of [...tables].reverse()) {
+    const [gone] = await db.execute<{ n: number }>(sql`
+      WITH gone AS (DELETE FROM ${sql.identifier(table)} WHERE tenant_id = ${tenantId} RETURNING 1)
+      SELECT count(*)::int AS n FROM gone
+    `)
+    cleared[table] = gone?.n ?? 0
+    onTable()
+  }
+  return cleared
+}
+
+/** The Slug the operator typed names this studio — for a replace and a delete alike. */
+export function slugConfirmed(typed: string, slug: string): boolean {
+  return typed.trim().toLowerCase() === slug
 }
 
 /**
