@@ -5,6 +5,8 @@ import { getBrand } from "@/lib/brand";
 import { BrandProvider } from "@/components/brand/brand-provider";
 import { TelemetryUser } from "@/components/telemetry-user";
 import { ViewTransitionGuard } from "@/components/layout/view-transition-guard";
+import { DisplayPrefsSync } from "@/components/display-prefs-sync";
+import { DISPLAY_PREFS_SCRIPT } from "@/lib/display-prefs";
 import "./globals.css";
 
 // Self-hosted via next/font (same pattern as fe-portal) — no render-blocking
@@ -53,8 +55,14 @@ export default async function RootLayout({
   return (
     // `data-scroll-behavior` tells Next the smooth scrolling in `globals.css` is
     // deliberate, so it turns it off while it restores scroll on a navigation.
-    <html lang="en" className={sans.variable} data-scroll-behavior="smooth">
+    // `suppressHydrationWarning`: the head script sets the member's theme and
+    // text size on this element before React hydrates (`lib/display-prefs.ts`).
+    <html lang="en" className={sans.variable} data-scroll-behavior="smooth" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: DISPLAY_PREFS_SCRIPT }} />
+      </head>
       <body className="antialiased">
+        <DisplayPrefsSync />
         <ViewTransitionGuard />
         <BrandProvider brand={brand}>{children}</BrandProvider>
         <TelemetryUser />

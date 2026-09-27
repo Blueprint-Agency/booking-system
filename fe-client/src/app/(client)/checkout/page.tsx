@@ -325,7 +325,7 @@ function CheckoutContent() {
             Log in, or create one in under a minute.
           </p>
           <div className="flex flex-col sm:flex-row gap-2.5 justify-center">
-            <a href={loginHref} className="flex-1 inline-flex min-h-[44px] items-center justify-center px-5 py-2.5 text-sm font-bold text-inverse bg-accent rounded-full hover:bg-accent-deep transition-colors">
+            <a href={loginHref} className="flex-1 inline-flex min-h-[44px] items-center justify-center px-5 py-2.5 text-sm font-bold text-inverse bg-accent rounded-full hover:bg-accent-deep dark:hover:bg-accent/85 transition-colors">
               Log in
             </a>
             <a href={registerHref} className="flex-1 inline-flex min-h-[44px] items-center justify-center px-5 py-2.5 text-sm font-bold text-ink border border-ink/15 rounded-full hover:bg-warm transition-colors">

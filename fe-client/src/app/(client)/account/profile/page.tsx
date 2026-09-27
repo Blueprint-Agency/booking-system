@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Lock } from "lucide-react";
 import { ChangePasswordCard } from "@/components/account/change-password-card";
 import { SavedCardsCard } from "@/components/account/saved-cards-card";
+import { GeneralSettingsCard } from "@/components/account/general-settings-card";
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { Select } from "@/components/ui/select";
 import { ApiError, useApi } from "@/lib/api";
@@ -241,6 +242,9 @@ export default function ProfilePage() {
             </div>
           </section>
         </form>
+
+        {/* Theme and text size — this device's, so nothing to save. */}
+        <GeneralSettingsCard />
 
         {/* Saved cards (#185) — account admin, beside the password, rather than
             on the overview, which is for things waiting on the member. */}

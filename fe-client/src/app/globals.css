@@ -56,10 +56,65 @@
   --shadow-modal: 0 16px 64px rgba(31, 29, 26, 0.18);
 }
 
+/* `dark:` utilities follow the member's choice in General settings, not the
+   OS: the choice is `data-theme` on <html> (`lib/display-prefs.ts`). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ── Dark theme ──────────────────────────────────────────────────────────────
+   Every surface and text colour is a token, so dark theme is the tokens again.
+   The accent is the studio's, set inline on the brand wrapper
+   (`components/brand/brand-provider.tsx`), so it is lifted here from the raw
+   copy the wrapper also emits (`--brand-color-accent`), falling back to the
+   platform default above. `!important` because an inline declaration on the
+   wrapper otherwise beats this one; the wrapper is listed beside <html> so
+   dialogs portalled to <body> get the same values. */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --color-paper: #0f1219;
+  --color-warm: #1c2130;
+  --color-card: #171b26;
+  --color-border: #2c3345;
+  --color-ink: #e6e9f2;
+  --color-muted: #9ca3b6;
+
+  /* Text on a tint: light enough to read on a dark card. The solid gold and
+     green tickets keep their colour and their white text. */
+  --color-gold-deep: #dcb872;
+  --color-green-deep: #82c79f;
+
+  --color-sage: #86a893;
+  --color-warning: #d4a64a;
+  --color-error: #d06666;
+
+  --color-overlay: rgba(0, 0, 0, 0.55);
+
+  --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.25);
+  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.45), 0 16px 40px rgba(0, 0, 0, 0.3);
+  --shadow-modal: 0 16px 64px rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme="dark"],
+html[data-theme="dark"] .brand-scope {
+  /* Still a solid that carries white text, but clear of the dark page. */
+  --color-accent: color-mix(in oklab, var(--brand-color-accent, #1a2a7a) 78%, white) !important;
+  /* `accent-deep` is mostly text and icons on an accent tint. */
+  --color-accent-deep: color-mix(in oklab, var(--brand-color-accent, #1a2a7a) 40%, white) !important;
+}
+
 @layer base {
+  /* Text size, from General settings. Every size in the app is in rem, so
+     this one value scales all of it. Small is the size the app was designed at. */
   html {
     scroll-behavior: smooth;
     font-size: 90%;
+  }
+
+  html[data-font-size="medium"] {
+    font-size: 100%;
+  }
+
+  html[data-font-size="large"] {
+    font-size: 112.5%;
   }
 
   body {
@@ -452,9 +507,9 @@ body:has(.page-loader[data-navigating="true"]) main {
 
 /* react-phone-number-input — match AuthSplitShell field styling */
 .phone-input { display: flex; gap: 0.5rem; }
-.phone-input .PhoneInputInput { border-radius: 0.75rem; border: 1px solid rgba(13, 26, 62, 0.1); background: #f5f6fa; padding: 0.75rem 1rem; font-size: 0.875rem; width: 100%; min-width: 0; color: #0d1a3e; }
+.phone-input .PhoneInputInput { border-radius: 0.75rem; border: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent); background: var(--color-paper); padding: 0.75rem 1rem; font-size: 0.875rem; width: 100%; min-width: 0; color: var(--color-ink); }
 @media (max-width: 767px) {
   .phone-input .PhoneInputInput { font-size: 16px; }
 }
-.phone-input .PhoneInputInput:focus { outline: none; border-color: #1a2a7a; }
-.phone-input .PhoneInputCountry { border-radius: 0.75rem; border: 1px solid rgba(13, 26, 62, 0.1); padding: 0 0.75rem; }
+.phone-input .PhoneInputInput:focus { outline: none; border-color: var(--color-accent); }
+.phone-input .PhoneInputCountry { border-radius: 0.75rem; border: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent); padding: 0 0.75rem; }

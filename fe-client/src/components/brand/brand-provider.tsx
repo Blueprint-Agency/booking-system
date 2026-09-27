@@ -61,6 +61,10 @@ function themeStyle(theme: Record<string, string>): React.CSSProperties {
     if (!/^[a-z0-9-]+$/i.test(token)) continue;
     if (typeof value !== "string" || !value.trim()) continue;
     style[`--${token}`] = value.trim();
+    // The studio's value again, under a name nothing overrides: dark theme
+    // replaces `--color-accent` with a lift of it (`globals.css`), and a
+    // property cannot be derived from itself.
+    style[`--brand-${token}`] = value.trim();
   }
   return style as React.CSSProperties;
 }
@@ -75,7 +79,7 @@ export function BrandProvider({
   const style = useMemo(() => themeStyle(brand.theme), [brand.theme]);
   return (
     <BrandContext.Provider value={brand}>
-      <div style={style} className="contents">
+      <div style={style} className="brand-scope contents">
         {children}
       </div>
     </BrandContext.Provider>
