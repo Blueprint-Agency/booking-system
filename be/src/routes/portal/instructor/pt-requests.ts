@@ -10,8 +10,20 @@ import { schedulePtRequest } from '../../../services/pt-sessions/schedule'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
 import { statusForScheduleError } from '../pt-schedule-status'
 import { tenantId } from '../../../middleware/tenant'
-import { createManualPtSession } from '../../../services/pt-sessions/manual'
-import { instructorManualSessionSchema, manualSessionFields } from '../pt-manual'
+import {
+  addManualPtSessionMember,
+  createManualPtSession,
+  listSeatCandidates,
+} from '../../../services/pt-sessions/manual'
+import {
+  addedMemberJson,
+  addManualMemberFields,
+  addManualMemberSchema,
+  instructorManualSessionSchema,
+  instructorSeatCandidatesQuery,
+  manualSessionFields,
+  seatCandidatesJson,
+} from '../pt-manual'
 
 // Instructor PT surface. Instructors see the pending requests they may act on —
 // unbound ones, plus those bound to them — and pick up the ones they can run;
@@ -91,6 +103,40 @@ const app = new Hono()
     const row = await getPtRequestForAdmin(tenantId(c), ptRequestId)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
+  // The member's PT packages read against a session the caller would run
+  // (#337): the instructor is always self, so a package bound to another
+  // coach reads as refused, not warned.
+  .get('/seat-candidates', zValidator('query', instructorSeatCandidatesQuery), async c => {
+    const q = c.req.valid('query')
+    const res = await listSeatCandidates(tenantId(c), {
+      clientId: q.client_id,
+      sessionType: q.session_type,
+      instructorId: c.get('staffUserId') as string, // never from the query
+      actorIsAdmin: false,
+    })
+    return c.json(seatCandidatesJson(res))
+  })
+  // One more member on a manual session the caller runs (#337); another
+  // coach's session is `403 not_your_session`.
+  .post(
+    '/sessions/:id/members',
+    zValidator('param', idParam),
+    zValidator('json', addManualMemberSchema),
+    async c => {
+      const { id } = c.req.valid('param')
+      const body = c.req.valid('json')
+      const self = c.get('staffUserId') as string
+      const seat = await addManualPtSessionMember(tenantId(c), {
+        ...addManualMemberFields(body),
+        ptSessionId: id,
+        actorStaffId: self,
+        actorIsAdmin: false,
+        requireOwnInstructorId: self,
+      })
+      c.set('auditTarget' as any, { table: 'bookings', id: seat.bookingId })
+      return c.json(addedMemberJson(body.client_id, seat), 201)
+    },
+  )
   .post('/:id/schedule', zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')

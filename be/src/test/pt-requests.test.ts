@@ -1810,6 +1810,400 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(packageId), 9)
   })
 
+  // ── Adding a member to a manual session (#337) ───────────────────────────
+
+  type AddBody = { client_id: string; client_package_id?: string; override?: boolean }
+
+  const adminAddMember = (by: Staff, sessionId: string, body: AddBody) =>
+    harness.app.request(`/api/v1/portal/admin/pt-sessions/sessions/${sessionId}/members`, {
+      method: 'POST',
+      headers: { ...by.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+  const instructorAddMember = (by: Staff, sessionId: string, body: AddBody) =>
+    harness.app.request(`/api/v1/portal/instructor/pt-requests/sessions/${sessionId}/members`, {
+      method: 'POST',
+      headers: { ...by.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+  /** A manual 2on1 run by `instructor` with one member on it, one seat still open. */
+  async function openPair(name: string, instructor: Staff = coachA) {
+    const first = await member(one, `${name} First`)
+    await givePt(one, first, '2on1')
+    const made = await manualSession(
+      await adminManual(adminAtOne, [{ client_id: first.clientId }], { sessionType: '2on1', instructor }),
+    )
+    return { first, ...made }
+  }
+
+  test('PT-87 an admin or an instructor adds a member to a manual session: their booking carries their package and one session, a Dormant package Activates, and the second attendee becomes the co-client', async () => {
+    for (const [by, add] of [
+      [adminAtOne, adminAddMember],
+      [coachA, instructorAddMember],
+    ] as const) {
+      const { first, requestId, sessionId } = await openPair(`Abe Add ${by === coachA ? 'I' : 'A'}`)
+      const joiner = await member(one, `Ada Joins ${by === coachA ? 'I' : 'A'}`)
+      const packageId = await givePt(one, joiner, '2on1')
+      assert.equal((await pkg(packageId)).expiresAt, null)
+
+      const beforeAdd = Date.now()
+      const res = await expectStatus(await add(by, sessionId, { client_id: joiner.clientId }), 201)
+      assert.equal(res.booking.client_id, joiner.clientId)
+      assert.equal(res.booking.client_package_id, packageId)
+
+      const seat = (await bookingsOn(sessionId)).find(b => b.clientId === joiner.clientId)
+      assert.equal(seat?.id, res.booking.id)
+      assert.equal(seat?.state, 'confirmed')
+      assert.equal(seat?.clientPackageId, packageId)
+      assert.equal(seat?.creditsOrSessionsUsed, 1)
+      assert.ok(seat?.qrToken && seat.code)
+      assert.equal(await sessionsLeft(packageId), 9)
+
+      const activated = await pkg(packageId)
+      assert.ok(withinMinutes(activated.expiresAt, beforeAdd + activated.validityDays! * DAY))
+      assert.equal(activated.activatedByPtSessionId, sessionId)
+
+      const req = await requestRow(requestId)
+      assert.equal(req.clientId, first.clientId)
+      assert.equal(req.coClientId, joiner.clientId)
+      const attendees = await harness.db
+        .select({ clientId: schema.ptSessionClients.clientId })
+        .from(schema.ptSessionClients)
+        .where(eq(schema.ptSessionClients.ptSessionId, sessionId))
+      assert.deepEqual(attendees.map(a => a.clientId).sort(), [first.clientId, joiner.clientId].sort())
+    }
+  })
+
+  test('PT-88 adding to a full session, a member already on it, a cancelled session, a member-origin session, or as an instructor to another coach\'s session is refused and changes nothing', async () => {
+    const extra = await member(one, 'Bea Extra')
+    const extraPackage = await givePt(one, extra, '1on1')
+
+    // Full: a 1on1 with its one attendee, a 2on1 with two.
+    const solo = await member(one, 'Bo Solo')
+    await givePt(one, solo, '1on1')
+    const single = await manualSession(await adminManual(adminAtOne, [{ client_id: solo.clientId }]))
+    const pairOne = await member(one, 'Bix Pair One')
+    const pairTwo = await member(one, 'Bix Pair Two')
+    await givePt(one, pairOne, '2on1')
+    await givePt(one, pairTwo, '2on1')
+    const pair = await manualSession(
+      await adminManual(adminAtOne, [{ client_id: pairOne.clientId }, { client_id: pairTwo.clientId }], {
+        sessionType: '2on1',
+      }),
+    )
+    for (const sessionId of [single.sessionId, pair.sessionId]) {
+      const full = await expectStatus(
+        await adminAddMember(adminAtOne, sessionId, { client_id: extra.clientId, override: true }),
+        409,
+      )
+      assert.equal(full.error, 'session_full')
+    }
+
+    // Already on it.
+    const open = await openPair('Bly Open')
+    const twice = await expectStatus(await adminAddMember(adminAtOne, open.sessionId, { client_id: open.first.clientId }), 409)
+    assert.equal(twice.error, 'already_booked')
+
+    // Another coach's session, from the instructor route.
+    const theirs = await openPair('Bry Theirs', coachB)
+    const notYours = await expectStatus(
+      await instructorAddMember(coachA, theirs.sessionId, { client_id: extra.clientId, override: true }),
+      403,
+    )
+    assert.equal(notYours.error, 'not_your_session')
+
+    // Cancelled.
+    const gone = await openPair('Bud Gone')
+    await expectStatus(await adminCancel(adminAtOne, gone.requestId), 200)
+    const cancelled = await expectStatus(
+      await adminAddMember(adminAtOne, gone.sessionId, { client_id: extra.clientId }),
+      409,
+    )
+    assert.equal(cancelled.error, 'session_cancelled')
+
+    // A member's own request: its requester paid for the whole session.
+    const asker = await member(one, 'Bea Asks')
+    const askerPackage = await givePt(one, asker, '1on1')
+    const requested = await scheduled(await requestOk(one, asker, { sessionType: '1on1', clientPackageId: askerPackage }))
+    const memberOrigin = await expectStatus(
+      await adminAddMember(adminAtOne, requested, { client_id: extra.clientId, override: true }),
+      409,
+    )
+    assert.equal(memberOrigin.error, 'not_a_manual_session')
+
+    // Another studio's session is not found.
+    await expectStatus(await adminAddMember(adminAtTwo, open.sessionId, { client_id: extra.clientId }), 404)
+
+    assert.equal(await sessionsLeft(extraPackage), 10)
+    assert.equal((await harness.db.select().from(schema.bookings).where(eq(schema.bookings.clientId, extra.clientId))).length, 0)
+    assert.equal((await bookingsOn(requested)).length, 1)
+    assert.equal((await bookingsOn(single.sessionId)).length, 1)
+    assert.equal((await bookingsOn(pair.sessionId)).length, 2)
+    assert.equal((await bookingsOn(open.sessionId)).length, 1)
+    assert.equal((await bookingsOn(theirs.sessionId)).length, 1)
+    assert.equal((await requestRow(open.requestId)).coClientId, null)
+  })
+
+  test('PT-89 adding a member warns and overrides as creating does: a package of the other type or (for an admin) bound to another coach needs Add anyway, an instructor is refused another coach\'s client, and a named package pays', async () => {
+    // Type mismatch: warned, then Add anyway.
+    const mismatch = await openPair('Cal Mismatch')
+    const cy = await member(one, 'Cy Singles')
+    const singles = await givePt(one, cy, '1on1')
+    const warned = await expectStatus(await adminAddMember(adminAtOne, mismatch.sessionId, { client_id: cy.clientId }), 409)
+    assert.equal(warned.error, 'seat_needs_override')
+    assert.deepEqual(warned.warnings, ['session_type_mismatch'])
+    assert.equal(warned.client_id, cy.clientId)
+    assert.equal(warned.client_package_id, singles)
+    assert.equal(await sessionsLeft(singles), 10)
+    await expectStatus(
+      await adminAddMember(adminAtOne, mismatch.sessionId, { client_id: cy.clientId, override: true }),
+      201,
+    )
+    assert.equal(await sessionsLeft(singles), 9)
+
+    // Bound to coach B, on coach A's session.
+    const bound = await openPair('Cor Bound')
+    const cleo = await member(one, 'Cleo Bound B')
+    const boundToB = await givePt(one, cleo, '2on1', { boundTo: coachB })
+    const adminWarned = await expectStatus(await adminAddMember(adminAtOne, bound.sessionId, { client_id: cleo.clientId }), 409)
+    assert.deepEqual(adminWarned.warnings, ['bound_to_other_instructor'])
+    for (const override of [false, true]) {
+      const refused = await expectStatus(
+        await instructorAddMember(coachA, bound.sessionId, { client_id: cleo.clientId, override }),
+        403,
+      )
+      assert.equal(refused.error, 'bound_to_other_instructor')
+    }
+    assert.equal(await sessionsLeft(boundToB), 10)
+    await expectStatus(await adminAddMember(adminAtOne, bound.sessionId, { client_id: cleo.clientId, override: true }), 201)
+    assert.equal(await sessionsLeft(boundToB), 9)
+
+    // A named package pays over the Default payer.
+    const named = await openPair('Cid Named')
+    const cam = await member(one, 'Cam Picks')
+    const firstBought = await givePt(one, cam, '2on1')
+    const secondBought = await givePt(one, cam, '2on1')
+    const res = await expectStatus(
+      await adminAddMember(adminAtOne, named.sessionId, { client_id: cam.clientId, client_package_id: secondBought }),
+      201,
+    )
+    assert.equal(res.booking.client_package_id, secondBought)
+    assert.equal(await sessionsLeft(secondBought), 9)
+    assert.equal(await sessionsLeft(firstBought), 10)
+  })
+
+  test('PT-90 two adds racing for the last seat make one booking', async () => {
+    const { sessionId } = await openPair('Dot Race')
+    const dan = await member(one, 'Dan Race')
+    const dee = await member(one, 'Dee Race')
+    const danPackage = await givePt(one, dan, '2on1')
+    const deePackage = await givePt(one, dee, '2on1')
+
+    const results = await Promise.all([
+      adminAddMember(adminAtOne, sessionId, { client_id: dan.clientId }),
+      adminAddMember(adminAtOne, sessionId, { client_id: dee.clientId }),
+    ])
+    assert.deepEqual(results.map(r => r.status).sort(), [201, 409])
+    const loser = results.find(r => r.status === 409)!
+    assert.equal(((await loser.json()) as any).error, 'session_full')
+
+    assert.equal((await bookingsOn(sessionId)).filter(b => b.state === 'confirmed').length, 2)
+    assert.equal((await sessionsLeft(danPackage))! + (await sessionsLeft(deePackage))!, 19)
+  })
+
+  test('PT-94 a seat freed by a single-booking cancel can be filled again — by the same member or another — and the attendees and the request follow who is booked', async () => {
+    const cancelBooking = (bookingId: string) =>
+      harness.app.request(`/api/v1/portal/admin/bookings/${bookingId}/cancel`, {
+        method: 'POST',
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credit: 'return' }),
+      })
+    const attendeesOf = async (sessionId: string) =>
+      (
+        await harness.db
+          .select({ clientId: schema.ptSessionClients.clientId })
+          .from(schema.ptSessionClients)
+          .where(eq(schema.ptSessionClients.ptSessionId, sessionId))
+      )
+        .map(a => a.clientId)
+        .sort()
+    const seatOf = async (sessionId: string, who: Member) =>
+      (await bookingsOn(sessionId)).find(b => b.clientId === who.clientId && b.state === 'confirmed')
+
+    // 2on1: the co-client's seat is cancelled, they are added back, then
+    // cancelled again and someone else takes the seat.
+    const { first, requestId, sessionId } = await openPair('Ivy Refill')
+    const ian = await member(one, 'Ian Back')
+    const ianPackage = await givePt(one, ian, '2on1')
+    await expectStatus(await adminAddMember(adminAtOne, sessionId, { client_id: ian.clientId }), 201)
+    await expectStatus(await cancelBooking((await seatOf(sessionId, ian))!.id), 200)
+
+    await expectStatus(await adminAddMember(adminAtOne, sessionId, { client_id: ian.clientId }), 201)
+    assert.ok(await seatOf(sessionId, ian))
+    assert.deepEqual(await attendeesOf(sessionId), [first.clientId, ian.clientId].sort())
+    assert.equal((await requestRow(requestId)).coClientId, ian.clientId)
+
+    await expectStatus(await cancelBooking((await seatOf(sessionId, ian))!.id), 200)
+    const ira = await member(one, 'Ira Instead')
+    await givePt(one, ira, '2on1')
+    await expectStatus(await adminAddMember(adminAtOne, sessionId, { client_id: ira.clientId }), 201)
+    assert.deepEqual(await attendeesOf(sessionId), [first.clientId, ira.clientId].sort(), 'two seats, two attendees')
+    const pairReq = await requestRow(requestId)
+    assert.equal(pairReq.clientId, first.clientId)
+    assert.equal(pairReq.coClientId, ira.clientId)
+    assert.equal(await sessionsLeft(ianPackage), 10, 'both of his seats were returned')
+
+    // 1on1: its only member's seat is cancelled and someone else takes it —
+    // they become the request's client, and a 1on1 has no co-client.
+    const ike = await member(one, 'Ike Solo')
+    await givePt(one, ike, '1on1')
+    const single = await manualSession(await adminManual(adminAtOne, [{ client_id: ike.clientId }]))
+    await expectStatus(await cancelBooking((await seatOf(single.sessionId, ike))!.id), 200)
+    const isa = await member(one, 'Isa Takes Over')
+    await givePt(one, isa, '1on1')
+    await expectStatus(await adminAddMember(adminAtOne, single.sessionId, { client_id: isa.clientId }), 201)
+    assert.deepEqual(await attendeesOf(single.sessionId), [isa.clientId])
+    const soloReq = await requestRow(single.requestId)
+    assert.equal(soloReq.clientId, isa.clientId)
+    assert.equal(soloReq.coClientId, null)
+  })
+
+  // ── The packages a member could pay a seat with (#337) ───────────────────
+
+  const candidates = (path: string, by: Staff, query: Record<string, string>) =>
+    harness.app.request(`${path}?${new URLSearchParams(query)}`, { headers: by.headers })
+  const adminCandidates = (by: Staff, query: Record<string, string>) =>
+    candidates('/api/v1/portal/admin/pt-sessions/seat-candidates', by, query)
+  const instructorCandidates = (by: Staff, query: Record<string, string>) =>
+    candidates('/api/v1/portal/instructor/pt-requests/seat-candidates', by, query)
+
+  test('PT-91 the candidate read lists every PT package the member holds in Default-payer order, each with whether it can pay and why not or what it warns, and a Dormant one\'s end date', async () => {
+    const eli = await member(one, 'Eli Candidates')
+    const dormant = await givePt(one, eli, '1on1')
+    const runningLate = await givePt(one, eli, '1on1')
+    const runningSoon = await givePt(one, eli, '1on1')
+    const otherType = await givePt(one, eli, '2on1')
+    const empty = await givePt(one, eli, '1on1', { sessions: 0 })
+    const boundToB = await givePt(one, eli, '1on1', { boundTo: coachB })
+    await giveClassCredits(one, eli)
+    const set = (id: string, expiresAt: Date) =>
+      harness.db.update(schema.clientPackages).set({ expiresAt }).where(eq(schema.clientPackages.id, id))
+    await set(runningLate, new Date(Date.now() + 60 * DAY))
+    await set(runningSoon, new Date(Date.now() + 20 * DAY))
+    await set(otherType, new Date(Date.now() + 5 * DAY))
+
+    const beforeRead = Date.now()
+    const res = await expectStatus(
+      await adminCandidates(adminAtOne, { client_id: eli.clientId, session_type: '1on1', instructor_id: coachA.staffId }),
+      200,
+    )
+    const ids: string[] = res.packages.map((p: any) => p.id)
+    assert.equal(ids.length, 6, 'every PT package, and no class package')
+    // The session's type first, running before Dormant, soonest-ending first.
+    assert.deepEqual(ids.slice(0, 2), [runningSoon, runningLate])
+    assert.equal(ids.at(-1), otherType)
+    assert.equal(res.default_client_package_id, runningSoon)
+
+    const byId = new Map<string, any>(res.packages.map((p: any) => [p.id, p]))
+    const soon = byId.get(runningSoon)
+    assert.equal(soon.eligible, true)
+    assert.equal(soon.reason, null)
+    assert.deepEqual(soon.warnings, [])
+    assert.equal(soon.session_type, '1on1')
+    assert.equal(soon.sessions_left, 10)
+    assert.equal(new Date(soon.expires_at).getTime() > Date.now(), true)
+    assert.equal(soon.activation_end_if_picked, null, 'a running package has its end date already')
+    assert.equal(typeof soon.name, 'string')
+
+    const dorm = byId.get(dormant)
+    assert.equal(dorm.eligible, true)
+    assert.equal(dorm.expires_at, null)
+    const validityDays = (await pkg(dormant)).validityDays!
+    assert.ok(withinMinutes(new Date(dorm.activation_end_if_picked), beforeRead + validityDays * DAY))
+
+    assert.equal(byId.get(empty).eligible, false)
+    assert.equal(byId.get(empty).reason, 'insufficient_pt_credit')
+    assert.equal(byId.get(empty).activation_end_if_picked, null)
+
+    assert.equal(byId.get(otherType).eligible, true)
+    assert.deepEqual(byId.get(otherType).warnings, ['session_type_mismatch'])
+
+    const bound = byId.get(boundToB)
+    assert.equal(bound.eligible, true)
+    assert.deepEqual(bound.warnings, ['bound_to_other_instructor'])
+    assert.equal(bound.bound_instructor.id, coachB.staffId)
+
+    // A member holding no PT package: an empty list and no Default payer.
+    const fin = await member(one, 'Fin Nothing')
+    const nothing = await expectStatus(
+      await adminCandidates(adminAtOne, { client_id: fin.clientId, session_type: '1on1', instructor_id: coachA.staffId }),
+      200,
+    )
+    assert.deepEqual(nothing, { default_client_package_id: null, packages: [] })
+
+    // Nothing was spent or started by reading.
+    assert.equal(await sessionsLeft(runningSoon), 10)
+    assert.equal((await pkg(dormant)).expiresAt, null)
+  })
+
+  test('PT-92 an instructor\'s candidate read judges a package bound to another coach as a refusal, against their own sessions whatever instructor they name', async () => {
+    const gus = await member(one, 'Gus Bound')
+    const boundToB = await givePt(one, gus, '1on1', { boundTo: coachB })
+    const boundToA = await givePt(one, gus, '1on1', { boundTo: coachA })
+
+    const res = await expectStatus(
+      await instructorCandidates(coachA, { client_id: gus.clientId, session_type: '1on1', instructor_id: coachB.staffId }),
+      200,
+    )
+    const byId = new Map<string, any>(res.packages.map((p: any) => [p.id, p]))
+    assert.equal(byId.get(boundToB).eligible, false)
+    assert.equal(byId.get(boundToB).reason, 'bound_to_other_instructor')
+    assert.equal(byId.get(boundToA).eligible, true)
+    assert.deepEqual(byId.get(boundToA).warnings, [])
+    assert.equal(res.default_client_package_id, boundToA)
+
+    // The admin, asking about coach A's session, is only warned.
+    const asAdmin = await expectStatus(
+      await adminCandidates(adminAtOne, { client_id: gus.clientId, session_type: '1on1', instructor_id: coachA.staffId }),
+      200,
+    )
+    const adminView = asAdmin.packages.find((p: any) => p.id === boundToB)
+    assert.equal(adminView.eligible, true)
+    assert.deepEqual(adminView.warnings, ['bound_to_other_instructor'])
+  })
+
+  test('PT-93 the candidate read finds no member of another studio, or a deleted one, and refuses a blocked one as adding them would', async () => {
+    const stopped = await member(one, 'Hal Blocked')
+    await givePt(one, stopped, '1on1')
+    await harness.db.update(schema.clients).set({ status: 'suspended' }).where(eq(schema.clients.id, stopped.clientId))
+    const blocked = await expectStatus(
+      await adminCandidates(adminAtOne, { client_id: stopped.clientId, session_type: '1on1', instructor_id: coachA.staffId }),
+      409,
+    )
+    assert.equal(blocked.error, 'client_blocked')
+
+    const away = await member(two, 'Hal Away')
+    await givePt(two, away, '1on1')
+    const gone = await member(one, 'Hal Gone')
+    await givePt(one, gone, '1on1')
+    await harness.db.update(schema.clients).set({ deletedAt: new Date() }).where(eq(schema.clients.id, gone.clientId))
+
+    for (const who of [away, gone]) {
+      const admin = await expectStatus(
+        await adminCandidates(adminAtOne, { client_id: who.clientId, session_type: '1on1', instructor_id: coachA.staffId }),
+        404,
+      )
+      assert.equal(admin.error, 'client_not_found')
+      const coach = await expectStatus(
+        await instructorCandidates(coachA, { client_id: who.clientId, session_type: '1on1' }),
+        404,
+      )
+      assert.equal(coach.error, 'client_not_found')
+    }
+  })
+
   // ── Who may ──────────────────────────────────────────────────────────────
 
   test('a member, or a staff session on the member app, is refused the staff PT routes; an instructor is refused the admin ones', async () => {

@@ -18,7 +18,7 @@
  * `override`. A Dormant package Activates on its seat, from that moment
  * (be/docs/adr/0011).
  */
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, notInArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
@@ -108,8 +108,8 @@ const packageColumns = {
 }
 
 /** The Tenant's member, alive. Another studio's member is simply not found. */
-async function assertMember(tx: Tx, tenantId: string, clientId: string): Promise<void> {
-  const [member] = await tx
+async function assertMember(reader: Tx | typeof db, tenantId: string, clientId: string): Promise<void> {
+  const [member] = await reader
     .select({ status: clients.status, deletedAt: clients.deletedAt })
     .from(clients)
     .where(and(eq(clients.tenantId, tenantId), eq(clients.id, clientId)))
@@ -210,6 +210,20 @@ async function seatMember(
     )
   if (seated.some(b => b.clientId === member.clientId)) throw new ConflictError('already_booked')
   if (seated.length >= session.capacityOnline) throw new ConflictError('session_full')
+
+  // A single-booking cancel frees the seat but leaves its attendee row, so
+  // the attendees are brought back to who is booked before this one joins —
+  // or the same member coming back would collide with their old row.
+  const seatedIds = seated.map(b => b.clientId)
+  await tx
+    .delete(ptSessionClients)
+    .where(
+      and(
+        eq(ptSessionClients.tenantId, tenantId),
+        eq(ptSessionClients.ptSessionId, session.id),
+        ...(seatedIds.length ? [notInArray(ptSessionClients.clientId, seatedIds)] : []),
+      ),
+    )
 
   const now = clockNow()
   // An ended package reads as ended now, not only once the nightly sweep runs.
@@ -401,11 +415,23 @@ export async function addManualPtSessionMember(
 
     const seat = await seatMember(tx, tenantId, session, input, input)
 
-    // The request mirrors the roster, as a request session's does.
-    if (!req.coClientId && req.clientId !== input.clientId) {
+    // The request mirrors the roster, as a request session's does: its client
+    // stays while they are booked, and the co-client is whoever else is. A
+    // seat freed by a single-booking cancel and filled again moves them too.
+    const booked = await tx
+      .select({ clientId: bookings.clientId })
+      .from(bookings)
+      .where(
+        and(eq(bookings.tenantId, tenantId), eq(bookings.ptSessionId, session.id), eq(bookings.state, 'confirmed')),
+      )
+      .orderBy(asc(bookings.bookedAt), asc(bookings.id))
+    const ids = booked.map(b => b.clientId)
+    const clientId = ids.includes(req.clientId) ? req.clientId : ids[0]!
+    const coClientId = ids.find(id => id !== clientId) ?? null
+    if (clientId !== req.clientId || coClientId !== req.coClientId) {
       await tx
         .update(ptRequests)
-        .set({ coClientId: input.clientId })
+        .set({ clientId, coClientId })
         .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
     }
     return seat
@@ -442,12 +468,10 @@ export async function listSeatCandidates(
   tenantId: string,
   input: { clientId: string; sessionType: PtSessionType; instructorId: string; actorIsAdmin: boolean },
 ): Promise<{ defaultClientPackageId: string | null; packages: SeatCandidate[] }> {
-  const [member] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(and(eq(clients.tenantId, tenantId), eq(clients.id, input.clientId)))
-    .limit(1)
-  if (!member) throw new NotFoundError('client_not_found')
+  // Refused as adding them would be, so the form never offers a seat the add
+  // turns down: another studio's member or a deleted one is not found, a
+  // blocked one is `client_blocked`.
+  await assertMember(db, tenantId, input.clientId)
 
   const rows = await db
     .select({

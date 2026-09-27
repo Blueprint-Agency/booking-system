@@ -13,8 +13,20 @@ import { schedulePtRequest, updatePtSession } from '../../../services/pt-session
 import { statusForScheduleError } from '../pt-schedule-status'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
 import { getPtSessionDetail, type PtSessionDetail } from '../../../services/schedule/detail'
-import { createManualPtSession } from '../../../services/pt-sessions/manual'
-import { adminManualSessionSchema, manualSessionFields } from '../pt-manual'
+import {
+  addManualPtSessionMember,
+  createManualPtSession,
+  listSeatCandidates,
+} from '../../../services/pt-sessions/manual'
+import {
+  addedMemberJson,
+  addManualMemberFields,
+  addManualMemberSchema,
+  adminManualSessionSchema,
+  adminSeatCandidatesQuery,
+  manualSessionFields,
+  seatCandidatesJson,
+} from '../pt-manual'
 
 // PT request triage for admins. No "approve"/"decline" in the simplified flow —
 // admin negotiates over WhatsApp, then either schedules (the implicit approval)
@@ -142,6 +154,19 @@ const app = new Hono()
     })
     return c.json({ pt_requests: rows.map(serialize) })
   })
+  // The member's PT packages read against a session's type and instructor —
+  // what a manual session's Pay with select lists (#337). Before `/:id`, which
+  // would otherwise take the path for an id.
+  .get('/seat-candidates', zValidator('query', adminSeatCandidatesQuery), async c => {
+    const q = c.req.valid('query')
+    const res = await listSeatCandidates(tenantId(c), {
+      clientId: q.client_id,
+      sessionType: q.session_type,
+      instructorId: q.instructor_id,
+      actorIsAdmin: true,
+    })
+    return c.json(seatCandidatesJson(res))
+  })
   .get('/:id', zValidator('param', idParam), async c => {
     const row = await getPtRequestForAdmin(tenantId(c), c.req.valid('param').id)
     if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
@@ -216,6 +241,25 @@ const app = new Hono()
     const detail = await getPtSessionDetail(tenantId(c), id)
     return c.json(serializeSession(detail))
   })
+  // One more member on a manual session (#337): :id is the pt_session id. The
+  // same seat rule and `override` as creating it.
+  .post(
+    '/sessions/:id/members',
+    zValidator('param', idParam),
+    zValidator('json', addManualMemberSchema),
+    async c => {
+      const { id } = c.req.valid('param')
+      const body = c.req.valid('json')
+      const seat = await addManualPtSessionMember(tenantId(c), {
+        ...addManualMemberFields(body),
+        ptSessionId: id,
+        actorStaffId: c.get('staffUserId') as string,
+        actorIsAdmin: true,
+      })
+      c.set('auditTarget' as any, { table: 'bookings', id: seat.bookingId })
+      return c.json(addedMemberJson(body.client_id, seat), 201)
+    },
+  )
   .post('/:id/link-partner', zValidator('param', idParam), zValidator('json', linkPartnerSchema), async c => {
     const { id } = c.req.valid('param')
     const { client_id, email } = c.req.valid('json')
