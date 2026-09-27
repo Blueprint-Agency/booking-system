@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, CalendarPlus, ChevronRight, Ticket, UserRound } from "lucide-react";
+import { ArrowRight, CalendarPlus, ChevronRight } from "lucide-react";
 import { cn, formatExpiryDate, formatSgd } from "@/lib/utils";
 import { coversAllLocations } from "@/lib/package-coverage";
 import { AllLocationsRow, CoversRow, LocationChip } from "@/components/ui/location-chip";
 import { useLocations } from "@/lib/classes";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { ComingUp } from "@/components/account/coming-up";
-import { PracticeSummary } from "@/components/account/practice-summary";
 import { AccountHeader } from "@/components/account/account-header";
 import { ACCOUNT_SECTIONS } from "@/components/account/account-nav-items";
 import { SignOutButton } from "@/components/account/sign-out-button";
@@ -18,11 +17,8 @@ import { OpenPurchases } from "@/components/account/open-purchases";
 import { CancelledBanner } from "@/components/checkout/cancelled-banner";
 import { usePartPaymentOptions, useOpenPurchases } from "@/lib/open-purchases";
 
-/** What a Dormant package says on both member surfaces (spec §8). */
-const ACTIVATION_LINE = "Starts when you book your first class";
-
 /**
- * The same promise with the length attached, for a package card. Every kind
+ * What a Dormant package promises, with the length attached. Every kind
  * waits Dormant until the first booking it pays for; a PT package starts when
  * the studio schedules the first session it pays for, not when the member
  * asks for one (be/docs/adr/0011). With another package running, that is the
@@ -64,23 +60,12 @@ function SectionTitle({
 
 export default function AccountOverview() {
   const { user } = useAppUser();
-  const {
-    classCredits,
-    isUnlimited: unlimited,
-    unlimitedExpiresAt,
-    unlimitedDormant,
-    pt1on1,
-    pt2on1,
-    packages: livePackages,
-    crossLocation,
-    loading: pkgLoading,
-  } = useClientPackages();
+  const { packages: livePackages, crossLocation, loading: pkgLoading } = useClientPackages();
   const { data: locations } = useLocations();
   // A balance the member left outstanding (#93). It sits above the packages
   // because it is the one thing on this page waiting on them.
   const { purchases: openPurchases, failed: openPurchasesFailed } = useOpenPurchases();
   const partPayment = usePartPaymentOptions();
-  const ptSessionsRemaining = pt1on1 + pt2on1;
   const firstName = user?.firstName || "there";
 
   // Every live package, each on its own card: several of a Family may run at
@@ -122,21 +107,6 @@ export default function AccountOverview() {
               one tap away (#192); the rest beside it, swiped through. */}
           <ComingUp />
 
-          {/* Attended classes over a chosen timeframe, as a punch card (#317). */}
-          <PracticeSummary />
-
-          {/* Balances — side by side even on a phone; they're read together. */}
-          <div className="xl:hidden mb-6">
-            <Balances
-              loading={pkgLoading}
-              unlimited={unlimited}
-              classCredits={classCredits}
-              unlimitedExpiresAt={unlimitedExpiresAt}
-              unlimitedDormant={unlimitedDormant}
-              ptSessions={ptSessionsRemaining}
-            />
-          </div>
-
           {/* Unfinished purchases — money paid that has granted nothing yet. */}
           <div className="[&>*:first-child]:mt-0 mb-6 empty:hidden">
             <OpenPurchases
@@ -149,27 +119,18 @@ export default function AccountOverview() {
         </div>
 
         <aside className="min-w-0">
-          <div className="hidden xl:block mb-8">
-            <SectionTitle>Balance</SectionTitle>
-            <Balances
-              loading={pkgLoading}
-              unlimited={unlimited}
-              classCredits={classCredits}
-              unlimitedExpiresAt={unlimitedExpiresAt}
-              unlimitedDormant={unlimitedDormant}
-              ptSessions={ptSessionsRemaining}
-            />
-          </div>
-
+          {/* Every package the member holds, running or still waiting for its
+              first booking — each card says which, so a Dormant one is never
+              passed off as active. */}
           <section aria-labelledby="packages-heading" className="mb-8">
             <SectionTitle action={{ href: "/packages", label: "Buy more" }}>
-              <span id="packages-heading">Active packages</span>
+              <span id="packages-heading">Your packages</span>
             </SectionTitle>
             {pkgLoading ? (
               <ContentLoading label="Loading your packages" className="min-h-24" />
             ) : packages.length === 0 ? (
               <div className={cn(cardClass, "p-5")}>
-                <p className="font-semibold text-ink">No active packages</p>
+                <p className="font-semibold text-ink">No packages yet</p>
                 <p className="text-sm text-muted mt-0.5">
                   A class bundle, unlimited pass or PT package unlocks booking.
                 </p>
@@ -208,84 +169,10 @@ export default function AccountOverview() {
   );
 }
 
-function Balances({
-  loading,
-  unlimited,
-  classCredits,
-  unlimitedExpiresAt,
-  unlimitedDormant,
-  ptSessions,
-}: {
-  loading: boolean;
-  unlimited: boolean;
-  classCredits: number;
-  unlimitedExpiresAt: string | null;
-  unlimitedDormant: boolean;
-  ptSessions: number;
-}) {
-  const classNote = unlimited
-    ? unlimitedExpiresAt
-      ? `Until ${formatExpiryDate(unlimitedExpiresAt)}`
-      : unlimitedDormant
-        ? ACTIVATION_LINE
-        : null
-    : null;
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <BalanceTile
-        icon={Ticket}
-        label="Class credits"
-        value={loading ? "—" : unlimited ? "Unlimited" : String(classCredits)}
-        note={classNote}
-        compactValue={unlimited}
-      />
-      <BalanceTile
-        icon={UserRound}
-        label="PT sessions"
-        value={loading ? "—" : String(ptSessions)}
-      />
-    </div>
-  );
-}
-
-function BalanceTile({
-  icon: Icon,
-  label,
-  value,
-  note,
-  compactValue = false,
-}: {
-  icon: typeof Ticket;
-  label: string;
-  value: string;
-  note?: string | null;
-  compactValue?: boolean;
-}) {
-  return (
-    <div className={cn(cardClass, "p-4 sm:p-5 min-w-0")}>
-      <div className="flex items-center gap-2 text-muted">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/10 text-accent-deep">
-          <Icon className="h-3.5 w-3.5" />
-        </span>
-        <span className="text-xs font-semibold truncate">{label}</span>
-      </div>
-      <p
-        className={cn(
-          "mt-3 font-extrabold text-ink tabular-nums leading-none truncate",
-          compactValue ? "text-2xl" : "text-3xl sm:text-4xl",
-        )}
-      >
-        {value}
-      </p>
-      {note && <p className="text-xs text-muted mt-1.5 line-clamp-2">{note}</p>}
-    </div>
-  );
-}
-
 /**
  * The account's sections as a menu, for phones and tablets where there is no
  * sidebar. It closes the overview rather than opening it: what the member came
- * to see — the next class, the balance — comes first.
+ * to see — the next session, their packages — comes first.
  */
 function AccountMenu() {
   return (
@@ -347,14 +234,26 @@ function PackageCard({
     <div className={cn(cardClass, "p-4 sm:p-5")}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <span
-            className={cn(
-              "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-              isPt ? "bg-cyan/15 text-cyan-deep" : "bg-accent/10 text-accent-deep",
-            )}
-          >
-            {isPt ? "Private" : isUnlimited ? "Unlimited" : "Classes"}
-          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className={cn(
+                "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                isPt ? "bg-cyan/15 text-cyan-deep" : "bg-accent/10 text-accent-deep",
+              )}
+            >
+              {isPt ? "Private" : isUnlimited ? "Unlimited" : "Classes"}
+            </span>
+            {/* Running, or Dormant until its first booking: said outright, so a
+                package that has not started never reads as active. */}
+            <span
+              className={cn(
+                "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                pkg.dormant ? "bg-ink/[0.06] text-muted" : "bg-sage/15 text-sage",
+              )}
+            >
+              {pkg.dormant ? "Not started" : "Active"}
+            </span>
+          </div>
           <p className="mt-1.5 font-semibold text-ink break-words">{pkg.name}</p>
           <p className="text-xs text-muted mt-1">
             {pkg.dormant

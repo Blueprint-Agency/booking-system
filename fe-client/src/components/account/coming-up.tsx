@@ -1,103 +1,152 @@
 "use client";
 
 /**
- * "Coming up" on the account overview: the next class as the ticket, and
- * everything after it — bookings and places in line alike — as one row of
- * cards the member swipes through. Sideways rather than down, so three
- * bookings cost a phone the same height as one.
- *
- * Tapping a card opens its sheet, where the QR and the cancel (or, for a
- * waitlist place, the leave) live. The ticket carries its own QR and cancel.
+ * "Coming up" on the account overview: the one booking the member walks into
+ * next — a class, a PT session or a workshop, whichever starts first — as the
+ * ticket, with its QR and (where the member may still cancel) its Cancel.
+ * Everything after it lives on its own page; this screen shows only what is
+ * next.
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ChevronRight, Hourglass, MapPin, QrCode, UserRound } from "lucide-react";
+import { ArrowRight, ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Portal } from "@/components/ui/portal";
 import { ContentLoading } from "@/components/ui/content-loading";
 import {
-  BTN_PRIMARY,
   BTN_SECONDARY,
   CARD,
+  SHEET_ACTIONS,
   SHEET_BACKDROP,
   SHEET_HANDLE,
   SHEET_PANEL,
   SHEET_TEXT,
   SHEET_TITLE,
 } from "@/components/ui/styles";
-import { DateStub } from "@/components/account/date-stub";
-import { NextClassCard, nextClass } from "@/components/account/next-class-card";
-import { QrFullScreen } from "@/components/account/qr-badge";
+import { NextTicketCard, classTicket, nextClass, type Ticket } from "@/components/account/next-class-card";
 import { CancelBookingDialog, type CancelOutcome } from "@/components/account/cancel-booking-dialog";
-import { LeaveWaitlistDialog } from "@/components/booking/leave-waitlist-dialog";
 import type { ApiBooking } from "@/components/account/class-bookings";
-import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
-import { formatClassTime } from "@/lib/classes";
-import { cn, formatDate } from "@/lib/utils";
+import type { ApiWorkshopBooking } from "@/components/account/workshop-bookings";
+import { useApi } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { reportError } from "@/lib/report-error";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useClientPackages } from "@/lib/use-client-packages";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
-import { canCancelClass, cancelDeadlineLine, isLate } from "@/lib/cancellation-copy";
 import {
-  leaveWaitlist,
-  listWaitlist,
-  waitlistRefusal,
-  type ApiWaitlistEntry,
-} from "@/lib/waitlist";
+  canCancelClass,
+  canStillCancel,
+  ptCancelPrompt,
+  ptCancelResult,
+} from "@/lib/cancellation-copy";
+import { makePtSessionsApi, ptCancelFailure, type RawPtRequest } from "@/lib/pt-sessions";
 
-type Item =
-  | { kind: "booking"; id: string; starts_at: string; booking: ApiBooking }
-  | { kind: "waitlist"; id: string; starts_at: string; entry: ApiWaitlistEntry };
+/** The ticket, and what a Cancel on it acts on. */
+type Next =
+  | { ticket: Ticket; booking: ApiBooking }
+  | { ticket: Ticket; pt: RawPtRequest }
+  | { ticket: Ticket; workshop: ApiWorkshopBooking };
 
-/** Whether the member can still cancel this themselves: until it starts, late or not. */
-function cancellable(b: ApiBooking): boolean {
-  return canCancelClass(b.starts_at);
+function ptTicket(r: RawPtRequest): Ticket {
+  return {
+    kind: "pt",
+    name: `${r.session_type === "1on1" ? "1-on-1" : "2-on-1"} · ${r.class_name ?? "Private session"}`,
+    starts_at: r.session!.starts_at,
+    location: r.location_name ?? null,
+    instructor: r.session!.instructor_name,
+    qr_token: r.booking!.qr_token,
+    code: r.booking!.code,
+    attended: r.booking!.check_in_state === "attended",
+  };
 }
 
-function when(iso: string): string {
-  return `${formatDate(iso)} · ${formatClassTime(iso)}`;
+function workshopTicket(w: ApiWorkshopBooking): Ticket {
+  return {
+    kind: "workshop",
+    name: w.workshop_name,
+    starts_at: w.starts_at!,
+    location: w.location?.name ?? null,
+    instructor: null,
+    qr_token: w.qr_token,
+    code: w.code,
+    attended: w.check_in_state === "attended",
+  };
+}
+
+/**
+ * The soonest of the three that has not yet ended. A running one starts
+ * earliest, so it leads — the member arriving late still has a QR to show.
+ */
+export function nextUp(
+  classes: { upcoming: ApiBooking[]; past: ApiBooking[] },
+  pt: RawPtRequest[],
+  workshops: ApiWorkshopBooking[],
+  now: number,
+): Next | null {
+  const candidates: Next[] = [];
+  const cls = nextClass(classes.upcoming, classes.past, now);
+  if (cls) candidates.push({ ticket: classTicket(cls), booking: cls });
+  for (const r of pt) {
+    if (r.status === "scheduled" && r.session && r.booking && new Date(r.session.ends_at).getTime() > now) {
+      candidates.push({ ticket: ptTicket(r), pt: r });
+    }
+  }
+  // A workshop's `starts_at`/`ends_at` span its first day to its last, not a
+  // day's session. Once it has begun it counts as running only for its first
+  // day, so a workshop spread over weeks never holds the ticket over the
+  // classes and sessions booked between its days.
+  for (const w of workshops) {
+    if (w.state === "cancelled" || !w.starts_at) continue;
+    const start = new Date(w.starts_at).getTime();
+    const end = Math.min(w.ends_at ? new Date(w.ends_at).getTime() : start, start + 24 * 60 * 60 * 1000);
+    if (start > now || end > now) {
+      candidates.push({ ticket: workshopTicket(w), workshop: w });
+    }
+  }
+  candidates.sort((a, b) => a.ticket.starts_at.localeCompare(b.ticket.starts_at));
+  return candidates[0] ?? null;
 }
 
 export function ComingUp() {
   const api = useApi();
   const policy = useCancellationPolicy();
+  const { refetch: refetchPackages } = useClientPackages();
   const [loading, setLoading] = useState(true);
-  const [featured, setFeatured] = useState<ApiBooking | null>(null);
-  const [items, setItems] = useState<Item[]>([]);
-  const [open, setOpen] = useState<Item | null>(null);
-  const [qrFor, setQrFor] = useState<ApiBooking | null>(null);
-  const [cancelTarget, setCancelTarget] = useState<ApiBooking | null>(null);
-  const [leaveTarget, setLeaveTarget] = useState<ApiWaitlistEntry | null>(null);
-  const [leaving, setLeaving] = useState(false);
+  const [next, setNext] = useState<Next | null>(null);
+  const [cancelClass, setCancelClass] = useState<ApiBooking | null>(null);
+  const [cancelPt, setCancelPt] = useState<RawPtRequest | null>(null);
 
   const reload = useCallback(async () => {
     try {
-      // Only the bookings are essential: a failed past or waitlist read must not
-      // blank the member's confirmed classes into "No classes booked yet".
+      // Only the class bookings are essential: a failed PT, workshop or past
+      // read must not blank a confirmed class into "Nothing booked yet".
       const optional = <T,>(p: Promise<T>, fallback: T, scope: string) =>
         p.catch((err) => {
           reportError(err, { scope });
           return fallback;
         });
-      const [upcoming, past, waitlist] = await Promise.all([
+      const [upcoming, past, pt, workshops] = await Promise.all([
         api.get<{ bookings: ApiBooking[] }>("/me/bookings/upcoming"),
         optional(api.get<{ bookings: ApiBooking[] }>("/me/bookings/past"), { bookings: [] }, "coming-up-past"),
-        optional(listWaitlist(api), [] as ApiWaitlistEntry[], "coming-up-waitlist"),
+        optional(makePtSessionsApi(api).listRequests(), { pt_requests: [] }, "coming-up-pt"),
+        optional(
+          api.get<{ workshop_bookings: ApiWorkshopBooking[] }>("/me/workshop-bookings"),
+          { workshop_bookings: [] },
+          "coming-up-workshops",
+        ),
       ]);
-      const next = nextClass(upcoming.bookings ?? [], past.bookings ?? [], Date.now());
-      const rest: Item[] = [
-        ...(upcoming.bookings ?? [])
-          .filter((b) => b.state === "confirmed" && b.booking_id !== next?.booking_id)
-          .map((b) => ({ kind: "booking" as const, id: b.booking_id, starts_at: b.starts_at, booking: b })),
-        ...waitlist.map((e) => ({ kind: "waitlist" as const, id: e.id, starts_at: e.starts_at, entry: e })),
-      ].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-      setFeatured(next);
-      setItems(rest);
+      setNext(
+        nextUp(
+          { upcoming: upcoming.bookings ?? [], past: past.bookings ?? [] },
+          pt.pt_requests ?? [],
+          workshops.workshop_bookings ?? [],
+          Date.now(),
+        ),
+      );
     } catch (err) {
       reportError(err, { scope: "coming-up" });
-      setFeatured(null);
-      setItems([]);
+      setNext(null);
     } finally {
       setLoading(false);
     }
@@ -107,31 +156,38 @@ export function ComingUp() {
     reload();
   }, [reload]);
 
-  async function onCancelled(outcome: CancelOutcome) {
-    setCancelTarget(null);
+  async function onClassCancelled(outcome: CancelOutcome) {
+    setCancelClass(null);
     const say = outcome.tone === "ok" ? toast.success : outcome.tone === "warn" ? toast.warning : toast.error;
     say(outcome.text);
     if (outcome.cancelled || outcome.stale) await reload();
   }
 
-  async function confirmLeave() {
-    if (!leaveTarget) return;
-    setLeaving(true);
-    try {
-      await leaveWaitlist(api, leaveTarget.id);
-      toast.success("Left the waitlist.");
-    } catch (err) {
-      const out = waitlistRefusal(errCode(err), err instanceof ApiError ? err.body : null);
-      toast.error(out?.kind === "message" ? out.msg : "Couldn't leave the waitlist. Please try again.");
-    } finally {
-      setLeaving(false);
-      setLeaveTarget(null);
-      // Everyone behind the member moves up, so positions are re-read, not guessed.
-      await reload();
-    }
+  async function onPtDone(result: { tone: "ok" | "warn" | "error"; text: string }) {
+    setCancelPt(null);
+    const say = result.tone === "ok" ? toast.success : result.tone === "warn" ? toast.warning : toast.error;
+    say(result.text);
+    await reload();
+    await refetchPackages();
   }
 
-  const hasAny = featured !== null || items.length > 0;
+  // Cancel is offered only where the server would take it: a class until it
+  // starts; a PT session the member requested, outside the studio's window.
+  // A workshop is never self-cancelled — the studio arranges that (#272).
+  let onCancel: (() => void) | undefined;
+  if (next && "booking" in next && canCancelClass(next.booking.starts_at)) {
+    const b = next.booking;
+    onCancel = () => setCancelClass(b);
+  } else if (
+    next &&
+    "pt" in next &&
+    next.pt.role !== "partner" &&
+    policy &&
+    canStillCancel(next.ticket.starts_at, policy.pt_window_hours)
+  ) {
+    const r = next.pt;
+    onCancel = () => setCancelPt(r);
+  }
 
   return (
     <section aria-labelledby="coming-up" className="mb-6">
@@ -139,22 +195,22 @@ export function ComingUp() {
         <h2 id="coming-up" className="text-base font-bold text-ink">
           Coming up
         </h2>
-        {hasAny && (
+        {next && (
           <Link
             href="/account/classes"
             className="inline-flex items-center gap-0.5 text-sm font-semibold text-accent-deep hover:text-accent"
           >
-            All classes
+            Your classes
             <ChevronRight className="h-4 w-4" />
           </Link>
         )}
       </div>
 
       {loading ? (
-        <ContentLoading label="Loading upcoming classes" className="min-h-32" />
-      ) : !hasAny ? (
+        <ContentLoading label="Loading what's coming up" className="min-h-32" />
+      ) : !next ? (
         <div className={cn(CARD, "flex items-center justify-between gap-3 p-4")}>
-          <p className="text-sm text-muted">No classes booked yet.</p>
+          <p className="text-sm text-muted">Nothing booked yet.</p>
           <Link
             href="/"
             className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-accent-deep hover:text-accent"
@@ -164,215 +220,92 @@ export function ComingUp() {
           </Link>
         </div>
       ) : (
-        <>
-          {featured && (
-            <NextClassCard
-              booking={featured}
-              className={items.length > 0 ? "mb-3" : "mb-0"}
-              onCancel={cancellable(featured) ? () => setCancelTarget(featured) : undefined}
-            />
-          )}
-
-          {items.length > 0 && (
-            // Runs to the screen edge on a phone, so the card cut off at the
-            // right says there is more to swipe to.
-            <ul
-              aria-label={featured ? "Also coming up" : "Coming up"}
-              className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0 md:scroll-px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {items.map((item) => (
-                <li key={`${item.kind}-${item.id}`} className="w-[15.5rem] shrink-0 snap-start">
-                  <ItemCard item={item} onOpen={() => setOpen(item)} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
+        <NextTicketCard ticket={next.ticket} className="mb-0" onCancel={onCancel} />
       )}
 
-      {open && (
-        <ItemSheet
-          item={open}
-          onClose={() => setOpen(null)}
-          onShowQr={(b) => {
-            setOpen(null);
-            setQrFor(b);
-          }}
-          onCancel={(b) => {
-            setOpen(null);
-            setCancelTarget(b);
-          }}
-          onLeave={(e) => {
-            setOpen(null);
-            setLeaveTarget(e);
-          }}
-        />
-      )}
-
-      {qrFor && (
-        <QrFullScreen
-          value={qrFor.qr_token}
-          code={qrFor.code}
-          title={qrFor.name}
-          subtitle={qrFor.location ? `${when(qrFor.starts_at)} · ${qrFor.location.name}` : when(qrFor.starts_at)}
-          onClose={() => setQrFor(null)}
-        />
-      )}
-
-      {cancelTarget && (
+      {cancelClass && (
         <CancelBookingDialog
-          booking={cancelTarget}
+          booking={cancelClass}
           policy={policy}
-          onDone={onCancelled}
-          onClose={() => setCancelTarget(null)}
+          onDone={onClassCancelled}
+          onClose={() => setCancelClass(null)}
         />
       )}
 
-      {leaveTarget && (
-        <LeaveWaitlistDialog
-          classTitle={leaveTarget.name}
-          startsAt={leaveTarget.starts_at}
-          position={leaveTarget.position}
-          leaving={leaving}
-          onConfirm={confirmLeave}
-          onClose={() => setLeaveTarget(null)}
+      {cancelPt && (
+        <CancelPtDialog
+          request={cancelPt}
+          prompt={ptCancelPrompt("scheduled", policy)}
+          windowHours={policy?.pt_window_hours ?? null}
+          onDone={onPtDone}
+          onClose={() => setCancelPt(null)}
         />
       )}
     </section>
   );
 }
 
-function ItemCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
-  const waitlisted = item.kind === "waitlist";
-  const name = waitlisted ? item.entry.name : item.booking.name;
-  const place = waitlisted ? item.entry.location : item.booking.location?.name ?? null;
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-haspopup="dialog"
-      className={cn(
-        "flex h-full w-full items-center gap-3 rounded-2xl border bg-card p-3 text-left shadow-soft transition-colors",
-        waitlisted ? "border-warning/40 hover:border-warning" : "border-ink/5 hover:border-accent/30",
-      )}
-    >
-      <DateStub iso={item.starts_at} tone={waitlisted ? "muted" : "default"} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-semibold text-ink">{name}</span>
-        <span className="block text-sm text-ink/80 tabular-nums">{formatClassTime(item.starts_at)}</span>
-        {waitlisted ? (
-          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-ink">
-            <Hourglass className="h-3 w-3 text-ink/50" aria-hidden />
-            Waitlist · #{item.entry.position}
-          </span>
-        ) : (
-          place && <span className="block truncate text-xs text-muted">{place}</span>
-        )}
-      </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-muted" aria-hidden />
-    </button>
-  );
-}
-
-function ItemSheet({
-  item,
+/** "Cancel this session?" — the PT cancel, asked before it is sent. */
+function CancelPtDialog({
+  request,
+  prompt,
+  windowHours,
+  onDone,
   onClose,
-  onShowQr,
-  onCancel,
-  onLeave,
 }: {
-  item: Item;
+  request: RawPtRequest;
+  prompt: string;
+  windowHours: number | null;
+  onDone: (result: { tone: "ok" | "warn" | "error"; text: string }) => void;
   onClose: () => void;
-  onShowQr: (b: ApiBooking) => void;
-  onCancel: (b: ApiBooking) => void;
-  onLeave: (e: ApiWaitlistEntry) => void;
 }) {
+  const api = useApi();
+  const [cancelling, setCancelling] = useState(false);
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   useBodyScrollLock(true);
 
-  const name = item.kind === "booking" ? item.booking.name : item.entry.name;
-  const instructor = item.kind === "booking" ? item.booking.instructor?.name : item.entry.instructor;
-  const place = item.kind === "booking" ? item.booking.location?.name : item.entry.location;
+  async function confirm() {
+    setCancelling(true);
+    try {
+      const res = await makePtSessionsApi(api).cancelRequest(request.id);
+      onDone(ptCancelResult(res.refundOutcome, res.refundedSessions));
+    } catch (err) {
+      onDone({ tone: "error", text: ptCancelFailure(err, windowHours) });
+    }
+  }
 
   return (
     <Portal>
-      <div className={SHEET_BACKDROP} onClick={onClose}>
+      <div className={SHEET_BACKDROP} onClick={() => !cancelling && onClose()}>
         <div
           ref={trapRef}
           role="dialog"
           aria-modal="true"
-          aria-labelledby="coming-up-sheet-title"
+          aria-labelledby="cancel-pt-title"
           tabIndex={-1}
           className={SHEET_PANEL}
           onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.key === "Escape" && onClose()}
+          onKeyDown={(e) => e.key === "Escape" && !cancelling && onClose()}
         >
           <span aria-hidden className={SHEET_HANDLE} />
-          <h3 id="coming-up-sheet-title" className={SHEET_TITLE}>
-            {name}
+          <h3 id="cancel-pt-title" className={SHEET_TITLE}>
+            Cancel this session?
           </h3>
-          <p className="mt-1 text-sm font-medium text-ink/80">{when(item.starts_at)}</p>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-            {place && (
-              <span className="inline-flex items-center gap-1 min-w-0">
-                <MapPin className="h-3.5 w-3.5 shrink-0" />
-                {place}
-              </span>
-            )}
-            {instructor && (
-              <span className="inline-flex items-center gap-1 min-w-0">
-                <UserRound className="h-3.5 w-3.5 shrink-0" />
-                {instructor}
-              </span>
-            )}
+          <p className={SHEET_TEXT}>{prompt}</p>
+          <div className={SHEET_ACTIONS}>
+            <button type="button" onClick={onClose} disabled={cancelling} className={BTN_SECONDARY}>
+              Keep session
+            </button>
+            <button
+              type="button"
+              onClick={confirm}
+              disabled={cancelling}
+              className="inline-flex min-h-[48px] items-center justify-center gap-1.5 rounded-full bg-error px-4 text-sm font-semibold text-inverse hover:bg-error/90 transition-colors disabled:opacity-70 disabled:cursor-wait"
+            >
+              {cancelling && <Loader2 className="h-4 w-4 animate-spin" />}
+              {cancelling ? "Cancelling…" : "Confirm cancellation"}
+            </button>
           </div>
-
-          {item.kind === "booking" ? (
-            <>
-              <p className="mt-4 text-xs text-muted">
-                Booking code <span className="font-mono tracking-wide text-ink">{item.booking.code}</span>
-              </p>
-              <div className="mt-5 flex flex-col gap-2">
-                <button type="button" onClick={() => onShowQr(item.booking)} className={BTN_PRIMARY}>
-                  <QrCode className="h-4 w-4" />
-                  Show my QR
-                </button>
-                {cancellable(item.booking) && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onCancel(item.booking)}
-                      className={cn(BTN_SECONDARY, "text-error hover:border-error/40")}
-                    >
-                      Cancel booking
-                    </button>
-                    <p className="text-center text-xs text-muted">
-                      {cancelDeadlineLine(isLate(item.booking.cancel_deadline), when(item.booking.cancel_deadline))}
-                    </p>
-                  </>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              <p className={SHEET_TEXT}>
-                You&apos;re #{item.entry.position} in line. If a seat opens, we&apos;ll book you in and
-                email you.
-              </p>
-              <div className="mt-5 flex flex-col gap-2">
-                <button type="button" onClick={onClose} className={BTN_PRIMARY}>
-                  Stay in line
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onLeave(item.entry)}
-                  className={cn(BTN_SECONDARY, "text-error hover:border-error/40")}
-                >
-                  Leave waitlist
-                </button>
-              </div>
-            </>
-          )}
         </div>
       </div>
     </Portal>

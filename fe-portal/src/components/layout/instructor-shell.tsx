@@ -1,7 +1,7 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { InstructorNav, InstructorMobileNavTrigger } from "./instructor-nav";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { DevRoleSwitcher } from "./dev-role-switcher";
@@ -33,16 +33,8 @@ export function InstructorShell({ children }: { children: React.ReactNode }) {
     if (isStaffAdmin) router.replace("/admin/schedule");
   }, [isStaffAdmin, router]);
 
-  if (loading || !currentStaff || isStaffAdmin) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-paper">
-        <div className="flex items-center gap-2 text-sm text-muted">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading…
-        </div>
-      </div>
-    );
-  }
+  // Chrome first, page once the staff member is known — see `AdminShell`.
+  const ready = !loading && currentStaff !== null && !isStaffAdmin;
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
@@ -51,7 +43,7 @@ export function InstructorShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <InstructorTopBar />
           <main className="flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
-            {children}
+            {ready ? children : <ContentLoading label="Loading workspace" />}
           </main>
         </div>
       </div>

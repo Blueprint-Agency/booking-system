@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * "My next class" — the class the member is about to walk into, with one tap
- * to a full-screen QR and the typed code for check-in (#192).
+ * The ticket for what the member is about to walk into — a class, a PT
+ * session or a workshop, each in its own colour — with one tap to a
+ * full-screen QR and the typed code for check-in (#192).
  *
  * A class already running comes first: a member who arrives late still has
  * something to show the desk, and the desk can still scan it until the day is
@@ -36,31 +37,73 @@ export function nextClass(upcoming: ApiBooking[], past: ApiBooking[], now: numbe
   return running[0] ?? next[0] ?? null;
 }
 
+/** What the ticket stands in for; each wears its own colour. */
+export type TicketKind = "class" | "pt" | "workshop";
+
+/** One booking the member will walk into, whatever kind it is. */
+export interface Ticket {
+  kind: TicketKind;
+  name: string;
+  starts_at: string;
+  location: string | null;
+  instructor: string | null;
+  qr_token: string;
+  code: string;
+  attended: boolean;
+}
+
+const TICKET_TONE: Record<TicketKind, { card: string; qr: string; eyebrow: string }> = {
+  class: { card: "bg-accent", qr: "text-accent-deep", eyebrow: "My next class" },
+  pt: { card: "bg-gold", qr: "text-gold-deep", eyebrow: "My next PT session" },
+  workshop: { card: "bg-green", qr: "text-green-deep", eyebrow: "My next workshop" },
+};
+
+export function classTicket(b: ApiBooking): Ticket {
+  return {
+    kind: "class",
+    name: b.name,
+    starts_at: b.starts_at,
+    location: b.location?.name ?? null,
+    instructor: b.instructor?.name ?? null,
+    qr_token: b.qr_token,
+    code: b.code,
+    attended: b.check_in_state === "attended",
+  };
+}
+
+/** The class ticket, as the schedule shows it above the feed. */
+export function NextClassCard({ booking, className }: { booking: ApiBooking; className?: string }) {
+  return <NextTicketCard ticket={classTicket(booking)} className={className} />;
+}
+
 /**
- * `onCancel` adds a Cancel beside the QR — passed only where the member can
- * still cancel, so the ticket never offers what the server will refuse.
+ * The ticket for the member's next booking. `onCancel` adds a Cancel beside
+ * the QR — passed only where the member can still cancel, so the ticket never
+ * offers what the server will refuse.
  */
-export function NextClassCard({
-  booking,
+export function NextTicketCard({
+  ticket,
   onCancel,
   className = "mb-6",
 }: {
-  booking: ApiBooking;
+  ticket: Ticket;
   onCancel?: () => void;
   className?: string;
 }) {
   const [qrOpen, setQrOpen] = useState(false);
   const closeQr = useCallback(() => setQrOpen(false), []);
 
-  const attended = booking.check_in_state === "attended";
-  const running = new Date(booking.starts_at).getTime() <= Date.now();
-  const when = `${formatDate(booking.starts_at)} · ${formatClassTime(booking.starts_at)}`;
+  const tone = TICKET_TONE[ticket.kind];
+  const attended = ticket.attended;
+  const running = new Date(ticket.starts_at).getTime() <= Date.now();
+  const when = `${formatDate(ticket.starts_at)} · ${formatClassTime(ticket.starts_at)}`;
 
   return (
     <section
       data-testid="next-class-card"
+      data-kind={ticket.kind}
       aria-labelledby="next-class-heading"
-      className={cn("relative overflow-hidden rounded-2xl bg-accent text-inverse p-5 sm:p-6 shadow-hover", className)}
+      className={cn("relative overflow-hidden rounded-2xl text-inverse p-5 sm:p-6 shadow-hover", tone.card, className)}
     >
       {/* The perforation between stub and ticket: two notches and a dashed
           seam, so the card reads as the ticket it stands in for. */}
@@ -70,14 +113,14 @@ export function NextClassCard({
       <span aria-hidden className="pointer-events-none absolute left-[5.375rem] sm:left-[5.75rem] top-5 bottom-5 border-l border-dashed border-inverse/25" />
 
       <div className="flex gap-5 sm:gap-6">
-        <DateStub iso={booking.starts_at} tone="accent" className="bg-inverse/10 self-start" />
+        <DateStub iso={ticket.starts_at} tone="accent" className="bg-inverse/10 self-start" />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <h2
               id="next-class-heading"
               className="text-[11px] font-bold uppercase tracking-[0.14em] text-inverse/70"
             >
-              {running ? "Happening now" : "My next class"}
+              {running ? "Happening now" : tone.eyebrow}
             </h2>
             {attended && (
               <span
@@ -89,19 +132,19 @@ export function NextClassCard({
               </span>
             )}
           </div>
-          <p className="mt-1.5 text-xl font-extrabold leading-tight break-words">{booking.name}</p>
-          <p className="mt-1 text-sm font-semibold text-inverse/90">{formatClassTime(booking.starts_at)}</p>
+          <p className="mt-1.5 text-xl font-extrabold leading-tight break-words">{ticket.name}</p>
+          <p className="mt-1 text-sm font-semibold text-inverse/90">{formatClassTime(ticket.starts_at)}</p>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-inverse/75">
-            {booking.location && (
+            {ticket.location && (
               <span className="inline-flex items-center gap-1 min-w-0">
                 <MapPin className="h-3.5 w-3.5 shrink-0" />
-                <span className="break-words">{booking.location.name}</span>
+                <span className="break-words">{ticket.location}</span>
               </span>
             )}
-            {booking.instructor && (
+            {ticket.instructor && (
               <span className="inline-flex items-center gap-1 min-w-0">
                 <UserRound className="h-3.5 w-3.5 shrink-0" />
-                <span className="break-words">{booking.instructor.name}</span>
+                <span className="break-words">{ticket.instructor}</span>
               </span>
             )}
           </div>
@@ -113,7 +156,10 @@ export function NextClassCard({
           data-testid="next-class-show-qr"
           onClick={() => setQrOpen(true)}
           aria-haspopup="dialog"
-          className="inline-flex flex-1 min-h-[48px] items-center justify-center gap-2 rounded-full bg-inverse px-5 text-base font-bold text-accent-deep hover:bg-inverse/90 transition-colors sm:flex-none focus-visible:outline-inverse"
+          className={cn(
+            "inline-flex flex-1 min-h-[48px] items-center justify-center gap-2 rounded-full bg-inverse px-5 text-base font-bold hover:bg-inverse/90 transition-colors sm:flex-none focus-visible:outline-inverse",
+            tone.qr,
+          )}
         >
           <QrCode className="h-5 w-5" />
           Show my QR
@@ -123,7 +169,7 @@ export function NextClassCard({
             type="button"
             onClick={onCancel}
             aria-haspopup="dialog"
-            className="inline-flex shrink-0 min-h-[48px] items-center justify-center rounded-full border border-inverse/30 px-5 text-sm font-semibold text-inverse hover:bg-inverse/10 transition-colors focus-visible:outline-inverse"
+            className="inline-flex shrink-0 min-h-[48px] items-center justify-center rounded-full bg-error px-5 text-sm font-semibold text-inverse hover:bg-error/90 transition-colors focus-visible:outline-inverse"
           >
             Cancel
           </button>
@@ -132,10 +178,10 @@ export function NextClassCard({
 
       {qrOpen && (
         <QrFullScreen
-          value={booking.qr_token}
-          code={booking.code}
-          title={booking.name}
-          subtitle={booking.location ? `${when} · ${booking.location.name}` : when}
+          value={ticket.qr_token}
+          code={ticket.code}
+          title={ticket.name}
+          subtitle={ticket.location ? `${when} · ${ticket.location}` : when}
           onClose={closeQr}
         />
       )}

@@ -148,3 +148,60 @@
 .sidebar-scroll:focus-within {
   scrollbar-color: var(--color-border) transparent;
 }
+
+/* ── Page loader (`components/layout/page-loader.tsx`) ──────────────────────
+   The same one fe-client draws: a spinning ring on a small card, centred on
+   the screen. Fades in and out with the load; over the sticky top bar (z 30),
+   under the dialogs and sheets (z 50), and never in the pointer's way. */
+.page-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+}
+
+.page-loader[data-state="loading"] {
+  opacity: 1;
+}
+
+.page-loader__card {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 9999px;
+  background: var(--color-card);
+  box-shadow: var(--shadow-soft);
+  transform: scale(0.92);
+  transition: transform 0.2s ease-out;
+}
+
+.page-loader[data-state="loading"] .page-loader__card {
+  transform: scale(1);
+}
+
+/* A faint full track with an accent arc running round it. */
+.page-loader__ring {
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  border: 2.5px solid color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border-top-color: var(--color-accent);
+  animation: loaderSpin 0.8s linear infinite;
+}
+
+@keyframes loaderSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* No turning while it is hidden. */
+.page-loader:not([data-state="loading"]) .page-loader__ring {
+  animation-play-state: paused;
+}

@@ -3,14 +3,11 @@
 import Link from "next/link";
 import { useAppUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { useClientPackages } from "@/lib/use-client-packages";
 import { useBrand } from "@/components/brand/brand-provider";
 
 export function AppTopBar({ impersonating = false }: { impersonating?: boolean }) {
   const brand = useBrand();
   const { user, isSignedIn: isAuth } = useAppUser();
-  const { classCredits, pt1on1, pt2on1, isUnlimited: unlimited } = useClientPackages();
-  const sessionCredits = pt1on1 + pt2on1;
   const firstName = user?.firstName ?? "";
   const lastName = user?.lastName ?? "";
   const userInitials = isAuth
@@ -38,23 +35,7 @@ export function AppTopBar({ impersonating = false }: { impersonating?: boolean }
         </Link>
 
         {isAuth ? (
-          <div className="flex items-center gap-2.5">
-            <Link
-              href="/account"
-              className="flex items-center gap-2 px-3 py-2 rounded-md bg-warm border border-ink/10 hover:border-ink/20 transition-colors"
-            >
-              <span className="flex items-center gap-1.5" title="Class credits">
-                <span className="w-1.5 h-1.5 rounded-full bg-sage" />
-                <span className="text-[12px] font-bold text-sage">{unlimited ? "∞" : classCredits}</span>
-                <span className="hidden sm:inline text-[10px] font-medium text-muted">class credits</span>
-              </span>
-              <span className="w-px h-3 bg-ink/15" />
-              <span className="flex items-center gap-1.5" title="PT sessions">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-                <span className="text-[12px] font-bold text-accent-deep">{sessionCredits}</span>
-                <span className="hidden sm:inline text-[10px] font-medium text-muted">PT sessions</span>
-              </span>
-            </Link>
+          <div className="flex items-center">
             <Link
               href="/account"
               aria-label="Account"

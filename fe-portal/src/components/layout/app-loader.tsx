@@ -13,7 +13,8 @@ const GIVE_UP_AFTER_MS = 15_000;
 const MIN_SHOW_MS = 300;
 
 /**
- * The member app's one loading indicator: the centred spinner (`PageLoader`).
+ * The portal's one loading indicator: the centred spinner (`PageLoader`), a
+ * copy of fe-client's (the apps share no code, so each keeps its own).
  * It shows while either
  *
  *  - a navigation is on its way: from a click on an in-app link to another

@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, UserRound, MapPin, Loader2, Lock, Ticket } from "lucide-react";
+import { Check, UserRound, MapPin, Loader2, Lock, Ticket, X } from "lucide-react";
 import { cn, formatDate, formatSgd } from "@/lib/utils";
 import { Select } from "@/components/ui/select";
 import { Portal } from "@/components/ui/portal";
@@ -37,6 +37,10 @@ import { toast } from "sonner";
 import { LeaveWaitlistDialog } from "@/components/booking/leave-waitlist-dialog";
 import { ConfirmBookingSheet } from "@/components/booking/confirm-booking-sheet";
 import { ClassDetailOverlay } from "@/components/booking/class-detail-overlay";
+import { CancelBookingDialog, type CancelOutcome } from "@/components/account/cancel-booking-dialog";
+import type { ApiBooking } from "@/components/account/class-bookings";
+import { canCancelClass } from "@/lib/cancellation-copy";
+import { useCancellationPolicy } from "@/lib/cancellation-policy";
 
 /** `POST /me/bookings/class`: the booking, and the package that paid for it. */
 interface BookClassResponse {
@@ -84,6 +88,16 @@ export function ClassRow({
   const [joining, setJoining] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  // A tap on "Booked" arms it as "Cancel?"; a second tap opens the cancel dialog.
+  const [cancelArmed, setCancelArmed] = useState(false);
+  const [findingBooking, setFindingBooking] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<ApiBooking | null>(null);
+  // An armed "Cancel?" nobody follows up on goes back to "Booked".
+  useEffect(() => {
+    if (!cancelArmed) return;
+    const t = setTimeout(() => setCancelArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [cancelArmed]);
   // A re-read feed hands the row a new card: take what the server now says,
   // rather than what this row last believed.
   const [seenCls, setSeenCls] = useState(cls);
@@ -263,6 +277,43 @@ export function ClassRow({
     }
   };
 
+  /**
+   * The second tap on "Cancel?". The class card carries no booking id, so the
+   * member's own confirmed booking for it is looked up, then the one class
+   * cancel dialog asks — the same one My Classes and the overview use.
+   */
+  const openCancel = async () => {
+    if (findingBooking) return;
+    setFindingBooking(true);
+    try {
+      const res = await api.get<{ bookings: ApiBooking[] }>("/me/bookings/upcoming");
+      const mine = (res.bookings ?? []).find((b) => b.class_id === cls.id && b.state === "confirmed");
+      if (mine) {
+        setCancelTarget(mine);
+      } else {
+        // Already gone — cancelled elsewhere, or the class has started.
+        toast.error("This booking can no longer be cancelled here.");
+        onStale?.();
+      }
+    } catch {
+      toast.error("Couldn't load this booking. Please try again.");
+    } finally {
+      setFindingBooking(false);
+      setCancelArmed(false);
+    }
+  };
+
+  const onCancelled = (outcome: CancelOutcome) => {
+    setCancelTarget(null);
+    const say = outcome.tone === "ok" ? toast.success : outcome.tone === "warn" ? toast.warning : toast.error;
+    say(outcome.text);
+    if (outcome.cancelled) {
+      setBooked(false);
+      setSpotsLeft((s) => s + 1);
+    }
+    if (outcome.cancelled || outcome.stale) onStale?.();
+  };
+
   const action = classAction({ booked, myEntry, spotsLeft, waitlistOpen, notCovered: lockedOut, notAccepted });
   // Dimmed only when there is nothing to do here; a full class with a line to
   // join, or the member's own place in it, stays at full strength.
@@ -274,10 +325,42 @@ export function ClassRow({
     "inline-flex min-h-[40px] items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 text-sm font-semibold";
   const cta =
     action === "booked" ? (
-      <span className={cn(shape, "bg-sage/15 text-sage")}>
-        <Check className="h-4 w-4" aria-hidden />
-        Booked
-      </span>
+      // Cancellable until the class starts: one tap arms it, the next asks.
+      canCancelClass(cls.starts_at) ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (cancelArmed) void openCancel();
+            else setCancelArmed(true);
+          }}
+          onBlur={() => !findingBooking && setCancelArmed(false)}
+          disabled={findingBooking}
+          aria-label={cancelArmed ? `Cancel your booking for ${cls.class_type.name}` : "Booked — tap to cancel"}
+          className={cn(
+            shape,
+            "transition-colors disabled:cursor-wait",
+            cancelArmed || findingBooking
+              ? "bg-error text-inverse hover:bg-error/90"
+              : "bg-sage/15 text-sage hover:bg-sage/25",
+          )}
+        >
+          {findingBooking ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          ) : cancelArmed ? (
+            <X className="h-4 w-4" aria-hidden />
+          ) : (
+            <Check className="h-4 w-4" aria-hidden />
+          )}
+          {cancelArmed || findingBooking ? "Cancel?" : "Booked"}
+        </button>
+      ) : (
+        <span className={cn(shape, "bg-sage/15 text-sage")}>
+          <Check className="h-4 w-4" aria-hidden />
+          Booked
+        </span>
+      )
     ) : action === "waitlisted" && myEntry ? (
       <span className="inline-flex items-center gap-1">
         <span className={cn(shape, "bg-warning/15 text-ink")}>On waitlist · #{myEntry.position}</span>
@@ -456,6 +539,14 @@ export function ClassRow({
         />
       )}
 
+      {cancelTarget && (
+        <ClassRowCancelDialog
+          booking={cancelTarget}
+          onDone={onCancelled}
+          onClose={() => setCancelTarget(null)}
+        />
+      )}
+
       {confirmLeave && myEntry && (
         <LeaveWaitlistDialog
           classTitle={cls.class_type.name}
@@ -524,4 +615,22 @@ export function FilterSelect({ label, value, onChange, options, placeholder }: F
       triggerClassName={value ? "border-accent/40 font-medium" : undefined}
     />
   );
+}
+
+/**
+ * The class cancel dialog, reading the studio's policy only once it opens: a
+ * schedule renders a row per class, and each row reading it up front would
+ * send one policy request per class.
+ */
+function ClassRowCancelDialog({
+  booking,
+  onDone,
+  onClose,
+}: {
+  booking: ApiBooking;
+  onDone: (outcome: CancelOutcome) => void;
+  onClose: () => void;
+}) {
+  const policy = useCancellationPolicy();
+  return <CancelBookingDialog booking={booking} policy={policy} onDone={onDone} onClose={onClose} />;
 }

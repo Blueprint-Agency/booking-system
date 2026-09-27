@@ -6,7 +6,25 @@
  * Errors: non-2xx throws `ApiError`; callers can inspect `err.body` for BE error codes
  * (e.g. `{ error: "insufficient_pt_credit" }`).
  */
-import { useApi, type Api } from "./api";
+import { ApiError, useApi, type Api } from "./api";
+import { ERROR_CODES } from "./error-codes";
+import { windowRefusal } from "./cancellation-copy";
+
+/** What to tell a member whose PT cancel the server refused. */
+export function ptCancelFailure(err: unknown, windowHours: number | null): string {
+  const body =
+    err instanceof ApiError && err.body && typeof err.body === "object"
+      ? (err.body as Record<string, unknown>)
+      : {};
+  if (body.error === ERROR_CODES.cancellation_window_passed) {
+    // The window the server refused under is the one that applied.
+    const hours = typeof body.window_hours === "number" ? body.window_hours : windowHours;
+    return hours !== null
+      ? windowRefusal("session", hours)
+      : "This session can no longer be cancelled in the app. Please contact the studio.";
+  }
+  return "Couldn't cancel. Please check your connection and try again.";
+}
 
 // ── Request types ─────────────────────────────────────────────────────────────
 

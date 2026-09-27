@@ -75,9 +75,20 @@ test('CXL-39 a member cancels inside the window: a late cancel, and the credit s
   await expectCredits(page, booked)
 })
 
-/** The balance in the member app's top bar, which reads it fresh on each page load. */
+/**
+ * The balance on the member's one package card on /account, read fresh on
+ * each visit; the page the journey was on is returned to after.
+ */
 async function expectCredits(page: Page, credits: number) {
-  await expect(page.getByTitle('Class credits').locator('visible=true').first()).toHaveText(
-    new RegExp(`^\\s*${credits}\\s*class credits`),
-  )
+  const { urls, catalogue } = studio()
+  const back = page.url()
+  await page.goto(`${urls.client}/account`)
+  // The innermost card holding both the package's name and its balance.
+  const card = page
+    .locator('div')
+    .filter({ has: page.getByText(catalogue.packageName, { exact: true }) })
+    .filter({ hasText: /credits/i })
+    .last()
+  await expect(card).toContainText(new RegExp(`(^|\\D)${credits}\\s*credits`, 'i'))
+  await page.goto(back)
 }

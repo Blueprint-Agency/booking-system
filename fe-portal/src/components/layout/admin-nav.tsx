@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { NAV_ITEMS, NAV_GROUP_ORDER, type NavItem, type NavGroup } from "./nav-items";
 import { cn } from "@/lib/utils";
 import { StudioMark } from "@/components/brand/studio-mark";
-import { visibleToRole } from "@/lib/staff-role";
+import { runsStudio, visibleToRole } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 import {
   SidebarBrand,
@@ -142,10 +142,14 @@ function CollapsibleNavGroup({
 function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   const { role, activeLocationId, accessibleLocations, api } = useWorkspace();
 
+  // The nav draws before the staff member is known (and, for an instructor,
+  // while the shell bounces them out), so the admin-only counts wait for the role.
+  const isAdmin = runsStudio(role);
+
   // Live, workspace-scoped count of PENDING PT requests for the nav badge.
   const [ptPending, setPtPending] = useState<number | undefined>(undefined);
   useEffect(() => {
-    if (!api || !activeLocationId) {
+    if (!api || !isAdmin || !activeLocationId) {
       setPtPending(undefined);
       return;
     }
@@ -165,13 +169,13 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
       cancelled = true;
     };
     // Re-count when the workspace changes or the route changes (e.g. after triaging).
-  }, [api, activeLocationId, pathname]);
+  }, [api, isAdmin, activeLocationId, pathname]);
 
   // Live count of PENDING corporate requests for the nav badge. Workspace-AGNOSTIC
   // (no location_id until scheduled) — unlike PT, it's NOT filtered by the switcher.
   const [corporatePending, setCorporatePending] = useState<number | undefined>(undefined);
   useEffect(() => {
-    if (!api) {
+    if (!api || !isAdmin) {
       setCorporatePending(undefined);
       return;
     }
@@ -191,7 +195,7 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
       cancelled = true;
     };
     // Re-count when the route changes (e.g. after triaging a request).
-  }, [api, pathname]);
+  }, [api, isAdmin, pathname]);
 
   const badges: BadgeMap = {
     ptRequestsPending: ptPending,

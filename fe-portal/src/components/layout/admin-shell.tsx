@@ -1,7 +1,7 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { AdminNav } from "./admin-nav";
 import { AdminTopBar } from "./admin-topbar";
 import { LocationGate } from "./location-gate";
@@ -20,16 +20,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     if (isInstructor) router.replace("/instructor/schedule");
   }, [isInstructor, router]);
 
-  if (loading || !currentStaff || isInstructor) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-paper">
-        <div className="flex items-center gap-2 text-sm text-muted">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading workspace…
-        </div>
-      </div>
-    );
-  }
+  // The nav and top bar draw straight away — in the server's HTML, before the
+  // staff member is known — and only the page waits for them, so a first visit
+  // paints the app rather than a blank screen.
+  const ready = !loading && currentStaff !== null && !isInstructor;
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
@@ -38,7 +32,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <AdminTopBar />
           <main className="flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
-            <LocationGate>{children}</LocationGate>
+            {ready ? (
+              <LocationGate>{children}</LocationGate>
+            ) : (
+              <ContentLoading label="Loading workspace" />
+            )}
           </main>
         </div>
       </div>

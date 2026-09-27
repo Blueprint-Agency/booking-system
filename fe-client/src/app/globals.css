@@ -28,6 +28,14 @@
   --color-cyan: #5fbfd9;
   --color-cyan-deep: #3a9fc2;
 
+  /* What the member's next session is, on the account ticket: a class wears
+     the accent, a PT session gold, a workshop green. Deep enough to carry
+     white text. */
+  --color-gold: #9a7120;
+  --color-gold-deep: #6b4e14;
+  --color-green: #2f7a4e;
+  --color-green-deep: #1d5634;
+
   /* Semantic status */
   --color-sage: #5b7a68;
   --color-warning: #c99a3a;

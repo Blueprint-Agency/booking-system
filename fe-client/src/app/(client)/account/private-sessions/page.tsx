@@ -13,14 +13,13 @@ import { DateStub } from "@/components/account/date-stub";
 import {
   usePtSessionsApi,
   formatSlotRange,
+  ptCancelFailure,
   type CancelPtRequestResult,
   type RawPtRequest,
 } from "@/lib/pt-sessions";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { cn, formatDate } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
-import { ApiError } from "@/lib/api";
-import { ERROR_CODES } from "@/lib/error-codes";
 import { useCancellationPolicy, type CancellationPolicy } from "@/lib/cancellation-policy";
 import {
   cancelClosed,
@@ -28,7 +27,6 @@ import {
   ptCancelPrompt,
   ptCancelResult,
   ptPolicyNote,
-  windowRefusal,
 } from "@/lib/cancellation-copy";
 
 type Tab = "pending" | "confirmed" | "past" | "cancelled";
@@ -363,21 +361,6 @@ function RequestCard({
 }
 
 /** Why a PT cancel was refused, in words the member can act on. */
-function cancelFailure(err: unknown, windowHours: number | null): string {
-  const body =
-    err instanceof ApiError && err.body && typeof err.body === "object"
-      ? (err.body as Record<string, unknown>)
-      : {};
-  if (body.error === ERROR_CODES.cancellation_window_passed) {
-    // The window the server refused under is the one that applied.
-    const hours = typeof body.window_hours === "number" ? body.window_hours : windowHours;
-    return hours !== null
-      ? windowRefusal("session", hours)
-      : "This session can no longer be cancelled in the app. Please contact the studio.";
-  }
-  return "Couldn't cancel. Please check your connection and try again.";
-}
-
 function CancelButton({
   requestId,
   prompt,
@@ -401,7 +384,7 @@ function CancelButton({
     try {
       result = await ptApi.cancelRequest(requestId);
     } catch (err) {
-      setCancelError(cancelFailure(err, windowHours));
+      setCancelError(ptCancelFailure(err, windowHours));
       setCancelling(false);
       setConfirming(false);
       return;
