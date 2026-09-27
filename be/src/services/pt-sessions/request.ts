@@ -19,6 +19,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../shared/erro
 import { sweepExpired } from '../packages/activation'
 import { debitCredits } from '../packages/ledger'
 import { ptSessionCost } from './cost'
+import { sgToday } from '../../lib/time'
 
 export interface PtRequestSlotInput {
   /** YYYY-MM-DD (local Singapore date). */
@@ -60,7 +61,11 @@ export async function submitPtRequest(
   input: PtRequestInput,
 ): Promise<{ ptRequestId: string }> {
   if (input.slots.length === 0) throw new BadRequestError('no_slots')
+  // The studio needs a day to arrange a private session: the earliest a member
+  // may propose is tomorrow in Singapore, never today or a day already gone.
+  const today = sgToday(new Date())
   for (const s of input.slots) {
+    if (s.proposedDate <= today) throw new BadRequestError('slot_date_too_soon')
     if (s.endTime !== undefined && s.endTime <= s.startTime) throw new BadRequestError('slot_end_before_start')
   }
   if (input.sessionType === '2on1' && !input.partner) throw new BadRequestError('partner_required')

@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import {
   type ApiLocationLite,
   type ApiWorkshopCard,
-  formatDayRange,
+  formatWorkshopDates,
   formatSgd,
   useWorkshops,
 } from "@/lib/workshops";
@@ -136,7 +136,7 @@ function firstLine(text: string | null): string {
 
 function WorkshopCard({ workshop }: { workshop: ApiWorkshopCard }) {
   const summary = firstLine(workshop.description_html);
-  const dateRange = formatDayRange(workshop.starts_at, workshop.ends_at);
+  const dateRange = formatWorkshopDates(workshop.starts_at, workshop.ends_at);
   const minPrice = workshop.min_price_sgd;
   const priceLabel =
     minPrice == null

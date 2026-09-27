@@ -171,29 +171,7 @@ export function useWorkshop(id: string | undefined): {
 
 export { formatSgd } from "./utils";
 
-export function formatDayRange(
-  startsAt: string | null,
-  endsAt: string | null,
-): string {
-  if (!startsAt) return "TBA";
-  const s = new Date(startsAt);
-  const e = endsAt ? new Date(endsAt) : null;
-  const fmt: Intl.DateTimeFormatOptions = {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    timeZone: "Asia/Singapore",
-  };
-  const sStr = s.toLocaleDateString("en-SG", fmt);
-  if (!e) return sStr;
-  // Same calendar day → just one date.
-  const sameDay =
-    s.getFullYear() === e.getFullYear() &&
-    s.getMonth() === e.getMonth() &&
-    s.getDate() === e.getDate();
-  if (sameDay) return sStr;
-  return `${sStr} – ${e.toLocaleDateString("en-SG", fmt)}`;
-}
+export { formatWorkshopDates } from "./workshop-dates";
 
 /**
  * Returns the effective price for a tier, factoring in the early-bird cutoff:

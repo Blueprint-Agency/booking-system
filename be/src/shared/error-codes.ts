@@ -296,6 +296,7 @@ export const ERROR_CODES = {
   series_has_no_dates: 'series_has_no_dates',
   series_not_found: 'series_not_found',
   series_range_too_long: 'series_range_too_long',
+  slot_date_too_soon: 'slot_date_too_soon',
   slot_end_before_start: 'slot_end_before_start',
   slug_held: 'slug_held',
   slug_malformed: 'slug_malformed',

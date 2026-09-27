@@ -1280,7 +1280,10 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
           locationId: one.locationId,
           sessionType: '1on1',
           clientPackageId: one.clientPackageId,
-          slots: [{ proposedDate: '2027-01-04', startTime: '10:00', endTime: '11:00' }],
+          // Dated ahead of today, so the refusal is the package's and not the slot's.
+          slots: [
+            { proposedDate: new Date(Date.now() + 5 * 24 * HOUR).toISOString().slice(0, 10), startTime: '10:00', endTime: '11:00' },
+          ],
         }),
       (err: { code?: string }) => err.code === 'client_package_not_found',
     )

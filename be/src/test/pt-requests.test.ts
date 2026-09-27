@@ -537,6 +537,38 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(pair), 10)
   })
 
+  test('PT-116 a slot dated today or earlier in Singapore is refused; tomorrow is accepted', async () => {
+    const gus = await member(one, 'Gus Early')
+    const solo = await givePt(one, gus, '1on1')
+    // A Singapore calendar day, `days` from today there.
+    const sgDay = (days: number) => new Date(Date.now() + 8 * HOUR + days * DAY).toISOString().slice(0, 10)
+
+    for (const day of [sgDay(0), sgDay(-1)]) {
+      const refused = await expectStatus(
+        await submit(one, gus, {
+          sessionType: '1on1',
+          clientPackageId: solo,
+          // One good slot beside it does not carry the bad one.
+          slots: [
+            { proposedDate, startTime: '09:00', endTime: '10:00' },
+            { proposedDate: day, startTime: '23:30', endTime: '23:59' },
+          ],
+        }),
+        400,
+      )
+      assert.equal(refused.error, 'slot_date_too_soon')
+    }
+    assert.equal((await requestsOf(gus)).length, 0)
+    assert.equal(await sessionsLeft(solo), 10)
+
+    await requestOk(one, gus, {
+      sessionType: '1on1',
+      clientPackageId: solo,
+      slots: [{ proposedDate: sgDay(1), startTime: '09:00', endTime: '10:00' }],
+    })
+    assert.equal(await sessionsLeft(solo), 9)
+  })
+
   test('PT-15 an expired PT package is refused and nothing is debited', async () => {
     const gia = await member(one, 'Gia Expired')
     const packageId = await givePt(one, gia, '1on1')

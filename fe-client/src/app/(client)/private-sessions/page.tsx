@@ -39,8 +39,10 @@ function emptySlot(): Slot {
   return { proposedDate: "", startTime: nextHourTime() };
 }
 
-function todayIso() {
-  return new Date().toISOString().split("T")[0];
+// The earliest date a member may propose: tomorrow in Singapore, the studio's
+// clock, whatever the device's zone — the server refuses today or earlier.
+function earliestSlotDate() {
+  return new Date(Date.now() + 8 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
 }
 
 export default function PrivateSessionsPage() {
@@ -118,8 +120,10 @@ export default function PrivateSessionsPage() {
     const errs: string[] = [];
     if (!locationId) errs.push("Pick a location.");
     if (slots.length === 0) errs.push("Add at least one proposed slot.");
+    const earliest = earliestSlotDate();
     slots.forEach((s, i) => {
       if (!s.proposedDate || !s.startTime) errs.push(`Slot ${i + 1}: pick a date and start time.`);
+      else if (s.proposedDate < earliest) errs.push(`Slot ${i + 1}: pick a date from tomorrow on.`);
     });
     if (sessionType === "2on1") {
       if (!partnerEmail.trim()) errs.push("Partner email is required for a 2-on-1.");
@@ -171,7 +175,9 @@ export default function PrivateSessionsPage() {
       setSheetError(
         code === ERROR_CODES.insufficient_pt_credit
           ? `That package no longer has ${sessionsWord(requestCost)} left. Pick another, or buy a package.`
-          : err instanceof Error
+          : code === ERROR_CODES.slot_date_too_soon
+            ? "Private sessions are booked from tomorrow on. Change any time dated today or earlier."
+            : err instanceof Error
             ? err.message
             : "We couldn't submit your request. Please try again.",
       );
@@ -309,7 +315,7 @@ export default function PrivateSessionsPage() {
                       <input
                         id={`slot-${i}-date`}
                         type="date"
-                        min={todayIso()}
+                        min={earliestSlotDate()}
                         value={s.proposedDate}
                         onChange={(e) => setSlot(i, { proposedDate: e.target.value })}
                         className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"

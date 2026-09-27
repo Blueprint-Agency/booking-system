@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import {
   type ApiWorkshopTier,
   formatSgd,
-  formatDayRange,
+  formatWorkshopDates,
   tierEffectivePrice,
   useWorkshop,
 } from "@/lib/workshops";
@@ -118,7 +118,11 @@ export default function WorkshopDetailPage() {
           <div className="-mt-2 mb-5 space-y-1 text-sm">
             <p className="flex items-start gap-2 font-semibold text-ink">
               <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-ink/40" aria-hidden />
-              {formatDayRange(workshop.starts_at, workshop.ends_at)}
+              {formatWorkshopDates(
+                workshop.starts_at,
+                workshop.ends_at,
+                workshop.days.map((d) => d.starts_at),
+              )}
             </p>
             {workshop.location && (
               <p className="flex items-start gap-2 text-muted">
@@ -181,7 +185,7 @@ export default function WorkshopDetailPage() {
                       <p className="font-semibold text-ink">
                         Day {d.ord}
                         {/* The stub is aria-hidden; the date still has to be read out. */}
-                        <span className="sr-only">, {formatDayRange(d.starts_at, null)}</span>
+                        <span className="sr-only">, {formatWorkshopDates(d.starts_at, null)}</span>
                       </p>
                       <p className="text-sm text-muted">{formatTimeRange(d.starts_at, d.ends_at)}</p>
                     </div>
