@@ -115,6 +115,8 @@ export interface RestoreSummary {
   opened: boolean
   /** Logins a replace deleted because their email is not in the archive; zero for a restore. */
   logins_removed: { client: number; staff: number }
+  /** Logins given the password the archive carried for them; zero when it carried none. */
+  passwords_applied: { client: number; staff: number }
 }
 
 function view(row: TenantImportRow): ImportJobView {
@@ -455,7 +457,7 @@ export async function restoreArchive(
     tenantId,
     archive,
     onProgress,
-    request.mode === 'replace' ? { mode: 'replace', confirmSlug: request.confirmSlug, by } : {},
+    request.mode === 'replace' ? { mode: 'replace', confirmSlug: request.confirmSlug, by } : { by },
   )
 
   onProgress({ phase: 'finishing', processed: summary.total, total: summary.total })
@@ -483,6 +485,7 @@ export async function restoreArchive(
     from: { slug: summary.sourceTenant.slug, name: summary.sourceTenant.name },
     remapped: summary.remapped,
     logins_removed: summary.loginsRemoved,
+    passwords_applied: summary.passwordsApplied,
     opened,
   }
 }

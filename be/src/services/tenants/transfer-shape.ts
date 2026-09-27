@@ -34,12 +34,30 @@ export type TenantManifest = {
    * version is unchanged.
    */
   ensureAccounts?: boolean
+  /**
+   * How many password hashes the archive carries, per pool — present only on an
+   * export the operator asked to include them in. Optional, so the archive
+   * version is unchanged and a reader that knows nothing of it restores the
+   * rows as it always did.
+   */
+  passwords?: { client: number; staff: number }
 }
+
+/**
+ * One person's password at the studio: their login's email and its credential
+ * hash, exactly as the pool stored it — never the password itself. Nothing
+ * else a login holds travels: a second factor's secret is sealed with the
+ * platform's own secret, and a session or a reset link is one environment's.
+ */
+export type ArchivedPassword = { email: string; hash: string }
+export type ArchivedPasswords = { client: ArchivedPassword[]; staff: ArchivedPassword[] }
 
 export type TenantArchive = {
   manifest: TenantManifest
   /** Table name → its rows, as returned by Postgres. */
   rows: Record<string, Record<string, unknown>[]>
+  /** The studio's members' and staff's password hashes, when the export was asked to include them. */
+  passwords?: ArchivedPasswords
 }
 
 /**

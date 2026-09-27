@@ -37,13 +37,22 @@ const app = new Hono()
  * thousands of rows at the top end, which is megabytes — and a streamed export
  * that fails halfway produces a file that looks fine and is not, which is the
  * one outcome a backup must never have.
+ *
+ * `?include=passwords` adds each member's and staff member's password hash, so
+ * a restore elsewhere lets them sign in with the password they have now. Only
+ * when asked by name: a routine backup should not be a copy of everyone's
+ * password, and the export is recorded in the studio's audit log when it is.
  */
-app.get('/tenants/:id/export', async c => {
+const exportQuery = z.object({ include: z.enum(['passwords']).optional() })
+
+app.get('/tenants/:id/export', zValidator('query', exportQuery), async c => {
   const tenantId = c.req.param('id')
   const tenant = await loadTenantById(tenantId)
   if (!tenant) return c.json({ error: ERROR_CODES.not_found }, 404)
 
-  const archive = await exportTenant(tenantId)
+  const by = c.get('platformAdminEmail')
+  const withPasswords = c.req.valid('query').include === 'passwords'
+  const archive = await exportTenant(tenantId, withPasswords ? { includePasswords: true, by } : {})
   const bytes = await packArchive(archive)
 
   logger.info(
@@ -51,12 +60,13 @@ app.get('/tenants/:id/export', async c => {
       tenant: tenant.slug,
       rows: Object.values(archive.manifest.counts).reduce((a, b) => a + b, 0),
       bytes: bytes.length,
-      by: c.get('platformAdminEmail'),
+      passwords: archive.manifest.passwords ?? null,
+      by,
     },
     'tenant exported',
   )
 
-  const filename = archiveFilename(tenant.slug, archive.manifest.exportedAt)
+  const filename = archiveFilename(tenant.slug, archive.manifest.exportedAt, { withPasswords })
   c.header('Content-Type', 'application/zip')
   c.header('Content-Disposition', `attachment; filename="${filename}"`)
   // The browser reads the filename off the header, and a cross-origin fetch

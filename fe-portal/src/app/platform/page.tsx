@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { Button, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
 import { CreateTenantDialog } from "@/components/platform/create-tenant-dialog";
 import { DeleteTenantDialog } from "@/components/platform/delete-tenant-dialog";
+import { ExportTenantDialog } from "@/components/platform/export-tenant-dialog";
 import { InviteFirstAdminDialog } from "@/components/platform/invite-first-admin-dialog";
 import { RenameTenantDialog } from "@/components/platform/rename-tenant-dialog";
 import { ReplaceTenantDialog } from "@/components/platform/replace-tenant-dialog";
@@ -92,6 +93,7 @@ export default function PlatformPage() {
   const [deleting, setDeleting] = useState<PlatformTenant | null>(null);
   /** The studio the replace dialog is open for, or null. */
   const [replacing, setReplacing] = useState<PlatformTenant | null>(null);
+  const [exporting, setExporting] = useState<PlatformTenant | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   /** One file input serves every row; this is the studio the picker is for. */
   const [importTarget, setImportTarget] = useState<PlatformTenant | null>(null);
@@ -172,11 +174,12 @@ export default function PlatformPage() {
     }
   }
 
-  async function downloadArchive(tenant: PlatformTenant) {
+  async function downloadArchive(tenant: PlatformTenant, options: { withPasswords: boolean }) {
     setBusyId(`export:${tenant.id}`);
     try {
-      await exportTenant(getPortalToken, tenant);
-      toast.success(`${tenant.name} exported.`);
+      await exportTenant(getPortalToken, tenant, options);
+      setExporting(null);
+      toast.success(`${tenant.name} exported${options.withPasswords ? " with passwords" : ""}.`);
     } catch {
       toast.error(`Could not export ${tenant.name}.`);
     } finally {
@@ -499,7 +502,7 @@ export default function PlatformPage() {
                     // an operator most wants it is right before they do
                     // something they might regret.
                     [
-                      { icon: Download, label: "Export archive", onSelect: () => void downloadArchive(tenant) },
+                      { icon: Download, label: "Export archive", onSelect: () => setExporting(tenant) },
                       {
                         icon: Upload,
                         label: "Restore archive",
@@ -611,6 +614,16 @@ export default function PlatformPage() {
           setDeleting(null);
           setTenants(rows => (rows ?? []).filter(row => row.id !== gone.id));
         }}
+      />
+
+      <ExportTenantDialog
+        // Keyed on the studio, so "Include passwords" starts unticked each time.
+        key={`export:${exporting?.id ?? "none"}`}
+        tenant={exporting}
+        onOpenChange={open => {
+          if (!open) setExporting(null);
+        }}
+        onExport={downloadArchive}
       />
 
       <ReplaceTenantDialog

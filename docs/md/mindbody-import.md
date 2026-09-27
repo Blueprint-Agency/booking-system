@@ -639,6 +639,12 @@ came with (#229). The archive's manifest carries `ensureAccounts: true`, which l
 no account and refuses any studio but the one it was built for. An archive without the flag
 (every export) still needs each row to name an account, as before.
 
+The one exception is a super portal export with **Include passwords** ticked
+(`?include=passwords`): it carries each member's and staff member's password hash by email, and the
+import gives it to any of these accounts that has no password yet, so people sign in with the
+password they had where the archive came from. A Mindbody build never carries passwords: Mindbody
+has none to give.
+
 ## 4. Launch day, in order
 
 Every step in one sitting, in this order. Do not start until section 1 is settled, the

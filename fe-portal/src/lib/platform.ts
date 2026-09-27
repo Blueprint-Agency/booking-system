@@ -271,15 +271,23 @@ export interface ImportSummary {
   opened: boolean;
   /** Sign-ins a replace deleted because their email is not in the archive. Absent on jobs finished before it was added. */
   logins_removed?: { client: number; staff: number };
+  /** Sign-ins given the password the archive carried for them. Absent on jobs finished before it was added. */
+  passwords_applied?: { client: number; staff: number };
 }
 
-/** Download a studio's whole archive. */
+/**
+ * Download a studio's whole archive. `withPasswords` adds each member's and
+ * staff member's password hash, so a restore elsewhere keeps their sign-ins;
+ * the backend records that export in the studio's audit log.
+ */
 export function exportTenant(
   getToken: () => Promise<string | null>,
   tenant: PlatformTenant,
+  options: { withPasswords?: boolean } = {},
 ): Promise<void> {
-  return downloadFile(getToken, `/platform/tenants/${tenant.id}/export`, {
-    fallbackName: `${tenant.slug}.zip`,
+  const query = options.withPasswords ? "?include=passwords" : "";
+  return downloadFile(getToken, `/platform/tenants/${tenant.id}/export${query}`, {
+    fallbackName: `${tenant.slug}${options.withPasswords ? "-with-passwords" : ""}.zip`,
     failure: "The studio could not be exported.",
   });
 }

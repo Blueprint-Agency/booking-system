@@ -10,7 +10,7 @@ import { buildIdentityMap, remapRow } from './transfer-identity'
 import { orderTables, type ForeignKey } from './transfer-order'
 import { studioTables } from './transfer-tables'
 import { upgradeArchiveRows } from './transfer-upgrade'
-import { ARCHIVE_VERSION, type TenantArchive, type TenantManifest } from './transfer-shape'
+import { ARCHIVE_VERSION, type ArchivedPasswords, type TenantArchive, type TenantManifest } from './transfer-shape'
 import { loadTenantById } from './tenants'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
@@ -90,8 +90,15 @@ export async function tenantTableOrder() {
   return orderTables(tables, foreignKeys)
 }
 
+/**
+ * What an export may add to the studio's rows: its people's password hashes,
+ * when the platform administrator asks for them by name (`by`, for the
+ * studio's audit log). Off unless asked — see `readPasswords`.
+ */
+export type ExportOptions = { includePasswords?: false } | { includePasswords: true; by: string }
+
 /** Read one studio out of the database, whole. */
-export async function exportTenant(tenantId: string): Promise<TenantArchive> {
+export async function exportTenant(tenantId: string, options: ExportOptions = {}): Promise<TenantArchive> {
   const tenant = await loadTenantById(tenantId)
   if (!tenant) throw new NotFoundError('not_found')
 
@@ -121,6 +128,7 @@ export async function exportTenant(tenantId: string): Promise<TenantArchive> {
   // Nothing detects that at export. It surfaces as a foreign-key violation on
   // the day the archive is restored, which is the worst day to find out.
   let settings: Record<string, unknown> | undefined
+  let passwords: ArchivedPasswords | undefined
   await withTenant(
     tenantId,
     async () => {
@@ -145,12 +153,33 @@ export async function exportTenant(tenantId: string): Promise<TenantArchive> {
       ;[settings] = await db.execute<Record<string, unknown>>(
         sql`SELECT * FROM current_tenant_settings()`,
       )
+
+      // In the same snapshot as the rows, so a password is there for exactly
+      // the people the archive holds.
+      if (options.includePasswords) passwords = await readPasswords()
     },
     { isolation: 'repeatable read' },
   )
   if (settings) {
     rows.tenant_settings = [settings]
     counts.tenant_settings = 1
+  }
+
+  // Taking a copy of everyone's password is recorded where the studio's own
+  // admins can see it, as a replace is: by the platform, naming who asked.
+  if (passwords && options.includePasswords) {
+    const carried = { client: passwords.client.length, staff: passwords.staff.length }
+    await withTenant(tenantId, () =>
+      db.insert(auditLog).values({
+        tenantId,
+        actorStaffId: null,
+        actorType: 'system',
+        action: 'tenant.exported_with_passwords',
+        targetTable: 'tenants',
+        targetId: tenantId,
+        payload: { exportedBy: options.by, passwords: carried },
+      }),
+    )
   }
 
   return {
@@ -166,8 +195,40 @@ export async function exportTenant(tenantId: string): Promise<TenantArchive> {
       tables: settings ? [...order, 'tenant_settings'] : order,
       deferred,
       counts,
+      ...(passwords ? { passwords: { client: passwords.client.length, staff: passwords.staff.length } } : {}),
     },
     rows,
+    ...(passwords ? { passwords } : {}),
+  }
+}
+
+/**
+ * The password hash of each member and staff member the studio holds, inside
+ * the caller's `withTenant`, which is what limits it to this studio.
+ *
+ * Only a login a `clients` / `staff_users` row names: the archive restores
+ * those people and nobody else, so a password for anyone else would be a
+ * secret carried for no one. Only the hash, as the pool stored it — Better
+ * Auth's scrypt or a bcrypt digest from the previous provider, both checked
+ * without any secret of this platform's (`password-hash.ts`), which is why they
+ * sign in on another. A second factor's secret is sealed with this platform's
+ * `BETTER_AUTH_SECRET`, and so stays behind.
+ */
+async function readPasswords(): Promise<ArchivedPasswords> {
+  const pool = async (people: string, users: string, accounts: string) =>
+    [
+      ...(await db.execute<{ email: string; hash: string }>(sql`
+        SELECT DISTINCT lower(u.email) AS email, a.password AS hash
+        FROM ${sql.identifier(users)} u
+        JOIN ${sql.identifier(accounts)} a
+          ON a.user_id = u.id AND a.provider_id = 'credential' AND a.password IS NOT NULL
+        WHERE u.id IN (SELECT auth_user_id FROM ${sql.identifier(people)} WHERE auth_user_id IS NOT NULL)
+        ORDER BY 1
+      `)),
+    ].map(({ email, hash }) => ({ email, hash }))
+  return {
+    client: await pool('clients', 'client_auth_users', 'client_auth_accounts'),
+    staff: await pool('staff_users', 'staff_auth_users', 'staff_auth_accounts'),
   }
 }
 
@@ -199,7 +260,11 @@ export type ImportProgressListener = (progress: ImportProgress) => void
 export type ImportMode = 'restore' | 'replace'
 
 export type ImportOptions =
-  | { mode?: 'restore' }
+  | {
+      mode?: 'restore'
+      /** The platform administrator's email, for the audit entry an archive carrying passwords writes. */
+      by?: string
+    }
   | {
       mode: 'replace'
       /** The studio's current Slug, as the operator typed it. */
@@ -224,6 +289,11 @@ export type ImportSummary = {
   cleared: Record<string, number>
   /** Logins a replace deleted because their email is not in the archive, per pool; zero for a restore. */
   loginsRemoved: Record<keyof typeof LOGIN_POOLS, number>
+  /**
+   * Logins given the archive's password, per pool: those that had none. Zero
+   * when the archive carries no passwords.
+   */
+  passwordsApplied: Record<keyof typeof LOGIN_POOLS, number>
   /** Total rows written. */
   total: number
   /** The studio the archive came from, which is not the one it was written to. */
@@ -370,6 +440,7 @@ export async function importTenant(
   const written: Record<string, number> = {}
   const cleared: Record<string, number> = {}
   const loginsRemoved = { client: 0, staff: 0 }
+  const passwordsApplied = { client: 0, staff: 0 }
 
   // A shallow copy, so ensuring accounts below replaces tables in this import's
   // view of the archive rather than in the caller's object — brought up to the
@@ -436,7 +507,9 @@ export async function importTenant(
     // is one from the platform it came from — or none, when it was built
     // outside one. Either way it is not copied: each person gets a login made
     // from their email, with no password, and signs in through the email-first
-    // step, which mails them a Set-password link (#229). The login is the
+    // step, which mails them a Set-password link (#229) — unless the export was
+    // asked to carry passwords, whose hashes are given to these logins below.
+    // The login is the
     // target studio's own (#231), through the helper every other way in uses;
     // the same person at another studio has a login there, untouched.
     //
@@ -463,6 +536,16 @@ export async function importTenant(
       for (const [table, pool] of Object.entries(ACCOUNT_TABLES)) {
         const kept = (rows[table] ?? []).map(row => String(row.auth_user_id))
         loginsRemoved[pool] = await removeLoginsNotIn(targetTenantId, pool, kept)
+      }
+    }
+    // An export asked to carry passwords brings each person's hash, by email,
+    // and a login that has none takes it: so after a restore people sign in
+    // with the password they had where the archive came from. A login that
+    // already has one — a replace's people, who carry on as they were — keeps
+    // its own; the archive never overwrites a password.
+    if (archive.passwords) {
+      for (const [table, pool] of Object.entries(ACCOUNT_TABLES)) {
+        passwordsApplied[pool] = await applyPasswords(targetTenantId, pool, rows[table] ?? [], archive.passwords[pool])
       }
     }
 
@@ -599,7 +682,28 @@ export async function importTenant(
           counts: written,
           cleared: Object.values(cleared).reduce((a, b) => a + b, 0),
           loginsRemoved,
+          passwordsApplied,
           remapped: identity.size > 0,
+        },
+      })
+    }
+    // Passwords arriving from another environment are recorded on their own,
+    // restore and replace alike, so the studio's trail says whose hashes these
+    // logins now hold and where they came from.
+    if (archive.passwords) {
+      await db.insert(auditLog).values({
+        tenantId: targetTenantId,
+        actorStaffId: null,
+        actorType: 'system',
+        action: 'tenant.passwords_imported',
+        targetTable: 'tenants',
+        targetId: targetTenantId,
+        payload: {
+          importedBy: options.by ?? null,
+          mode: replace ? 'replace' : 'restore',
+          source: { ...archive.manifest.tenant, exportedAt: archive.manifest.exportedAt },
+          carried: { client: archive.passwords.client.length, staff: archive.passwords.staff.length },
+          applied: passwordsApplied,
         },
       })
     }
@@ -617,6 +721,7 @@ export async function importTenant(
     written,
     cleared,
     loginsRemoved,
+    passwordsApplied,
     total: Object.values(written).reduce((a, b) => a + b, 0),
     sourceTenant: archive.manifest.tenant,
     remapped: identity.size > 0,
@@ -730,6 +835,43 @@ async function removeLoginsNotIn(
     `)
   }
   return removed.length
+}
+
+/**
+ * Give each of the archive's people in `pool` the password hash the archive
+ * carries for their email, inside the caller's `withTenant` — but only on a
+ * login that has no password yet, so no one's current password is replaced.
+ * `people` are the `clients` / `staff_users` rows already linked to this
+ * studio's logins. How many logins took one.
+ */
+async function applyPasswords(
+  tenantId: string,
+  pool: keyof typeof LOGIN_POOLS,
+  people: readonly Record<string, unknown>[],
+  passwords: ArchivedPasswords[keyof ArchivedPasswords],
+): Promise<number> {
+  const byEmail = new Map(passwords.map(p => [p.email.trim().toLowerCase(), p.hash]))
+  const hashByLogin = new Map<string, string>()
+  for (const person of people) {
+    const hash = byEmail.get(String(person.email).trim().toLowerCase())
+    if (hash) hashByLogin.set(String(person.auth_user_id), hash)
+  }
+  if (hashByLogin.size === 0) return 0
+
+  const { users } = LOGIN_POOLS[pool]
+  const accounts = `${pool}_auth_accounts`
+  // The shape Better Auth's own sign-up writes, as `setFirstStaffPassword` does.
+  const given = await db.execute(sql`
+    INSERT INTO ${sql.identifier(accounts)} (id, account_id, provider_id, user_id, password, tenant_id)
+    SELECT gen_random_uuid()::text, u.id, 'credential', u.id, p.hash, ${tenantId}
+    FROM unnest(${pgArray([...hashByLogin.keys()])}::text[], ${pgArray([...hashByLogin.values()])}::text[]) AS p(user_id, hash)
+    JOIN ${sql.identifier(users)} u ON u.id = p.user_id AND u.tenant_id = ${tenantId}
+    WHERE NOT EXISTS (
+      SELECT 1 FROM ${sql.identifier(accounts)} a WHERE a.user_id = u.id AND a.provider_id = 'credential'
+    )
+    RETURNING 1
+  `)
+  return given.length
 }
 
 /** The Slug the operator typed names this studio — for a replace and a delete alike. */

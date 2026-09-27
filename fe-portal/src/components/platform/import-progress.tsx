@@ -196,6 +196,7 @@ export function ImportProgress({
         )}
         <p className="text-xs text-muted">
           {s.mode === "replace" ? replacedSignIns(s) : ""}
+          {carriedPasswords(s)}
           {s.remapped && s.mode !== "replace" ? `${s.from.name} is untouched. ` : ""}
           {s.opened ? `${studioName} is now open.` : ""}
           {job.finished_at ? ` Finished ${new Date(job.finished_at).toLocaleString()}.` : ""}
@@ -234,6 +235,12 @@ function replacedSignIns(s: ImportSummary): string {
   return removed > 0
     ? `Sign-ins kept for everyone in the archive; ${removed.toLocaleString()} for people not in it were removed. `
     : "Sign-ins kept for everyone in the archive. ";
+}
+
+/** How many sign-ins took the password the archive carried; nothing for an archive without passwords. */
+function carriedPasswords(s: ImportSummary): string {
+  const given = (s.passwords_applied?.client ?? 0) + (s.passwords_applied?.staff ?? 0);
+  return given > 0 ? `${given.toLocaleString()} sign-ins kept their password from the archive. ` : "";
 }
 
 function Panel({

@@ -2,6 +2,8 @@ import JSZip from 'jszip'
 import {
   ARCHIVE_VERSION,
   ArchiveError,
+  type ArchivedPassword,
+  type ArchivedPasswords,
   type MemberArchive,
   type TenantArchive,
   type TenantManifest,
@@ -27,6 +29,12 @@ export { ArchiveError }
 
 const MANIFEST = 'manifest.json'
 const TABLE_DIR = 'tables'
+/**
+ * The password hashes, when an export was asked to carry them: outside
+ * `tables/` because they are no table's rows, and named so a person opening
+ * the zip sees at once that it holds them.
+ */
+const PASSWORDS = 'logins/passwords.json'
 
 /**
  * Pack an archive — a whole studio, or one member of it — into zip bytes.
@@ -48,6 +56,9 @@ export async function packArchive(
 
   for (const table of archive.manifest.tables) {
     zip.file(`${TABLE_DIR}/${table}.json`, JSON.stringify(archive.rows[table] ?? [], null, 2), entry)
+  }
+  if ('passwords' in archive && archive.passwords) {
+    zip.file(PASSWORDS, JSON.stringify(archive.passwords, null, 2), entry)
   }
 
   return zip.generateAsync({
@@ -127,13 +138,52 @@ export async function unpackArchive(bytes: Buffer | Uint8Array): Promise<TenantA
     rows[table] = parsed as Record<string, unknown>[]
   }
 
-  return { manifest, rows }
+  const passwords = manifest.passwords ? await readPasswords(zip, manifest.passwords) : undefined
+  return passwords ? { manifest, rows, passwords } : { manifest, rows }
 }
 
-/** `{slug}-2026-09-05.zip` — sortable, and says whose it is. */
-export function archiveFilename(slug: string, exportedAt: string): string {
+/**
+ * The password hashes the manifest says the zip carries, checked whole: a file
+ * that is missing, short, or holds anything but an email and a hash per person
+ * is refused, rather than restoring a studio where some people's passwords
+ * quietly did not come across.
+ */
+async function readPasswords(zip: JSZip, counts: { client: number; staff: number }): Promise<ArchivedPasswords> {
+  const file = zip.file(PASSWORDS)
+  if (!file) throw new ArchiveError(`The manifest says this archive carries passwords, but it has no ${PASSWORDS}.`)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(await file.async('string'))
+  } catch {
+    throw new ArchiveError(`${PASSWORDS} is not readable JSON.`)
+  }
+  const isPassword = (p: unknown): p is ArchivedPassword => {
+    const { email, hash } = (p ?? {}) as Partial<ArchivedPassword>
+    return typeof email === 'string' && email.trim() !== '' && typeof hash === 'string' && hash !== ''
+  }
+  const pool = (name: 'client' | 'staff'): ArchivedPassword[] => {
+    const list = (parsed as Record<string, unknown> | null)?.[name]
+    if (!Array.isArray(list) || !list.every(isPassword)) {
+      throw new ArchiveError(`${PASSWORDS} should list an email and a hash for each ${name} login.`)
+    }
+    if (list.length !== counts[name]) {
+      throw new ArchiveError(
+        `${PASSWORDS} holds ${list.length} ${name} passwords but the manifest says ${counts[name]} — the archive is incomplete.`,
+      )
+    }
+    return list
+  }
+  return { client: pool('client'), staff: pool('staff') }
+}
+
+/**
+ * `{slug}-2026-09-05.zip` — sortable, and says whose it is. One that carries
+ * passwords says that too, `{slug}-2026-09-05-with-passwords.zip`, so it is not
+ * mistaken for a routine backup and kept as one.
+ */
+export function archiveFilename(slug: string, exportedAt: string, options: { withPasswords?: boolean } = {}): string {
   const day = exportedAt.slice(0, 10)
-  return `${slug}-${day}.zip`
+  return `${slug}-${day}${options.withPasswords ? '-with-passwords' : ''}.zip`
 }
 
 /** `{slug}-member-1a2b3c4d-2026-09-05.zip` — a member's id, not their name, in a filename. */
