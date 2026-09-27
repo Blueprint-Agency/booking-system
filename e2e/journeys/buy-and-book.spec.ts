@@ -1,4 +1,5 @@
 import { expect, test, type Frame, type Page } from '@playwright/test'
+import { openDayOf } from '../src/schedule'
 import { signInMember, studio } from '../src/studio'
 
 /**
@@ -26,6 +27,7 @@ test('PAY-16 a member buys a plan with a test card and books a class', async ({ 
   await expect(page.getByText(`${catalogue.packageCredits} class credits added`)).toBeVisible()
 
   await page.goto(urls.client)
+  await openDayOf(page, catalogue.buyClassType)
   const row = page
     .locator('div')
     .filter({ has: page.getByRole('heading', { name: catalogue.buyClassType, exact: true }) })

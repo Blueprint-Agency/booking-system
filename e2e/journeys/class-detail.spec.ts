@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openDayOf } from '../src/schedule'
 import { signInMember, studio } from '../src/studio'
 
 /**
@@ -15,6 +16,7 @@ test('BKG-06, BKG-30 a member opens a class detail overlay from the schedule and
   await signInMember(page, members.waiter)
 
   await page.goto(urls.client)
+  await openDayOf(page, catalogue.buyClassType)
   const row = page
     .locator('div')
     .filter({ has: page.getByRole('heading', { name: catalogue.buyClassType, exact: true }) })

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openDayOf } from '../src/schedule'
 import { setStudioFlag, signInMember, studio } from '../src/studio'
 
 /**
@@ -16,6 +17,7 @@ test('WTL-25 a member joins a full class waitlist, sees their place, and leaves 
   await signInMember(page, members.waiter)
 
   await page.goto(urls.client)
+  await openDayOf(page, catalogue.waitlistClassType)
   const row = classRow(page, catalogue.waitlistClassType)
   await row.getByRole('button', { name: 'Join waitlist' }).locator('visible=true').click()
 
@@ -35,6 +37,7 @@ test('WTL-25 a member joins a full class waitlist, sees their place, and leaves 
   // The line is open again, so the class offers it rather than reading Full —
   // and leaving from the row itself gives the row back the same way.
   await page.goto(urls.client)
+  await openDayOf(page, catalogue.waitlistClassType)
   const again = classRow(page, catalogue.waitlistClassType)
   await again.getByRole('button', { name: 'Join waitlist' }).locator('visible=true').click()
   await expect(again.getByText('On waitlist · #1').locator('visible=true')).toBeVisible()

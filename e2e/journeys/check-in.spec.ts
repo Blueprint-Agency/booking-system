@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openDayOf } from '../src/schedule'
 import { signInMember, signInStaff, studio } from '../src/studio'
 
 /**
@@ -16,6 +17,7 @@ test('a member shows their code at the desk and is checked in', async ({ browser
   const member = await browser.newPage({ viewport: { width: 360, height: 740 } })
   await signInMember(member, members.arriver)
   await member.goto(urls.client)
+  await openDayOf(member, catalogue.checkInClassType)
   const row = member
     .locator('div')
     .filter({ has: member.getByRole('heading', { name: catalogue.checkInClassType, exact: true }) })

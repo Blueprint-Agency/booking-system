@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openDayOf } from '../src/schedule'
 import { signInMember, studio } from '../src/studio'
 
 /**
@@ -16,6 +17,7 @@ test('CXL-01 a member cancels inside the window and the credit comes back', asyn
   await page.goto(urls.client)
   await expectCredits(page, full)
 
+  await openDayOf(page, catalogue.cancelClassType)
   const row = page
     .locator('div')
     .filter({ has: page.getByRole('heading', { name: catalogue.cancelClassType, exact: true }) })
