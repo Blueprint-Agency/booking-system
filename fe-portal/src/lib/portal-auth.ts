@@ -23,6 +23,7 @@
  * session with it. The super portal's hostname names no studio, so its calls
  * carry none and its sessions carry no Tenant.
  */
+import { useSyncExternalStore } from "react";
 import { createAuthClient } from "better-auth/react";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { getApiBaseUrl } from "@/lib/api-url";
@@ -125,6 +126,21 @@ export async function signOutPortal(): Promise<void> {
   }
 }
 
+const subscribeNothing = () => () => {};
+
+/**
+ * False while hydrating server HTML, true on every render after it, and true
+ * at once for a component first mounted on the client, so a client-side
+ * navigation shows no extra spinner frame.
+ */
+function useHydrated(): boolean {
+  return useSyncExternalStore(
+    subscribeNothing,
+    () => true,
+    () => false,
+  );
+}
+
 /** The session as the portal reads it. */
 export interface PortalSession {
   /** The auth user's id — what telemetry tags events with (`lib/telemetry.ts`). */
@@ -141,12 +157,18 @@ export interface PortalSession {
  * `isLoaded` is false until the first answer arrives, and stays true across
  * the background re-reads that follow (focus, sign-in, sign-out) so the app is
  * not torn down into a spinner every time the tab regains focus.
+ *
+ * While React hydrates server HTML it is false and the session null, whatever
+ * the store holds: the server makes no auth call, so it always rendered "not
+ * loaded", and Better Auth's store can answer before hydration runs.
  */
 export function usePortalSession(): {
   isLoaded: boolean;
   session: PortalSession | null;
 } {
-  const { data, isPending } = portalAuth.useSession();
+  const hydrated = useHydrated();
+  const { data: storeData, isPending } = portalAuth.useSession();
+  const data = hydrated ? storeData : null;
   const session = data
     ? {
         userId: data.user.id,
@@ -156,5 +178,5 @@ export function usePortalSession(): {
           (data.session as { claimedTenantId?: string | null }).claimedTenantId ?? null,
       }
     : null;
-  return { isLoaded: !isPending || data !== null, session };
+  return { isLoaded: hydrated && (!isPending || data !== null), session };
 }
