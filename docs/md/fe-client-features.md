@@ -566,18 +566,20 @@ Every purchase succeeds even if the email fails to send — the send is a fire-a
 
 ## 8. Account portal `/account/*`
 
-The account section is a sticky sidebar (desktop, from `lg`) / a sideways-scrolling row of tabs above the page (below `lg`) — the same four items in the same order: **Your bookings** (`/account`), **Your packages** (`/account/packages`), **Merch**, **Profile & security**. All sub-pages share an `AccountShell`. **Sign out** is red: at the foot of the sidebar, and at the foot of Profile & security below `lg`.
+The account section is a sticky sidebar (desktop, from `lg`) listing **Your bookings** (`/account/bookings`), **Your packages** (`/account/packages`), **Merch**, **Profile & security**, then a red **Sign out**; the member's card at its top opens `/account`. All sub-pages share an `AccountShell`.
 
-### 8.1 Your bookings `/account` (as built)
+### 8.0 Account home `/account` (as built)
+
+A greeting, unfinished purchases (#93) and the checkout-cancelled banner (#274), then **Up next** only: the one ticket of the old "Coming up" below — the same component the schedule shows above its feed (`ComingUp`), with **Show my QR** and a red **Cancel**. Below `lg` the **Your account** menu follows it: the member's card (→ Profile), Your bookings, Your packages, Merch, Profile & security, and a red **Sign out**. Every section page heads itself with "‹ Account" back to it below `lg`.
+
+### 8.1 Your bookings `/account/bookings` (as built)
 
 Every booking and request the member holds, in one list (`lib/my-bookings.ts`, tested in `my-bookings.test.ts`):
 
-- **Up next** leads: the one ticket of §8.1's "Coming up" below — the same component the schedule shows above its feed (`ComingUp`), with **Show my QR** and a red **Cancel**. What it shows is left out of the list.
 - **Filters**: booking type chips — **All / Classes / Private / Workshops / Corporate** — and **Upcoming / Ongoing / Past** tabs with counts. `?type=` (`class`, `pt`, `workshop`, `corporate`) and `?when=` open it filtered.
 - **Placing**: a class is Upcoming until it starts, Ongoing while it runs, Past once it ends or is cancelled. A **pending PT or corporate request is Upcoming** (it can still be cancelled); a scheduled one follows its session; attended or cancelled is Past. A workshop with no dates yet is Upcoming; a cancelled one is Past.
 - **One card for every kind** (`booking-cards.tsx`): date stub, a kind tag (class accent, PT gold, workshop green, corporate cyan) and a status tag, the name, the time, then instructor / location / room / partner / tier as chips, the QR where there is one, and the check-in code with the action in the footer. Every cancel is **red** (`BTN_CANCEL`): Cancel on a class, Cancel request / Cancel on a PT request, Leave waitlist.
 - **Waitlisted** places sit above the Upcoming list (All or Classes).
-- Unfinished purchases (#93) and the checkout-cancelled banner (#274) sit at the top, as they did on the old dashboard.
 - The old per-kind pages — `/account/classes`, `/account/private-sessions`, `/account/workshops`, `/account/corporate` — redirect here with their filter set (`?submitted=1` from a PT request becomes the "Your request is in" banner).
 
 ### 8.1a Your packages `/account/packages` (as built)
@@ -631,7 +633,7 @@ Every package the member has bought, each marked **Active**, **Not started** (Do
 
 ### 8.3 My Classes `/account/classes`
 
-> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account?type=class`.
+> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account/bookings?type=class`.
 
 **Business logic**
 - Tabs: **Upcoming** / **Past**.
@@ -647,7 +649,7 @@ Every package the member has bought, each marked **Active**, **Not started** (Do
 
 ### 8.4 My Workshops `/account/workshops`
 
-> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account?type=workshop`.
+> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account/bookings?type=workshop`.
 
 **Business logic**
 - Same upcoming/past split, scoped to workshops.
@@ -658,7 +660,7 @@ Every package the member has bought, each marked **Active**, **Not started** (Do
 
 ### 8.5 My Private Sessions `/account/private-sessions`
 
-> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account?type=pt`. Pending requests list under Upcoming, cancelled ones under Past.
+> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account/bookings?type=pt`. Pending requests list under Upcoming, cancelled ones under Past.
 
 **Business logic**
 - Four groupings visible to the user: **Pending** (awaiting studio), **Confirmed** (scheduled upcoming), **Past** (attended), **Cancelled** (rolls up both `cancelled_before_scheduled` and `cancelled_after_scheduled`).
@@ -701,7 +703,7 @@ Every package the member has bought, each marked **Active**, **Not started** (Do
 
 ### 8.8 My Corporate `/account/corporate`
 
-> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account?type=corporate`.
+> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account/bookings?type=corporate`.
 
 **Business logic**
 - Lists the user's corporate requests, one card per request, with a status that the FE reflects back from the backend:

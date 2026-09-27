@@ -9,7 +9,7 @@ import {
 export type AccountNavItem = {
   href: string;
   label: string;
-  /** One line under the label, for a screen reader's link description. */
+  /** One line under the label in the mobile account menu. */
   hint: string;
   icon: LucideIcon;
   isActive: (pathname: string) => boolean;
@@ -18,19 +18,11 @@ export type AccountNavItem = {
 const prefix = (href: string) => (p: string) => p.startsWith(href);
 
 /**
- * The account's landing page: every booking and request the member holds —
- * classes, PT, workshops, corporate — in one list with its own filters.
+ * The account's sections, in the order the desktop sidebar and the mobile
+ * account menu (on `/account`, under "Up next") both list them.
  */
-export const ACCOUNT_OVERVIEW: AccountNavItem = {
-  href: "/account",
-  label: "Your bookings",
-  hint: "Classes, PT, workshops and requests",
-  icon: CalendarCheck,
-  isActive: (p) => p === "/account",
-};
-
-/** The account's other sections, in the order both navs list them. */
 export const ACCOUNT_SECTIONS: AccountNavItem[] = [
+  { href: "/account/bookings", label: "Your bookings", hint: "Classes, PT, workshops and requests", icon: CalendarCheck, isActive: prefix("/account/bookings") },
   { href: "/account/packages", label: "Your packages", hint: "Active, not started and ended", icon: Ticket, isActive: prefix("/account/packages") },
   { href: "/account/merch", label: "Merch", hint: "Items to collect at the studio", icon: ShoppingBag, isActive: prefix("/account/merch") },
   { href: "/account/profile", label: "Profile & security", hint: "Details, saved cards, password", icon: UserCircle, isActive: prefix("/account/profile") },

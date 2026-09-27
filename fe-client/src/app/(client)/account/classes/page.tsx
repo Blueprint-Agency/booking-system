@@ -8,5 +8,5 @@ export default async function AccountClassesPage({
 }) {
   const { tab } = await searchParams;
   const when = tab === "ongoing" || tab === "past" ? `&when=${tab}` : "";
-  redirect(`/account?type=class${when}`);
+  redirect(`/account/bookings?type=class${when}`);
 }

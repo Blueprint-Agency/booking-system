@@ -8,13 +8,13 @@ import { useMemberSession } from "@/lib/member-auth";
 import { cn } from "@/lib/utils";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { AccountHeader } from "./account-header";
-import { ACCOUNT_OVERVIEW, ACCOUNT_SECTIONS } from "./account-nav-items";
+import { ACCOUNT_SECTIONS } from "./account-nav-items";
 import { SignOutButton, SigningOutContext } from "./sign-out-button";
 
 /**
  * The frame around every account page. From `lg` up it is a sidebar beside the
- * page; below that the same sections are a row of tabs above it
- * (`AccountTabs`), so a phone and a desktop reach every section the same way.
+ * page. Below that there is no sidebar: `/account` carries the account menu
+ * under Up next, and every section heads itself with a link back to it.
  */
 export function AccountShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -42,11 +42,19 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
     <div className="max-w-6xl mx-auto px-4 md:px-8 py-5 md:py-10 grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-6 lg:gap-10">
       <aside className="hidden lg:block lg:sticky lg:top-24 self-start">
         <div className="rounded-2xl bg-card border border-ink/5 shadow-soft p-3">
-          <div className="p-3 pb-4 border-b border-ink/5">
+          {/* The member's card opens the account's landing page: Up next. */}
+          <Link
+            href="/account"
+            aria-current={pathname === "/account" ? "page" : undefined}
+            className={cn(
+              "block rounded-xl p-3 pb-4 border-b border-ink/5 transition-colors hover:bg-ink/[0.03]",
+              pathname === "/account" && "bg-accent/5",
+            )}
+          >
             <AccountHeader />
-          </div>
+          </Link>
           <nav className="mt-2 flex flex-col gap-0.5" aria-label="Account">
-            {[ACCOUNT_OVERVIEW, ...ACCOUNT_SECTIONS].map(({ href, label, icon: Icon, isActive }) => {
+            {ACCOUNT_SECTIONS.map(({ href, label, icon: Icon, isActive }) => {
               const active = isActive(pathname);
               return (
                 <Link
@@ -74,45 +82,8 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="min-w-0 animate-fade-in">
-        <AccountTabs pathname={pathname} />
-        {children}
-      </div>
+      <div className="min-w-0 animate-fade-in">{children}</div>
     </div>
     </SigningOutContext.Provider>
-  );
-}
-
-/**
- * The account's sections below `lg`, where there is no sidebar: the same
- * items in the same order, as a row of tabs that scrolls sideways rather than
- * wrapping. Sign out sits at the foot of Profile & security on a phone.
- */
-function AccountTabs({ pathname }: { pathname: string }) {
-  return (
-    <nav aria-label="Account" className="lg:hidden -mx-4 mb-5 overflow-x-auto px-4 no-scrollbar md:-mx-8 md:px-8">
-      <ul className="flex w-max gap-2">
-        {[ACCOUNT_OVERVIEW, ...ACCOUNT_SECTIONS].map(({ href, label, icon: Icon, isActive }) => {
-          const active = isActive(pathname);
-          return (
-            <li key={href}>
-              <Link
-                href={href}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-sm font-semibold transition-colors",
-                  active
-                    ? "border-accent/20 bg-accent/10 text-accent-deep"
-                    : "border-ink/10 bg-card text-muted hover:border-ink/25 hover:text-ink",
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" strokeWidth={active ? 2.3 : 1.8} aria-hidden />
-                {label}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
   );
 }

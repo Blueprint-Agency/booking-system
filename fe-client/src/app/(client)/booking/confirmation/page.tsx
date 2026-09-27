@@ -215,7 +215,7 @@ function WorkshopSuccess({
             </ReceiptPanel>
             <div className={ctaRow}>
               <Link
-                href="/account?type=workshop"
+                href="/account/bookings?type=workshop"
                 className={primaryCta}
               >
                 View my workshops

@@ -7,5 +7,5 @@ export default async function AccountPrivateSessionsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { submitted } = await searchParams;
-  redirect(`/account?type=pt${submitted === "1" ? "&submitted=pt" : ""}`);
+  redirect(`/account/bookings?type=pt${submitted === "1" ? "&submitted=pt" : ""}`);
 }
