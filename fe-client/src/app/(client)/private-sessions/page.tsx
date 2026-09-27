@@ -17,6 +17,9 @@ import { usePtSessionsApi, HALF_HOUR_TIMES, formatSlotTime } from "@/lib/pt-sess
 import { ApiError } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { cn } from "@/lib/utils";
+import { initialPtPick, ptPickRows, sessionTypeLabel, sessionsWord } from "@/lib/pt-package-picker";
+import { ConfirmPtRequestSheet, slotLabel } from "@/components/private-sessions/confirm-pt-request-sheet";
+import { RequestSentCelebration } from "@/components/celebration/request-sent-celebration";
 
 type Slot = { proposedDate: string; startTime: string };
 
@@ -55,10 +58,13 @@ export default function PrivateSessionsPage() {
   const [locationId, setLocationId] = useState<string>("");
   const [slots, setSlots] = useState<Slot[]>([emptySlot()]);
   const [message, setMessage] = useState<string>("");
-  // Which package this request is debited from, when more than one fits. It
-  // decides the instructor too, so it is the member's choice to make and not
-  // ours to guess. Empty means "whichever the form picks by default".
-  const [packageId, setPackageId] = useState<string>("");
+  // The confirm sheet, where the member picks which package pays: it decides
+  // the instructor too, so it is theirs to choose and not ours to guess.
+  const [confirming, setConfirming] = useState(false);
+  const [packageId, setPackageId] = useState<string | null>(null);
+  const [sheetError, setSheetError] = useState<string | null>(null);
+  // Set once the request is in: the "Request sent!" celebration.
+  const [sent, setSent] = useState(false);
 
   // Default to the first location once the public list loads.
   useEffect(() => {
@@ -123,11 +129,12 @@ export default function PrivateSessionsPage() {
     return errs;
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  /** The form's own checks, then the confirm sheet — nothing is sent from here. */
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    // Gate: a request needs an active PT package of the right type with enough credits.
-    if (!matchingPackage || !hasEnoughCredits) {
+    // A member with no PT package of this type has nothing to pick from.
+    if (!hasPackageForType) {
       setShowBuyPrompt(true);
       setErrors([]);
       return;
@@ -138,28 +145,36 @@ export default function PrivateSessionsPage() {
     setErrors(errs);
     if (errs.length > 0) return;
 
+    setPackageId(initialPtPick(pickRows));
+    setSheetError(null);
+    setConfirming(true);
+  }
+
+  /** Send, paid by the package picked on the sheet. */
+  async function send(clientPackageId: string) {
     setSubmitting(true);
+    setSheetError(null);
     try {
       await ptApi.submitRequest({
         classTypeId,
         locationId,
         sessionType: computedSessionType,
-        clientPackageId: matchingPackage.id,
+        clientPackageId,
         slots: slots.map((s) => ({ proposedDate: s.proposedDate, startTime: s.startTime })),
         message: message.trim() || undefined,
         partner: buildPartner() ?? undefined,
       });
-      router.push("/account/private-sessions?submitted=1");
+      setConfirming(false);
+      setSent(true);
     } catch (err: unknown) {
       const code = apiErrorCode(err);
-      const msg =
+      setSheetError(
         code === ERROR_CODES.insufficient_pt_credit
-          ? `This ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} request uses ${requestCost} session${requestCost === 1 ? "" : "s"}. Choose a package with enough sessions or buy another package.`
+          ? `That package no longer has ${sessionsWord(requestCost)} left. Pick another, or buy a package.`
           : err instanceof Error
             ? err.message
-            : "We couldn't submit your request. Please try again.";
-      if (code === ERROR_CODES.insufficient_pt_credit) setShowBuyPrompt(true);
-      setErrors([msg]);
+            : "We couldn't submit your request. Please try again.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -185,26 +200,22 @@ export default function PrivateSessionsPage() {
 
   const balanceForType = (t: "1on1" | "2on1") => (t === "2on1" ? pt2on1 : pt1on1);
   const requestCost = computedSessionType === "2on1" ? 2 : 1;
-  // Every package that could pay for this request. Any number of PT packages
-  // may run at once (be/docs/adr/0010), so a Dormant pick simply starts. More
-  // than one means the member picks, because the package they pick decides the
-  // instructor.
-  const eligiblePackages = useMemo(
-    () =>
-      ptPackages.filter(
-        (p) =>
-          p.sessionType === computedSessionType &&
-          (p.creditsOrSessionsRemaining ?? 0) >= requestCost,
-      ),
+  // Every PT package of this session type, each able to pay or greyed with the
+  // reason — the confirm sheet's list. Any number of PT packages may run at
+  // once (be/docs/adr/0010), so a Dormant pick simply starts.
+  const pickRows = useMemo(
+    () => ptPickRows(ptPackages, computedSessionType, requestCost),
     [ptPackages, computedSessionType, requestCost],
   );
-  // A pick that no longer fits (the session type changed under it) falls back
-  // rather than lingering — the request must never be debited from a package
-  // the member can no longer see in the list.
-  const matchingPackage =
-    eligiblePackages.find((p) => p.id === packageId) ?? eligiblePackages[0];
-  const hasPackageForType = ptPackages.some((p) => p.sessionType === computedSessionType);
-  const hasEnoughCredits = Boolean(matchingPackage) && balanceForType(computedSessionType) >= requestCost;
+  const hasPackageForType = pickRows.length > 0;
+  const locationName = locations?.find((l) => l.id === locationId)?.name ?? null;
+  const classTypeName = classTypeId ? (classTypes?.find((t) => t.id === classTypeId)?.name ?? null) : null;
+  const partnerDisplay =
+    computedSessionType === "2on1"
+      ? partnerLookup.state === "found"
+        ? partnerLookup.name
+        : partnerName.trim() || null
+      : null;
 
   return (
     <BookingSurface>
@@ -254,34 +265,6 @@ export default function PrivateSessionsPage() {
                 You have {pt1on1} 1-on-1 and {pt2on1} 2-on-1 sessions remaining.
               </p>
             </div>
-          )}
-
-          {eligiblePackages.length > 1 && (
-            <div>
-              <label
-                className="text-sm font-medium text-ink mb-1.5 block"
-                htmlFor="pt-package"
-              >
-                Use package
-              </label>
-              <Select
-                id="pt-package"
-                value={matchingPackage?.id ?? ""}
-                onChange={setPackageId}
-                options={eligiblePackages.map((p) => ({
-                  value: p.id,
-                  label:
-                    `${p.name} — ${p.creditsOrSessionsRemaining ?? 0} left` +
-                    (p.boundInstructor ? ` · with ${p.boundInstructor.name}` : ""),
-                }))}
-              />
-            </div>
-          )}
-
-          {matchingPackage?.boundInstructor && (
-            <p className="rounded-xl border border-accent/25 bg-accent/5 px-3 py-2.5 text-sm text-ink">
-              Your sessions will be with {matchingPackage.boundInstructor.name}.
-            </p>
           )}
 
           <div>
@@ -461,11 +444,40 @@ export default function PrivateSessionsPage() {
             disabled={submitting}
             className={cn(BTN_PRIMARY, "w-full")}
           >
-            {submitting
-              ? "Sending…"
-              : `Send request · ${requestCost} session${requestCost === 1 ? "" : "s"}`}
+            {`Send request · ${sessionsWord(requestCost)}`}
           </button>
         </form>
+      )}
+
+      {confirming && (
+        <ConfirmPtRequestSheet
+          summary={{
+            sessionType: computedSessionType,
+            locationName,
+            classTypeName,
+            slots,
+            partnerName: partnerDisplay,
+          }}
+          rows={pickRows}
+          picked={packageId}
+          onPick={setPackageId}
+          cost={requestCost}
+          sending={submitting}
+          error={sheetError}
+          onConfirm={(id) => void send(id)}
+          onClose={() => setConfirming(false)}
+        />
+      )}
+
+      {sent && (
+        <RequestSentCelebration
+          kind="pt"
+          name={`${classTypeName ?? "Private session"} · ${sessionTypeLabel(computedSessionType)}`}
+          detail={slots.length === 1 ? slotLabel(slots[0]!) : `${slots.length} times suggested`}
+          place={locationName}
+          person={partnerDisplay ? `With ${partnerDisplay}` : null}
+          onClose={() => router.push("/account/private-sessions")}
+        />
       )}
     </BookingSurface>
   );

@@ -587,6 +587,46 @@ describe('corporate packages, requests and sessions over HTTP', { skip: integrat
       assert.equal(row.resolvedAt, null)
       assert.equal((await sessionsFrom(requestId)).length, 0)
     })
+
+    test('CORP-13 a scheduled request is the member’s to celebrate once: listed with its session until they mark it seen, and not once cancelled', async () => {
+      const approvals = async (who: Member) => {
+        const res = await json(await send('/api/v1/me/approvals', who.headers))
+        assert.equal(res.status, 200, JSON.stringify(res.body))
+        return res.body.approvals as any[]
+      }
+      const markSeen = (who: Member, requestId: string) =>
+        send(`/api/v1/me/approvals/corporate/${requestId}/seen`, who.headers, 'POST')
+
+      const requestId = await request(memberAtOne)
+      assert.ok(!(await approvals(memberAtOne)).some(a => a.id === requestId), 'a pending request is not yet approved')
+
+      const when = slot()
+      const res = await schedule(adminAtOne, requestId, at(hereAtOne, teacherA, when))
+      assert.equal(res.status, 201, JSON.stringify(res.body))
+      assert.equal((await requestRow(requestId)).approvalUnseen, true)
+
+      const approval = (await approvals(memberAtOne)).find(a => a.id === requestId)
+      assert.ok(approval, 'the scheduled request is listed')
+      assert.equal(approval.kind, 'corporate')
+      assert.equal(approval.title, `${TAG} Team Offsite`)
+      assert.equal(approval.session_type, null)
+      assert.equal(approval.starts_at, when.startsAt.toISOString())
+      assert.equal(approval.ends_at, when.endsAt.toISOString())
+      assert.ok(approval.location_name)
+      assert.ok(approval.instructor_name)
+      assert.ok(!(await approvals(otherMemberAtOne)).some(a => a.id === requestId), 'nobody else sees it')
+
+      assert.equal((await markSeen(otherMemberAtOne, requestId)).status, 204)
+      assert.ok((await approvals(memberAtOne)).some(a => a.id === requestId), "another member's mark changes nothing")
+      assert.equal((await markSeen(memberAtOne, requestId)).status, 204)
+      assert.ok(!(await approvals(memberAtOne)).some(a => a.id === requestId), 'seen once, gone')
+      assert.equal((await requestRow(requestId)).status, 'scheduled')
+
+      const cancelledId = await request(memberAtOne)
+      assert.equal((await schedule(adminAtOne, cancelledId, at(hereAtOne, teacherB, slot()))).status, 201)
+      assert.equal((await admin(`/corporate-requests/${cancelledId}/cancel`, adminAtOne, 'POST')).status, 200)
+      assert.ok(!(await approvals(memberAtOne)).some(a => a.id === cancelledId), 'a cancelled session has nothing to celebrate')
+    })
   })
 
   // ---------------------------------------------------------------------------

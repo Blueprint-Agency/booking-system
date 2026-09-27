@@ -687,6 +687,13 @@
       "when": 1790497190737,
       "tag": "0097_instructor_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1790524368298,
+      "tag": "0098_approval_unseen",
+      "breakpoints": true
     }
   ]
 }

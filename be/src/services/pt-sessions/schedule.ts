@@ -214,6 +214,8 @@ export async function schedulePtRequest(
       .set({
         status: 'scheduled',
         scheduledPtSessionId: sessionId,
+        // The member's request is approved: their app celebrates it once.
+        approvalUnseen: true,
         resolvedAt: new Date(),
         resolvedByStaffId: input.actorStaffId,
       })

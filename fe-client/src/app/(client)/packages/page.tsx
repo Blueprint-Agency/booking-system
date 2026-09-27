@@ -48,6 +48,7 @@ import {
   WHATSAPP_COPY_KEY,
 } from "@/lib/corporate";
 import { useBrandCopy } from "@/components/brand/brand-provider";
+import { RequestSentCelebration } from "@/components/celebration/request-sent-celebration";
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
@@ -917,10 +918,12 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  // The venue asked for, once sent: the "Request sent!" celebration.
+  const [sent, setSent] = useState<{ location: string } | null>(null);
 
   // Submitting the request form sends a corporate request directly — no payment.
   // The studio arranges the rest over WhatsApp; the new request appears under the
-  // member's account, so we route there on success.
+  // member's account, where the celebration's Done takes them.
   async function startRequest(details: {
     location: string;
     notes: string;
@@ -933,7 +936,9 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
         location: details.location || undefined,
         notes: details.notes || undefined,
       });
-      router.push("/account/corporate");
+      setFormOpen(false);
+      setPending(false);
+      setSent({ location: details.location });
     } catch {
       setErr(true);
       setPending(false);
@@ -981,6 +986,17 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
             setFormOpen(false);
           }}
           onSubmit={startRequest}
+        />
+      )}
+
+      {sent && (
+        <RequestSentCelebration
+          kind="corporate"
+          name={pkg.name}
+          detail={null}
+          place={sent.location || null}
+          person={null}
+          onClose={() => router.push("/account/corporate")}
         />
       )}
     </div>

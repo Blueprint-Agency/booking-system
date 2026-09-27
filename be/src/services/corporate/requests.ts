@@ -288,6 +288,8 @@ export async function scheduleCorporateRequest(
       .set({
         status: 'scheduled',
         scheduledCorporateSessionId: sessionId,
+        // The member's request is approved: their app celebrates it once.
+        approvalUnseen: true,
         resolvedAt: new Date(),
         resolvedByStaffId: input.actorStaffId,
       })

@@ -142,6 +142,14 @@ Same shape as `routes/public/catalog.ts` but adds:
 
 **Promotion** is not a route: `cancelBooking` runs it (§4c step 10). Booking a class by hand while waiting on it (`POST /bookings/class`) closes the member's entry as `withdrawn`.
 
+### `approvals.ts` (the member's "approved" celebration, `fe-client-features.md` §11.2)
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/approvals` | The member's PT and Corporate Requests the studio has scheduled and the member has yet to see, soonest session first: `{ approvals: [{ kind: 'pt'\|'corporate', id, title, session_type: '1on1'\|'2on1'\|null, starts_at, ends_at, location_name, location_address, instructor_name, approved_at }] }`. `id` is the request's. Only the requester's own (not a 2on1 partner's; a manual session is never listed), and only while its session is active and has not started. `title` is the PT request's class type (else "Private session") or the corporate package's name; an off-site corporate session's `location_name` is its venue text. Read by the app on every page and every minute while visible. |
+| POST | `/approvals/:kind/:id/seen` | The member has seen it: clears `approval_unseen` on the request → `204`. Idempotent; a request that is not the caller's is left unchanged (still `204`). `400` for a `kind` other than `pt` / `corporate` or a non-uuid `id`. While an admin impersonates the member it clears nothing. |
+
+`approval_unseen` (migration 0098, on `pt_requests` and `corporate_requests`) is set by `schedulePtRequest` / `scheduleCorporateRequest` and defaults false, so rows that existed before it, and archives taken before it, never celebrate.
+
 ### `pt-sessions.ts` (verification gate applies)
 
 Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-facing entity is the **PT Request**. The route file is named `pt-sessions.ts` because requests and their scheduled sessions are paired 1:1 and the FE renders them together; the URL space is `/me/pt-sessions/*`.

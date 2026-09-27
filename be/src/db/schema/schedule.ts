@@ -2,6 +2,7 @@ import {
   pgTable,
   uuid,
   text,
+  boolean,
   timestamp,
   integer,
   numeric,
@@ -562,6 +563,11 @@ export const ptRequests = pgTable(
     debitedClientPackageId: uuid('debited_client_package_id').references(() => clientPackages.id, {
       onDelete: 'restrict',
     }),
+    // The member has yet to see that their request was scheduled (their
+    // "approved" celebration). Set when a member's request is scheduled, cleared
+    // when they see it. Defaults false so rows from before it, or from an older
+    // archive, never celebrate.
+    approvalUnseen: boolean('approval_unseen').notNull().default(false),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
     resolvedByStaffId: uuid('resolved_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',
@@ -896,6 +902,8 @@ export const corporateRequests = pgTable(
     // FK to corporate_sessions.id added via the hand-edited migration below to break
     // the circular reference at TS-declaration time.
     scheduledCorporateSessionId: uuid('scheduled_corporate_session_id'),
+    // As on pt_requests: scheduled, and the member has yet to see it.
+    approvalUnseen: boolean('approval_unseen').notNull().default(false),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
     resolvedByStaffId: uuid('resolved_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',

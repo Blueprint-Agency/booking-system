@@ -416,9 +416,10 @@ Fields, in order:
 **User journey**
 1. From `/private-sessions`, tap "Request a Private Session".
 2. Fill the form: location, session type, preferred class type, one or more proposed start times, optional note, partner (if 2-on-1).
-3. Submit → confirmation toast: *"Your request is in. We'll reach you on WhatsApp shortly to confirm the time."* Page redirects to `/account/private-sessions` with the new request highlighted in the **Pending** group.
-4. Studio takes over on WhatsApp, then schedules in `/admin/pt-requests` → the client receives an email confirming the final time + venue, and the row moves to **Confirmed** on `/account/private-sessions`.
-5. If the studio can't accommodate any proposed slot and the WhatsApp negotiation fails, either side can **cancel** the request from their UI. While `pending`, cancel refunds credits.
+3. **Send request · N sessions** checks the form, then opens the **request sheet** — the PT request's Book sheet (§3.1), where nothing is debited yet (`components/private-sessions/confirm-pt-request-sheet.tsx`). The form itself has no package field. *"Request a {1-on-1 \| 2-on-1} session?"* states the Location, preferred class type (or "Any class type"), the partner and each proposed time, then **Pay with**: every PT package of that session type as a radio list, each with its sessions left and its clock ("starts when your first session is scheduled" while Dormant, else "until {date}"), and "Sessions with {instructor}" on a bound one. The first that can pay starts ticked; one with fewer sessions than the request needs is greyed with *"Only N sessions left — this request needs M"*. The cost line reads "Uses N sessions from {package}". With none able to pay, the sheet says so and offers **See packages**. **Send request** submits with the picked package; a refusal shows inside the sheet. A member with no PT package of that type at all still gets the "Buy a private session package" prompt on the form. Helpers: `lib/pt-package-picker.ts`.
+4. Sent → the **"Request sent!"** celebration (as §3.1's, without a calendar — there is no time yet): a light line about hearing back on WhatsApp, and what was asked for, when and where. **Done** goes to `/account/private-sessions`, the new request in the **Pending** group.
+5. Studio takes over on WhatsApp, then schedules in `/admin/pt-requests` → the member's app shows the **"Approved!"** celebration with the final time, place and instructor and Add to Google Calendar / .ics (§11.2), and the row moves to **Confirmed** on `/account/private-sessions`. _(No approval email is sent yet.)_
+6. If the studio can't accommodate any proposed slot and the WhatsApp negotiation fails, either side can **cancel** the request from their UI. While `pending`, cancel refunds credits.
 
 **Where admin comes in**
 - **`/admin/pt-requests`** triage page is the single surface — see admin-restructure.md §9.
@@ -472,7 +473,9 @@ Fields, in order:
 **User journey**
 1. User browses `/corporate`, taps **Buy** on a package → normal Stripe checkout (`/checkout`).
 2. On success → a pending corporate request is created; the user lands on `/account/corporate` (§8.8) with a WhatsApp contact button (number the studio's own `tenant_settings.copy->>'contact.whatsapp'`).
-3. Studio negotiates on WhatsApp, then schedules → the request flips to **Scheduled** (date/time, location, instructor shown). After the session, it moves to **done** (attended). Either side can end up at **Cancelled**.
+3. Studio negotiates on WhatsApp, then schedules → the request flips to **Scheduled** (date/time, location, instructor shown), and the member's app shows the **"Approved!"** celebration with Add to Google Calendar / .ics (§11.2). After the session, it moves to **done** (attended). Either side can end up at **Cancelled**.
+
+_As built, a corporate request is sent from the package card's request form (preferred venue and notes, no payment — `submitCorporateRequest`); sending it shows the **"Request sent!"** celebration (§5.2 step 4) naming the package and venue, and **Done** goes to `/account/corporate`._
 
 **Where admin comes in**
 - Admin (superadmin) manages corporate packages under Packages.
@@ -760,7 +763,8 @@ These are the in-app and channel touchpoints triggered by booking and payment ev
 |---|---|---|
 | Booking confirmation (any) | Email | Includes per-booking QR link |
 | Workshop purchase receipt | Email | PDF invoice attached or linked |
-| Private-session request approved/rejected | Email + in-app | Approval includes QR; rejection may include alt-time suggestion |
+| Private-session request approved/rejected | Email + in-app | Approval includes QR; rejection may include alt-time suggestion. _Built: the in-app approval only (below); no email is sent yet._ |
+| PT or Corporate Request approved (scheduled by the studio) | In-app celebration | The member's app shows **"Approved!"** once per request: a confetti burst, a light-hearted nudge to remember, the session's title, date, time, place and instructor, **Add to Google Calendar** and **Apple / Outlook (.ics)**, then **Done** (`components/approvals/approval-celebration.tsx`). Read from `GET /me/approvals` on every page a signed-in member opens, when the tab comes back into view, and every minute while it is visible, so a member online when the studio schedules sees it within a minute, and one who was away sees it on their next visit, on whichever device. Done (or closing it) sends `POST /me/approvals/{pt\|corporate}/:id/seen`, and it is not shown again. Only the requester's own (not a 2on1 partner's, nor a manual session staff made) and only a session still active and yet to start; one cancelled or already past is dropped. An admin impersonating the member sees it without clearing it. The flag is `approval_unseen` on `pt_requests` / `corporate_requests`, set by scheduling. |
 | Promoted from a class waitlist | Email (`class_waitlist_promoted`) | "You're in — [class]": a seat opened and the member has been booked, with the credit used and the time they can cancel free until. No claim step — promotion books them (`spec-waitlist.md` §5, §11). |
 | Workshop waitlist seat available | Email + in-app | Time-bound CTA to claim _(not built — `spec-waitlist.md` §12)_ |
 | Class cancelled by studio | Email + in-app | Credit auto-returned, banner on dashboard |

@@ -4,6 +4,7 @@ import { AppLoader } from "@/components/layout/app-loader";
 import { ScrollToTop } from "@/components/layout/scroll-to-top";
 import { ClientPackagesProvider } from "@/lib/use-client-packages";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
+import { ApprovalWatcher } from "@/components/approvals/approval-celebration";
 
 export default async function ClientLayout({
   children,
@@ -21,6 +22,7 @@ export default async function ClientLayout({
         <AppLoader />
         <AppShell impersonating={impersonating}>{children}</AppShell>
       </div>
+      <ApprovalWatcher />
     </ClientPackagesProvider>
   );
 }

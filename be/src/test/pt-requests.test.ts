@@ -2741,4 +2741,70 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal((await sessionRow(sessionId)).startsAt.getTime(), session.startsAt.getTime())
     assert.equal(await sessionsLeft(packageId), 8)
   })
+
+  // ── The member's "approved" celebration ──────────────────────────────────
+
+  async function approvals(who: Member): Promise<any[]> {
+    const res = await expectStatus(await harness.app.request('/api/v1/me/approvals', { headers: who.headers }), 200)
+    return res.approvals
+  }
+  const markSeen = (who: Member, kind: string, requestId: string) =>
+    harness.app.request(`/api/v1/me/approvals/${kind}/${requestId}/seen`, { method: 'POST', headers: who.headers })
+
+  test('PT-114 a scheduled request is the requester’s to celebrate once: listed with its session until they mark it seen, never for the partner or another member', async () => {
+    const ivy = await member(one, 'Ivy Approved')
+    const jon = await member(one, 'Jon Partner')
+    const packageId = await givePt(one, ivy, '2on1')
+    const requestId = await requestOk(one, ivy, {
+      sessionType: '2on1',
+      clientPackageId: packageId,
+      partner: { kind: 'existing', coClientId: jon.clientId },
+    })
+    assert.deepEqual(await approvals(ivy), [], 'a pending request is not yet approved')
+
+    const startsAt = far()
+    await scheduled(requestId, { startsAt })
+    assert.equal((await requestRow(requestId)).approvalUnseen, true)
+
+    const [approval, ...rest] = await approvals(ivy)
+    assert.deepEqual(rest, [])
+    assert.equal(approval.kind, 'pt')
+    assert.equal(approval.id, requestId)
+    assert.equal(approval.session_type, '2on1')
+    assert.equal(new Date(approval.starts_at).getTime(), startsAt.getTime())
+    assert.equal(new Date(approval.ends_at).getTime(), startsAt.getTime() + HOUR)
+    assert.ok(approval.title, 'names what was approved')
+    assert.ok(approval.location_name, 'names where')
+    assert.ok(approval.instructor_name, 'names who')
+    assert.ok(approval.approved_at)
+    assert.deepEqual(await approvals(jon), [], 'the partner did not ask, so has nothing approved')
+
+    // Someone else marking it seen changes nothing; the requester's own mark clears it, and again is harmless.
+    await expectStatus(await markSeen(jon, 'pt', requestId), 204)
+    assert.equal((await approvals(ivy)).length, 1)
+    await expectStatus(await markSeen(ivy, 'pt', requestId), 204)
+    assert.deepEqual(await approvals(ivy), [])
+    await expectStatus(await markSeen(ivy, 'pt', requestId), 204)
+    assert.equal((await requestRow(requestId)).approvalUnseen, false)
+    assert.equal((await requestRow(requestId)).status, 'scheduled', 'seeing it changes nothing else')
+
+    await expectStatus(await markSeen(ivy, 'workshop', requestId), 400)
+    await expectStatus(await markSeen(ivy, 'pt', 'not-a-uuid'), 400)
+  })
+
+  test('PT-115 nothing is celebrated for a scheduled request since cancelled, nor for a manual session staff made', async () => {
+    const kit = await member(one, 'Kit Cancelled')
+    const packageId = await givePt(one, kit, '1on1')
+    const requestId = await requestOk(one, kit, { sessionType: '1on1', clientPackageId: packageId })
+    await scheduled(requestId)
+    assert.equal((await approvals(kit)).length, 1)
+    await expectStatus(await adminCancel(adminAtOne, requestId), 200)
+    assert.deepEqual(await approvals(kit), [], 'a cancelled session has nothing to celebrate')
+
+    const lou = await member(one, 'Lou Manual')
+    await givePt(one, lou, '1on1')
+    const { requestId: manualId } = await manualSession(await adminManual(adminAtOne, [{ client_id: lou.clientId }]))
+    assert.equal((await requestRow(manualId)).approvalUnseen, false)
+    assert.deepEqual(await approvals(lou), [], 'the member asked for nothing, so nothing was approved')
+  })
 })
