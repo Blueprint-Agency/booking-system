@@ -527,10 +527,9 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 - Per-row booking actions where applicable
 
 **Class detail page additions:**
-- Check-in column on the roster (QR scan / code entry / manual tick — see §11)
-- Check-in state chip: `pending` / `completed` (manual flip — see §11)
+- Each roster row shows a read-only **Checked in** tag once the member is attended (or **No-show**). Attendance is not marked here — that is the check-in desk's alone (§11)
 - Cancel-this-instance action (admin) → triggers full credit refund + Inbox notification
-- **Cancel…** on each confirmed, not-attended roster row (admin on any class; instructor on a class they lead) → the staff cancel dialog, Return credit or Keep credit (§12)
+- **Cancel** on each confirmed, not-attended roster row (admin on any class; instructor on a class they lead) → the staff cancel dialog, Return credit or Keep credit (§12)
 - **Packages accepted** — the class's Package rule as a sentence ("All packages" / "Only: …" / "All except: …"), on the admin page and the instructor's session page. The admin editor changes it with the same `PackageRuleField` as §7b. A change that would cancel bookings is previewed first (`PATCH …/classes/:id` with `preview: true` → `{ would_cancel: n }`): above zero, a confirm step says **"This will cancel N bookings"** before anything is saved. Saving cancels exactly the bookings paid by a package the class no longer accepts (never one already checked in) — each refunded in full to the package that paid, its seat offered to the waitlist, not counted against the member's cancellations, and the member emailed `class_rule_cancelled`. A change that cancels nobody saves without the confirm.
 
 **Workshop detail page additions:**
@@ -563,16 +562,20 @@ Per-booking codes are **unique** — the system resolves both client identity an
 
 | Surface | Methods available | Use case |
 |---|---|---|
-| Session detail page (Class/PT) | QR + Code + Manual | Reviewing a roster, marking no-shows, post-class cleanup |
-| Generic Check-in page (`/admin/check-in`) | QR + Code | Front-desk daily driver; auto-selects currently active session; persistent scan area |
+| Check-in desk (`/admin/check-in`, `/instructor/check-in`) | QR + Code + Manual | The only place attendance is marked. Front-desk daily driver |
+
+The class session page shows each member's check-in but does not change it.
 
 Both admin and instructor can perform check-in (instructor scoped to own sessions).
 
-**Unticking asks first.** Ticking a member attended stays one tap. Taking it away — unticking the class roster's **Attended** pill, or pressing **Undo** on the check-in desk — opens one shared confirmation, and nothing is sent until it is answered:
+**The desk has two views**, switched by tabs under the header:
 
-- title "Unmark {name} as attended?"
-- body "Their check-in is removed. The credit stays spent — to return it, cancel the booking afterwards."
-- actions **Keep attended** / **Unmark**
+- **Scan** (the default): the result banner across the top (with **Open roster** after a check-in), the camera, the **Type a booking code** box, and an **At the door** card naming the session running now or next with its checked-in count. The camera closes while Rosters is up and re-opens on the way back, so nobody is checked in by a camera no one is watching.
+- **Rosters**: today's sessions down the side, one line each (start and end time, name, instructor, checked-in / booked, waitlist count), with a **Now** line between the sessions that have started and those still to come; below `md` they are one swipeable strip. The picked session's roster sits beside it: kind and phase, time, instructor and room, a checked-in progress bar, a name-or-code search once there are more than 8 rows, then the members. On the admin desk each member's name (and each waitlisted name) opens their customer profile in a new tab.
+
+There is no location filter on the desk: it follows the workspace switcher's location like every workspace-scoped page. A session's location is shown on its line only when the day's sessions span more than one.
+
+**Marking and unmarking.** A member not yet in has **Mark as attended** — one tap. Once attended the button reads **Attended**; tapping it turns it into **Undo?**, with the note "Their check-in is removed. The credit stays spent — to return it, cancel the booking afterwards." beside it, and a second tap unmarks them. Tapping elsewhere, pressing Escape or waiting four seconds leaves them attended.
 
 Unmarking only removes the check-in; it never returns the credit the booking spent.
 
@@ -702,7 +705,7 @@ Two staff roles in the system: `admin` and `instructor`. The `staff_role` type h
 - **Per studio.** A person who teaches at two studios is trusted separately by each.
 - Every change goes through the staff audit trail like any other staff edit.
 - **On the Staff page.** Each active Instructor's row in the Instructors tab carries the three switches, and flipping one saves at once. The staff dialog lists them by name and its edit form offers them while the person stays an Instructor; a change from Admin to Instructor sets them after that save, since the backend then holds the grant (all three, or what they had before a promotion).
-- **In the instructor portal.** The portal learns the switches from `me`, and one helper (`fe-portal/src/lib/instructor-permissions.ts`, Admin always yes) decides every button they govern. With Schedule classes off, New class, Repeat weekly and the per-class Cancel are gone from My schedule, and the New class page says to ask an admin. With Take PT bookings off, PT Requests leaves the instructor's navigation and its pending badge is not fetched; PT sessions an admin schedules for them stay on My schedule and the check-in desk. With Manage rosters off, the session page of a class they lead keeps the roster (names, booking codes, check-in state), the Waitlist and the check-in ticks, but Add member (and its offer to put a member in the line), each booking's Cancel… and the Waitlist's Add to class and Remove are gone, as is the check-in desk's "Add to class on the class page" link beside a class's waitlist.
+- **In the instructor portal.** The portal learns the switches from `me`, and one helper (`fe-portal/src/lib/instructor-permissions.ts`, Admin always yes) decides every button they govern. With Schedule classes off, New class, Repeat weekly and the per-class Cancel are gone from My schedule, and the New class page says to ask an admin. With Take PT bookings off, PT Requests leaves the instructor's navigation and its pending badge is not fetched; PT sessions an admin schedules for them stay on My schedule and the check-in desk. With Manage rosters off, the session page of a class they lead keeps the roster (names, booking codes, check-in state) and the Waitlist, but Add member (and its offer to put a member in the line), each booking's Cancel and the Waitlist's Add to class and Remove are gone, as is the check-in desk's "Add to class on the class page" link beside a class's waitlist.
 - **Rollout (#327).** This section is the target. The backend stores and serves all three and enforces Schedule classes (#328); the portal's switches, refusal message and Schedule classes hiding follow (#329); Take PT bookings is enforced and hidden end to end (#330); Manage rosters is enforced and hidden end to end (#331).
 
 ### 14b. Invitation rules

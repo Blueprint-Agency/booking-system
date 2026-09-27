@@ -1,6 +1,6 @@
 /**
- * What unticking a member's attendance asks first, on the class roster and on
- * the check-in desk alike (admin-restructure §11). Unticking only removes the
+ * What unticking a member's attendance says. The check-in desk shows `body`
+ * beside its armed "Undo?" (admin-restructure §11). Unticking only removes the
  * check-in; the credit it spent stays spent until the booking is cancelled.
  */
 export function untickConfirmCopy(name: string) {

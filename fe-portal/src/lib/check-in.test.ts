@@ -4,7 +4,9 @@ import { ApiError } from "./api";
 import {
   checkInErrorMessage,
   createScanGate,
+  nowLineIndex,
   pickActiveSession,
+  rosterRowMatches,
   sessionPhase,
   type CheckInSession,
 } from "./check-in";
@@ -99,4 +101,23 @@ test("reset lets the same QR through at once", () => {
   assert.equal(gate.admit("tok-1", 0), true);
   gate.reset();
   assert.equal(gate.admit("tok-1", 10), true);
+});
+
+test("nowLineIndex: the line falls after the sessions that have started", () => {
+  const day = [session("a", "07:00", "08:00"), session("b", "09:00", "10:00"), session("c", "12:00", "13:00")];
+  assert.equal(nowLineIndex(day, at("06:00")), 0);
+  assert.equal(nowLineIndex(day, at("07:30")), 1);
+  assert.equal(nowLineIndex(day, at("09:00")), 2);
+  assert.equal(nowLineIndex(day, at("20:00")), 3);
+  assert.equal(nowLineIndex([], at("09:00")), 0);
+});
+
+test("rosterRowMatches: part of the name or the booking code, ignoring case", () => {
+  const row = { name: "Lew Ee Ling", code: "RT-3Q9YFT" };
+  assert.equal(rosterRowMatches(row, ""), true);
+  assert.equal(rosterRowMatches(row, "  "), true);
+  assert.equal(rosterRowMatches(row, "ee li"), true);
+  assert.equal(rosterRowMatches(row, "rt-3q9"), true);
+  assert.equal(rosterRowMatches(row, " ling "), true);
+  assert.equal(rosterRowMatches(row, "zou"), false);
 });

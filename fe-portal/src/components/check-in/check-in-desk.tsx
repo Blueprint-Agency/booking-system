@@ -3,25 +3,31 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
+  ArrowRight,
   CalendarX,
   Check,
   CheckCircle2,
+  ExternalLink,
   Info,
   KeyRound,
   Loader2,
   QrCode,
   RefreshCw,
+  ScanLine,
+  Search,
   Undo2,
+  Users,
 } from "lucide-react";
-import { Avatar, Badge, Button, EmptyState, Input, Label, PageHeader, Select } from "@/components/ui";
+import { Avatar, Badge, Button, EmptyState, Input, Label, PageHeader } from "@/components/ui";
 import { QrScanner } from "@/components/check-in/qr-scanner";
-import { UntickConfirmDialog } from "@/components/check-in/untick-confirm-dialog";
 import { ApiError } from "@/lib/api";
 import {
   checkInBase,
   checkInErrorMessage,
   createScanGate,
+  nowLineIndex,
   pickActiveSession,
+  rosterRowMatches,
   sessionKey,
   sessionPhase,
   type CheckInAudience,
@@ -33,28 +39,43 @@ import {
   type SessionPhase,
 } from "@/lib/check-in";
 import { formatDate, formatTime } from "@/lib/formatters";
+import { untickConfirmCopy } from "@/lib/untick-confirm";
 import { useWorkspace } from "@/lib/workspace-context";
 
 /**
  * The check-in desk (#192) — one component for both audiences. The admin desk
- * sees every session today; the instructor desk the sessions they teach. That
- * difference is the backend's (the instructor mount refuses anyone else's
- * booking), so here `audience` only picks the endpoint and whether a location
- * filter is offered.
+ * sees every session today at the workspace switcher's location; the
+ * instructor desk the sessions they teach. That difference is the backend's
+ * (the instructor mount refuses anyone else's booking), so here `audience`
+ * only picks the endpoint and whether a member's name opens their profile.
  *
- * Built to be held at the door: the camera stays armed, the code box is the
- * fallback, and the banner under them says what the last scan did in the
- * server's own words.
+ * Two views. **Scan** is the door: the camera stays armed, the code box is the
+ * fallback, and the banner says what the last scan did in the server's own
+ * words. **Rosters** is today's sessions down the side and the picked one's
+ * members beside it, to tick someone in by hand. Both stay mounted, so a
+ * scan's roster and a half-typed search survive a switch; only the camera
+ * closes while Rosters is up (it re-opens itself on the way back).
  */
 
 /** A roster that another desk is also ticking drifts; re-read it this often. */
 const ROSTER_REFRESH_MS = 60_000;
 /** The clock that moves "ongoing" / "next" along without a reload. */
 const CLOCK_TICK_MS = 30_000;
-const ALL_LOCATIONS = "all";
+/** A roster longer than this gets a search box. */
+const SEARCH_FROM_ROWS = 8;
+
+type View = "scan" | "rosters";
 
 type Banner =
-  | { tone: "success" | "info"; outcome: ScanResult["outcome"]; title: string; detail: string; at: number }
+  | {
+      tone: "success" | "info";
+      outcome: ScanResult["outcome"];
+      title: string;
+      detail: string;
+      at: number;
+      /** The scanned session, so Open roster shows it even after another is picked. */
+      sessionKey: string;
+    }
   | { tone: "error"; outcome: string; title: string; detail: string; at: number };
 
 const PHASE_BADGE: Record<SessionPhase, { label: string; tone: "neutral" | "accent" | "warning" | "sage" }> = {
@@ -68,17 +89,30 @@ function sessionLine(s: Pick<CheckInSession, "starts_at" | "ends_at">) {
   return `${formatTime(s.starts_at)}–${formatTime(s.ends_at)}`;
 }
 
+function attendedCount(s: CheckInSession) {
+  return s.roster.filter((r) => r.check_in_state === "attended").length;
+}
+
 function scanBanner(res: ScanResult): Banner {
   const where = res.session.location?.name;
   const detail = [res.session.name, formatTime(res.session.starts_at), where].filter(Boolean).join(" · ");
+  const key = sessionKey(res.session);
   return res.outcome === "checked_in"
-    ? { tone: "success", outcome: res.outcome, title: `${res.member.name} is checked in`, detail, at: Date.now() }
+    ? {
+        tone: "success",
+        outcome: res.outcome,
+        title: `${res.member.name} is checked in`,
+        detail,
+        at: Date.now(),
+        sessionKey: key,
+      }
     : {
         tone: "info",
         outcome: res.outcome,
         title: `${res.member.name} was already checked in`,
         detail: res.message || detail,
         at: Date.now(),
+        sessionKey: key,
       };
 }
 
@@ -95,15 +129,15 @@ function refusalBanner(err: unknown): Banner {
 }
 
 export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
-  const { api, accessibleLocations, activeLocationId, setActiveLocationId } = useWorkspace();
+  const { api, accessibleLocations, activeLocationId } = useWorkspace();
   const base = checkInBase(audience);
 
-  // The admin desk follows the workspace switcher's location, with "all" on
-  // top; an instructor's desk is already narrowed to their own sessions.
-  const offerLocationFilter = audience === "admin" && accessibleLocations.length > 1;
-  const [allLocations, setAllLocations] = useState(false);
-  const locationId = offerLocationFilter && !allLocations ? activeLocationId : null;
+  // The admin desk follows the workspace switcher's location (the one filter
+  // at the top of the portal); an instructor's desk is already narrowed to
+  // their own sessions.
+  const locationId = audience === "admin" && accessibleLocations.length > 1 ? activeLocationId : null;
 
+  const [view, setView] = useState<View>("scan");
   const [day, setDay] = useState<CheckInDay | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -119,12 +153,10 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
 
   const [busyBookingId, setBusyBookingId] = useState<string | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
-  /** The checked-in row whose Undo is waiting on the confirmation. */
-  const [undoing, setUndoing] = useState<CheckInRosterRow | null>(null);
 
   // The latest request wins: a slow answer for the old location must not
   // overwrite the new one. `loading` is raised by whoever asks for a visible
-  // reload (the Refresh button, a location change), never from inside here.
+  // reload (the Refresh button), never from inside here.
   const loadSeq = useRef(0);
   const load = useCallback(
     async (opts: { quiet?: boolean } = {}) => {
@@ -170,12 +202,12 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
     [day],
   );
 
-  // What the desk shows: whatever was picked (or last scanned), else the
-  // session running now / next — so the right roster is up without a tap.
+  // The session at the door right now — the one running, else the next.
+  const currentKey = pickActiveSession(sessions, now);
+  const current = sessions.find((s) => sessionKey(s) === currentKey) ?? null;
+  // What Rosters shows: whatever was picked (or last scanned), else the current one.
   const selectedKey =
-    pickedKey && sessions.some((s) => sessionKey(s) === pickedKey)
-      ? pickedKey
-      : pickActiveSession(sessions, now);
+    pickedKey && sessions.some((s) => sessionKey(s) === pickedKey) ? pickedKey : currentKey;
   const selected = sessions.find((s) => sessionKey(s) === selectedKey) ?? null;
 
   const submitScan = useCallback(
@@ -265,9 +297,15 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
     void load();
   };
 
+  const openRoster = (key: string | null) => {
+    if (key) setPickedKey(key);
+    setRosterError(null);
+    setView("rosters");
+  };
+
   const description =
     audience === "admin"
-      ? "Scan a member's QR code or type their booking code. Today's rosters are below — tap to tick someone in by hand."
+      ? "Scan a member's QR code or type their booking code. Rosters has today's sessions, to tick someone in by hand."
       : "Scan a member's QR code or type their booking code for the sessions you teach today.";
 
   return (
@@ -288,169 +326,222 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
-        {/* The door first on a phone: scanner, code box and result above the rosters. */}
-        <aside className="order-first min-w-0 space-y-4 lg:order-none lg:col-start-2 lg:row-start-1">
-          <ResultBanner banner={banner} scanning={scanning} />
+      <ViewSwitch view={view} onChange={setView} sessionCount={day ? sessions.length : null} />
 
-          <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <QrCode className="h-4 w-4 text-muted" />
-              <h2 className="text-sm font-semibold text-ink">Scan QR code</h2>
-            </div>
-            <QrScanner onToken={onQrToken} />
-          </section>
+      <div
+        id="check-in-panel-scan"
+        role="tabpanel"
+        aria-labelledby="check-in-tab-scan"
+        hidden={view !== "scan"}
+        className="mt-5"
+      >
+        <div className="mx-auto max-w-5xl space-y-4">
+          <ResultBanner
+            banner={banner}
+            scanning={scanning}
+            onOpenRoster={
+              // Only a session on today's list has a roster here: a code can find
+              // one at another location, which this desk does not list.
+              banner && banner.tone !== "error" && sessions.some((s) => sessionKey(s) === banner.sessionKey)
+                ? () => openRoster(banner.sessionKey)
+                : undefined
+            }
+          />
 
-          <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-muted" />
-              <h2 className="text-sm font-semibold text-ink">Type a booking code</h2>
-            </div>
-            <form className="space-y-3" onSubmit={onCodeSubmit} noValidate>
-              <Label htmlFor="check-in-code" className="sr-only">
-                Booking code
-              </Label>
-              <Input
-                id="check-in-code"
-                ref={codeRef}
-                data-testid="check-in-code-input"
-                aria-label="Booking code"
-                placeholder="RT-XXXXXX"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                enterKeyHint="go"
-                maxLength={40}
-                className="h-12 text-base uppercase tracking-wider"
-              />
-              <Button
-                type="submit"
-                size="lg"
-                className="w-full"
-                disabled={scanning}
-                data-testid="check-in-code-submit"
-              >
-                {scanning ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
-                Check in
-              </Button>
-            </form>
-            <p className="mt-3 text-xs text-muted">
-              Codes aren&apos;t case-sensitive. The code finds the member and their session on its own.
-            </p>
-          </section>
-        </aside>
+          <div className="grid gap-4 md:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+            <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <QrCode className="h-4 w-4 text-muted" />
+                <h2 className="text-sm font-semibold text-ink">Scan QR code</h2>
+              </div>
+              {/* Unmounted while Rosters is up, so a hidden camera never checks anyone in unseen. */}
+              {view === "scan" && <QrScanner onToken={onQrToken} />}
+            </section>
 
-        <section className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="min-w-0">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-                {day ? `Today · ${formatDate(`${day.date}T00:00:00`)}` : "Today"}
-              </h2>
-              {day && (
-                <p className="mt-0.5 text-xs text-muted">
-                  Check-in opens {day.opens_minutes_before} min before each session starts.
+            <div className="flex min-w-0 flex-col gap-4">
+              <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-muted" />
+                  <h2 className="text-sm font-semibold text-ink">Type a booking code</h2>
+                </div>
+                <form className="space-y-3" onSubmit={onCodeSubmit} noValidate>
+                  <Label htmlFor="check-in-code" className="sr-only">
+                    Booking code
+                  </Label>
+                  <Input
+                    id="check-in-code"
+                    ref={codeRef}
+                    data-testid="check-in-code-input"
+                    aria-label="Booking code"
+                    placeholder="RT-XXXXXX"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    enterKeyHint="go"
+                    maxLength={40}
+                    className="h-12 font-mono text-base uppercase tracking-wider"
+                  />
+                  <Button
+                    type="submit"
+                    size="lg"
+                    className="w-full"
+                    disabled={scanning}
+                    data-testid="check-in-code-submit"
+                  >
+                    {scanning ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
+                    Check in
+                  </Button>
+                </form>
+                <p className="mt-3 text-xs text-muted">
+                  Codes aren&apos;t case-sensitive. The code finds the member and their session on its own.
                 </p>
+              </section>
+
+              {current && (
+                <AtTheDoor session={current} now={now} onOpen={() => openRoster(sessionKey(current))} />
               )}
             </div>
-            {offerLocationFilter && (
-              <div className="w-full sm:w-56">
-                <Label htmlFor="check-in-location" className="mb-1 block text-xs text-muted">
-                  Location
-                </Label>
-                <Select
-                  id="check-in-location"
-                  data-testid="check-in-location"
-                  className="h-11"
-                  value={allLocations ? ALL_LOCATIONS : (activeLocationId ?? ALL_LOCATIONS)}
-                  onChange={(e) => {
-                    // The effect on `load` fetches the new location; this just shows it's coming.
-                    setLoading(true);
-                    if (e.target.value === ALL_LOCATIONS) {
-                      setAllLocations(true);
-                    } else {
-                      setAllLocations(false);
-                      setActiveLocationId(e.target.value);
-                    }
-                    setPickedKey(null);
-                  }}
-                >
-                  <option value={ALL_LOCATIONS}>All locations</option>
-                  {accessibleLocations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        id="check-in-panel-rosters"
+        role="tabpanel"
+        aria-labelledby="check-in-tab-rosters"
+        hidden={view !== "rosters"}
+        className="mt-5"
+      >
+        {loading && !day ? (
+          <div className="flex h-40 items-center justify-center gap-2 rounded-xl border border-border bg-card text-sm text-muted shadow-soft">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading today&apos;s sessions…
+          </div>
+        ) : loadError && !day ? (
+          <div
+            role="alert"
+            className="rounded-xl border border-error/30 bg-error/5 p-6 text-center text-sm text-error"
+          >
+            <p>{loadError}</p>
+            <Button size="sm" variant="ghost" onClick={reload} className="mt-2">
+              Retry
+            </Button>
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card shadow-soft">
+            <EmptyState
+              icon={CalendarX}
+              title="No sessions today"
+              description={
+                audience === "admin"
+                  ? "Nothing on the schedule here today. A scanned code still finds its own session."
+                  : "You aren't teaching anything today."
+              }
+            />
+          </div>
+        ) : (
+          <div className="grid items-start gap-4 md:grid-cols-[minmax(0,300px)_minmax(0,1fr)] lg:gap-6">
+            <SessionRail
+              day={day}
+              sessions={sessions}
+              selectedKey={selectedKey}
+              now={now}
+              onPick={(key) => {
+                setPickedKey(key);
+                setRosterError(null);
+              }}
+            />
+            {selected && (
+              <Roster
+                key={selectedKey}
+                audience={audience}
+                session={selected}
+                phase={sessionPhase(selected, now)}
+                busyBookingId={busyBookingId}
+                error={rosterError}
+                onMark={(row, attended) => void mark(row, attended)}
+              />
             )}
           </div>
-
-          {loading && !day ? (
-            <div className="flex h-40 items-center justify-center gap-2 rounded-xl border border-border bg-card text-sm text-muted shadow-soft">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading today&apos;s sessions…
-            </div>
-          ) : loadError && !day ? (
-            <div
-              role="alert"
-              className="rounded-xl border border-error/30 bg-error/5 p-6 text-center text-sm text-error"
-            >
-              <p>{loadError}</p>
-              <Button size="sm" variant="ghost" onClick={reload} className="mt-2">
-                Retry
-              </Button>
-            </div>
-          ) : sessions.length === 0 ? (
-            <div className="rounded-xl border border-border bg-card shadow-soft">
-              <EmptyState
-                icon={CalendarX}
-                title="No sessions today"
-                description={
-                  audience === "admin"
-                    ? "Nothing on the schedule here today. A scanned code still finds its own session."
-                    : "You aren't teaching anything today."
-                }
-              />
-            </div>
-          ) : (
-            <>
-              <SessionPicker
-                sessions={sessions}
-                selectedKey={selectedKey}
-                now={now}
-                onPick={(key) => {
-                  setPickedKey(key);
-                  setRosterError(null);
-                }}
-              />
-              {selected && (
-                <Roster
-                  audience={audience}
-                  session={selected}
-                  phase={sessionPhase(selected, now)}
-                  busyBookingId={busyBookingId}
-                  error={rosterError}
-                  // Check in is one tap; Undo asks first.
-                  onMark={(row, attended) => (attended ? void mark(row, true) : setUndoing(row))}
-                />
-              )}
-            </>
-          )}
-          <UntickConfirmDialog
-            row={undoing}
-            name={(r) => r.name}
-            onClose={() => setUndoing(null)}
-            onUnmark={(r) => void mark(r, false)}
-          />
-        </section>
+        )}
       </div>
     </div>
   );
 }
 
-function ResultBanner({ banner, scanning }: { banner: Banner | null; scanning: boolean }) {
+function ViewSwitch({
+  view,
+  onChange,
+  sessionCount,
+}: {
+  view: View;
+  onChange: (v: View) => void;
+  sessionCount: number | null;
+}) {
+  const tabs: { value: View; label: string; icon: typeof ScanLine; count?: number | null }[] = [
+    { value: "scan", label: "Scan", icon: ScanLine },
+    { value: "rosters", label: "Rosters", icon: Users, count: sessionCount },
+  ];
+  return (
+    <div
+      role="tablist"
+      aria-label="Check-in view"
+      className="inline-flex rounded-lg border border-border bg-card p-1 shadow-soft"
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        const next = view === "scan" ? "rosters" : "scan";
+        onChange(next);
+        document.getElementById(`check-in-tab-${next}`)?.focus();
+      }}
+    >
+      {tabs.map((t) => {
+        const active = t.value === view;
+        const Icon = t.icon;
+        return (
+          <button
+            key={t.value}
+            type="button"
+            role="tab"
+            id={`check-in-tab-${t.value}`}
+            aria-selected={active}
+            aria-controls={`check-in-panel-${t.value}`}
+            tabIndex={active ? 0 : -1}
+            data-testid={`check-in-view-${t.value}`}
+            onClick={() => onChange(t.value)}
+            className={`flex min-h-10 items-center gap-2 rounded-md px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
+              active ? "bg-accent text-white" : "text-muted hover:text-ink"
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+            {t.label}
+            {t.count != null && (
+              <span
+                className={`rounded-full px-1.5 text-xs tabular-nums ${
+                  active ? "bg-white/20 text-white" : "bg-warm text-ink"
+                }`}
+              >
+                {t.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ResultBanner({
+  banner,
+  scanning,
+  onOpenRoster,
+}: {
+  banner: Banner | null;
+  scanning: boolean;
+  onOpenRoster?: () => void;
+}) {
   const tone = banner?.tone;
   const styles =
     tone === "success"
@@ -470,84 +561,221 @@ function ResultBanner({ banner, scanning }: { banner: Banner | null; scanning: b
       aria-atomic="true"
       data-testid="check-in-result"
       data-outcome={banner?.outcome ?? "none"}
-      className={`min-h-[72px] rounded-xl border p-4 shadow-soft ${styles}`}
+      className={`min-h-[88px] rounded-xl border p-4 shadow-soft sm:p-5 ${styles}`}
     >
-      <div key={banner?.at ?? 0} className="flex items-start gap-3 animate-fade-in">
+      <div key={banner?.at ?? 0} className="flex items-center gap-4 animate-fade-in">
         {scanning ? (
-          <Loader2 className="mt-0.5 h-6 w-6 shrink-0 animate-spin text-muted" />
+          <Loader2 className="h-8 w-8 shrink-0 animate-spin text-muted" />
         ) : (
-          <Icon className="mt-0.5 h-6 w-6 shrink-0" />
+          <Icon className="h-8 w-8 shrink-0" />
         )}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           {banner ? (
             <>
-              <p className="text-base font-semibold break-words">{banner.title}</p>
+              <p className="text-lg font-semibold break-words">{banner.title}</p>
               <p className="mt-0.5 text-sm break-words text-ink/80">{banner.detail}</p>
             </>
           ) : (
-            <p className="text-sm">{scanning ? "Checking…" : "Ready. Scan a QR code or type a booking code."}</p>
+            <p className="text-base">{scanning ? "Checking…" : "Ready. Scan a QR code or type a booking code."}</p>
           )}
         </div>
+        {onOpenRoster && !scanning && (
+          <Button type="button" variant="secondary" size="sm" className="shrink-0" onClick={onOpenRoster}>
+            Open roster <ArrowRight className="h-4 w-4" />
+          </Button>
+        )}
       </div>
     </div>
   );
 }
 
-function SessionPicker({
+/** The session members are arriving for, under the code box: how full the door is, one tap from its roster. */
+function AtTheDoor({ session, now, onOpen }: { session: CheckInSession; now: Date; onOpen: () => void }) {
+  const phase = PHASE_BADGE[sessionPhase(session, now)];
+  const attended = attendedCount(session);
+  return (
+    <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5" aria-label="At the door now">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">At the door</h2>
+        <Badge tone={phase.tone}>{phase.label}</Badge>
+      </div>
+      <p className="truncate font-medium text-ink">{session.name}</p>
+      <p className="truncate text-xs text-muted">
+        {sessionLine(session)}
+        {session.instructor ? ` · ${session.instructor.name}` : ""}
+      </p>
+      <Progress attended={attended} total={session.roster.length} className="mt-3" />
+      <Button type="button" variant="ghost" size="sm" className="mt-3 -ml-2" onClick={onOpen}>
+        Open roster <ArrowRight className="h-4 w-4" />
+      </Button>
+    </section>
+  );
+}
+
+function Progress({ attended, total, className = "" }: { attended: number; total: number; className?: string }) {
+  const pct = total === 0 ? 0 : Math.round((attended / total) * 100);
+  return (
+    <div className={className}>
+      <div className="mb-1 flex items-baseline justify-between text-xs text-muted">
+        <span>
+          <span className="font-semibold tabular-nums text-ink">{attended}</span> of{" "}
+          <span className="tabular-nums">{total}</span> checked in
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-warm" aria-hidden="true">
+        <div className="h-full rounded-full bg-sage transition-[width]" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Today's sessions as one line each, in start order, with a "now" line
+ * between the ones that have started and the ones still to come. A phone
+ * swipes through them in one strip so the roster sits right under it.
+ */
+function SessionRail({
+  day,
   sessions,
   selectedKey,
   now,
   onPick,
 }: {
+  day: CheckInDay | null;
   sessions: CheckInSession[];
   selectedKey: string | null;
   now: Date;
   onPick: (key: string) => void;
 }) {
+  const nowAt = nowLineIndex(sessions, now);
+  // A location on every line only says something when the day spans more than one.
+  const manyLocations = new Set(sessions.map((s) => s.location?.id ?? "")).size > 1;
   return (
-    // A phone swipes through today's sessions in one strip, so the roster sits
-    // right under it instead of below a stack of every class of the day.
-    <ul
-      className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0"
+    <nav
       aria-label="Today's sessions"
+      className="min-w-0 md:sticky md:top-4 md:rounded-xl md:border md:border-border md:bg-card md:shadow-soft"
     >
-      {sessions.map((s) => {
-        const key = sessionKey(s);
-        const phase = PHASE_BADGE[sessionPhase(s, now)];
-        const attended = s.roster.filter((r) => r.check_in_state === "attended").length;
-        const waiting = s.waitlist?.length ?? 0;
-        const active = key === selectedKey;
-        return (
-          <li key={key} className="w-[78%] min-w-0 shrink-0 snap-start sm:w-auto">
-            <button
-              type="button"
-              onClick={() => onPick(key)}
-              aria-pressed={active}
-              data-testid="check-in-session"
-              data-session-id={s.id}
-              className={`h-full w-full min-w-0 rounded-xl border bg-card p-3 text-left shadow-soft transition sm:p-4 ${
-                active ? "border-accent ring-2 ring-accent/20" : "border-border hover:border-accent/40"
+      <div className="mb-2 md:mb-0 md:border-b md:border-border md:px-4 md:py-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
+          {day ? `Today · ${formatDate(`${day.date}T00:00:00`)}` : "Today"}
+        </h2>
+        {day && (
+          <p className="mt-0.5 text-xs text-muted">
+            Check-in opens {day.opens_minutes_before} min before each start.
+          </p>
+        )}
+      </div>
+      <ul className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:block md:max-h-[calc(100vh-14rem)] md:snap-none md:space-y-0 md:overflow-y-auto md:p-1.5">
+        {sessions.map((s, i) => {
+          const key = sessionKey(s);
+          return (
+            <SessionRailItem
+              key={key}
+              session={s}
+              phase={sessionPhase(s, now)}
+              active={key === selectedKey}
+              showLocation={manyLocations}
+              nowLine={i === nowAt ? now : null}
+              onPick={() => onPick(key)}
+            />
+          );
+        })}
+        {nowAt === sessions.length && <NowLine now={now} />}
+      </ul>
+    </nav>
+  );
+}
+
+function NowLine({ now }: { now: Date }) {
+  return (
+    <li role="presentation" className="hidden items-center gap-2 px-2 py-1 md:flex" data-testid="check-in-now-line">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-error tabular-nums">
+        Now {formatTime(now.toISOString())}
+      </span>
+      <span className="h-px flex-1 bg-error/50" />
+    </li>
+  );
+}
+
+function SessionRailItem({
+  session: s,
+  phase,
+  active,
+  showLocation,
+  nowLine,
+  onPick,
+}: {
+  session: CheckInSession;
+  phase: SessionPhase;
+  active: boolean;
+  showLocation: boolean;
+  nowLine: Date | null;
+  onPick: () => void;
+}) {
+  const attended = attendedCount(s);
+  const total = s.roster.length;
+  const waiting = s.waitlist?.length ?? 0;
+  const ended = phase === "ended";
+  const live = phase === "open" || phase === "ongoing";
+  const meta = [s.instructor?.name, showLocation ? s.location?.name : null].filter(Boolean).join(" · ");
+  return (
+    <>
+      {nowLine && <NowLine now={nowLine} />}
+      <li className="w-[72%] shrink-0 snap-start md:w-auto">
+        <button
+          type="button"
+          onClick={onPick}
+          aria-pressed={active}
+          aria-current={active ? "true" : undefined}
+          data-testid="check-in-session"
+          data-session-id={s.id}
+          className={`relative flex h-full w-full min-w-0 items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 md:border-transparent ${
+            active
+              ? "border-accent bg-accent/5 md:border-transparent"
+              : "border-border bg-card hover:bg-paper md:bg-transparent"
+          } ${ended && !active ? "opacity-60" : ""}`}
+        >
+          {active && (
+            <span aria-hidden="true" className="absolute inset-y-2 left-0 hidden w-0.5 rounded-full bg-accent md:block" />
+          )}
+          <span className="w-14 shrink-0 tabular-nums">
+            <span className="block text-sm font-semibold text-ink">{formatTime(s.starts_at)}</span>
+            <span className="block text-[11px] text-muted">{formatTime(s.ends_at)}</span>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1.5">
+              {live && (
+                <span
+                  aria-hidden="true"
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${phase === "ongoing" ? "bg-warning" : "bg-accent"}`}
+                />
+              )}
+              <span className={`truncate text-sm ${active ? "font-semibold text-accent" : "font-medium text-ink"}`}>
+                {s.name}
+              </span>
+              {s.kind === "pt" && (
+                <Badge tone="accent" className="px-1.5 py-0 text-[10px]">
+                  Private
+                </Badge>
+              )}
+            </span>
+            {meta && <span className="block truncate text-xs text-muted">{meta}</span>}
+            {live && <span className="sr-only">{PHASE_BADGE[phase].label}</span>}
+          </span>
+          <span className="shrink-0 text-right tabular-nums">
+            <span
+              className={`block text-sm ${
+                total > 0 && attended === total ? "font-semibold text-sage" : "text-ink"
               }`}
+              aria-label={`${attended} of ${total} checked in`}
             >
-              <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                <Badge tone={s.kind === "class" ? "cyan" : "accent"}>{s.kind === "class" ? "Class" : "Private"}</Badge>
-                <Badge tone={phase.tone}>{phase.label}</Badge>
-              </div>
-              <div className="truncate font-medium text-ink">{s.name}</div>
-              <div className="truncate text-xs text-muted">
-                {sessionLine(s)}
-                {s.instructor ? ` · ${s.instructor.name}` : ""}
-                {s.location ? ` · ${s.location.name}` : ""}
-              </div>
-              <div className="mt-1 text-xs text-muted">
-                {attended} / {s.roster.length} checked in
-                {waiting > 0 && <span className="font-medium text-warning"> · {waiting} waiting</span>}
-              </div>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+              {attended}/{total}
+            </span>
+            {waiting > 0 && <span className="block text-[11px] font-medium text-warning">+{waiting} wait</span>}
+          </span>
+        </button>
+      </li>
+    </>
   );
 }
 
@@ -566,32 +794,45 @@ function Roster({
   error: string | null;
   onMark: (row: CheckInRosterRow, attended: boolean) => void;
 }) {
+  const [query, setQuery] = useState("");
   const rows = [...session.roster].sort((a, b) => a.name.localeCompare(b.name));
+  const shown = rows.filter((r) => rosterRowMatches(r, query));
   const attended = rows.filter((r) => r.check_in_state === "attended").length;
   const notOpen = phase === "not_open";
+  const badge = PHASE_BADGE[phase];
   const where = [session.room?.name, session.location?.name].filter(Boolean).join(", ");
+  // The admin desk opens a member's profile in a new tab, so the desk keeps its place.
+  const profileHref = audience === "admin" ? (clientId: string) => `/admin/customers/${clientId}` : null;
 
   return (
     <section
-      className="rounded-xl border border-border bg-card shadow-soft"
+      className="min-w-0 rounded-xl border border-border bg-card shadow-soft"
       aria-label={`Roster for ${session.name}`}
       data-testid="check-in-roster"
     >
-      <header className="border-b border-border px-4 py-3 sm:px-5">
-        <h3 className="break-words text-sm font-semibold text-ink">
-          {session.name} · {sessionLine(session)}
-        </h3>
-        <p className="mt-0.5 text-xs text-muted">
-          {attended} / {rows.length} checked in
-          {session.instructor ? ` · ${session.instructor.name}` : ""}
-          {where ? ` · ${where}` : ""}
-        </p>
-        {notOpen && (
-          <p className="mt-2 rounded-md bg-paper px-3 py-2 text-xs text-muted">
-            Check-in opens at {formatTime(session.check_in_opens_at)}.
+      <header className="flex flex-col gap-4 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+        <div className="min-w-0">
+          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+            <Badge tone={session.kind === "class" ? "cyan" : "accent"}>
+              {session.kind === "class" ? "Class" : "Private"}
+            </Badge>
+            <Badge tone={badge.tone}>{badge.label}</Badge>
+          </div>
+          <h3 className="break-words text-lg font-semibold text-ink">{session.name}</h3>
+          <p className="mt-0.5 text-sm text-muted">
+            {sessionLine(session)}
+            {session.instructor ? ` · ${session.instructor.name}` : ""}
+            {where ? ` · ${where}` : ""}
           </p>
-        )}
+        </div>
+        <Progress attended={attended} total={rows.length} className="w-full shrink-0 sm:w-44" />
       </header>
+
+      {notOpen && (
+        <p className="mx-4 mt-3 rounded-md bg-paper px-3 py-2 text-xs text-muted sm:mx-5">
+          Check-in opens at {formatTime(session.check_in_opens_at)}.
+        </p>
+      )}
       {error && (
         <p
           role="alert"
@@ -601,14 +842,32 @@ function Roster({
           {error}
         </p>
       )}
+
+      {rows.length > SEARCH_FROM_ROWS && (
+        <div className="relative mx-4 mt-3 sm:mx-5">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <Input
+            type="search"
+            aria-label={`Find someone in ${session.name}`}
+            placeholder="Find by name or code"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-10 pl-9"
+          />
+        </div>
+      )}
+
       {rows.length === 0 ? (
-        <p className="px-5 py-8 text-center text-sm text-muted">No one is booked into this session.</p>
+        <p className="px-5 py-10 text-center text-sm text-muted">No one is booked into this session.</p>
+      ) : shown.length === 0 ? (
+        <p className="px-5 py-10 text-center text-sm text-muted">No one here matches &ldquo;{query.trim()}&rdquo;.</p>
       ) : (
-        <ul className="divide-y divide-border">
-          {rows.map((r) => (
+        <ul className="mt-2 divide-y divide-border">
+          {shown.map((r) => (
             <RosterRow
               key={r.booking_id}
               row={r}
+              href={profileHref?.(r.client_id) ?? null}
               busy={busyBookingId === r.booking_id}
               locked={busyBookingId !== null || notOpen}
               onMark={onMark}
@@ -616,8 +875,35 @@ function Roster({
           ))}
         </ul>
       )}
-      <WaitingLine audience={audience} session={session} />
+      <WaitingLine audience={audience} session={session} profileHref={profileHref} />
     </section>
+  );
+}
+
+/** A member's name, opening their profile in a new tab where the desk may see it. */
+function MemberName({
+  name,
+  href,
+  children,
+  className = "",
+}: {
+  name: string;
+  href: string | null;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  if (!href) return <div className={className}>{children}</div>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`${name} — open profile in a new tab`}
+      data-testid="check-in-member-link"
+      className={`group rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${className}`}
+    >
+      {children}
+    </a>
   );
 }
 
@@ -627,7 +913,15 @@ function Roster({
  * seat is the class page's Add to class, one tap away — offered only to staff
  * who may work the line (Manage rosters; an admin always may).
  */
-function WaitingLine({ audience, session }: { audience: CheckInAudience; session: CheckInSession }) {
+function WaitingLine({
+  audience,
+  session,
+  profileHref,
+}: {
+  audience: CheckInAudience;
+  session: CheckInSession;
+  profileHref: ((clientId: string) => string) | null;
+}) {
   const { may } = useWorkspace();
   const line = session.waitlist ?? [];
   if (session.kind !== "class" || line.length === 0) return null;
@@ -658,7 +952,11 @@ function WaitingLine({ audience, session }: { audience: CheckInAudience; session
             <span className="w-6 shrink-0 text-right text-xs font-semibold tabular-nums text-muted">
               #{w.position}
             </span>
-            <span className="min-w-0 truncate text-ink">{w.name}</span>
+            <MemberName name={w.name} href={profileHref?.(w.client_id) ?? null} className="min-w-0">
+              <span className="block truncate text-ink group-hover:text-accent group-hover:underline">
+                {w.name}
+              </span>
+            </MemberName>
             <Badge tone="warning" className="ml-auto">
               Waiting
             </Badge>
@@ -671,11 +969,13 @@ function WaitingLine({ audience, session }: { audience: CheckInAudience; session
 
 function RosterRow({
   row,
+  href,
   busy,
   locked,
   onMark,
 }: {
   row: CheckInRosterRow;
+  href: string | null;
   busy: boolean;
   locked: boolean;
   onMark: (row: CheckInRosterRow, attended: boolean) => void;
@@ -687,53 +987,133 @@ function RosterRow({
       data-booking-code={row.code}
       data-check-in-state={state}
       aria-label={`${row.name}, ${row.code}`}
-      className="flex items-center gap-3 px-4 py-3 sm:px-5"
+      className={`flex items-center gap-3 px-4 py-3 transition-colors sm:px-5 ${
+        state === "attended" ? "bg-sage/5" : ""
+      }`}
     >
-      <Avatar name={row.name} size={36} className="hidden min-[400px]:flex" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-ink">{row.name}</div>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-          <span className="font-mono">{row.code}</span>
-          {row.promoted_from_waitlist && <Badge tone="cyan">Promoted from waitlist</Badge>}
-          {row.seat === "buffer" && <Badge>Buffer</Badge>}
-          {row.seat === "overbook" && <Badge tone="warning">Overbook</Badge>}
-          {state === "attended" && (
-            <Badge tone="sage">
-              <Check className="mr-1 h-3 w-3" />
-              {row.checked_in_at ? `In ${formatTime(row.checked_in_at)}` : "Attended"}
-              {row.method && row.method !== "manual" ? ` · ${row.method.toUpperCase()}` : ""}
-            </Badge>
-          )}
-          {state === "no_show" && <Badge tone="error">No-show</Badge>}
-          {state === "pending" && <Badge>Not in yet</Badge>}
+      <MemberName name={row.name} href={href} className="flex min-w-0 flex-1 items-center gap-3">
+        <Avatar name={row.name} size={36} className="hidden min-[400px]:flex" />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium text-ink group-hover:text-accent group-hover:underline">
+              {row.name}
+            </span>
+            {href && (
+              <ExternalLink
+                aria-hidden="true"
+                className="h-3.5 w-3.5 shrink-0 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+              />
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+            <span className="font-mono">{row.code}</span>
+            {row.promoted_from_waitlist && <Badge tone="cyan">Promoted from waitlist</Badge>}
+            {row.seat === "buffer" && <Badge>Buffer</Badge>}
+            {row.seat === "overbook" && <Badge tone="warning">Overbook</Badge>}
+            {state === "attended" && (
+              <Badge tone="sage">
+                <Check className="mr-1 h-3 w-3" />
+                {row.checked_in_at ? `In ${formatTime(row.checked_in_at)}` : "Attended"}
+                {row.method && row.method !== "manual" ? ` · ${row.method.toUpperCase()}` : ""}
+              </Badge>
+            )}
+            {state === "no_show" && <Badge tone="error">No-show</Badge>}
+            {state === "pending" && <Badge>Not in yet</Badge>}
+          </div>
         </div>
-      </div>
+      </MemberName>
       {state === "attended" ? (
-        <Button
-          type="button"
-          variant="secondary"
-          className="h-11 px-3"
-          disabled={locked}
-          onClick={() => onMark(row, false)}
-          data-testid="check-in-undo"
-          aria-label={`Undo check-in for ${row.name}`}
-        >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
-          Undo
-        </Button>
+        <UndoButton row={row} busy={busy} locked={locked} onUndo={() => onMark(row, false)} />
       ) : state === "n_a" ? null : (
         <Button
           type="button"
-          className="h-11 px-4"
+          className="h-11 w-40 px-4"
           disabled={locked}
           onClick={() => onMark(row, true)}
           data-testid="check-in-tick"
-          aria-label={`Check in ${row.name}`}
+          aria-label={`Mark ${row.name} as attended`}
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-          Check in
+          Mark as attended
         </Button>
       )}
     </li>
+  );
+}
+
+/** How long "Undo?" waits for its second tap before settling back to Attended. */
+const UNDO_ARMED_MS = 4000;
+
+/**
+ * An attended member's button. Unmarking takes two taps on the same spot:
+ * the first turns "Attended" into "Undo?", the second sends it. Tapping
+ * elsewhere, or waiting, leaves them attended.
+ */
+function UndoButton({
+  row,
+  busy,
+  locked,
+  onUndo,
+}: {
+  row: CheckInRosterRow;
+  busy: boolean;
+  locked: boolean;
+  onUndo: () => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = window.setTimeout(() => setArmed(false), UNDO_ARMED_MS);
+    return () => window.clearTimeout(t);
+  }, [armed]);
+
+  const hintId = `undo-hint-${row.booking_id}`;
+  return (
+    <div className="relative shrink-0">
+      <Button
+        type="button"
+        variant="secondary"
+        className={`h-11 w-40 px-3 ${
+          armed
+            ? "border-error/40 bg-error/10 text-error hover:bg-error/15"
+            : "border-sage/40 bg-sage/10 text-sage hover:bg-sage/15"
+        }`}
+        disabled={locked}
+        onClick={() => {
+          if (armed) {
+            setArmed(false);
+            onUndo();
+          } else {
+            setArmed(true);
+          }
+        }}
+        onBlur={() => setArmed(false)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setArmed(false);
+        }}
+        data-testid="check-in-undo"
+        data-armed={armed}
+        aria-label={armed ? `Undo check-in for ${row.name}? Tap again to confirm` : `${row.name} is attended. Tap to undo`}
+        aria-describedby={armed ? hintId : undefined}
+      >
+        {busy ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : armed ? (
+          <Undo2 className="h-4 w-4" />
+        ) : (
+          <Check className="h-4 w-4" />
+        )}
+        {armed ? "Undo?" : "Attended"}
+      </Button>
+      {armed && (
+        <p
+          id={hintId}
+          role="status"
+          className="absolute right-0 top-full z-10 mt-1 w-56 rounded-md border border-border bg-card px-2.5 py-1.5 text-[11px] leading-snug text-muted shadow-soft animate-fade-in"
+        >
+          {untickConfirmCopy(row.name).body}
+        </p>
+      )}
+    </div>
   );
 }

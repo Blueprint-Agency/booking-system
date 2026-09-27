@@ -15,9 +15,9 @@ import { acceptsLine } from "@/lib/package-rule";
 
 /**
  * An instructor's own class (spec-waitlist.md §10): the seats, the roster with
- * each member's seat, the attendance tick, Add member into a buffer seat (or
- * the waitlist), and the Waitlist panel. Without Manage rosters the roster, the
- * line and the ticks stay; Add member, Cancel… and the line's actions go.
+ * each member's seat and check-in, Add member into a buffer seat (or the
+ * waitlist), and the Waitlist panel. Without Manage rosters the roster and the
+ * line stay; Add member, Cancel and the line's actions go.
  * No pay and no editing — those are the admin's page.
  */
 export default function InstructorClassPage({ params }: { params: Promise<{ id: string }> }) {
@@ -80,8 +80,8 @@ export default function InstructorClassPage({ params }: { params: Promise<{ id: 
 
 function ClassPage({ data, onChanged }: { data: InstructorClassDetail; onChanged: () => void }) {
   const { may } = useWorkspace();
-  // Add member (and its waitlist offer), Cancel… and the Waitlist actions are
-  // Manage rosters; the roster, the line and the check-in ticks are not.
+  // Add member (and its waitlist offer), Cancel and the Waitlist actions are
+  // Manage rosters; the roster and the line are not.
   const managesRosters = may("manage_rosters");
   const state = computeEventState({
     startsAt: data.starts_at,

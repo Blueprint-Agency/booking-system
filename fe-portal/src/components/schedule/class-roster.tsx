@@ -1,7 +1,8 @@
 "use client";
 // The class session page's roster, shared by the admin and instructor portals
 // (spec-waitlist.md §10): seat stats, the booked members each tagged with the
-// seat they hold, the attendance tick, and Add member. Everything that differs
+// seat they hold, whether each is checked in (marking it is the check-in
+// desk's alone), Cancel, and Add member. Everything that differs
 // between the two roles is the `role` prop — which routes it calls, whether a
 // member's name links to their profile, and whether a full class may be
 // overbooked.
@@ -10,10 +11,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, Loader2, Plus, Search, X } from "lucide-react";
 import { Badge, Button, Input } from "@/components/ui";
-import { UntickConfirmDialog } from "@/components/check-in/untick-confirm-dialog";
 import { CancelBookingDialog, type StaffCancelTarget } from "@/components/bookings/cancel-booking-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
-import { checkInErrorMessage } from "@/lib/check-in";
 import {
   memberPackagesForClass,
   packagePick,
@@ -139,56 +138,18 @@ export function ClassRoster({
   cancelled: boolean;
   /** Add member is offered only while the class can still be booked. */
   canAdd: boolean;
-  /** Whether a booking's Cancel… is offered at all (an Instructor needs Manage rosters). */
+  /** Whether a booking's Cancel is offered at all (an Instructor needs Manage rosters). */
   canCancel: boolean;
   /** A member was added or cancelled: reload the class so the stats and roster agree. */
   onChanged: () => void;
 }) {
-  const { api } = useWorkspace();
-  const [rows, setRows] = useState<ScheduleClassAttendee[]>(attendees);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  /** The attended member whose untick is waiting on the confirmation. */
-  const [unticking, setUnticking] = useState<ScheduleClassAttendee | null>(null);
+  const rows = attendees;
   /** The booking whose cancel is waiting on the Return / Keep credit choice. */
   const [cancelling, setCancelling] = useState<StaffCancelTarget | null>(null);
 
-  // Re-sync when the parent reloads the class.
-  useEffect(() => setRows(attendees), [attendees]);
-
-  // When the tick opens is the studio's Check-in Window, which the server
-  // holds; a tick before it comes back refused with the opening time.
+  // Attendance is read here, not changed: marking someone attended (and
+  // taking it back) is the check-in desk's job alone.
   const attendedCount = rows.filter((r) => r.check_in_state === "attended").length;
-
-  /** Ticking is one tap; unticking asks first. */
-  function toggle(a: ScheduleClassAttendee) {
-    if (!api || cancelled || busyId) return;
-    if (a.check_in_state === "attended") setUnticking(a);
-    else void mark(a, true);
-  }
-
-  async function mark(a: ScheduleClassAttendee, attended: boolean) {
-    if (!api || cancelled || busyId) return;
-    setBusyId(a.booking_id);
-    setErr(null);
-    try {
-      const res = await api.post<{ check_in_state: ScheduleClassAttendee["check_in_state"] }>(
-        `/portal/${role}/check-in/manual`,
-        { booking_id: a.booking_id, attended },
-      );
-      setRows((prev) =>
-        prev.map((r) =>
-          r.booking_id === a.booking_id ? { ...r, check_in_state: res.check_in_state } : r,
-        ),
-      );
-    } catch (e) {
-      // The backend words its own refusal (the Check-in Window, a cancelled
-      // booking) — show that rather than guessing from the status.
-      setErr(checkInErrorMessage(e, "Couldn't update attendance"));
-    } finally {
-      setBusyId(null);
-    }
-  }
 
   return (
     <section className="mt-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
@@ -199,11 +160,6 @@ export function ClassRoster({
         )}
       </div>
       {canAdd && <AddMember role={role} classId={classId} onBooked={onChanged} />}
-      {err && (
-        <p className="mb-3 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
-          {err}
-        </p>
-      )}
       {rows.length === 0 ? (
         <p className="text-sm text-muted">No bookings yet.</p>
       ) : (
@@ -211,7 +167,6 @@ export function ClassRoster({
           {rows.map((a) => {
             const attended = a.check_in_state === "attended";
             const noShow = a.check_in_state === "no_show";
-            const disabled = cancelled || busyId === a.booking_id;
             const tag = seatTag(a.seat);
             return (
               <li
@@ -241,6 +196,12 @@ export function ClassRoster({
                   </div>
                 </div>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
+                  {attended && (
+                    <Badge tone="sage">
+                      <Check className="mr-1 h-3 w-3" />
+                      Checked in
+                    </Badge>
+                  )}
                   {noShow && !attended && <Badge tone="error">No-show</Badge>}
                   {/* Confirmed and not attended: the backend sends a preview only then. */}
                   {canCancel && !cancelled && a.cancel_preview && (
@@ -249,52 +210,19 @@ export function ClassRoster({
                       size="sm"
                       variant="ghost"
                       className="h-10 text-error hover:bg-error/10 hover:text-error sm:h-8"
-                      disabled={busyId === a.booking_id}
                       onClick={() =>
                         setCancelling({ bookingId: a.booking_id, name: a.client.name, preview: a.cancel_preview! })
                       }
                     >
-                      Cancel…
+                      Cancel
                     </Button>
                   )}
-                  <button
-                    type="button"
-                    role="checkbox"
-                    aria-checked={attended}
-                    aria-label={attended ? "Mark as not attended" : "Mark as attended"}
-                    disabled={disabled}
-                    onClick={() => toggle(a)}
-                    className={`inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0 sm:px-2.5 ${
-                      attended
-                        ? "border-sage/40 bg-sage/15 text-sage"
-                        : "border-border bg-card text-muted hover:border-accent/40 hover:text-ink"
-                    }`}
-                  >
-                    {busyId === a.booking_id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <span
-                        className={`flex h-4 w-4 items-center justify-center rounded border ${
-                          attended ? "border-sage bg-sage text-white" : "border-muted"
-                        }`}
-                      >
-                        {attended && <Check className="h-3 w-3" />}
-                      </span>
-                    )}
-                    {attended ? "Attended" : "Mark attended"}
-                  </button>
                 </div>
               </li>
             );
           })}
         </ul>
       )}
-      <UntickConfirmDialog
-        row={unticking}
-        name={(a) => a.client.name}
-        onClose={() => setUnticking(null)}
-        onUnmark={(a) => void mark(a, false)}
-      />
       <CancelBookingDialog
         role={role}
         target={cancelling}

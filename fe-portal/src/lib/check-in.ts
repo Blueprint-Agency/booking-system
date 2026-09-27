@@ -154,3 +154,20 @@ export function createScanGate(quietMs = RESCAN_QUIET_MS) {
     },
   };
 }
+
+/**
+ * Where the "now" line sits in a day's sessions, sorted by start: after every
+ * session that has started, before the first still to come. 0 puts it above
+ * the day; `sessions.length` below it.
+ */
+export function nowLineIndex(sessions: Pick<CheckInSession, "starts_at">[], now: Date): number {
+  const t = now.getTime();
+  return sessions.filter((s) => new Date(s.starts_at).getTime() <= t).length;
+}
+
+/** Whether a roster row answers the desk's search: any part of the name, or the booking code. */
+export function rosterRowMatches(row: Pick<CheckInRosterRow, "name" | "code">, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return row.name.toLowerCase().includes(q) || row.code.toLowerCase().includes(q);
+}
