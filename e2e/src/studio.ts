@@ -1,4 +1,5 @@
 import { exec, execSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import type { APIRequestContext, Page } from '@playwright/test'
 
 /**
@@ -108,6 +109,28 @@ export function studio(): Studio {
 }
 
 /**
+ * Give this page's API calls an address of its own, as a member or staff
+ * member on their own device has.
+ *
+ * The backend's general rate limits count per client address (be/src/app.ts),
+ * before any sign-in is known. Every browser in a run reaches the API from the
+ * one runner — on the local stack with no proxy at all, so no address — and
+ * would share a single budget across every journey: the run, not any one
+ * journey, then trips it, and a page whose reads are refused renders as empty
+ * (WTL-25's schedule read "No classes scheduled yet"). The address is added
+ * as the request leaves the browser, like the proxy in front of a deployed
+ * backend, from the benchmarking range the studio command signs members up
+ * from (be/src/e2e/studio.ts).
+ */
+async function ownAddress(page: Page): Promise<void> {
+  const n = randomBytes(2)
+  const address = `198.18.${n[0]}.${n[1]}`
+  await page.route(`${studio().urls.api}/**`, route =>
+    route.fallback({ headers: { ...route.request().headers(), 'x-forwarded-for': address } }),
+  )
+}
+
+/**
  * Sign a member in the way the member app itself would find them signed in: a
  * session token in this hostname's own storage (fe-client/src/lib/member-auth.ts).
  * Signing in by emailed code is not one of the journeys; the token is a real
@@ -115,6 +138,7 @@ export function studio(): Studio {
  */
 export async function signInMember(page: Page, member: { token: string }): Promise<void> {
   const { client } = studio().urls
+  await ownAddress(page)
   await page.addInitScript(
     ([origin, token]) => {
       if (window.location.origin === origin) window.localStorage.setItem('rt.client.session', token)
@@ -151,6 +175,7 @@ export async function setStudioFlag(request: APIRequestContext, key: string, ena
  */
 export async function signInStaff(page: Page, person: { email: string }): Promise<void> {
   const { urls, staff } = studio()
+  await ownAddress(page)
   await page.goto(`${urls.portal}/login`)
   await page.getByLabel('Email').fill(person.email)
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
