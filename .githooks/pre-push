@@ -1,6 +1,0 @@
-#!/bin/sh
-# Before a push leaves: the suites the pushed commits touch, run with CI's own
-# commands, so a push that would turn CI red stops here. `git push --no-verify`
-# skips it. Installed by `make hooks` (git config core.hooksPath .githooks).
-# See docs/md/test-guardrails.md § Before a push.
-exec node "$(git rev-parse --show-toplevel)/.claude/hooks/affected-tests.mjs" pre-push

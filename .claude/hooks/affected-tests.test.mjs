@@ -8,7 +8,6 @@ import {
   decide,
   failureExcerpt,
   lockDatabase,
-  pushedRanges,
   skippedCount,
   unlockDatabase,
 } from './affected-tests.mjs'
@@ -42,23 +41,6 @@ test('an error catalogue change also checks the catalogues match, as CI does', (
   assert.deepEqual(ids(['be/src/shared/error-codes.ts']), ['be', 'error-codes'])
   assert.deepEqual(ids(['fe-client/src/lib/error-codes.ts']), ['fe-client', 'error-codes'])
   assert.deepEqual(ids(['fe-portal/src/lib/error-codes.ts']), ['fe-portal', 'error-codes'])
-})
-
-test('a push is diffed against the remote commit, a new branch against a merge base, and a delete pushes nothing', () => {
-  const zero = '0'.repeat(40)
-  const a = 'a'.repeat(40)
-  const b = 'b'.repeat(40)
-  const stdin = [
-    `refs/heads/staging ${a} refs/heads/main ${b}`,
-    `refs/heads/feature ${a} refs/heads/feature ${zero}`,
-    `(delete) ${zero} refs/heads/old ${b}`,
-    '',
-  ].join('\n')
-  assert.deepEqual(pushedRanges(stdin), [
-    { local: a, remoteRef: 'refs/heads/main', remote: b },
-    { local: a, remoteRef: 'refs/heads/feature', remote: null },
-  ])
-  assert.deepEqual(pushedRanges(''), [])
 })
 
 test('skipped tests are read from the spec reporter summary', () => {

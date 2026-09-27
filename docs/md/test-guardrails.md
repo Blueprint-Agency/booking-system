@@ -15,30 +15,14 @@ The gates run in CI, where a reviewer already reads the diff: every PR, the merg
 push run every suite (`deploy-be.yml`, `e2e-local.yml`, `test-guardrails.yml`), so sessions don't
 run them on stop. Each check is stateless: it looks at the commit in front of it, never at a count or
 a result another run left. An edit to a committed test, a deletion included, is a normal diff for
-review. The one local gate is before a push (next section).
+review.
 
 ## Before a push
 
-A push runs the suites its commits touch first, with CI's own commands, and is stopped if one
-fails — so a push to `staging` or `main` that would turn CI red fails on the machine that made it,
-not twenty minutes later in Actions. It is the git hook `.githooks/pre-push`, which calls
-`node .claude/hooks/affected-tests.mjs pre-push`; install it once per clone with `make hooks`
-(`git config core.hooksPath .githooks`; `make install` and `make init` do it too).
-
-| Pushed code in | Runs | CI job it mirrors |
-|---|---|---|
-| `be/` | `npm run check -- <the test files the change reaches>` (below), on real Postgres, failing on any skip | backend `test` |
-| `fe-client/`, `fe-portal/` | `npm run check` | `fe-client`, `fe-portal` |
-| any `error-codes.ts` | `node scripts/check-error-codes.mjs` | "Error catalogues match" |
-| `e2e/` | `npm run check && npx playwright test --list` | `test-guardrails` journey list |
-| `scripts/`, `.claude/hooks/` | `node --test` on their tests | — |
-
-"Touch" is the diff from the remote branch's commit to the one pushed (for a new branch, from its
-merge base with `origin/main`), so pushing `staging` to `main` runs everything `main` has not yet
-had. The backend runs only the test files that change reaches, not the whole suite; CI still runs
-all of it, and a full local `npm run check` (~6 minutes in CI, longer on a laptop) is what predicts it (`testing.md` §
-Matching CI locally). Tests run on the working tree, and the hook names any uncommitted change to
-the same code. `git push --no-verify` skips it.
+No git hook runs on a push. Before a direct push to `staging` or `main`, run the full backend suite
+yourself: `npm run check` in `be/` (~6 minutes in CI, longer on a laptop) is what predicts CI's
+`test` job (`testing.md` § Matching CI locally). A pull request needs nothing local: CI runs every
+suite on it.
 
 ## Running tests locally
 
