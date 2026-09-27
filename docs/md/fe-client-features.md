@@ -209,10 +209,9 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 - **No dollar price shown** — credits only. (A user without a Bundle/Unlimited can still book a single class via the **One-time Pass** under `/packages`, which acts as the drop-in path.)
 
 **Layout & controls**
-- Horizontal **date strip** scroller with `< / >` arrows for week navigation and a **"Today"** button that snaps back to the current day. Selected day is highlighted.
-- Subheading: *"Classes on [Day], [Date]"* — updates on day click.
-- Filter row beneath the date strip: location pill toggle, instructor select, level select.
-- Mobile: classes for the selected day collapse into accordion-style rows.
+- The schedule shows the next **10 days** (today and the nine after it), grouped by day. Past classes and days with no classes are left out.
+- The days are an **accordion, one open at a time**. The soonest day with classes opens by default; each collapsed day shows its label ("Today", "Tomorrow", or the weekday, with the date) and its class count. Tapping a collapsed day opens it and closes the one that was open. The open day's header stays pinned under the top bar while its classes scroll.
+- Filter row above the schedule: location select and instructor select. If a filter leaves the open day empty, the soonest remaining day opens.
 
 **Per-row layout (one class)**
 - Thumbnail · category tag (e.g., `YOGA`) · title · instructor · start time + tz · duration.

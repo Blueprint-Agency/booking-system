@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { useMemberSession } from "@/lib/member-auth";
 import { useClasses, useLocations, useCanBookClass, toLocalDateStr, type ApiClassCard } from "@/lib/classes";
 import { BookingSurface } from "@/components/booking/booking-surface";
@@ -14,7 +15,8 @@ import { cn } from "@/lib/utils";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
 import { classBookingPolicy } from "@/lib/cancellation-copy";
 
-const WINDOW_DAYS = 30;
+/** Today and the nine days after it. */
+const WINDOW_DAYS = 10;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function startOfTodayISO(): string {
@@ -85,6 +87,30 @@ export function ClassFeed() {
     return Array.from(byDay, ([date, items]) => ({ date, items }));
   }, [all, nowMs]);
 
+  // One day open at a time. Until the member picks one, or when a filter
+  // empties the day they picked, the soonest day with classes is open.
+  const [pickedDate, setPickedDate] = useState<string | null>(null);
+  const openDate = groups.some((g) => g.date === pickedDate) ? pickedDate : (groups[0]?.date ?? null);
+
+  // Opening a day collapses the one above it, which pulls the new header up
+  // the page; bring it back into view once the layout has settled.
+  const headerRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
+  useEffect(() => {
+    if (!scrollTo) return;
+    const el = headerRefs.current.get(scrollTo);
+    if (el && el.getBoundingClientRect().top < 64) {
+      el.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+    setScrollTo(null);
+  }, [scrollTo]);
+
+  const openDay = (date: string) => {
+    if (date === openDate) return;
+    setPickedDate(date);
+    setScrollTo(date);
+  };
+
   const filtered = Boolean(selectedLocation || instructor);
   const clearFilters = () => {
     setSelectedLocation("");
@@ -142,30 +168,66 @@ export function ClassFeed() {
           )}
         </div>
       ) : (
-        <div className="flex flex-col gap-5 md:gap-6">
-          {groups.map(({ date, items }) => (
-            <section key={date} aria-label={dayHeaderLabel(date)}>
-              {/* Pinned under the top bar while its day scrolls past, in the
-                  page's own colour so rows slide cleanly beneath it. */}
-              <h2 className="sticky top-16 z-10 -mx-4 bg-paper/95 px-4 py-2 text-sm font-bold text-ink backdrop-blur-sm md:mx-0 md:px-0">
-                {dayHeaderLabel(date)}
-              </h2>
-              <div className={cn(CARD, "divide-y divide-ink/5")}>
-                {items.map((c) => (
-                  <ClassRow
-                    key={c.id}
-                    cls={c}
-                    showLocation={showLocationBadge}
-                    canBook={canBook}
-                    canBookLoaded={canBookLoaded}
-                    isSignedIn={!!isSignedIn}
-                    entitlements={entitlements}
-                    onStale={refresh}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
+        <div className="flex flex-col gap-2">
+          {groups.map(({ date, items }) => {
+            const open = date === openDate;
+            const label = dayHeaderLabel(date);
+            const panelId = `day-${date}`;
+            return (
+              <section key={date} aria-label={label} className={cn(open && "mb-3")}>
+                {/* The open day's header stays pinned under the top bar while
+                    its classes scroll past, in the page's own colour so rows
+                    slide cleanly beneath it. */}
+                <h2
+                  className={cn(
+                    "-mx-4 px-4 md:mx-0 md:px-0",
+                    open && "sticky top-16 z-10 bg-paper/95 backdrop-blur-sm",
+                  )}
+                >
+                  <button
+                    type="button"
+                    ref={(el) => {
+                      if (el) headerRefs.current.set(date, el);
+                      else headerRefs.current.delete(date);
+                    }}
+                    onClick={() => openDay(date)}
+                    aria-expanded={open}
+                    aria-controls={panelId}
+                    className={cn(
+                      // Scrolled to below the 4rem top bar, where it pins.
+                      "flex w-full scroll-mt-16 items-center justify-between gap-3 py-3 text-left text-sm font-bold text-ink",
+                      open ? "cursor-default" : "rounded-xl hover:text-accent",
+                    )}
+                  >
+                    <span>{label}</span>
+                    <span className="flex items-center gap-2 text-xs font-medium text-muted">
+                      {items.length} {items.length === 1 ? "class" : "classes"}
+                      <ChevronDown
+                        aria-hidden
+                        className={cn("h-4 w-4 transition-transform", open && "rotate-180")}
+                      />
+                    </span>
+                  </button>
+                </h2>
+                {open && (
+                  <div id={panelId} className={cn(CARD, "divide-y divide-ink/5")}>
+                    {items.map((c) => (
+                      <ClassRow
+                        key={c.id}
+                        cls={c}
+                        showLocation={showLocationBadge}
+                        canBook={canBook}
+                        canBookLoaded={canBookLoaded}
+                        isSignedIn={!!isSignedIn}
+                        entitlements={entitlements}
+                        onStale={refresh}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </div>
       )}
     </BookingSurface>
