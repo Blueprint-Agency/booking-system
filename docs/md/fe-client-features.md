@@ -210,7 +210,8 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 
 **Layout & controls**
 - The schedule shows the next **10 days** (today and the nine after it), grouped by day. Past classes and days with no classes are left out.
-- The days are an **accordion, one open at a time**. The soonest day with classes opens by default; each collapsed day shows its label ("Today", "Tomorrow", or the weekday, with the date) and its class count. Tapping a collapsed day opens it and closes the one that was open. The open day's header stays pinned under the top bar while its classes scroll.
+- The days are an **accordion, at most one open**. The soonest day with classes opens by default; each collapsed day shows its label ("Today", "Tomorrow", or the weekday, with the date) and its class count. Tapping a collapsed day opens it and closes the one that was open; tapping the open day closes it, leaving none open. Days slide open and shut (no slide with reduced motion). The open day's header stays pinned under the top bar while its classes scroll.
+- After a day opens, the page scrolls so its first class sits a quarter of the way down the screen (or as near as the foot of the page allows). After the open day is closed, if its header is above the screen, the page scrolls it back to just under the top bar.
 - Filter row above the schedule: location select and instructor select. If a filter leaves the open day empty, the soonest remaining day opens.
 
 **Per-row layout (one class)**
@@ -332,7 +333,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 **List layout**
 - An **ended** workshop is left off the list: there is nothing left to book. The location chips list only locations with a workshop still to come.
 - The rest is grouped: **Happening now** (started, not yet over), then one group per **month** of start date in studio time ("This month", then "October", with the year only when it differs), then **Dates to be announced**.
-- The groups are an accordion, **one open at a time**, the same as the class schedule (§3.1). The first group opens by default, each collapsed group shows its workshop count, and opening one closes the other. If a location filter empties the open group, the first remaining group opens.
+- The groups are an accordion, **at most one open**, behaving exactly as the class schedule's days (§3.1), scrolling included. The first group opens by default, each collapsed group shows its workshop count, and tapping the open group closes it. If a location filter empties the open group, the first remaining group opens.
 
 **User journey**
 1. List rendered as **expandable accordion cards**. Card header shows title, instructor, level badge (colour-coded), date, **"X of N spots left"** counter, *"From S$X"* on the collapsed view.

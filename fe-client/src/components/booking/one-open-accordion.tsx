@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 
 /** How long a panel takes to slide open or shut (`duration-300` below). */
 const SLIDE_MS = 300;
+/** Where a newly opened section's first item lands, as a share of the screen's height. */
+const FIRST_ITEM_AT = 0.25;
 
 export interface AccordionSection {
   /** Stable across renders; also names the panel's element id. */
@@ -16,11 +18,12 @@ export interface AccordionSection {
 }
 
 /**
- * A list of sections with one open at a time: the schedule's days, the
+ * A list of sections with at most one open: the schedule's days, the
  * workshops' months. The first section is open until the member picks another,
  * or again when a filter removes the one they picked. Opening a section closes
- * the one that was open, and the open section's header stays pinned under the
- * top bar while its contents scroll.
+ * the one that was open; tapping the open one closes it, leaving none open
+ * until the member opens another. The open section's header stays pinned
+ * under the top bar while its contents scroll.
  */
 export function OneOpenAccordion({
   sections,
@@ -32,29 +35,53 @@ export function OneOpenAccordion({
   /** A section's contents, rendered for every section and shown for the open one. */
   children: (key: string) => ReactNode;
 }) {
-  const [picked, setPicked] = useState<string | null>(null);
-  const openKey = sections.some((s) => s.key === picked) ? picked : (sections[0]?.key ?? null);
+  // `undefined` until the member taps a header (the first section is open),
+  // `null` once they have closed the open one (none is).
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const openKey =
+    picked === null
+      ? null
+      : sections.some((s) => s.key === picked)
+        ? picked!
+        : (sections[0]?.key ?? null);
 
-  // Opening a section collapses the one above it, which pulls the new header
-  // up the page; bring it back into view once the slide has finished.
-  const headerRefs = useRef(new Map<string, HTMLButtonElement>());
-  const [scrollTo, setScrollTo] = useState<string | null>(null);
+  // Opening a section moves everything around it: the one closing above it
+  // pulls it up, and its own contents grow below. Once the slide has settled,
+  // scroll so its first item sits a quarter of the way down the screen, where
+  // the eye lands, whichever way the page moved. The browser stops short at
+  // the foot of the page, so a last short section simply ends at the bottom.
+  //
+  // Closing a section a member had scrolled deep into leaves its header above
+  // the screen once the contents fold away; bring that header back to just
+  // under the top bar, so they are where they were in the list.
+  const panelRefs = useRef(new Map<string, HTMLDivElement>());
+  const [scrollTo, setScrollTo] = useState<{ key: string; opened: boolean } | null>(null);
   useEffect(() => {
     if (!scrollTo) return;
     const timer = setTimeout(() => {
-      const el = headerRefs.current.get(scrollTo);
-      if (el && el.getBoundingClientRect().top < 64) {
-        el.scrollIntoView({ block: "start", behavior: "smooth" });
-      }
+      const panel = panelRefs.current.get(scrollTo.key);
       setScrollTo(null);
+      if (!panel) return;
+      const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+      if (scrollTo.opened) {
+        const off = panel.getBoundingClientRect().top - window.innerHeight * FIRST_ITEM_AT;
+        // Its scroll margin (`scroll-mt-[25vh]` below) is the quarter screen.
+        if (Math.abs(off) >= 8) panel.scrollIntoView({ block: "start", behavior });
+      } else {
+        const header = panel.previousElementSibling;
+        // Its scroll margin (`scroll-mt-16` below) is the 4rem top bar.
+        if (header && header.getBoundingClientRect().top < 64) {
+          header.scrollIntoView({ block: "start", behavior });
+        }
+      }
     }, SLIDE_MS);
     return () => clearTimeout(timer);
   }, [scrollTo]);
 
-  const open = (key: string) => {
-    if (key === openKey) return;
-    setPicked(key);
-    setScrollTo(key);
+  const toggle = (key: string) => {
+    const opened = key !== openKey;
+    setPicked(opened ? key : null);
+    setScrollTo({ key, opened });
   };
 
   return (
@@ -67,23 +94,18 @@ export function OneOpenAccordion({
             {/* Pinned in the page's own colour so rows slide cleanly beneath it. */}
             <h2
               className={cn(
-                "-mx-4 px-4 md:mx-0 md:px-0",
+                "-mx-4 scroll-mt-16 px-4 md:mx-0 md:px-0",
                 isOpen && "sticky top-16 z-10 bg-paper/95 backdrop-blur-sm",
               )}
             >
               <button
                 type="button"
-                ref={(el) => {
-                  if (el) headerRefs.current.set(key, el);
-                  else headerRefs.current.delete(key);
-                }}
-                onClick={() => open(key)}
+                onClick={() => toggle(key)}
                 aria-expanded={isOpen}
                 aria-controls={panelId}
                 className={cn(
-                  // Scrolled to below the 4rem top bar, where it pins.
-                  "flex w-full scroll-mt-16 items-center justify-between gap-3 py-3 text-left text-sm font-bold text-ink",
-                  isOpen ? "cursor-default" : "rounded-xl hover:text-accent",
+                  "flex w-full items-center justify-between gap-3 py-3 text-left text-sm font-bold text-ink",
+                  "rounded-xl hover:text-accent",
                 )}
               >
                 <span>{label}</span>
@@ -102,9 +124,13 @@ export function OneOpenAccordion({
                 so nothing in it takes focus or is read out. */}
             <div
               id={panelId}
+              ref={(el) => {
+                if (el) panelRefs.current.set(key, el);
+                else panelRefs.current.delete(key);
+              }}
               inert={!isOpen}
               className={cn(
-                "grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none",
+                "grid scroll-mt-[25vh] transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none",
                 isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
               )}
             >
