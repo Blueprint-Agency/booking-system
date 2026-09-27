@@ -79,7 +79,12 @@ export const ptBookingConfig = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    // The latest a member may propose a private session: this many days after
+    // today, in Singapore. Also how long their request waits pending.
     bookInAdvanceDays: integer('book_in_advance_days').notNull(),
+    // The earliest: at least this many days after today, so the studio has
+    // time to arrange it. Never above `book_in_advance_days` (the service's rule).
+    minBookInAdvanceDays: integer('min_book_in_advance_days').notNull().default(3),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     updatedByStaffId: uuid('updated_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',

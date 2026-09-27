@@ -15,11 +15,43 @@ import { clients } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
 import { ptRequests, ptRequestSlots } from '../../db/schema/schedule'
 import { ptBookingConfig } from '../../db/schema/policy'
-import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { AppError, BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { DEFAULT_PT_BOOKING_CONFIG } from '../../db/seed/policy'
 import { sweepExpired } from '../packages/activation'
 import { debitCredits } from '../packages/ledger'
 import { ptSessionCost } from './cost'
-import { sgToday } from '../../lib/time'
+import { daysBetween, sgToday } from '../../lib/time'
+import { now as clockNow } from '../../lib/clock'
+
+/** The days after today, in Singapore, a member may propose a private session on. */
+export interface PtBookingWindow {
+  /** Earliest: at least this many days after today. */
+  minDays: number
+  /** Latest: at most this many days after today. Also how long a request waits pending. */
+  maxDays: number
+}
+
+/**
+ * The studio's Book in advance settings. Every studio is provisioned with a
+ * row (`db/seed/policy.ts`); one without reads as what that row would hold.
+ */
+export async function readPtBookingWindow(tenantId: string): Promise<PtBookingWindow> {
+  const [cfg] = await db
+    .select({
+      minDays: ptBookingConfig.minBookInAdvanceDays,
+      maxDays: ptBookingConfig.bookInAdvanceDays,
+    })
+    .from(ptBookingConfig)
+    // One row per tenant, keyed on the tenant rather than a fixed singleton id.
+    .where(eq(ptBookingConfig.tenantId, tenantId))
+    .limit(1)
+  return (
+    cfg ?? {
+      minDays: DEFAULT_PT_BOOKING_CONFIG.minBookInAdvanceDays,
+      maxDays: DEFAULT_PT_BOOKING_CONFIG.bookInAdvanceDays,
+    }
+  )
+}
 
 export interface PtRequestSlotInput {
   /** YYYY-MM-DD (local Singapore date). */
@@ -61,18 +93,29 @@ export async function submitPtRequest(
   input: PtRequestInput,
 ): Promise<{ ptRequestId: string }> {
   if (input.slots.length === 0) throw new BadRequestError('no_slots')
-  // The studio needs a day to arrange a private session: the earliest a member
-  // may propose is tomorrow in Singapore, never today or a day already gone.
-  const today = sgToday(new Date())
+  const window = await readPtBookingWindow(tenantId)
+  // The studio's Book in advance window, counted in Singapore days from today:
+  // no sooner than its minimum, so it has time to arrange the session, and no
+  // later than its maximum.
+  // The app's clock (lib/clock), like every other rule that turns on "now".
+  const today = sgToday(clockNow())
   for (const s of input.slots) {
-    if (s.proposedDate <= today) throw new BadRequestError('slot_date_too_soon')
+    const daysAhead = daysBetween(today, s.proposedDate)
+    if (daysAhead < window.minDays) {
+      throw new AppError(400, 'slot_date_too_soon', { min_book_in_advance_days: window.minDays })
+    }
+    if (daysAhead > window.maxDays) {
+      throw new AppError(400, 'slot_date_too_far', { book_in_advance_days: window.maxDays })
+    }
     if (s.endTime !== undefined && s.endTime <= s.startTime) throw new BadRequestError('slot_end_before_start')
   }
   if (input.sessionType === '2on1' && !input.partner) throw new BadRequestError('partner_required')
   if (input.sessionType === '1on1' && input.partner) throw new BadRequestError('partner_not_allowed')
 
   return db.transaction(async tx => {
-    const now = new Date()
+    // The same clock the window above was read on, so a request's expiry, the
+    // expiry sweep and the dates it was allowed agree.
+    const now = clockNow()
     // Same as the class path: an ended package reads as ended now, not only
     // once the nightly sweep gets to it.
     await sweepExpired(tx, tenantId, input.clientId, now)
@@ -115,14 +158,8 @@ export async function submitPtRequest(
     const cost = ptSessionCost(input.sessionType)
     if ((pkg.remaining ?? 0) < cost) throw new ConflictError('insufficient_pt_credit')
 
-    const [cfg] = await tx
-      .select({ days: ptBookingConfig.bookInAdvanceDays })
-      .from(ptBookingConfig)
-      // One row per tenant, keyed on the tenant rather than a fixed singleton id.
-      .where(eq(ptBookingConfig.tenantId, tenantId))
-      .limit(1)
     const expiresAt = new Date(now)
-    expiresAt.setDate(expiresAt.getDate() + (cfg?.days ?? 14))
+    expiresAt.setDate(expiresAt.getDate() + window.maxDays)
 
     // Debit through the credit ledger: it re-derives `active` and writes the
     // credit-movement audit row, so the cancel/expiry refund is reversible to

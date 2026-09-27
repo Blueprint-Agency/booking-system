@@ -63,6 +63,11 @@ export interface SchedulePtRequestInput {
    * otherwise be granted or denied the bypass by omission.
    */
   actorIsAdmin: boolean
+  /**
+   * Shown to the member beside their session: the portal offers it when the
+   * time chosen is not one the member proposed, to say why. Optional.
+   */
+  note?: string | null
 }
 
 export type SchedulePtRequestError =
@@ -216,6 +221,7 @@ export async function schedulePtRequest(
         scheduledPtSessionId: sessionId,
         // The member's request is approved: their app celebrates it once.
         approvalUnseen: true,
+        scheduleNote: input.note?.trim() || null,
         resolvedAt: new Date(),
         resolvedByStaffId: input.actorStaffId,
       })
@@ -589,6 +595,20 @@ export async function updatePtSession(
         .returning()
       if (!rows[0]) throw new ConflictError('pt_session_update_failed')
       row = rows[0]
+    }
+
+    // A note from scheduling explains the time it was scheduled at. Moved to
+    // another start, the note no longer describes the session, so it goes
+    // rather than tell the member something that is not so.
+    if (
+      existing.ptRequestId &&
+      patch.startsAt !== undefined &&
+      patch.startsAt.getTime() !== existing.startsAt.getTime()
+    ) {
+      await tx
+        .update(ptRequests)
+        .set({ scheduleNote: null })
+        .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, existing.ptRequestId)))
     }
 
     if (touchesRoster) {

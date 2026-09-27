@@ -42,6 +42,8 @@ function serializeRequest(r: Awaited<ReturnType<typeof listClientPtRequests>>[nu
     role: r.role,
     host_name: r.requesterName,
     message: r.message,
+    schedule_note: r.scheduleNote,
+    cancel_note: r.cancelNote,
     co_client_name: r.coClientName,
     created_at: r.createdAt,
     expires_at: r.expiresAt,

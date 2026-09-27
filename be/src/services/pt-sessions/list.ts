@@ -22,6 +22,10 @@ export interface ClientPtRequestView {
   /** The requester's name. Used by partner cards ("hosted by …"). */
   requesterName: string | null
   message: string | null
+  /** Staff's word on a time the member did not propose. Both attendees see it. */
+  scheduleNote: string | null
+  /** Staff's reason for cancelling. Both attendees see it. */
+  cancelNote: string | null
   coClientName: string | null
   createdAt: Date
   /** Null on a manual session's request, which never waits pending. */
@@ -60,6 +64,8 @@ export async function listClientPtRequests(
       sessionType: ptRequests.sessionType,
       status: ptRequests.status,
       message: ptRequests.message,
+      scheduleNote: ptRequests.scheduleNote,
+      cancelNote: ptRequests.cancelNote,
       coClientName: ptRequests.coClientName,
       createdAt: ptRequests.createdAt,
       expiresAt: ptRequests.expiresAt,
@@ -156,6 +162,9 @@ export async function listClientPtRequests(
       requesterName: r.requesterName,
       // The requester's private note to the instructor isn't the partner's to read.
       message: role === 'partner' ? null : r.message,
+      // Staff's notes are to whoever is on the session, the partner included.
+      scheduleNote: r.scheduleNote,
+      cancelNote: r.cancelNote,
       coClientName: r.coClientName,
       createdAt: r.createdAt,
       expiresAt: r.expiresAt,
@@ -190,6 +199,10 @@ export interface AdminPtRequestView {
   status: string
   sessionType: '1on1' | '2on1'
   message: string | null
+  /** Staff's note to the member on scheduling a time they did not propose. */
+  scheduleNote: string | null
+  /** Staff's reason for cancelling, as the member sees it. */
+  cancelNote: string | null
   /** `portal` for a manual session staff created, `member` for a member's request. */
   origin: PtRequestOrigin
   createdAt: Date
@@ -237,6 +250,8 @@ function adminSelect() {
       status: ptRequests.status,
       sessionType: ptRequests.sessionType,
       message: ptRequests.message,
+      scheduleNote: ptRequests.scheduleNote,
+      cancelNote: ptRequests.cancelNote,
       origin: ptRequests.origin,
       createdAt: ptRequests.createdAt,
       expiresAt: ptRequests.expiresAt,
@@ -343,6 +358,8 @@ async function hydrateAdminRows(
       status: r.status,
       sessionType: r.sessionType as '1on1' | '2on1',
       message: r.message,
+      scheduleNote: r.scheduleNote,
+      cancelNote: r.cancelNote,
       origin: r.origin,
       createdAt: r.createdAt,
       expiresAt: r.expiresAt,

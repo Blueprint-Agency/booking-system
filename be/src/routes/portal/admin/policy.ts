@@ -72,9 +72,17 @@ const globalPatch = z.object({
     .optional(),
 })
 
-const ptPatch = z.object({
-  book_in_advance_days: z.number().int().min(1).max(365),
-})
+// Either or both. At least a day for the minimum: a private session is never
+// proposed for today. Min above max is the service's refusal, since it needs
+// the stored value of whichever is left out.
+const ptPatch = z
+  .object({
+    book_in_advance_days: z.number().int().min(1).max(365).optional(),
+    min_book_in_advance_days: z.number().int().min(1).max(365).optional(),
+  })
+  .refine(v => v.book_in_advance_days !== undefined || v.min_book_in_advance_days !== undefined, {
+    message: 'nothing to update',
+  })
 
 function serializeGlobal(r: svc.GlobalPolicyRow) {
   return {
@@ -104,6 +112,7 @@ async function serializeConflicts(tenant: string) {
 function serializePt(r: svc.PtBookingConfigRow) {
   return {
     book_in_advance_days: r.bookInAdvanceDays,
+    min_book_in_advance_days: r.minBookInAdvanceDays,
     updated_at: r.updatedAt,
     updated_by_staff_id: r.updatedByStaffId,
   }
@@ -166,7 +175,12 @@ const app = new Hono()
     const staffId = c.get('staffUserId')
     const row = await svc.updatePtBookingConfig(
       tenantId(c),
-      { bookInAdvanceDays: body.book_in_advance_days },
+      {
+        ...(body.book_in_advance_days !== undefined ? { bookInAdvanceDays: body.book_in_advance_days } : {}),
+        ...(body.min_book_in_advance_days !== undefined
+          ? { minBookInAdvanceDays: body.min_book_in_advance_days }
+          : {}),
+      },
       staffId,
     )
     c.set('auditTarget' as any, { table: 'pt_booking_config', id: row.id })

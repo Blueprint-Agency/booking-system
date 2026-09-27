@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { ptBookingWindowProblem } from "@/lib/pt-requests";
 
 interface PolicyState {
   /** Whether cancellations past the count keep their credit (#318). */
@@ -21,6 +22,8 @@ interface PolicyState {
   /** How long before a session starts the door opens for check-in (#192). */
   checkInOpensMinutesBefore: number;
   bookInAdvanceDays: number;
+  /** The earliest a member may propose a private session, in days after today. */
+  minBookInAdvanceDays: number;
   updatedAt: string | null;
 }
 
@@ -40,6 +43,7 @@ interface ApiPolicy {
   };
   pt_booking_config: {
     book_in_advance_days: number;
+    min_book_in_advance_days: number;
     updated_at: string | null;
   };
   /** Every declared leave conflict, lower id first. */
@@ -81,6 +85,7 @@ function emptyPolicy(): PolicyState {
     partPaymentEnabled: true,
     checkInOpensMinutesBefore: 30,
     bookInAdvanceDays: 0,
+    minBookInAdvanceDays: 0,
     updatedAt: null,
   };
 }
@@ -150,6 +155,7 @@ export default function PolicyPage() {
         partPaymentEnabled: r.global_policy.part_payment_enabled,
         checkInOpensMinutesBefore: r.global_policy.check_in_opens_minutes_before,
         bookInAdvanceDays: r.pt_booking_config.book_in_advance_days,
+        minBookInAdvanceDays: r.pt_booking_config.min_book_in_advance_days,
         updatedAt: r.global_policy.updated_at,
       };
       setPolicy(next);
@@ -194,7 +200,15 @@ export default function PolicyPage() {
     draft.classWindowHours !== policy.classWindowHours ||
     draft.ptWindowHours !== policy.ptWindowHours ||
     draft.leaveCarryOverCapDays !== policy.leaveCarryOverCapDays ||
-    draft.bookInAdvanceDays !== policy.bookInAdvanceDays;
+    draft.bookInAdvanceDays !== policy.bookInAdvanceDays ||
+    draft.minBookInAdvanceDays !== policy.minBookInAdvanceDays;
+
+  const ptWindowChanged =
+    draft.bookInAdvanceDays !== policy.bookInAdvanceDays ||
+    draft.minBookInAdvanceDays !== policy.minBookInAdvanceDays;
+  const ptWindowError = ptWindowChanged
+    ? ptBookingWindowProblem(draft.minBookInAdvanceDays, draft.bookInAdvanceDays)
+    : null;
 
   // The cap is a headcount of instructors on study leave at once, so the backend
   // accepts 1–99. Say so here rather than letting the save come back refused.
@@ -214,7 +228,7 @@ export default function PolicyPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!api || capError || checkInError) return;
+    if (!api || capError || checkInError || ptWindowError) return;
     setSaving(true);
     try {
       const globalDelta: Record<string, unknown> = diffGlobal(policy, draft);
@@ -223,10 +237,11 @@ export default function PolicyPage() {
       if (Object.keys(globalDelta).length > 0) {
         ops.push(api.patch("/portal/admin/policy/global", globalDelta));
       }
-      if (draft.bookInAdvanceDays !== policy.bookInAdvanceDays) {
+      if (ptWindowChanged) {
         ops.push(
           api.patch("/portal/admin/policy/pt", {
             book_in_advance_days: draft.bookInAdvanceDays,
+            min_book_in_advance_days: draft.minBookInAdvanceDays,
           }),
         );
       }
@@ -484,22 +499,45 @@ export default function PolicyPage() {
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">PT booking horizon</h2>
             <p className="mt-0.5 text-xs text-muted">
-              How far in advance customers can request a Private Training session.
+              How many days ahead of today customers can propose a Private Training session:
+              no sooner than the minimum, no later than the maximum.
             </p>
           </header>
-          <div className="space-y-1.5 max-w-xs">
-            <Label htmlFor="pt-horizon">Book in advance (days)</Label>
-            <Input
-              id="pt-horizon"
-              type="number"
-              min={1}
-              max={365}
-              value={draft.bookInAdvanceDays}
-              onChange={(e) =>
-                setDraft({ ...draft, bookInAdvanceDays: Number(e.target.value) })
-              }
-            />
+          <div className="grid max-w-md gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="pt-horizon-min">Book in advance, at least (days)</Label>
+              <Input
+                id="pt-horizon-min"
+                type="number"
+                min={1}
+                max={365}
+                value={draft.minBookInAdvanceDays}
+                onChange={(e) =>
+                  setDraft({ ...draft, minBookInAdvanceDays: Number(e.target.value) })
+                }
+                aria-invalid={Boolean(ptWindowError)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pt-horizon">Book in advance, at most (days)</Label>
+              <Input
+                id="pt-horizon"
+                type="number"
+                min={1}
+                max={365}
+                value={draft.bookInAdvanceDays}
+                onChange={(e) =>
+                  setDraft({ ...draft, bookInAdvanceDays: Number(e.target.value) })
+                }
+                aria-invalid={Boolean(ptWindowError)}
+              />
+            </div>
           </div>
+          {ptWindowError && (
+            <p role="alert" className="mt-2 text-xs text-error">
+              {ptWindowError}
+            </p>
+          )}
         </section>
 
         <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
@@ -687,7 +725,10 @@ export default function PolicyPage() {
             >
               Reset
             </Button>
-            <Button type="submit" disabled={!dirty || saving || capError !== null || checkInError !== null}>
+            <Button
+              type="submit"
+              disabled={!dirty || saving || capError !== null || checkInError !== null || ptWindowError !== null}
+            >
               {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" /> Saving…

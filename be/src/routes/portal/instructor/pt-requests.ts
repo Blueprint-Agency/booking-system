@@ -9,6 +9,7 @@ import {
 import { schedulePtRequest } from '../../../services/pt-sessions/schedule'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
 import { statusForScheduleError } from '../pt-schedule-status'
+import { ptCancelNote } from '../pt-cancel-note'
 import { tenantId } from '../../../middleware/tenant'
 import {
   addManualPtSessionMember,
@@ -51,18 +52,21 @@ const scheduleSchema = z
     room_id: z.string().uuid(),
     starts_at: isoDate,
     ends_at: isoDate,
+    // To the member, when the time is not one they proposed.
+    note: z.string().max(500).nullable().optional(),
   })
   .refine(v => new Date(v.ends_at) > new Date(v.starts_at), {
     message: 'ends_at must be after starts_at',
     path: ['ends_at'],
   })
-
 function serialize(r: AdminPtRequestView) {
   return {
     id: r.id,
     status: r.status,
     session_type: r.sessionType,
     message: r.message,
+    schedule_note: r.scheduleNote,
+    cancel_note: r.cancelNote,
     origin: r.origin,
     created_at: r.createdAt.toISOString(),
     expires_at: r.expiresAt ? r.expiresAt.toISOString() : null,
@@ -177,6 +181,7 @@ const app = new Hono()
       roomId: body.room_id,
       startsAt: new Date(body.starts_at),
       endsAt: new Date(body.ends_at),
+      note: body.note ?? null,
       actorStaffId: self,
       // Never the admin bypass: on this surface the binding rule decides, and
       // a request bound to a different instructor is refused.
@@ -189,6 +194,7 @@ const app = new Hono()
   })
   .post('/:id/cancel', takesPtBookings, zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
+    const note = await ptCancelNote(c)
     const self = c.get('staffUserId') as string
     // source:'admin' = staff-initiated (full refund, doesn't count to client cap),
     // but requireOwnInstructorId restricts it to the instructor's own scheduled session.
@@ -197,6 +203,7 @@ const app = new Hono()
       source: 'admin',
       actorStaffId: self,
       requireOwnInstructorId: self,
+      note,
     })
     c.set('auditTarget' as any, { table: 'pt_requests', id })
     const row = await getPtRequestForAdmin(tenantId(c), id)

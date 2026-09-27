@@ -11,10 +11,13 @@ import { toast } from "sonner";
 import {
   type PtProposedSlot,
   ptClassTypeName,
+  ptNoteOrNull,
+  ptOffProposal,
   ptSlotEnd,
   ptSlotStart,
   ptSlotTime,
 } from "@/lib/pt-requests";
+import { ScheduleNoteField } from "@/components/pt-requests/schedule-note-field";
 
 interface InstructorPtRequest {
   id: string;
@@ -191,6 +194,8 @@ function ScheduleForm({
   const [endTime, setEndTime] = useState(first ? ptSlotEnd(first) : "");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const offProposal = ptOffProposal(request.slots, date, startTime, endTime);
 
   const canSubmit = useMemo(
     () => Boolean(roomId && date && startTime && endTime),
@@ -214,6 +219,7 @@ function ScheduleForm({
         room_id: roomId,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
+        note: offProposal ? ptNoteOrNull(note) : null,
       });
       toast.success("Session scheduled — assigned to you");
       onScheduled();
@@ -298,6 +304,17 @@ function ScheduleForm({
           </div>
         </div>
       </div>
+
+      {offProposal && (
+        <div className="mt-3">
+          <ScheduleNoteField
+            id={`note-${request.id}`}
+            value={note}
+            onChange={setNote}
+            disabled={submitting}
+          />
+        </div>
+      )}
 
       {err && <p className="mt-2 text-xs text-error">{err}</p>}
 

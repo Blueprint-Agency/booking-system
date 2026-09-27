@@ -19,6 +19,7 @@ import { PtPackageDialog } from "@/components/packages/pt-package-dialog";
 import { formatSgd } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { ptBookingWindowProblem } from "@/lib/pt-requests";
 import type { PtPackage, PtSessionType } from "@/types";
 import {
   promotionFromApi,
@@ -58,6 +59,9 @@ export default function PrivateSessionsPage() {
   const [packages, setPackages] = useState<PtPackage[]>([]);
   const [advance, setAdvance] = useState<number>(30);
   const [draftAdvance, setDraftAdvance] = useState<number>(30);
+  // The earliest a member may propose, in days after today (3 by default).
+  const [minAdvance, setMinAdvance] = useState<number>(3);
+  const [draftMinAdvance, setDraftMinAdvance] = useState<number>(3);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -75,12 +79,14 @@ export default function PrivateSessionsPage() {
       const [pkgs, policy] = await Promise.all([
         api.get<{ pt_packages: ApiPtPackage[] }>("/portal/admin/pt-packages"),
         api.get<{
-          pt_booking_config: { book_in_advance_days: number };
+          pt_booking_config: { book_in_advance_days: number; min_book_in_advance_days: number };
         }>("/portal/admin/policy"),
       ]);
       setPackages(pkgs.pt_packages.map(fromApi));
       setAdvance(policy.pt_booking_config.book_in_advance_days);
       setDraftAdvance(policy.pt_booking_config.book_in_advance_days);
+      setMinAdvance(policy.pt_booking_config.min_book_in_advance_days);
+      setDraftMinAdvance(policy.pt_booking_config.min_book_in_advance_days);
     } catch (err) {
       setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
     } finally {
@@ -92,7 +98,7 @@ export default function PrivateSessionsPage() {
     void load();
   }, [load]);
 
-  const configDirty = draftAdvance !== advance;
+  const configDirty = draftAdvance !== advance || draftMinAdvance !== minAdvance;
   const active = packages.filter((p) => p.status === "active");
   const archived = packages.filter((p) => p.status === "archived");
 
@@ -178,15 +184,28 @@ export default function PrivateSessionsPage() {
   async function handleSaveConfig(e: React.FormEvent) {
     e.preventDefault();
     if (!api) return;
+    const problem = ptBookingWindowProblem(draftMinAdvance, draftAdvance);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     setSavingConfig(true);
     try {
       await api.patch("/portal/admin/policy/pt", {
         book_in_advance_days: draftAdvance,
+        min_book_in_advance_days: draftMinAdvance,
       });
       setAdvance(draftAdvance);
+      setMinAdvance(draftMinAdvance);
       toast.success("Booking config saved.");
     } catch (err) {
-      toast.error(err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.");
+      toast.error(
+        err instanceof ApiError
+          ? (err.body as { error?: string } | null)?.error === "min_book_in_advance_after_max"
+            ? "The minimum can't be more days ahead than the maximum."
+            : `Save failed (HTTP ${err.status}).`
+          : "Save failed.",
+      );
     } finally {
       setSavingConfig(false);
     }
@@ -230,7 +249,19 @@ export default function PrivateSessionsPage() {
         >
           <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="advance">Book in advance (days)</Label>
+              <Label htmlFor="min-advance">Book in advance, at least (days)</Label>
+              <Input
+                id="min-advance"
+                type="number"
+                min={1}
+                max={365}
+                value={draftMinAdvance}
+                onChange={(e) => setDraftMinAdvance(Number(e.target.value))}
+                className="w-32"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="advance">Book in advance, at most (days)</Label>
               <Input
                 id="advance"
                 type="number"
@@ -244,7 +275,8 @@ export default function PrivateSessionsPage() {
             {/* On a phone the hint takes its own line under the field and Save,
                 rather than being crushed to a word-wide column between them. */}
             <div className="order-last w-full text-xs text-muted sm:order-none sm:w-auto sm:flex-1">
-              Maximum number of days ahead a customer can submit a private session request.
+              How many days ahead of today a customer may propose a private session: no
+              sooner than the first, no later than the second.
             </div>
             <Button type="submit" disabled={!configDirty || savingConfig}>
               {savingConfig ? (

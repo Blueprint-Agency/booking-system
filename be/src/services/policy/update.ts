@@ -225,14 +225,26 @@ export async function readLeaveConflicts(tenantId: string): Promise<LeaveConflic
 
 export async function updatePtBookingConfig(
   tenantId: string,
-  patch: { bookInAdvanceDays?: number },
+  patch: { bookInAdvanceDays?: number; minBookInAdvanceDays?: number },
   staffId: string,
 ): Promise<PtBookingConfigRow> {
-  const [row] = await db
-    .update(ptBookingConfig)
-    .set({ ...patch, updatedAt: new Date(), updatedByStaffId: staffId })
-    .where(eq(ptBookingConfig.tenantId, tenantId))
-    .returning()
-  if (!row) throw new NotFoundError('pt_booking_config_not_seeded')
-  return row
+  return db.transaction(async tx => {
+    const [current] = await tx
+      .select()
+      .from(ptBookingConfig)
+      .where(eq(ptBookingConfig.tenantId, tenantId))
+      .for('update')
+      .limit(1)
+    if (!current) throw new NotFoundError('pt_booking_config_not_seeded')
+    // A minimum past the maximum leaves no day a member could propose.
+    const min = patch.minBookInAdvanceDays ?? current.minBookInAdvanceDays
+    const max = patch.bookInAdvanceDays ?? current.bookInAdvanceDays
+    if (min > max) throw new BadRequestError('min_book_in_advance_after_max')
+    const [row] = await tx
+      .update(ptBookingConfig)
+      .set({ ...patch, updatedAt: new Date(), updatedByStaffId: staffId })
+      .where(eq(ptBookingConfig.tenantId, tenantId))
+      .returning()
+    return row!
+  })
 }

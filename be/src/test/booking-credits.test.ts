@@ -285,7 +285,8 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
         locationId: at.locationId,
         sessionType,
         clientPackageId: packageId,
-        slots: [{ proposedDate: '2030-01-15', startTime: '09:00', endTime: '10:00' }],
+        // Inside the studio's Book in advance window, which a request must be.
+        slots: [{ proposedDate: new Date(Date.now() + 5 * DAY).toISOString().slice(0, 10), startTime: '09:00', endTime: '10:00' }],
         ...(sessionType === '2on1' ? { partner: { kind: 'new', name: 'Partner', email: emailFor(`partner-${run}`) } } : {}),
       }),
     })

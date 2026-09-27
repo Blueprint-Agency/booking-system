@@ -370,9 +370,12 @@ services/pt-sessions/request.ts:submitPtRequest({
 tx start
 1. Validate class_type_id, when given, exists and is active. Validate location_id exists and is not archived.
 2. Validate slots[]: 1..N rows; end_time, where sent, > start_time; each proposed_date in
-   [today, today + pt_booking_config.book_in_advance_days] (local SGT date math).
-   As built: a proposed_date on or before today (SGT) is refused 400 slot_date_too_soon —
-   the earliest is tomorrow. The book_in_advance_days upper bound is not enforced.
+   [today + min_book_in_advance_days, today + book_in_advance_days] (Singapore calendar
+   days, `pt_booking_config`, read on the app clock). Sooner is refused 400
+   slot_date_too_soon { min_book_in_advance_days }; later, 400 slot_date_too_far
+   { book_in_advance_days }. A studio with no config row reads as the seeded
+   defaults (DEFAULT_PT_BOOKING_CONFIG: 3 and 7).
+   GET /public/pt-booking-config returns both bounds, so the form can state them.
 3. Validate session_type:
    '1on1' → partner MUST be omitted.
    '2on1' → partner REQUIRED. If kind='existing', co_client_id MUST be a different active client.

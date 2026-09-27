@@ -743,7 +743,8 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     const refunded = await state(paid)
     assert.equal(refunded.package.creditsOrSessionsRemaining, 5)
 
-    const soon = new Date(Date.now() + 3 * DAY).toISOString().slice(0, 10)
+    // Inside the studio's Book in advance window, so the refusal is the package's.
+    const soon = new Date(Date.now() + 5 * DAY).toISOString().slice(0, 10)
     const attempt = await post('/api/v1/me/pt-sessions/request', lu.headers, {
       classTypeId: one.classTypeId,
       locationId: one.locationId,

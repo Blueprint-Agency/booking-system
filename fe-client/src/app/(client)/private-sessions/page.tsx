@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Trash2, CheckCircle2, AlertCircle, CalendarRange } from "lucide-react";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
@@ -15,6 +15,14 @@ import { useLocations, useClassTypes } from "@/lib/classes";
 import { PreferredClassType } from "@/components/booking/preferred-class-type";
 import { usePtSessionsApi, HALF_HOUR_TIMES, formatSlotTime } from "@/lib/pt-sessions";
 import { ApiError } from "@/lib/api";
+import {
+  ptSlotDateProblem,
+  ptWindowDates,
+  ptWindowNotice,
+  ptWindowRefusal,
+  sgDatePlus,
+} from "@/lib/pt-booking-window";
+import { usePtBookingWindow } from "@/lib/use-pt-booking-window";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { cn } from "@/lib/utils";
 import { initialPtPick, ptPickRows, sessionTypeLabel, sessionsWord } from "@/lib/pt-package-picker";
@@ -39,18 +47,17 @@ function emptySlot(): Slot {
   return { proposedDate: "", startTime: nextHourTime() };
 }
 
-// The earliest date a member may propose: tomorrow in Singapore, the studio's
-// clock, whatever the device's zone — the server refuses today or earlier.
-function earliestSlotDate() {
-  return new Date(Date.now() + 8 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
-}
-
 export default function PrivateSessionsPage() {
   const router = useRouter();
   const { pt1on1, pt2on1, packages, loading: pkgLoading } = useClientPackages();
   const { data: locations } = useLocations();
   const { data: classTypes } = useClassTypes();
   const ptApi = usePtSessionsApi();
+  // The studio's Book in advance window, on its Singapore calendar whatever the
+  // device's zone. Until it has loaded the picker only rules out today and
+  // earlier, which no window allows; the server stays the enforcement.
+  const bookingWindow = usePtBookingWindow();
+  const dateBounds = bookingWindow ? ptWindowDates(bookingWindow) : { earliest: sgDatePlus(1), latest: undefined };
 
   const ptPackages = useMemo(() => packages.filter((p) => p.kind === "pt"), [packages]);
 
@@ -120,10 +127,17 @@ export default function PrivateSessionsPage() {
     const errs: string[] = [];
     if (!locationId) errs.push("Pick a location.");
     if (slots.length === 0) errs.push("Add at least one proposed slot.");
-    const earliest = earliestSlotDate();
     slots.forEach((s, i) => {
-      if (!s.proposedDate || !s.startTime) errs.push(`Slot ${i + 1}: pick a date and start time.`);
-      else if (s.proposedDate < earliest) errs.push(`Slot ${i + 1}: pick a date from tomorrow on.`);
+      if (!s.proposedDate || !s.startTime) {
+        errs.push(`Time ${i + 1}: pick a date and start time.`);
+        return;
+      }
+      const problem = bookingWindow
+        ? ptSlotDateProblem(s.proposedDate, i + 1, bookingWindow)
+        : s.proposedDate < dateBounds.earliest
+          ? `Time ${i + 1}: pick a date from tomorrow on.`
+          : null;
+      if (problem) errs.push(problem);
     });
     if (sessionType === "2on1") {
       if (!partnerEmail.trim()) errs.push("Partner email is required for a 2-on-1.");
@@ -154,6 +168,21 @@ export default function PrivateSessionsPage() {
     setConfirming(true);
   }
 
+  /** What to tell the member when the server refuses the request. */
+  function submitFailure(err: unknown): string {
+    const code = apiErrorCode(err);
+    if (code === ERROR_CODES.insufficient_pt_credit) {
+      return `That package no longer has ${sessionsWord(requestCost)} left. Pick another, or buy a package.`;
+    }
+    if (code === ERROR_CODES.slot_date_too_soon || code === ERROR_CODES.slot_date_too_far) {
+      return (
+        (bookingWindow && ptWindowRefusal(code, bookingWindow)) ??
+        "One of your times is outside the days the studio takes bookings for. Please pick another date."
+      );
+    }
+    return err instanceof Error ? err.message : "We couldn't submit your request. Please try again.";
+  }
+
   /** Send, paid by the package picked on the sheet. */
   async function send(clientPackageId: string) {
     setSubmitting(true);
@@ -171,16 +200,7 @@ export default function PrivateSessionsPage() {
       setConfirming(false);
       setSent(true);
     } catch (err: unknown) {
-      const code = apiErrorCode(err);
-      setSheetError(
-        code === ERROR_CODES.insufficient_pt_credit
-          ? `That package no longer has ${sessionsWord(requestCost)} left. Pick another, or buy a package.`
-          : code === ERROR_CODES.slot_date_too_soon
-            ? "Private sessions are booked from tomorrow on. Change any time dated today or earlier."
-            : err instanceof Error
-            ? err.message
-            : "We couldn't submit your request. Please try again.",
-      );
+      setSheetError(submitFailure(err));
     } finally {
       setSubmitting(false);
     }
@@ -231,7 +251,9 @@ export default function PrivateSessionsPage() {
       {pkgLoading ? (
         <ContentLoading label="Loading your packages" />
       ) : (
-        <form className={cn(CARD, "max-w-2xl p-4 sm:p-6 space-y-6")} onSubmit={handleSubmit}>
+        // noValidate: the browser's own bubble ("Value must be …") would speak
+        // for the date picker's bounds; validate() says it in the member's words.
+        <form noValidate className={cn(CARD, "max-w-2xl p-4 sm:p-6 space-y-6")} onSubmit={handleSubmit}>
           <div>
             <h2 className="text-base font-bold text-ink">Request a private session</h2>
             <p className="mt-0.5 text-sm text-muted">
@@ -296,6 +318,12 @@ export default function PrivateSessionsPage() {
               Times that suit you
               <span className="ml-1.5 font-normal text-muted">More options confirm faster</span>
             </p>
+            {bookingWindow && (
+              <p className="mb-3 inline-flex items-start gap-1.5 rounded-xl border border-cyan/40 bg-cyan/10 px-3 py-1.5 text-xs font-medium text-cyan-deep">
+                <CalendarRange className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+                {ptWindowNotice(bookingWindow)}
+              </p>
+            )}
             <div className="space-y-3">
               {slots.map((s, i) => (
                 <div
@@ -315,7 +343,8 @@ export default function PrivateSessionsPage() {
                       <input
                         id={`slot-${i}-date`}
                         type="date"
-                        min={earliestSlotDate()}
+                        min={dateBounds.earliest}
+                        max={dateBounds.latest}
                         value={s.proposedDate}
                         onChange={(e) => setSlot(i, { proposedDate: e.target.value })}
                         className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"

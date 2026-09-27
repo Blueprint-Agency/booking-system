@@ -123,6 +123,16 @@ export function PtRequestDrawer({
               </Link>
             </Row>
           )}
+          {request.schedule_note && (
+            <Row label="Note to the member (time changed)">
+              <p className="whitespace-pre-line break-words">{request.schedule_note}</p>
+            </Row>
+          )}
+          {request.cancel_note && (
+            <Row label="Reason for cancelling">
+              <p className="whitespace-pre-line break-words">{request.cancel_note}</p>
+            </Row>
+          )}
         </dl>
         {request.status === "pending" && (
           <div className="mt-6 flex flex-wrap gap-2">

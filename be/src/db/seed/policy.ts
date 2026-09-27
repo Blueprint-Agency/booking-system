@@ -26,7 +26,7 @@ export const DEFAULT_GLOBAL_POLICY = {
   leaveCarryOverCapDays: 14,
 } as const
 
-export const DEFAULT_PT_BOOKING_CONFIG = { bookInAdvanceDays: 7 } as const
+export const DEFAULT_PT_BOOKING_CONFIG = { bookInAdvanceDays: 7, minBookInAdvanceDays: 3 } as const
 
 /** A database or an open transaction — provisioning writes these inside its own. */
 type PolicyWriter = Pick<PostgresJsDatabase<typeof schema>, 'insert'>

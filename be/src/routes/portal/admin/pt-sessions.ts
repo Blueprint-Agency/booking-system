@@ -11,6 +11,7 @@ import { tenantId } from '../../../middleware/tenant'
 import { ERROR_CODES } from '../../../shared/error-codes'
 import { schedulePtRequest, updatePtSession } from '../../../services/pt-sessions/schedule'
 import { statusForScheduleError } from '../pt-schedule-status'
+import { ptCancelNote } from '../pt-cancel-note'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
 import { getPtSessionDetail, type PtSessionDetail } from '../../../services/schedule/detail'
 import {
@@ -55,12 +56,13 @@ const scheduleSchema = z
     // Optional: blank leaves the session Unpriced — see the note on the admin
     // class-create schema in ./schedule.ts.
     instructor_pay_sgd: z.number().min(0).nullable().optional(),
+    // To the member, when the time is not one they proposed.
+    note: z.string().max(500).nullable().optional(),
   })
   .refine(v => new Date(v.ends_at) > new Date(v.starts_at), {
     message: 'ends_at must be after starts_at',
     path: ['ends_at'],
   })
-
 // PATCH /sessions/:id targets a SCHEDULED pt_sessions row (distinct from the pt_requests
 // id used by the routes above) — the only id space with starts_at/room/etc.
 const updateSessionSchema = z.object({
@@ -103,6 +105,8 @@ function serialize(r: AdminPtRequestView) {
     status: r.status,
     session_type: r.sessionType,
     message: r.message,
+    schedule_note: r.scheduleNote,
+    cancel_note: r.cancelNote,
     // `portal` marks a manual session staff created (#334).
     origin: r.origin,
     created_at: r.createdAt.toISOString(),
@@ -192,6 +196,7 @@ const app = new Hono()
       startsAt: new Date(body.starts_at),
       endsAt: new Date(body.ends_at),
       instructorPaySgd: body.instructor_pay_sgd ?? null,
+      note: body.note ?? null,
       actorStaffId: actor,
       // The dialog pre-selects the Bound Instructor, but an admin may override
       // it for one session — a bound coach's illness must not block a member.
@@ -300,11 +305,13 @@ const app = new Hono()
   // scheduled → cancelled_after_scheduled (cascade; admin = always full refund).
   .post('/:id/cancel', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
+    const note = await ptCancelNote(c)
     const actor = c.get('staffUserId') as string
     const result = await cancelPtRequest(tenantId(c), {
       ptRequestId: id,
       source: 'admin',
       actorStaffId: actor,
+      note,
     })
     c.set('auditTarget' as any, { table: 'pt_requests', id })
     const row = await getPtRequestForAdmin(tenantId(c), id)

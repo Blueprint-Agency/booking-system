@@ -351,10 +351,20 @@ export function retypeSession(api: Api, sessionId: string, body: RetypeBody): Pr
   return api.patch(`/portal/admin/pt-sessions/sessions/${sessionId}`, body);
 }
 
-/** Cancelling goes against the session's request, on the caller's surface. */
-export function cancelSession(api: Api, role: StaffRole, ptRequestId: string): Promise<unknown> {
+/**
+ * Cancel a PT request or its session, on the caller's surface, with staff's
+ * reason to the member when there is one. It goes against the request, never
+ * the session id.
+ */
+export function cancelSession(
+  api: Api,
+  role: StaffRole,
+  ptRequestId: string,
+  note: string | null = null,
+): Promise<unknown> {
   return api.post(
     role === "admin" ? `/portal/admin/pt-sessions/${ptRequestId}/cancel` : `/portal/instructor/pt-requests/${ptRequestId}/cancel`,
+    { note },
   );
 }
 

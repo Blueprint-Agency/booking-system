@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, Ban, Loader2 } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import { PtSessionMembers } from "@/components/schedule/pt-session-members";
+import { CancelPtDialog } from "@/components/pt-requests/cancel-pt-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
@@ -77,23 +78,14 @@ function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged:
   const { api, may } = useWorkspace();
   // Cancelling a private session they run is Take PT bookings'.
   const canTakePt = may("take_pt_bookings");
-  const [cancelBusy, setCancelBusy] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const state = computeEventState({ startsAt: data.starts_at, endsAt: data.ends_at, lifecycle: data.lifecycle });
   const where = [data.location?.name, data.room?.name].filter(Boolean).join(" · ");
 
-  async function handleCancel() {
-    if (!api || !data.pt_request_id || !confirm(ptCancelConfirm(data))) return;
-    setCancelBusy(true);
-    setCancelError(null);
-    try {
-      await cancelSession(api, "instructor", data.pt_request_id);
-      await onChanged();
-    } catch (e) {
-      setCancelError(sessionActionErrorMessage(e, "Couldn't cancel the session"));
-    } finally {
-      setCancelBusy(false);
-    }
+  async function cancelWithNote(note: string | null) {
+    if (!api || !data.pt_request_id) return;
+    await cancelSession(api, "instructor", data.pt_request_id, note);
+    await onChanged();
   }
 
   return (
@@ -110,11 +102,10 @@ function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged:
               type="button"
               variant="ghost"
               size="sm"
-              onClick={handleCancel}
-              disabled={cancelBusy}
+              onClick={() => setCancelOpen(true)}
               className="ml-auto text-error hover:text-error"
             >
-              {cancelBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+              <Ban className="h-4 w-4" />
               Cancel session
             </Button>
           )}
@@ -129,11 +120,14 @@ function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged:
         </p>
       </header>
 
-      {cancelError && (
-        <p role="alert" className="mb-4 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
-          {cancelError}
-        </p>
-      )}
+      <CancelPtDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title="Cancel session"
+        consequence={ptCancelConfirm(data)}
+        onConfirm={cancelWithNote}
+        errorMessage={(e) => sessionActionErrorMessage(e, "Couldn't cancel the session")}
+      />
 
       <PtSessionMembers role="instructor" data={data} onChanged={onChanged} />
     </>

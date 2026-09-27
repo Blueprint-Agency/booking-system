@@ -430,7 +430,8 @@ cancel_cap_count int, cancel_cap_cycle_days int, class_window_hours int, pt_wind
 
 #### `pt_booking_config` (§6)
 
-book_in_advance_days int, updated_at, updated_by_staff_id (FK).
+book_in_advance_days int, min_book_in_advance_days int (default 3, never above the max),
+updated_at, updated_by_staff_id (FK).
 
 ### 4d. Packages
 

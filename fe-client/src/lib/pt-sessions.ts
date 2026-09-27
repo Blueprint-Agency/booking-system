@@ -81,6 +81,10 @@ export interface RawPtRequest {
   location_name?: string;
   slots: RawPtSlot[];
   message?: string | null;
+  // The studio's note when it scheduled a time other than the ones proposed.
+  schedule_note?: string | null;
+  // The studio's reason when it cancelled the request or session.
+  cancel_note?: string | null;
   co_client_name?: string | null;
   created_at: string;
   updated_at?: string;

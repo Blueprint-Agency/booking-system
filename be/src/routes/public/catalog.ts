@@ -12,6 +12,7 @@ import * as workshopsSvc from '../../services/workshops/catalog'
 import * as merchSvc from '../../services/catalog/merch'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
 import { readCancellationPolicy } from '../../services/policy/evaluate-cancellation'
+import { readPtBookingWindow } from '../../services/pt-sessions/request'
 import { tenantId } from '../../middleware/tenant'
 import { takesOnlinePayments } from '../../lib/stripe'
 
@@ -136,6 +137,16 @@ const app = new Hono()
       cancel_cap_enabled: p.cancelCapEnabled,
       cancel_cap_count: p.cancelCapCount,
       cancel_cap_cycle_days: p.cancelCapCycleDays,
+    })
+  })
+  // How far ahead a member may propose a private session, so the request form
+  // can say so and cap its date picker before the server refuses. Not cached,
+  // for the same reason as the cancellation policy above.
+  .get('/pt-booking-config', async c => {
+    const window = await readPtBookingWindow(tenantId(c))
+    return c.json({
+      min_book_in_advance_days: window.minDays,
+      book_in_advance_days: window.maxDays,
     })
   })
   // Whether this studio takes card payments online at all (#293) — false until

@@ -333,6 +333,12 @@ export function PtBookingCard({
         ))
       }
     >
+      {r.schedule_note && r.status === "scheduled" && (
+        <StudioNote label="A different time from the ones you proposed">{r.schedule_note}</StudioNote>
+      )}
+      {r.cancel_note && (r.status === "cancelled_before_scheduled" || r.status === "cancelled_after_scheduled") && (
+        <StudioNote label="Why the studio cancelled">{r.cancel_note}</StudioNote>
+      )}
       {r.message && (
         <blockquote className="mt-2 rounded-lg bg-ink/[0.04] px-3 py-1.5 text-xs italic text-muted">{r.message}</blockquote>
       )}
@@ -351,6 +357,16 @@ export function PtBookingCard({
         </details>
       )}
     </BookingCard>
+  );
+}
+
+/** A word from the studio on this booking — set apart from the member's own message. */
+function StudioNote({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-2 rounded-lg border border-accent/15 bg-accent/5 px-3 py-2 text-xs">
+      <p className="font-semibold text-accent-deep">{label}</p>
+      <p className="mt-0.5 whitespace-pre-line break-words text-ink">{children}</p>
+    </div>
   );
 }
 

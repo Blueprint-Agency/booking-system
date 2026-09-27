@@ -4,6 +4,8 @@ import { PageHeader, Badge, Pagination, usePaged } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { PtRequestDrawer } from "@/components/pt-requests/pt-request-drawer";
 import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
+import { CancelPtDialog } from "@/components/pt-requests/cancel-pt-dialog";
+import { cancelSession, ptCancelConfirm, sessionActionErrorMessage } from "@/lib/pt-manual";
 import { formatRelative } from "@/lib/formatters";
 import {
   type ApiPtRequest,
@@ -25,6 +27,7 @@ export default function PtRequestsPage() {
   const [tab, setTab] = useState<PtFilter>("pending");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [schedFor, setSchedFor] = useState<ApiPtRequest | null>(null);
+  const [cancelFor, setCancelFor] = useState<ApiPtRequest | null>(null);
 
   // Fetch every status for the active workspace location; tabs filter client-side
   // so the per-tab counts stay accurate.
@@ -67,24 +70,11 @@ export default function PtRequestsPage() {
   const pendingCount = requests.filter((r) => r.status === "pending").length;
   const filters: PtFilter[] = ["pending", "scheduled", "cancelled", "attended", "all"];
 
-  async function handleCancel(req: ApiPtRequest) {
+  async function cancelWithNote(req: ApiPtRequest, note: string | null) {
     if (!api) return;
-    const scheduled = req.status === "scheduled";
-    if (
-      !confirm(
-        scheduled
-          ? "Cancel this scheduled session? Admin cancellation returns the requester session."
-          : "Cancel this pending request? The sessions it was holding go back to the requester's package.",
-      )
-    )
-      return;
-    try {
-      await api.post(`/portal/admin/pt-sessions/${req.id}/cancel`);
-      setActiveId(null);
-      await load();
-    } catch {
-      setError("Couldn't cancel the request. Please try again.");
-    }
+    await cancelSession(api, "admin", req.id, note);
+    setActiveId(null);
+    await load();
   }
 
   return (
@@ -186,7 +176,21 @@ export default function PtRequestsPage() {
           request={active}
           onClose={() => setActiveId(null)}
           onSchedule={() => setSchedFor(active)}
-          onCancel={() => handleCancel(active)}
+          onCancel={() => setCancelFor(active)}
+        />
+      )}
+      {cancelFor && (
+        <CancelPtDialog
+          open
+          onOpenChange={(open) => !open && setCancelFor(null)}
+          title={cancelFor.status === "scheduled" ? "Cancel session" : "Cancel request"}
+          consequence={
+            cancelFor.status === "scheduled"
+              ? ptCancelConfirm(cancelFor)
+              : "Cancel this pending request? The sessions it was holding go back to the requester's package."
+          }
+          onConfirm={(note) => cancelWithNote(cancelFor, note)}
+          errorMessage={(err) => sessionActionErrorMessage(err, "Couldn't cancel the request")}
         />
       )}
       {schedFor && (

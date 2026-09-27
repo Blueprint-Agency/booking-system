@@ -55,6 +55,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
   let coachA!: Staff
   let coachB!: Staff
   let adminAtTwo!: Staff
+  let ptConfigBefore: typeof import('../db/schema').ptBookingConfig.$inferSelect | undefined
 
   const emailFor = (name: string) => `${name.toLowerCase().replace(/\s+/g, '-')}@${DOMAIN}`
 
@@ -337,10 +338,28 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     coachA = await staff(one, 'coach-a', 'instructor')
     coachB = await staff(one, 'coach-b', 'instructor')
     adminAtTwo = await staff(two, 'pt-admin', 'admin')
+    ;[ptConfigBefore] = await harness.db
+      .select()
+      .from(schema.ptBookingConfig)
+      .where(eq(schema.ptBookingConfig.tenantId, one.id))
   })
 
   after(async () => {
     if (!harness) return
+    // The Book in advance tests edit studio one's window as this file's admin;
+    // put it back as it was, so the admin's row can go and no later file sees
+    // this one's window.
+    if (ptConfigBefore) {
+      await harness.db
+        .update(schema.ptBookingConfig)
+        .set({
+          bookInAdvanceDays: ptConfigBefore.bookInAdvanceDays,
+          minBookInAdvanceDays: ptConfigBefore.minBookInAdvanceDays,
+          updatedAt: ptConfigBefore.updatedAt,
+          updatedByStaffId: ptConfigBefore.updatedByStaffId,
+        })
+        .where(eq(schema.ptBookingConfig.tenantId, one.id))
+    }
     const ours = `%@${DOMAIN}`
     const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
     const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
@@ -537,13 +556,22 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(pair), 10)
   })
 
-  test('PT-116 a slot dated today or earlier in Singapore is refused; tomorrow is accepted', async () => {
+  // The studio's Book in advance window, set through the admin's own route.
+  const setPtWindow = (body: { min_book_in_advance_days?: number; book_in_advance_days?: number }) =>
+    harness.app.request('/api/v1/portal/admin/policy/pt', {
+      method: 'PATCH',
+      headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+  test('PT-116 a slot sooner than the studio\'s minimum Book in advance days in Singapore is refused; the minimum day is accepted', async () => {
     const gus = await member(one, 'Gus Early')
     const solo = await givePt(one, gus, '1on1')
     // A Singapore calendar day, `days` from today there.
     const sgDay = (days: number) => new Date(Date.now() + 8 * HOUR + days * DAY).toISOString().slice(0, 10)
+    await expectStatus(await setPtWindow({ min_book_in_advance_days: 3, book_in_advance_days: 7 }), 200)
 
-    for (const day of [sgDay(0), sgDay(-1)]) {
+    for (const day of [sgDay(2), sgDay(0), sgDay(-1)]) {
       const refused = await expectStatus(
         await submit(one, gus, {
           sessionType: '1on1',
@@ -557,6 +585,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
         400,
       )
       assert.equal(refused.error, 'slot_date_too_soon')
+      assert.equal(refused.min_book_in_advance_days, 3)
     }
     assert.equal((await requestsOf(gus)).length, 0)
     assert.equal(await sessionsLeft(solo), 10)
@@ -564,9 +593,155 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     await requestOk(one, gus, {
       sessionType: '1on1',
       clientPackageId: solo,
-      slots: [{ proposedDate: sgDay(1), startTime: '09:00', endTime: '10:00' }],
+      slots: [{ proposedDate: sgDay(3), startTime: '09:00', endTime: '10:00' }],
     })
     assert.equal(await sessionsLeft(solo), 9)
+  })
+
+  test('PT-120 a minimum Book in advance above the maximum is refused and nothing changes', async () => {
+    await expectStatus(await setPtWindow({ min_book_in_advance_days: 3, book_in_advance_days: 7 }), 200)
+    const refused = await expectStatus(await setPtWindow({ min_book_in_advance_days: 8 }), 400)
+    assert.equal(refused.error, 'min_book_in_advance_after_max')
+    const lowered = await expectStatus(await setPtWindow({ book_in_advance_days: 2 }), 400)
+    assert.equal(lowered.error, 'min_book_in_advance_after_max')
+    const [row] = await harness.db
+      .select()
+      .from(schema.ptBookingConfig)
+      .where(eq(schema.ptBookingConfig.tenantId, one.id))
+    assert.equal(row!.minBookInAdvanceDays, 3)
+    assert.equal(row!.bookInAdvanceDays, 7)
+  })
+
+  test('PT-117 a slot past the studio\'s Book in advance days is refused; the last day is accepted, and the public read names the setting', async () => {
+    const ivy = await member(one, 'Ivy Ahead')
+    const solo = await givePt(one, ivy, '1on1')
+    const sgDay = (days: number) => new Date(Date.now() + 8 * HOUR + days * DAY).toISOString().slice(0, 10)
+    await expectStatus(await setPtWindow({ min_book_in_advance_days: 3, book_in_advance_days: 7 }), 200)
+
+    const config = await expectStatus(
+      await harness.app.request('/api/v1/public/pt-booking-config', {
+        headers: { 'X-Tenant-Slug': one.slug },
+      }),
+      200,
+    )
+    assert.deepEqual(config, { min_book_in_advance_days: 3, book_in_advance_days: 7 })
+
+    const refused = await expectStatus(
+      await submit(one, ivy, {
+        sessionType: '1on1',
+        clientPackageId: solo,
+        slots: [
+          { proposedDate: sgDay(4), startTime: '09:00', endTime: '10:00' },
+          { proposedDate: sgDay(8), startTime: '09:00', endTime: '10:00' },
+        ],
+      }),
+      400,
+    )
+    assert.equal(refused.error, 'slot_date_too_far')
+    assert.equal(refused.book_in_advance_days, 7)
+    assert.equal((await requestsOf(ivy)).length, 0)
+    assert.equal(await sessionsLeft(solo), 10)
+
+    await requestOk(one, ivy, {
+      sessionType: '1on1',
+      clientPackageId: solo,
+      slots: [{ proposedDate: sgDay(7), startTime: '09:00', endTime: '10:00' }],
+    })
+    assert.equal(await sessionsLeft(solo), 9)
+  })
+
+  test('PT-118 staff cancel with a reason: the member and staff read it; a blank one and a member\'s own cancel record none', async () => {
+    const jo = await member(one, 'Jo Reason')
+    const solo = await givePt(one, jo, '1on1')
+    const withNote = (by: Staff, path: string, note: string) =>
+      harness.app.request(path, {
+        method: 'POST',
+        headers: { ...by.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note }),
+      })
+
+    // An admin cancels a pending request, saying why.
+    const pending = await requestOk(one, jo, { sessionType: '1on1', clientPackageId: solo })
+    const cancelled = await expectStatus(
+      await withNote(adminAtOne, `/api/v1/portal/admin/pt-sessions/${pending}/cancel`, '  Coach is away that week.  '),
+      200,
+    )
+    assert.equal(cancelled.pt_request.cancel_note, 'Coach is away that week.')
+    const mine = (await myRequests(jo)).find(r => r.id === pending)
+    assert.equal(mine.cancel_note, 'Coach is away that week.')
+
+    // An instructor cancels the session they run.
+    const booked = await requestOk(one, jo, { sessionType: '1on1', clientPackageId: solo })
+    await scheduled(booked)
+    await expectStatus(
+      await withNote(coachA, `/api/v1/portal/instructor/pt-requests/${booked}/cancel`, 'Studio closed for repairs.'),
+      200,
+    )
+    assert.equal((await myRequests(jo)).find(r => r.id === booked).cancel_note, 'Studio closed for repairs.')
+
+    // Blank is no reason at all.
+    const blank = await requestOk(one, jo, { sessionType: '1on1', clientPackageId: solo })
+    await expectStatus(await withNote(adminAtOne, `/api/v1/portal/admin/pt-sessions/${blank}/cancel`, '   '), 200)
+    assert.equal((await requestRow(blank)).cancelNote, null)
+
+    // A JSON Content-Type with no body at all is a cancel with no reason, as a
+    // bare cancel always was — not a refusal.
+    const bare = await requestOk(one, jo, { sessionType: '1on1', clientPackageId: solo })
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/pt-sessions/${bare}/cancel`, {
+        method: 'POST',
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+      }),
+      200,
+    )
+    assert.equal((await requestRow(bare)).status, 'cancelled_before_scheduled')
+    assert.equal((await requestRow(bare)).cancelNote, null)
+
+    // The member's own cancel carries none.
+    const own = await requestOk(one, jo, { sessionType: '1on1', clientPackageId: solo })
+    await expectStatus(await memberCancel(jo, own), 200)
+    assert.equal((await requestRow(own)).cancelNote, null)
+  })
+
+  test('PT-119 staff schedule with a note: the requester and staff read it; none sent is none recorded', async () => {
+    const kit = await member(one, 'Kit Moved')
+    const solo = await givePt(one, kit, '1on1')
+
+    const moved = await requestOk(one, kit, { sessionType: '1on1', clientPackageId: solo })
+    const res = await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/pt-sessions/${moved}/schedule`, {
+        method: 'POST',
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...scheduleBody(one, {}),
+          instructor_id: coachA.staffId,
+          note: 'Your times were taken, so we agreed this one on WhatsApp.',
+        }),
+      }),
+      201,
+    )
+    assert.equal(res.pt_request.schedule_note, 'Your times were taken, so we agreed this one on WhatsApp.')
+    assert.equal(
+      (await myRequests(kit)).find(r => r.id === moved).schedule_note,
+      'Your times were taken, so we agreed this one on WhatsApp.',
+    )
+
+    const plain = await requestOk(one, kit, { sessionType: '1on1', clientPackageId: solo })
+    await scheduled(plain)
+    assert.equal((await myRequests(kit)).find(r => r.id === plain).schedule_note, null)
+
+    // Moved to another start, the note no longer describes the session.
+    const sessionId = res.pt_request.session.id as string
+    const later = far()
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/pt-sessions/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ starts_at: later.toISOString(), ends_at: new Date(later.getTime() + HOUR).toISOString() }),
+      }),
+      200,
+    )
+    assert.equal((await myRequests(kit)).find(r => r.id === moved).schedule_note, null)
   })
 
   test('PT-15 an expired PT package is refused and nothing is debited', async () => {

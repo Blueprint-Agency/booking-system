@@ -323,13 +323,8 @@ export function cancelClass(api: Api, classId: string): Promise<unknown> {
   return api.post(`/portal/admin/schedule/classes/${classId}/cancel`);
 }
 
-/**
- * Cancelling a private session is done against the PT *request* — pass
- * `SchedulePtDetail.pt_request_id`, never the session id.
- */
-export function cancelPtRequest(api: Api, ptRequestId: string): Promise<unknown> {
-  return api.post(`/portal/admin/pt-sessions/${ptRequestId}/cancel`);
-}
+// A private session is cancelled against its PT *request*, with the staff's
+// reason: `cancelSession` in ./pt-manual, passed `SchedulePtDetail.pt_request_id`.
 
 export function cancelCorporateSession(api: Api, sessionId: string): Promise<unknown> {
   return api.post(`/portal/admin/corporate-sessions/${sessionId}/cancel`);

@@ -39,7 +39,6 @@ import { WORKSHOP_CANCEL_CONFIRM } from "@/lib/workshop-cancel";
 import {
   cancelClass,
   cancelCorporateSession,
-  cancelPtRequest,
   fetchClassDetail,
   fetchCorporatePackageBrief,
   fetchCorporateSession,
@@ -56,7 +55,8 @@ import {
   type ScheduleCorporateSession,
   type SchedulePtDetail,
 } from "@/lib/schedule";
-import { isManual, ptCancelConfirm, sessionActionErrorMessage } from "@/lib/pt-manual";
+import { cancelSession, isManual, ptCancelConfirm, sessionActionErrorMessage } from "@/lib/pt-manual";
+import { CancelPtDialog } from "@/components/pt-requests/cancel-pt-dialog";
 import { PtSessionMembers } from "@/components/schedule/pt-session-members";
 import {
   fetchActiveClassTypes,
@@ -637,7 +637,7 @@ function PtDetail({ id }: { id: string }) {
   const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -670,19 +670,15 @@ function PtDetail({ id }: { id: string }) {
       setActionError("The member who requested this session was deleted, so it cannot be cancelled here.");
       return;
     }
-    const ptRequestId = data.pt_request_id;
-    if (!confirm(ptCancelConfirm(data))) return;
-    setCancelBusy(true);
     setActionError(null);
-    try {
-      // Cancellation is against the PT request, not this session.
-      await cancelPtRequest(api, ptRequestId);
-      await load();
-    } catch (err) {
-      setActionError(sessionActionErrorMessage(err, "Couldn't cancel the session"));
-    } finally {
-      setCancelBusy(false);
-    }
+    setCancelOpen(true);
+  }
+
+  async function cancelWithNote(note: string | null) {
+    if (!api || !data?.pt_request_id) return;
+    // Cancellation is against the PT request, not this session.
+    await cancelSession(api, "admin", data.pt_request_id, note);
+    await load();
   }
 
   if (loading) return <LoadingDetail label="private session" />;
@@ -722,18 +718,22 @@ function PtDetail({ id }: { id: string }) {
               variant="ghost"
               size="sm"
               onClick={handleCancelPt}
-              disabled={cancelBusy}
               className="text-error hover:text-error"
             >
-              {cancelBusy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Ban className="h-4 w-4" />
-              )}
+              <Ban className="h-4 w-4" />
               Cancel session
             </Button>
           ) : undefined
         }
+      />
+
+      <CancelPtDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title="Cancel session"
+        consequence={ptCancelConfirm(data)}
+        onConfirm={cancelWithNote}
+        errorMessage={(err) => sessionActionErrorMessage(err, "Couldn't cancel the session")}
       />
 
       {actionError && (

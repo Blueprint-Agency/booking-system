@@ -33,6 +33,45 @@ export function ptSlotStart(s: PtProposedSlot): string {
 }
 
 /**
+ * Whether a time staff are about to schedule is none of the member's proposals:
+ * no slot on that date starting at that time — and, on an older request whose
+ * slots carry an end, ending then too. Then the scheduling form offers a note
+ * to the member saying why. A request with nothing proposed (a manual
+ * session's) has nothing to be off.
+ */
+export function ptOffProposal(
+  slots: PtProposedSlot[],
+  date: string,
+  startTime: string,
+  endTime: string,
+): boolean {
+  if (slots.length === 0) return false;
+  return !slots.some(
+    (s) =>
+      s.proposed_date === date &&
+      ptSlotStart(s) === startTime &&
+      (s.end_time === null || hhmm(s.end_time) === endTime),
+  );
+}
+
+/**
+ * What is wrong with a Book in advance window an admin is about to save, or
+ * null. The server refuses a minimum past the maximum
+ * (`min_book_in_advance_after_max`); this says so before the request is sent.
+ */
+export function ptBookingWindowProblem(minDays: number, maxDays: number): string | null {
+  const whole = (n: number) => Number.isInteger(n) && n >= 1 && n <= 365;
+  if (!whole(minDays) || !whole(maxDays)) return "Both must be whole days between 1 and 365.";
+  if (minDays > maxDays) return "The minimum can't be more days ahead than the maximum.";
+  return null;
+}
+
+/** What staff write to the member, trimmed; null when there is nothing to send. */
+export function ptNoteOrNull(note: string): string | null {
+  return note.trim() || null;
+}
+
+/**
  * End as HH:MM, for prefilling a scheduling form: the proposed end where there
  * is one, else an hour after the start for staff to adjust.
  */
@@ -53,6 +92,10 @@ export interface ApiPtRequest {
   status: PtStatus;
   session_type: "1on1" | "2on1";
   message: string | null;
+  // Staff's note to the member when the time scheduled was not one they proposed.
+  schedule_note: string | null;
+  // Staff's reason for cancelling, as the member sees it.
+  cancel_note: string | null;
   // `portal` marks a manual session staff created with no member request.
   origin: "member" | "portal";
   created_at: string;

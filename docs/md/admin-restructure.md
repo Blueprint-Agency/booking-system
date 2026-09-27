@@ -306,7 +306,14 @@ A standalone, quota-based pack that any client may purchase **once only** — en
 The catalogue list shows each package's session count and validity.
 
 **Booking config:**
-- `book_in_advance_days` — how many days ahead a client can submit a PT request.
+- `min_book_in_advance_days` — the soonest a client may propose a PT session, in days after today (default 3).
+- `book_in_advance_days` — the latest, in days after today; also how long a pending request waits before it expires.
+- A minimum above the maximum is refused (`min_book_in_advance_after_max`); the page says so before saving. Both are editable here and in Global Policy.
+
+**Staff notes to the member** (PT Requests queue, the session's page, the instructor's queue and session page):
+- **Cancel** opens a dialog saying what happens to the sessions held, with an optional **Reason** (500 characters) the member reads on their booking (`cancel_note`).
+- **Schedule** offers an optional **Note to the member** only when the date and start chosen match none of the member's proposed slots (`schedule_note`), to say why.
+- The request drawer shows both to staff.
 
 ---
 

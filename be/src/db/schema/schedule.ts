@@ -568,6 +568,12 @@ export const ptRequests = pgTable(
     // when they see it. Defaults false so rows from before it, or from an older
     // archive, never celebrate.
     approvalUnseen: boolean('approval_unseen').notNull().default(false),
+    // Why staff scheduled a time other than the ones the member proposed,
+    // shown to the member. Optional; null when nothing was said.
+    scheduleNote: text('schedule_note'),
+    // Why staff cancelled the request or its session, shown to the member.
+    // Optional; null on a member's own cancel and on expiry.
+    cancelNote: text('cancel_note'),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
     resolvedByStaffId: uuid('resolved_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',

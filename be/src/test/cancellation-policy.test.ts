@@ -245,7 +245,9 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
         locationId: at.locationId,
         sessionType: '1on1',
         clientPackageId: packageId,
-        slots: [{ proposedDate: '2030-01-15', startTime: '09:00', endTime: '10:00' }],
+        // Inside the studio's Book in advance window, which a request must be,
+        // counted from the app's clock: these tests stand it a week out.
+        slots: [{ proposedDate: new Date(harness.clock.now().getTime() + 5 * DAY).toISOString().slice(0, 10), startTime: '09:00', endTime: '10:00' }],
       }),
     })
     return (await expectStatus(res, 201)).pt_request_id as string

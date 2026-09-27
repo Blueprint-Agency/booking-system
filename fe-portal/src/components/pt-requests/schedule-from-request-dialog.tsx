@@ -17,7 +17,15 @@ import {
   InstructorOption,
   useInstructorsOnLeave,
 } from "@/components/schedule/instructor-leave";
-import { type ApiPtRequest, ptSlotEnd, ptSlotStart, ptSlotTime } from "@/lib/pt-requests";
+import {
+  type ApiPtRequest,
+  ptNoteOrNull,
+  ptOffProposal,
+  ptSlotEnd,
+  ptSlotStart,
+  ptSlotTime,
+} from "@/lib/pt-requests";
+import { ScheduleNoteField } from "@/components/pt-requests/schedule-note-field";
 
 // Codes only this dialog raises. A room or instructor clash is NOT here — it
 // arrives as `schedule_conflict` carrying the specific sentence, which
@@ -87,6 +95,8 @@ export function ScheduleFromRequestDialog({
   const [partnerLinking, setPartnerLinking] = useState(false);
   const [partnerLinkError, setPartnerLinkError] = useState<string | null>(null);
   const onLeave = useInstructorsOnLeave(date);
+  const [note, setNote] = useState("");
+  const offProposal = ptOffProposal(currentRequest.slots, date, startTime, endTime);
 
   // Partner must be a member before a 2on1 can be scheduled (BE enforces too).
   const partnerBlocked =
@@ -187,6 +197,9 @@ export function ScheduleFromRequestDialog({
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
         instructor_pay_sgd: payOrNull(instructorPay),
+        // Only with a time the member did not propose: a note typed and then
+        // left behind by picking one of their slots is not sent.
+        note: offProposal ? ptNoteOrNull(note) : null,
       });
       onScheduled();
     } catch (e) {
@@ -382,6 +395,9 @@ export function ScheduleFromRequestDialog({
             </select>
           </div>
         </div>
+        {offProposal && (
+          <ScheduleNoteField id="pt-schedule-note" value={note} onChange={setNote} disabled={saving} />
+        )}
         {err && (
           <p className="rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
             {err}

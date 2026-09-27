@@ -53,6 +53,12 @@ export interface CancelPtRequestInput {
    * (un-triaged) requests, nor sessions assigned to another instructor.
    */
   requireOwnInstructorId?: string
+  /**
+   * Why staff cancelled, shown to the member on their booking. Optional, and
+   * recorded only for a staff cancel (source='admin'): a member's own cancel
+   * and an expiry carry none.
+   */
+  note?: string | null
 }
 
 export interface CancelPtRequestResult {
@@ -101,6 +107,16 @@ export async function cancelPtRequest(
 
     const cost = ptSessionCost(req.sessionType)
     const resolvedByStaffId = source === 'admin' ? (actorStaffId ?? null) : null
+
+    // Written first, in this transaction, so every branch below — the manual
+    // session's included — carries it, and a refused cancel rolls it back.
+    const cancelNote = source === 'admin' ? input.note?.trim() || null : null
+    if (cancelNote) {
+      await tx
+        .update(ptRequests)
+        .set({ cancelNote })
+        .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+    }
 
     // Refund `n` sessions to the exact debited package (ledger locks the row,
     // re-derives `active` and writes the audit entry).
