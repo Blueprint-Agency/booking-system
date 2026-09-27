@@ -520,11 +520,12 @@ The studio import — `POST /api/v1/platform/tenants/:id/import` (form fields) o
 default; empty studio only) or `replace`, which needs `confirm_slug` equal to the current
 slug (`400 confirmation_mismatch`, checked at start and again under a row lock). From any
 status. One transaction: every studio table emptied children first (the same
-`clearStudioRows` a deletion uses), then the archive written as a restore writes it. Kept:
-the studio's logins — each archive `clients` / `staff_users` row is linked to the login the
-studio already has for its email, so passwords, second factors and sessions carry on —
-`tenant_settings` (the archive's is not applied), payment credentials, the `tenants` row
-and `former_slugs`. It never reactivates a suspended studio. Recorded in the studio's own
+`clearStudioRows` a deletion uses), then the archive written as a restore writes it. Logins
+follow the archive: each archive `clients` / `staff_users` row is linked to the login the
+studio already has for its email, so that person's password, second factor and sessions carry
+on; every other `staff` / `client` login at the studio is deleted with its sessions,
+credentials, second factor and verifications. Kept: `tenant_settings` (the archive's is not
+applied), payment credentials, the `tenants` row and `former_slugs`. It never reactivates a suspended studio. Recorded in the studio's own
 `audit_log` as `tenant.replaced_from_archive` (`system` actor, the operator's email, the
 archive's source and counts). One import or replace per studio at a time (the
 `tenant_imports` partial unique index). Integration test: `be/src/test/tenant-replace.test.ts`.

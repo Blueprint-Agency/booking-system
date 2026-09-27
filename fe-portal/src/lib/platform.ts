@@ -269,6 +269,8 @@ export interface ImportSummary {
   /** True when the archive is what let this studio open: it was created with no
    *  admin and therefore suspended, and the archive brought its own staff. */
   opened: boolean;
+  /** Sign-ins a replace deleted because their email is not in the archive. Absent on jobs finished before it was added. */
+  logins_removed?: { client: number; staff: number };
 }
 
 /** Download a studio's whole archive. */

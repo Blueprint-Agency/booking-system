@@ -695,8 +695,10 @@ rehearsal passed and the preflight has been answered.
    Into a Tenant that already has a build (step 5's second paragraph): the Tenant's ⋯ menu →
    **Replace from archive**, choose the zip and type the Tenant's slug. Every row the Tenant holds
    is deleted and the new build written in its place, in one transaction — a failure leaves the
-   previous build as it was. Everyone who already set a password on the Tenant keeps it, and their
-   second factor; a person new in this build gets a login with no password, as on a first import.
+   previous build as it was. Everyone in the new build who already set a password on the Tenant
+   keeps it, and their second factor; a person new in this build gets a login with no password, as
+   on a first import. **Anyone not in the new build loses their login on the Tenant** — an account
+   registered on it by hand for a test included — with its password and sessions.
    Branding, settings, payment account and status are left as they were: a replace never opens a
    suspended Tenant, so reactivate it by hand if that is the next step. From a script, the same
    is `POST /api/v1/platform/tenants/<id>/import` with `mode=replace` and `confirm_slug=<slug>`
@@ -775,9 +777,11 @@ step 9. Two differences and nothing else:
 
 Each new build goes over the **same** rehearsal Tenant, with **Replace from archive** (step 7),
 never a delete and a fresh provision. Build it with `--tenant` set to that Tenant's id, so its ids
-are kept and verify compares like with like. The staff who set a password on the rehearsal
-studio — the owner checking the schedule, anyone trying the portal — keep that password, their
-second factor and any session they have open through every rebuild.
+are kept and verify compares like with like. The staff and members in the build who set a
+password on the rehearsal studio — the owner checking the schedule, anyone trying the portal —
+keep that password, their second factor and any session they have open through every rebuild.
+A test account registered on the rehearsal studio with an email the build does not have is
+deleted by each rebuild; register it again afterwards if it is still wanted.
 
 Record, on the rehearsal's ticket: how long the download took — and, apart, how long its Class
 Waitlists scrape took, since it opens a screen per future class and grows with the timetable —

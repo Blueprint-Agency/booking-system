@@ -113,6 +113,8 @@ export interface RestoreSummary {
   remapped: boolean
   /** True when the archive is what let this studio open for business. Never after a replace. */
   opened: boolean
+  /** Logins a replace deleted because their email is not in the archive; zero for a restore. */
+  logins_removed: { client: number; staff: number }
 }
 
 function view(row: TenantImportRow): ImportJobView {
@@ -480,6 +482,7 @@ export async function restoreArchive(
     tables: summary.written,
     from: { slug: summary.sourceTenant.slug, name: summary.sourceTenant.name },
     remapped: summary.remapped,
+    logins_removed: summary.loginsRemoved,
     opened,
   }
 }

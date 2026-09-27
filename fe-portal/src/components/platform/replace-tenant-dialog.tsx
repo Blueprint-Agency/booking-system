@@ -10,8 +10,8 @@ import type { PlatformTenant } from "@/lib/platform";
  * Everything the studio holds is deleted and the file's rows written in its
  * place — so, like deleting a studio, it asks for the studio's address typed
  * out, and the backend checks the same thing again. What it keeps is said
- * before it is asked: its people's sign-ins, its branding and settings, its
- * payment account and its status.
+ * before it is asked: the sign-ins of the people in the archive (everyone
+ * else's go), its branding and settings, its payment account and its status.
  *
  * The dialog only gathers the file and the confirmation. The upload itself is
  * the page's, so it shows in the studio's row with the same progress panel as a
@@ -52,9 +52,13 @@ export function ReplaceTenantDialog({ tenant, onOpenChange, onConfirm }: Replace
               written in their place. Anything made since the archive was built is lost.
             </p>
             <p className="mt-2">
-              Kept as they are: everyone’s sign-in — members and staff who already sign in here
-              keep their email, password and second factor — and the studio’s address, name,
-              branding, settings, payment account, term and status.
+              Sign-ins follow the archive: a member or staff member whose email is in it keeps
+              their password and second factor. Anyone whose email is not in it loses their
+              sign-in here.
+            </p>
+            <p className="mt-2">
+              Kept as they are: the studio’s address, name, branding, settings, payment account,
+              term and status.
             </p>
             <p className="mt-2 text-muted">
               Export the studio first if there is any chance you will want its current data back.

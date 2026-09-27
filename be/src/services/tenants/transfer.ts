@@ -222,6 +222,8 @@ export type ImportSummary = {
   written: Record<string, number>
   /** Rows a replace deleted first, per table; empty for a restore. */
   cleared: Record<string, number>
+  /** Logins a replace deleted because their email is not in the archive, per pool; zero for a restore. */
+  loginsRemoved: Record<keyof typeof LOGIN_POOLS, number>
   /** Total rows written. */
   total: number
   /** The studio the archive came from, which is not the one it was written to. */
@@ -304,14 +306,20 @@ const ACCOUNT_TABLES = { clients: 'client', staff_users: 'staff' } as const
  * refusing a studio that has rows, it deletes them — children first, in the
  * same transaction as the writes, so a failure part-way leaves the studio as it
  * was — and then writes the archive exactly as a restore would, ids kept by the
- * same rule: once the rows are gone, this studio's own ids are free again. What
- * it does not touch is everything the archive cannot supply: the logins (each
- * `clients` / `staff_users` row is linked to the login this studio already has
- * for its email, so passwords, second factors and open sessions carry on), the
- * `tenant_settings` row (the archive's is not applied), the payment credentials
- * (`KEPT_ON_REPLACE`), the Tenant row and its former Slugs. It is recorded in
- * the studio's own audit log, written after the rows so the archive's own log
- * does not take it with it.
+ * same rule: once the rows are gone, this studio's own ids are free again.
+ *
+ * Logins follow the archive's people. Each `clients` / `staff_users` row is
+ * linked to the login this studio already has for its email, so that person's
+ * password, second factor and open sessions carry on. A login whose email the
+ * archive does not have — someone who registered since the build, or was left
+ * out of it — is deleted with everything hanging off it (`removeLoginsNotIn`):
+ * the studio is the archive's people, and nobody else can still sign in to it.
+ *
+ * What a replace does not touch is everything else the archive cannot supply:
+ * the `tenant_settings` row (the archive's is not applied), the payment
+ * credentials (`KEPT_ON_REPLACE`), the Tenant row and its former Slugs. It is
+ * recorded in the studio's own audit log, written after the rows so the
+ * archive's own log does not take it with it.
  */
 export async function importTenant(
   targetTenantId: string,
@@ -361,6 +369,7 @@ export async function importTenant(
   const deferred = Object.fromEntries(Object.entries(tableOrder.deferred).filter(([t]) => order.includes(t)))
   const written: Record<string, number> = {}
   const cleared: Record<string, number> = {}
+  const loginsRemoved = { client: 0, staff: 0 }
 
   // A shallow copy, so ensuring accounts below replaces tables in this import's
   // view of the archive rather than in the caller's object — brought up to the
@@ -447,6 +456,14 @@ export async function importTenant(
         step('accounts', 1)
       }
       rows[table] = linked
+    }
+    // A replace's studio is the archive's people: every other login goes, in
+    // this transaction, so a failed replace leaves them all as they were.
+    if (replace) {
+      for (const [table, pool] of Object.entries(ACCOUNT_TABLES)) {
+        const kept = (rows[table] ?? []).map(row => String(row.auth_user_id))
+        loginsRemoved[pool] = await removeLoginsNotIn(targetTenantId, pool, kept)
+      }
     }
 
     // Pass one: every row, with the references no ordering can satisfy left
@@ -581,6 +598,7 @@ export async function importTenant(
           },
           counts: written,
           cleared: Object.values(cleared).reduce((a, b) => a + b, 0),
+          loginsRemoved,
           remapped: identity.size > 0,
         },
       })
@@ -598,6 +616,7 @@ export async function importTenant(
     mode: replace ? 'replace' : 'restore',
     written,
     cleared,
+    loginsRemoved,
     total: Object.values(written).reduce((a, b) => a + b, 0),
     sourceTenant: archive.manifest.tenant,
     remapped: identity.size > 0,
@@ -661,6 +680,56 @@ export async function clearStudioRows(
     onTable()
   }
   return cleared
+}
+
+/**
+ * Each studio pool's user table, and its verifications — the one login table
+ * with no foreign key to its user. Sessions, credentials and second factors go
+ * with their user by `ON DELETE CASCADE`.
+ */
+const LOGIN_POOLS = {
+  client: { users: 'client_auth_users', verifications: 'client_auth_verifications' },
+  staff: { users: 'staff_auth_users', verifications: 'staff_auth_verifications' },
+} as const
+
+/**
+ * Delete this studio's logins in `pool` other than `kept`, inside the caller's
+ * `withTenant`: the user, and through it their sessions, password and second
+ * factor. Their verifications — a password-reset link, an emailed code — name
+ * the login by its id (in `value`) or by its email (as the whole `identifier`,
+ * or after a `prefix:` / `prefix-`), and go too. How many logins went.
+ */
+async function removeLoginsNotIn(
+  tenantId: string,
+  pool: keyof typeof LOGIN_POOLS,
+  kept: readonly string[],
+): Promise<number> {
+  const { users, verifications } = LOGIN_POOLS[pool]
+  const removed = await db.execute<{ id: string; email: string }>(sql`
+    DELETE FROM ${sql.identifier(users)}
+    WHERE tenant_id = ${tenantId} AND NOT (id = ANY(${pgArray(kept)}::text[]))
+    RETURNING id, lower(email) AS email
+  `)
+  if (removed.length === 0) return 0
+  await db.execute(sql`
+    DELETE FROM ${sql.identifier(verifications)} v
+    USING unnest(${pgArray(removed.map(r => r.id))}::text[], ${pgArray(removed.map(r => r.email))}::text[]) AS r(id, email)
+    WHERE v.tenant_id = ${tenantId}
+      AND (
+        strpos(v.value, r.id) > 0
+        OR lower(v.identifier) = r.email
+        OR right(lower(v.identifier), length(r.email) + 1) IN (':' || r.email, '-' || r.email)
+      )
+  `)
+  // A member session a removed admin opened as that member (#118) names the
+  // admin's login in another pool, with no key to cascade on.
+  if (pool === 'staff') {
+    await db.execute(sql`
+      DELETE FROM client_auth_sessions
+      WHERE tenant_id = ${tenantId} AND impersonated_by = ANY(${pgArray(removed.map(r => r.id))}::text[])
+    `)
+  }
+  return removed.length
 }
 
 /** The Slug the operator typed names this studio — for a replace and a delete alike. */

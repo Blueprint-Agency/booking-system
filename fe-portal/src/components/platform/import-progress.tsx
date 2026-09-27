@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui";
-import type { ImportJob, ImportPhase } from "@/lib/platform";
+import type { ImportJob, ImportPhase, ImportSummary } from "@/lib/platform";
 
 /** What each phase is doing, in the operator's words. */
 const PHASE_LABELS: Record<ImportPhase, string> = {
@@ -195,7 +195,7 @@ export function ImportProgress({
           </p>
         )}
         <p className="text-xs text-muted">
-          {s.mode === "replace" ? "Everyone’s sign-in was kept. " : ""}
+          {s.mode === "replace" ? replacedSignIns(s) : ""}
           {s.remapped && s.mode !== "replace" ? `${s.from.name} is untouched. ` : ""}
           {s.opened ? `${studioName} is now open.` : ""}
           {job.finished_at ? ` Finished ${new Date(job.finished_at).toLocaleString()}.` : ""}
@@ -226,6 +226,14 @@ export function ImportProgress({
       </div>
     </Panel>
   );
+}
+
+/** What a replace did to sign-ins: kept for everyone in the archive, removed for everyone else. */
+function replacedSignIns(s: ImportSummary): string {
+  const removed = (s.logins_removed?.client ?? 0) + (s.logins_removed?.staff ?? 0);
+  return removed > 0
+    ? `Sign-ins kept for everyone in the archive; ${removed.toLocaleString()} for people not in it were removed. `
+    : "Sign-ins kept for everyone in the archive. ";
 }
 
 function Panel({

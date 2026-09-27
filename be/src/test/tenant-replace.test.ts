@@ -252,15 +252,30 @@ describe('replacing a studio from an archive', { skip: integrationTestsEnabled ?
     assert.equal(again.status, 200, await again.clone().text())
   })
 
-  test('SUP-14 rows not in the archive are gone; the archive’s people name the studio’s existing logins, a newcomer gets a fresh one with no password, and a login for someone left out is kept', async () => {
+  test('SUP-14 rows not in the archive are gone; the archive’s people name the studio’s existing logins, a newcomer gets a fresh one with no password, and the login of anyone not in the archive is deleted with its password, sessions, second factor and verifications', async () => {
     const target = await studio('links')
     const source = await studio('links-src')
     const staying = email('staying', target)
     const leaving = email('leaving', target)
     const newcomer = email('newcomer', target)
+    const leavingStaff = email('leaving-staff', target)
 
     const stayingLogin = await member(target, staying, 'Staying')
+    // Registered on the new system since the build: a password, a session open,
+    // a reset link outstanding. And a staff member with a second factor.
     const leavingLogin = await member(target, leaving, 'Leaving')
+    const leavingSession = (await harness.signInAs('client', leaving, target)).Authorization!.slice('Bearer '.length)
+    await harness.db.insert(schema.clientAuthVerifications).values({
+      id: randomUUID(), identifier: leaving, value: 'pending-code', expiresAt: new Date(Date.now() + 3_600_000), tenantId: target.id,
+    })
+    const leavingStaffLogin = await admin(target, leavingStaff, 'Leaving Staff')
+    await harness.signInAs('staff', leavingStaff, target)
+    await harness.db.insert(schema.staffAuthTwoFactors).values({
+      id: randomUUID(), secret: 'leaving-secret', backupCodes: 'leaving-backup', userId: leavingStaffLogin, tenantId: target.id,
+    })
+    await harness.db.insert(schema.staffAuthVerifications).values({
+      id: randomUUID(), identifier: `reset-password:${randomUUID()}`, value: leavingStaffLogin, expiresAt: new Date(Date.now() + 3_600_000), tenantId: target.id,
+    })
     await location(target, 'Old Room')
 
     await member(source, staying, 'Staying')
@@ -292,11 +307,34 @@ describe('replacing a studio from an archive', { skip: integrationTestsEnabled ?
       .where(and(eq(schema.clientAuthAccounts.userId, fresh!.id), eq(schema.clientAuthAccounts.providerId, 'credential')))
     assert.deepEqual(passwords, [], 'and it has no password yet')
 
-    const kept = await harness.db
+    assert.deepEqual(summary.logins_removed, { client: 1, staff: 1 })
+
+    // Every trace of the two logins at this studio is gone.
+    const left = async (table: string, where: ReturnType<typeof sql>) =>
+      (await harness.db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM ${sql.identifier(table)} WHERE tenant_id = ${target.id} AND ${where}`))[0]!.n
+    assert.equal(await left('client_auth_users', sql`id = ${leavingLogin}`), 0, 'the member’s login is deleted')
+    assert.equal(await left('client_auth_accounts', sql`user_id = ${leavingLogin}`), 0, 'with their password')
+    assert.equal(await left('client_auth_sessions', sql`user_id = ${leavingLogin}`), 0, 'and their sessions')
+    assert.equal(await left('client_auth_verifications', sql`identifier = ${leaving}`), 0, 'and their pending codes')
+    assert.equal(await left('staff_auth_users', sql`id = ${leavingStaffLogin}`), 0, 'the staff member’s login is deleted')
+    assert.equal(await left('staff_auth_accounts', sql`user_id = ${leavingStaffLogin}`), 0)
+    assert.equal(await left('staff_auth_sessions', sql`user_id = ${leavingStaffLogin}`), 0)
+    assert.equal(await left('staff_auth_two_factors', sql`user_id = ${leavingStaffLogin}`), 0, 'with their second factor')
+    assert.equal(await left('staff_auth_verifications', sql`value = ${leavingStaffLogin}`), 0, 'and their reset link')
+
+    // The session they had open is refused, and their password no longer signs in.
+    const me = await harness.app.request('/api/v1/me', { headers: headersFor('client', target, leavingSession) })
+    assert.equal(me.status, 401, await me.text())
+    const signIn = await auth('client', target, '/sign-in/email', { email: leaving, password: HARNESS_PASSWORD })
+    assert.notEqual(signIn.status, 200, 'the old password signs nobody in')
+    assert.equal(signIn.headers.get('set-auth-token'), null)
+
+    // The person who stayed keeps their login.
+    const [still] = await harness.db
       .select({ id: schema.clientAuthUsers.id })
       .from(schema.clientAuthUsers)
-      .where(eq(schema.clientAuthUsers.id, leavingLogin))
-    assert.equal(kept.length, 1, 'a login for someone no longer in the archive is kept')
+      .where(eq(schema.clientAuthUsers.id, stayingLogin))
+    assert.ok(still, 'a person in the archive keeps their login')
   })
 
   test('SUP-15 a replace leaves the studio’s settings, Slug, name, status, Term, payment credentials and former Slugs as they were, and a suspended studio stays suspended', async () => {
@@ -413,9 +451,15 @@ describe('replacing a studio from an archive', { skip: integrationTestsEnabled ?
     await location(acme, 'Acme Room')
     await harness.signInAs('client', shared, acme)
     await member(source, shared, 'At Northwind Again')
+    // Left out of northwind's build, and a member of acme too: only northwind's login goes.
+    const dropped = email('dropped', northwind)
+    await member(northwind, dropped, 'Dropped At Northwind')
+    await member(acme, dropped, 'Still At Acme')
+    await harness.signInAs('client', dropped, acme)
 
     const before = await snapshot(acme)
-    await json(await replaceNow(northwind, await zipOf(await exported(source))), 200)
+    const summary = await json(await replaceNow(northwind, await zipOf(await exported(source))), 200)
+    assert.equal(summary.logins_removed.client, 1)
     assert.deepEqual(await snapshot(acme), before)
   })
 
