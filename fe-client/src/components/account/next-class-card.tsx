@@ -54,7 +54,7 @@ export interface Ticket {
 
 const TICKET_TONE: Record<TicketKind, { card: string; qr: string; eyebrow: string }> = {
   class: { card: "bg-accent", qr: "text-accent-deep", eyebrow: "My next class" },
-  pt: { card: "bg-gold", qr: "text-gold-deep", eyebrow: "My next PT session" },
+  pt: { card: "ticket-gold", qr: "text-gold-deep", eyebrow: "My next PT session" },
   workshop: { card: "bg-green", qr: "text-green-deep", eyebrow: "My next workshop" },
 };
 

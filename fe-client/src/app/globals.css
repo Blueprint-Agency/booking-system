@@ -268,6 +268,43 @@
   }
 }
 
+/* The PT session ticket (`components/account/next-class-card.tsx`): burnished
+   gold, dark at the corners and bright across the middle, with a hairline
+   rim and a glint of light that sweeps across it every few seconds. The
+   glint is the top background layer, so it passes under the text. The
+   brightest stop stays dark enough to carry white text. */
+@keyframes goldSheen {
+  from {
+    background-position: 100% 0, 0 0;
+  }
+  45%,
+  to {
+    background-position: 0% 0, 0 0;
+  }
+}
+
+.ticket-gold {
+  background-color: #7d5413;
+  background-image:
+    linear-gradient(105deg, transparent 42%, rgba(255, 236, 190, 0.3) 50%, transparent 58%),
+    linear-gradient(135deg, #4a300a 0%, #8a5f17 32%, #b3873a 52%, #7d5413 74%, #3f2808 100%);
+  background-size: 260% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 224, 150, 0.35),
+    inset 0 1px 0 rgba(255, 240, 200, 0.35),
+    0 12px 32px -10px rgba(110, 72, 14, 0.6);
+  animation: goldSheen 5.5s ease-in-out 0.6s infinite both;
+}
+
+/* A still card, glint off-stage, rather than the global rule's one flash. */
+@media (prefers-reduced-motion: reduce) {
+  .ticket-gold {
+    animation: none;
+    background-position: 0% 0, 0 0;
+  }
+}
+
 /* ── Page transitions (`components/layout/page-transition.tsx`) ──────────────
    The new page rises in. Fill mode `backwards`, not `both`: a transform left on
    the wrapper after the animation would become the containing block for every
