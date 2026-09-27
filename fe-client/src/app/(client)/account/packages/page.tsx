@@ -76,7 +76,7 @@ export default function YourPackagesPage() {
   return (
     <div>
       <AccountPageHeader
-        title="Your packages"
+        title="My packages"
         action={
           <Link href="/packages" className={cn(BTN_PRIMARY, "hidden sm:inline-flex min-h-[44px]")}>
             <Plus className="h-4 w-4" aria-hidden />

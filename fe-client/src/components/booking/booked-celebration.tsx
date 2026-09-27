@@ -48,7 +48,7 @@ export function BookedCelebration({
       details: [
         `${cls.class_type.name} with ${cls.instructor.name}.`,
         "Arrive a few minutes early to settle in.",
-        link ? `Your bookings: ${link}` : null,
+        link ? `My bookings: ${link}` : null,
       ]
         .filter(Boolean)
         .join("\n"),

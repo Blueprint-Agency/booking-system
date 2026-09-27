@@ -22,8 +22,8 @@ const prefix = (href: string) => (p: string) => p.startsWith(href);
  * account menu (on `/account`, under "Up next") both list them.
  */
 export const ACCOUNT_SECTIONS: AccountNavItem[] = [
-  { href: "/account/bookings", label: "Your bookings", hint: "Classes, PT, workshops and requests", icon: CalendarCheck, isActive: prefix("/account/bookings") },
-  { href: "/account/packages", label: "Your packages", hint: "Active, not started and ended", icon: Ticket, isActive: prefix("/account/packages") },
+  { href: "/account/bookings", label: "My bookings", hint: "Classes, PT, workshops and requests", icon: CalendarCheck, isActive: prefix("/account/bookings") },
+  { href: "/account/packages", label: "My packages", hint: "Active, not started and ended", icon: Ticket, isActive: prefix("/account/packages") },
   { href: "/account/merch", label: "Merch", hint: "Items to collect at the studio", icon: ShoppingBag, isActive: prefix("/account/merch") },
   { href: "/account/profile", label: "Profile & security", hint: "Details, saved cards, password", icon: UserCircle, isActive: prefix("/account/profile") },
 ];

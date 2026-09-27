@@ -58,7 +58,7 @@ function AccountMenu() {
   return (
     <section aria-labelledby="account-menu-heading" className="lg:hidden">
       <h2 id="account-menu-heading" className="mb-3 text-base font-bold text-ink">
-        Your account
+        My account
       </h2>
       <div className={cn(CARD, "overflow-hidden")}>
         <Link

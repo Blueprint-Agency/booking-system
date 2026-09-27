@@ -191,7 +191,7 @@ function YourBookings() {
   return (
     <div>
       <AccountPageHeader
-        title="Your bookings"
+        title="My bookings"
         action={
           <Link href="/" className={cn(BTN_BOOK, "hidden sm:inline-flex min-h-[44px]")}>
             <CalendarPlus className="h-4 w-4" aria-hidden />

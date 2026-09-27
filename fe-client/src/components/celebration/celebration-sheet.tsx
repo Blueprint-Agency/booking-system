@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarPlus, Download, MapPin, PartyPopper, UserRound } from "lucide-react";
+import { CalendarPlus, MapPin, PartyPopper, UserRound } from "lucide-react";
 import { Portal } from "@/components/ui/portal";
-import { BTN_PRIMARY, BTN_SECONDARY, SHEET_BACKDROP, SHEET_HANDLE, SHEET_PANEL } from "@/components/ui/styles";
-import { googleCalendarUrl, icsFile, icsFileName, type CalendarEvent } from "@/lib/add-to-calendar";
+import { BTN_PRIMARY, SHEET_BACKDROP, SHEET_HANDLE, SHEET_PANEL } from "@/components/ui/styles";
+import { googleCalendarUrl, type CalendarEvent } from "@/lib/add-to-calendar";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 
@@ -26,8 +26,7 @@ export function usePickedLine(lines: readonly string[]): string {
  * booked, a request sent, a request approved. A confetti burst (none under
  * reduced motion), the headline, one light line, what it was about, and, when
  * there is a time to keep, the way into their calendar: Google's prefilled
- * event, or a `.ics` for Apple Calendar, Outlook and the rest
- * (`lib/add-to-calendar.ts`).
+ * event (`lib/add-to-calendar.ts`).
  */
 export function CelebrationSheet({
   id,
@@ -51,20 +50,6 @@ export function CelebrationSheet({
 }) {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   useBodyScrollLock(true);
-
-  const downloadIcs = () => {
-    if (!event) return;
-    const blob = new Blob([icsFile(event)], { type: "text/calendar;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = icsFileName(event.title);
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    // Some browsers read the blob after the click returns.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
 
   return (
     <Portal>
@@ -114,16 +99,10 @@ export function CelebrationSheet({
 
           <div className="mt-6 flex flex-col gap-2">
             {event && (
-              <>
-                <a href={googleCalendarUrl(event)} target="_blank" rel="noopener noreferrer" className={BTN_PRIMARY}>
-                  <CalendarPlus className="h-4 w-4" aria-hidden />
-                  Add to Google Calendar
-                </a>
-                <button type="button" onClick={downloadIcs} className={BTN_SECONDARY}>
-                  <Download className="h-4 w-4" aria-hidden />
-                  Apple / Outlook (.ics)
-                </button>
-              </>
+              <a href={googleCalendarUrl(event)} target="_blank" rel="noopener noreferrer" className={BTN_PRIMARY}>
+                <CalendarPlus className="h-4 w-4" aria-hidden />
+                Add to Google Calendar
+              </a>
             )}
             <button
               type="button"
