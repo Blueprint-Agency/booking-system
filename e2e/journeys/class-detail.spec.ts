@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openDayOf } from '../src/schedule'
+import { closeBookedCelebration, openDayOf } from '../src/schedule'
 import { signInMember, studio } from '../src/studio'
 
 /**
@@ -38,6 +38,7 @@ test('BKG-06, BKG-30 a member opens a class detail overlay from the schedule and
   // The same Book sheet the row opens, with the plan already picked.
   await expect(sheet.getByRole('radio', { name: catalogue.packageName })).toBeChecked()
   await sheet.getByRole('button', { name: 'Book class' }).click()
+  await closeBookedCelebration(page)
   await expect(row.getByText('Booked', { exact: true }).locator('visible=true')).toBeVisible()
 
   // A class the member is booked into opens the same way, and says so.

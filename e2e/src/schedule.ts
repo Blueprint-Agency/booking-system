@@ -22,3 +22,18 @@ export async function openDayOf(page: Page, className: string): Promise<void> {
     await expect(header).toHaveAttribute('aria-expanded', 'true', { timeout: 1_000 })
   }).toPass()
 }
+
+/**
+ * The celebration a booked class opens (fe-client-features.md §3.1): it says
+ * the class is booked, offers it to the member's calendar, and is closed with
+ * Done, as a member does before going on with the schedule underneath.
+ */
+export async function closeBookedCelebration(page: Page): Promise<void> {
+  const booked = page.getByRole('dialog', { name: "You're booked!" })
+  await expect(booked.getByRole('link', { name: 'Add to Google Calendar' })).toHaveAttribute(
+    'href',
+    /^https:\/\/calendar\.google\.com\/calendar\/render\?action=TEMPLATE&/,
+  )
+  await booked.getByRole('button', { name: 'Done' }).click()
+  await expect(booked).toBeHidden()
+}

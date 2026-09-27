@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openDayOf } from '../src/schedule'
+import { closeBookedCelebration, openDayOf } from '../src/schedule'
 import { signInMember, signInStaff, studio } from '../src/studio'
 
 /**
@@ -29,6 +29,7 @@ test('a member shows their code at the desk and is checked in', async ({ browser
   // already picked, so booking stays one tap.
   await expect(sheet.getByRole('radio', { name: catalogue.packageName })).toBeChecked()
   await sheet.getByRole('button', { name: 'Book class' }).click()
+  await closeBookedCelebration(member)
   await expect(row.getByText('Booked', { exact: true }).locator('visible=true')).toBeVisible()
 
   await member.reload()

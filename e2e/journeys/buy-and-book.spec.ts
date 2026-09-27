@@ -1,5 +1,5 @@
 import { expect, test, type Frame, type Page } from '@playwright/test'
-import { openDayOf } from '../src/schedule'
+import { closeBookedCelebration, openDayOf } from '../src/schedule'
 import { signInMember, studio } from '../src/studio'
 
 /**
@@ -39,6 +39,7 @@ test('PAY-16 a member buys a plan with a test card and books a class', async ({ 
   // already picked, so booking stays one tap: here, the plan just bought.
   await expect(sheet.getByRole('radio', { name: catalogue.packageName })).toBeChecked()
   await sheet.getByRole('button', { name: 'Book class' }).click()
+  await closeBookedCelebration(page)
   await expect(row.getByText('Booked', { exact: true }).locator('visible=true')).toBeVisible()
 })
 

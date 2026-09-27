@@ -54,7 +54,6 @@ export function ClassFeed() {
     from,
     to,
     location_id: selectedLocation || undefined,
-    instructor_id: instructor || undefined,
   });
   // `?? []` and not a default argument: the hook returns null while loading,
   // and a default only fires for undefined.
@@ -64,14 +63,23 @@ export function ClassFeed() {
   const policy = useCancellationPolicy();
   const { canBook, loaded: canBookLoaded, entitlements } = useCanBookClass();
 
-  const all = useMemo(() => classes ?? [], [classes]);
+  // The feed is read without the instructor filter and narrowed here, so the
+  // instructor choice lists everyone teaching in the window (at the picked
+  // Location) whichever one is picked, and the member can switch straight to
+  // another. Like the server's `instructor_id` filter, this matches the main
+  // instructor.
+  const unfiltered = useMemo(() => classes ?? [], [classes]);
+  const all = useMemo(
+    () => (instructor ? unfiltered.filter((c) => c.instructor.id === instructor) : unfiltered),
+    [unfiltered, instructor],
+  );
   const showLocationBadge = !selectedLocation;
 
   const instructorOptions = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const c of all) seen.set(c.instructor.id, c.instructor.name);
+    for (const c of unfiltered) seen.set(c.instructor.id, c.instructor.name);
     return Array.from(seen, ([value, label]) => ({ value, label }));
-  }, [all]);
+  }, [unfiltered]);
 
   const groups = useMemo(() => {
     const upcoming = all

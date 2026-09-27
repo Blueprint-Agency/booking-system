@@ -37,6 +37,7 @@ import { toast } from "sonner";
 import { LeaveWaitlistDialog } from "@/components/booking/leave-waitlist-dialog";
 import { ConfirmBookingSheet } from "@/components/booking/confirm-booking-sheet";
 import { ClassDetailOverlay } from "@/components/booking/class-detail-overlay";
+import { BookedCelebration } from "@/components/booking/booked-celebration";
 import { CancelBookingDialog, type CancelOutcome } from "@/components/account/cancel-booking-dialog";
 import type { ApiBooking } from "@/components/account/class-bookings";
 import { canCancelClass } from "@/lib/cancellation-copy";
@@ -78,6 +79,8 @@ export function ClassRow({
   const [booking, setBooking] = useState(false);
   // The confirmation open: the Book sheet, where the member picks what pays.
   const [confirmBook, setConfirmBook] = useState(false);
+  // The booking just made, celebrated with a way into the member's calendar.
+  const [celebrate, setCelebrate] = useState<{ bookingId: string; paidWith: string | null } | null>(null);
   // The class detail overlay, opened by a tap anywhere on the row.
   const [showDetail, setShowDetail] = useState(false);
   // The class's Package rule takes none of the member's packages — learnt from
@@ -165,8 +168,11 @@ export function ClassRow({
       setBookError(null);
       setBooked(true);
       setSpotsLeft((s) => Math.max(0, s - 1));
-      // Worth saying only when there was a choice to make.
-      if (choices > 1 && res?.paid_with?.name) toast.success(`Booked with ${res.paid_with.name}.`);
+      setCelebrate({
+        bookingId: res.booking_id,
+        // Worth saying only when there was a choice to make.
+        paidWith: choices > 1 ? (res.paid_with?.name ?? null) : null,
+      });
     } catch (err) {
       const code = errCode(err);
       if (code === ERROR_CODES.insufficient_credits) {
@@ -536,6 +542,15 @@ export function ClassRow({
           addOnRateSgd={entitlements?.cross_location_rate_sgd ?? null}
           onConfirm={handleBook}
           onClose={() => setConfirmBook(false)}
+        />
+      )}
+
+      {celebrate && (
+        <BookedCelebration
+          cls={cls}
+          bookingId={celebrate.bookingId}
+          paidWith={celebrate.paidWith}
+          onClose={() => setCelebrate(null)}
         />
       )}
 

@@ -205,6 +205,69 @@
   }
 }
 
+/* The booked celebration (`components/booking/booked-celebration.tsx`): the
+   icon pops, a ring pulses out once, and confetti bursts from behind it and
+   fades. Each bit flies along its own `--confetti-angle`. */
+@keyframes celebratePop {
+  from {
+    opacity: 0;
+    transform: scale(0.3) rotate(-20deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.2) rotate(8deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+@keyframes celebrateRing {
+  from {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes confettiBurst {
+  from {
+    opacity: 1;
+    transform: rotate(var(--confetti-angle)) translateY(0) rotate(0);
+  }
+  70% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: rotate(var(--confetti-angle)) translateY(calc(-1 * var(--confetti-distance))) rotate(220deg);
+  }
+}
+
+.celebrate-pop {
+  animation: celebratePop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;
+}
+
+.celebrate-ring {
+  animation: celebrateRing 0.4s ease-out both;
+}
+
+.confetti-bit {
+  opacity: 0;
+  animation: confettiBurst 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) 0.15s both;
+}
+
+/* No burst at all for reduced motion: the global rule would still flash it. */
+@media (prefers-reduced-motion: reduce) {
+  .confetti-bit {
+    display: none;
+  }
+}
+
 /* ── Page transitions (`components/layout/page-transition.tsx`) ──────────────
    The new page rises in. Fill mode `backwards`, not `both`: a transform left on
    the wrapper after the animation would become the containing block for every

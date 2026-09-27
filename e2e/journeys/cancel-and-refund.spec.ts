@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { openDayOf } from '../src/schedule'
+import { closeBookedCelebration, openDayOf } from '../src/schedule'
 import { signInMember, studio } from '../src/studio'
 
 /**
@@ -29,6 +29,7 @@ test('CXL-01 a member cancels inside the window and the credit comes back', asyn
   // already picked, so booking stays one tap.
   await expect(sheet.getByRole('radio', { name: catalogue.packageName })).toBeChecked()
   await sheet.getByRole('button', { name: 'Book class' }).click()
+  await closeBookedCelebration(page)
   await expect(row.getByText('Booked', { exact: true }).locator('visible=true')).toBeVisible()
   await page.reload()
   await expectCredits(page, full - 1)
