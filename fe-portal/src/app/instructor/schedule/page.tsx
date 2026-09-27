@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarPlus, Loader2 } from "lucide-react";
+import { CalendarPlus, Loader2, UserPlus } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -16,6 +16,7 @@ import { ApiError } from "@/lib/api";
 import { formatDate, formatTime, todayIso } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
 import { waitingTag } from "@/lib/class-waitlist";
+import { ManualPtSessionDialog } from "@/components/schedule/manual-pt-session-dialog";
 
 interface ScheduleEntry {
   kind: "class" | "workshop" | "pt" | "corporate";
@@ -73,6 +74,7 @@ export default function InstructorSchedulePage() {
   const [reason, setReason] = useState("");
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [addingPt, setAddingPt] = useState(false);
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -163,13 +165,30 @@ export default function InstructorSchedulePage() {
         title="My schedule"
         description="Your classes and private sessions over the next 60 days."
         actions={
-          <Link href="/instructor/schedule/new/class">
-            <Button>
-              <CalendarPlus className="h-4 w-4" /> New class
+          <div className="flex flex-wrap gap-2">
+            {/* A private session agreed outside the app, run by this instructor (#336). */}
+            <Button variant="secondary" onClick={() => setAddingPt(true)}>
+              <UserPlus className="h-4 w-4" /> PT session
             </Button>
-          </Link>
+            <Link href="/instructor/schedule/new/class">
+              <Button>
+                <CalendarPlus className="h-4 w-4" /> New class
+              </Button>
+            </Link>
+          </div>
         }
       />
+
+      {addingPt && (
+        <ManualPtSessionDialog
+          role="instructor"
+          onClose={() => setAddingPt(false)}
+          onCreated={() => {
+            setAddingPt(false);
+            void load();
+          }}
+        />
+      )}
 
       {error && (
         <div className="rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">

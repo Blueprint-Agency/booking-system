@@ -14,6 +14,9 @@ import { and, eq, isNotNull, lte } from 'drizzle-orm'
 import { clientPackages } from '../../db/schema/packages'
 import { manualAdjustments } from '../../db/schema/ledger'
 import type { Tx } from './ledger'
+import { activationExpiry, isDormant } from './validity'
+import { ConflictError } from '../../shared/errors'
+import { now as clockNow } from '../../lib/clock'
 
 /**
  * Flip `active` off on the member's own packages whose expiry has passed —
@@ -57,6 +60,38 @@ export async function activatePackage(
     .update(clientPackages)
     .set({ expiresAt, activatedByPtSessionId })
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
+}
+
+/**
+ * A PT package Activates when its first session is put on the calendar, not
+ * when the member asks for one (be/docs/adr/0011): a package the request left
+ * Dormant starts its clock now, from the scheduling moment, and records this
+ * session as the one that started it. A package already running keeps its
+ * date. The row is locked, so two requests on one Dormant package scheduled
+ * at once Activate it once. A manual session's seat Activates its package the
+ * same way (services/pt-sessions/manual.ts).
+ */
+export async function activateOnSchedule(
+  tx: Tx,
+  tenantId: string,
+  clientPackageId: string,
+  ptSessionId: string,
+): Promise<void> {
+  const [pkg] = await tx
+    .select({
+      kind: clientPackages.kind,
+      expiresAt: clientPackages.expiresAt,
+      durationMonths: clientPackages.durationMonths,
+      validityDays: clientPackages.validityDays,
+    })
+    .from(clientPackages)
+    .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
+    .for('update')
+    .limit(1)
+  if (!pkg || !isDormant(pkg)) return
+  const until = activationExpiry(pkg, clockNow())
+  if (!until) throw new ConflictError('package_not_consumable')
+  await activatePackage(tx, tenantId, clientPackageId, until, ptSessionId)
 }
 
 /**

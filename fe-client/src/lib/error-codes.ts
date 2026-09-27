@@ -282,6 +282,7 @@ export const ERROR_CODES = {
   self_delete_forbidden: "self_delete_forbidden",
   self_role_edit_forbidden: "self_role_edit_forbidden",
   session_cancelled: "session_cancelled",
+  session_ended: "session_ended",
   session_full: "session_full",
   session_not_found: "session_not_found",
   session_not_started: "session_not_started",

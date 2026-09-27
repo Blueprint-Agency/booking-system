@@ -23,9 +23,7 @@ import { bookings } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
 import { debitCredits, refundCredits, type Tx } from '../packages/ledger'
-import { activatePackage } from '../packages/activation'
-import { activationExpiry, isDormant } from '../packages/validity'
-import { now as clockNow } from '../../lib/clock'
+import { activateOnSchedule } from '../packages/activation'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
 import { assertInstructorsAvailable, plannedInstructorIds } from '../schedule/occupancy'
@@ -36,6 +34,7 @@ import {
   type RosterPatch,
 } from '../schedule/roster'
 import { planPtTypeChange, ptSessionCost } from './cost'
+import { retypeManualSessionInTx } from './manual'
 import { maySchedulePtRequest } from './binding'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
@@ -96,38 +95,6 @@ async function boundInstructorFor(
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
     .limit(1)
   return pkg?.boundInstructorId ?? null
-}
-
-/**
- * A PT package Activates when its first session is put on the calendar, not
- * when the member asks for one (be/docs/adr/0011): a package the request left
- * Dormant starts its clock now, from the scheduling moment, and records this
- * session as the one that started it. A package already running keeps its
- * date. The row is locked, so two requests on one Dormant package scheduled
- * at once Activate it once. A manual session's seat Activates its package the
- * same way (./manual.ts).
- */
-export async function activateOnSchedule(
-  tx: Tx,
-  tenantId: string,
-  clientPackageId: string,
-  ptSessionId: string,
-): Promise<void> {
-  const [pkg] = await tx
-    .select({
-      kind: clientPackages.kind,
-      expiresAt: clientPackages.expiresAt,
-      durationMonths: clientPackages.durationMonths,
-      validityDays: clientPackages.validityDays,
-    })
-    .from(clientPackages)
-    .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
-    .for('update')
-    .limit(1)
-  if (!pkg || !isDormant(pkg)) return
-  const until = activationExpiry(pkg, clockNow())
-  if (!until) throw new ConflictError('package_not_consumable')
-  await activatePackage(tx, tenantId, clientPackageId, until, ptSessionId)
 }
 
 export async function schedulePtRequest(
@@ -290,6 +257,15 @@ export interface UpdatePtSessionInput {
    * for every other change.
    */
   partnerClientId?: string
+  /**
+   * A manual session only (#335): the partner's package that pays their seat
+   * on an upgrade. Absent, the PT Default payer does.
+   */
+  partnerClientPackageId?: string
+  /** A manual session only: staff said "Add anyway" to the partner's seat warnings. */
+  override?: boolean
+  /** Who is making the change — recorded on a manual session's seat movements. */
+  actorStaffId: string
   /** undefined = leave unchanged; null = clear; number = set (SGD). */
   instructorPaySgd?: number | null
   /** When provided, REPLACES the full supporting-instructor roster for this session. */
@@ -521,25 +497,71 @@ export async function updatePtSession(
     // together. Re-read under FOR UPDATE so two concurrent retypes can't both
     // see the old type and debit twice.
     if (patch.sessionType !== undefined) {
+      // The request before the session, the order cancelPtRequest locks them
+      // in, so a type change racing a cancel waits rather than deadlocks.
+      const [req] = existing.ptRequestId
+        ? await tx
+            .select({
+              id: ptRequests.id,
+              origin: ptRequests.origin,
+              status: ptRequests.status,
+              clientId: ptRequests.clientId,
+              coClientId: ptRequests.coClientId,
+            })
+            .from(ptRequests)
+            .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, existing.ptRequestId)))
+            .for('update')
+            .limit(1)
+        : []
       const [locked] = await tx
-        .select({ sessionType: ptSessions.sessionType, ptRequestId: ptSessions.ptRequestId })
+        .select({
+          sessionType: ptSessions.sessionType,
+          ptRequestId: ptSessions.ptRequestId,
+          instructorId: ptSessions.instructorId,
+          startsAt: ptSessions.startsAt,
+          endsAt: ptSessions.endsAt,
+          lifecycle: ptSessions.lifecycle,
+        })
         .from(ptSessions)
         .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
         .for('update')
         .limit(1)
       if (!locked) throw new NotFoundError('pt_session_not_found')
+      // Asked again under the lock: a cancel that committed since the read
+      // above must not be followed by a seat, or a debit, on a dead session.
+      if (locked.lifecycle !== 'active') throw new ConflictError('session_cancelled')
       // Setting the type to what it already is is a no-op, not a second debit.
       if (locked.sessionType !== patch.sessionType) {
         // A session whose requester was permanently deleted (#144) has no request
         // left to reconcile credits against.
-        if (!locked.ptRequestId) throw new ConflictError('pt_requester_deleted')
-        await reconcileSessionType(tx, tenantId, {
-          sessionId: id,
-          ptRequestId: locked.ptRequestId,
-          from: locked.sessionType,
-          to: patch.sessionType,
-          ...(patch.partnerClientId !== undefined ? { partnerClientId: patch.partnerClientId } : {}),
-        })
+        if (!locked.ptRequestId || !req) throw new ConflictError('pt_requester_deleted')
+        if (req.origin === 'portal') {
+          // A manual session is paid seat by seat, so the partner joins or
+          // leaves on their own package (./manual.ts). Its seat rule judges
+          // the binding against the instructor the session ends up with.
+          await retypeManualSessionInTx(tx, tenantId, {
+            session: {
+              id,
+              instructorId: patch.instructorId ?? locked.instructorId,
+              startsAt: patch.startsAt ?? locked.startsAt,
+              endsAt: locked.endsAt,
+            },
+            req,
+            to: patch.sessionType,
+            ...(patch.partnerClientId !== undefined ? { partnerClientId: patch.partnerClientId } : {}),
+            partnerClientPackageId: patch.partnerClientPackageId ?? null,
+            actorStaffId: patch.actorStaffId,
+            override: patch.override === true,
+          })
+        } else {
+          await reconcileSessionType(tx, tenantId, {
+            sessionId: id,
+            ptRequestId: locked.ptRequestId,
+            from: locked.sessionType,
+            to: patch.sessionType,
+            ...(patch.partnerClientId !== undefined ? { partnerClientId: patch.partnerClientId } : {}),
+          })
+        }
       }
     }
 

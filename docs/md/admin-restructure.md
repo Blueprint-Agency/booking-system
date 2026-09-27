@@ -420,7 +420,7 @@ It is replaced by the **PT Request** flow (§9): clients submit a request with t
 
 ## 9. PT Requests (Private Session Booking Flow)
 
-The Availability system is gone (§8). PT sessions now exist only as the resolution of a client-submitted **PT Request**.
+The Availability system is gone (§8). PT sessions now exist only as the resolution of a **PT Request** — one a client submitted, or one the portal writes itself for a session staff add manually (§9d).
 
 **Invariant:** in v1, **no `PtSession` can exist without a matching `PtRequest`.**
 
@@ -466,12 +466,14 @@ PT Requests carry a `location_id` chosen by the client at request time. The `/ad
 
 ### 9d. Two converging entry points
 
-Both paths share `ScheduleFromRequestDialog`:
+Scheduling a request goes through `ScheduleFromRequestDialog` from either of two places (Add manually, below, is a third path with its own dialog):
 
 1. **From PT Requests** → row drawer → "Schedule" button.
 2. **From Schedule** → "+ PT Session" button → picker dialog listing pending requests → same dialog.
 
-The scheduler can no longer create a PT session ad-hoc — it must always originate from a request, preserving the invariant.
+**Add manually (#336).** The "+ PT Session" picker also offers **Add manually**, whether or not requests are pending, for a session agreed outside the app. It opens `ManualPtSessionDialog` seeded with the clicked slot: session type (1-on-1 / 2-on-1), date, start and end, instructor, instructor pay (optional, as on the class form), Location and room. Below the form, a member search and roster like the class roster's seats one member on a 1-on-1 and up to two on a 2-on-1, nobody twice. Each member row reads the member's PT packages for the chosen type and instructor (`GET …/seat-candidates`, re-read when either changes): the one that can pay is shown, or a **Pay with** select when more than one can, each named with its sessions left, type, bound instructor and end date (a Dormant one says when it would run until), Ineligible ones greyed with their reason. A package that bends what the member bought — the other session type, or (Admin only) bound to another instructor — shows a warning band with **Add anyway**; for an Instructor another coach's package is a refusal. Saving is refused with no member, and sends `override` only when staff accepted a warning. The **Instructor** portal reaches the same dialog from **PT session** on My schedule: the instructor is them and not editable, and pay is left for an admin.
+
+The invariant still holds: a manual session is created with a portal-origin request behind it (be-portal.md § `/pt-requests/manual`).
 
 ### 9e. Status lifecycle + refund policy
 

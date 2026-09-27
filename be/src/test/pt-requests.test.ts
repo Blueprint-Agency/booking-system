@@ -2070,6 +2070,363 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(soloReq.coClientId, null)
   })
 
+  // ── Cancel, remove a member, change type: a manual session (#335) ────────
+  //
+  // Everything after creation works as it does for a request session, priced
+  // per seat: each attendee is refunded, or charged, on their own package.
+
+  const adminRemoveMember = (by: Staff, sessionId: string, clientId: string) =>
+    harness.app.request(`/api/v1/portal/admin/pt-sessions/sessions/${sessionId}/members/${clientId}`, {
+      method: 'DELETE',
+      headers: by.headers,
+    })
+
+  const instructorRemoveMember = (by: Staff, sessionId: string, clientId: string) =>
+    harness.app.request(`/api/v1/portal/instructor/pt-requests/sessions/${sessionId}/members/${clientId}`, {
+      method: 'DELETE',
+      headers: by.headers,
+    })
+
+  const retype = (sessionId: string, body: object) =>
+    harness.app.request(`/api/v1/portal/admin/pt-sessions/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+  const attendeeIds = async (sessionId: string) =>
+    (
+      await harness.db
+        .select({ clientId: schema.ptSessionClients.clientId })
+        .from(schema.ptSessionClients)
+        .where(eq(schema.ptSessionClients.ptSessionId, sessionId))
+    )
+      .map(a => a.clientId)
+      .sort()
+
+  const bookingOf = async (sessionId: string, who: Member) =>
+    (await bookingsOn(sessionId)).find(b => b.clientId === who.clientId)
+
+  /** A manual 2on1 with two members on it, each paying from a Dormant 2on1 package of their own. */
+  async function fullPair(name: string, opts: { startsAt?: Date; instructor?: Staff } = {}) {
+    const first = await member(one, `${name} One`)
+    const second = await member(one, `${name} Two`)
+    const firstPackage = await givePt(one, first, '2on1')
+    const secondPackage = await givePt(one, second, '2on1')
+    const made = await manualSession(
+      await adminManual(adminAtOne, [{ client_id: first.clientId }, { client_id: second.clientId }], {
+        sessionType: '2on1',
+        ...opts,
+      }),
+    )
+    assert.equal(await sessionsLeft(firstPackage), 9)
+    assert.equal(await sessionsLeft(secondPackage), 9)
+    return { first, second, firstPackage, secondPackage, ...made }
+  }
+
+  test('PT-98 staff cancel a manual 2on1: each attendee gets their one session back on their own package, both bookings are cancelled as returned, and each is recorded as a staff cancellation', async () => {
+    for (const [by, cancel] of [
+      [adminAtOne, adminCancel],
+      [coachA, instructorCancel],
+    ] as const) {
+      const tag = by === coachA ? 'I' : 'A'
+      const { first, second, firstPackage, secondPackage, requestId, sessionId } = await fullPair(`Cal Cancel ${tag}`)
+
+      const res = await expectStatus(await cancel(by, requestId), 200)
+      assert.equal(res.result.status, 'cancelled_after_scheduled')
+      assert.equal(res.result.refundedSessions, 2)
+      assert.equal(res.result.refundOutcome, 'session_returned')
+
+      assert.equal(await sessionsLeft(firstPackage), 10)
+      assert.equal(await sessionsLeft(secondPackage), 10)
+      assert.equal((await sessionRow(sessionId)).lifecycle, 'cancelled')
+      assert.equal((await requestRow(requestId)).status, 'cancelled_after_scheduled')
+      for (const who of [first, second]) {
+        const seat = await bookingOf(sessionId, who)
+        assert.equal(seat?.state, 'cancelled', who.name)
+        assert.equal(seat?.refundOutcome, 'session_returned', who.name)
+        const [cancellation, ...more] = await cancellationsOf(who)
+        assert.equal(more.length, 0)
+        assert.equal(cancellation!.bookingId, seat!.id)
+        assert.equal(cancellation!.source, 'admin')
+        assert.equal(cancellation!.refundFired, true)
+      }
+
+      // Cancelled once: again is a no-op that returns nothing more.
+      await expectStatus(await cancel(by, requestId), 200)
+      assert.equal(await sessionsLeft(firstPackage), 10)
+    }
+
+    // A seat already cancelled on its own is not paid back a second time.
+    const { second, firstPackage, secondPackage, requestId, sessionId } = await fullPair('Cam Once')
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/bookings/${(await bookingOf(sessionId, second))!.id}/cancel`, {
+        method: 'POST',
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credit: 'return' }),
+      }),
+      200,
+    )
+    const res = await expectStatus(await adminCancel(adminAtOne, requestId), 200)
+    assert.equal(res.result.refundedSessions, 1)
+    assert.equal(await sessionsLeft(firstPackage), 10)
+    assert.equal(await sessionsLeft(secondPackage), 10)
+  })
+
+  test('PT-99 a member cancels their own seat on a manual 2on1 outside the window: their session comes back, the other stays seated on an active session, and the request follows who is booked', async () => {
+    // The request's client cancels; then, on another session, its co-client.
+    for (const leaver of ['first', 'second'] as const) {
+      const pair = await fullPair(`Dee Leaves ${leaver}`)
+      const gone = pair[leaver]
+      const stays = leaver === 'first' ? pair.second : pair.first
+      const goneFrom = leaver === 'first' ? pair.firstPackage : pair.secondPackage
+      const staysOn = leaver === 'first' ? pair.secondPackage : pair.firstPackage
+
+      const res = await expectStatus(await memberCancel(gone, pair.requestId), 200)
+      assert.equal(res.status, 'seat_cancelled')
+      assert.equal(res.refundedSessions, 1)
+      assert.equal(res.refundOutcome, 'session_returned')
+
+      assert.equal(await sessionsLeft(goneFrom), 10)
+      assert.equal(await sessionsLeft(staysOn), 9, "the other attendee's balance is not touched")
+      const goneSeat = await bookingOf(pair.sessionId, gone)
+      assert.equal(goneSeat?.state, 'cancelled')
+      assert.equal(goneSeat?.refundOutcome, 'session_returned')
+      assert.equal((await bookingOf(pair.sessionId, stays))?.state, 'confirmed')
+      assert.equal((await sessionRow(pair.sessionId)).lifecycle, 'active')
+      const req = await requestRow(pair.requestId)
+      assert.equal(req.status, 'scheduled')
+      assert.equal(req.clientId, stays.clientId)
+      assert.equal(req.coClientId, null)
+      assert.deepEqual(await attendeeIds(pair.sessionId), [stays.clientId])
+      const [cancellation] = await cancellationsOf(gone)
+      assert.equal(cancellation!.source, 'client')
+      assert.equal(cancellation!.wasWithinWindow, true)
+    }
+
+    // The only member of a manual 1on1 cancelling cancels the session with them.
+    const eli = await member(one, 'Eli Solo Leaves')
+    const eliPackage = await givePt(one, eli, '1on1')
+    const solo = await manualSession(await adminManual(adminAtOne, [{ client_id: eli.clientId }]))
+    const res = await expectStatus(await memberCancel(eli, solo.requestId), 200)
+    assert.equal(res.status, 'cancelled_after_scheduled')
+    assert.equal(await sessionsLeft(eliPackage), 10)
+    assert.equal((await sessionRow(solo.sessionId)).lifecycle, 'cancelled')
+    assert.equal((await requestRow(solo.requestId)).status, 'cancelled_after_scheduled')
+
+    // A member not on the session cannot cancel it.
+    const pair = await fullPair('Eva Stranger')
+    const stranger = await member(one, 'Eva Not On It')
+    const refused = await expectStatus(await memberCancel(stranger, pair.requestId), 403)
+    assert.equal(refused.error, 'not_your_request')
+    assert.equal((await bookingOf(pair.sessionId, pair.first))?.state, 'confirmed')
+  })
+
+  test('PT-100 a member cannot cancel their seat on a manual session inside the PT window: refused, still seated, nothing returned', async () => {
+    const { first, firstPackage, requestId, sessionId } = await fullPair('Fin Late', { startsAt: near() })
+
+    const refused = await expectStatus(await memberCancel(first, requestId), 422)
+    assert.equal(refused.error, 'cancellation_window_passed')
+
+    assert.equal(await sessionsLeft(firstPackage), 9)
+    assert.equal((await bookingOf(sessionId, first))?.state, 'confirmed')
+    assert.equal((await sessionRow(sessionId)).lifecycle, 'active')
+    assert.equal((await requestRow(requestId)).status, 'scheduled')
+    assert.equal((await cancellationsOf(first)).length, 0)
+  })
+
+  test('PT-101 staff remove one member from a manual 2on1: they are refunded on their own package, the other stays, and the session stays active', async () => {
+    for (const [by, remove] of [
+      [adminAtOne, adminRemoveMember],
+      [coachA, instructorRemoveMember],
+    ] as const) {
+      const tag = by === coachA ? 'I' : 'A'
+      const { first, second, firstPackage, secondPackage, requestId, sessionId } = await fullPair(`Gus Removed ${tag}`)
+
+      const res = await expectStatus(await remove(by, sessionId, first.clientId), 200)
+      assert.equal(res.refund_outcome, 'session_returned')
+      assert.equal(res.refunded_sessions, 1)
+
+      assert.equal(await sessionsLeft(firstPackage), 10)
+      assert.equal(await sessionsLeft(secondPackage), 9)
+      const removed = await bookingOf(sessionId, first)
+      assert.equal(removed?.state, 'cancelled')
+      assert.equal(removed?.refundOutcome, 'session_returned')
+      assert.equal((await bookingOf(sessionId, second))?.state, 'confirmed')
+      assert.equal((await sessionRow(sessionId)).lifecycle, 'active')
+      const req = await requestRow(requestId)
+      assert.equal(req.status, 'scheduled')
+      assert.equal(req.clientId, second.clientId)
+      assert.equal(req.coClientId, null)
+      assert.deepEqual(await attendeeIds(sessionId), [second.clientId])
+      const [cancellation] = await cancellationsOf(first)
+      assert.equal(cancellation!.source, by === coachA ? 'instructor' : 'admin')
+      assert.equal(cancellation!.refundFired, true)
+
+      // The freed seat takes someone again.
+      const next = await member(one, `Gia Next ${tag}`)
+      await givePt(one, next, '2on1')
+      await expectStatus(await adminAddMember(adminAtOne, sessionId, { client_id: next.clientId }), 201)
+      assert.deepEqual(await attendeeIds(sessionId), [second.clientId, next.clientId].sort())
+    }
+  })
+
+  test("PT-102 removing someone not on the session, from a member's own request session, a cancelled session, or as an instructor from another coach's session is refused and changes nothing", async () => {
+    const { first, firstPackage, requestId, sessionId } = await fullPair('Hal Refused', { instructor: coachB })
+    const outsider = await member(one, 'Hal Outsider')
+
+    const notOn = await expectStatus(await adminRemoveMember(adminAtOne, sessionId, outsider.clientId), 404)
+    assert.equal(notOn.error, 'booking_not_found')
+    const notYours = await expectStatus(await instructorRemoveMember(coachA, sessionId, first.clientId), 403)
+    assert.equal(notYours.error, 'not_your_session')
+    assert.equal(await sessionsLeft(firstPackage), 9)
+    assert.equal((await bookingOf(sessionId, first))?.state, 'confirmed')
+
+    const hana = await member(one, 'Hana Requested')
+    const hanaPackage = await givePt(one, hana, '1on1')
+    const requestSession = await scheduled(await requestOk(one, hana, { sessionType: '1on1', clientPackageId: hanaPackage }))
+    const memberOrigin = await expectStatus(await adminRemoveMember(adminAtOne, requestSession, hana.clientId), 409)
+    assert.equal(memberOrigin.error, 'not_a_manual_session')
+    assert.equal((await bookingOf(requestSession, hana))?.state, 'confirmed')
+
+    await expectStatus(await adminCancel(adminAtOne, requestId), 200)
+    const cancelled = await expectStatus(await adminRemoveMember(adminAtOne, sessionId, first.clientId), 409)
+    assert.equal(cancelled.error, 'session_cancelled')
+
+    const away = await expectStatus(await adminRemoveMember(adminAtTwo, requestSession, hana.clientId), 404)
+    assert.equal(away.error, 'pt_session_not_found')
+
+    // A seat someone was checked in on is their attendance, not a refund; nor,
+    // on either route, is anything once the session has ended.
+    const attended = await fullPair('Hal Attended')
+    const attendedSeat = (await bookingOf(attended.sessionId, attended.first))!
+    await harness.db
+      .update(schema.bookings)
+      .set({ checkInState: 'attended' })
+      .where(eq(schema.bookings.id, attendedSeat.id))
+    const checkedIn = await expectStatus(
+      await adminRemoveMember(adminAtOne, attended.sessionId, attended.first.clientId),
+      409,
+    )
+    assert.equal(checkedIn.error, 'booking_attended')
+    assert.equal(await sessionsLeft(attended.firstPackage), 9)
+
+    const ended = await fullPair('Hal Ended')
+    await harness.db
+      .update(schema.ptSessions)
+      .set({ startsAt: new Date(Date.now() - 3 * HOUR), endsAt: new Date(Date.now() - 2 * HOUR) })
+      .where(eq(schema.ptSessions.id, ended.sessionId))
+    const over = await expectStatus(await adminRemoveMember(adminAtOne, ended.sessionId, ended.second.clientId), 409)
+    assert.equal(over.error, 'session_ended')
+    const overDown = await expectStatus(await retype(ended.sessionId, { session_type: '1on1' }), 409)
+    assert.equal(overDown.error, 'session_ended')
+    assert.equal(await sessionsLeft(ended.secondPackage), 9)
+    assert.equal((await bookingOf(ended.sessionId, ended.second))?.state, 'confirmed')
+    assert.equal((await sessionRow(ended.sessionId)).sessionType, '2on1')
+  })
+
+  test("PT-103 a manual 2on1 downgraded to 1on1 refunds the removed partner's own package; upgraded back, the new partner pays one session from their own package under the seat rule — the other attendee's balance never moves", async () => {
+    const { first, second, firstPackage, secondPackage, requestId, sessionId } = await fullPair('Ian Retype')
+
+    const down = await expectStatus(await retype(sessionId, { session_type: '1on1' }), 200)
+    assert.equal(down.session_type, '1on1')
+    assert.equal(down.capacity_online, 1)
+    assert.equal(await sessionsLeft(secondPackage), 10, 'the partner leaving gets their session back')
+    assert.equal(await sessionsLeft(firstPackage), 9)
+    const left = await bookingOf(sessionId, second)
+    assert.equal(left?.state, 'cancelled')
+    assert.equal(left?.refundOutcome, 'session_returned')
+    const kept = await bookingOf(sessionId, first)
+    assert.equal(kept?.state, 'confirmed')
+    assert.equal(kept?.creditsOrSessionsUsed, 1, 'still one seat, one session')
+    assert.deepEqual(await attendeeIds(sessionId), [first.clientId])
+    let req = await requestRow(requestId)
+    assert.equal(req.sessionType, '1on1')
+    assert.equal(req.coClientId, null)
+
+    // Upgrading needs a partner, who must be able to pay.
+    const noPartner = await expectStatus(await retype(sessionId, { session_type: '2on1' }), 400)
+    assert.equal(noPartner.error, 'partner_required')
+    const broke = await member(one, 'Ivo No Package')
+    const unpaid = await expectStatus(await retype(sessionId, { session_type: '2on1', co_client_id: broke.clientId }), 409)
+    assert.equal(unpaid.error, 'not_a_pt_package')
+
+    // A partner holding only a 1on1 package that can pay is a warning, then Add anyway.
+    const joiner = await member(one, 'Ivy Joins Up')
+    const soloPackage = await givePt(one, joiner, '1on1')
+    await givePt(one, joiner, '2on1', { sessions: 0 })
+    const warned = await expectStatus(await retype(sessionId, { session_type: '2on1', co_client_id: joiner.clientId }), 409)
+    assert.equal(warned.error, 'seat_needs_override')
+    assert.deepEqual(warned.warnings, ['session_type_mismatch'])
+    assert.equal((await sessionRow(sessionId)).sessionType, '1on1', 'nothing changed')
+    assert.equal(await sessionsLeft(soloPackage), 10)
+
+    const up = await expectStatus(
+      await retype(sessionId, { session_type: '2on1', co_client_id: joiner.clientId, override: true }),
+      200,
+    )
+    assert.equal(up.session_type, '2on1')
+    assert.equal(up.capacity_online, 2)
+    assert.equal(await sessionsLeft(soloPackage), 9)
+    assert.equal(await sessionsLeft(firstPackage), 9, "the other attendee's balance never moves")
+    const seat = (await bookingsOn(sessionId)).find(b => b.clientId === joiner.clientId && b.state === 'confirmed')
+    assert.equal(seat?.clientPackageId, soloPackage)
+    assert.equal(seat?.creditsOrSessionsUsed, 1)
+    assert.deepEqual(await attendeeIds(sessionId), [first.clientId, joiner.clientId].sort())
+    req = await requestRow(requestId)
+    assert.equal(req.sessionType, '2on1')
+    assert.equal(req.clientId, first.clientId)
+    assert.equal(req.coClientId, joiner.clientId)
+
+    // Down again, then up with a named package.
+    await expectStatus(await retype(sessionId, { session_type: '1on1' }), 200)
+    assert.equal(await sessionsLeft(soloPackage), 10)
+    const named = await givePt(one, joiner, '2on1')
+    await expectStatus(
+      await retype(sessionId, { session_type: '2on1', co_client_id: joiner.clientId, co_client_package_id: named }),
+      200,
+    )
+    assert.equal(await sessionsLeft(named), 9)
+    assert.equal(await sessionsLeft(soloPackage), 10)
+    assert.equal(await sessionsLeft(firstPackage), 9)
+  })
+
+  test("PT-104 a manual session's cancel, a member's seat cancel, a removal and a downgrade each return a package that session Activated to Dormant when in time; a staff cancel inside the window leaves them Activated", async () => {
+    // Staff cancel in time: both attendees' packages go back to Dormant.
+    const early = await fullPair('Jo Early')
+    assert.equal((await pkg(early.firstPackage)).activatedByPtSessionId, early.sessionId)
+    await expectStatus(await adminCancel(adminAtOne, early.requestId), 200)
+    await assertDormantAgain(early.firstPackage, 10, adminAtOne)
+    await assertDormantAgain(early.secondPackage, 10, adminAtOne)
+
+    // A member's own seat, a removal, a downgrade: each returns the one package.
+    const seat = await fullPair('Jo Seat')
+    await expectStatus(await memberCancel(seat.second, seat.requestId), 200)
+    await assertDormantAgain(seat.secondPackage, 10, null)
+    assert.ok((await pkg(seat.firstPackage)).expiresAt, "the other attendee's package keeps running")
+
+    const removal = await fullPair('Jo Removed')
+    await expectStatus(await adminRemoveMember(adminAtOne, removal.sessionId, removal.first.clientId), 200)
+    await assertDormantAgain(removal.firstPackage, 10, adminAtOne)
+
+    const downgrade = await fullPair('Jo Downgraded')
+    await expectStatus(await retype(downgrade.sessionId, { session_type: '1on1' }), 200)
+    await assertDormantAgain(downgrade.secondPackage, 10, adminAtOne)
+    assert.ok((await pkg(downgrade.firstPackage)).expiresAt)
+
+    // Staff cancel inside the window: refunded, still Activated.
+    const late = await fullPair('Jo Late', { startsAt: near() })
+    const firstUntil = (await pkg(late.firstPackage)).expiresAt!
+    await expectStatus(await adminCancel(adminAtOne, late.requestId), 200)
+    const kept = await pkg(late.firstPackage)
+    assert.equal(kept.expiresAt?.getTime(), firstUntil.getTime())
+    assert.equal(kept.creditsOrSessionsRemaining, 10)
+    assert.ok((await pkg(late.secondPackage)).expiresAt)
+    assert.equal((await reversalsOf(late.firstPackage)).length, 0)
+    const [cancellation] = await cancellationsOf(late.first)
+    assert.equal(cancellation!.wasWithinWindow, false)
+  })
+
   // ── The packages a member could pay a seat with (#337) ───────────────────
 
   const candidates = (path: string, by: Staff, query: Record<string, string>) =>

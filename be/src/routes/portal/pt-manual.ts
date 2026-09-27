@@ -80,6 +80,16 @@ export function addedMemberJson(clientId: string, seat: { bookingId: string; cli
 }
 
 /**
+ * `DELETE …/sessions/:id/members/:clientId`: one member off a manual session
+ * (#335), their session returned to their own package.
+ */
+export const removeMemberParam = z.object({ id: z.string().uuid(), clientId: z.string().uuid() })
+
+export function removedMemberJson(res: { refundOutcome: string; refundedSessions: number }) {
+  return { refund_outcome: res.refundOutcome, refunded_sessions: res.refundedSessions }
+}
+
+/**
  * `GET …/seat-candidates`: the member's PT packages read against a session's
  * shape, so the form can ask before the session exists. The instructor route
  * drops `instructor_id` and reads against the caller.

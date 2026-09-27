@@ -17,6 +17,7 @@ import {
   addManualPtSessionMember,
   createManualPtSession,
   listSeatCandidates,
+  removeManualPtSessionMember,
 } from '../../../services/pt-sessions/manual'
 import {
   addedMemberJson,
@@ -25,6 +26,8 @@ import {
   adminManualSessionSchema,
   adminSeatCandidatesQuery,
   manualSessionFields,
+  removedMemberJson,
+  removeMemberParam,
   seatCandidatesJson,
 } from '../pt-manual'
 
@@ -69,6 +72,10 @@ const updateSessionSchema = z.object({
   // Partner for a 1on1 → 2on1 upgrade. Only needed when the request doesn't
   // already carry a co-client. See services/pt-sessions/schedule.ts.
   co_client_id: z.string().uuid().optional(),
+  // A manual session's upgrade only (#335): the partner pays their own seat,
+  // from this package or else the Default payer, and `override` is "Add anyway".
+  co_client_package_id: z.string().uuid().optional(),
+  override: z.boolean().optional(),
   instructor_id: z.string().uuid().optional(),
   instructor_pay_sgd: z.number().min(0).nullable().optional(),
   supporting_instructors: z
@@ -224,6 +231,9 @@ const app = new Hono()
       ...(body.ends_at !== undefined ? { endsAt: new Date(body.ends_at) } : {}),
       ...(body.session_type !== undefined ? { sessionType: body.session_type } : {}),
       ...(body.co_client_id !== undefined ? { partnerClientId: body.co_client_id } : {}),
+      ...(body.co_client_package_id !== undefined ? { partnerClientPackageId: body.co_client_package_id } : {}),
+      override: body.override === true,
+      actorStaffId: c.get('staffUserId') as string,
       ...(body.instructor_pay_sgd !== undefined ? { instructorPaySgd: body.instructor_pay_sgd } : {}),
       // snake_case → the roster module's shape, and nothing else. An OMITTED
       // `pay_sgd` stays omitted (the roster keeps whatever is recorded); an
@@ -260,6 +270,19 @@ const app = new Hono()
       return c.json(addedMemberJson(body.client_id, seat), 201)
     },
   )
+  // One member off a manual session (#335), refunded on their own package;
+  // the others stay seated.
+  .delete('/sessions/:id/members/:clientId', zValidator('param', removeMemberParam), async c => {
+    const { id, clientId } = c.req.valid('param')
+    const res = await removeManualPtSessionMember(tenantId(c), {
+      ptSessionId: id,
+      clientId,
+      actorStaffId: c.get('staffUserId') as string,
+      source: 'admin',
+    })
+    c.set('auditTarget' as any, { table: 'pt_sessions', id })
+    return c.json(removedMemberJson(res))
+  })
   .post('/:id/link-partner', zValidator('param', idParam), zValidator('json', linkPartnerSchema), async c => {
     const { id } = c.req.valid('param')
     const { client_id, email } = c.req.valid('json')

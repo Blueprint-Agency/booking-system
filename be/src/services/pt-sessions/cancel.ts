@@ -7,6 +7,7 @@ import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-canc
 import { refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import { ptSessionCost } from './cost'
+import { cancelManualSessionInTx } from './manual'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
@@ -29,6 +30,10 @@ import { now as clockNow } from '../../lib/clock'
  *               action is rejected outright (hard deadline, mirroring classes).
  *               If this session Activated the package and the cancel is not
  *               late, the package returns to Dormant (be/docs/adr/0011).
+ *               A manual session (`origin = 'portal'`) is settled seat by
+ *               seat instead — staff cancel it whole, each booking refunded to
+ *               its own package; a member cancels only their own seat
+ *               (./manual.ts:cancelManualSessionInTx).
  *
  * Terminal states are an idempotent no-op. Credit movements write a
  * manual_adjustments ledger row for traceability/parity with the class path.
@@ -51,7 +56,8 @@ export interface CancelPtRequestInput {
 }
 
 export interface CancelPtRequestResult {
-  status: 'cancelled_before_scheduled' | 'cancelled_after_scheduled' | 'noop'
+  /** `seat_cancelled`: a member left a manual session that goes on without them. */
+  status: 'cancelled_before_scheduled' | 'cancelled_after_scheduled' | 'seat_cancelled' | 'noop'
   refundedSessions: number
   refundOutcome: 'session_returned' | 'forfeited' | 'n_a'
 }
@@ -71,8 +77,10 @@ export async function cancelPtRequest(
       .limit(1)
     if (!req) throw new NotFoundError('pt_request_not_found')
 
-    // Ownership: a client may only cancel their own request.
-    if (source === 'client' && clientId && req.clientId !== clientId) {
+    // Ownership: a client may only cancel their own request — or, on a manual
+    // session, where each attendee holds a seat of their own, their own seat.
+    const mayCancel = req.clientId === clientId || (req.origin === 'portal' && req.coClientId === clientId)
+    if (source === 'client' && clientId && !mayCancel) {
       throw new ForbiddenError('not_your_request')
     }
 
@@ -152,6 +160,19 @@ export async function cancelPtRequest(
     }
 
     const now = clockNow()
+
+    // A manual session has no debit on its request: each seat was paid on its
+    // own booking, so each is settled on its own package (./manual.ts).
+    if (req.origin === 'portal') {
+      return cancelManualSessionInTx(tx, tenantId, {
+        req,
+        session,
+        source: source === 'client' ? 'client' : 'admin',
+        ...(clientId ? { clientId } : {}),
+        actorStaffId: resolvedByStaffId,
+        now,
+      })
+    }
 
     // Refund decision. Admin bypasses window/cap (always full); client is gated
     // by the PT window + shared cancellation cap.

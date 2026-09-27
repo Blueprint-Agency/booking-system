@@ -14,6 +14,7 @@ import {
   addManualPtSessionMember,
   createManualPtSession,
   listSeatCandidates,
+  removeManualPtSessionMember,
 } from '../../../services/pt-sessions/manual'
 import {
   addedMemberJson,
@@ -22,6 +23,8 @@ import {
   instructorManualSessionSchema,
   instructorSeatCandidatesQuery,
   manualSessionFields,
+  removedMemberJson,
+  removeMemberParam,
   seatCandidatesJson,
 } from '../pt-manual'
 
@@ -137,6 +140,21 @@ const app = new Hono()
       return c.json(addedMemberJson(body.client_id, seat), 201)
     },
   )
+  // One member off a manual session the caller runs (#335), refunded on their
+  // own package; another coach's session is `403 not_your_session`.
+  .delete('/sessions/:id/members/:clientId', zValidator('param', removeMemberParam), async c => {
+    const { id, clientId } = c.req.valid('param')
+    const self = c.get('staffUserId') as string
+    const res = await removeManualPtSessionMember(tenantId(c), {
+      ptSessionId: id,
+      clientId,
+      actorStaffId: self,
+      source: 'instructor',
+      requireOwnInstructorId: self,
+    })
+    c.set('auditTarget' as any, { table: 'pt_sessions', id })
+    return c.json(removedMemberJson(res))
+  })
   .post('/:id/schedule', zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')

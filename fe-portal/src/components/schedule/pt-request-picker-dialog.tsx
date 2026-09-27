@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Button, Dialog, Pagination, usePaged } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
+import { ManualPtSessionDialog } from "@/components/schedule/manual-pt-session-dialog";
 import { type ApiPtRequest, ptClassTypeName, ptSlotTime } from "@/lib/pt-requests";
 import type { Slot } from "@/lib/schedule";
 
@@ -20,6 +21,8 @@ export function PtRequestPickerDialog({
   const [pending, setPending] = useState<ApiPtRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [picked, setPicked] = useState<ApiPtRequest | null>(null);
+  /** Add manually: a session agreed outside the app, with no request behind it (#336). */
+  const [manual, setManual] = useState(false);
 
   useEffect(() => {
     if (!api || !activeLocation) {
@@ -49,6 +52,17 @@ export function PtRequestPickerDialog({
 
   const { visible, pagination } = usePaged(pending);
 
+  if (manual) {
+    return (
+      <ManualPtSessionDialog
+        role="admin"
+        slot={slot}
+        onClose={() => setManual(false)}
+        onCreated={onScheduled}
+      />
+    );
+  }
+
   if (picked) {
     return (
       <ScheduleFromRequestDialog
@@ -64,7 +78,8 @@ export function PtRequestPickerDialog({
     <Dialog
       open
       onOpenChange={(o) => !o && onClose()}
-      title="Schedule a pending PT request"
+      title="Add a PT session"
+      description="Schedule a pending request, or add a session agreed outside the app."
     >
       {loading ? (
         <p className="px-1 py-4 text-sm text-muted">Loading…</p>
@@ -73,10 +88,11 @@ export function PtRequestPickerDialog({
           <p className="text-sm text-muted">
             No pending PT requests. Customers submit requests from their app.
           </p>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={onClose}>
               Close
             </Button>
+            <Button onClick={() => setManual(true)}>Add manually</Button>
           </div>
         </div>
       ) : (
@@ -104,6 +120,11 @@ export function PtRequestPickerDialog({
             })}
           </ul>
           <Pagination {...pagination} noun="requests" className="px-3 sm:px-3" />
+          <div className="mt-3 flex justify-end border-t border-border pt-3">
+            <Button variant="secondary" onClick={() => setManual(true)}>
+              Add manually
+            </Button>
+          </div>
         </div>
       )}
     </Dialog>

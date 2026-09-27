@@ -5,9 +5,9 @@
  * Every session still has a request: the portal writes one itself, marked
  * `origin = 'portal'` with the acting staff member, no proposed slots, no
  * expiry and no debit of its own, and schedules it in the same transaction. So
- * the lists and the attended sweep read it like any other. Cancel and the type
- * change still price off the request's debit, which a manual one has none of:
- * per-seat refunds and type changes are #335.
+ * the lists and the attended sweep read it like any other. It has no debit to
+ * price a cancel or a type change off, so those read its `origin` and settle
+ * seat by seat here instead (below).
  *
  * Payment is per seat, not per request: each attendee pays ONE session from
  * their own package, recorded on their own booking (`client_package_id`,
@@ -17,23 +17,32 @@
  * is a 409 `seat_needs_override` naming the warnings, unless the caller sent
  * `override`. A Dormant package Activates on its seat, from that moment
  * (be/docs/adr/0011).
+ *
+ * Everything after creation is priced per seat too (#335): cancelling the
+ * session refunds each booking to the package it was paid from, a member
+ * cancels their own seat under the PT window, staff remove one member, and
+ * the 1on1 ↔ 2on1 change seats or refunds the partner on their own package —
+ * never touching the other attendee's balance. A seat whose session Activated
+ * its package, cancelled in time, returns the package to Dormant.
  */
 import { and, asc, eq, notInArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedule'
-import { bookings } from '../../db/schema/bookings'
+import { bookings, cancellations } from '../../db/schema/bookings'
+import { inboxItems } from '../../db/schema/inbox'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
-import { debitCredits, type Tx } from '../packages/ledger'
-import { sweepExpired } from '../packages/activation'
+import { debitCredits, refundCredits, type Tx } from '../packages/ledger'
+import { activateOnSchedule, reverseActivationOnCancel, sweepExpired } from '../packages/activation'
 import { activationExpiry } from '../packages/validity'
+import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
+import type { CancelSource, RefundOutcome as BookingRefundOutcome } from '../bookings/refund-outcome'
 import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
 import { assertInstructorsAvailable, findClash } from '../schedule/occupancy'
 import { ensureInstructors } from '../schedule/roster'
 import { ptSessionCost, type PtSessionType } from './cost'
-import { activateOnSchedule } from './schedule'
 import {
   mayPayForSeat,
   orderSeatCandidates,
@@ -42,7 +51,7 @@ import {
   type SeatRefusal,
   type SeatWarning,
 } from './seat'
-import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
+import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 
 export interface ManualSeatInput {
   clientId: string
@@ -382,60 +391,450 @@ export async function addManualPtSessionMember(
   return db.transaction(async tx => {
     // Locked, as class booking locks the class: two adds for the last seat
     // are decided one after the other.
-    const [session] = await tx
-      .select({
-        id: ptSessions.id,
-        sessionType: ptSessions.sessionType,
-        instructorId: ptSessions.instructorId,
-        capacityOnline: ptSessions.capacityOnline,
-        lifecycle: ptSessions.lifecycle,
-        ptRequestId: ptSessions.ptRequestId,
-      })
-      .from(ptSessions)
-      .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, input.ptSessionId)))
-      .for('update')
-      .limit(1)
-    if (!session) throw new NotFoundError('pt_session_not_found')
-    if (input.requireOwnInstructorId && session.instructorId !== input.requireOwnInstructorId) {
-      throw new ForbiddenError('not_your_session')
-    }
-    if (session.lifecycle !== 'active') throw new ConflictError('session_cancelled')
-
-    const [req] = session.ptRequestId
-      ? await tx
-          .select({ id: ptRequests.id, origin: ptRequests.origin, clientId: ptRequests.clientId, coClientId: ptRequests.coClientId })
-          .from(ptRequests)
-          .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, session.ptRequestId)))
-          .for('update')
-          .limit(1)
-      : []
-    // A member's request is paid by its requester for the whole session; a
-    // seat paid on its own has no place on it.
-    if (req?.origin !== 'portal') throw new ConflictError('not_a_manual_session')
-
+    const { session, req } = await lockManualSession(tx, tenantId, input.ptSessionId, input.requireOwnInstructorId)
     const seat = await seatMember(tx, tenantId, session, input, input)
-
-    // The request mirrors the roster, as a request session's does: its client
-    // stays while they are booked, and the co-client is whoever else is. A
-    // seat freed by a single-booking cancel and filled again moves them too.
-    const booked = await tx
-      .select({ clientId: bookings.clientId })
-      .from(bookings)
-      .where(
-        and(eq(bookings.tenantId, tenantId), eq(bookings.ptSessionId, session.id), eq(bookings.state, 'confirmed')),
-      )
-      .orderBy(asc(bookings.bookedAt), asc(bookings.id))
-    const ids = booked.map(b => b.clientId)
-    const clientId = ids.includes(req.clientId) ? req.clientId : ids[0]!
-    const coClientId = ids.find(id => id !== clientId) ?? null
-    if (clientId !== req.clientId || coClientId !== req.coClientId) {
-      await tx
-        .update(ptRequests)
-        .set({ clientId, coClientId })
-        .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
-    }
+    await followRoster(tx, tenantId, session.id, req)
     return seat
   })
+}
+
+/**
+ * A manual session and the request behind it, both locked — the request
+ * first, the order cancelPtRequest takes them in, so a change and a cancel
+ * of one session wait on each other rather than deadlock. Refused as the
+ * session's own checks come: not found, not the instructor's, cancelled,
+ * then a member's request (`not_a_manual_session`).
+ */
+async function lockManualSession(tx: Tx, tenantId: string, ptSessionId: string, requireOwnInstructorId?: string) {
+  const sessionWhere = and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, ptSessionId))
+  const [peek] = await tx.select({ ptRequestId: ptSessions.ptRequestId }).from(ptSessions).where(sessionWhere).limit(1)
+  if (!peek) throw new NotFoundError('pt_session_not_found')
+  const [req] = peek.ptRequestId
+    ? await tx
+        .select({
+          id: ptRequests.id,
+          origin: ptRequests.origin,
+          status: ptRequests.status,
+          clientId: ptRequests.clientId,
+          coClientId: ptRequests.coClientId,
+        })
+        .from(ptRequests)
+        .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, peek.ptRequestId)))
+        .for('update')
+        .limit(1)
+    : []
+  const [session] = await tx
+    .select({
+      id: ptSessions.id,
+      sessionType: ptSessions.sessionType,
+      instructorId: ptSessions.instructorId,
+      capacityOnline: ptSessions.capacityOnline,
+      lifecycle: ptSessions.lifecycle,
+      startsAt: ptSessions.startsAt,
+      endsAt: ptSessions.endsAt,
+    })
+    .from(ptSessions)
+    .where(sessionWhere)
+    .for('update')
+    .limit(1)
+  if (!session) throw new NotFoundError('pt_session_not_found')
+  if (requireOwnInstructorId && session.instructorId !== requireOwnInstructorId) {
+    throw new ForbiddenError('not_your_session')
+  }
+  if (session.lifecycle !== 'active') throw new ConflictError('session_cancelled')
+  // A member's request is paid by its requester for the whole session, so a
+  // seat settled on its own has no place on it.
+  if (req?.origin !== 'portal') throw new ConflictError('not_a_manual_session')
+  return { session, req }
+}
+
+/**
+ * A seat is only given back while the session is still to come: once it has
+ * ended (the attended sweep may not have run yet) its sessions were used, and
+ * a seat someone was checked in on is their attendance, not a refund.
+ */
+function assertSeatsStillOpen(
+  session: { endsAt: Date },
+  req: { status: string },
+  seats: { checkInState: string }[],
+  now: Date,
+): void {
+  if (req.status !== 'scheduled' || session.endsAt <= now) throw new ConflictError('session_ended')
+  if (seats.some(s => s.checkInState === 'attended')) throw new ConflictError('booking_attended')
+}
+
+/** What cancelling a seat did with the one session it paid. */
+type RefundOutcome = Extract<BookingRefundOutcome, 'session_returned' | 'forfeited' | 'n_a'>
+
+/** Confirmed seats on a session, first booked first, each locked. */
+function seatsOn(tx: Tx, tenantId: string, ptSessionId: string) {
+  return tx
+    .select({
+      id: bookings.id,
+      clientId: bookings.clientId,
+      clientPackageId: bookings.clientPackageId,
+      used: bookings.creditsOrSessionsUsed,
+      checkInState: bookings.checkInState,
+    })
+    .from(bookings)
+    .where(and(eq(bookings.tenantId, tenantId), eq(bookings.ptSessionId, ptSessionId), eq(bookings.state, 'confirmed')))
+    .orderBy(asc(bookings.bookedAt), asc(bookings.id))
+    .for('update')
+}
+
+type Seat = Awaited<ReturnType<typeof seatsOn>>[number]
+
+/**
+ * The request and the attendee rows mirror who is booked, as a request
+ * session's do: the request's client stays while they are booked, and the
+ * co-client is whoever else is. With nobody booked the request keeps its
+ * client — it is a NOT NULL column, and the seat can be filled again.
+ */
+async function followRoster(
+  tx: Tx,
+  tenantId: string,
+  ptSessionId: string,
+  req: { id: string; clientId: string; coClientId: string | null },
+): Promise<void> {
+  const ids = (await seatsOn(tx, tenantId, ptSessionId)).map(b => b.clientId)
+  await tx
+    .delete(ptSessionClients)
+    .where(
+      and(
+        eq(ptSessionClients.tenantId, tenantId),
+        eq(ptSessionClients.ptSessionId, ptSessionId),
+        ...(ids.length ? [notInArray(ptSessionClients.clientId, ids)] : []),
+      ),
+    )
+  if (!ids.length) return
+  const clientId = ids.includes(req.clientId) ? req.clientId : ids[0]!
+  const coClientId = ids.find(id => id !== clientId) ?? null
+  if (clientId !== req.clientId || coClientId !== req.coClientId) {
+    await tx
+      .update(ptRequests)
+      .set({ clientId, coClientId })
+      .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
+  }
+}
+
+/**
+ * Cancel one seat and settle it on its own package: the one session it paid
+ * comes back when `refund` says so, the package returns to Dormant if this
+ * session Activated it and the cancel came in time (be/docs/adr/0011), and
+ * the booking and a cancellations row record it. Whatever else is on the
+ * session is not touched.
+ */
+async function cancelSeat(
+  tx: Tx,
+  tenantId: string,
+  input: {
+    seat: Seat
+    ptSessionId: string
+    source: CancelSource
+    refund: boolean
+    reason: string
+    wasWithinWindow: boolean
+    wasWithinCap: boolean
+    actorStaffId: string | null
+    now: Date
+  },
+): Promise<{ refundOutcome: RefundOutcome; refunded: number }> {
+  const { seat } = input
+  const used = seat.used ?? 0
+  const refunded = input.refund && seat.clientPackageId && used > 0 ? used : 0
+  if (refunded) {
+    await refundCredits(tx, {
+      tenantId,
+      clientId: seat.clientId,
+      clientPackageId: seat.clientPackageId!,
+      amount: refunded,
+      reason: input.reason,
+      actedByStaffId: input.actorStaffId,
+    })
+  }
+  if (seat.clientPackageId) {
+    await reverseActivationOnCancel(tx, {
+      tenantId,
+      clientId: seat.clientId,
+      clientPackageId: seat.clientPackageId,
+      ptSessionId: input.ptSessionId,
+      late: !input.wasWithinWindow,
+      actedByStaffId: input.actorStaffId,
+    })
+  }
+  const refundOutcome: RefundOutcome = refunded ? 'session_returned' : used > 0 && !input.refund ? 'forfeited' : 'n_a'
+  await tx
+    .update(bookings)
+    .set({ state: 'cancelled', refundOutcome, checkInState: 'n_a', cancelledAt: input.now })
+    .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, seat.id)))
+  await tx.insert(cancellations).values({
+    tenantId,
+    bookingId: seat.id,
+    clientId: seat.clientId,
+    kind: 'pt',
+    source: input.source,
+    wasWithinWindow: input.wasWithinWindow,
+    wasWithinCap: input.wasWithinCap,
+    refundFired: refunded > 0,
+    cancelledAt: input.now,
+  })
+  return { refundOutcome, refunded }
+}
+
+/** A request row as the cancel reads it. */
+export interface ManualCancelRequest {
+  id: string
+  clientId: string
+  coClientId: string | null
+}
+
+export interface ManualCancelResult {
+  status: 'cancelled_after_scheduled' | 'seat_cancelled'
+  refundedSessions: number
+  refundOutcome: RefundOutcome
+}
+
+/**
+ * Cancel a scheduled manual session, inside cancel.ts's transaction with the
+ * request and session rows already locked.
+ *
+ *   staff  → the whole session: every seat still booked gets its session back
+ *            on its own package, whatever the window (a staff cancel bypasses
+ *            it, as on a request session), each recorded as a staff cancel.
+ *   member → their own seat only, under the PT window: inside it the cancel
+ *            is refused, outside it the shared cap decides the refund, as a
+ *            request session's. The session goes on for whoever is left, and
+ *            is cancelled with the last one.
+ */
+export async function cancelManualSessionInTx(
+  tx: Tx,
+  tenantId: string,
+  input: {
+    req: ManualCancelRequest
+    session: { id: string; startsAt: Date }
+    source: 'client' | 'admin'
+    clientId?: string
+    actorStaffId: string | null
+    now: Date
+  },
+): Promise<ManualCancelResult> {
+  const { req, session, now } = input
+  const seats = await seatsOn(tx, tenantId, session.id)
+
+  const endSession = async () => {
+    await tx
+      .update(ptSessions)
+      .set({ lifecycle: 'cancelled', cancelledAt: now, cancelledByStaffId: input.actorStaffId })
+      .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, session.id)))
+    await tx
+      .update(ptRequests)
+      .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId: input.actorStaffId })
+      .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
+  }
+
+  if (input.source === 'client') {
+    const mine = seats.find(s => s.clientId === input.clientId)
+    if (!mine) throw new ForbiddenError('not_your_request')
+    const evaluation = await evaluateCancellation({
+      tenantId,
+      clientId: mine.clientId,
+      kind: 'pt',
+      sessionStartsAt: session.startsAt,
+      now,
+    })
+    if (!evaluation.wasWithinWindow) {
+      throw new AppError(422, 'cancellation_window_passed', { window_hours: evaluation.windowHours })
+    }
+    const { refundOutcome, refunded } = await cancelSeat(tx, tenantId, {
+      seat: mine,
+      ptSessionId: session.id,
+      source: 'client',
+      refund: evaluation.refund === 'full',
+      reason: 'pt_cancel_refund',
+      wasWithinWindow: true,
+      wasWithinCap: evaluation.wasWithinCap,
+      actorStaffId: null,
+      now,
+    })
+    const last = seats.length === 1
+    if (last) await endSession()
+    else await followRoster(tx, tenantId, session.id, req)
+    await tx.insert(inboxItems).values({
+      tenantId,
+      type: 'client_cancellation',
+      payload: {
+        ptRequestId: req.id,
+        ptSessionId: session.id,
+        bookingId: mine.id,
+        clientId: mine.clientId,
+        kind: 'pt',
+        refundOutcome,
+        refundedSessions: refunded,
+        at: now.toISOString(),
+      },
+    })
+    return { status: last ? 'cancelled_after_scheduled' : 'seat_cancelled', refundedSessions: refunded, refundOutcome }
+  }
+
+  // The window never decides a staff cancel's refund, but it is recorded
+  // truthfully, and a late one keeps each package Activated.
+  const wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, null, now)
+  let refundedSessions = 0
+  for (const seat of seats) {
+    const { refunded } = await cancelSeat(tx, tenantId, {
+      seat,
+      ptSessionId: session.id,
+      source: 'admin',
+      refund: true,
+      reason: 'pt_admin_cancel_refund',
+      wasWithinWindow,
+      wasWithinCap: true,
+      actorStaffId: input.actorStaffId,
+      now,
+    })
+    refundedSessions += refunded
+  }
+  await endSession()
+  const refundOutcome: RefundOutcome = refundedSessions > 0 ? 'session_returned' : 'n_a'
+  await tx.insert(inboxItems).values({
+    tenantId,
+    type: 'admin_cancel_class_pt',
+    payload: {
+      ptRequestId: req.id,
+      ptSessionId: session.id,
+      clientId: req.clientId,
+      kind: 'pt',
+      refundOutcome,
+      refundedSessions,
+      ...(input.actorStaffId ? { actorStaffId: input.actorStaffId } : {}),
+      at: now.toISOString(),
+    },
+  })
+  return { status: 'cancelled_after_scheduled', refundedSessions, refundOutcome }
+}
+
+export interface RemoveManualPtSessionMemberInput {
+  ptSessionId: string
+  clientId: string
+  actorStaffId: string
+  source: 'admin' | 'instructor'
+  /** Instructor route: the session must be one they run. */
+  requireOwnInstructorId?: string
+}
+
+/**
+ * Staff take one member off a manual session (#335): their seat is cancelled
+ * and its session returned to their own package, whatever the window; the
+ * others stay seated and the session stays on, its seat free to fill again.
+ */
+export async function removeManualPtSessionMember(
+  tenantId: string,
+  input: RemoveManualPtSessionMemberInput,
+): Promise<{ refundOutcome: RefundOutcome; refundedSessions: number }> {
+  return db.transaction(async tx => {
+    const { session, req } = await lockManualSession(tx, tenantId, input.ptSessionId, input.requireOwnInstructorId)
+    const seat = (await seatsOn(tx, tenantId, session.id)).find(s => s.clientId === input.clientId)
+    if (!seat) throw new NotFoundError('booking_not_found')
+
+    const now = clockNow()
+    assertSeatsStillOpen(session, req, [seat], now)
+    const { refundOutcome, refunded } = await cancelSeat(tx, tenantId, {
+      seat,
+      ptSessionId: session.id,
+      source: input.source,
+      refund: true,
+      reason: 'pt_manual_seat_removed_refund',
+      wasWithinWindow: await staffCancelInTime(tenantId, 'pt', session.startsAt, null, now),
+      wasWithinCap: true,
+      actorStaffId: input.actorStaffId,
+      now,
+    })
+    await followRoster(tx, tenantId, session.id, req)
+    await tx.insert(inboxItems).values({
+      tenantId,
+      type: 'admin_cancel_class_pt',
+      payload: {
+        ptRequestId: req.id,
+        ptSessionId: session.id,
+        bookingId: seat.id,
+        clientId: seat.clientId,
+        kind: 'pt',
+        refundOutcome,
+        refundedSessions: refunded,
+        source: input.source,
+        actorStaffId: input.actorStaffId,
+        at: now.toISOString(),
+      },
+    })
+    return { refundOutcome, refundedSessions: refunded }
+  })
+}
+
+/**
+ * Switch a manual session between 1on1 and 2on1, inside updatePtSession's
+ * transaction with the request and session rows locked, in that order, and
+ * the session found still active (#335). Per seat, never through the
+ * requester: an upgrade seats the partner on their own package exactly as
+ * adding a member does (the seat rule, a named package or the Default payer,
+ * warnings needing `override`, a Dormant package Activated); a downgrade
+ * cancels whoever is not the request's client and returns their session to
+ * their own package. The other attendee's balance never moves. The caller
+ * writes the session's own type and capacity.
+ */
+export async function retypeManualSessionInTx(
+  tx: Tx,
+  tenantId: string,
+  input: {
+    session: { id: string; instructorId: string; startsAt: Date; endsAt: Date }
+    req: { id: string; status: string; clientId: string; coClientId: string | null }
+    to: PtSessionType
+    partnerClientId?: string
+    partnerClientPackageId?: string | null
+    actorStaffId: string
+    override: boolean
+  },
+): Promise<void> {
+  const { session, req } = input
+  const seats = await seatsOn(tx, tenantId, session.id)
+  // A downgrade keeps the request's client, or else whoever booked first.
+  const keep = seats.find(s => s.clientId === req.clientId) ?? seats[0]
+  const leaving = input.to === '1on1' ? seats.filter(s => s !== keep) : []
+  // Neither way once the session is over: its seats were used.
+  assertSeatsStillOpen(session, req, leaving, clockNow())
+
+  if (input.to === '2on1') {
+    if (!input.partnerClientId) throw new BadRequestError('partner_required')
+    await seatMember(
+      tx,
+      tenantId,
+      { id: session.id, sessionType: '2on1', instructorId: session.instructorId, capacityOnline: ptSessionCost('2on1') },
+      { clientId: input.partnerClientId, clientPackageId: input.partnerClientPackageId ?? null },
+      // The type change is an Admin's alone.
+      { actorStaffId: input.actorStaffId, actorIsAdmin: true, override: input.override },
+    )
+  } else {
+    const now = clockNow()
+    const wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, null, now)
+    for (const seat of leaving) {
+      await cancelSeat(tx, tenantId, {
+        seat,
+        ptSessionId: session.id,
+        source: 'admin',
+        refund: true,
+        reason: 'pt_type_change_refund',
+        wasWithinWindow,
+        wasWithinCap: true,
+        actorStaffId: input.actorStaffId,
+        now,
+      })
+    }
+  }
+
+  await tx
+    .update(ptRequests)
+    .set({ sessionType: input.to, coClientName: null, coClientEmail: null })
+    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
+  await followRoster(tx, tenantId, session.id, req)
 }
 
 // ----------------------------------------------------------------------------
