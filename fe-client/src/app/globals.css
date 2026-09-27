@@ -213,10 +213,6 @@
     opacity: 0;
     transform: scale(0.3) rotate(-20deg);
   }
-  60% {
-    opacity: 1;
-    transform: scale(1.2) rotate(8deg);
-  }
   to {
     opacity: 1;
     transform: scale(1) rotate(0);
@@ -249,7 +245,7 @@
 }
 
 .celebrate-pop {
-  animation: celebratePop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;
+  animation: celebratePop 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
 }
 
 .celebrate-ring {
