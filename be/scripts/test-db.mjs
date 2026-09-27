@@ -14,8 +14,13 @@
  *
  * `npm run test:db -- --reset` drops and recreates it instead, so a full run
  * starts from the empty database CI starts from, not rows an earlier run left.
- * It refuses any database not named `reservetoday-test-*`, and the development
- * one (`POSTGRES_DB`) whatever it is called.
+ * A full `npm run check` does the same itself (`scripts/check.mjs`). It refuses
+ * any database not named `reservetoday-test` or `reservetoday-test-*`, and the
+ * development one (`POSTGRES_DB`) whatever it is called.
+ *
+ * Either way the database commits without waiting for the disk
+ * (`synchronous_commit = off`), as CI's throwaway Postgres does. The setting is
+ * the database's own, so the development database beside it stays durable.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -64,13 +69,38 @@ const TEST_DATABASE_PREFIX = 'reservetoday-test-'
 
 /** Why `--reset` must not drop `database`, or null when it may. */
 export function resetRefusal(database, vars) {
-  if (!database.startsWith(TEST_DATABASE_PREFIX) || database === TEST_DATABASE_PREFIX) {
-    return `--reset drops only a database named ${TEST_DATABASE_PREFIX}*, not ${database}`
+  const scratch =
+    database === 'reservetoday-test' ||
+    (database.startsWith(TEST_DATABASE_PREFIX) && database !== TEST_DATABASE_PREFIX)
+  if (!scratch) {
+    return `--reset drops only a database named reservetoday-test or ${TEST_DATABASE_PREFIX}*, not ${database}`
   }
   if (vars.POSTGRES_DB && database === vars.POSTGRES_DB) {
     return `${database} is the development database (POSTGRES_DB); --reset drops only a scratch test database`
   }
   return null
+}
+
+/**
+ * Make the database `url` names exist, dropping it first when `reset`, and have
+ * it commit without waiting for the disk. Checks nothing: the caller has already
+ * refused a database it must not touch.
+ */
+export async function prepareTestDatabase(url, { reset }) {
+  const database = decodeURIComponent(new URL(url).pathname.replace(/^\//, ''))
+  const server = new URL(url)
+  server.pathname = '/postgres'
+  const sql = postgres(server.toString(), { max: 1, onnotice: () => {} })
+  try {
+    // WITH (FORCE) disconnects a run still holding it (Postgres 13+).
+    if (reset) await sql`drop database if exists ${sql(database)} with (force)`
+    const [found] = await sql`select 1 from pg_database where datname = ${database}`
+    if (!found) await sql`create database ${sql(database)}`
+    await sql`alter database ${sql(database)} set synchronous_commit = off`
+    return { created: !found }
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
 }
 
 async function main() {
@@ -97,24 +127,9 @@ async function main() {
     if (refusal) throw new Error(refusal)
   }
 
-  const server = new URL(url)
-  server.pathname = '/postgres'
-  const sql = postgres(server.toString(), { max: 1, onnotice: () => {} })
-  try {
-    if (reset) {
-      // WITH (FORCE) disconnects a run still holding it (Postgres 13+).
-      await sql`drop database if exists ${sql(database)} with (force)`
-      console.log(`dropped test database ${database} on ${target.host}`)
-    }
-    const [found] = await sql`select 1 from pg_database where datname = ${database}`
-    if (found) console.log(`test database ${database} already exists on ${target.host}`)
-    else {
-      await sql`create database ${sql(database)}`
-      console.log(`created test database ${database} on ${target.host}`)
-    }
-  } finally {
-    await sql.end({ timeout: 5 })
-  }
+  const { created } = await prepareTestDatabase(url, { reset })
+  if (reset) console.log(`dropped test database ${database} on ${target.host}`)
+  console.log(`test database ${database} ${created ? 'created' : 'already exists'} on ${target.host}`)
 
   if (writeUrl) {
     writeFileSync(envFile, withTestDatabaseUrl(text, url))

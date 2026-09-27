@@ -116,29 +116,23 @@ backend suite means no image is built and neither stack is touched.
   flake is separate work. One process means the app is imported and the test database set up once
   for the whole run instead of once per file. A run in this mode is serial anyway. What that asks
   of a test file is in `testing.md` § Running the backend tests.
-- **Skips fail the job.** The integration tests skip themselves when `TEST_DATABASE_URL` is unset,
-  and a skipped test counts as a pass. Nothing else in the suite skips, so the job fails unless the
-  TAP summary reads `# skipped 0` — a broken CI env cannot turn the gate green by testing nothing.
-- **A push does not re-test a tree its PR already tested.** A green pull-request run uploads an
-  artifact `be-tested-<tree>`, keyed by the merge commit's whole-repository tree and kept 7 days.
-  A push to `staging`/`main` whose commit has that exact tree skips the test steps, records the
-  PR run's test count as its own, and links that run in the job summary. The job still ends green,
-  so `deploy` proceeds. Only runs from this repository count, not forks. A push with no matching
-  marker (`staging` moved between the PR's run and the merge, a direct push, a PR run over a week
-  old) runs the whole suite, and a manual dispatch always does. This relies on branch protection
-  requiring a PR to be up to date with its base before it merges (#302); without that, a merge
-  onto a moved `staging` has a tree no marker names, and so it is tested anyway.
-- **Tests may not quietly disappear.** A pull request whose backend has fewer tests than its base
-  branch fails the `test` job. Each `staging`/`main` run records its count (an Actions cache keyed
-  by the `be/` tree); a PR compares against the base's. Removing tests on purpose: add the
-  `tests-removed` label and re-run the job. The journeys get the same check, and a skipped journey
-  fails, in the `guardrails` job (`test-guardrails.yml`, called by `deploy-be.yml` on every PR). See
-  `test-guardrails.md`.
+- **Skips fail the job.** `npm run check` refuses to start without `TEST_DATABASE_URL`, so the
+  integration tests cannot skip themselves for want of a database, and the job fails unless the
+  TAP summary reads `# skipped 0`, so a `test.skip` cannot pass as a pass either.
+- **Stateless.** The job tests the commit in front of it and nothing else: it records no count and
+  reuses no earlier run's result. Every push runs the whole suite, whether or not a pull request
+  already tested the same tree; at ~6 minutes, that costs less than the bookkeeping that skipped it.
 - **One workflow per pull request.** `deploy-be.yml` is the only workflow a PR triggers, on every
   PR whatever it touches. It calls `test-guardrails.yml` (`guardrails`) and `e2e-local.yml`
   (`journeys-pr`) as jobs; its `changes` job still decides which app checks a PR needs.
-- **Coverage is reported, not gated.** The suite runs with Node's built-in coverage; the job's
-  summary page shows lines/branches/functions per `src/services/<feature>/` folder. No threshold.
+- **Two ways in.** A direct push to `staging` or `main` is gated by the push's own run: run the full
+  `npm run check` locally first (`testing.md` § Matching CI locally). A pull request runs every
+  check and never deploys; with the merge queue on, the queue (`merge_group`) runs every check
+  again, unfiltered, on the commit that will land, and the push the merge makes then tests and
+  deploys. The queue is a branch-protection setting, not part of the workflow: its required checks
+  are `test`, `guardrails / scripts` and `guardrails / e2e`.
+- **Coverage is reported, not gated,** nightly and off this job: `be-coverage.yml`
+  (`test-guardrails.md` § Coverage report).
 - **Pull requests** into `staging` or `main` run the same tests and never deploy. A push that only
   touches a frontend does not run the backend tests or deploy (a `changes` job filters by path).
   A manual `workflow_dispatch` always runs the tests, then deploys.

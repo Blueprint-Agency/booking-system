@@ -1,19 +1,18 @@
 name: Test Guardrails
 
-# The checks that keep tests honest, whoever wrote them (#200), on every pull
-# request. The backend's own count check and coverage report live in its `test`
-# job (deploy-be.yml), which has the suite's output to hand; these are the ones
-# that need no database. See docs/md/test-guardrails.md.
+# The checks that keep tests honest, whoever wrote them (#200): the ones that
+# need no database. The backend's own no-skip check lives in its `test` job
+# (deploy-be.yml), which has the suite's output to hand. See
+# docs/md/test-guardrails.md.
 #
-# Called by deploy-be.yml as its `guardrails` job on every pull request, so a
-# PR runs one workflow; `github.event` here is that pull request's.
+# Called by deploy-be.yml as its `guardrails` job on every pull request and in
+# the merge queue, so a PR runs one workflow. Stateless: nothing here reads the
+# base branch or another run.
 on:
   workflow_call:
 
 permissions:
   contents: read
-  # The count check reads the pull request's labels.
-  pull-requests: read
 
 jobs:
   # The test-picker hooks (.claude/hooks/) and the repo scripts are tested too.
@@ -43,9 +42,6 @@ jobs:
         working-directory: e2e
     steps:
       - uses: actions/checkout@v4
-        with:
-          # The merge commit's first parent is the base branch.
-          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -63,29 +59,3 @@ jobs:
         env:
           CI: 'true'
         run: npx playwright test --list
-
-      - name: No journeys lost
-        shell: bash
-        env:
-          CI: 'true'
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          count() { npx playwright test --list --reporter=json | jq '[.. | objects | select(has("specs")) | .specs[].tests[]] | length'; }
-          head=$(count)
-          git worktree add --detach "$RUNNER_TEMP/base" HEAD^1
-          ln -s "$PWD/node_modules" "$RUNNER_TEMP/base/e2e/node_modules"
-          base=$(cd "$RUNNER_TEMP/base/e2e" && count) || base=
-          if [ -z "$base" ]; then
-            echo "::warning::Could not list the base branch's journeys, so this PR's count ($head) was not compared."
-            exit 0
-          fi
-          echo "Journeys: $head here, $base on the base branch."
-          if [ "$head" -lt "$base" ]; then
-            if gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels -q '.labels[].name' | grep -qx tests-removed; then
-              echo "::warning::$((base - head)) journey(s) removed; allowed by the tests-removed label."
-              exit 0
-            fi
-            echo "::error::This PR has $((base - head)) fewer journeys than the base branch ($head vs $base). Deleting a test must be deliberate: if it is, add the tests-removed label and re-run this job."
-            exit 1
-          fi

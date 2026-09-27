@@ -4,6 +4,7 @@ import { resetRefusal } from './test-db.mjs'
 
 test('--reset drops only a reservetoday-test-* database', () => {
   assert.equal(resetRefusal('reservetoday-test-staging-7', { POSTGRES_DB: 'reservetoday' }), null)
+  assert.equal(resetRefusal('reservetoday-test', { POSTGRES_DB: 'reservetoday' }), null)
   assert.match(resetRefusal('reservetoday', { POSTGRES_DB: 'reservetoday' }), /reservetoday-test-\*/)
   assert.match(resetRefusal('booking_test', {}), /reservetoday-test-\*/)
   assert.match(resetRefusal('my-reservetoday-test-db', {}), /reservetoday-test-\*/)

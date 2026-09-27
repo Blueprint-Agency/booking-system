@@ -17,10 +17,19 @@
  *   npm run check
  *   npm run check -- --test-reporter=tap
  *   npm run check -- src/test/refunds.test.ts
+ *
+ * It refuses to start where a green run would not predict CI's: on a Node
+ * major other than `.nvmrc`'s, or with no `TEST_DATABASE_URL` (the integration
+ * tests would skip). A full run — no test files named — starts from an empty
+ * database, as CI's does: it drops and recreates the checkout's test database
+ * first. CI's own database is new with every job, so there it is left alone.
  */
 import { spawnSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parse } from 'dotenv'
+import { prepareTestDatabase, resetRefusal } from './test-db.mjs'
 
 export const BASE_FLAGS = [
   '--import',
@@ -50,16 +59,61 @@ export function nodeArgs(args) {
   return [...BASE_FLAGS, ...flags, ...(files.length ? files : DEFAULT_PATTERNS)]
 }
 
+/**
+ * Why Node `version` must not run the suite, or null when it may. CI and
+ * be/Dockerfile run the major `.nvmrc` names, and another major accepts flags
+ * and behaves in ways that one does not.
+ */
+export function nodeRefusal(version, nvmrc) {
+  const major = v => v.trim().replace(/^v/, '').split('.')[0]
+  const wanted = major(nvmrc)
+  if (major(version) === wanted) return null
+  return `this is Node ${version}, and CI runs Node ${wanted} (.nvmrc): switch first (nvm use ${wanted})`
+}
+
+/** The test database a run would use: the shell's, else `be/.env`'s, as `src/test/environment.ts` reads it. */
+export function testDatabaseUrl(env, dotenvText) {
+  return env.TEST_DATABASE_URL?.trim() || parse(dotenvText).TEST_DATABASE_URL?.trim() || null
+}
+
+/** A full run on a developer's machine, which starts from an empty database. */
+export function resetsDatabase(args, env) {
+  return !args.some(a => !a.startsWith('-')) && env.CI !== 'true'
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const beDir = join(dirname(fileURLToPath(import.meta.url)), '..')
-  let args
-  try {
-    args = nodeArgs(process.argv.slice(2))
-  } catch (err) {
-    console.error(`check: ${err.message}`)
+  const refuse = message => {
+    console.error(`check: ${message}`)
     process.exit(2)
   }
-  const result = spawnSync(process.execPath, args, { cwd: beDir, stdio: 'inherit' })
+  const args = process.argv.slice(2)
+  let argv
+  try {
+    argv = nodeArgs(args)
+  } catch (err) {
+    refuse(err.message)
+  }
+
+  const nodeProblem = nodeRefusal(process.version, readFileSync(join(beDir, '..', '.nvmrc'), 'utf8'))
+  if (nodeProblem) refuse(nodeProblem)
+
+  const envFile = join(beDir, '.env')
+  const dotenvText = existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''
+  const url = testDatabaseUrl(process.env, dotenvText)
+  if (!url) {
+    refuse('no TEST_DATABASE_URL, so the integration tests would skip and prove nothing: run `npm run test:db` once')
+  }
+
+  if (resetsDatabase(args, process.env)) {
+    const database = decodeURIComponent(new URL(url).pathname.replace(/^\//, ''))
+    const resetProblem = resetRefusal(database, parse(dotenvText))
+    if (resetProblem) refuse(`a full run starts from an empty database, and ${resetProblem}`)
+    await prepareTestDatabase(url, { reset: true })
+    console.log(`check: a full run, so ${database} starts empty, as CI's does`)
+  }
+
+  const result = spawnSync(process.execPath, argv, { cwd: beDir, stdio: 'inherit' })
   if (result.error) throw result.error
   process.exit(result.status ?? 1)
 }

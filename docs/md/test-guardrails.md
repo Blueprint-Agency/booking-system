@@ -7,15 +7,15 @@ make it pass.**
 
 | Guardrail | Where | What it stops |
 |---|---|---|
-| No skipped tests | backend `test` job (deploy-be.yml); `e2e/src/no-skips-reporter.ts` | A skip passing as a pass |
-| No lost tests | backend `test` job; `test-guardrails.yml` | A PR with fewer tests than its base branch |
-| Coverage report | backend `test` job → run summary | Untested code going unseen (report only, no % gate) |
+| No skipped tests | `be/scripts/check.mjs` and the backend `test` job (deploy-be.yml); `e2e/src/no-skips-reporter.ts` | A skip passing as a pass |
 | Scenario Inventory traces | `scripts/check-scenarios.mjs` in `test-guardrails.yml` | A row still marked covered after its test was renamed or deleted (`testing.md`) |
+| Coverage report | nightly `be-coverage.yml` → run summary | Untested code going unseen (report only, no % gate) |
 
-All of them run in CI, where a reviewer already reads the diff: every PR runs every suite
-(`deploy-be.yml`, `e2e-local.yml`, `test-guardrails.yml`), so sessions don't run them on stop.
-An edit to a committed test is a normal diff for review, and a test removed on purpose is allowed
-with the `tests-removed` label (below). The one local gate is before a push (next section).
+The gates run in CI, where a reviewer already reads the diff: every PR, the merge queue and every
+push run every suite (`deploy-be.yml`, `e2e-local.yml`, `test-guardrails.yml`), so sessions don't
+run them on stop. Each check is stateless: it looks at the commit in front of it, never at a count or
+a result another run left. An edit to a committed test, a deletion included, is a normal diff for
+review. The one local gate is before a push (next section).
 
 ## Before a push
 
@@ -35,8 +35,9 @@ not twenty minutes later in Actions. It is the git hook `.githooks/pre-push`, wh
 
 "Touch" is the diff from the remote branch's commit to the one pushed (for a new branch, from its
 merge base with `origin/main`), so pushing `staging` to `main` runs everything `main` has not yet
-had. The backend runs only the test files that change reaches, not the whole ~25-minute suite; CI
-still runs all of it. Tests run on the working tree, and the hook names any uncommitted change to
+had. The backend runs only the test files that change reaches, not the whole suite; CI still runs
+all of it, and a full local `npm run check` (~6 minutes in CI, longer on a laptop) is what predicts it (`testing.md` §
+Matching CI locally). Tests run on the working tree, and the hook names any uncommitted change to
 the same code. `git push --no-verify` skips it.
 
 ## Running tests locally
@@ -62,7 +63,9 @@ Postgres advisory lock on it for the whole run. See `testing.md` § Running the 
 
 ## No skipped tests
 
-- **Backend:** the `test` job fails unless the TAP summary reads `# skipped 0`.
+- **Backend:** `npm run check` refuses to start without `TEST_DATABASE_URL`, so the integration
+  tests cannot skip themselves for want of a database, and the `test` job fails unless the TAP
+  summary reads `# skipped 0`.
 - **Journeys:** the Playwright config adds `no-skips-reporter`, which fails any run with a
   `test.skip` / `test.fixme` / `describe.skip` journey, or one that calls `test.skip()` as it runs.
   `test-guardrails.yml` lists the journeys on every PR (`playwright test --list`, no stack needed),
@@ -72,26 +75,20 @@ Postgres advisory lock on it for the whole run. See `testing.md` § Running the 
 
 A journey that is genuinely broken is a bug to file, not a test to skip.
 
-## No lost tests
+## Deleted tests
 
-A pull request may not have fewer tests than the branch it merges into.
-
-- **Backend** (`test` job, deploy-be.yml): every green `staging`/`main` run records its test count
-  in an Actions cache keyed by the git tree of `be/`. A PR compares its own count with the one recorded
-  for its base (the merge commit's first parent). No record — the base run has not finished, or
-  the cache expired — is a warning, not a failure; re-run the base branch's BE Deploy to record one.
-- **Journeys** (`test-guardrails.yml`): the PR lists its journeys and its base's, and compares.
-
-Removing tests on purpose (a feature was deleted): add the `tests-removed` label to the PR and
-re-run the failed job. The label is read when the job runs, so a re-run sees it.
+No check counts tests. A deleted test shows in the diff like any other deletion, and review is
+where it is caught. A count compared against the base branch needed a record of every base run,
+kept in a cache that expired, and it degraded to a warning whenever that record was missing.
 
 ## Coverage report
 
-The backend `test` job runs the suite with Node's built-in coverage (`--experimental-test-coverage`,
-lcov reporter — no dependency) and `scripts/coverage-summary.mjs` writes a table of lines, branches
-and functions per `src/services/<feature>/` folder (and per other top-level `src/` folder) to the
-run's summary page — open the backend check from the PR. A file no test ever imports is not listed
-at all (Node only measures what it loads). It is a report: there is deliberately no
+`be-coverage.yml` runs the backend suite nightly (03:00 UTC, on `staging`) and on demand (Run
+workflow, on any branch) with Node's built-in coverage (`--experimental-test-coverage`, lcov
+reporter — no dependency), and `scripts/coverage-summary.mjs` writes a table of lines, branches and
+functions per `src/services/<feature>/` folder (and per other top-level `src/` folder) to the run's
+summary page. It stays out of the `test` job every push waits on. A file no test ever imports is not
+listed at all (Node only measures what it loads). It is a report: there is deliberately no
 percentage to hit, because a number to hit is a reason to write tests that assert nothing.
 
 Locally:

@@ -1,6 +1,6 @@
 /**
  * Which backend test files a change reaches, so the Stop hook runs those
- * instead of the whole ~25-minute suite. CI still runs everything on the PR.
+ * instead of the whole suite. CI still runs everything on the PR.
  *
  * A test is picked when:
  *  - it is itself one of the changed files, or

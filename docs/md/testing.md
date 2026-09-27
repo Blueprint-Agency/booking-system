@@ -14,37 +14,51 @@ themselves are in `deployment.md` § Tests gate the backend deploy.
 
 ## Running the backend tests
 
-**CI runs the whole suite on every PR. Locally, run the files your change reaches:**
+**While working, run the files your change reaches:**
 
 ```sh
 node .claude/hooks/backend-tests.mjs be src/services/bookings/cancel.ts   # lists them
 cd be && npm run check -- <those files>
 ```
 
+**Before a direct push to `staging` or `main`, run all of it:** `npm run check` in `be/`, about six
+minutes in CI and longer on a laptop (18 on a Windows one). That is the run that predicts CI's (below). CI runs the whole suite on every PR, in the
+merge queue and on every push.
+
 **One test database per checkout.** In a new checkout or worktree, run `npm run test:db` in `be/`
 once. It creates `reservetoday-test-<checkout folder>` on the local Postgres named by `be/.env`,
 and fills in `TEST_DATABASE_URL` there if it is blank. The harness migrates and seeds that database
-on first use. Without `TEST_DATABASE_URL` the integration tests skip, and CI fails on any skip.
-**Reset it before a full local run:** `npm run test:db -- --reset` drops and recreates it, so the
-run starts from an empty database as CI's does, not from rows an earlier run left behind. It refuses
-any database not named `reservetoday-test-*`, and the development one (`POSTGRES_DB`).
+on first use. `npm run check` refuses to start without `TEST_DATABASE_URL`: the integration tests
+would skip, and a green run would prove nothing. `npm run test:db -- --reset` drops and recreates
+the database by hand. It refuses any database not named `reservetoday-test` or
+`reservetoday-test-*`, and the development one (`POSTGRES_DB`).
 
-**Matching CI locally.** A green local `npm run check` should predict a green CI run, so the two
-share everything that can be shared:
+**Matching CI locally.** A green full `npm run check` predicts a green CI `test` job, so the two
+share everything that can be shared, and `be/scripts/check.mjs` refuses to run where they would not:
 
-- **Node 22**, as `.nvmrc` pins it (`nvm use`), `engines` in `be/package.json` states it, and CI and
-  `be/Dockerfile` run it. Node 23 accepts flags Node 22 refuses.
+- **Node 22**, as `.nvmrc` pins it (`nvm use 22`), `engines` in `be/package.json` states it, and CI
+  and `be/Dockerfile` run it. Another major accepts flags and behaves in ways 22 does not, so
+  `npm run check` refuses to start on one.
 - **One command.** CI's **Backend tests (serial)** step and the stop hook both run `npm run check`
-  (`be/scripts/check.mjs`), adding only reporter and coverage flags, or the files to run.
+  (`be/scripts/check.mjs`), adding only a reporter flag, or the files to run.
 - **One environment.** `be/src/test/environment.ts` sets the whole test environment before any file
   loads. The one value it reads from `be/.env` is `TEST_DATABASE_URL`; nothing else in `.env`
   reaches a test (`src/db/url.ts` loads no `.env` under `NODE_ENV=test`). Stripe, R2, the webhook
   secrets and `PLATFORM_ADMIN_EMAIL` are unset, so a run with real keys in `.env` still calls no
   real service. A test that needs one sets it with `withEnv`.
-- **A fresh database**, with `--reset` above.
+- **One time zone.** The same file sets `TZ=UTC`, CI's runners' zone, so a date formatted or a day
+  boundary found in the process's own zone reads the same on a laptop in any zone.
+- **An empty database.** A full run (no test files named) drops and recreates the checkout's test
+  database before it starts, as CI's is new with every job, so no row an earlier run left can make
+  it pass or fail. A run of named files keeps the database; CI (`CI=true`) never resets.
+- **Commits that skip the disk.** CI's Postgres runs with `fsync` off. Locally the test database
+  alone is set `synchronous_commit = off` (by `npm run test:db` and by the reset), so it commits
+  as fast without touching the development database's durability.
 
-What still differs is the OS and the machine's speed. They show up only as timing flakiness, and a
-flaky test gets fixed in the test.
+What still differs is the OS and the machine's speed. On Windows or macOS a file path's case can
+differ from an import and still resolve, where CI's Linux fails it, and a slower machine shows up as
+timing flakiness; a flaky test gets fixed in the test. And a green local run predicts the `test`
+job only: the deploy also waits on the schema `drift` check and the browser journeys.
 
 **What a run costs.** The harness (`be/src/test/harness.ts`) migrates, seeds and imports the app
 once per process, and every later `startTestApp()` in that process gets the same app back. It holds

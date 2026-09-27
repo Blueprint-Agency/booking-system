@@ -23,6 +23,12 @@ name: BE Deploy
 # whatever it touches — a check that only sometimes reports cannot be made
 # required — so `pull_request` has no `paths:` filter; the `changes` job below
 # still decides which of the app checks a PR needs.
+#
+# A merge queue (`merge_group`) runs every check a pull request runs, on the
+# commit that will land, without the `changes` filter: it is the last look
+# before the merge, and the queue waits on each required check (`test`,
+# `guardrails / scripts`, `guardrails / e2e`) to report. It never deploys; the
+# push the merge makes does, after testing it again.
 on:
   push:
     branches: [staging, main]
@@ -40,6 +46,7 @@ on:
       - '.github/workflows/e2e.yml'
   pull_request:
     branches: [staging, main]
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -62,7 +69,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # Not in a merge queue, which runs every job whatever changed.
       - id: filter
+        if: github.event_name != 'merge_group'
         uses: dorny/paths-filter@v3
         with:
           # Without this a push to `staging` is diffed against `main` (the default
@@ -87,7 +96,9 @@ jobs:
     needs: changes
     # A manual dispatch has no diff to filter on; it is a request to deploy, so
     # it gets the tests that gate the deploy.
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.be == 'true'
+    if: >-
+      github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' ||
+      needs.changes.outputs.be == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # One test run per branch at a time, so deploys leave in push order. Without
@@ -100,11 +111,6 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
-      # The test-count check reads the pull request's labels.
-      pull-requests: read
-      # A push looks up and downloads the marker a pull request's run left
-      # ("Already tested by a pull request").
-      actions: read
 
     # Throwaway. The integration harness migrates it, creates the `booking_app`
     # role and seeds both fixture tenants on every run.
@@ -144,76 +150,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # A pull request checks out its merge commit; its first parent is the
-          # base branch, whose test count the PR is held to.
-          fetch-depth: 2
-
-      # A push whose exact tree a pull request already tested green does not
-      # test it again (#302). With branch protection requiring a PR to be up to
-      # date with its base before it merges, the squash merge's tree is the tree
-      # the PR's merge commit had, and "Mark this tree as tested" below recorded
-      # it. The whole repository's tree, not only `be/`: this job also runs
-      # `scripts/` and is this workflow file.
-      #
-      # An artifact, not the Actions cache: a push to `staging` cannot restore a
-      # cache saved on a pull request's merge ref. Only a run from this
-      # repository counts, never one from a fork, whose workflow file is the
-      # fork's to change. A manual dispatch never skips: it asks for a deploy
-      # with its tests. Anything missing (staging moved between the PR's run and
-      # the merge, a direct push, an expired marker) runs the whole suite.
-      #
-      # The job still runs and ends green when it skips, since `deploy` needs it.
-      - name: Already tested by a pull request
-        id: reuse
-        if: github.event_name == 'push'
-        working-directory: .
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO_ID: ${{ github.repository_id }}
-        run: |
-          tree=$(git rev-parse 'HEAD^{tree}')
-          name="be-tested-$tree"
-          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$name&per_page=100" --jq \
-            "[.artifacts[] | select(.expired | not) | select(.workflow_run.head_repository_id == $REPO_ID)]
-             | sort_by(.created_at) | last | .workflow_run.id // empty") || run_id=
-          if [ -z "$run_id" ]; then
-            echo "No green pull request run tested tree $tree; running the suite."
-            exit 0
-          fi
-          if ! gh run download "$run_id" -R "$GITHUB_REPOSITORY" -n "$name" -D "$RUNNER_TEMP/reused"; then
-            echo "::warning::Could not download $name from run $run_id; running the suite."
-            exit 0
-          fi
-          tests=$(sed -n 's/^# tests //p' "$RUNNER_TEMP/reused/tested-summary.tap" | tail -n1)
-          if [ -z "$tests" ]; then
-            echo "::warning::$name from run $run_id holds no test count; running the suite."
-            exit 0
-          fi
-          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id"
-          {
-            echo "hit=true"
-            echo "tests=$tests"
-          } >> "$GITHUB_OUTPUT"
-          {
-            echo "### Backend tests not re-run"
-            echo
-            echo "Tree \`$tree\` already passed in [pull request run $run_id]($url) ($tests tests, none skipped)."
-            echo "Its result is reused here; a manual dispatch of this workflow runs the suite."
-            echo
-            echo '```'
-            cat "$RUNNER_TEMP/reused/tested-summary.tap"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "Reusing $url: $tests tests."
 
       # The Node a local run uses (.nvmrc; `engines` in be/package.json says
       # the same), checked against the image's below, so a test cannot pass here
       # on a Node the server never runs on. At least 21 either way: `node --test`
       # only expands the quoted glob from 21.
       - uses: actions/setup-node@v4
-        if: steps.reuse.outputs.hit != 'true'
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -222,7 +164,6 @@ jobs:
       # Bumping .nvmrc and not be/Dockerfile, or the other way round, fails
       # here, not after the deploy.
       - name: Node matches the image
-        if: steps.reuse.outputs.hit != 'true'
         shell: bash
         run: |
           image=$(sed -nE 's/^FROM node:([0-9]+).*/\1/p' Dockerfile | head -n1)
@@ -236,7 +177,6 @@ jobs:
       # same codes (be/src/shared/error-codes.ts). No dependencies, so it runs
       # before the install and fails fast.
       - name: Error catalogues match
-        if: steps.reuse.outputs.hit != 'true'
         working-directory: .
         run: |
           node --test scripts/check-error-codes.test.mjs
@@ -246,7 +186,6 @@ jobs:
       # dropped it would still pass the suite, only slower. No dependencies, so
       # it runs before the install.
       - name: Postgres runs without fsync
-        if: steps.reuse.outputs.hit != 'true'
         shell: bash
         run: |
           fsync=$(psql "$TEST_DATABASE_URL" -tAc 'SHOW fsync')
@@ -257,7 +196,6 @@ jobs:
           fi
 
       - run: npm ci
-        if: steps.reuse.outputs.hit != 'true'
 
       # `npm run check`, the command a local run uses (be/scripts/check.mjs), so
       # the two cannot drift apart. It runs serially, in one process, on
@@ -272,127 +210,20 @@ jobs:
       # harness.close() from leaving Postgres sockets open and the job sitting
       # at its timeout.
       #
-      # The integration tests skip themselves when TEST_DATABASE_URL is missing,
-      # and a skipped test is a passing one — so a broken env here would turn the
-      # gate green while testing nothing. Nothing else in the suite skips, so any
-      # skip at all fails the job.
-      #
-      # Coverage is Node's own (no dependency), written as lcov beside the TAP
-      # and summarised by the next step. Every flag is written `--flag=value`:
-      # check.mjs passes on only arguments that start with `-`.
+      # check.mjs refuses to start without TEST_DATABASE_URL, so the suite
+      # cannot skip itself green; a skip that remains is a `test.skip` someone
+      # wrote, and it fails the job. The job is stateless: it records nothing
+      # for a later run and reads nothing from an earlier one. Coverage runs
+      # nightly instead (be-coverage.yml), off the path every push waits on.
       - name: Backend tests (serial)
-        if: steps.reuse.outputs.hit != 'true'
         shell: bash
         run: |
-          npm run -s check -- \
-            --experimental-test-coverage --test-coverage-include='src/**' \
-            --test-coverage-exclude='src/**/*.test.ts' --test-coverage-exclude='src/test/**' \
-            --test-reporter=tap --test-reporter-destination=stdout \
-            --test-reporter=lcov --test-reporter-destination=lcov.info | tee test-output.tap
+          npm run -s check -- --test-reporter=tap --test-reporter-destination=stdout | tee test-output.tap
           if ! grep -qx '# skipped 0' test-output.tap; then
-            echo "::error::Tests were skipped — the integration suite did not run against Postgres."
+            echo "::error::Tests were skipped. A skipped test proves nothing: fix it or delete it."
             grep -E '^# (tests|pass|fail|skipped)' test-output.tap
             exit 1
           fi
-
-      # Per service folder, in the run's summary page. A report, never a gate:
-      # a percentage to hit is a reason to write tests that assert nothing.
-      - name: Coverage by service folder
-        if: ${{ !cancelled() && hashFiles('be/lcov.info') != '' }}
-        working-directory: .
-        run: node scripts/coverage-summary.mjs be/lcov.info >> "$GITHUB_STEP_SUMMARY"
-
-      # A pull request may not quietly lose tests. Every run on `staging`/`main`
-      # records how many tests its backend has, keyed by the git tree of `be/`
-      # it tested; a pull request compares its own count with the one recorded
-      # for the base branch it merges into (its merge commit's first parent).
-      # Only a run that skipped nothing counts — a skipped suite reports one
-      # test where it holds dozens. A push that reused a pull request's run
-      # records that run's count: the tree, and so the tests, are the same.
-      - name: Test count
-        id: count
-        if: ${{ !cancelled() && (steps.reuse.outputs.hit == 'true' || hashFiles('be/test-output.tap') != '') }}
-        shell: bash
-        env:
-          REUSED_TESTS: ${{ steps.reuse.outputs.tests }}
-        run: |
-          if [ -n "$REUSED_TESTS" ]; then
-            echo "tests=$REUSED_TESTS" >> "$GITHUB_OUTPUT"
-          elif grep -qx '# skipped 0' test-output.tap; then
-            echo "tests=$(sed -n 's/^# tests //p' test-output.tap | tail -n1)" >> "$GITHUB_OUTPUT"
-          fi
-          echo "tree=$(git rev-parse HEAD:be)" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.event_name }}" = pull_request ]; then
-            echo "base_tree=$(git rev-parse HEAD^1:be)" >> "$GITHUB_OUTPUT"
-          fi
-          mkdir -p .test-count
-
-      # Green runs only. A cache key cannot be overwritten, so a red run's count
-      # (a file that fails to import reports as one test) would stick to its tree.
-      - name: Record the test count
-        if: ${{ success() && github.event_name != 'pull_request' && steps.count.outputs.tests != '' }}
-        run: echo "${{ steps.count.outputs.tests }}" > .test-count/tests
-      - name: Save the test count
-        if: ${{ success() && github.event_name != 'pull_request' && steps.count.outputs.tests != '' }}
-        uses: actions/cache/save@v4
-        with:
-          path: be/.test-count
-          key: be-test-count-${{ steps.count.outputs.tree }}
-
-      - name: Base branch's test count
-        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.count.outputs.tests != '' }}
-        uses: actions/cache/restore@v4
-        with:
-          path: be/.test-count
-          key: be-test-count-${{ steps.count.outputs.base_tree }}
-
-      # Removing tests on purpose (a feature deleted) is allowed: a human adds
-      # the `tests-removed` label and re-runs this job. Read live, not from the
-      # event, so the re-run sees the label.
-      - name: No tests lost
-        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.count.outputs.tests != '' }}
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          HEAD_COUNT: ${{ steps.count.outputs.tests }}
-        run: |
-          base=$(cat .test-count/tests 2>/dev/null || true)
-          if [ -z "$base" ]; then
-            echo "::warning::No test count is recorded for the base branch's backend, so this PR's count ($HEAD_COUNT) was not compared. Re-run the base branch's BE Deploy workflow to record one."
-            exit 0
-          fi
-          echo "Backend tests: $HEAD_COUNT here, $base on the base branch."
-          if [ "$HEAD_COUNT" -lt "$base" ]; then
-            if gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels -q '.labels[].name' | grep -qx tests-removed; then
-              echo "::warning::$((base - HEAD_COUNT)) backend test(s) removed; allowed by the tests-removed label."
-              exit 0
-            fi
-            echo "::error::This PR has $((base - HEAD_COUNT)) fewer backend tests than the base branch ($HEAD_COUNT vs $base). Deleting a test must be deliberate: if it is, add the tests-removed label and re-run this job."
-            exit 1
-          fi
-
-      # Last, so only a run green to here marks its tree: the push that merges
-      # this exact tree reuses the result instead of running the suite again
-      # ("Already tested by a pull request" above). The TAP summary lines,
-      # `# tests N` above all, are what the push records as its count. Kept a
-      # week; a PR that sits longer is simply tested again on its push.
-      - name: Mark this tree as tested
-        id: mark
-        if: ${{ success() && github.event_name == 'pull_request' }}
-        shell: bash
-        run: |
-          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
-          grep -E '^# (tests|suites|pass|fail|cancelled|skipped|todo) ' test-output.tap > tested-summary.tap
-      - name: Upload the tested-tree marker
-        if: ${{ success() && github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: be-tested-${{ steps.mark.outputs.tree }}
-          path: be/tested-summary.tap
-          retention-days: 7
-          overwrite: true
-          if-no-files-found: error
 
   # The schema in `be/src/db/schema/` and the migration history must describe the
   # same database. A schema edit committed without its migration passes every
@@ -409,7 +240,9 @@ jobs:
   # Postgres truncates at 63 characters — so a real drift would be lost in it.
   drift:
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.be == 'true'
+    if: >-
+      github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' ||
+      needs.changes.outputs.be == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -464,7 +297,7 @@ jobs:
 
   fe-client:
     needs: changes
-    if: needs.changes.outputs.fe-client == 'true'
+    if: github.event_name == 'merge_group' || needs.changes.outputs.fe-client == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -488,7 +321,7 @@ jobs:
 
   fe-portal:
     needs: changes
-    if: needs.changes.outputs.fe-portal == 'true'
+    if: github.event_name == 'merge_group' || needs.changes.outputs.fe-portal == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -507,13 +340,11 @@ jobs:
         working-directory: .
         run: node scripts/check-error-codes.mjs
 
-  # The checks that keep tests honest (#200). Pull requests only.
+  # The checks that keep tests honest (#200). Pull requests and the merge queue.
   guardrails:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     permissions:
       contents: read
-      # The journey count check reads the pull request's labels.
-      pull-requests: read
     uses: ./.github/workflows/test-guardrails.yml
 
   # The browser journeys on a stack inside the runner (#207): on every pull
@@ -523,7 +354,9 @@ jobs:
   # they do not run against. Not the production gate — that is `e2e` below.
   # The job keeps its name so branch protection's required check still matches.
   journeys-pr:
-    if: github.event_name == 'pull_request' || github.ref_name == 'staging'
+    if: >-
+      github.event_name == 'pull_request' || github.event_name == 'merge_group' ||
+      github.ref_name == 'staging'
     permissions:
       contents: read
     uses: ./.github/workflows/e2e-local.yml

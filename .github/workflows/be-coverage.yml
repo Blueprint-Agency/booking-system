@@ -1,0 +1,74 @@
+name: BE Coverage
+
+# The backend suite's line, branch and function coverage per service folder, in
+# the run's summary page. A report, never a gate: a percentage to hit is a
+# reason to write tests that assert nothing. So it runs nightly and on demand,
+# not in the `test` job every push and pull request waits on. See
+# docs/md/test-guardrails.md § Coverage report.
+#
+# GitHub runs a schedule from the default branch's copy of this file, so the
+# nightly run starts once this file reaches `main`. It covers `staging`, where
+# work lands first; a manual dispatch covers the branch it is dispatched on.
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # As the `test` job's in deploy-be.yml: throwaway, and without durability.
+    services:
+      postgres:
+        image: postgres:16
+        command: -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: booking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d booking_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/booking_test
+
+    defaults:
+      run:
+        working-directory: be
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'staging' || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: be/package-lock.json
+      - run: npm ci
+
+      # Node's own coverage (no dependency), written as lcov and summarised by
+      # the next step. Every flag is written `--flag=value`: check.mjs passes on
+      # only arguments that start with `-`.
+      - name: Backend tests with coverage
+        run: >-
+          npm run -s check --
+          --experimental-test-coverage --test-coverage-include='src/**'
+          --test-coverage-exclude='src/**/*.test.ts' --test-coverage-exclude='src/test/**'
+          --test-reporter=dot --test-reporter-destination=stdout
+          --test-reporter=lcov --test-reporter-destination=lcov.info
+
+      - name: Coverage by service folder
+        if: ${{ !cancelled() && hashFiles('be/lcov.info') != '' }}
+        working-directory: .
+        run: node scripts/coverage-summary.mjs be/lcov.info >> "$GITHUB_STEP_SUMMARY"

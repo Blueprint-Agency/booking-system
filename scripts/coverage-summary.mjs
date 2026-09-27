@@ -2,8 +2,8 @@
 /**
  * Summarises the backend's lcov coverage per service folder, as markdown.
  *
- * The backend CI job runs its suite with Node's built-in coverage and the lcov
- * reporter; this turns that file into one row per `src/services/<feature>/`
+ * The nightly coverage workflow (be-coverage.yml) runs the backend suite with
+ * Node's built-in coverage and the lcov reporter; this turns that file into one row per `src/services/<feature>/`
  * (and one per other top-level `src/` folder) for the job summary. A report,
  * never a gate: there is no threshold, so there is nothing to write hollow
  * tests towards.

@@ -110,6 +110,10 @@ function stubEnvironment(): void {
   // triggered went out for real and bounced back into the platform inbox. It is
   // also what keeps `src/db/url.ts` from loading `.env`.
   process.env.NODE_ENV = 'test'
+  // CI's runners are on UTC and a developer's machine usually is not. A date
+  // formatted or a day boundary found in the process's own zone would pass on
+  // one and fail on the other.
+  process.env.TZ = 'UTC'
   // Never 'production': that is what gates the second tenant, and a one-tenant
   // fixture would let every isolation test pass vacuously.
   process.env.APP_ENV = 'development'
