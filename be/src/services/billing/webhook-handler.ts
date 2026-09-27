@@ -1,7 +1,8 @@
 /**
- * Stripe webhook entry. Routes checkout.session.completed and charge.refunded events.
+ * Stripe webhook entry. Routes checkout-paid and charge.refunded events.
  *
- * checkout.session.completed:
+ * checkout.session.completed (paid at once) / checkout.session.async_payment_succeeded
+ * (paid later, by a method that settles after the session completes):
  *   - insert stripe_payments row (pending → succeeded)
  *   - grant client_package (class or pt) OR insert workshop booking
  *   - trigger referral conversion check if applicable
@@ -285,7 +286,7 @@ async function existingPayment(tenantId: string, paymentIntentId: string) {
  * because a webhook has no Tenant context to read across.
  */
 async function tenantNamedByEvent(event: Stripe.Event): Promise<string | null> {
-  if (event.type === 'checkout.session.completed') {
+  if (isCheckoutPaidEvent(event)) {
     const clientId = (event.data.object as Stripe.Checkout.Session).metadata?.client_id
     return clientId ? routeToTenant(clientId) : null
   }
@@ -295,6 +296,27 @@ async function tenantNamedByEvent(event: Stripe.Event): Promise<string | null> {
     return intentId ? tenantForPaymentIntent(intentId, charge.metadata?.tenant_id ?? null) : null
   }
   return null
+}
+
+/**
+ * The events that say a checkout's money may have arrived (Stripe's Checkout
+ * fulfilment guide). `checkout.session.completed` fires when the member leaves
+ * the hosted page, which for an asynchronous method is before the money has
+ * arrived — its `payment_status` is then `unpaid`, and the provider sends
+ * `checkout.session.async_payment_succeeded` once it has. Both carry the same
+ * session, metadata and all, so both run the one fulfilment path; its
+ * idempotency guard makes whichever lands second a no-op.
+ *
+ * `checkout.session.async_payment_failed` is not subscribed to: an unpaid
+ * session has written nothing and granted nothing, so there is nothing to undo.
+ * Its Purchase stays open and its Promo Code Hold lapses, as for a checkout the
+ * member walked away from.
+ */
+function isCheckoutPaidEvent(event: Stripe.Event): boolean {
+  return (
+    event.type === 'checkout.session.completed' ||
+    event.type === 'checkout.session.async_payment_succeeded'
+  )
 }
 
 /**
@@ -358,11 +380,22 @@ export async function handleStripeEvent(
   const named = await tenantNamedByEvent(event)
   refuseWrongTenant(named, expectedTenantId, { eventId: event.id, eventType: event.type })
 
-  if (event.type !== 'checkout.session.completed') {
+  if (!isCheckoutPaidEvent(event)) {
     return dispatchStripeEvent(event, expectedTenantId, providerAccountId, retry)
   }
 
   const session = event.data.object as Stripe.Checkout.Session
+  // The member finished the hosted page but the money has not arrived — an
+  // asynchronous method still settling. Nothing is recorded or granted until
+  // `checkout.session.async_payment_succeeded` says it has. `no_payment_required`
+  // is fulfilled like `paid`.
+  if (session.payment_status === 'unpaid') {
+    logger.info(
+      { eventId: event.id, eventType: event.type, sessionId: session.id },
+      'stripe-webhook: checkout completed unpaid, waiting for the async payment',
+    )
+    return
+  }
   const clientId = (session.metadata ?? {}).client_id
   // No client id means our own checkout never ran — the same silent return the
   // per-kind branches below make on missing metadata.
@@ -398,7 +431,7 @@ async function dispatchStripeEvent(
   providerAccountId: string,
   retry: RetryPolicy | undefined,
 ): Promise<void> {
-  if (event.type === 'checkout.session.completed') {
+  if (isCheckoutPaidEvent(event)) {
     const session = event.data.object as Stripe.Checkout.Session
     const meta = session.metadata ?? {}
     const kind = meta.kind as string | undefined

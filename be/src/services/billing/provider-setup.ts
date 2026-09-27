@@ -12,11 +12,19 @@
 type AppEnv = 'development' | 'staging' | 'production'
 
 /**
- * The events the studio's endpoint has to subscribe to — exactly the two the
+ * The events the studio's endpoint has to subscribe to — exactly the ones the
  * webhook handler acts on (`webhook-handler.ts`). Anything else is delivered,
  * verified and ignored, so subscribing to more only adds noise.
+ *
+ * `checkout.session.async_payment_succeeded` is how a checkout paid by a method
+ * that settles after the session completes (PayNow among them) is delivered;
+ * without it that payment is never granted.
  */
-export const PROVIDER_WEBHOOK_EVENTS = ['checkout.session.completed', 'charge.refunded'] as const
+export const PROVIDER_WEBHOOK_EVENTS = [
+  'checkout.session.completed',
+  'checkout.session.async_payment_succeeded',
+  'charge.refunded',
+] as const
 
 /**
  * The secret-key prefix this environment accepts.

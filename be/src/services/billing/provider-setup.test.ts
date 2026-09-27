@@ -72,8 +72,12 @@ describe('the webhook URL a studio is shown', () => {
     )
   })
 
-  test('names the two events the handler acts on', () => {
-    assert.deepEqual([...PROVIDER_WEBHOOK_EVENTS], ['checkout.session.completed', 'charge.refunded'])
+  test('names the three events the handler acts on', () => {
+    assert.deepEqual([...PROVIDER_WEBHOOK_EVENTS], [
+      'checkout.session.completed',
+      'checkout.session.async_payment_succeeded',
+      'charge.refunded',
+    ])
   })
 })
 

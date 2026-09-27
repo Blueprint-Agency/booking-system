@@ -228,19 +228,27 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
   const sessionTotal = (params: { line_items: any[] }) =>
     params.line_items.reduce((n: number, l: any) => n + l.price_data.unit_amount * (l.quantity ?? 1), 0)
 
-  type Delivery = { intent?: string; signature?: string; endpoint?: string; metadata?: Record<string, string> }
+  type Delivery = {
+    intent?: string
+    signature?: string
+    endpoint?: string
+    metadata?: Record<string, string>
+    /** Which of the checkout events, and what it says of the money; paid on completion by default. */
+    type?: 'checkout.session.completed' | 'checkout.session.async_payment_succeeded'
+    paymentStatus?: 'paid' | 'unpaid'
+  }
 
   /** The provider's checkout-completed delivery for the last session, paid in full. */
   async function deliver(options: Delivery = {}): Promise<Response> {
     const { params } = lastSession()
     const event = {
       id: `evt_${randomUUID()}`,
-      type: 'checkout.session.completed',
+      type: options.type ?? 'checkout.session.completed',
       data: {
         object: {
           id: `cs_${randomUUID()}`,
           payment_intent: options.intent ?? `pi_${randomUUID()}`,
-          payment_status: 'paid',
+          payment_status: options.paymentStatus ?? 'paid',
           amount_total: sessionTotal(params),
           metadata: options.metadata ?? params.metadata,
         },
@@ -447,6 +455,38 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(purchases[0]!.amountPaidSgd, '150.00', 'the redelivery did not pay twice')
     assert.equal((await paymentsOf(ana)).length, 1, 'one payment')
     assert.equal((await packagesOf(ana))[0]!.creditsOrSessionsRemaining, 10)
+  })
+
+  test('PAY-46 a checkout completed but not yet paid grants nothing; the async-payment-succeeded webhook then grants once', async () => {
+    const kai = await member(one)
+    await expectStatus(await buyClass(kai, one.bundleId), 200)
+    const intent = `pi_${randomUUID()}`
+
+    // The member left the provider's page; an asynchronous method is still settling.
+    await expectStatus(await deliver({ intent, paymentStatus: 'unpaid' }), 200)
+    assert.equal((await packagesOf(kai)).length, 0, 'granted before the money arrived')
+    assert.equal((await paymentsOf(kai)).length, 0, 'a payment recorded before the money arrived')
+    const [open] = await purchasesOf(kai)
+    assert.equal(open!.status, 'open')
+    assert.equal(open!.amountPaidSgd, '0.00')
+
+    await expectStatus(await deliver({ intent, type: 'checkout.session.async_payment_succeeded' }), 200)
+    const [granted, ...more] = await packagesOf(kai)
+    assert.equal(more.length, 0)
+    assert.equal(granted!.creditsOrSessionsRemaining, 10)
+    const [payment] = await paymentsOf(kai)
+    assert.equal(payment!.paymentIntentId, intent)
+    assert.equal(payment!.status, 'succeeded')
+    assert.equal(payment!.clientPackageId, granted!.id)
+    const [sale] = await purchasesOf(kai)
+    assert.equal(sale!.amountPaidSgd, '150.00')
+
+    // Redelivered, or arriving after a completion that was already paid: nothing more.
+    await expectStatus(await deliver({ intent, type: 'checkout.session.async_payment_succeeded' }), 200)
+    await expectStatus(await deliver({ intent }), 200)
+    assert.equal((await packagesOf(kai)).length, 1, 'one package')
+    assert.equal((await paymentsOf(kai)).length, 1, 'one payment')
+    assert.equal((await purchasesOf(kai))[0]!.amountPaidSgd, '150.00')
   })
 
   test('PAY-17 a webhook whose signature does not verify grants nothing and records no payment', async () => {

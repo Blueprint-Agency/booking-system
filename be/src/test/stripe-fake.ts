@@ -90,7 +90,7 @@ export type StripeFake = {
   issueKey(secretKey: string, accountId: string): void
   /**
    * The webhook endpoints on one account, live. `webhookEndpoints.create`,
-   * `.list` and `.del` on a client bound to that account read and write this,
+   * `.list`, `.update` and `.del` on a client bound to that account read and write this,
    * unless a reply is set for them.
    */
   webhookEndpoints(accountId: string): FakeWebhookEndpoint[]
@@ -179,6 +179,17 @@ export function installStripeFake(options: { credentials?: 'fake' | 'database' }
         // Listed without the secret, as Stripe lists them.
         data: endpointsOn(bound(client)).map(({ secret: _secret, ...rest }) => ({ ...rest, object: 'webhook_endpoint' })),
       }),
+    ],
+    [
+      'webhookEndpoints.update',
+      (client, [id, params]) => {
+        const endpoint = endpointsOn(bound(client)).find(each => each.id === id)
+        if (!endpoint) throw new Error(`No such webhook endpoint: '${String(id)}'`)
+        const { enabled_events } = params as { enabled_events?: string[] }
+        if (enabled_events) endpoint.enabled_events = [...enabled_events]
+        const { secret: _secret, ...rest } = endpoint
+        return { ...rest, object: 'webhook_endpoint' }
+      },
     ],
     [
       'webhookEndpoints.del',

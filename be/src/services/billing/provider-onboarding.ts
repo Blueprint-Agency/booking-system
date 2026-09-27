@@ -235,6 +235,51 @@ export async function releaseProviderAccount(tenantId: string): Promise<Provider
   return status
 }
 
+/**
+ * Bring the events a studio's endpoint subscribes to up to
+ * `PROVIDER_WEBHOOK_EVENTS`, for an endpoint created before the list last grew
+ * (`checkout.session.async_payment_succeeded`). The endpoint and its signing
+ * secret are kept, so nothing stored changes.
+ *
+ * The endpoint the platform stored, or — for credentials saved before #294 —
+ * every endpoint at the studio's URL. `none` is a studio with no credentials
+ * of its own, or none that can be opened; `unchanged` an endpoint already
+ * subscribed to all of them.
+ */
+export async function syncWebhookEvents(
+  tenantId: string,
+): Promise<{ result: 'none' | 'unchanged' | 'updated'; endpointIds: string[] }> {
+  const account = await previousAccount(tenantId)
+  if (!account) return { result: 'none', endpointIds: [] }
+  const stripe = stripeForKey(account)
+  const url = await webhookUrlFor(tenantId)
+
+  const wanted = new Set<string>(PROVIDER_WEBHOOK_EVENTS)
+  const stale: Array<{ id: string; events: string[] }> = []
+  let found = 0
+  for await (const endpoint of listEndpoints(stripe)) {
+    const ours = account.endpointId ? endpoint.id === account.endpointId : endpoint.url === url
+    if (!ours) continue
+    found += 1
+    const has = new Set(endpoint.enabled_events)
+    if (has.has('*') || [...wanted].every(event => has.has(event))) continue
+    // Added to, never narrowed: an endpoint made by hand may carry more.
+    stale.push({ id: endpoint.id, events: [...new Set([...endpoint.enabled_events, ...wanted])] })
+  }
+  if (found === 0) return { result: 'none', endpointIds: [] }
+
+  for (const endpoint of stale) {
+    await outbound('stripe', 'webhookEndpoints.update', () =>
+      stripe.webhookEndpoints.update(endpoint.id, {
+        enabled_events: endpoint.events as Stripe.WebhookEndpointUpdateParams.EnabledEvent[],
+      }),
+    )
+    logger.info({ tenantId, accountId: account.accountId, webhookEndpointId: endpoint.id }, 'payment webhook endpoint events updated')
+  }
+  const endpointIds = stale.map(endpoint => endpoint.id)
+  return { result: endpointIds.length > 0 ? 'updated' : 'unchanged', endpointIds }
+}
+
 /** The studio's own webhook URL, from its slug. */
 async function webhookUrlFor(tenantId: string): Promise<string> {
   const tenant = await loadTenantById(tenantId)

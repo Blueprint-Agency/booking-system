@@ -11,6 +11,8 @@ const run = Date.now().toString(36)
 const DOMAIN = `webhook-setup-${run}.test`
 const OPERATOR = `operator@${DOMAIN}`
 const SEALING_KEY = randomBytes(32).toString('base64')
+/** Every event the webhook handler acts on, sorted. */
+const HANDLED_EVENTS = ['charge.refunded', 'checkout.session.async_payment_succeeded', 'checkout.session.completed']
 
 /**
  * A studio pastes only its secret key; the platform creates its webhook
@@ -113,7 +115,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     await harness.close()
   })
 
-  test('PAY-37 saving a key creates one endpoint at the studio’s URL for the two events, and a delivery verifies against it', async () => {
+  test('PAY-37 saving a key creates one endpoint at the studio’s URL for the events the handler acts on, and a delivery verifies against it', async () => {
     fake.issueKey('sk_test_first', 'acct_first')
 
     const res = await put(studio.id, { secret_key: 'sk_test_first' })
@@ -125,7 +127,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     const endpoints = fake.webhookEndpoints('acct_first')
     assert.equal(endpoints.length, 1)
     assert.equal(endpoints[0]!.url, url(studio.slug))
-    assert.deepEqual([...endpoints[0]!.enabled_events].sort(), ['charge.refunded', 'checkout.session.completed'])
+    assert.deepEqual([...endpoints[0]!.enabled_events].sort(), HANDLED_EVENTS)
 
     // The endpoint is remembered, so it can be managed later…
     const row = await storedRow(studio.id)
@@ -297,11 +299,45 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     const ours = fake.webhookEndpoints('acct_by_hand').filter(e => e.url === url(studio.slug))
     assert.equal(ours.length, 1)
     assert.equal((await storedRow(studio.id))?.webhookEndpointId, ours[0]!.id)
-    assert.deepEqual([...ours[0]!.enabled_events].sort(), ['charge.refunded', 'checkout.session.completed'])
+    assert.deepEqual([...ours[0]!.enabled_events].sort(), HANDLED_EVENTS)
     assert.equal(
       fake.webhookEndpoints('acct_by_hand').filter(e => e.url === 'https://elsewhere.test/hook').length,
       1,
     )
+  })
+
+  test('PAY-47 an endpoint created before the async-payment event joined the list is subscribed to it, keeping its secret, and a second run changes nothing', async () => {
+    fake.issueKey('sk_test_older', 'acct_older')
+    assert.equal((await put(studio.id, { secret_key: 'sk_test_older' })).status, 200)
+    const [endpoint] = fake.webhookEndpoints('acct_older')
+    // As the platform created it before this change.
+    endpoint!.enabled_events = ['checkout.session.completed', 'charge.refunded']
+    const secretBefore = endpoint!.secret
+    // One for somewhere else on the same account, which is not ours to touch.
+    fake.createWebhookEndpoint('acct_older', { url: 'https://elsewhere.test/hook', enabled_events: ['charge.refunded'] })
+
+    const { syncWebhookEvents } = await import('../services/billing/provider-onboarding')
+    assert.deepEqual(await syncWebhookEvents(studio.id), { result: 'updated', endpointIds: [endpoint!.id] })
+
+    const ours = fake.webhookEndpoints('acct_older').filter(e => e.url === url(studio.slug))
+    assert.equal(ours.length, 1, 'the same endpoint, not a new one')
+    assert.equal(ours[0]!.id, endpoint!.id)
+    assert.equal(ours[0]!.secret, secretBefore)
+    assert.deepEqual([...ours[0]!.enabled_events].sort(), HANDLED_EVENTS)
+    assert.equal((await storedRow(studio.id))?.webhookEndpointId, endpoint!.id)
+    assert.deepEqual(
+      fake.webhookEndpoints('acct_older').find(e => e.url === 'https://elsewhere.test/hook')!.enabled_events,
+      ['charge.refunded'],
+    )
+
+    assert.deepEqual(await syncWebhookEvents(studio.id), { result: 'unchanged', endpointIds: [] })
+    assert.equal(fake.callsTo('webhookEndpoints.update').length, 1)
+  })
+
+  test('PAY-47 a studio with no credentials of its own has no endpoint to update', async () => {
+    const { syncWebhookEvents } = await import('../services/billing/provider-onboarding')
+    assert.deepEqual(await syncWebhookEvents(studio.id), { result: 'none', endpointIds: [] })
+    assert.equal(fake.callsTo('webhookEndpoints.update').length, 0)
   })
 
   test('PAY-37 the route takes the secret key alone', async () => {
