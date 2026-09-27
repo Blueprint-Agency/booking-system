@@ -1,0 +1,1 @@
+ALTER TABLE "client_packages" ADD COLUMN "activated_by_pt_session_id" uuid;

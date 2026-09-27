@@ -834,7 +834,7 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
     <PackageCard
       name={pkg.name}
       headline={`${pkg.num_sessions} ${pkg.num_sessions === 1 ? "session" : "sessions"}`}
-      sub={`Valid ${pkg.validity_days} ${pkg.validity_days === 1 ? "day" : "days"} from your first request`}
+      sub={`Valid ${pkg.validity_days} ${pkg.validity_days === 1 ? "day" : "days"} from your first scheduled session`}
       badge={promo(pkg)}
       price={
         <div className="flex items-baseline justify-between gap-2">

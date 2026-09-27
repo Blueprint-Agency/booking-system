@@ -372,9 +372,11 @@ tx start
    WHERE id=client_package_id AND client_id=ctx.client_id.
    Required: kind='pt', not expired, session_type matches, credits_or_sessions_remaining >=
    (1 for 1on1, 2 for 2on1) → else 422 insufficient_pt_sessions.
-   If the chosen one is Dormant, this request Activates it: expires_at = now +
-   validity_days — whether or not another PT package is running (ADR 0010: any number
-   of PT packages may run at once; pt_package_not_current is retired).
+   A Dormant pick is accepted whether or not another PT package is running (ADR 0010:
+   any number of PT packages may run at once; pt_package_not_current is retired), and
+   it STAYS Dormant: the request debits it but starts no clock. Staff scheduling the
+   session Activates it — expires_at = scheduling moment + validity_days — and
+   cancelling that session in time returns it to Dormant (be/docs/adr/0011).
 5. DEBIT the package: credits_or_sessions_remaining -= (1 for 1on1, 2 for 2on1).
    The debit is recorded against pt_requests.id via the manual_adjustments shape with
    reason='pt_request_submit' so cancellation can reverse it precisely.

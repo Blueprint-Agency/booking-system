@@ -415,7 +415,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const held = packages.client_packages.find((p: any) => p.id === packageId)
     assert.equal(held.session_type, '1on1')
     assert.equal(held.credits_or_sessions_remaining, 9)
-    assert.ok(held.expires_at, 'a running PT package shows its expiry date')
+    assert.equal(held.expires_at, null, 'a request leaves the package Dormant; scheduling it Activates it')
   })
 
   test('PT-04 a 2on1 request debits two sessions, not one', async () => {
@@ -550,28 +550,29 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(packageId), 10)
   })
 
-  test('PT-67, PKG-36 a request against a Dormant PT package Activates it, whether or not another PT package is running', async () => {
+  test('PT-67, PKG-36 a request against a Dormant PT package debits it and leaves it Dormant, whether or not another PT package is running', async () => {
     const hal = await member(one, 'Hal Dormant')
     const first = await givePt(one, hal, '1on1')
     const second = await givePt(one, hal, '1on1')
     assert.equal((await pkg(first)).expiresAt, null, 'a purchase lands Dormant')
 
-    const before = Date.now()
-    await requestOk(one, hal, { sessionType: '1on1', clientPackageId: first })
-    const activated = await pkg(first)
-    assert.ok(activated.expiresAt, 'the first request Activates the package')
-    const validity = activated.validityDays!
-    assert.ok(Math.abs(activated.expiresAt.getTime() - (before + validity * DAY)) < 5 * MINUTE)
+    const firstRequest = await requestOk(one, hal, { sessionType: '1on1', clientPackageId: first })
+    assert.equal(await sessionsLeft(first), 9)
+    assert.equal((await pkg(first)).expiresAt, null, 'asking for a session starts no clock')
 
-    // The member picks the second while the first runs: it pays, and starts its
-    // own clock beside the first (be/docs/adr/0010).
-    const beforeSecond = Date.now()
-    await expectStatus(await submit(one, hal, { sessionType: '1on1', clientPackageId: second }), 201)
+    // Scheduling it starts the first; the member then picks the second while
+    // the first runs. It pays, and waits Dormant beside it (be/docs/adr/0010, 0011).
+    await scheduled(firstRequest)
+    const running = await pkg(first)
+    assert.ok(running.expiresAt)
+    const secondRequest = await requestOk(one, hal, { sessionType: '1on1', clientPackageId: second })
     assert.equal(await sessionsLeft(second), 9)
-    const secondRow = await pkg(second)
-    assert.ok(secondRow.expiresAt, 'the second request Activates the second package')
-    assert.ok(Math.abs(secondRow.expiresAt.getTime() - (beforeSecond + secondRow.validityDays! * DAY)) < 5 * MINUTE)
-    assert.equal((await pkg(first)).expiresAt?.getTime(), activated.expiresAt.getTime(), 'the first keeps running')
+    assert.equal((await pkg(second)).expiresAt, null, 'the second stays Dormant until its session is scheduled')
+    assert.equal((await pkg(first)).expiresAt?.getTime(), running.expiresAt.getTime(), 'the first keeps running')
+
+    await scheduled(secondRequest)
+    assert.ok((await pkg(second)).expiresAt, 'scheduled, the second runs too')
+    assert.equal((await pkg(first)).expiresAt?.getTime(), running.expiresAt.getTime(), 'beside the first')
   })
 
   test('PT-18 two requests racing for the last session: exactly one wins, and the balance never goes below zero', async () => {
@@ -1178,6 +1179,226 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(packageId), 10)
     assert.equal((await requestRow(again)).status, 'cancelled_after_scheduled')
     assert.equal((await sessionRow(againSession)).lifecycle, 'cancelled')
+  })
+
+  // ── Activation (be/docs/adr/0011) ────────────────────────────────────────
+  //
+  // A PT package Activates when its first session is put on the calendar, and
+  // goes back to Dormant when that session is cancelled in time.
+
+  /** The zero-delta ledger rows that record a package returning to Dormant. */
+  const reversalsOf = (clientPackageId: string) =>
+    harness.db
+      .select()
+      .from(schema.manualAdjustments)
+      .where(
+        and(
+          eq(schema.manualAdjustments.clientPackageId, clientPackageId),
+          eq(schema.manualAdjustments.reason, 'pt_activation_reversed'),
+        ),
+      )
+
+  const withinMinutes = (actual: Date | null, expected: number) =>
+    actual !== null && Math.abs(actual.getTime() - expected) < 5 * MINUTE
+
+  /** Back to Dormant: no clock, no Activating session, balance and liveness as given. */
+  async function assertDormantAgain(clientPackageId: string, sessions: number, by: Staff | null) {
+    const row = await pkg(clientPackageId)
+    assert.equal(row.expiresAt, null, 'the package is Dormant again')
+    assert.equal(row.activatedByPtSessionId, null)
+    assert.equal(row.creditsOrSessionsRemaining, sessions, 'whatever the cancel returned stays')
+    assert.equal(row.active, true)
+    const [reversal, ...more] = await reversalsOf(clientPackageId)
+    assert.ok(reversal, 'a ledger row records the return to Dormant')
+    assert.equal(more.length, 0)
+    assert.equal(reversal.delta, 0)
+    assert.equal(reversal.actedByStaffId, by?.staffId ?? null)
+  }
+
+  test('PT-70 scheduling a request against a Dormant package Activates it from the scheduling moment, by the admin or the instructor route, and records the session', async () => {
+    const fay = await member(one, 'Fay First Session')
+    const fox = await member(one, 'Fox Coach Scheduled')
+    const byAdmin = await givePt(one, fay, '1on1')
+    const byCoach = await givePt(one, fox, '1on1')
+    const adminRequest = await requestOk(one, fay, { sessionType: '1on1', clientPackageId: byAdmin })
+    const coachRequest = await requestOk(one, fox, { sessionType: '1on1', clientPackageId: byCoach })
+
+    const beforeAdmin = Date.now()
+    const adminSession = await scheduled(adminRequest)
+    const activated = await pkg(byAdmin)
+    const validity = activated.validityDays! * DAY
+    assert.ok(withinMinutes(activated.expiresAt, beforeAdmin + validity), 'the end date counts from the scheduling moment')
+    const startsAt = (await sessionRow(adminSession)).startsAt.getTime()
+    assert.ok(!withinMinutes(activated.expiresAt, startsAt + validity), 'not from the session date')
+    assert.equal(activated.activatedByPtSessionId, adminSession)
+    assert.equal(activated.creditsOrSessionsRemaining, 9, 'Activation debits nothing more')
+
+    const beforeCoach = Date.now()
+    const res = await expectStatus(await instructorSchedule(one, coachA, coachRequest), 201)
+    const coached = await pkg(byCoach)
+    assert.ok(withinMinutes(coached.expiresAt, beforeCoach + coached.validityDays! * DAY))
+    assert.equal(coached.activatedByPtSessionId, res.pt_request.session.id)
+  })
+
+  test('PT-71 a request scheduled against an already-running package leaves its expiry and its Activating session alone', async () => {
+    const gus = await member(one, 'Gus Running')
+    const packageId = await givePt(one, gus, '1on1')
+    const firstRequest = await requestOk(one, gus, { sessionType: '1on1', clientPackageId: packageId })
+    const secondRequest = await requestOk(one, gus, { sessionType: '1on1', clientPackageId: packageId })
+    const firstSession = await scheduled(firstRequest)
+    const running = await pkg(packageId)
+
+    await scheduled(secondRequest)
+
+    const after = await pkg(packageId)
+    assert.equal(after.expiresAt?.getTime(), running.expiresAt!.getTime())
+    assert.equal(after.activatedByPtSessionId, firstSession)
+    assert.equal(after.creditsOrSessionsRemaining, 8)
+  })
+
+  test('PT-72 a pending request cancelled by the member or an admin, or expired, returns the session and leaves the package Dormant', async () => {
+    const hua = await member(one, 'Hua Pending Cancel')
+    const packageId = await givePt(one, hua, '1on1')
+
+    const byMember = await requestOk(one, hua, { sessionType: '1on1', clientPackageId: packageId })
+    await expectStatus(await memberCancel(hua, byMember), 200)
+    const byAdmin = await requestOk(one, hua, { sessionType: '1on1', clientPackageId: packageId })
+    await expectStatus(await adminCancel(adminAtOne, byAdmin), 200)
+    const lapsing = await requestOk(one, hua, { sessionType: '1on1', clientPackageId: packageId })
+    await harness.db
+      .update(schema.ptRequests)
+      .set({ expiresAt: new Date(Date.now() - MINUTE) })
+      .where(eq(schema.ptRequests.id, lapsing))
+    // The expiry job, run for this studio as the scheduler would.
+    const { withTenant } = await import('../db')
+    const { expireStaleSessions } = await import('../services/pt-sessions/cancel')
+    await withTenant(one.id, () => expireStaleSessions())
+
+    assert.equal((await requestRow(lapsing)).status, 'cancelled_before_scheduled')
+    const row = await pkg(packageId)
+    assert.equal(row.creditsOrSessionsRemaining, 10)
+    assert.equal(row.expiresAt, null, 'still Dormant: nothing was ever put on the calendar')
+    assert.equal(row.activatedByPtSessionId, null)
+    assert.equal((await reversalsOf(packageId)).length, 0, 'nothing to reverse, so nothing recorded')
+  })
+
+  test('PT-73 the session that Activated the package, cancelled outside the window by the member, an admin or its instructor, returns the package to Dormant and the ledger records it', async () => {
+    const cancels: Array<{ name: string; by: Staff | null; cancel: (requestId: string, who: Member) => Response | Promise<Response> }> = [
+      { name: 'Ida Member Early', by: null, cancel: (id, who) => memberCancel(who, id) },
+      { name: 'Ike Admin Early', by: adminAtOne, cancel: id => adminCancel(adminAtOne, id) },
+      { name: 'Ina Coach Early', by: coachA, cancel: id => instructorCancel(coachA, id) },
+    ]
+    for (const { name, by, cancel } of cancels) {
+      const who = await member(one, name)
+      const packageId = await givePt(one, who, '1on1')
+      const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: packageId })
+      await scheduled(requestId)
+      assert.ok((await pkg(packageId)).expiresAt)
+
+      await expectStatus(await cancel(requestId, who), 200)
+
+      await assertDormantAgain(packageId, 10, by)
+    }
+
+    // The single-booking cancel reaches the same rule: the member's own seat,
+    // then an admin's with the session kept rather than returned.
+    const jin = await member(one, 'Jin Booking Early')
+    const jinPackage = await givePt(one, jin, '1on1')
+    const jinSession = await scheduled(await requestOk(one, jin, { sessionType: '1on1', clientPackageId: jinPackage }))
+    const [jinBooking] = await bookingsOn(jinSession)
+    await expectStatus(
+      await harness.app.request(`/api/v1/me/bookings/${jinBooking!.id}`, { method: 'DELETE', headers: jin.headers }),
+      200,
+    )
+    await assertDormantAgain(jinPackage, 10, null)
+
+    const joy = await member(one, 'Joy Kept Early')
+    const joyPackage = await givePt(one, joy, '1on1', { sessions: 1 })
+    const joySession = await scheduled(await requestOk(one, joy, { sessionType: '1on1', clientPackageId: joyPackage }))
+    const [joyBooking] = await bookingsOn(joySession)
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/bookings/${joyBooking!.id}/cancel`, {
+        method: 'POST',
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credit: 'keep' }),
+      }),
+      200,
+    )
+    const kept = await pkg(joyPackage)
+    assert.equal(kept.expiresAt, null, 'in time, so Dormant again, even with the session kept')
+    assert.equal(kept.creditsOrSessionsRemaining, 0)
+    assert.equal((await reversalsOf(joyPackage)).length, 1)
+
+    // Dormant again means the next session scheduled Activates it afresh.
+    const before = Date.now()
+    const nextSession = await scheduled(await requestOk(one, jin, { sessionType: '1on1', clientPackageId: jinPackage }))
+    const restarted = await pkg(jinPackage)
+    assert.ok(withinMinutes(restarted.expiresAt, before + restarted.validityDays! * DAY))
+    assert.equal(restarted.activatedByPtSessionId, nextSession)
+  })
+
+  test('PT-74 cancelling the Activating session inside the window: an admin or its instructor leaves the package Activated, and a member is refused', async () => {
+    const kim = await member(one, 'Kim Late')
+    const packageId = await givePt(one, kim, '1on1')
+    const refusedRequest = await requestOk(one, kim, { sessionType: '1on1', clientPackageId: packageId })
+    await scheduled(refusedRequest, { startsAt: near() })
+    const running = await pkg(packageId)
+    assert.ok(running.expiresAt)
+
+    await expectStatus(await memberCancel(kim, refusedRequest), 422)
+    assert.equal((await pkg(packageId)).expiresAt?.getTime(), running.expiresAt.getTime())
+
+    await expectStatus(await adminCancel(adminAtOne, refusedRequest), 200)
+    const afterAdmin = await pkg(packageId)
+    assert.equal(afterAdmin.expiresAt?.getTime(), running.expiresAt.getTime(), 'a late cancel keeps the package Activated')
+    assert.equal(afterAdmin.creditsOrSessionsRemaining, 10, 'staff still return the session')
+    assert.equal((await reversalsOf(packageId)).length, 0)
+    const [cancellation] = await cancellationsOf(kim)
+    assert.equal(cancellation!.wasWithinWindow, false, 'recorded as the late cancel it was')
+
+    // The same by its instructor, on a package that session Activated.
+    const kit = await member(one, 'Kit Coach Late')
+    const coachPackage = await givePt(one, kit, '1on1')
+    const coachRequest = await requestOk(one, kit, { sessionType: '1on1', clientPackageId: coachPackage })
+    await scheduled(coachRequest, { startsAt: near() })
+    const coachRunning = (await pkg(coachPackage)).expiresAt!
+    await expectStatus(await instructorCancel(coachA, coachRequest), 200)
+    assert.equal((await pkg(coachPackage)).expiresAt?.getTime(), coachRunning.getTime())
+    assert.equal((await reversalsOf(coachPackage)).length, 0)
+  })
+
+  test('PT-75 cancelling a session that did not Activate the package leaves its expiry alone, as does any cancel once staff have set the date by hand', async () => {
+    const lou = await member(one, 'Lou Later Session')
+    const packageId = await givePt(one, lou, '1on1')
+    const firstRequest = await requestOk(one, lou, { sessionType: '1on1', clientPackageId: packageId })
+    const laterRequest = await requestOk(one, lou, { sessionType: '1on1', clientPackageId: packageId })
+    const firstSession = await scheduled(firstRequest)
+    await scheduled(laterRequest)
+    const running = await pkg(packageId)
+
+    await expectStatus(await adminCancel(adminAtOne, laterRequest), 200)
+
+    const after = await pkg(packageId)
+    assert.equal(after.expiresAt?.getTime(), running.expiresAt!.getTime())
+    assert.equal(after.activatedByPtSessionId, firstSession)
+    assert.equal(after.creditsOrSessionsRemaining, 9)
+    assert.equal((await reversalsOf(packageId)).length, 0)
+
+    // Staff give the package a date of their own: it is no longer the first
+    // session's to take away.
+    const handSet = new Date(Date.now() + 30 * DAY)
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/clients/${lou.clientId}/packages/${packageId}/expiry`, {
+        method: 'POST',
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expires_at: handSet.toISOString(), reason: 'Agreed at the desk' }),
+      }),
+      200,
+    )
+    await expectStatus(await adminCancel(adminAtOne, firstRequest), 200)
+    const kept = await pkg(packageId)
+    assert.equal(kept.expiresAt?.getTime(), handSet.getTime())
+    assert.equal((await reversalsOf(packageId)).length, 0)
   })
 
   // ── Type change ──────────────────────────────────────────────────────────

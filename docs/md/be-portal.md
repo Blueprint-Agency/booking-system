@@ -490,6 +490,9 @@ tx start
 8. Insert bookings row(s): kind='pt', pt_session_id=new id, state='confirmed',
    credits_or_sessions_used=1 per client (recorded on the booking for audit; the debit
    itself already happened on submit and is not re-applied here); generate qr_token + code
+8b. Activation (be/docs/adr/0011): SELECT the debited client_packages row FOR UPDATE; if it is
+   Dormant (the request left it so), stamp expires_at = now() + validity_days and
+   activated_by_pt_session_id = new id. A package already running is left alone.
 9. Update pt_requests: status='scheduled', scheduled_pt_session_id=new id,
    resolved_at=now(), resolved_by_staff_id=actor_staff_id
 10. enqueueEmail('pt_session_scheduled', client.email, { instructor_name, starts_at, location, room, qr_url })
@@ -532,6 +535,8 @@ tx commit
 ```
 
 Expiry path (`pt-request-expiry` cron): pending requests past `expires_at` go through the same `'pending'` branch above with `actor=NULL`, ending up `cancelled_before_scheduled` + credits refunded. Client receives the `pt_cancelled_session_returned` email (subject mentions auto-expiry).
+
+**Activation reversal** (be/docs/adr/0011). A pending request's cancel or expiry refunds to a package that is still Dormant — nothing was Activated. In the `'scheduled'` branch, and in the single-booking cancel of the requester's paying seat, if the package's `activated_by_pt_session_id` is this session and the cancel is not late (not inside the PT cancellation window — only staff can cancel there), the package's `expires_at` and `activated_by_pt_session_id` are cleared in the same transaction and a zero-delta `manual_adjustments` row with reason `pt_activation_reversed` is written (actor = the staff member, or NULL for a member). The balance the cancel returned or kept is unaffected. A later session's cancel, a late cancel, a Voided package, and a package whose expiry staff have set by hand (which clears the pointer) never reverse.
 
 **Invariant:** `pt_sessions.pt_request_id` is `NOT NULL UNIQUE`. There is no path that creates a `pt_sessions` row without going through the schedule service.
 

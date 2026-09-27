@@ -666,6 +666,13 @@
       "when": 1790479090030,
       "tag": "0094_package_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1790493712160,
+      "tag": "0095_pt_activation_by_session",
+      "breakpoints": true
     }
   ]
 }

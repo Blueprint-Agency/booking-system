@@ -400,7 +400,10 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     const still = await pkg(plan)
     assert.equal(still.expiresAt, null, 'only a confirmed class booking Activates a plan')
     assert.equal(still.active, true)
-    assert.ok((await pkg(ptPackage)).expiresAt, 'the PT package itself did start')
+    // Nor does a request start the PT package: its session being scheduled does
+    // (be/docs/adr/0011). It is debited and waits Dormant.
+    assert.equal((await pkg(ptPackage)).expiresAt, null, 'the PT package waits for its session to be scheduled')
+    assert.equal((await pkg(ptPackage)).creditsOrSessionsRemaining, 2)
   })
 
   test('PKG-18 two first bookings arriving at once Activate a Dormant plan once, with a single end date', async () => {

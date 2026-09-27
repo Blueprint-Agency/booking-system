@@ -1,8 +1,9 @@
 /**
  * Activation (spec §3): the moment a Dormant package starts its clock — the
- * first booking it pays for. Every kind waits Dormant from purchase; this file
- * is the one place the stamp is written, so the class path and the PT path
- * cannot disagree about it.
+ * first booking it pays for (for a PT package, its first session being put on
+ * the calendar — be/docs/adr/0011). Every kind waits Dormant from purchase;
+ * this file is the one place the stamp is written, so the class path and the
+ * PT path cannot disagree about it.
  *
  * Any number of packages in a Family may be Activated at once (be/docs/adr/0010):
  * the member picks which one pays, and picking a Dormant one while another runs
@@ -11,6 +12,7 @@
  */
 import { and, eq, isNotNull, lte } from 'drizzle-orm'
 import { clientPackages } from '../../db/schema/packages'
+import { manualAdjustments } from '../../db/schema/ledger'
 import type { Tx } from './ledger'
 
 /**
@@ -41,16 +43,72 @@ export async function sweepExpired(
 /**
  * Stamp the expiry on a Dormant package. `expiresAt` was computed by the
  * caller through `activationExpiry`, from the booking moment and the length
- * frozen on the row.
+ * frozen on the row. A PT package names the session whose scheduling
+ * Activated it (be/docs/adr/0011), the one session whose cancel can undo it.
  */
 export async function activatePackage(
   tx: Tx,
   tenantId: string,
   clientPackageId: string,
   expiresAt: Date,
+  activatedByPtSessionId: string | null = null,
 ): Promise<void> {
   await tx
     .update(clientPackages)
-    .set({ expiresAt })
+    .set({ expiresAt, activatedByPtSessionId })
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
+}
+
+/**
+ * The session that Activated a PT package has been cancelled: return the
+ * package to Dormant unless the cancel was late (be/docs/adr/0011). Only that
+ * session undoes it — a package Activated by another, or by staff's hand, is
+ * left alone — and only once, since going back to Dormant clears the pointer.
+ * Balance is the cancel's business, not this: whatever it returned stays. The
+ * move is written to the ledger as a zero-delta row, like an expiry edit.
+ */
+export async function reverseActivationOnCancel(
+  tx: Tx,
+  input: {
+    tenantId: string
+    clientId: string
+    clientPackageId: string
+    ptSessionId: string
+    /** Inside the PT cancellation window, by whoever cancelled. */
+    late: boolean
+    actedByStaffId?: string | null
+  },
+): Promise<void> {
+  if (input.late) return
+  const [pkg] = await tx
+    .select({ id: clientPackages.id })
+    .from(clientPackages)
+    .where(
+      and(
+        eq(clientPackages.tenantId, input.tenantId),
+        eq(clientPackages.id, input.clientPackageId),
+        eq(clientPackages.clientId, input.clientId),
+        eq(clientPackages.activatedByPtSessionId, input.ptSessionId),
+      ),
+    )
+    .for('update')
+    .limit(1)
+  if (!pkg) return
+
+  await tx
+    .update(clientPackages)
+    // `active` is left as the cancel's ledger movement set it. Deriving it
+    // here would revive a package a Refund Voided, which is `active = false`
+    // and nothing else, if its session were cancelled after it.
+    .set({ expiresAt: null, activatedByPtSessionId: null })
+    .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, input.clientPackageId)))
+
+  await tx.insert(manualAdjustments).values({
+    tenantId: input.tenantId,
+    clientId: input.clientId,
+    clientPackageId: input.clientPackageId,
+    delta: 0,
+    reason: 'pt_activation_reversed',
+    actedByStaffId: input.actedByStaffId ?? null,
+  })
 }

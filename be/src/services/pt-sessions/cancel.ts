@@ -3,8 +3,9 @@ import { db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
-import { evaluateCancellation } from '../policy/evaluate-cancellation'
+import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
 import { refundCredits } from '../packages/ledger'
+import { reverseActivationOnCancel } from '../packages/activation'
 import { ptSessionCost } from './cost'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
@@ -26,6 +27,8 @@ import { now as clockNow } from '../../lib/clock'
  *               through evaluateCancellation(kind='pt') so a cancel within the
  *               configured PT window + cap returns the session(s), otherwise the
  *               action is rejected outright (hard deadline, mirroring classes).
+ *               If this session Activated the package and the cancel is not
+ *               late, the package returns to Dormant (be/docs/adr/0011).
  *
  * Terminal states are an idempotent no-op. Credit movements write a
  * manual_adjustments ledger row for traceability/parity with the class path.
@@ -157,6 +160,9 @@ export async function cancelPtRequest(
     let wasWithinCap = true
     if (source === 'admin') {
       refundSessions = cost
+      // The window never decides a staff cancel's refund, but it is recorded
+      // truthfully, and a late one keeps the package Activated (below).
+      wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, null, now)
     } else {
       const evaluation = await evaluateCancellation({
         tenantId,
@@ -198,6 +204,20 @@ export async function cancelPtRequest(
         : 'forfeited'
 
     await refundToPackage(refundSessions, source === 'admin' ? 'pt_admin_cancel_refund' : 'pt_cancel_refund')
+
+    // The session that Activated the package, cancelled in time, returns it to
+    // Dormant (be/docs/adr/0011). Not when the requester's booking was already
+    // cancelled on its own: that cancel settled it.
+    if (requesterStillBooked && req.debitedClientPackageId) {
+      await reverseActivationOnCancel(tx, {
+        tenantId,
+        clientId: req.clientId,
+        clientPackageId: req.debitedClientPackageId,
+        ptSessionId: session.id,
+        late: !wasWithinWindow,
+        actedByStaffId: resolvedByStaffId,
+      })
+    }
 
     // Cancel the session.
     await tx

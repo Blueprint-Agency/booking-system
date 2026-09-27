@@ -29,6 +29,7 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
   let bookSvc: typeof import('../services/bookings/book')
   let cancelSvc: typeof import('../services/bookings/cancel')
   let ptRequestSvc: typeof import('../services/pt-sessions/request')
+  let ptScheduleSvc: typeof import('../services/pt-sessions/schedule')
 
   let locationId!: string
   let roomId!: string
@@ -131,6 +132,7 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
     bookSvc = inTenantContext(await import('../services/bookings/book'))
     cancelSvc = inTenantContext(await import('../services/bookings/cancel'))
     ptRequestSvc = inTenantContext(await import('../services/pt-sessions/request'))
+    ptScheduleSvc = inTenantContext(await import('../services/pt-sessions/schedule'))
 
     const [location] = await harness.db
       .select()
@@ -200,6 +202,13 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
     if (!harness) return
     const clients = sql.join(clientIds.map(id => sql`${id}::uuid`), sql`, `)
     if (clientIds.length > 0) {
+      const requests = sql`SELECT id FROM pt_requests WHERE client_id IN (${clients})`
+      const sessions = sql`SELECT id FROM pt_sessions WHERE pt_request_id IN (${requests})`
+      await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM pt_session_clients WHERE pt_session_id IN (${sessions})`)
+      await harness.db.execute(sql`DELETE FROM pt_sessions WHERE id IN (${sessions})`)
       await harness.db.execute(sql`DELETE FROM pt_request_slots WHERE pt_request_id IN (SELECT id FROM pt_requests WHERE client_id IN (${clients}))`)
       await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)
@@ -350,22 +359,40 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.ok((await row(second)).expiresAt, 'and the next package started')
   })
 
-  test('a PT package Activates on its first session request, and another starts beside it when picked', async () => {
+  test('PT-67, PT-70 a PT package Activates when its first session is scheduled, not when it is requested, and another waits beside it when picked', async () => {
     const clientId = await newMember()
     const first = (await grantPt(clientId)).clientPackageId
     const other = (await grantPt(clientId, pt2on1CatalogId)).clientPackageId
     assert.equal((await row(first)).expiresAt, null)
     assert.equal((await row(first)).validityDays, 60)
 
-    await ptRequest(clientId, first)
+    const { ptRequestId } = await ptRequest(clientId, first)
+    const requested = await row(first)
+    assert.equal(requested.expiresAt, null, 'the request debits it and leaves it Dormant')
+    assert.equal(requested.creditsOrSessionsRemaining, 2)
+
+    const startsAt = soon(40)
+    const scheduled = await ptScheduleSvc.schedulePtRequest(tenantId, {
+      ptRequestId,
+      instructorId: staffId,
+      locationId,
+      roomId,
+      startsAt,
+      endsAt: new Date(startsAt.getTime() + HOUR),
+      actorStaffId: staffId,
+      actorIsAdmin: true,
+    })
+    assert.ok(scheduled.ok)
     const started = await row(first)
-    assert.ok(started.expiresAt, 'the request Activates it')
+    assert.ok(started.expiresAt, 'scheduling its session Activates it')
+    assert.equal(started.activatedByPtSessionId, scheduled.ptSessionId)
     assert.equal(started.creditsOrSessionsRemaining, 2)
 
     // The member picks the waiting 2-on-1 package while the 1-on-1 runs: it
-    // pays, and starts its own clock beside the first.
+    // pays, and waits Dormant beside the first until its own session is scheduled.
     await ptRequest(clientId, other, '2on1')
-    assert.ok((await row(other)).expiresAt, 'the 2-on-1 package Activates too')
+    assert.equal((await row(other)).creditsOrSessionsRemaining, 2)
+    assert.equal((await row(other)).expiresAt, null, 'the 2-on-1 package is still Dormant')
     assert.ok((await row(first)).expiresAt, 'and the 1-on-1 keeps running')
 
     const ent = await entitlementsSvc.getClientEntitlements(tenantId, clientId)

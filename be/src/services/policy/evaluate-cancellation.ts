@@ -91,6 +91,22 @@ export function cancelWindowHoursFor(
 }
 
 /**
+ * Whether a staff cancel came before the window a member's would be judged by.
+ * It never decides a staff cancel's refund; it is recorded on the cancellation,
+ * and a late one keeps a PT package Activated (be/docs/adr/0011).
+ */
+export async function staffCancelInTime(
+  tenantId: string,
+  kind: CancellationKind,
+  startsAt: Date,
+  classOwnWindowHours: number | null,
+  now: Date,
+): Promise<boolean> {
+  const windowHours = cancelWindowHoursFor(await readCancellationPolicy(tenantId), kind, classOwnWindowHours)
+  return !insideCancelWindow(startsAt, windowHours, now)
+}
+
+/**
  * Judge a member's cancel. Throws `class_started` for a class that has begun —
  * a member can cancel a class until it starts, never after. A PT session is
  * refused earlier, at its window, by its callers (`cancellation_window_passed`).

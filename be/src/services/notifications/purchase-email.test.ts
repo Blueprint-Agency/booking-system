@@ -118,8 +118,8 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
   )
   assert.strictEqual(
     validityLine('pt', null, null, 365),
-    'Valid 365 days from your first session request — your package activates when you make your first booking.',
-    'a PT package starts on its first session request, and says so',
+    'Valid 365 days from your first scheduled session — your package activates when the studio schedules your first session.',
+    'a PT package starts when its first session is scheduled, not requested, and says so (be/docs/adr/0011)',
   )
 }
 

@@ -64,7 +64,8 @@ export function contentsLine(
  * started, so the line names **Activation** as the first booking it pays for.
  * The length is the Duration or `validity_days` frozen onto the purchase, so
  * the sentence stays true if an admin later edits the catalogue. A PT package
- * starts on its first session request, so its wording says so.
+ * starts when the studio schedules its first session, not when the member
+ * asks for one (be/docs/adr/0011), so its wording says so.
  *
  * Read off the row's state rather than assumed: a resent confirmation for a
  * package that has since Activated prints the real end date it now carries.
@@ -80,8 +81,11 @@ export function validityLine(
       kind === 'unlimited'
         ? plural(durationMonths ?? 0, 'month', 'months')
         : plural(validityDays ?? 0, 'day', 'days')
-    const first = kind === 'pt' ? 'your first session request' : 'your first class'
-    return `Valid ${length} from ${first} — your package activates when you make your first booking.`
+    const [first, when] =
+      kind === 'pt'
+        ? ['your first scheduled session', 'when the studio schedules your first session']
+        : ['your first class', 'when you make your first booking']
+    return `Valid ${length} from ${first} — your package activates ${when}.`
   }
   return expiresAt ? `Expires ${SG_DATE.format(expiresAt)}` : 'See your account for the expiry date'
 }

@@ -7,7 +7,8 @@
  *
  * Credit accounting already happened at submit (services/pt-sessions/request.ts);
  * this path does NOT touch package balances — it only records `credits_or_sessions_used`
- * on each booking for audit. Refunds flow exclusively through cancel.ts.
+ * on each booking for audit. Refunds flow exclusively through cancel.ts. It does
+ * Activate the debited package if the request left it Dormant (be/docs/adr/0011).
  *
  * If the request used a "new" 2on1 partner (name + email only, not yet a member),
  * the admin must first create the partner's client record and back-fill
@@ -22,6 +23,9 @@ import { bookings } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
 import { debitCredits, refundCredits, type Tx } from '../packages/ledger'
+import { activatePackage } from '../packages/activation'
+import { activationExpiry, isDormant } from '../packages/validity'
+import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
 import { assertInstructorsAvailable, plannedInstructorIds } from '../schedule/occupancy'
@@ -92,6 +96,37 @@ async function boundInstructorFor(
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
     .limit(1)
   return pkg?.boundInstructorId ?? null
+}
+
+/**
+ * A PT package Activates when its first session is put on the calendar, not
+ * when the member asks for one (be/docs/adr/0011): a package the request left
+ * Dormant starts its clock now, from the scheduling moment, and records this
+ * session as the one that started it. A package already running keeps its
+ * date. The row is locked, so two requests on one Dormant package scheduled
+ * at once Activate it once.
+ */
+async function activateOnSchedule(
+  tx: Tx,
+  tenantId: string,
+  clientPackageId: string,
+  ptSessionId: string,
+): Promise<void> {
+  const [pkg] = await tx
+    .select({
+      kind: clientPackages.kind,
+      expiresAt: clientPackages.expiresAt,
+      durationMonths: clientPackages.durationMonths,
+      validityDays: clientPackages.validityDays,
+    })
+    .from(clientPackages)
+    .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
+    .for('update')
+    .limit(1)
+  if (!pkg || !isDormant(pkg)) return
+  const until = activationExpiry(pkg, clockNow())
+  if (!until) throw new ConflictError('package_not_consumable')
+  await activatePackage(tx, tenantId, clientPackageId, until, ptSessionId)
 }
 
 export async function schedulePtRequest(
@@ -200,6 +235,10 @@ export async function schedulePtRequest(
         qrToken,
         code,
       })
+    }
+
+    if (req.debitedClientPackageId) {
+      await activateOnSchedule(tx, tenantId, req.debitedClientPackageId, sessionId)
     }
 
     await tx

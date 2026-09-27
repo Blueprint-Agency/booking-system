@@ -35,7 +35,7 @@ const validityPhrase = (days: number) => (days === 1 ? "1 day" : `${days} days`)
 
 function subtitleForPackage(pkg: PackageInfo): string {
   if (pkg._kind === "pt") {
-    return `${pkg.num_sessions} private sessions · valid ${validityPhrase(pkg.validity_days)} from your first session request`;
+    return `${pkg.num_sessions} private sessions · valid ${validityPhrase(pkg.validity_days)} from your first scheduled session`;
   }
   if (pkg.kind === "credit_bundle" || pkg.kind === "trial") {
     return `${pkg.credits} credit${pkg.credits === 1 ? "" : "s"} · valid ${validityPhrase(pkg.validity_days ?? 0)} from your first class`;

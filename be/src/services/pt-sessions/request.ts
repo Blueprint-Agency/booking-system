@@ -1,6 +1,8 @@
 /**
  * Client submits a PT request. Service inserts pt_requests + pt_request_slots
  * and debits 1 session from the chosen PT package (whose session_type must match).
+ * A Dormant package stays Dormant: scheduling the request Activates it
+ * (be/docs/adr/0011).
  *
  * No approve/decline step in the new flow — admin negotiates on WhatsApp and
  * then directly schedules from the portal (see ./schedule.ts), which is the
@@ -14,9 +16,8 @@ import { clientPackages, ptPackages } from '../../db/schema/packages'
 import { ptRequests, ptRequestSlots } from '../../db/schema/schedule'
 import { ptBookingConfig } from '../../db/schema/policy'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
-import { activatePackage, sweepExpired } from '../packages/activation'
+import { sweepExpired } from '../packages/activation'
 import { debitCredits } from '../packages/ledger'
-import { activationExpiry, isDormant } from '../packages/validity'
 import { ptSessionCost } from './cost'
 
 export interface PtRequestSlotInput {
@@ -76,7 +77,6 @@ export async function submitPtRequest(
         kind: clientPackages.kind,
         active: clientPackages.active,
         expiresAt: clientPackages.expiresAt,
-        validityDays: clientPackages.validityDays,
         remaining: clientPackages.creditsOrSessionsRemaining,
         sessionType: ptPackages.sessionType,
       })
@@ -102,18 +102,13 @@ export async function submitPtRequest(
     if (!pkg.active || !notExpired) throw new ConflictError('package_not_consumable')
 
     // The member picks which PT package pays, and any number may run at once
-    // (be/docs/adr/0010): a Dormant pick is this request's Activation, whether
-    // or not another PT package is running.
+    // (be/docs/adr/0010). A Dormant pick stays Dormant: a PT package Activates
+    // when staff put its session on the calendar, not when it is asked for
+    // (be/docs/adr/0011, ./schedule.ts).
 
     // 1on1 debits 1 session, 2on1 debits 2 (one per attendee).
     const cost = ptSessionCost(input.sessionType)
     if ((pkg.remaining ?? 0) < cost) throw new ConflictError('insufficient_pt_credit')
-
-    if (isDormant(pkg)) {
-      const until = activationExpiry({ kind: 'pt', durationMonths: null, validityDays: pkg.validityDays }, now)
-      if (!until) throw new ConflictError('package_not_consumable')
-      await activatePackage(tx, tenantId, pkg.id, until)
-    }
 
     const [cfg] = await tx
       .select({ days: ptBookingConfig.bookInAdvanceDays })

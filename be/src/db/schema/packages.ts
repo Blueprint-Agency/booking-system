@@ -377,6 +377,22 @@ export const clientPackages = pgTable(
     // else. Every kind is Dormant at purchase; the first booking a package pays
     // for is its Activation and stamps this. It never means "never expires".
     expiresAt: timestamp('expires_at', { withTimezone: true }),
+    // The private session whose scheduling Activated this PT package
+    // (be/docs/adr/0011). Only that session's in-time cancel returns the
+    // package to Dormant; a later session's never does. Cleared when the
+    // package goes back to Dormant, and when staff set the expiry by hand — a
+    // date staff chose is not a session's to take away. Null on every
+    // class-family row, on every Dormant one, and on one Activated before 0011.
+    //
+    // A `pt_sessions` id with no foreign key, on purpose. A session already
+    // points here through its request (`pt_sessions → pt_requests →
+    // client_packages`), so a key back would close a cycle, and the studio
+    // archive/delete order (services/tenants/transfer-order.ts) breaks a cycle
+    // by deferring every nullable reference left in the knot — `bookings`'
+    // among them, which made deleting a real-sized studio null every booking
+    // first. Nothing needs the key: the pointer is only ever compared with the
+    // id of the session being cancelled, so one left dangling matches nothing.
+    activatedByPtSessionId: uuid('activated_by_pt_session_id'),
     active: boolean('active').notNull().default(true),
     purchasedAt: timestamp('purchased_at', { withTimezone: true }).notNull().defaultNow(),
     amountPaidSgd: numeric('amount_paid_sgd', { precision: 10, scale: 2 }).notNull(),

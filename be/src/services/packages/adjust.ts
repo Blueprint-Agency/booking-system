@@ -421,9 +421,12 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
 
     // Giving a Dormant package a date IS an Activation by hand, allowed while
     // another of its Family runs — several may run at once (be/docs/adr/0010).
+    // A date staff chose is theirs: no later session cancel may take it back to
+    // Dormant, so the pointer to the session that Activated it goes
+    // (be/docs/adr/0011).
     await tx
       .update(clientPackages)
-      .set({ expiresAt: input.expiresAt, active: nextActive })
+      .set({ expiresAt: input.expiresAt, active: nextActive, activatedByPtSessionId: null })
       .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
 
     await tx.insert(manualAdjustments).values({
@@ -435,6 +438,6 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
       actedByStaffId: input.actedByStaffId,
     })
 
-    return { ...pkg, expiresAt: input.expiresAt, active: nextActive }
+    return { ...pkg, expiresAt: input.expiresAt, active: nextActive, activatedByPtSessionId: null }
   })
 }

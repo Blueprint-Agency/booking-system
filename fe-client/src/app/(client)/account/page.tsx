@@ -23,13 +23,16 @@ const ACTIVATION_LINE = "Starts when you book your first class";
 
 /**
  * The same promise with the length attached, for a package card. Every kind
- * waits Dormant until the first booking it pays for; a PT package starts on
- * the first session request it pays for rather than a class. With another
- * package running, that is the booking the member picks it on.
+ * waits Dormant until the first booking it pays for; a PT package starts when
+ * the studio schedules the first session it pays for, not when the member
+ * asks for one (be/docs/adr/0011). With another package running, that is the
+ * booking the member picks it on.
  */
 function dormantLine(pkg: LivePackage): string {
   const start =
-    pkg.kind === "pt" ? "Starts the first time a session request uses it" : "Starts the first time you book with it";
+    pkg.kind === "pt"
+      ? "Starts when the studio schedules your first session with it"
+      : "Starts the first time you book with it";
   if (pkg.validityDays == null) return start;
   return `${start} · valid ${pkg.validityDays} ${pkg.validityDays === 1 ? "day" : "days"} from then`;
 }

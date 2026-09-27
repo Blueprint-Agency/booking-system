@@ -28,7 +28,7 @@ The default order is the one a member would choose for themselves nine times in 
 ## What else goes
 
 - **`family_already_activated`.** Staff may give a Dormant package an expiry while another of its Family runs; it is an Activation by hand and both then run.
-- **`pt_package_not_current`.** A PT session request against a Dormant PT package is no longer refused because another PT package runs; it Activates the one the member chose. The rest of the PT request stands — the member still names the package.
+- **`pt_package_not_current`.** A PT session request against a Dormant PT package is no longer refused because another PT package runs; it Activates the one the member chose. The rest of the PT request stands — the member still names the package. *(Since `0011-pt-activates-on-scheduling.md` the request debits the chosen package and leaves it Dormant; scheduling the session Activates it.)*
 - **The revival-to-Dormant branch** (`revivalPatch` in 0004). Credits returned to a spent package — a cancelled class, an admin top-up — land back on it with its expiry untouched. It is simply running again, beside whatever else runs. 0004 sent it back to Dormant only because two Activated in one Family was forbidden.
 
 ## Considered

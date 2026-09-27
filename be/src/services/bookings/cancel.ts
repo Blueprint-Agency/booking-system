@@ -28,6 +28,7 @@ import { bookings, cancellations } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { inboxItems } from '../../db/schema/inbox'
 import { refundCredits } from '../packages/ledger'
+import { reverseActivationOnCancel } from '../packages/activation'
 import {
   settleCancel,
   type CancelSource,
@@ -35,8 +36,7 @@ import {
   type StaffCancelSource,
   type StaffCredit,
 } from './refund-outcome'
-import { cancelWindowHoursFor, evaluateCancellation, readCancellationPolicy } from '../policy/evaluate-cancellation'
-import { insideCancelWindow } from '../policy/cancel-window'
+import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
 import { promoteFromWaitlist, sendPromotionEmails, type Promotion } from '../waitlist/promote'
 import { assertMayWorkClass } from '../waitlist/staff'
 import type { Tx } from '../schedule/roster'
@@ -211,8 +211,10 @@ export async function cancelBookingInTx(
   // Unlimited bookings used 0 credits → nothing to return; record n_a, not
   // credit_returned. A Voided package takes the same arm for the same reason:
   // there is no longer anything to return the credit to.
-  // Nothing here touches `expires_at`: Activation is one-way (§3), from any actor.
-  // Staff return a plan to Dormant by hand through the portal expiry dialog.
+  // A class cancel never touches `expires_at`: Activation is one-way (§3), from
+  // any actor, and staff return a plan to Dormant by hand through the portal
+  // expiry dialog. A PT booking on the session that Activated its package is
+  // the one exception (step 4b).
   const { refundOutcome, refundFired } = settleCancel({
     kind: cancelKind,
     source,
@@ -238,6 +240,20 @@ export async function cancelBookingInTx(
       clientPackageId: bk.clientPackageId!,
       amount: used,
       reason: studioReason ? 'package_rule_cancellation_refund' : `${source}_cancellation_refund`,
+      actedByStaffId: actorStaffId ?? null,
+    })
+  }
+
+  // 4b. The private session that Activated the package, its paying seat
+  // cancelled in time, returns the package to Dormant (be/docs/adr/0011). Not
+  // a Voided package: it has ended, and nothing may make it live again.
+  if (bk.kind === 'pt' && bk.clientPackageId && !packageVoided) {
+    await reverseActivationOnCancel(tx, {
+      tenantId,
+      clientId: bk.clientId,
+      clientPackageId: bk.clientPackageId,
+      ptSessionId: bk.ptSessionId!,
+      late: !wasWithinWindow,
       actedByStaffId: actorStaffId ?? null,
     })
   }
@@ -287,16 +303,4 @@ export async function cancelBookingInTx(
     bk.kind === 'class' && bk.seat === 'online' ? await promoteFromWaitlist(tx, tenantId, bk.classId!, now) : []
 
   return { result: { refundOutcome, refundFired }, promotions }
-}
-
-/** Whether a staff cancel came before the window a member's would be judged by. */
-async function staffCancelInTime(
-  tenantId: string,
-  kind: 'class' | 'pt',
-  startsAt: Date,
-  classOwnWindowHours: number | null,
-  now: Date,
-): Promise<boolean> {
-  const windowHours = cancelWindowHoursFor(await readCancellationPolicy(tenantId), kind, classOwnWindowHours)
-  return !insideCancelWindow(startsAt, windowHours, now)
 }
