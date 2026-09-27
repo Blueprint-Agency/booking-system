@@ -40,6 +40,20 @@ export function futureClasses(schedule: ScheduledClassRow[], now: Date, timeZone
   )
 }
 
+/**
+ * The schedule's rows split into classes and course sessions. Mindbody keeps a
+ * workshop or retreat as a course: it is on the Staff Schedule under its own
+ * service category, but on the Courses page, not the class list, so it has no
+ * row there to find. Its category is one the Courses page names (its "All
+ * service categories" filter); every other row is a class, and must be found.
+ */
+export function splitCourses(schedule: ScheduledClassRow[], courseCategories: string[]): { classes: ScheduledClassRow[]; courses: ScheduledClassRow[] } {
+  const key = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase()
+  const names = new Set(courseCategories.map(key))
+  const courses = schedule.filter(r => names.has(key(r.serviceCategory)))
+  return { classes: schedule.filter(r => !courses.includes(r)), courses }
+}
+
 /** A link on a day's class list, and the text of the row it sits in. */
 export type DayLink = { href: string; rowText: string }
 
@@ -53,25 +67,40 @@ function clocksIn(text: string): string[] {
   })
 }
 
-/** A class's sign-in link: one whose href names a class, on the day list's row of that start time and class name. */
-export const isSignInLink = (href: string) => /class_?id=\d+/i.test(href)
+/**
+ * A class's sign-in link: one whose href names a class, on the day list's row of that start time and class name.
+ * Mindbody's own is `/ASP/adm/adm_cls_list.asp?pDate=9/28/2026&pClsID=13436`. The same row links to the
+ * class's notes (`adm_cls_notes_e.asp?…&clsID=13436`) and setup (`adm_cs_e.asp?classID=13436`) as well, so
+ * a link has to open a sign-in screen, not merely name the class.
+ */
+export const isSignInLink = (href: string) =>
+  /(?:adm_cls_list|clslist|sign_?in)[^/?]*\?/i.test(href) && /(?:class_?id|pclsid)=\d+/i.test(href)
+
+/** The day a sign-in link names (`pDate=9/28/2026`, month first), where it names one. */
+export function linkDay(href: string): string | null {
+  const m = /[?&]p?(?:cls|class)?date=(\d{1,2})(?:\/|%2F)(\d{1,2})(?:\/|%2F)(\d{4})/i.exec(href)
+  return m ? `${m[3]}-${m[1]!.padStart(2, '0')}-${m[2]!.padStart(2, '0')}` : null
+}
 
 /**
  * The sign-in link for each class of one day, matched on the start time and the
- * class name its row shows — and, where two rows share both, the teacher.
+ * class name its row shows — and, where two rows share both, the teacher. The
+ * class list shows the whole week around the day asked for, so a link naming
+ * another day is never a match.
  * A class with no link, or with two it cannot tell apart, is returned in
  * `missing` for the caller to refuse.
  */
-export function matchSignInLinks(classes: FutureClass[], links: DayLink[]): { found: { cls: FutureClass; href: string }[]; missing: FutureClass[] } {
+export function matchSignInLinks(classes: FutureClass[], links: DayLink[]): { found: { cls: FutureClass; href: string; rowText: string }[]; missing: FutureClass[] } {
   const rows = links
     .filter(l => isSignInLink(l.href))
     .map(l => ({ ...l, clocks: clocksIn(l.rowText), text: normaliseClassName(l.rowText) }))
-  const found: { cls: FutureClass; href: string }[] = []
+  const found: { cls: FutureClass; href: string; rowText: string }[] = []
   const missing: FutureClass[] = []
   for (const cls of classes) {
     const name = normaliseClassName(cls.description)
     const at = isoClock(cls.start)
-    const hrefs = new Set(rows.filter(r => r.clocks[0] === at && r.text.includes(name)).map(r => r.href))
+    const day = isoDay(cls.date)
+    const hrefs = new Set(rows.filter(r => r.clocks[0] === at && r.text.includes(name) && (linkDay(r.href) ?? day) === day).map(r => r.href))
     let chosen = [...hrefs]
     if (chosen.length > 1) {
       const teacher = normaliseStaffName(cls.staff).split(' ')
@@ -80,10 +109,34 @@ export function matchSignInLinks(classes: FutureClass[], links: DayLink[]): { fo
         return teacher.every(w => words.includes(w))
       })
     }
-    if (chosen.length === 1) found.push({ cls, href: chosen[0]! })
+    if (chosen.length === 1) found.push({ cls, href: chosen[0]!, rowText: rows.find(r => r.href === chosen[0])!.rowText })
     else missing.push(cls)
   }
   return { found, missing }
+}
+
+/**
+ * How close to its start a class with free seats can still hold a line. Mindbody
+ * moves the head of the line into a seat the moment one frees outside the
+ * cancellation window, so a line only outlasts a free seat inside it. The
+ * download cannot see the studio's window (a config value), so it allows 24
+ * hours, the platform's default and more than a studio usually sets.
+ */
+export const WINDOW_MARGIN_HOURS = 24
+
+/**
+ * Whether a class's sign-in screen has to be opened: only a class that could have
+ * anybody waiting. Its class list row shows `Sign In (booked/capacity)`; a class
+ * with seats free that starts after the margin cannot have a line, and is not
+ * opened. A row whose seats cannot be read is opened: an unread line is not an
+ * empty one.
+ */
+export function mightHaveWaitlist(rowText: string, cls: FutureClass, now: Date, timeZone: string): boolean {
+  const seats = /sign\s*in\s*\((\d+)\s*\/\s*(\d+)\)/i.exec(rowText)
+  if (!seats) return true
+  if (Number(seats[1]) >= Number(seats[2])) return true
+  const starts = zonedToInstant({ ...cls.date, ...cls.start, second: 0 }, timeZone)
+  return starts.getTime() - now.getTime() <= WINDOW_MARGIN_HOURS * 3_600_000
 }
 
 const CLIENT_ID = /^(\d{9}|[A-Z]{2}\d{6})$/
@@ -97,7 +150,7 @@ export type WaitingClient = { clientId: string; client: string; position: number
  * clients in queue order. Its header is found by a name column; the position is
  * the row's own number where it shows one (`1`, `1.`, `#1`), else its place in
  * the table; the client id is a nine-digit cell or the id in the row's client
- * link. A row with no client id (a guest with no profile) is kept with an empty
+ * link, and with no header the name is that link's cell. A row with no client id (a guest with no profile) is kept with an empty
  * id, and counted in `unread`.
  */
 export function readWaitlistSection(rows: TableRow[]): { waiting: WaitingClient[]; unread: number } {
@@ -117,7 +170,7 @@ export function readWaitlistSection(rows: TableRow[]): { waiting: WaitingClient[
     const numbered = row.cells.map(c => /^#?\s*(\d{1,3})\.?$/.exec(c)?.[1]).find(Boolean)
     waiting.push({
       clientId: id ?? '',
-      client: nameCol >= 0 ? (row.cells[nameCol] ?? '') : '',
+      client: nameCol >= 0 ? (row.cells[nameCol] ?? '') : (row.cells[row.links.findIndex(l => !!l && ID_IN_LINK.test(l))] ?? ''),
       position: numbered ? Number(numbered) : waiting.length + 1,
       paymentStatus: payCol >= 0 ? (row.cells[payCol] ?? '') : '',
     })

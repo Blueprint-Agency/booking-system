@@ -8,7 +8,7 @@ import { readStaffSchedule } from '../transform/readers'
 import type { TableRow } from '../transform/html-table'
 import { isoClock, isoDay } from '../transform/values'
 import { BASE } from './session'
-import { futureClasses, matchSignInLinks, readWaitlistSection, waitlistSheet, type DayLink, type FutureClass, type WaitingClient } from './waitlists'
+import { futureClasses, isSignInLink, linkDay, matchSignInLinks, mightHaveWaitlist, readWaitlistSection, splitCourses, waitlistSheet, WINDOW_MARGIN_HOURS, type DayLink, type FutureClass, type WaitingClient } from './waitlists'
 import { writeXlsx } from './xlsx-write'
 
 /**
@@ -60,15 +60,22 @@ export function createEngine(o: EngineOptions) {
     return readdirSync(dir).find(f => f.startsWith(name) && !f.endsWith('.FAILED.png')) ?? null
   }
 
-  async function load(p: string): Promise<void> {
+  /**
+   * Open a back-office page. `ready` names what the caller is about to read: the
+   * page is waited on until that is drawn, instead of until the network goes quiet,
+   * which Mindbody's classic screens (always polling) never do inside 30 seconds.
+   */
+  async function load(p: string, ready?: string): Promise<void> {
     await page.goto(BASE + p, { waitUntil: 'domcontentloaded', timeout: 90_000 })
-    await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {})
+    // Attached, not visible: an empty waitlist table has no height, and is still the answer.
+    if (ready) await page.waitForSelector(ready, { state: 'attached', timeout: 30_000 }).catch(() => {})
+    else await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {})
     if (!/clients\.mindbodyonline\.com/.test(page.url()) || /signin|\/launch/i.test(page.url())) {
       console.log('>> Logged out mid-run.')
       await o.relogin()
-      return load(p)
+      return load(p, ready)
     }
-    await page.waitForTimeout(1500)
+    await page.waitForTimeout(ready ? 300 : 1500)
   }
 
   /**
@@ -166,7 +173,22 @@ export function createEngine(o: EngineOptions) {
     return file
   }
 
+  /**
+   * An MVC report. In a full run the page is sometimes carried off mid-export (Visits Remaining,
+   * straight after Account Balances, on 27 Sep 2026) though the same request alone downloads in
+   * seconds: a navigation is retried once from a fresh load before it counts as a refusal.
+   */
   async function runMvc(r: Job, set: FieldSet, base: string): Promise<string> {
+    try {
+      return await runMvcOnce(r, set, base)
+    } catch (e) {
+      if (!(e instanceof TooManyError) || e.message !== 'navigated') throw e
+      console.log(`   carried off the page mid-export (to ${page.url()}); retrying once`)
+      return runMvcOnce(r, set, base)
+    }
+  }
+
+  async function runMvcOnce(r: Job, set: FieldSet, base: string): Promise<string> {
     await load(r.path)
     const missing = await setFields(set, r.allMulti)
     if (missing.length) console.log(`   (not on page: ${missing.join(', ')})`)
@@ -217,13 +239,28 @@ export function createEngine(o: EngineOptions) {
    * the Staff Schedule this download already wrote; each day's class list gives
    * their sign-in links, and each sign-in screen its line. A class whose link
    * cannot be found, or whose screen has no Waitlist section to read, fails the
-   * report: an unread line is not an empty one.
+   * report: an unread line is not an empty one. A workshop or retreat session is
+   * a course, named by the Courses page's service categories, and is skipped by
+   * name: workshop waitlists are not migrated (runbook §3, Waitlists).
    */
   async function runClassWaitlists(r: Job, base: string): Promise<string> {
     if (!o.timeZone) throw new Error('MB_TIMEZONE is not set: it says which classes are still to come')
     const scheduleFile = readdirSync(OUT, { recursive: true, encoding: 'utf8' }).find(f => TRANSFORM_READS.schedule.test(path.basename(f)))
     if (!scheduleFile) throw new Error('no Staff Schedule (ALL, Scheduled) in this download yet: it is what says which classes to read')
-    const classes = futureClasses(readStaffSchedule(readFileSync(path.join(OUT, scheduleFile), 'utf8')), new Date(), o.timeZone)
+    if (!r.coursesPath) throw new Error('no Courses page configured: it is what says which schedule rows are workshops, not classes')
+    await load(r.coursesPath, 'select')
+    const courseCategories: string[] | null = await page.evaluate(() => {
+      const filter: any = [...document.querySelectorAll('select')].find((s: any) => /^all service categories$/i.test(String(s.options[0]?.text ?? '').trim()))
+      return filter ? [...filter.options].slice(1).map((o: any) => String(o.text).trim()) : null
+    })
+    if (!courseCategories) throw new Error(`no service category filter on the Courses page (${r.coursesPath}): cannot tell workshops from classes`)
+    const split = splitCourses(readStaffSchedule(readFileSync(path.join(OUT, scheduleFile), 'utf8')), courseCategories)
+    const courses = futureClasses(split.courses, new Date(), o.timeZone)
+    if (courses.length) {
+      const names = [...new Set(courses.map(c => c.description))]
+      console.log(`   ${courses.length} workshop/retreat session(s) skipped, not migrated: ${names.join('; ')}`)
+    }
+    const classes = futureClasses(split.classes, new Date(), o.timeZone)
     const byDay = new Map<string, FutureClass[]>()
     for (const c of classes) byDay.set(isoDay(c.date), [...(byDay.get(isoDay(c.date)) ?? []), c])
     const named = (c: FutureClass) => `${c.description} ${isoDay(c.date)} ${isoClock(c.start)}`
@@ -231,35 +268,57 @@ export function createEngine(o: EngineOptions) {
     const unfound: string[] = []
     let unread = 0
     let read = 0
-    for (const dayClasses of byDay.values()) {
-      const d = dayClasses[0]!.date
-      await load(`${r.path}?date=${d.month}/${d.day}/${d.year}`)
-      const links: DayLink[] = await page.evaluate(() =>
-        [...document.querySelectorAll('a[href]')].map((a: any) => {
-          const url = new URL(a.getAttribute('href'), location.href)
-          return {
-            href: url.pathname + url.search,
-            rowText: String((a.closest('tr') ?? a.parentElement)?.innerText ?? a.innerText).replace(/\s+/g, ' ').trim(),
-          }
-        }))
+    let skipped = 0
+    const now = new Date()
+    // One class list shows the whole week, so a day already on the last one read is not loaded again.
+    let links: DayLink[] = []
+    for (const [day, dayClasses] of byDay) {
+      if (!links.some(l => isSignInLink(l.href) && linkDay(l.href) === day)) {
+        const d = dayClasses[0]!.date
+        await load(`${r.path}?date=${d.month}/${d.day}/${d.year}`, 'a.signInLink, #optLocation')
+        // The list shows one Location until its filter says otherwise; choosing posts the form and keeps the date.
+        const locationFilter = page.locator('#optLocation')
+        if ((await locationFilter.count()) && (await locationFilter.inputValue()) !== '0') {
+          await Promise.all([page.waitForNavigation({ timeout: 60_000 }), locationFilter.selectOption('0')])
+          await page.waitForSelector('a.signInLink', { state: 'attached', timeout: 30_000 }).catch(() => {})
+        }
+        links = await page.evaluate(() =>
+          [...document.querySelectorAll('a[href]')].map((a: any) => {
+            const url = new URL(a.getAttribute('href'), location.href)
+            return {
+              href: url.pathname + url.search,
+              rowText: String((a.closest('tr') ?? a.parentElement)?.innerText ?? a.innerText).replace(/\s+/g, ' ').trim(),
+            }
+          }))
+      }
       const { found, missing } = matchSignInLinks(dayClasses, links)
       unfound.push(...missing.map(c => `${named(c)} (no sign-in link on its day's class list)`))
-      for (const { cls, href } of found) {
-        await load(href)
-        // The section is found by its heading, and read from the first table after it.
-        const section: TableRow[] | null = await page.evaluate(() => {
-          const heading = [...document.querySelectorAll('h1,h2,h3,h4,h5,th,td,div,span,b,strong,legend')]
-            .find((e: any) => /^\s*wait\s*-?\s*list\b/i.test(String(e.innerText ?? '')) && String(e.innerText).length < 60)
-          if (!heading) return null
-          const tables = [...document.querySelectorAll('table')].filter((t: any) =>
-            (heading.compareDocumentPosition(t) & 4) !== 0 && !t.contains(heading) && !t.querySelector('table'))
-          const table: any = tables[0]
-          if (!table) return []
-          return [...table.rows].map((tr: any) => ({
-            cells: [...tr.cells].map((td: any) => String(td.innerText).replace(/\s+/g, ' ').trim()),
-            links: [...tr.cells].map((td: any) => td.querySelector('a[href]')?.getAttribute('href') ?? null),
-          }))
-        })
+      for (const { cls, href, rowText } of found) {
+        // A class with seats free, starting after the margin, cannot have anybody waiting: its screen is not opened.
+        if (!mightHaveWaitlist(rowText, cls, now, o.timeZone)) { skipped++; continue }
+        // Mindbody marks the section's table (`v2_classSignin__clientList--waitList`, empty when nobody
+        // waits); failing that, it is the first table after the "Waitlist" heading. Never a roster column
+        // header: the roster above it has one called "Waitlist Notified". A screen caught before it finished
+        // drawing has neither, so it is opened once more before it counts as unreadable.
+        let section: TableRow[] | null = null
+        for (let attempt = 0; attempt < 2 && section === null; attempt++) {
+          await load(href, 'table[class*="clientList--waitList"]')
+          section = await page.evaluate(() => {
+            let table: any = document.querySelector('table[class*="clientList--waitList"]')
+            if (!table) {
+              const heading = [...document.querySelectorAll('h1,h2,h3,h4,h5,div,span,b,strong,legend')]
+                .find((e: any) => /^\s*wait\s*-?\s*list\b(?!\s*notified)/i.test(String(e.innerText ?? '')) && String(e.innerText).length < 60)
+              if (!heading) return null
+              table = [...document.querySelectorAll('table')].find((t: any) =>
+                (heading.compareDocumentPosition(t) & 4) !== 0 && !t.contains(heading) && !t.querySelector('table'))
+              if (!table) return []
+            }
+            return [...table.rows].map((tr: any) => ({
+              cells: [...tr.cells].map((td: any) => String(td.innerText).replace(/\s+/g, ' ').trim()),
+              links: [...tr.cells].map((td: any) => td.querySelector('a[href]')?.getAttribute('href') ?? null),
+            }))
+          })
+        }
         if (section === null) {
           unfound.push(`${named(cls)} (no Waitlist section on ${href})`)
           continue
@@ -275,7 +334,7 @@ export function createEngine(o: EngineOptions) {
     }
     if (unread) console.log(`   WARNING ${unread} waiting row(s) showed no client id: written with none, and named in the preflight`)
     const rows = waitlistSheet(lines)
-    console.log(`   ${read} classes read, ${lines.length} with a waitlist, ${rows.length - 1} waiting`)
+    console.log(`   ${read} classes read (full, or within ${WINDOW_MARGIN_HOURS} h), ${skipped} with seats free not opened; ${lines.length} with a waitlist, ${rows.length - 1} waiting`)
     const file = path.join(OUT, `${base}.xlsx`)
     writeFileSync(file, await writeXlsx(rows, r.name))
     return file

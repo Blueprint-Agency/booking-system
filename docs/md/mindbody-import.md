@@ -190,12 +190,28 @@ download reads them there, as `reports/Clients/45 Class Waitlists/45 Class Waitl
 (`download/reports.ts`, the `waitlists` entry; `download/waitlists.ts`):
 
 - **Which classes.** Every class after the run's start on the Staff Schedule (ALL, "Scheduled")
-  the same download has just written, once each, so it runs after that report.
-- **How each screen is found.** Each day's class list (`path` in the entry, `?date=M/D/YYYY`) is
-  opened, and each class's sign-in link taken from the row showing its start time and name (and
-  teacher, where two rows share both). Its screen's Waitlist section is found by its heading and
-  read from the table below it: the row's own number where it shows one, else its place, and the
-  client id from the cell or the client's link.
+  the same download has just written, once each, so it runs after that report. A workshop or
+  retreat is a Mindbody *course*: it is on the Staff Schedule under its own service category but
+  not on the class list, so a row whose category the Courses page names (its "All service
+  categories" filter) is skipped and printed by name. Workshop waitlists are not migrated (section
+  3, **Waitlists**).
+- **How each screen is found.** The Classes page's class list (`path` in the entry,
+  `/classic/admmainclass?date=M/D/YYYY`) shows the whole week around the date, at the Location its
+  filter names, so the filter is set to All locations before it is read, and one load serves the
+  week. Each class's sign-in link (`Sign In (booked/capacity)`, `adm_cls_list.asp?pDate=…&pClsID=…`)
+  is taken from the row showing its day, start time and name (and teacher, where two rows share
+  all three). The row's other links, class notes and setup, name the class too and are ignored.
+- **Which screens are opened.** Only a class that could hold a line: one that is full, or one
+  that starts within 24 hours. Mindbody moves the head of a line into a seat the moment one frees
+  outside the cancellation window, so a class with seats free days away has nobody waiting, and
+  its screen is not opened. The download cannot see the studio's window (a config value), so it
+  allows 24 hours. A row whose seat count cannot be read is opened. On a studio with nothing full
+  the whole step takes seconds.
+- **How a screen is read.** The Waitlist section is the table Mindbody marks
+  `v2_classSignin__clientList--waitList` (empty when nobody waits), else the first table after
+  the "Waitlist" heading, never the roster's "Waitlist Notified" column. Each row gives its own
+  number where it shows one, else its place, and the client id from the cell or the client's
+  link. A screen caught before it finished drawing is opened once more.
 - **What it writes.** One row per waiting client, in queue order: `Class date` (`YYYY-MM-DD`),
   `Start` (`HH:MM`), `Description`, `Staff`, `Client ID`, `Client`, `Position`, `Payment status`.
   A class nobody waits on writes nothing; nobody waiting anywhere is a file with only its header.
@@ -204,9 +220,10 @@ download reads them there, as `reports/Clients/45 Class Waitlists/45 Class Waitl
   optional, so the cutover download then ends `CUTOVER DOWNLOAD INCOMPLETE`. A waiting row with no
   client id (a guest with no profile) is written with none, the run warns how many, and the
   transform names each in the preflight.
-- **Mindbody's markup.** The day list's path and the section's layout are Mindbody's, and are
-  confirmed on the staging rehearsal (section 7) before a launch depends on them: if the first
-  real run fails on every class, the path or the heading is what changed.
+- **Mindbody's markup.** The class list's path, its Location filter, the sign-in link and the
+  section's layout are Mindbody's, checked against the live back office on 27 Sep 2026 (the
+  earlier guess, `/ASP/adm/home.asp`, now redirects to a dashboard that lists today only). If a
+  real run fails on every class, one of those is what changed.
 - `download verify` prints the file's count: `waiting N on M class(es)`.
 
 What the profile is built to:

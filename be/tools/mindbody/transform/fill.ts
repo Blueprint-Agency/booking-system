@@ -52,6 +52,12 @@ export type StudioAnswers = {
   ptPattern?: string
   /** How active staff get in: `active` (no invitation) or `invite`. */
   staffOnboarding: 'active' | 'invite'
+  /**
+   * Decision 10: an email for a staff member Mindbody holds none for, by their
+   * Mindbody name (`Sumit Sumit` → address). With it they come across with a login,
+   * as a staff member Mindbody has an email for does. Mindbody's own email wins.
+   */
+  staffEmails?: Record<string, string>
   /** Decision 6. */
   catalogue: {
     /** On sale now (option names). Everything else still held is `legacy`. The price is the commonest of the last 90 days. */
@@ -254,6 +260,12 @@ export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportF
      left behind. Inactive in Mindbody: archived if they ever taught, else left behind. Of several
      records with one name, the active one with an email wins. */
   c.staffOnboarding = answers.staffOnboarding
+  // An email the studio gave for someone Mindbody has none for counts as theirs from here on.
+  const givenEmail = new Map(Object.entries(answers.staffEmails ?? {}).map(([name, email]) => [norm(name), email.trim()]))
+  for (const s of c.staff) if (!s.email && givenEmail.has(norm(s.mindbodyName))) s.email = givenEmail.get(norm(s.mindbodyName))
+  for (const name of Object.keys(answers.staffEmails ?? {})) {
+    if (!c.staff.some((s: Json) => norm(s.mindbodyName) === norm(name))) notes?.push(`staffEmails: no staff member named "${name}" in the reports; its email is not used`)
+  }
   const factOf = new Map<string, Pick<StaffFact, 'instructor' | 'lastTaught'>>()
   for (const f of staff) {
     const had = factOf.get(norm(f.name))

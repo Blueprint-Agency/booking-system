@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readWaitlists, type ScheduledClassRow } from '../transform/readers'
 import { readXlsxTable } from '../transform/xlsx'
 import { describePlan, exportDir, plannedFiles, profileReports, readManifest, runDates } from './plan'
-import { futureClasses, matchSignInLinks, readWaitlistSection, waitlistSheet, type FutureClass } from './waitlists'
+import { futureClasses, matchSignInLinks, mightHaveWaitlist, readWaitlistSection, splitCourses, waitlistSheet, type FutureClass } from './waitlists'
 import { writeXlsx } from './xlsx-write'
 
 /**
@@ -65,6 +65,16 @@ test('every class still to come is opened once; a class already begun, or a seco
   )
 })
 
+test('a workshop or retreat session is a course, by the service categories the Courses page names, and every other row a class', () => {
+  const retreat = row({ description: 'Kerala - India Yoga Retreat 2027', serviceCategory: 'Kerala, India Yoga Retreat 2027' })
+  const workshop = row({ description: 'CHAIR & WHEEL YOGA WORKSHOP', serviceCategory: 'CHAIR &  WHEEL YOGA WORKSHOP ' })
+  const hatha = row({})
+  const { classes, courses } = splitCourses([hatha, retreat, workshop], ['CHAIR & WHEEL YOGA WORKSHOP', 'kerala, india yoga retreat 2027', 'Sapa Yoga Retreat 2027'])
+  assert.deepEqual(courses, [retreat, workshop], 'matched on the category, however it is spaced or cased: the names differ between reports')
+  assert.deepEqual(classes, [hatha])
+  assert.deepEqual(splitCourses([hatha], []).classes, [hatha], 'with no courses, every row is a class to find')
+})
+
 test('a class\'s sign-in link is the one on its row, by start time and name, and by teacher where two share both', () => {
   const hatha: FutureClass = { date: { year: 2090, month: 1, day: 2 }, start: { hour: 19, minute: 0 }, description: 'Hatha', staff: 'IVY INSTRUCTOR' }
   const hathaOlive: FutureClass = { ...hatha, staff: 'OLIVE OWNER' }
@@ -89,6 +99,52 @@ test('a class\'s sign-in link is the one on its row, by start time and name, and
     ],
   )
   assert.deepEqual(missing, [lost], 'a class with no link is refused by the caller, never read as nobody waiting')
+})
+
+test('on Mindbody\'s class list, which shows the whole week, each class takes its own day\'s Sign In link', () => {
+  const monday: FutureClass = { date: { year: 2090, month: 1, day: 2 }, start: { hour: 7, minute: 30 }, description: 'Warm Yoga', staff: 'MASTER VISHAL' }
+  const tuesday: FutureClass = { ...monday, date: { year: 2090, month: 1, day: 3 } }
+  const row = 'Sign In (2/35) Warm Yoga Master Vishal Tai Seng Taiseng Studio Edit class setup Cancel or delete class'
+  const { found, missing } = matchSignInLinks(
+    [monday, tuesday],
+    [
+      { href: '/ASP/adm/adm_cls_notes_e.asp?clsDate=1/2/2090&clsID=13436', rowText: `7:30 am - 8:30 am ${row}` },
+      { href: '/ASP/adm/adm_cls_list.asp?pDate=1/2/2090&pClsID=13436', rowText: `7:30 am - 8:30 am ${row}` },
+      // "Edit class setup", on the same row: it names the class too, and opens no sign-in screen.
+      { href: '/ASP/adm/adm_cs_e.asp?classID=13436&clsDate=1/2/2090', rowText: `7:30 am - 8:30 am ${row}` },
+      { href: '/ASP/adm/adm_cls_list.asp?pDate=1/3/2090&pClsID=13436', rowText: `7:30 am - 8:30 am ${row}` },
+    ],
+  )
+  assert.deepEqual(
+    found.map(f => `${f.cls.date.day} → ${f.href}`),
+    ['2 → /ASP/adm/adm_cls_list.asp?pDate=1/2/2090&pClsID=13436', '3 → /ASP/adm/adm_cls_list.asp?pDate=1/3/2090&pClsID=13436'],
+  )
+  assert.deepEqual(missing, [])
+})
+
+test('only a class that could hold a line is opened: full, or starting within the margin; a row with no seat count is opened', () => {
+  const now = new Date('2090-01-02T00:00:00Z') // 8am in Singapore
+  const soon: FutureClass = { date: { year: 2090, month: 1, day: 2 }, start: { hour: 19, minute: 0 }, description: 'Hatha', staff: 'IVY INSTRUCTOR' }
+  const later: FutureClass = { ...soon, date: { year: 2090, month: 1, day: 5 } }
+  assert.equal(mightHaveWaitlist('7:00 pm Sign In (35/35) Hatha', later, now, TZ), true, 'full: people may be waiting')
+  assert.equal(mightHaveWaitlist('7:00 pm Sign In (12/35) Hatha', later, now, TZ), false, 'seats free and days away: the line would have moved into them')
+  assert.equal(mightHaveWaitlist('7:00 pm Sign In (12/35) Hatha', soon, now, TZ), true, 'inside the window a line can outlast a free seat')
+  assert.equal(mightHaveWaitlist('7:00 pm Hatha', later, now, TZ), true, 'no seat count to go by: opened, never assumed empty')
+})
+
+test('a Waitlist section with no header row still names each client, from the cell holding their link', () => {
+  // A row as Mindbody's sign-in screen draws its client lists: remove link, number, icon, client, phone, payment.
+  const { waiting, unread } = readWaitlistSection(
+    cells(
+      [['', "javascript:cancWaitList(13436, '1/2/2090', 100000069)"], '1.', '', ['Puah, Cyndi', '/app/clients/100000069/client-info?rtnPage=clslist'], '91281338', 'Unlimited 18 + 6'],
+      [['', "javascript:cancWaitList(13436, '1/2/2090', 100000070)"], '2.', '', ['Lee, Sam', '/app/clients/100000070/client-info'], '', ''],
+    ),
+  )
+  assert.deepEqual(
+    waiting.map(w => [w.position, w.clientId, w.client]),
+    [[1, '100000069', 'Puah, Cyndi'], [2, '100000070', 'Lee, Sam']],
+  )
+  assert.equal(unread, 0)
 })
 
 test('the Waitlist section reads in queue order, with the id from the cell or the client link', () => {

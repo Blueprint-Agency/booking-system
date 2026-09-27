@@ -78,6 +78,8 @@ export type Report = {
    * that lists a day's classes with their sign-in links.
    */
   perClass?: boolean
+  /** With `perClass`: the Courses page, whose service categories name the schedule's workshop and retreat rows. */
+  coursesPath?: string
 }
 
 /** A cutover-profile entry: a report narrowed to what the transform reads. */
@@ -336,8 +338,12 @@ export const CUTOVER: ProfileEntry[] = [
     // class still to come on it is found on its day's class list (`path?date=M/D/YYYY`, its sign-in link by
     // start time and name) and its Waitlist section read, into one workbook of our own: a row per waiting
     // client, in queue order (`./waitlists.ts`). Not optional: a failed scrape would lose every queue quietly.
-    // The day list's path and the section's markup are Mindbody's: the staging rehearsal (runbook §7) confirms them.
+    // The day list's path and the section's markup are Mindbody's, checked against the live back office on
+    // 27 Sep 2026: the Classes page's class list, which shows the whole week around `?date=` at the Location
+    // its filter names (set to All locations before reading), each class's "Sign In (n/cap)" link opening its
+    // screen. `/ASP/adm/home.asp` now redirects to the dashboard (today only). Workshops and retreats are not
+    // on it: they are courses, listed on the Courses page, and their waitlists are not migrated.
     name: 'Class Waitlists', kind: 'waitlists', cat: 'Clients', num: 45, type: 'scrape', perClass: true,
-    path: '/ASP/adm/home.asp',
+    path: '/classic/admmainclass', coursesPath: '/ASP/adm/main_enroll.asp',
   },
 ]

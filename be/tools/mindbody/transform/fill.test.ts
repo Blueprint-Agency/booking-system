@@ -84,6 +84,31 @@ test('fill takes every value from the answers and leaves the starter as it was',
   assert.deepEqual(starter, before, 'the starter is not edited in place')
 })
 
+test('an email the answers give a teacher Mindbody holds none for brings them across with a login; Mindbody\'s own email wins', async () => {
+  const reports = await readReports(path.join(FIXTURES, 'reports'))
+  const asOf = dateOfIso(AS_OF.slice(0, 10))
+  const starter = starterConfig(reports, AS_OF) as Record<string, any>
+  const facts = reportFacts(reports, asOf, { offSiteVenues: ANSWERS.offSiteVenues })
+  const staff = staffFacts(reports, asOf)
+  const teachers = (fillConfigs(starter, ANSWERS, facts, staff).local!.staff as Record<string, any>[]).filter(s => s.migrate === 'active' && s.email && s.teaches)
+  assert.ok(teachers.length >= 2, 'the fixture has two active teachers with an email')
+  const [noLogin, withEmail] = teachers as [Record<string, any>, Record<string, any>]
+  // Mindbody holds no email for the first: in the starter, as the reports would have it.
+  for (const s of starter.staff) if (s.mindbodyName === noLogin.mindbodyName) s.email = null
+  const before = fillConfigs(starter, ANSWERS, facts, staff).local!.staff as Record<string, any>[]
+  assert.equal(before.find(s => s.mindbodyName === noLogin.mindbodyName)!.noLogin, true, 'with no email, a teacher comes across with no login')
+
+  const notes: string[] = []
+  const answers = { ...ANSWERS, staffEmails: { [noLogin.mindbodyName.toUpperCase()]: ' given@northwind.test ', [withEmail.mindbodyName]: 'other@northwind.test', 'Nobody Here': 'x@northwind.test' } }
+  const after = fillConfigs(starter, answers, facts, staff, notes).local!.staff as Record<string, any>[]
+  const given = after.find(s => s.mindbodyName === noLogin.mindbodyName)!
+  assert.equal(given.email, 'given@northwind.test', 'matched on the name however it is cased, and trimmed')
+  assert.equal(given.noLogin, false)
+  assert.equal(given.migrate, 'active')
+  assert.equal(after.find(s => s.mindbodyName === withEmail.mindbodyName)!.email, withEmail.email)
+  assert.ok(notes.some(n => n.includes('"Nobody Here"')), 'a name matching no staff member is reported, not silently dropped')
+})
+
 test('fill sizes each Room by its largest class, and gives a pattern Room the class types it matches', async () => {
   const { configs, facts } = await filled()
   const rooms = configs.local!.rooms as { name: string; capacity?: number; classTypes?: string[] }[]
