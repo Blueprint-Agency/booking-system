@@ -6,11 +6,18 @@ import * as classesSvc from '../../../services/schedule/classes'
 import * as seriesSvc from '../../../services/schedule/series'
 import { getClassDetail, getPtSessionDetail } from '../../../services/schedule/detail'
 import { cancelClass } from '../../../services/bookings/cancel-class'
-import { staffBookClass } from '../../../services/bookings/book'
+import { staffBookClass, staffPackagesForClass } from '../../../services/bookings/book'
 import { cancelWorkshop } from '../../../services/workshops/cancel'
 import { workshopRow } from './workshops'
 import { tenantId } from '../../../middleware/tenant'
-import { classSeatsJson, seatFields, staffBookingJson, staffBookingSchema } from '../class-seats'
+import {
+  classSeatsJson,
+  seatFields,
+  staffBookingJson,
+  staffBookingSchema,
+  staffPackagesJson,
+  staffPackagesQuery,
+} from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
 import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-window'
 import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
@@ -290,8 +297,26 @@ const app = new Hono()
       check_in_state: d.checkInState,
     })
   })
+  // The member's class packages for this class, each Eligible or with its
+  // reason — what Add member's package select lists (#333).
+  .get(
+    '/classes/:id/packages',
+    zValidator('param', z.object({ id: z.string().uuid() })),
+    zValidator('query', staffPackagesQuery),
+    async c => {
+      const { id } = c.req.valid('param')
+      const res = await staffPackagesForClass(tenantId(c), {
+        classId: id,
+        clientId: c.req.valid('query').client_id,
+        role: 'admin',
+        actorStaffId: c.get('staffUserId'),
+      })
+      return c.json(staffPackagesJson(res))
+    },
+  )
   // Book a member onto a class: a buffer seat, or an overbook seat when the
-  // buffer is full and the admin said so (spec-waitlist.md §7).
+  // buffer is full and the admin said so (spec-waitlist.md §7), paid by the
+  // package the admin picked or the Default payer.
   .post(
     '/classes/:id/bookings',
     zValidator('param', z.object({ id: z.string().uuid() })),
@@ -305,6 +330,7 @@ const app = new Hono()
         role: 'admin',
         actorStaffId: c.get('staffUserId'),
         overbook: body.overbook,
+        clientPackageId: body.client_package_id ?? null,
       })
       c.set('auditTarget' as any, { table: 'bookings', id: res.bookingId })
       return c.json(staffBookingJson(res), 201)

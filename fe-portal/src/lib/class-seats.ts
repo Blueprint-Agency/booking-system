@@ -8,6 +8,7 @@
 
 import { ApiError, type Api } from "@/lib/api";
 import { NOT_ACCEPTED_COPY } from "@/lib/package-rule";
+import { formatDate } from "@/lib/formatters";
 
 export type BookingSeat = "online" | "buffer" | "overbook";
 export type StaffRole = "admin" | "instructor";
@@ -56,7 +57,8 @@ export interface StaffBookingResult {
 
 /**
  * Book a member onto a class from the session page. An admin's `overbook` takes
- * a seat past a full buffer; the instructor route ignores it.
+ * a seat past a full buffer; the instructor route ignores it. `clientPackageId`
+ * is staff's pick of the member's packages; null lets the Default payer pay.
  */
 export function staffBookClass(
   api: Api,
@@ -64,11 +66,112 @@ export function staffBookClass(
   classId: string,
   clientId: string,
   overbook = false,
+  clientPackageId: string | null = null,
 ): Promise<StaffBookingResult> {
   return api.post<StaffBookingResult>(`/portal/${role}/schedule/classes/${classId}/bookings`, {
     client_id: clientId,
     ...(overbook ? { overbook: true } : {}),
+    ...(clientPackageId ? { client_package_id: clientPackageId } : {}),
   });
+}
+
+/* --------------------------- The member's packages -------------------------- */
+
+export type PackageRefusal =
+  | "not_accepted"
+  | "location_not_covered"
+  | "plan_expires_before_class"
+  | "insufficient_credits";
+
+/** One of the member's class packages read against the class (#333). */
+export interface StaffMemberPackage {
+  id: string;
+  name: string;
+  kind: "credit_bundle" | "unlimited" | "trial" | "pt";
+  running: boolean;
+  /** Credits left; null on an Unlimited Plan. */
+  remaining: number | null;
+  expires_at: string | null;
+  /** Dormant only: the end date picking it would stamp. */
+  activation_end_if_picked: string | null;
+  location: { id: string; name: string } | null;
+  eligible: boolean;
+  reason: PackageRefusal | null;
+}
+
+export interface StaffMemberPackages {
+  /** The package that pays when staff leave the choice alone. */
+  default_client_package_id: string | null;
+  /** In default order, Ineligible ones included. */
+  packages: StaffMemberPackage[];
+}
+
+/** The member's class packages for this class, each Eligible or with its reason. */
+export function memberPackagesForClass(
+  api: Api,
+  role: StaffRole,
+  classId: string,
+  clientId: string,
+): Promise<StaffMemberPackages> {
+  return api.get<StaffMemberPackages>(`/portal/${role}/schedule/classes/${classId}/packages`, {
+    client_id: clientId,
+  });
+}
+
+export interface PackageOption {
+  id: string;
+  label: string;
+  /** Ineligible: shown, greyed, not choosable. */
+  disabled: boolean;
+  /** Why it can't pay, or when a Dormant one would run until; null otherwise. */
+  note: string | null;
+}
+
+export interface PackagePick {
+  options: PackageOption[];
+  defaultId: string;
+}
+
+/** Why a greyed package can't pay, under its name in the select. */
+const REFUSAL_NOTE: Record<PackageRefusal, (p: StaffMemberPackage) => string> = {
+  not_accepted: () => "Not accepted for this class",
+  location_not_covered: (p) => (p.location ? `Covers ${p.location.name} only` : "Doesn't cover this Location"),
+  plan_expires_before_class: () => "Ends before this class",
+  insufficient_credits: () => "Not enough credits",
+};
+
+function refusalNote(p: StaffMemberPackage): string {
+  return p.reason ? REFUSAL_NOTE[p.reason](p) : "Can't pay for this class";
+}
+
+function optionLabel(p: StaffMemberPackage): string {
+  if (p.remaining === null) return `${p.name} · Unlimited`;
+  return `${p.name} · ${p.remaining} ${p.remaining === 1 ? "credit" : "credits"} left`;
+}
+
+/**
+ * Whether staff choose which package pays, as the member would on their Book
+ * sheet: only when more than one can. With one or none there is nothing to
+ * choose, and the booking goes straight through — the Default payer pays, or
+ * the server says why nothing can. Ineligible packages stay in the list,
+ * greyed with their reason, so staff can tell the member why.
+ */
+export function packagePick(res: StaffMemberPackages): PackagePick | null {
+  const eligible = res.packages.filter((p) => p.eligible);
+  if (eligible.length < 2) return null;
+  return {
+    defaultId: res.default_client_package_id ?? eligible[0]!.id,
+    options: res.packages.map((p) => ({
+      id: p.id,
+      label: optionLabel(p),
+      disabled: !p.eligible,
+      note: !p.eligible
+        ? refusalNote(p)
+        : p.activation_end_if_picked
+          ? `Starts today, runs until ${formatDate(p.activation_end_if_picked, "d MMM yyyy")}`
+          : null,
+    })),
+  };
 }
 
 export interface MemberMatch {
@@ -107,6 +210,7 @@ const REFUSAL_COPY: Record<string, string> = {
   class_already_started: "This class has already started.",
   class_not_found: "This class is no longer running.",
   client_not_found: "That member can't be found.",
+  client_package_not_found: "That package can no longer pay for this class.",
   not_your_session: "This class is not one you are teaching.",
 };
 

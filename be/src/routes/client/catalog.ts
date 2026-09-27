@@ -10,7 +10,7 @@ import {
   serializePromotion,
 } from '../../services/packages/promotions'
 import { getClientEntitlements, serializeUnlimitedPlan } from '../../services/packages/entitlements'
-import { memberPackagesForClass } from '../../services/bookings/book'
+import { memberPackagesForClass, serializeMemberPackageForClass } from '../../services/bookings/book'
 import { NotFoundError } from '../../shared/errors'
 import { tenantId } from '../../middleware/tenant'
 import * as workshopsSvc from '../../services/workshops/catalog'
@@ -108,18 +108,7 @@ const app = new Hono()
     return c.json({
       ...detail,
       default_client_package_id: mine.defaultPayerId,
-      my_packages: mine.packages.map(p => ({
-        id: p.id,
-        name: p.name,
-        kind: p.kind,
-        running: p.running,
-        remaining: p.remaining,
-        expires_at: p.expiresAt?.toISOString() ?? null,
-        activation_end_if_picked: p.activationEndIfPicked?.toISOString() ?? null,
-        location: p.location,
-        eligible: p.eligible,
-        reason: p.reason,
-      })),
+      my_packages: mine.packages.map(serializeMemberPackageForClass),
     })
   })
   .get('/workshops', async c => {

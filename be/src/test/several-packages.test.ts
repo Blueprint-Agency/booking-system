@@ -461,6 +461,101 @@ describe('several packages per Family, the member picks the payer', { skip: inte
     assert.ok((await pkg(bundle)).expiresAt, 'and starts')
   })
 
+  /* ── staff pick the member's package (#333) ─────────────────────────── */
+
+  const staffBook = (as: Staff, role: 'admin' | 'instructor', classId: string, body: Record<string, unknown>) =>
+    send('POST', as.headers, `/api/v1/portal/${role}/schedule/classes/${classId}/bookings`, body)
+
+  const staffPackages = (as: Staff, role: 'admin' | 'instructor', classId: string, clientId: string) =>
+    send('GET', as.headers, `/api/v1/portal/${role}/schedule/classes/${classId}/packages?client_id=${clientId}`)
+
+  test('BKG-33 staff booking a member naming an Eligible package charge that package, admin and instructor alike', async () => {
+    for (const role of ['admin', 'instructor'] as const) {
+      const as = one[role]
+      const max = await member(one)
+      const sooner = await holds(one, max, 'credit_bundle', { expiresAt: days(10) })
+      const waiting = await holds(one, max, 'unlimited')
+      const classId = await addClass(one, { capacityBuffer: 2 })
+
+      const res = await expectStatus(await staffBook(as, role, classId, { client_id: max.clientId, client_package_id: waiting }), 201)
+      const row = await bookingRow(res.booking_id)
+      assert.equal(row.clientPackageId, waiting, `${role}: the pick paid, not the Default payer`)
+      assert.equal(row.creditsOrSessionsUsed, 0)
+      assert.deepEqual(res.paid_with, { client_package_id: waiting, name: `${NAME} unlimited`, kind: 'unlimited' })
+      assert.equal((await pkg(waiting)).expiresAt?.toISOString(), addUtcMonths(T, 1).toISOString(), `${role}: the Dormant pick Activates from today`)
+      assert.equal((await pkg(sooner)).creditsOrSessionsRemaining, 5, `${role}: the Default payer was not touched`)
+    }
+  })
+
+  test('BKG-34 staff naming an Ineligible package are refused with its reason, and another member’s package 404, and nothing is booked', async () => {
+    const ned = await member(one)
+    const away = await holds(one, ned, 'unlimited', { locationId: one.secondLocationId, expiresAt: days(20) })
+    const short = await holds(one, ned, 'credit_bundle', { credits: 1 })
+    // One package the Default payer could use, so every refusal below is the pick's own.
+    await holds(one, ned, 'credit_bundle', { credits: 5, expiresAt: days(20) })
+    const theirs = await holds(one, await member(one), 'credit_bundle')
+    const otherStudios = await holds(two, await member(two), 'credit_bundle')
+    const classId = await addClass(one, { creditCost: 2, capacityBuffer: 2 })
+
+    const pick = (id: string) => staffBook(one.admin, 'admin', classId, { client_id: ned.clientId, client_package_id: id })
+    await expectStatus(await pick(away), 409, 'location_not_covered')
+    await expectStatus(await pick(short), 409, 'insufficient_credits')
+    await expectStatus(await pick(theirs), 404, 'client_package_not_found')
+    await expectStatus(await pick(otherStudios), 404, 'client_package_not_found')
+    await expectStatus(
+      await staffBook(one.instructor, 'instructor', classId, { client_id: ned.clientId, client_package_id: short }),
+      409,
+      'insufficient_credits',
+    )
+
+    assert.equal((await bookingsOn(ned, classId)).length, 0)
+    const stillShort = await pkg(short)
+    assert.equal(stillShort.creditsOrSessionsRemaining, 1)
+    assert.equal(stillShort.expiresAt, null, 'a refused pick does not start its clock')
+    assert.equal((await pkg(theirs)).creditsOrSessionsRemaining, 5)
+  })
+
+  test('BKG-35 staff read a member’s class packages for a class, classified with the Default payer named, within their studio', async () => {
+    const oz = await member(one)
+    const away = await holds(one, oz, 'unlimited', { locationId: one.secondLocationId, expiresAt: days(8) })
+    const running = await holds(one, oz, 'credit_bundle', { expiresAt: days(15) })
+    const short = await holds(one, oz, 'credit_bundle', { credits: 1 })
+    const plan = await holds(one, oz, 'unlimited')
+    await holds(one, oz, 'pt')
+    await holds(one, await member(one), 'credit_bundle')
+    const classId = await addClass(one, { creditCost: 2 })
+
+    for (const role of ['admin', 'instructor'] as const) {
+      const res = await expectStatus(await staffPackages(one[role], role, classId, oz.clientId), 200)
+      assert.equal(res.default_client_package_id, running, role)
+      assert.deepEqual(
+        res.packages.map((p: any) => [p.id, p.running, p.eligible, p.reason]),
+        [
+          [away, true, false, 'location_not_covered'],
+          [running, true, true, null],
+          [plan, false, true, null],
+          [short, false, false, 'insufficient_credits'],
+        ],
+        `${role}: every class package in default order, no PT package, nobody else’s`,
+      )
+      const dormantPlan = res.packages.find((p: any) => p.id === plan)
+      assert.equal(dormantPlan.activation_end_if_picked, addUtcMonths(T, 1).toISOString(), 'the end date picking it would give')
+      assert.equal(dormantPlan.name, `${NAME} unlimited`)
+      assert.equal(res.packages.find((p: any) => p.id === running).remaining, 5)
+    }
+
+    // Tenant isolation: another studio's member, or another studio's class, is not there to read.
+    const elsewhere = await member(two)
+    await holds(two, elsewhere, 'credit_bundle')
+    await expectStatus(await staffPackages(one.admin, 'admin', classId, elsewhere.clientId), 404, 'client_not_found')
+    await expectStatus(await staffPackages(one.admin, 'admin', await addClass(two), oz.clientId), 404, 'class_not_found')
+
+    // An instructor reads only the classes they teach.
+    const colleague = await staffAt(one, `colleague-${members}`, 'instructor')
+    await harness.db.insert(schema.instructors).values({ tenantId: one.id, staffUserId: colleague.id })
+    await expectStatus(await staffPackages(colleague, 'instructor', classId, oz.clientId), 403, 'not_your_session')
+  })
+
   test('WTL-29, WTL-30 promotion from the waitlist, automatic or by staff, is paid by the Default payer', async () => {
     assert.equal((await setFlag(one, true)).status, 200)
 

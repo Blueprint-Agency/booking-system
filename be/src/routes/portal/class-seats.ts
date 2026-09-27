@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import { serializePaidWith, type BookClassResult } from '../../services/bookings/book'
+import {
+  serializeMemberPackageForClass,
+  serializePaidWith,
+  type BookClassResult,
+  type MemberPackagesForClass,
+} from '../../services/bookings/book'
 import type { ClassDetail } from '../../services/schedule/detail'
 import type { ScheduleEntryRow } from '../../services/schedule/timetable'
 import { staffCancelPreviewJson } from '../../services/bookings/staff-cancel-preview'
@@ -10,10 +15,15 @@ import { staffCancelPreviewJson } from '../../services/bookings/staff-cancel-pre
  * number here was counted by `services/bookings/seats`.
  */
 
-/** `POST …/schedule/classes/:id/bookings`. `overbook` is honoured for admins only. */
+/**
+ * `POST …/schedule/classes/:id/bookings`. `overbook` is honoured for admins
+ * only. `client_package_id` is staff's pick of the member's packages (#333);
+ * absent, the Default payer pays.
+ */
 export const staffBookingSchema = z.object({
   client_id: z.string().uuid(),
   overbook: z.boolean().optional(),
+  client_package_id: z.string().uuid().optional(),
 })
 
 export function staffBookingJson(res: BookClassResult) {
@@ -22,8 +32,19 @@ export function staffBookingJson(res: BookClassResult) {
     seat: res.seat,
     qr_token: res.qrToken,
     code: res.code,
-    // The Default payer staff charged, named so they know what was spent.
+    // The package staff charged, named so they know what was spent.
     paid_with: serializePaidWith(res.paidWith),
+  }
+}
+
+/** `GET …/schedule/classes/:id/packages?client_id=`: whose packages to read. */
+export const staffPackagesQuery = z.object({ client_id: z.string().uuid() })
+
+/** The member's class packages for one class, as the Book sheet's `my_packages` reads them. */
+export function staffPackagesJson(res: MemberPackagesForClass) {
+  return {
+    default_client_package_id: res.defaultPayerId,
+    packages: res.packages.map(serializeMemberPackageForClass),
   }
 }
 

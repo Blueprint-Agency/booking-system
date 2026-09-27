@@ -15,12 +15,15 @@ import { CancelBookingDialog, type StaffCancelTarget } from "@/components/bookin
 import { useWorkspace } from "@/lib/workspace-context";
 import { checkInErrorMessage } from "@/lib/check-in";
 import {
+  memberPackagesForClass,
+  packagePick,
   searchMembers,
   seatTag,
   seatsSummary,
   staffBookClass,
   type ClassSeats,
   type MemberMatch,
+  type PackagePick,
   type StaffRole,
 } from "@/lib/class-seats";
 import {
@@ -303,6 +306,58 @@ export function ClassRoster({
 }
 
 /**
+ * Which of the member's packages pays, when more than one can (#333). The
+ * Default payer comes chosen; Ineligible packages are listed greyed with their
+ * reason so staff can tell the member why.
+ */
+function PackageChoice({
+  pick,
+  chosen,
+  busy,
+  onChange,
+  onBook,
+  onCancel,
+}: {
+  pick: PackagePick;
+  chosen: string;
+  busy: boolean;
+  onChange: (id: string) => void;
+  onBook: () => void;
+  onCancel: () => void;
+}) {
+  const note = pick.options.find((o) => o.id === chosen)?.note;
+  return (
+    <div className="mt-2 space-y-1.5 rounded-md border border-border bg-card p-2.5">
+      <label htmlFor="roster-package" className="text-xs font-medium text-muted">
+        Pay with
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          id="roster-package"
+          value={chosen}
+          disabled={busy}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-10 min-w-0 flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-60 sm:h-8 sm:py-1"
+        >
+          {pick.options.map((o) => (
+            <option key={o.id} value={o.id} disabled={o.disabled}>
+              {o.disabled ? `${o.label} — ${o.note}` : o.label}
+            </option>
+          ))}
+        </select>
+        <Button type="button" size="sm" className="h-10 sm:h-8" disabled={busy} onClick={onBook}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Book"}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" className="h-10 sm:h-8" disabled={busy} onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+      {note && <p className="text-xs text-muted">{note}</p>}
+    </div>
+  );
+}
+
+/**
  * Find a member and book them on. Staff take a buffer seat; when there is none
  * the refusal becomes a question — "Overbook, or add to the waitlist?" for an
  * admin, "Add to the waitlist?" for an instructor, without the waitlist when
@@ -323,9 +378,18 @@ function AddMember({
   const [matches, setMatches] = useState<MemberMatch[]>([]);
   const [searching, setSearching] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  /** The member a refusal is about, and what it said. */
-  const [refusal, setRefusal] = useState<{ member: MemberMatch; refusal: StaffBookingPrompt } | null>(null);
+  /**
+   * The member a refusal is about, what it said, and the package staff picked —
+   * kept so Overbook books with the same one.
+   */
+  const [refusal, setRefusal] = useState<{
+    member: MemberMatch;
+    refusal: StaffBookingPrompt;
+    packageId: string | null;
+  } | null>(null);
   const [added, setAdded] = useState<string | null>(null);
+  /** A member with more than one package that can pay, while staff choose which. */
+  const [choosing, setChoosing] = useState<{ member: MemberMatch; pick: PackagePick; chosen: string } | null>(null);
 
   useEffect(() => {
     if (!api || !open) return;
@@ -354,15 +418,42 @@ function AddMember({
     setQ("");
     setMatches([]);
     setRefusal(null);
+    setChoosing(null);
   }
 
-  async function book(member: MemberMatch, overbook = false) {
+  /**
+   * Add: read the member's packages first. With more than one that can pay,
+   * staff choose which (as the member would); otherwise book straight away.
+   */
+  async function add(member: MemberMatch) {
     if (!api || busyId) return;
     setBusyId(member.id);
     setRefusal(null);
     setAdded(null);
+    setChoosing(null);
+    let pick: PackagePick | null;
     try {
-      const res = await staffBookClass(api, role, classId, member.id, overbook);
+      pick = packagePick(await memberPackagesForClass(api, role, classId, member.id));
+    } catch (e) {
+      setRefusal({ member, refusal: staffBookingPrompt(e, role), packageId: null });
+      setBusyId(null);
+      return;
+    }
+    setBusyId(null);
+    if (pick) setChoosing({ member, pick, chosen: pick.defaultId });
+    else await book(member);
+  }
+
+  async function book(member: MemberMatch, overbook = false, packageId: string | null = null) {
+    if (!api || busyId) return;
+    setBusyId(member.id);
+    setRefusal(null);
+    setAdded(null);
+    // The pick travels with a refusal from here, so Overbook charges what was
+    // chosen; a select left open beside the prompt could say otherwise.
+    setChoosing(null);
+    try {
+      const res = await staffBookClass(api, role, classId, member.id, overbook, packageId);
       setAdded(
         res.seat === "overbook"
           ? `${member.name} was added as an overbooking.`
@@ -371,7 +462,7 @@ function AddMember({
       close();
       onBooked();
     } catch (e) {
-      setRefusal({ member, refusal: staffBookingPrompt(e, role) });
+      setRefusal({ member, refusal: staffBookingPrompt(e, role), packageId });
     } finally {
       setBusyId(null);
     }
@@ -388,7 +479,7 @@ function AddMember({
       close();
       onBooked();
     } catch (e) {
-      setRefusal({ member, refusal: { kind: "error", message: staffJoinRefusal(e) } });
+      setRefusal({ member, refusal: { kind: "error", message: staffJoinRefusal(e) }, packageId: null });
     } finally {
       setBusyId(null);
     }
@@ -422,7 +513,10 @@ function AddMember({
         <Input
           autoFocus
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setChoosing(null);
+          }}
           placeholder="Search members by name, email or phone"
           aria-label="Search members"
         />
@@ -452,7 +546,7 @@ function AddMember({
                   type="button"
                   size="sm"
                   disabled={busyId !== null}
-                  onClick={() => book(refusal.member, true)}
+                  onClick={() => book(refusal.member, true, refusal.packageId)}
                 >
                   Overbook
                 </Button>
@@ -494,21 +588,35 @@ function AddMember({
           <li className="py-2 text-xs text-muted">No members match.</li>
         )}
         {shown.map((m) => (
-          <li key={m.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-            <div className="min-w-0">
-              <div className="truncate text-ink">{m.name}</div>
-              <div className="truncate text-xs text-muted">{m.email}</div>
+          <li key={m.id} className="py-2 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-ink">{m.name}</div>
+                <div className="truncate text-xs text-muted">{m.email}</div>
+              </div>
+              {choosing?.member.id !== m.id && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-10 sm:h-8"
+                  disabled={busyId !== null}
+                  onClick={() => add(m)}
+                >
+                  {busyId === m.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
+                </Button>
+              )}
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="h-10 sm:h-8"
-              disabled={busyId !== null}
-              onClick={() => book(m)}
-            >
-              {busyId === m.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
-            </Button>
+            {choosing?.member.id === m.id && (
+              <PackageChoice
+                pick={choosing.pick}
+                chosen={choosing.chosen}
+                busy={busyId === m.id}
+                onChange={(chosen) => setChoosing({ ...choosing, chosen })}
+                onBook={() => book(m, false, choosing.chosen)}
+                onCancel={() => setChoosing(null)}
+              />
+            )}
           </li>
         ))}
       </ul>

@@ -85,9 +85,9 @@ export interface ClassifyInput {
 
 export interface SelectionInput extends ClassifyInput {
   /**
-   * The package the member picked on the Book sheet. Absent where nobody is
-   * there to pick — a promotion, staff booking, an old client — and the Default
-   * payer is used.
+   * The package the member picked on the Book sheet, or staff picked for them.
+   * Absent where nobody picked — a promotion, staff who left it, an old client —
+   * and the Default payer is used.
    */
   clientPackageId?: string | null
 }

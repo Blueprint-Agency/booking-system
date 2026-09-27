@@ -76,12 +76,19 @@ export interface StaffBookClassInput {
   actorStaffId: string
   /** Admin only: take an overbook seat when the buffer is full. Ignored for instructors. */
   overbook?: boolean
+  /**
+   * The package staff picked for the member, as the member would on the Book
+   * sheet (#333): refused with its own reason unless it is Eligible. Absent,
+   * the Default payer pays.
+   */
+  clientPackageId?: string | null
 }
 
 /**
  * Staff booking a member onto a class (spec-waitlist.md §7): a buffer seat, or
- * an overbook seat for an admin who asked. Everything else — package selection,
- * the debit, Activation, the QR code — is the member's booking, unchanged.
+ * an overbook seat for an admin who asked. Everything else — package selection
+ * (staff's pick or the Default payer), the debit, Activation, the QR code — is
+ * the member's booking, unchanged.
  */
 export async function staffBookClass(
   tenantId: string,
@@ -93,6 +100,7 @@ export async function staffBookClass(
     role: input.role,
     overbook: input.overbook ?? false,
     actorStaffId: input.actorStaffId,
+    clientPackageId: input.clientPackageId ?? null,
   })
 }
 
@@ -111,22 +119,12 @@ async function bookIntoClass(
     const cls = await lockClass(tx, tenantId, classId)
 
     if (!cls || cls.lifecycle !== 'active') throw new NotFoundError('class_not_found')
-    // An instructor reaches their own classes only — the same rule as check-in.
-    if (input.role === 'instructor' && cls.mainInstructorId !== input.actorStaffId) {
-      throw new ForbiddenError('not_your_session', { message: 'This class is not one you are teaching.' })
-    }
+    assertStaffReaches(cls, input.role, input.actorStaffId)
     if (cls.startsAt <= now) throw new BadRequestError('class_already_started')
 
     // A member booked by staff must be one of this studio's members. RLS would
     // refuse the insert anyway; this makes it a 404 rather than a 500.
-    if (input.role !== 'member') {
-      const [client] = await tx
-        .select({ id: clients.id })
-        .from(clients)
-        .where(and(eq(clients.tenantId, tenantId), eq(clients.id, clientId), isNull(clients.deletedAt)))
-        .limit(1)
-      if (!client) throw new NotFoundError('client_not_found')
-    }
+    if (input.role !== 'member') await assertStudioMember(tx, tenantId, clientId)
 
     // 2. Already booked? (one confirmed booking per client per class)
     if (await holdsSeat(tx, tenantId, clientId, classId)) throw new ConflictError('already_booked')
@@ -163,6 +161,23 @@ async function bookIntoClass(
 
     return paid.booking
   })
+}
+
+/** An instructor reaches their own classes only — the same rule as check-in. */
+function assertStaffReaches(cls: { mainInstructorId: string }, role: SeatRole, actorStaffId?: string) {
+  if (role === 'instructor' && cls.mainInstructorId !== actorStaffId) {
+    throw new ForbiddenError('not_your_session', { message: 'This class is not one you are teaching.' })
+  }
+}
+
+/** The member staff act for is one of this studio's, not deleted: `client_not_found` otherwise. */
+async function assertStudioMember(reader: Tx | typeof db, tenantId: string, clientId: string) {
+  const [client] = await reader
+    .select({ id: clients.id })
+    .from(clients)
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.id, clientId), isNull(clients.deletedAt)))
+    .limit(1)
+  if (!client) throw new NotFoundError('client_not_found')
 }
 
 /** The class row a booking reads, as `lockClass` returns it. */
@@ -298,7 +313,7 @@ export async function payAndBook(
   input: {
     clientId: string
     seat: BookingSeat
-    /** The member's pick; null wherever nobody is there to pick, and the Default payer pays. */
+    /** The member's or staff's pick; null where nobody picked, and the Default payer pays. */
     clientPackageId: string | null
     now: Date
   },
@@ -411,8 +426,38 @@ export async function memberPackagesForClass(
   tenantId: string,
   clientId: string,
   classId: string,
-): Promise<{ packages: MemberPackageForClass[]; defaultPayerId: string | null } | null> {
-  const now = clockNow()
+): Promise<MemberPackagesForClass | null> {
+  const cls = await readBookableClass(tenantId, classId)
+  if (!cls) return null
+  return classifyForClass(tenantId, clientId, cls)
+}
+
+/**
+ * The same read for staff about to book a member (#333) — what the roster's
+ * package select lists. A member of another studio is `client_not_found`, and
+ * an instructor reads only a class they teach, as they book only onto one.
+ */
+export async function staffPackagesForClass(
+  tenantId: string,
+  input: Omit<StaffBookClassInput, 'overbook' | 'clientPackageId'>,
+): Promise<MemberPackagesForClass> {
+  const cls = await readBookableClass(tenantId, input.classId)
+  if (!cls) throw new NotFoundError('class_not_found')
+  assertStaffReaches(cls, input.role, input.actorStaffId)
+  await assertStudioMember(db, tenantId, input.clientId)
+  return classifyForClass(tenantId, input.clientId, cls)
+}
+
+export interface MemberPackagesForClass {
+  packages: MemberPackageForClass[]
+  /** The first Eligible package — what pays when nobody picks. */
+  defaultPayerId: string | null
+}
+
+type BookableClass = NonNullable<Awaited<ReturnType<typeof readBookableClass>>>
+
+/** A class as the package reads need it; null unless it is still running. */
+async function readBookableClass(tenantId: string, classId: string) {
   const [cls] = await db
     .select({
       id: classes.id,
@@ -421,12 +466,16 @@ export async function memberPackagesForClass(
       creditCost: classes.creditCost,
       lifecycle: classes.lifecycle,
       packageRuleMode: classes.packageRuleMode,
+      mainInstructorId: classes.mainInstructorId,
     })
     .from(classes)
     .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
     .limit(1)
-  if (!cls || cls.lifecycle !== 'active') return null
+  return cls && cls.lifecycle === 'active' ? cls : null
+}
 
+async function classifyForClass(tenantId: string, clientId: string, cls: BookableClass): Promise<MemberPackagesForClass> {
+  const now = clockNow()
   const pkgs = await candidatePackages(db, tenantId, clientId)
   const locationIds = [...new Set(pkgs.flatMap(p => (p.locationId ? [p.locationId] : [])))]
   const locationNames = new Map(
@@ -464,4 +513,20 @@ export async function memberPackagesForClass(
     }
   })
   return { packages, defaultPayerId: packages.find(p => p.eligible)?.id ?? null }
+}
+
+/** One classified package as the member's Book sheet and the staff roster both read it. */
+export function serializeMemberPackageForClass(p: MemberPackageForClass) {
+  return {
+    id: p.id,
+    name: p.name,
+    kind: p.kind,
+    running: p.running,
+    remaining: p.remaining,
+    expires_at: p.expiresAt?.toISOString() ?? null,
+    activation_end_if_picked: p.activationEndIfPicked?.toISOString() ?? null,
+    location: p.location,
+    eligible: p.eligible,
+    reason: p.reason,
+  }
 }

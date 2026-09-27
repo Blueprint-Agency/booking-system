@@ -402,7 +402,7 @@ A shared `<CapacityFields />` block appears on every scheduling form, reading "A
 
 **Seats.** Every class booking records the seat it holds — `online`, `buffer` or `overbook` — and `services/bookings/seats.ts` is the only place they are counted. A member takes an online seat; staff take a buffer seat; an admin may **overbook** past a full buffer after confirming "No seats left. Overbook?". An instructor is told "No seats left." and cannot overbook. The member catalogue's `spots_left` is online seats only, so a staff booking never changes it.
 
-**Session page** (admin and instructor): **Booked** `attending / attendance capacity` (e.g. 8 / 16); **Seats** `online used / online · buffer used / buffer`, plus "N overbooked" when any; the roster tags each buffer and overbook row; **Add member** searches the studio's members and books one on. The timetable cell reads `attending / attendance capacity`. An instructor reaches this page for the classes they lead.
+**Session page** (admin and instructor): **Booked** `attending / attendance capacity` (e.g. 8 / 16); **Seats** `online used / online · buffer used / buffer`, plus "N overbooked" when any; the roster tags each buffer and overbook row; **Add member** searches the studio's members and books one on; when the member holds more than one package that can pay, a **Pay with** select opens on their row with the Default payer chosen and Ineligible packages greyed with their reason (a Dormant one says "Starts today, runs until {date}"), and with one or none the booking goes straight through (#333). The timetable cell reads `attending / attendance capacity`. An instructor reaches this page for the classes they lead.
 
 ### 7e. Workshops are configured under Packages (not Schedule)
 

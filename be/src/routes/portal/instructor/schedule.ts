@@ -5,10 +5,10 @@ import * as timetable from '../../../services/schedule/timetable'
 import * as classesSvc from '../../../services/schedule/classes'
 import * as seriesSvc from '../../../services/schedule/series'
 import { cancelClass } from '../../../services/bookings/cancel-class'
-import { staffBookClass } from '../../../services/bookings/book'
+import { staffBookClass, staffPackagesForClass } from '../../../services/bookings/book'
 import { sgDayWindow, sgToday } from '../../../lib/time'
 import { tenantId } from '../../../middleware/tenant'
-import { seatFields, staffBookingJson, staffBookingSchema } from '../class-seats'
+import { seatFields, staffBookingJson, staffBookingSchema, staffPackagesJson, staffPackagesQuery } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
 import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-window'
 import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
@@ -30,8 +30,11 @@ import { hasCapacity, NO_CAPACITY, previewJson, seriesRow, seriesTemplateFields,
  *                           contract with the same forcing as a single class:
  *                           the caller is the main instructor, nobody supports,
  *                           and pay is null. Extend and end stay admin only.
+ *   GET  /schedule/classes/:id/packages — a member's class packages for a class
+ *                           the caller is the MAIN instructor of, classified.
  *   POST /schedule/classes/:id/bookings — book a member onto a class the caller
- *                           is the MAIN instructor of, into a buffer seat.
+ *                           is the MAIN instructor of, into a buffer seat, paid
+ *                           by the package picked or the Default payer.
  *   POST /schedule/classes/:id/cancel — cancel a class the caller is the MAIN
  *                           instructor of, with a reason. Same service (and so
  *                           the same member refunds) as the admin path; the
@@ -185,8 +188,26 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'class_series', id: res.series.id })
     return c.json({ series: seriesRow(res.series), class_ids: res.classIds }, 201)
   })
+  // The member's class packages for a class the caller teaches — the admin
+  // route's read (#333).
+  .get(
+    '/classes/:id/packages',
+    zValidator('param', z.object({ id: z.string().uuid() })),
+    zValidator('query', staffPackagesQuery),
+    async c => {
+      const { id } = c.req.valid('param')
+      const res = await staffPackagesForClass(tenantId(c), {
+        classId: id,
+        clientId: c.req.valid('query').client_id,
+        role: 'instructor',
+        actorStaffId: c.get('staffUserId'), // never from the query
+      })
+      return c.json(staffPackagesJson(res))
+    },
+  )
   // Book a member onto a class the caller teaches: a buffer seat only. An
-  // instructor never overbooks, so `overbook` in the body changes nothing.
+  // instructor never overbooks, so `overbook` in the body changes nothing. They
+  // may pick the member's package, as an admin may.
   .post(
     '/classes/:id/bookings',
     zValidator('param', z.object({ id: z.string().uuid() })),
@@ -199,6 +220,7 @@ const app = new Hono()
         clientId: body.client_id,
         role: 'instructor',
         actorStaffId: c.get('staffUserId'), // never from the body
+        clientPackageId: body.client_package_id ?? null,
       })
       c.set('auditTarget' as any, { table: 'bookings', id: res.bookingId })
       return c.json(staffBookingJson(res), 201)
