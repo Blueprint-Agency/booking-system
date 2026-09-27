@@ -8,16 +8,17 @@
 // session themselves and leaves pay to an admin, as on their class form.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Loader2, Search, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { InstructorOption, useInstructorsOnLeave } from "@/components/schedule/instructor-leave";
+import { MemberSearch, SeatRowView, toSeat, type SeatRow } from "@/components/schedule/pt-seat";
 import { useWorkspace } from "@/lib/workspace-context";
 import { currentHourTime, todayIso } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
 import { PAY_OPTIONAL_HINT } from "@/lib/pay";
 import { fetchActiveInstructors, fetchActiveRooms, type CatalogInstructor, type CatalogRoom } from "@/lib/catalog";
-import { searchMembers, type MemberMatch, type StaffRole } from "@/lib/class-seats";
+import type { MemberMatch, StaffRole } from "@/lib/class-seats";
 import type { Slot } from "@/lib/schedule";
 import {
   createManualSession,
@@ -27,42 +28,12 @@ import {
   seatChoice,
   seatLimit,
   seatReadErrorMessage,
-  seatWarnings,
   sessionTypeLabel,
-  type ManualSeat,
   type PtSessionType,
-  type SeatCandidates,
-  type SeatChoice,
 } from "@/lib/pt-manual";
 
 const SELECT_CLASS =
   "flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50";
-
-/** One member on the roster, and what their packages say for the session's current shape. */
-interface SeatRow {
-  member: MemberMatch;
-  /** The session type and instructor the packages were (or are being) read for. */
-  shape: string;
-  state: "waiting" | "loading" | "ready" | "error";
-  candidates: SeatCandidates | null;
-  choice: SeatChoice | null;
-  chosen: string | null;
-  accepted: boolean;
-  error: string | null;
-}
-
-function toSeat(r: SeatRow, sessionType: PtSessionType): ManualSeat {
-  const pkg = r.candidates?.packages.find((p) => p.id === r.chosen);
-  return {
-    clientId: r.member.id,
-    name: r.member.name,
-    packageId: r.state === "ready" ? r.chosen : null,
-    warned: Boolean(pkg && seatWarnings(pkg, sessionType).length),
-    accepted: r.accepted,
-    ready: r.state === "ready",
-    readError: r.state === "error" ? r.error : null,
-  };
-}
 
 export function ManualPtSessionDialog({
   role,
@@ -392,213 +363,5 @@ export function ManualPtSessionDialog({
         </DialogFooter>
       </form>
     </Dialog>
-  );
-}
-
-/**
- * One member on the roster: the package that pays (a select only when more
- * than one can), and the warning band with Add anyway when it bends something
- * the member bought.
- */
-function SeatRowView({
-  row,
-  sessionType,
-  onRemove,
-  onChoose,
-  onAccept,
-}: {
-  row: SeatRow;
-  sessionType: PtSessionType;
-  onRemove: () => void;
-  onChoose: (id: string) => void;
-  onAccept: (accepted: boolean) => void;
-}) {
-  const { choice, chosen } = row;
-  const pkg = row.candidates?.packages.find((p) => p.id === chosen) ?? null;
-  const option = choice?.options.find((o) => o.id === chosen) ?? null;
-  const warnings = pkg ? seatWarnings(pkg, sessionType) : [];
-  const selectId = `manual-pt-pkg-${row.member.id}`;
-
-  return (
-    <li className="space-y-2 px-3 py-2.5 text-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-ink">{row.member.name}</div>
-          <div className="truncate text-xs text-muted">{row.member.email}</div>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 shrink-0"
-          onClick={onRemove}
-          aria-label={`Remove ${row.member.name}`}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {row.state === "waiting" && (
-        <p className="text-xs text-muted">Pick an instructor to see this member&apos;s packages.</p>
-      )}
-      {row.state === "loading" && (
-        <p className="flex items-center gap-1.5 text-xs text-muted">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading packages…
-        </p>
-      )}
-      {row.state === "error" && <p className="text-xs text-error">{row.error}</p>}
-
-      {row.state === "ready" && choice?.refusal && (
-        <div className="space-y-1">
-          <p className="text-xs text-error">{choice.refusal}</p>
-          {choice.options.length > 0 && (
-            <ul className="space-y-0.5 text-xs text-muted opacity-70">
-              {choice.options.map((o) => (
-                <li key={o.id}>
-                  {o.label} — {o.note}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-      {row.state === "ready" && choice && !choice.refusal && (
-        <div className="space-y-1">
-          {choice.choosable ? (
-            <>
-              <label htmlFor={selectId} className="text-xs font-medium text-muted">
-                Pay with
-              </label>
-              <select
-                id={selectId}
-                value={chosen ?? ""}
-                onChange={(e) => onChoose(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm sm:h-8 sm:py-1"
-              >
-                {choice.options.map((o) => (
-                  <option key={o.id} value={o.id} disabled={o.disabled}>
-                    {o.disabled ? `${o.label} — ${o.note}` : o.label}
-                  </option>
-                ))}
-              </select>
-            </>
-          ) : (
-            <p className="text-xs text-muted">
-              Pays with <span className="text-ink">{option?.label}</span>
-            </p>
-          )}
-          {option?.note && <p className="text-xs text-muted">{option.note}</p>}
-        </div>
-      )}
-
-      {row.state === "ready" && warnings.length > 0 && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-ink"
-        >
-          <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
-          <span className="min-w-0 flex-1">
-            {warnings.join(" ")}
-            {row.accepted ? " Adding anyway: one session is charged from it." : ""}
-          </span>
-          {row.accepted ? (
-            <Button type="button" size="sm" variant="ghost" onClick={() => onAccept(false)}>
-              Undo
-            </Button>
-          ) : (
-            <Button type="button" size="sm" variant="secondary" onClick={() => onAccept(true)}>
-              Add anyway
-            </Button>
-          )}
-        </div>
-      )}
-    </li>
-  );
-}
-
-/** Find a member to add, as the class roster does. Someone already added can't be added twice. */
-function MemberSearch({
-  role,
-  added,
-  onAdd,
-}: {
-  role: StaffRole;
-  added: string[];
-  onAdd: (m: MemberMatch) => void;
-}) {
-  const { api } = useWorkspace();
-  const [q, setQ] = useState("");
-  const [matches, setMatches] = useState<MemberMatch[]>([]);
-  const [searching, setSearching] = useState(false);
-
-  useEffect(() => {
-    if (!api) return;
-    const term = q.trim();
-    if (term.length < 2) return;
-    let live = true;
-    const t = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const rows = await searchMembers(api, role, term);
-        if (live) setMatches(rows);
-      } catch {
-        if (live) setMatches([]);
-      } finally {
-        if (live) setSearching(false);
-      }
-    }, 250);
-    return () => {
-      live = false;
-      clearTimeout(t);
-      // A search cut short by a new term, or by Add clearing it, must not leave "Searching…" up.
-      setSearching(false);
-    };
-  }, [api, q, role]);
-
-  const searchable = q.trim().length >= 2;
-  const shown = searchable ? matches : [];
-
-  return (
-    <div className="rounded-lg border border-border bg-paper p-3">
-      <div className="flex items-center gap-2">
-        <Search className="h-4 w-4 shrink-0 text-muted" />
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search members by name, email or phone"
-          aria-label="Search members"
-        />
-      </div>
-      <ul className="mt-2 divide-y divide-border">
-        {searching && shown.length === 0 && <li className="py-2 text-xs text-muted">Searching…</li>}
-        {!searching && searchable && shown.length === 0 && <li className="py-2 text-xs text-muted">No members match.</li>}
-        {shown.map((m) => {
-          const already = added.includes(m.id);
-          return (
-            <li key={m.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-              <div className="min-w-0">
-                <div className="truncate text-ink">{m.name}</div>
-                <div className="truncate text-xs text-muted">{m.email}</div>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="h-10 sm:h-8"
-                disabled={already}
-                onClick={() => {
-                  onAdd(m);
-                  setQ("");
-                  setMatches([]);
-                }}
-              >
-                {already ? "Added" : "Add"}
-              </Button>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
   );
 }

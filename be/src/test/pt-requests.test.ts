@@ -2427,6 +2427,62 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(cancellation!.wasWithinWindow, false)
   })
 
+  // ── The session detail page's read (#338) ────────────────────────────────
+
+  const adminDetail = (by: Staff, sessionId: string) =>
+    harness.app.request(`/api/v1/portal/admin/schedule/pt/${sessionId}`, { headers: by.headers })
+  const instructorDetail = (by: Staff, sessionId: string) =>
+    harness.app.request(`/api/v1/portal/instructor/sessions/pt/${sessionId}/roster`, { headers: by.headers })
+
+  test("PT-108 a session's detail says whether it is manual and, per attendee, the package paying their seat with its sessions left; a removed member leaves it, and one added back is listed once", async () => {
+    const { first, second, firstPackage, secondPackage, sessionId } = await fullPair('Kai Detail')
+
+    let d = await expectStatus(await adminDetail(adminAtOne, sessionId), 200)
+    assert.equal(d.origin, 'portal')
+    const seatOf = (who: Member) => d.clients.find((cl: any) => cl.id === who.clientId)
+    assert.equal(seatOf(first).package.id, firstPackage)
+    assert.equal(seatOf(first).package.sessions_left, 9)
+    assert.ok(seatOf(first).package.name)
+    assert.equal(seatOf(second).package.id, secondPackage)
+    assert.equal(seatOf(first).is_requester, true)
+    assert.equal(seatOf(second).is_requester, false)
+
+    await expectStatus(await adminRemoveMember(adminAtOne, sessionId, first.clientId), 200)
+    d = await expectStatus(await adminDetail(adminAtOne, sessionId), 200)
+    assert.deepEqual(d.clients.map((cl: any) => cl.id), [second.clientId])
+    assert.equal(seatOf(second).is_requester, true, 'the request follows who is booked')
+
+    await expectStatus(await adminAddMember(adminAtOne, sessionId, { client_id: first.clientId }), 201)
+    d = await expectStatus(await adminDetail(adminAtOne, sessionId), 200)
+    assert.deepEqual(d.clients.map((cl: any) => cl.id).sort(), [first.clientId, second.clientId].sort())
+    assert.equal(seatOf(first).package.sessions_left, 9, 'the confirmed seat, not the cancelled one')
+    assert.equal(seatOf(first).check_in_state, 'pending')
+
+    const lea = await member(one, 'Lea Requested')
+    const leaPackage = await givePt(one, lea, '1on1')
+    const requestSession = await scheduled(await requestOk(one, lea, { sessionType: '1on1', clientPackageId: leaPackage }))
+    const fromMember = await expectStatus(await adminDetail(adminAtOne, requestSession), 200)
+    assert.equal(fromMember.origin, 'member')
+    assert.equal(fromMember.clients[0].package.id, leaPackage)
+  })
+
+  test("PT-109 an instructor reads a private session they run, with no pay, and is refused another coach's or another studio's", async () => {
+    const { first, firstPackage, sessionId } = await fullPair('Max Own')
+
+    const d = await expectStatus(await instructorDetail(coachA, sessionId), 200)
+    assert.equal(d.id, sessionId)
+    assert.equal(d.origin, 'portal')
+    assert.equal(d.session_type, '2on1')
+    assert.ok(d.pt_request_id)
+    assert.equal(d.clients.find((cl: any) => cl.id === first.clientId).package.id, firstPackage)
+    assert.equal('instructor_pay_sgd' in d, false)
+
+    const notYours = await expectStatus(await instructorDetail(coachB, sessionId), 403)
+    assert.equal(notYours.error, 'not_your_session')
+    const away = await expectStatus(await adminDetail(adminAtTwo, sessionId), 404)
+    assert.equal(away.error, 'pt_session_not_found')
+  })
+
   // ── The packages a member could pay a seat with (#337) ───────────────────
 
   const candidates = (path: string, by: Staff, query: Record<string, string>) =>

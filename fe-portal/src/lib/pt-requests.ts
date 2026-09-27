@@ -140,6 +140,35 @@ export function ptInFilter(r: ApiPtRequest, f: PtFilter): boolean {
   return r.status === f;
 }
 
+/**
+ * The queue row's line under the member's name. A manual session (#338) had
+ * no request from the member — no proposed slots, class type or message — so
+ * it reads "Manual" and names who and where it was put on instead.
+ */
+export function ptRequestSummary(r: ApiPtRequest): string {
+  const type = r.session_type.toUpperCase();
+  if (r.origin === "portal") {
+    return [
+      type,
+      "Manual",
+      r.co_client?.name ? `partner: ${r.co_client.name}` : null,
+      r.session?.instructor_name,
+      r.session?.room_name,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  const first = r.slots[0];
+  const more = r.slots.length - 1;
+  return (
+    `${type} · ${ptClassTypeName(r.class_type)}` +
+    (first ? ` · ${first.proposed_date} ${ptSlotTime(first)}` : "") +
+    (more > 0 ? ` +${more} more` : "") +
+    (r.session_type === "2on1" && !r.co_client?.clientId ? " · partner: needs account" : "") +
+    (r.bound_instructor ? ` · with ${r.bound_instructor.name}` : "")
+  );
+}
+
 export function ptPartnerDisplay(r: ApiPtRequest): string {
   if (!r.co_client) return "—";
   if (r.co_client.clientId) return r.co_client.name ?? "Existing member";

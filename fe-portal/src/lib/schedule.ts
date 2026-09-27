@@ -123,6 +123,10 @@ export interface SchedulePtAttendee {
   name: string;
   code: string | null;
   check_in_state: "pending" | "attended" | "no_show" | "n_a" | null;
+  /** The request's client: on a manual session, the one a downgrade keeps. */
+  is_requester: boolean;
+  /** The package their seat was paid from, as it stands now. */
+  package: { id: string; name: string | null; sessions_left: number | null } | null;
 }
 
 export interface SchedulePtDetail {
@@ -132,6 +136,8 @@ export interface SchedulePtDetail {
    * the member who requested the session was permanently deleted.
    */
   pt_request_id: string | null;
+  /** `portal` for a manual session staff added (#334); null with no request. */
+  origin: "member" | "portal" | null;
   lifecycle: "active" | "cancelled";
   starts_at: string;
   ends_at: string;
@@ -196,6 +202,16 @@ export function fetchInstructorClass(api: Api, id: string): Promise<InstructorCl
   return api.get<InstructorClassDetail>(`/portal/instructor/sessions/class/${id}/roster`);
 }
 
+/**
+ * A private session the signed-in instructor runs, as their session page shows
+ * it: the admin's read without pay (#338). 403 `not_your_session` otherwise.
+ */
+export type InstructorPtDetail = Omit<SchedulePtDetail, "instructor_pay_sgd" | "supporting_instructors">;
+
+export function fetchInstructorPt(api: Api, id: string): Promise<InstructorPtDetail> {
+  return api.get<InstructorPtDetail>(`/portal/instructor/sessions/pt/${id}/roster`);
+}
+
 export function fetchPtDetail(api: Api, id: string): Promise<SchedulePtDetail> {
   return api.get<SchedulePtDetail>(`/portal/admin/schedule/pt/${id}`);
 }
@@ -252,7 +268,8 @@ export interface ClassPatch {
 
 /** PT names the main instructor `instructor_id`, not `main_instructor_id`. */
 export interface PtPatch {
-  session_type: "1on1" | "2on1";
+  /** Left out for a manual session, whose type changes through `retypeSession`. */
+  session_type?: "1on1" | "2on1";
   instructor_id: string;
   instructor_pay_sgd: number | null;
   supporting_instructors: SupportingPay[];

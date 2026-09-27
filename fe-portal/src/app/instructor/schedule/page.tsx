@@ -24,6 +24,8 @@ interface ScheduleEntry {
   label: string;
   subtitle: string | null;
   main_instructor_id: string | null;
+  /** Everyone teaching it; a private session's one instructor is here, not above. */
+  instructor_ids: string[];
   location_id: string | null;
   room_id: string | null;
   starts_at: string;
@@ -129,6 +131,14 @@ export default function InstructorSchedulePage() {
   // its cancel are theirs. Supporting on someone else's class grants neither.
   const ownsClass = (e: ScheduleEntry) =>
     e.kind === "class" && !!currentStaff && e.main_instructor_id === currentStaff.id;
+  // A private session they run has its own page too: its members and, on a
+  // manual one, removing or adding a member (#338).
+  const pageOf = (e: ScheduleEntry): string | null =>
+    ownsClass(e)
+      ? `/instructor/schedule/class/${e.id}`
+      : e.kind === "pt" && !!currentStaff && e.instructor_ids.includes(currentStaff.id)
+        ? `/instructor/schedule/pt/${e.id}`
+        : null;
 
   const canCancel = (e: ScheduleEntry) =>
     ownsClass(e) &&
@@ -226,9 +236,9 @@ export default function InstructorSchedulePage() {
                     className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3"
                   >
                     <div className="min-w-0 flex-1">
-                      {ownsClass(e) ? (
+                      {pageOf(e) ? (
                         <Link
-                          href={`/instructor/schedule/class/${e.id}`}
+                          href={pageOf(e)!}
                           className="block truncate py-0.5 font-medium text-ink hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           {e.label}

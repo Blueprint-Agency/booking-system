@@ -54,9 +54,10 @@ import {
   type ClassDifficulty,
   type ScheduleCorporatePackageBrief,
   type ScheduleCorporateSession,
-  type SchedulePtAttendee,
   type SchedulePtDetail,
 } from "@/lib/schedule";
+import { isManual, ptCancelConfirm, sessionActionErrorMessage } from "@/lib/pt-manual";
+import { PtSessionMembers } from "@/components/schedule/pt-session-members";
 import {
   fetchActiveClassTypes,
   fetchActiveInstructors,
@@ -669,13 +670,7 @@ function PtDetail({ id }: { id: string }) {
       return;
     }
     const ptRequestId = data.pt_request_id;
-    if (
-      !confirm(
-        "Cancel this private session? Customer bookings will be cancelled and credits returned.",
-      )
-    ) {
-      return;
-    }
+    if (!confirm(ptCancelConfirm(data))) return;
     setCancelBusy(true);
     setActionError(null);
     try {
@@ -683,7 +678,7 @@ function PtDetail({ id }: { id: string }) {
       await cancelPtRequest(api, ptRequestId);
       await load();
     } catch (err) {
-      setActionError(detailError(err, "Private session not found."));
+      setActionError(sessionActionErrorMessage(err, "Couldn't cancel the session"));
     } finally {
       setCancelBusy(false);
     }
@@ -710,7 +705,12 @@ function PtDetail({ id }: { id: string }) {
   return (
     <DetailFrame>
       <DetailHeader
-        badge={<Badge tone="accent">Private session</Badge>}
+        badge={
+          <>
+            <Badge tone="accent">Private session</Badge>
+            {isManual(data) && <Badge tone="neutral">Manual</Badge>}
+          </>
+        }
         state={state}
         title={`Private session · ${typeLabel}`}
         meta={meta}
@@ -756,33 +756,7 @@ function PtDetail({ id }: { id: string }) {
         </dl>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
-        <h2 className="mb-3 text-sm font-semibold text-ink">
-          Customers ({data.clients.length})
-        </h2>
-        {data.clients.length === 0 ? (
-          <p className="text-sm text-muted">No customers assigned.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {data.clients.map((cl) => (
-              <li
-                key={cl.id}
-                className="flex items-center justify-between gap-3 py-2.5 text-sm"
-              >
-                <div className="min-w-0">
-                  <Link href={`/admin/customers/${cl.id}`} className="text-ink hover:text-accent">
-                    {cl.name}
-                  </Link>
-                  {cl.code && (
-                    <div className="text-xs text-muted">Code {cl.code}</div>
-                  )}
-                </div>
-                <PtCheckInBadge state={cl.check_in_state} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <PtSessionMembers role="admin" data={data} onChanged={load} />
 
       <PtEditor data={data} instructors={instructors} rooms={rooms} onSaved={load} />
     </DetailFrame>
@@ -802,6 +776,7 @@ function PtEditor({
 }) {
   const { api } = useWorkspace();
   const disabled = data.lifecycle === "cancelled";
+  const manual = isManual(data);
 
   const [sessionType, setSessionType] = useState<"1on1" | "2on1">(data.session_type);
   const [mainInstructorId, setMainInstructorId] = useState(data.main_instructor_id);
@@ -861,7 +836,9 @@ function PtEditor({
         // upgrade on a session whose request names nobody fails with
         // `partner_required` and the admin has no field to fix it with.
         // Needs a client picker here, shown only when switching to 2on1.
-        session_type: sessionType,
+        // A manual session's type changes on the Members panel instead, which
+        // asks for the partner and their package (#338).
+        ...(manual ? {} : { session_type: sessionType }),
         instructor_id: mainInstructorId,
         instructor_pay_sgd: mainPay.trim() === "" ? null : Number(mainPay),
         supporting_instructors: supporting.map((s) => ({
@@ -885,20 +862,24 @@ function PtEditor({
     <section className="mt-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
       <h2 className="mb-4 text-sm font-semibold text-ink">Edit private session</h2>
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="pt-type">Format</Label>
-          <select
-            id="pt-type"
-            value={sessionType}
-            disabled={disabled || saving}
-            onChange={(e) => setSessionType(e.target.value as "1on1" | "2on1")}
-            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
-          >
-            <option value="1on1">1-on-1</option>
-            <option value="2on1">2-on-1</option>
-          </select>
-        </div>
-        <div className="hidden sm:block" />
+        {!manual && (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="pt-type">Format</Label>
+              <select
+                id="pt-type"
+                value={sessionType}
+                disabled={disabled || saving}
+                onChange={(e) => setSessionType(e.target.value as "1on1" | "2on1")}
+                className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+              >
+                <option value="1on1">1-on-1</option>
+                <option value="2on1">2-on-1</option>
+              </select>
+            </div>
+            <div className="hidden sm:block" />
+          </>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="pt-main-ins">Main instructor</Label>
           <select
@@ -1008,12 +989,6 @@ function PtEditor({
   );
 }
 
-function PtCheckInBadge({ state }: { state: SchedulePtAttendee["check_in_state"] }) {
-  if (state === "attended") return <Badge tone="sage">Checked in</Badge>;
-  if (state === "no_show") return <Badge tone="error">No-show</Badge>;
-  if (state === "pending") return <Badge tone="neutral">Pending</Badge>;
-  return null;
-}
 
 /* ------------------------------- Workshop ------------------------------- */
 

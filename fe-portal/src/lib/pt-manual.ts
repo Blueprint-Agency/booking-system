@@ -226,11 +226,9 @@ export function manualSessionBody(
   }
   const members: ManualSessionBody["members"] = [];
   for (const s of seats) {
-    if (s.readError) return `${s.name} can't be added: ${s.readError} Remove them to save.`;
-    if (!s.ready) return `Still reading ${s.name}'s packages.`;
-    if (!s.packageId) return `${s.name} has no package that can pay. Remove them to save.`;
-    if (s.warned && !s.accepted) return `${s.name}'s package needs Add anyway, or pick another.`;
-    members.push({ client_id: s.clientId, client_package_id: s.packageId });
+    const problem = seatProblem(s, " Remove them to save.");
+    if (problem) return problem;
+    members.push({ client_id: s.clientId, client_package_id: s.packageId! });
   }
 
   return {
@@ -243,6 +241,147 @@ export function manualSessionBody(
     members,
     ...(seats.some((s) => s.warned && s.accepted) ? { override: true as const } : {}),
   };
+}
+
+/**
+ * Why this member can't be seated yet, or null when their package is settled.
+ * `remedy` ends the sentences staff can act on by taking the member off.
+ */
+function seatProblem(s: ManualSeat, remedy = ""): string | null {
+  if (s.readError) return `${s.name} can't be added: ${s.readError}${remedy}`;
+  if (!s.ready) return `Still reading ${s.name}'s packages.`;
+  if (!s.packageId) return `${s.name} has no package that can pay.${remedy}`;
+  if (s.warned && !s.accepted) return `${s.name}'s package needs Add anyway, or pick another.`;
+  return null;
+}
+
+/* ------------------------ After it exists (#338) ------------------------ */
+
+/** A private session as its detail page holds it, enough to judge what staff may do. */
+export interface ManualSessionState {
+  origin: "member" | "portal" | null;
+  lifecycle: "active" | "cancelled";
+  session_type: PtSessionType;
+  clients: { id: string; name: string; is_requester: boolean }[];
+}
+
+/** Staff put it on the Schedule with no member request behind it. */
+export function isManual(s: Pick<ManualSessionState, "origin">): boolean {
+  return s.origin === "portal";
+}
+
+/** A manual session still on, with a seat its type holds and nobody fills. */
+export function canAddMember(s: ManualSessionState): boolean {
+  return isManual(s) && s.lifecycle === "active" && s.clients.length < seatLimit(s.session_type);
+}
+
+/** What staff are asked before cancelling the whole session. */
+export function ptCancelConfirm(s: Pick<ManualSessionState, "origin">): string {
+  return isManual(s)
+    ? "Cancel this private session? Each member gets their session back on the package it was paid from."
+    : "Cancel this private session? Customer bookings will be cancelled and credits returned.";
+}
+
+export interface AddMemberBody {
+  client_id: string;
+  client_package_id: string;
+  override?: true;
+}
+
+/** The add-member call's body, or the sentence saying what stops it. */
+export function addMemberBody(s: ManualSeat): AddMemberBody | string {
+  const problem = seatProblem(s);
+  if (problem) return problem;
+  return {
+    client_id: s.clientId,
+    client_package_id: s.packageId!,
+    ...(s.warned && s.accepted ? { override: true as const } : {}),
+  };
+}
+
+/**
+ * Who a downgrade to 1-on-1 takes off: everyone but the request's client, as
+ * the backend keeps them (or, with none, whoever booked first).
+ */
+export function downgradeLeaving<T extends { is_requester: boolean }>(clients: T[]): T[] {
+  const keep = clients.find((c) => c.is_requester) ?? clients[0];
+  return clients.filter((c) => c !== keep);
+}
+
+export function downgradeConfirm(clients: { name: string; is_requester: boolean }[]): string {
+  const leaving = downgradeLeaving(clients);
+  if (leaving.length === 0) return "Change this session to 1-on-1?";
+  const names = leaving.map((c) => c.name).join(" and ");
+  return `Change this session to 1-on-1? ${names} ${leaving.length === 1 ? "is" : "are"} taken off it and ${leaving.length === 1 ? "gets their session" : "get their sessions"} back on their own package.`;
+}
+
+export interface RetypeBody {
+  session_type: PtSessionType;
+  co_client_id?: string;
+  co_client_package_id?: string;
+  override?: true;
+}
+
+/**
+ * The type change's body (Admin only). A downgrade is the type alone; an
+ * upgrade names the partner joining and the package they pay from.
+ */
+export function retypeBody(to: PtSessionType, partner: ManualSeat | null): RetypeBody | string {
+  if (to === "1on1") return { session_type: "1on1" };
+  if (!partner) return "Add the partner who joins the 2-on-1.";
+  const problem = seatProblem(partner);
+  if (problem) return problem;
+  return {
+    session_type: "2on1",
+    co_client_id: partner.clientId,
+    co_client_package_id: partner.packageId!,
+    ...(partner.warned && partner.accepted ? { override: true as const } : {}),
+  };
+}
+
+export function addSessionMember(api: Api, role: StaffRole, sessionId: string, body: AddMemberBody): Promise<unknown> {
+  return api.post(`${sessionsPath(role)}/${sessionId}/members`, body);
+}
+
+export function removeSessionMember(api: Api, role: StaffRole, sessionId: string, clientId: string): Promise<unknown> {
+  return api.del(`${sessionsPath(role)}/${sessionId}/members/${clientId}`);
+}
+
+export function retypeSession(api: Api, sessionId: string, body: RetypeBody): Promise<unknown> {
+  return api.patch(`/portal/admin/pt-sessions/sessions/${sessionId}`, body);
+}
+
+/** Cancelling goes against the session's request, on the caller's surface. */
+export function cancelSession(api: Api, role: StaffRole, ptRequestId: string): Promise<unknown> {
+  return api.post(
+    role === "admin" ? `/portal/admin/pt-sessions/${ptRequestId}/cancel` : `/portal/instructor/pt-requests/${ptRequestId}/cancel`,
+  );
+}
+
+function sessionsPath(role: StaffRole): string {
+  return role === "admin" ? "/portal/admin/pt-sessions/sessions" : "/portal/instructor/pt-requests/sessions";
+}
+
+// A refused remove, add, type change or cancel, in staff terms (#335, #337).
+const SESSION_ACTION_COPY: Partial<Record<ErrorCode, string>> = {
+  booking_attended: "That member has checked in, so their seat can't be given back.",
+  session_ended: "This session has ended, so its members can't change.",
+  session_cancelled: "This session has been cancelled.",
+  not_your_session: "This session is not one you are teaching.",
+  not_a_manual_session: "Only a session staff added manually can change its members.",
+  booking_not_found: "That member is no longer on this session.",
+  pt_session_not_found: "This session can't be found.",
+  pt_request_not_found: "This session's request can't be found.",
+  partner_required: "Add the partner who joins the 2-on-1.",
+  session_full: "This session has no free seat.",
+  cannot_cancel: "This session can no longer be cancelled.",
+  not_your_request: "This session is not one you are teaching.",
+};
+
+/** A refused action on an existing session; the seat rule's codes read as on create. */
+export function sessionActionErrorMessage(err: unknown, fallback: string): string {
+  const code = err instanceof ApiError ? errorCode(err) : undefined;
+  return (code && (SESSION_ACTION_COPY[code] ?? CREATE_ERROR_COPY[code])) || scheduleErrorMessage(err, fallback);
 }
 
 // A refused create, in staff terms. A room or instructor clash is not here: it

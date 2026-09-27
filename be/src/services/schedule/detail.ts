@@ -15,6 +15,8 @@ import {
   bookings,
   clientPackages,
   classPackages,
+  ptPackages,
+  ptRequests,
   waitlistEntries,
 } from '../../db/schema'
 import type { BookingSeat, ClassDifficulty, ClientPackageKind } from '../../db/enums'
@@ -281,12 +283,18 @@ export interface PtSessionAttendee {
   name: string
   code: string | null
   checkInState: 'pending' | 'attended' | 'no_show' | 'n_a' | null
+  /** The request's client: on a manual session, the one a downgrade keeps. */
+  isRequester: boolean
+  /** The package their seat was paid from, as it stands now. */
+  package: { id: string; name: string | null; sessionsLeft: number | null } | null
 }
 
 export interface PtSessionDetail {
   id: string
   /** Null once the member who requested it is permanently deleted (#144). */
   ptRequestId: string | null
+  /** `portal` for a manual session staff created (#334); null with no request. */
+  origin: 'member' | 'portal' | null
   lifecycle: 'active' | 'cancelled'
   startsAt: Date
   endsAt: Date
@@ -303,6 +311,19 @@ export interface PtSessionDetail {
   capacityBuffer: number
   clients: PtSessionAttendee[]
   checkInState: SessionCheckInState
+}
+
+/** A private session the caller runs, for the instructor's session page (#338). */
+export async function getOwnPtSessionDetail(
+  tenantId: string,
+  id: string,
+  instructorStaffId: string,
+): Promise<PtSessionDetail> {
+  const detail = await getPtSessionDetail(tenantId, id)
+  if (detail.mainInstructorId !== instructorStaffId) {
+    throw new ForbiddenError('not_your_session', { message: 'This session is not one you are teaching.' })
+  }
+  return detail
 }
 
 export async function getPtSessionDetail(
@@ -327,11 +348,14 @@ export async function getPtSessionDetail(
       locationName: locations.name,
       roomId: ptSessions.roomId,
       roomName: rooms.name,
+      origin: ptRequests.origin,
+      requestClientId: ptRequests.clientId,
     })
     .from(ptSessions)
     .leftJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
     .leftJoin(locations, eq(locations.id, ptSessions.locationId))
     .leftJoin(rooms, eq(rooms.id, ptSessions.roomId))
+    .leftJoin(ptRequests, eq(ptRequests.id, ptSessions.ptRequestId))
     .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
     .limit(1)
   if (!row) throw new NotFoundError('pt_session_not_found')
@@ -342,6 +366,11 @@ export async function getPtSessionDetail(
       name: clients.name,
       code: bookings.code,
       checkInState: bookings.checkInState,
+      state: bookings.state,
+      bookedAt: bookings.bookedAt,
+      packageId: clientPackages.id,
+      packageName: ptPackages.name,
+      sessionsLeft: clientPackages.creditsOrSessionsRemaining,
     })
     .from(ptSessionClients)
     .innerJoin(clients, eq(clients.id, ptSessionClients.clientId))
@@ -349,15 +378,33 @@ export async function getPtSessionDetail(
       bookings,
       and(eq(bookings.ptSessionId, id), eq(bookings.clientId, ptSessionClients.clientId)),
     )
+    .leftJoin(clientPackages, eq(clientPackages.id, bookings.clientPackageId))
+    .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
     .where(
       and(eq(ptSessionClients.tenantId, tenantId), eq(ptSessionClients.ptSessionId, id)),
     )
 
-  const attendees: PtSessionAttendee[] = clientRows.map(c => ({
+  // A manual session's member removed and added back holds a cancelled booking
+  // and a confirmed one: the confirmed one is their seat, else the latest.
+  type SeatRow = (typeof clientRows)[number]
+  const outranks = (a: SeatRow, b: SeatRow) =>
+    a.state === 'confirmed' && b.state !== 'confirmed'
+      ? true
+      : a.state !== 'confirmed' && b.state === 'confirmed'
+        ? false
+        : (a.bookedAt?.getTime() ?? 0) > (b.bookedAt?.getTime() ?? 0)
+  const seatOf = new Map<string, SeatRow>()
+  for (const c of clientRows) {
+    const held = seatOf.get(c.id)
+    if (!held || outranks(c, held)) seatOf.set(c.id, c)
+  }
+  const attendees: PtSessionAttendee[] = [...seatOf.values()].map(c => ({
     id: c.id,
     name: c.name,
     code: c.code ?? null,
     checkInState: (c.checkInState as PtSessionAttendee['checkInState']) ?? null,
+    isRequester: c.id === row.requestClientId,
+    package: c.packageId ? { id: c.packageId, name: c.packageName, sessionsLeft: c.sessionsLeft } : null,
   }))
 
   const supportingRows = await db
@@ -386,6 +433,7 @@ export async function getPtSessionDetail(
   return {
     id: row.id,
     ptRequestId: row.ptRequestId,
+    origin: row.origin ?? null,
     lifecycle: row.lifecycle as PtSessionDetail['lifecycle'],
     startsAt: row.startsAt,
     endsAt: row.endsAt,

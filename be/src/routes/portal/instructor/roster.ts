@@ -1,12 +1,13 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { getOwnClassDetail } from '../../../services/schedule/detail'
+import { getOwnClassDetail, getOwnPtSessionDetail } from '../../../services/schedule/detail'
 import { searchClients } from '../../../services/clients/manage'
 import { tenantId } from '../../../middleware/tenant'
 import { classSeatsJson } from '../class-seats'
 import { cancelWindowJson } from '../class-cancel-window'
 import { namedRuleJson } from '../../../services/schedule/package-rules'
+import { ptSessionDetailJson } from '../pt-session-detail'
 
 /**
  * The instructor's session page (spec-waitlist.md §10):
@@ -15,6 +16,10 @@ import { namedRuleJson } from '../../../services/schedule/package-rules'
  *                                    its roster, each row tagged with its seat.
  *                                    No pay figures. 403 `not_your_session` for
  *                                    anyone else's class.
+ *   GET /sessions/pt/:id/roster    — a private session the caller runs: its
+ *                                    members and the package paying each seat,
+ *                                    whether it is manual (#338). No pay
+ *                                    figures. 403 `not_your_session` otherwise.
  *   GET /clients?q=               — find a member to add to the roster.
  */
 
@@ -46,6 +51,15 @@ const app = new Hono()
         ...classSeatsJson(d),
         check_in_state: d.checkInState,
       })
+    },
+  )
+  .get(
+    '/sessions/pt/:id/roster',
+    zValidator('param', z.object({ id: z.string().uuid() })),
+    async c => {
+      const { id } = c.req.valid('param')
+      const d = await getOwnPtSessionDetail(tenantId(c), id, c.get('staffUserId'))
+      return c.json(ptSessionDetailJson(d, { admin: false }))
     },
   )
   .get('/clients', zValidator('query', searchQuery), async c => {

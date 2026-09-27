@@ -12,9 +12,8 @@ import {
   PT_STATUS_TONE,
   PT_STATUS_SHORT,
   ptInFilter,
+  ptRequestSummary,
   ptStatusLabel,
-  ptClassTypeName,
-  ptSlotTime,
 } from "@/lib/pt-requests";
 
 export default function PtRequestsPage() {
@@ -147,12 +146,6 @@ export default function PtRequestsPage() {
         <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
           <ul className="divide-y divide-border">
             {visible.map((r) => {
-              const first = r.slots[0];
-              const more = r.slots.length - 1;
-              const partnerHint =
-                r.session_type === "2on1" && !r.co_client?.clientId
-                  ? " · partner: needs account"
-                  : "";
               return (
                 <li key={r.id}>
                   <button
@@ -162,18 +155,11 @@ export default function PtRequestsPage() {
                   >
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
                       <div className="min-w-0 flex-1">
-                        <div className="break-words font-medium text-ink">{r.client.name}</div>
-                        <div className="break-words text-xs text-muted">
-                          {r.session_type.toUpperCase()} · {ptClassTypeName(r.class_type)}
-                          {first
-                            ? ` · ${first.proposed_date} ${ptSlotTime(first)}`
-                            : ""}
-                          {more > 0 ? ` +${more} more` : ""}
-                          {partnerHint}
-                          {r.bound_instructor
-                            ? ` · with ${r.bound_instructor.name}`
-                            : ""}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="break-words font-medium text-ink">{r.client.name}</span>
+                          {r.origin === "portal" && <Badge tone="neutral">Manual</Badge>}
                         </div>
+                        <div className="break-words text-xs text-muted">{ptRequestSummary(r)}</div>
                       </div>
                       <div className="ml-auto flex shrink-0 items-center gap-2">
                         <Badge tone={PT_STATUS_TONE[r.status]}>

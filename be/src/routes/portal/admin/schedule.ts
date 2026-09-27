@@ -22,6 +22,7 @@ import { classWaitlistRoutes } from '../class-waitlist'
 import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-window'
 import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
 import { namedRuleJson } from '../../../services/schedule/package-rules'
+import { ptSessionDetailJson } from '../pt-session-detail'
 import {
   hasCapacity,
   NO_CAPACITY,
@@ -269,33 +270,7 @@ const app = new Hono()
   })
   .get('/pt/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const { id } = c.req.valid('param')
-    const d = await getPtSessionDetail(tenantId(c), id)
-    return c.json({
-      id: d.id,
-      pt_request_id: d.ptRequestId,
-      lifecycle: d.lifecycle,
-      starts_at: d.startsAt.toISOString(),
-      ends_at: d.endsAt.toISOString(),
-      session_type: d.sessionType,
-      instructor: d.instructor,
-      main_instructor_id: d.mainInstructorId,
-      instructor_pay_sgd: d.instructorPaySgd,
-      supporting_instructor_ids: d.supportingInstructorIds,
-      supporting_instructors: d.supportingInstructors,
-      instructor_ids: [d.mainInstructorId, ...d.supportingInstructorIds],
-      location: d.location,
-      room: d.room,
-      capacity_online: d.capacityOnline,
-      capacity_waitlist: d.capacityWaitlist,
-      capacity_buffer: d.capacityBuffer,
-      clients: d.clients.map(cl => ({
-        id: cl.id,
-        name: cl.name,
-        code: cl.code,
-        check_in_state: cl.checkInState,
-      })),
-      check_in_state: d.checkInState,
-    })
+    return c.json(ptSessionDetailJson(await getPtSessionDetail(tenantId(c), id), { admin: true }))
   })
   // The member's class packages for this class, each Eligible or with its
   // reason — what Add member's package select lists (#333).

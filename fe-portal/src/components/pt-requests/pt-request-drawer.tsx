@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { X } from "lucide-react";
 import { Avatar, Badge, Button } from "@/components/ui";
 import { formatDateTime, formatRelative } from "@/lib/formatters";
@@ -25,6 +26,9 @@ export function PtRequestDrawer({
 }) {
   const partnerNeedsAccount =
     request.session_type === "2on1" && !request.co_client?.clientId;
+  // Staff put a manual session on the Schedule (#338): the member asked for
+  // nothing, so there are no proposed slots, class type, message or binding.
+  const manual = request.origin === "portal";
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
@@ -40,9 +44,12 @@ export function PtRequestDrawer({
         <div className="mb-4 flex items-center gap-3 pr-10 sm:pr-8">
           <Avatar name={request.client.name} size={40} />
           <div className="min-w-0">
-            <h2 className="break-words text-base font-semibold text-ink">{request.client.name}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="break-words text-base font-semibold text-ink">{request.client.name}</h2>
+              {manual && <Badge tone="neutral">Manual</Badge>}
+            </div>
             <div className="text-xs text-muted">
-              Submitted {formatRelative(request.created_at)}
+              {manual ? "Added by staff" : "Submitted"} {formatRelative(request.created_at)}
             </div>
           </div>
         </div>
@@ -50,15 +57,17 @@ export function PtRequestDrawer({
           <Row label="Format">
             {request.session_type === "1on1" ? "1-on-1" : "2-on-1"}
           </Row>
-          <Row label="Preferred class type">{ptClassTypeName(request.class_type)}</Row>
+          {!manual && <Row label="Preferred class type">{ptClassTypeName(request.class_type)}</Row>}
           <Row label="Location">{request.location.name}</Row>
-          <Row label="Bound instructor">
-            {request.bound_instructor ? (
-              request.bound_instructor.name
-            ) : (
-              <span className="text-muted">Open to any instructor</span>
-            )}
-          </Row>
+          {!manual && (
+            <Row label="Bound instructor">
+              {request.bound_instructor ? (
+                request.bound_instructor.name
+              ) : (
+                <span className="text-muted">Open to any instructor</span>
+              )}
+            </Row>
+          )}
           {request.session_type === "2on1" && (
             <Row label="Partner">
               <div className="flex flex-wrap items-center gap-2">
@@ -67,16 +76,18 @@ export function PtRequestDrawer({
               </div>
             </Row>
           )}
-          <Row label="Proposed slots">
-            <ul className="space-y-0.5">
-              {request.slots.map((s, i) => (
-                <li key={i} className="text-ink">
-                  {s.proposed_date} · {ptSlotTime(s)}
-                </li>
-              ))}
-            </ul>
-          </Row>
-          {request.message && (
+          {!manual && (
+            <Row label="Proposed slots">
+              <ul className="space-y-0.5">
+                {request.slots.map((s, i) => (
+                  <li key={i} className="text-ink">
+                    {s.proposed_date} · {ptSlotTime(s)}
+                  </li>
+                ))}
+              </ul>
+            </Row>
+          )}
+          {!manual && request.message && (
             <Row label="Message">
               <blockquote className="break-words rounded-md border-l-2 border-border bg-paper p-2 italic">
                 {request.message}
@@ -104,6 +115,12 @@ export function PtRequestDrawer({
                   .filter(Boolean)
                   .join(" · ") || "—"}
               </div>
+              <Link
+                href={`/admin/schedule/pt/${request.session.id}`}
+                className="mt-1 inline-block text-xs text-accent hover:underline"
+              >
+                Open session
+              </Link>
             </Row>
           )}
         </dl>

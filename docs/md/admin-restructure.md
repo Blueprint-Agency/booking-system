@@ -543,6 +543,8 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 - Check-in row (QR / code / manual — see §11)
 - Check-in state chip: `pending` / `completed`
 - Cancel-this-session action (admin or assigned instructor) → full session return + Inbox notification
+- Members panel: each member with their check-in and the package paying their seat (name, sessions left)
+- **Manual sessions (#338).** A session staff added manually (§9d) carries a **Manual** badge here and on the PT Requests list and drawer, which hide the request-only fields (proposed slots, preferred class type, message, bound instructor). While it is to come, the Members panel manages it: **Remove** takes one member off, their session back on their own package, the others staying; **Add member** fills a free seat through the same member search, package pick and Add anyway band as Add manually (an Instructor is refused another coach's package); and, an Admin's alone, **Change to 1-on-1** confirms which partner leaves and refunds them, while **Change to 2-on-1** asks for the partner through that same add-member row, who pays one session from their own package. The edit form's Format select is not shown for a manual session. Refusals are worded from their error code. The **Instructor** portal opens the same page for a private session they run from My schedule (`/instructor/schedule/pt/:id`): the members, Remove and Add member on a manual one, and Cancel — no pay, editing or type change.
 
 ---
 
