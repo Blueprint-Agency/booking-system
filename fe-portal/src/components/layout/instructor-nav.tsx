@@ -1,26 +1,14 @@
 "use client";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import {
-  Menu,
-  X,
-  CalendarDays,
-  CalendarOff,
-  HandHeart,
-  QrCode,
-  Wallet,
-  UserRound,
-  type LucideIcon,
-} from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { StudioMark } from "@/components/brand/studio-mark";
 import { useWorkspace } from "@/lib/workspace-context";
 import { SidebarBrand, SidebarFrame, SidebarLink } from "./sidebar";
+import { instructorNavItems, type InstructorNavItem } from "./instructor-nav-items";
 
-interface InstructorNavItem {
-  label: string;
-  href: string;
-  icon: LucideIcon;
+interface BadgedNavItem extends InstructorNavItem {
   badge?: number;
 }
 
@@ -37,7 +25,7 @@ function NavLinkList({
   pathname,
   onNavigate,
 }: {
-  items: InstructorNavItem[];
+  items: BadgedNavItem[];
   pathname: string;
   onNavigate?: () => void;
 }) {
@@ -63,14 +51,16 @@ function NavLinkList({
   );
 }
 
-function useInstructorNavItems(): InstructorNavItem[] {
-  const { api } = useWorkspace();
+function useInstructorNavItems(): BadgedNavItem[] {
+  const { api, may } = useWorkspace();
   const pathname = usePathname() ?? "";
   const [ptPending, setPtPending] = useState<number | undefined>(undefined);
+  const takesPt = may("take_pt_bookings");
 
-  // Live count of the shared pending PT queue for the nav badge.
+  // Live count of the shared pending PT queue for the nav badge. Not asked
+  // for without Take PT bookings: the backend would refuse it.
   useEffect(() => {
-    if (!api) {
+    if (!api || !takesPt) {
       setPtPending(undefined);
       return;
     }
@@ -88,16 +78,11 @@ function useInstructorNavItems(): InstructorNavItem[] {
     return () => {
       cancelled = true;
     };
-  }, [api, pathname]);
+  }, [api, pathname, takesPt]);
 
-  return [
-    { label: "My Schedule", href: "/instructor/schedule", icon: CalendarDays },
-    { label: "Check-in", href: "/instructor/check-in", icon: QrCode },
-    { label: "PT Requests", href: "/instructor/pt-requests", icon: HandHeart, badge: ptPending },
-    { label: "My Leave", href: "/instructor/leave", icon: CalendarOff },
-    { label: "Teaching log", href: "/instructor/payroll", icon: Wallet },
-    { label: "Profile", href: "/instructor/profile", icon: UserRound },
-  ];
+  return instructorNavItems(may).map((item) =>
+    item.permission === "take_pt_bookings" ? { ...item, badge: ptPending } : item
+  );
 }
 
 function NavContent({ onNavigate }: { onNavigate?: () => void }) {

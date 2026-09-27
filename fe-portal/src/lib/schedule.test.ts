@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert";
 import { scheduleErrorMessage, fetchCorporateSession } from "./schedule";
+import { seriesErrorMessage } from "./series";
 import { ApiError, type Api } from "./api";
 
 // A clash is one code for both subjects, and the backend says who is taken by
@@ -16,6 +17,15 @@ test("a scheduling clash shows the backend's specific sentence", () => {
     ),
     "Anya is already booked — a class on 1 Jan, 18:00–19:00.",
   );
+});
+
+// Schedule classes switched off while the page was open: the next create, series
+// or cancel says it is a setting, not an HTTP status.
+test("STF-35 a missing Instructor Permission reads as ask an admin, on every schedule call", () => {
+  const refused = new ApiError(403, { error: "forbidden_permission", required: "schedule_classes" });
+  const copy = "You do not have permission for this. Ask an admin.";
+  assert.strictEqual(scheduleErrorMessage(refused, "Failed to create class"), copy);
+  assert.strictEqual(seriesErrorMessage(refused, "Couldn't preview the dates"), copy);
 });
 
 // ...and if it ever arrives without one, the code still explains itself.

@@ -1,6 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { accessDeniedCopy, authFailure, refusalCode } from "./access-refusal";
+import { ApiError } from "./api";
+import {
+  PERMISSION_REFUSED,
+  accessDeniedCopy,
+  authFailure,
+  permissionRefusal,
+  refusalCode,
+} from "./access-refusal";
+
+test("STF-35 a missing Instructor Permission is told to ask an admin", () => {
+  const err = new ApiError(403, { error: "forbidden_permission", required: "schedule_classes" });
+  assert.equal(permissionRefusal(err), "You do not have permission for this. Ask an admin.");
+  assert.equal(permissionRefusal(err), PERMISSION_REFUSED);
+});
+
+test("STF-35 every other failure is left to the caller's own copy", () => {
+  assert.equal(permissionRefusal(new ApiError(403, { error: "not_your_session" })), null);
+  assert.equal(permissionRefusal(new ApiError(500, null)), null);
+  assert.equal(permissionRefusal(new Error("offline")), null);
+  assert.equal(permissionRefusal(null), null);
+});
 
 test("no session at all is a sign-out", () => {
   // A token the staff pool no longer knows: signed out in another tab, expired,

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { getOwnClassDetail, getOwnPtSessionDetail } from '../../../services/schedule/detail'
 import { searchClients } from '../../../services/clients/manage'
 import { tenantId } from '../../../middleware/tenant'
+import { requirePermission } from '../../../middleware/require-permission'
 import { classSeatsJson } from '../class-seats'
 import { cancelWindowJson } from '../class-cancel-window'
 import { namedRuleJson } from '../../../services/schedule/package-rules'
@@ -21,6 +22,10 @@ import { ptSessionDetailJson } from '../pt-session-detail'
  *                                    whether it is manual (#338). No pay
  *                                    figures. 403 `not_your_session` otherwise.
  *   GET /clients?q=               — find a member to add to the roster.
+ *
+ * The roster read is what an Instructor needs to teach and is ungated; the
+ * member search serves only Add member, so it is the **Manage rosters**
+ * Instructor Permission (be/docs/adr/0012).
  */
 
 const searchQuery = z.object({ q: z.string().trim().min(1).max(100) })
@@ -62,7 +67,7 @@ const app = new Hono()
       return c.json(ptSessionDetailJson(d, { admin: false }))
     },
   )
-  .get('/clients', zValidator('query', searchQuery), async c => {
+  .get('/clients', requirePermission('manage_rosters'), zValidator('query', searchQuery), async c => {
     const rows = await searchClients(tenantId(c), c.req.valid('query').q)
     return c.json({ clients: rows.map(r => ({ id: r.id, name: r.name, email: r.email })) })
   })

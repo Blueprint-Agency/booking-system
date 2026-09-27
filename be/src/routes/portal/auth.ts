@@ -8,8 +8,11 @@ import { tenantId } from '../../middleware/tenant'
  * GET /api/v1/portal/auth/me
  *
  * Returns the staff_users row the session authenticated, plus the denormalised
- * studio's active `locations`. Auth (staffAuth + requireActiveStaff) is applied
- * by the parent router (routes/portal/index.ts).
+ * studio's active `locations`, plus `permissions` — the Instructor Permissions
+ * the caller holds, as `staffAuth` resolved them on this request: the granted
+ * keys for an Instructor, all three for an Admin, so the portal has one shape
+ * to reason about (be/docs/adr/0012). Auth (staffAuth + requireActiveStaff) is
+ * applied by the parent router (routes/portal/index.ts).
  */
 const app = new Hono().get('/me', async c => {
   const row = c.get('staffRow')
@@ -28,6 +31,7 @@ const app = new Hono().get('/me', async c => {
     name: row.name,
     role: row.role,
     status: row.status,
+    permissions: [...c.get('staffPermissions')],
     locations: activeLocations
       .filter(l => l.archivedAt === null)
       .map(l => ({

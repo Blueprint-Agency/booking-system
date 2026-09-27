@@ -38,7 +38,7 @@ export function PtSessionMembers({
   data: InstructorPtDetail;
   onChanged: () => void | Promise<void>;
 }) {
-  const { api } = useWorkspace();
+  const { api, may } = useWorkspace();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -46,7 +46,9 @@ export function PtSessionMembers({
 
   const state = computeEventState({ startsAt: data.starts_at, endsAt: data.ends_at, lifecycle: data.lifecycle });
   // Once it has ended its seats were used; the backend refuses `session_ended`.
-  const editable = isManual(data) && (state === "scheduled" || state === "ongoing");
+  // Changing who is on a private session is Take PT bookings' (an Admin always
+  // may); without it the list still reads, and the actions are gone.
+  const editable = isManual(data) && may("take_pt_bookings") && (state === "scheduled" || state === "ongoing");
   const limit = seatLimit(data.session_type);
   const onIt = data.clients.map((c) => c.id);
 

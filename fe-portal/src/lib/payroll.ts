@@ -24,6 +24,7 @@
 //
 // Takes the backend handle as a parameter rather than reaching for React
 // context, following `catalog.ts`.
+import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError, type Api } from "@/lib/api";
 import { rangeToParams, type DateRange } from "@/components/date-range-filter";
 
@@ -114,6 +115,8 @@ const PAYROLL_ERROR_COPY: Record<string, string> = {
  */
 export function payrollErrorMessage(err: unknown, fallback = "Couldn't save"): string {
   if (!(err instanceof ApiError)) return "Network error";
+  const refused = permissionRefusal(err);
+  if (refused) return refused;
   const body = err.body as { error?: string; message?: string } | null;
   if (typeof body?.message === "string" && body.message) return body.message;
   const known = body?.error ? PAYROLL_ERROR_COPY[body.error] : undefined;

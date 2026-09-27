@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { tenantId } from '../../../middleware/tenant'
 import {
   listClientsPage,
-  createClientWithInvite,
+  createClient,
   getClientContact,
   listRecentAdjustments,
   softDeleteClient,
@@ -95,6 +95,14 @@ const createSchema = z.object({
   name: z.string().min(1).max(160),
   email: z.string().email(),
   phone: z.string().min(1).max(40),
+  gender: z
+    .enum(clientGenderEnum.enumValues, {
+      message: 'Gender is female, male, non-binary or prefer not to say.',
+    })
+    .optional(),
+  // Off when the studio tells the member itself: the account is made all the
+  // same, and their first sign-in mails them the set-password link.
+  send_invite: z.boolean().default(true),
 })
 
 const adjustSchema = z.object({
@@ -411,11 +419,13 @@ const app = new Hono()
   .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
-    const row = await createClientWithInvite({
+    const row = await createClient({
       tenantId: tenantId(c),
       name: body.name,
       email: body.email,
       phone: body.phone,
+      gender: body.gender,
+      sendInvite: body.send_invite,
       invitedByStaffId: staffId,
     })
     c.set('auditTarget' as any, { table: 'clients', id: row.id })

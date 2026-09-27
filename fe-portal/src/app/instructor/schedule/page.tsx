@@ -12,11 +12,13 @@ import {
   Textarea,
 } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
+import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatTime, todayIso } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
 import { waitingTag } from "@/lib/class-waitlist";
 import { ManualPtSessionDialog } from "@/components/schedule/manual-pt-session-dialog";
+import { scheduleErrorMessage } from "@/lib/schedule";
 
 interface ScheduleEntry {
   kind: "class" | "workshop" | "pt" | "corporate";
@@ -66,7 +68,11 @@ function plusDaysIso(days: number): string {
 const dayKey = localDay;
 
 export default function InstructorSchedulePage() {
-  const { api, accessibleLocations, currentStaff } = useWorkspace();
+  const { api, accessibleLocations, currentStaff, may } = useWorkspace();
+  // New class, Repeat weekly and Cancel are Schedule classes; the timetable is not.
+  const canSchedule = may("schedule_classes");
+  // A manual PT session puts a private session on their calendar: Take PT bookings'.
+  const canTakePt = may("take_pt_bookings");
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,7 +99,10 @@ export default function InstructorSchedulePage() {
       setEntries(sched.entries ?? []);
       setRooms(rm.rooms ?? []);
     } catch (err) {
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      setError(
+        permissionRefusal(err) ??
+          (err instanceof ApiError ? `HTTP ${err.status}` : "Network error"),
+      );
     } finally {
       setLoading(false);
     }
@@ -141,6 +150,7 @@ export default function InstructorSchedulePage() {
         : null;
 
   const canCancel = (e: ScheduleEntry) =>
+    canSchedule &&
     ownsClass(e) &&
     e.event_state !== "cancelled" &&
     e.event_state !== "completed";
@@ -158,9 +168,7 @@ export default function InstructorSchedulePage() {
       setReason("");
       await load();
     } catch (err) {
-      setCancelError(
-        err instanceof ApiError ? `HTTP ${err.status}` : "Network error",
-      );
+      setCancelError(scheduleErrorMessage(err, "Failed to cancel"));
     } finally {
       setCancelBusy(false);
     }
@@ -175,17 +183,23 @@ export default function InstructorSchedulePage() {
         title="My schedule"
         description="Your classes and private sessions over the next 60 days."
         actions={
-          <div className="flex flex-wrap gap-2">
-            {/* A private session agreed outside the app, run by this instructor (#336). */}
-            <Button variant="secondary" onClick={() => setAddingPt(true)}>
-              <UserPlus className="h-4 w-4" /> PT session
-            </Button>
-            <Link href="/instructor/schedule/new/class">
-              <Button>
-                <CalendarPlus className="h-4 w-4" /> New class
-              </Button>
-            </Link>
-          </div>
+          canSchedule || canTakePt ? (
+            <div className="flex flex-wrap gap-2">
+              {/* A private session agreed outside the app, run by this instructor (#336). */}
+              {canTakePt && (
+                <Button variant="secondary" onClick={() => setAddingPt(true)}>
+                  <UserPlus className="h-4 w-4" /> PT session
+                </Button>
+              )}
+              {canSchedule && (
+                <Link href="/instructor/schedule/new/class">
+                  <Button>
+                    <CalendarPlus className="h-4 w-4" /> New class
+                  </Button>
+                </Link>
+              )}
+            </div>
+          ) : null
         }
       />
 
@@ -213,7 +227,11 @@ export default function InstructorSchedulePage() {
       ) : groups.length === 0 ? (
         <EmptyState
           title="Nothing scheduled"
-          description="Classes and sessions you teach in the next 60 days show up here. Use “New class” to add one."
+          description={
+            canSchedule
+              ? "Classes and sessions you teach in the next 60 days show up here. Use “New class” to add one."
+              : "Classes and sessions you teach in the next 60 days show up here."
+          }
         />
       ) : (
         <div className="space-y-5">

@@ -1,8 +1,10 @@
 import type { MiddlewareHandler } from 'hono'
 import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '../db'
+import type { InstructorPermission } from '../db/enums'
 import { staffUsers } from '../db/schema/identity'
 import { readPoolSession } from '../services/auth/better-auth'
+import { resolveInstructorPermissions } from '../services/auth/instructor-permissions'
 import { ERROR_CODES } from '../shared/error-codes'
 import { setLogContext } from '../shared/logger'
 import { assertTenantSessionClaim, tenantId, tenantMatches } from './tenant'
@@ -11,6 +13,13 @@ declare module 'hono' {
   interface ContextVariableMap {
     staffUserId: string
     staffRow: typeof staffUsers.$inferSelect
+    /**
+     * The caller's Instructor Permissions, resolved on this request: every one
+     * for an Admin, the profile row's grant for an Instructor. Read by
+     * `requirePermission`; never cached across requests, so a revocation is
+     * immediate.
+     */
+    staffPermissions: ReadonlySet<InstructorPermission>
     actingAs?: string
     impersonatedBy?: string
     impersonatedClientId?: string
@@ -75,5 +84,10 @@ export const staffAuth: MiddlewareHandler = async (c, next) => {
 
   c.set('staffUserId', row.id)
   c.set('staffRow', row)
+  // Once per request, after the row: what this staff member may do beyond
+  // their role (be/docs/adr/0012). An Admin resolves to everything without a
+  // read; an Instructor's grant is read fresh so an Admin's change reaches
+  // their very next request.
+  c.set('staffPermissions', await resolveInstructorPermissions(row))
   await next()
 }

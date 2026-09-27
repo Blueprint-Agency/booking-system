@@ -81,7 +81,7 @@ _Avoid_: trace id, correlation id, MDC, request scope
 ### Staff
 
 **Staff role**:
-What a staff member of one Tenant may do in that studio's portal — exactly two, **Admin** and **Instructor**, and nothing else (`staff_role` in Postgres). Ranked Admin above Instructor: nobody may edit a staff member who outranks them, and only an Admin may change anyone's role. A role is per Tenant, like the `staff_users` row it sits on. See `docs/adr/0006-two-staff-roles.md`.
+What a staff member of one Tenant may do in that studio's portal — exactly two, **Admin** and **Instructor**, and nothing else (`staff_role` in Postgres). Ranked Admin above Instructor: nobody may edit a staff member who outranks them, and only an Admin may change anyone's role. A role is per Tenant, like the `staff_users` row it sits on. Within the Instructor role, an **Instructor Permission** narrows what one person may do; it is not a role. See `docs/adr/0006-two-staff-roles.md` and `docs/adr/0012-instructor-permissions.md`.
 _Avoid_: owner, main admin, permission level
 
 **Admin**:
@@ -89,8 +89,12 @@ A staff member who runs the studio: its catalogue, locations, policy, waiver, no
 _Avoid_: studio owner, manager
 
 **Instructor**:
-A staff member who teaches. Reaches the instructor surfaces only and is refused every admin-only surface. Applies for leave as an Admin does, and is the only role that Leave Conflicts and the Leave Cap apply to.
+A staff member who teaches. Reaches the instructor surfaces only and is refused every admin-only surface. Applies for leave as an Admin does, and is the only role that Leave Conflicts and the Leave Cap apply to. What they may do beyond teaching is their **Instructor Permissions**.
 _Avoid_: teacher, coach, trainer
+
+**Instructor Permission**:
+One of a fixed, small set of switches an Admin sets per Instructor, each granting a job-shaped bundle of actions: **Schedule classes** (`schedule_classes` — create a class, preview and create a Class Series, cancel a class they lead), **Take PT bookings** (`take_pt_bookings` — the pending PT Request queue, scheduling a request to themselves, cancelling a PT session they lead) and **Manage rosters** (`manage_rosters` — member search, booking a member in, the Waitlist actions, cancelling a member's booking). Stored as an enum array on the `instructors` profile row, defaulting to all three, so every new or existing Instructor has everything until an Admin decides otherwise. Never gates an Admin, who resolves to all of them; never a role. Resolved on every request, so a change is felt on the Instructor's next request. Everything an Instructor needs to teach — their own timetable and rosters, check-in, their leave, teaching log and profile — is role membership, not a permission. The backend refuses `403 forbidden_permission`; the portal hides. See `be/docs/adr/0012-instructor-permissions.md`.
+_Avoid_: role, access level, capability, grant (the leave word), per-feature toggle
 
 **Last-admin guard**:
 The rule that a studio always keeps one active Admin. Archiving a staff member, or changing their role away from Admin, is refused when they are the studio's only active Admin — role Admin, status active, not soft-deleted. The count and the write share one transaction, so two concurrent removals cannot both pass. Deleting needs an already-archived row, so it needs no check of its own; signing someone out is not guarded, because they can sign back in. Separately, nobody may change their own role or archive themselves.

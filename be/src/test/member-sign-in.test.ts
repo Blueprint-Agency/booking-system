@@ -259,6 +259,43 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     assert.equal(profile.name, 'Grace Hopper')
   })
 
+  test('CUS-20 an admin adds a member with their gender, and the invite email goes only when asked for', async () => {
+    const invited = at('added-invited')
+    const quiet = at('added-quiet')
+    const invitesTo = async (email: string) =>
+      harness.db
+        .select({ id: schema.emailLog.id })
+        .from(schema.emailLog)
+        .where(and(eq(schema.emailLog.recipientEmail, email), eq(schema.emailLog.templateSlug, 'client_invite')))
+
+    await expectStatus(
+      await send('/api/v1/portal/admin/clients', {
+        body: { name: 'Katherine Johnson', email: invited, phone: '+6591112222', gender: 'female' },
+        headers: admin,
+      }),
+      201,
+    )
+    await expectStatus(
+      await send('/api/v1/portal/admin/clients', {
+        body: { name: 'Alan Turing', email: quiet, phone: '+6593334444', gender: 'male', send_invite: false },
+        headers: admin,
+      }),
+      201,
+    )
+
+    assert.equal((await clientRow(one.id, invited))?.gender, 'female')
+    assert.equal((await clientRow(one.id, quiet))?.gender, 'male')
+    assert.equal((await invitesTo(invited)).length, 1, 'the invite goes by default')
+    assert.equal((await invitesTo(quiet)).length, 0, 'no invite when the admin turned it off')
+
+    // Not being told is no bar to getting in: the first sign-in mails the link.
+    const step = await expectStatus(
+      await send('/api/v1/public/members/sign-in-step', { body: { email: quiet }, headers: memberHeaders(one) }),
+      200,
+    )
+    assert.deepEqual(step, { next: 'link_sent' })
+  })
+
   test('an address already a member at the studio cannot be added again', async () => {
     const email = at('added-twice')
     await registered(one, email)

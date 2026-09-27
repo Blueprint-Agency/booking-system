@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader, Textarea } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
+import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -36,7 +37,10 @@ export default function InstructorProfilePage() {
       setBio(res.bio ?? "");
       setPhone(res.phone ?? "");
     } catch (err) {
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      setError(
+        permissionRefusal(err) ??
+          (err instanceof ApiError ? `HTTP ${err.status}` : "Network error"),
+      );
     } finally {
       setLoading(false);
     }
@@ -59,7 +63,8 @@ export default function InstructorProfilePage() {
       toast.success("Profile saved");
     } catch (err) {
       toast.error(
-        err instanceof ApiError ? `Couldn't save (HTTP ${err.status})` : "Couldn't save",
+        permissionRefusal(err) ??
+          (err instanceof ApiError ? `Couldn't save (HTTP ${err.status})` : "Couldn't save"),
       );
     } finally {
       setSaving(false);

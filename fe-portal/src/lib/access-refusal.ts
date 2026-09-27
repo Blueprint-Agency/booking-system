@@ -20,6 +20,7 @@
  * signed in at (`session-tenant.ts`). Kept pure and separate from the provider
  * so all of this is testable without a session at all.
  */
+import { ApiError } from "./api";
 import { ERROR_CODES } from "./error-codes";
 
 /** The `error` code on a refusal body, when there is one. */
@@ -27,6 +28,22 @@ export function refusalCode(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
   const code = (body as { error?: unknown }).error;
   return typeof code === "string" ? code : null;
+}
+
+/** What an Instructor is told when a switch an Admin set refuses them. */
+export const PERMISSION_REFUSED = "You do not have permission for this. Ask an admin.";
+
+/**
+ * The words for `403 forbidden_permission` (be/docs/adr/0012), or null for any
+ * other failure. The third kind of refusal this file holds: neither the session
+ * nor the studio, but one action this Instructor's Admin has switched off. It
+ * can come from any page — a switch turned off while the page was open is only
+ * felt on the next action — so every error helper asks this first, and the
+ * person reads that it is a setting, not a bug.
+ */
+export function permissionRefusal(err: unknown): string | null {
+  if (!(err instanceof ApiError) || err.status !== 403) return null;
+  return refusalCode(err.body) === ERROR_CODES.forbidden_permission ? PERMISSION_REFUSED : null;
 }
 
 export type AuthFailure =

@@ -28,6 +28,7 @@ import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useWaitlistsOn } from "@/lib/use-waitlists-on";
 import { todayIso, currentHourTime } from "@/lib/formatters";
+import { PERMISSION_REFUSED, permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
 import { scheduleErrorMessage } from "@/lib/schedule";
 import type { Capacity } from "@/types";
@@ -42,7 +43,36 @@ interface ApiRoom {
   name: string;
 }
 
+/**
+ * With Schedule classes off there is no form to fill: a bookmark or a stale tab
+ * lands on the refusal the backend would give, not on a form it would refuse.
+ */
 export default function InstructorNewClassPage() {
+  const { may } = useWorkspace();
+  if (may("schedule_classes")) return <InstructorNewClassForm />;
+  return (
+    <div className="mx-auto max-w-3xl">
+      <BackToSchedule />
+      <PageHeader title="New class" />
+      <div className="rounded-lg border border-border bg-paper p-3 text-sm text-muted">
+        {PERMISSION_REFUSED}
+      </div>
+    </div>
+  );
+}
+
+function BackToSchedule() {
+  return (
+    <Link
+      href="/instructor/schedule"
+      className="mb-2 inline-flex min-h-10 items-center gap-1 text-sm text-muted hover:text-ink sm:min-h-0"
+    >
+      <ArrowLeft className="h-3.5 w-3.5" /> Back to my schedule
+    </Link>
+  );
+}
+
+function InstructorNewClassForm() {
   const router = useRouter();
   const { api, activeLocationId } = useWorkspace();
   const waitlistsOn = useWaitlistsOn("instructor");
@@ -88,7 +118,8 @@ export default function InstructorNewClassPage() {
       } catch (err) {
         if (cancelled) return;
         setCatalogError(
-          err instanceof ApiError ? `HTTP ${err.status}` : "Network error",
+          permissionRefusal(err) ??
+            (err instanceof ApiError ? `HTTP ${err.status}` : "Network error"),
         );
       }
     })();
@@ -187,12 +218,7 @@ export default function InstructorNewClassPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <Link
-        href="/instructor/schedule"
-        className="mb-2 inline-flex min-h-10 items-center gap-1 text-sm text-muted hover:text-ink sm:min-h-0"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to my schedule
-      </Link>
+      <BackToSchedule />
       <PageHeader
         title="New class"
         description={

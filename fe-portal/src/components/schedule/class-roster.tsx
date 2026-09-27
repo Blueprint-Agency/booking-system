@@ -130,6 +130,7 @@ export function ClassRoster({
   attendees,
   cancelled,
   canAdd,
+  canCancel,
   onChanged,
 }: {
   role: StaffRole;
@@ -138,6 +139,8 @@ export function ClassRoster({
   cancelled: boolean;
   /** Add member is offered only while the class can still be booked. */
   canAdd: boolean;
+  /** Whether a booking's Cancel… is offered at all (an Instructor needs Manage rosters). */
+  canCancel: boolean;
   /** A member was added or cancelled: reload the class so the stats and roster agree. */
   onChanged: () => void;
 }) {
@@ -240,7 +243,7 @@ export function ClassRoster({
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                   {noShow && !attended && <Badge tone="error">No-show</Badge>}
                   {/* Confirmed and not attended: the backend sends a preview only then. */}
-                  {!cancelled && a.cancel_preview && (
+                  {canCancel && !cancelled && a.cancel_preview && (
                     <Button
                       type="button"
                       size="sm"

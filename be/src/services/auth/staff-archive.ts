@@ -36,7 +36,14 @@ import {
   withLeaveFigures,
   type StaffLeaveFigures,
 } from '../leave/requests'
+import type { InstructorPermission } from '../../db/enums'
 import { endStaffSessionsAt } from './auth-users'
+import {
+  assertPermissionsTargetInstructor,
+  ensureInstructorProfile,
+  withInstructorPermissions,
+  writeInstructorPermissions,
+} from './instructor-permissions'
 import { recordStaffAct } from './staff-acts'
 import { isTopRank, STAFF_EDIT_REFUSAL_MESSAGE, staffEditRefusal, TOP_RANK_ROLES } from './staff-rank'
 
@@ -46,9 +53,13 @@ export type StaffUserRow = typeof staffUsers.$inferSelect
  * A staff row as the portal reads it. Assigned Days are columns on the row
  * itself — every staff member takes leave, admins included. `leave` is this
  * Leave Year's Carried, Pool and Remaining, attached by `withLeaveFigures`.
+ * `permissions` is an Instructor's stored grant, attached by
+ * `withInstructorPermissions`; absent on an Admin, and on an Instructor with no
+ * profile row yet, whom the portal is shown with the default.
  */
 export type StaffProfileRow = StaffUserRow & {
   leave?: StaffLeaveFigures
+  permissions?: InstructorPermission[]
 }
 
 /**
@@ -278,6 +289,12 @@ export interface UpdateStaffProfileInput {
     bio?: string | null
     languages?: string[]
     role?: StaffUserRow['role']
+    /**
+     * The Instructor Permissions to grant, the whole set. Only on an Instructor
+     * — judged after any role change in the same patch — else
+     * `permissions_require_instructor` and nothing is written.
+     */
+    permissions?: InstructorPermission[]
     /** Assigned Days. Deliberately NOT privilege fields — an admin may set
      *  them, on any staff member, another admin included. */
     annualLeaveDays?: number
@@ -331,6 +348,10 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
   }
 
   const changingRole = patch.role !== undefined && patch.role !== target.role
+  // Judged against the role the target will have once this patch is applied,
+  // so "make them an admin and grant permissions" is refused as one request.
+  // Before any write, so a refusal writes nothing.
+  if (patch.permissions !== undefined) assertPermissionsTargetInstructor(patch.role ?? target.role)
   if (changingRole) {
     if (targetStaffId === actorStaffId) {
       throw new ForbiddenError('self_role_edit_forbidden', {
@@ -392,6 +413,14 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
     if (!updated) throw new ConflictError('staff_update_failed')
     row = updated
   }
-  const [profile] = await withLeaveFigures(tenantId, [row])
+  // An Instructor's profile row is where their permissions live. A staff member
+  // made an Instructor here gets one with the default, all three, unless they
+  // already have one from before a promotion — that one is kept as it is. A
+  // change of role to Admin leaves the row alone, permissions included.
+  if (changingRole && row.role === 'instructor') await ensureInstructorProfile(db, tenantId, targetStaffId)
+  if (patch.permissions !== undefined) {
+    await writeInstructorPermissions(db, tenantId, targetStaffId, patch.permissions)
+  }
+  const [profile] = await withInstructorPermissions(tenantId, await withLeaveFigures(tenantId, [row]))
   return profile ?? row
 }

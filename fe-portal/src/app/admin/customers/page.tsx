@@ -4,6 +4,8 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search, Plus, Loader2, KeyRound } from "lucide-react";
 import { toast } from "sonner";
+import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
+import "react-phone-number-input/style.css";
 import {
   Avatar,
   Badge,
@@ -18,6 +20,7 @@ import {
   Pagination,
   Select,
 } from "@/components/ui";
+import type { ClientGender } from "@/components/clients/edit-profile-dialog";
 import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
@@ -515,6 +518,23 @@ function TrialFunnel({ funnel }: { funnel: ApiFunnel }) {
   );
 }
 
+type Gender = Exclude<ClientGender, "non_binary">;
+
+/** The backend's cap on a member's name (`POST /portal/admin/clients`). */
+const NAME_MAX = 160;
+
+/** The member's own sign-up asks these three, so a member added here is asked the same. */
+const GENDERS: { value: Gender; label: string }[] = [
+  { value: "female", label: "Female" },
+  { value: "male", label: "Male" },
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
+];
+
+/**
+ * Add a member with the details sign-up asks for. "Email them an invite" is on
+ * by default; off, the studio tells the member itself, and their first sign-in
+ * mails them the set-password link all the same.
+ */
 function AddClientDialog({
   open,
   onOpenChange,
@@ -525,36 +545,49 @@ function AddClientDialog({
   onCreated: () => void;
 }) {
   const { api } = useWorkspace();
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState<string | undefined>(undefined);
+  const [gender, setGender] = useState<Gender | "">("");
+  const [sendInvite, setSendInvite] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Reset fields whenever the dialog opens.
   useEffect(() => {
     if (open) {
-      setName("");
+      setFirstName("");
+      setLastName("");
       setEmail("");
-      setPhone("");
+      setPhone(undefined);
+      setGender("");
+      setSendInvite(true);
       setError(null);
     }
   }, [open]);
 
   async function handleSubmit() {
     if (!api) return;
-    if (!name.trim()) return setError("Name is required.");
+    if (!firstName.trim() || !lastName.trim()) return setError("First and last name are required.");
+    const name = `${firstName.trim()} ${lastName.trim()}`;
+    if (name.length > NAME_MAX) return setError(`The full name can be at most ${NAME_MAX} characters.`);
     if (!email.trim()) return setError("Email is required.");
-    if (!phone.trim()) return setError("Phone is required.");
+    if (!phone || !isValidPhoneNumber(phone)) return setError("Enter a valid phone number.");
+    if (!gender) return setError("Choose a gender, or “Prefer not to say”.");
     setError(null);
     setSaving(true);
     try {
       await api.post("/portal/admin/clients", {
-        name: name.trim(),
+        name,
         email: email.trim(),
-        phone: phone.trim(),
+        phone,
+        gender,
+        send_invite: sendInvite,
       });
-      toast.success("Customer created — an invite email has been sent.");
+      toast.success(
+        sendInvite ? "Customer created — an invite email has been sent." : "Customer created — no email sent.",
+      );
       onCreated();
     } catch (err) {
       const msg =
@@ -575,23 +608,37 @@ function AddClientDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Add customer"
-      description="Creates the member's account and emails them an invite to sign in."
+      description="Creates the member's account. They set their own password the first time they sign in."
     >
       <div className="space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="client-name">Name</Label>
-          <Input
-            id="client-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Aisha Tan"
-          />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="client-first-name">First name</Label>
+            <Input
+              id="client-first-name"
+              autoComplete="off"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="e.g. Aisha"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="client-last-name">Last name</Label>
+            <Input
+              id="client-last-name"
+              autoComplete="off"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="e.g. Tan"
+            />
+          </div>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="client-email">Email</Label>
           <Input
             id="client-email"
             type="email"
+            autoComplete="off"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="e.g. aisha@example.com"
@@ -599,13 +646,49 @@ function AddClientDialog({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="client-phone">Phone</Label>
-          <Input
+          <PhoneInput
             id="client-phone"
+            international
+            defaultCountry="SG"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="e.g. +65 9123 4567"
+            onChange={setPhone}
+            inputComponent={Input}
+            className="flex items-center gap-2"
           />
         </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="client-gender">Gender</Label>
+          <Select
+            id="client-gender"
+            value={gender}
+            onChange={(e) => setGender(e.target.value as Gender | "")}
+          >
+            <option value="" disabled>
+              Choose…
+            </option>
+            {GENDERS.map((g) => (
+              <option key={g.value} value={g.value}>
+                {g.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <label className="flex items-start gap-2.5 rounded-lg border border-border bg-card px-3 py-2.5 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={sendInvite}
+            onChange={(e) => setSendInvite(e.target.checked)}
+          />
+          <span>
+            <span className="font-medium text-ink">Email them an invite</span>
+            <span className="block text-xs text-muted">
+              {sendInvite
+                ? "They get a welcome email with a link to sign in."
+                : "Nothing is emailed. When they sign in with this email, we'll send them a link to set a password."}
+            </span>
+          </span>
+        </label>
         {error && (
           <div className="rounded-md border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
             {error}

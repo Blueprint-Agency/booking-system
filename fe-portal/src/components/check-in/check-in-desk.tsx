@@ -624,9 +624,11 @@ function Roster({
 /**
  * Who is still waiting for a seat, in queue order, so the door can tell a
  * waitlisted member who turns up that they aren't booked yet. Giving them a
- * seat is the class page's Add to class, one tap away.
+ * seat is the class page's Add to class, one tap away — offered only to staff
+ * who may work the line (Manage rosters; an admin always may).
  */
 function WaitingLine({ audience, session }: { audience: CheckInAudience; session: CheckInSession }) {
+  const { may } = useWorkspace();
   const line = session.waitlist ?? [];
   if (session.kind !== "class" || line.length === 0) return null;
   const classPage =
@@ -644,9 +646,11 @@ function WaitingLine({ audience, session }: { audience: CheckInAudience; session
         <h4 className="text-xs font-semibold uppercase tracking-wider text-warning">
           Waitlist · {line.length} not booked yet
         </h4>
-        <Link href={classPage} className="text-xs font-medium text-accent hover:underline">
-          Add to class on the class page
-        </Link>
+        {may("manage_rosters") && (
+          <Link href={classPage} className="text-xs font-medium text-accent hover:underline">
+            Add to class on the class page
+          </Link>
+        )}
       </div>
       <ol className="space-y-1.5">
         {line.map((w) => (

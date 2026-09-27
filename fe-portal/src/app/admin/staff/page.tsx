@@ -32,6 +32,12 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { formatDate, formatRelative } from "@/lib/formatters";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
 import {
+  INSTRUCTOR_PERMISSIONS,
+  knownPermissions,
+  type InstructorPermission,
+} from "@/lib/instructor-permissions";
+import { PermissionSwitches } from "@/components/staff/permission-switches";
+import {
   StaffEditDialog,
   type PendingEmail,
   type StaffEditPatch,
@@ -54,6 +60,8 @@ interface StaffApiRow {
   languages: string[] | null;
   role: "admin" | "instructor";
   status: "pending" | "active" | "archived";
+  /** An Instructor's granted Instructor Permissions; null for an Admin. */
+  permissions: string[] | null;
   invited_at: string | null;
   accepted_at: string | null;
   archived_at: string | null;
@@ -110,6 +118,7 @@ export default function StaffPage() {
   const [unarchiveBusyId, setUnarchiveBusyId] = useState<string | null>(null);
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<StaffApiRow | null>(null);
+  const [permissionsBusyId, setPermissionsBusyId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!api) return;
@@ -225,6 +234,32 @@ export default function StaffPage() {
     }
   }
 
+  // A row's switch saves at once, the whole grant replacing what is stored; the
+  // row shows the server's answer, so a refusal leaves the switch as it was.
+  async function handlePermissions(
+    target: StaffApiRow,
+    permissions: InstructorPermission[],
+  ) {
+    if (!api) return;
+    setPermissionsBusyId(target.id);
+    try {
+      const updated = await api.patch<StaffApiRow>(`/portal/admin/staff/${target.id}`, {
+        permissions,
+      });
+      setStaff(prev => prev.map(s => (s.id === updated.id ? updated : s)));
+      toast.success(`${target.name}'s permissions updated.`);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Update failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Update failed.");
+      }
+    } finally {
+      setPermissionsBusyId(null);
+    }
+  }
+
   async function handleArchive(target: StaffApiRow) {
     if (!api) return;
     setArchiveBusy(true);
@@ -262,10 +297,19 @@ export default function StaffPage() {
     s => s.status === "active" && roleInTab(s.role, "instructors"),
   ).length;
 
-  async function handleInvite(email: string, role: InvitableRole) {
+  async function handleInvite(
+    email: string,
+    role: InvitableRole,
+    permissions: InstructorPermission[],
+  ) {
     if (!api) return;
     try {
-      await api.post("/portal/admin/staff/invite", { email, role });
+      // Permissions are an Instructor's only; on an admin invitation they are refused.
+      await api.post("/portal/admin/staff/invite", {
+        email,
+        role,
+        ...(role === "instructor" ? { permissions } : {}),
+      });
       toast.success(`Invitation sent to ${email}.`);
       setInviteDialog(false);
       await refresh();
@@ -455,6 +499,10 @@ export default function StaffPage() {
                       canArchive={canArchiveTarget(s)}
                       onArchive={() => setArchiveTarget(s)}
                       onOpen={() => setEditTarget(s)}
+                      onPermissionsChange={
+                        canManageStaff ? next => void handlePermissions(s, next) : undefined
+                      }
+                      permissionsBusy={permissionsBusyId === s.id}
                     />
                   ))}
                 </ul>
@@ -607,6 +655,8 @@ function StaffRow({
   onDelete,
   unarchiveBusy,
   deleteBusy,
+  onPermissionsChange,
+  permissionsBusy,
 }: {
   staff: StaffApiRow;
   isSelf: boolean;
@@ -618,6 +668,9 @@ function StaffRow({
   onDelete?: () => void;
   unarchiveBusy?: boolean;
   deleteBusy?: boolean;
+  /** Saves an Instructor's switches; absent, the row shows none. */
+  onPermissionsChange?: (next: InstructorPermission[]) => void;
+  permissionsBusy?: boolean;
 }) {
   const isArchived = staff.status === "archived";
   const isPending = staff.status === "pending";
@@ -695,6 +748,18 @@ function StaffRow({
           </Button>
         )}
       </div>
+      {/* An Admin's row has none: the switches never gate an Admin. */}
+      {staff.role === "instructor" && onPermissionsChange && (
+        <div className="basis-full sm:pl-12">
+          <PermissionSwitches
+            compact
+            idPrefix={`perm-${staff.id}`}
+            value={knownPermissions(staff.permissions)}
+            onChange={onPermissionsChange}
+            disabled={permissionsBusy}
+          />
+        </div>
+      )}
     </li>
   );
 }
@@ -745,11 +810,19 @@ function InviteAdminDialog({
   onClose,
 }: {
   defaultRole: InvitableRole;
-  onSubmit: (email: string, role: InvitableRole) => void | Promise<void>;
+  onSubmit: (
+    email: string,
+    role: InvitableRole,
+    permissions: InstructorPermission[],
+  ) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<InvitableRole>(defaultRole);
+  // All three on: the common case needs no clicks, and matches the backend's default.
+  const [permissions, setPermissions] = useState<InstructorPermission[]>([
+    ...INSTRUCTOR_PERMISSIONS,
+  ]);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -757,7 +830,7 @@ function InviteAdminDialog({
     if (!email.trim()) return;
     setSubmitting(true);
     try {
-      await onSubmit(email.trim(), role);
+      await onSubmit(email.trim(), role, permissions);
     } finally {
       setSubmitting(false);
     }
@@ -832,11 +905,22 @@ function InviteAdminDialog({
         )}
 
         {role === "instructor" && (
-          <p className="rounded-lg border border-border bg-paper px-3 py-2 text-xs text-muted">
-            Instructors sign in to view their schedule and class rosters. They
-            have no admin access and are assigned to locations through the
-            schedule, not on invite.
-          </p>
+          <>
+            <p className="rounded-lg border border-border bg-paper px-3 py-2 text-xs text-muted">
+              Instructors sign in to view their schedule and class rosters. They
+              have no admin access and are assigned to locations through the
+              schedule, not on invite.
+            </p>
+            <div className="space-y-2">
+              <Label>Permissions</Label>
+              <PermissionSwitches
+                idPrefix="invite-perm"
+                value={permissions}
+                onChange={setPermissions}
+                disabled={submitting}
+              />
+            </div>
+          </>
         )}
 
         <DialogFooter>

@@ -13,7 +13,7 @@ import {
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
-import { classDifficultyEnum } from '../enums'
+import { classDifficultyEnum, instructorPermissionEnum } from '../enums'
 
 export const locations = pgTable(
   'locations',
@@ -162,6 +162,14 @@ export const instructors = pgTable('instructors', {
     .primaryKey()
     .references(() => staffUsers.id, { onDelete: 'cascade' }),
   photoR2Key: text('photo_r2_key'),
+  // The Instructor Permissions an Admin has granted (be/docs/adr/0012). The
+  // default is all three, and it lives here so every path that makes an
+  // instructors row — invitation, role change, provisioning, import, restore of
+  // an archive taken before the column — gets all three without knowing it.
+  permissions: instructorPermissionEnum('permissions')
+    .array()
+    .notNull()
+    .default(sql`'{schedule_classes,take_pt_bookings,manage_rosters}'::instructor_permission[]`),
   // Assigned Days are not here: leave belongs to a staff member, admins
   // included, so they live on `staff_users` (be/docs/adr/0009).
 }, table => ({

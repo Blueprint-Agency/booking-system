@@ -277,6 +277,36 @@ describe('moving a studio between deployments', () => {
     assert.deepEqual([...invitations].map(r => r.role), ['admin'])
   })
 
+  test('STF-33 an archive taken before Instructor Permissions existed restores every instructor with all three', options, async () => {
+    // Migration 0097 (#328) added `instructors.permissions`. An archive written
+    // the day before has instructors rows without it, and must restore the way
+    // the migration backfilled the database: every instructor holding all three.
+    const source = await studioWithData(`prepermsrc-${Date.now()}`)
+    const archive = await transfer.exportTenant(source)
+    const staffId = randomUUID()
+    archive.rows.staff_users = [
+      {
+        id: staffId,
+        tenant_id: source,
+        auth_user_id: randomUUID(),
+        email: 'teacher@preperm.test',
+        name: 'Old Teacher',
+        languages: [],
+        role: 'instructor',
+        status: 'active',
+      },
+    ]
+    archive.rows.instructors = [{ tenant_id: source, staff_user_id: staffId, photo_r2_key: null }]
+
+    const target = await emptyTenant(`prepermdst-${Date.now()}`)
+    await transfer.importTenant(target, archive)
+
+    const rows = await harness.db.execute<{ permissions: string }>(sql`
+    SELECT permissions::text AS permissions FROM instructors WHERE tenant_id = ${target}
+  `)
+    assert.deepEqual([...rows].map(r => r.permissions), ['{schedule_classes,take_pt_bookings,manage_rosters}'])
+  })
+
   test('an archive row with no auth_user_id is refused by name', options, async () => {
     const source = await studioWithData(`noauthsrc-${Date.now()}`)
     const archive = await transfer.exportTenant(source)

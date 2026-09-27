@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarCheck, Loader2, X } from "lucide-react";
 import { Button, EmptyState, Label, PageHeader } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
+import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
 import { formatRelative } from "@/lib/formatters";
 import { scheduleErrorMessage } from "@/lib/schedule";
@@ -62,7 +63,10 @@ export default function InstructorPtRequestsPage() {
       setRequests(res.pt_requests ?? []);
       setRooms(rm.rooms ?? []);
     } catch (err) {
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      setError(
+        permissionRefusal(err) ??
+          (err instanceof ApiError ? `HTTP ${err.status}` : "Network error"),
+      );
       setRequests([]);
     } finally {
       setLoading(false);

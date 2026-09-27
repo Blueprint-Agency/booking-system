@@ -676,7 +676,7 @@ Two staff roles in the system: `admin` and `instructor`. The `staff_role` type h
 | Role | How created | Authority |
 |---|---|---|
 | **Admin** | A studio's first admin arrives with the studio (created or restored through the super portal); further admins are invited by an admin | Everything in the portal: Locations, Class Types, all Packages + Promotions, Promo Codes, Global Policy, Waiver, Notifications, Marketing, feature flags, Staff (including other admins), Clients, Workshops, Rooms, and member impersonation. Sees every active location of the studio. |
-| **Instructor** | Invited by an admin | The instructor portal only, scoped to their own sessions. Unchanged by this spec. |
+| **Instructor** | Invited by an admin | The instructor portal only, scoped to their own sessions. What they may do there beyond teaching is set per person by their **Instructor Permissions** (below). |
 
 - Roles are **mutually exclusive** — one email = one staff account = one role.
 - **Rank:** admin > instructor. Nobody can edit a staff member who outranks them (instructors cannot edit admins; admins can edit anyone), and changing a role requires admin.
@@ -685,6 +685,26 @@ Two staff roles in the system: `admin` and `instructor`. The `staff_role` type h
 - A studio archive taken while the portal still had a third, now-retired staff role restores those staff rows and invitations as admins.
 - **Changing a sign-in email.** An admin can change any staff member's email, another admin's and their own included, from **Change** beside the email in the staff dialog (view or edit). It is verified by link: **Send link** saves the new address, which the staff dialog and the staff list show beside the current one labelled **Unverified**, and mails a confirmation link to it. Nothing changes on the account — the current address keeps signing in — until the link is clicked; it opens `/confirm-email` on the studio's portal, which shows the address and asks for one **Confirm email** click (no sign-in needed; the click is asked for so a mail scanner opening links cannot confirm it). The link works for 24 hours, after which the address shows **Link expired**. While it is Unverified or expired, an admin can **Resend link** (a new link; the old one stops working; not within 30 seconds of the last) or **Revoke** it (the link stops working and the address disappears). Changing to another address replaces the pending one. On confirming, the same login is re-addressed: password, second factor and sessions stay, a pending invitation moves to the new address, and the old address gets a notice (unless it is a `.invalid` placeholder). Refused: an address another staff member of this studio signs in with, a `.invalid` placeholder, the current address, and a blocked (archived) staff member. Because nobody signs in to confirm, a link also stops working if the admin who sent it is blocked, deleted or made an instructor before it is clicked. Service: `be/src/services/auth/staff-email-change.ts`.
 
+**Instructor Permissions** (`be/CONTEXT.md` § Staff; `be/docs/adr/0012`). Every Instructor has three switches an admin sets from the Staff page, each granting one job's worth of actions:
+
+| Permission | Label | Grants |
+|---|---|---|
+| `schedule_classes` | Schedule classes | Create a class, preview and create a Class Series, cancel a class they lead |
+| `take_pt_bookings` | Take PT bookings | See the pending PT Request queue, schedule a request to themselves, cancel a PT session they lead |
+| `manage_rosters` | Manage rosters | Search members, book a member into a buffer seat, join, promote and remove on the Waitlist, cancel a member's booking (Return or Keep credit) |
+
+- **All three are on** for every existing Instructor and every newly invited one, so nothing changes at release. An instructor who "should not do any type of scheduling" is one with the first two switched off.
+- **Never a role, never on an Admin.** Admins hold every permission and are never gated by one; the API refuses an attempt to set permissions on an Admin (or to promote someone to Admin and set them in the same request). The Staff list shows the switches on an Instructor's row and none on an Admin's.
+- **What an Instructor needs to teach is not a permission:** their own timetable, the roster of a class they lead, check-in by scan, code or manual tick, their own leave, teaching log and profile stay whatever the switches say.
+- **Immediate.** A change is felt on the instructor's very next request, with no sign-out. A class or series made while a switch was on stays on the timetable when it is turned off; only an admin can then cancel it.
+- **Set at invitation.** The invite dialog offers the three switches when the role picker says Instructor; an invitation with none stated gives all three. A staff member changed from Admin to Instructor starts with all three; one changed from Instructor to Admin keeps their switches for a later demotion.
+- **The backend refuses, the portal hides.** A refused action answers `403 forbidden_permission`, which the portal renders as "You do not have permission for this. Ask an admin." Hiding is a convenience; the backend is the truth.
+- **Per studio.** A person who teaches at two studios is trusted separately by each.
+- Every change goes through the staff audit trail like any other staff edit.
+- **On the Staff page.** Each active Instructor's row in the Instructors tab carries the three switches, and flipping one saves at once. The staff dialog lists them by name and its edit form offers them while the person stays an Instructor; a change from Admin to Instructor sets them after that save, since the backend then holds the grant (all three, or what they had before a promotion).
+- **In the instructor portal.** The portal learns the switches from `me`, and one helper (`fe-portal/src/lib/instructor-permissions.ts`, Admin always yes) decides every button they govern. With Schedule classes off, New class, Repeat weekly and the per-class Cancel are gone from My schedule, and the New class page says to ask an admin. With Take PT bookings off, PT Requests leaves the instructor's navigation and its pending badge is not fetched; PT sessions an admin schedules for them stay on My schedule and the check-in desk. With Manage rosters off, the session page of a class they lead keeps the roster (names, booking codes, check-in state), the Waitlist and the check-in ticks, but Add member (and its offer to put a member in the line), each booking's Cancel… and the Waitlist's Add to class and Remove are gone, as is the check-in desk's "Add to class on the class page" link beside a class's waitlist.
+- **Rollout (#327).** This section is the target. The backend stores and serves all three and enforces Schedule classes (#328); the portal's switches, refusal message and Schedule classes hiding follow (#329); Take PT bookings is enforced and hidden end to end (#330); Manage rosters is enforced and hidden end to end (#331).
+
 ### 14b. Invitation rules
 
 **Who can invite whom:**
@@ -692,7 +712,7 @@ Two staff roles in the system: `admin` and `instructor`. The `staff_role` type h
 - Instructors cannot invite.
 
 **Invitation flow:**
-- Inviter enters the invitee's email and role (Admin or Instructor). No locations are captured.
+- Inviter enters the invitee's email and role (Admin or Instructor), and for an Instructor the three Instructor Permissions (all on unless changed). No locations are captured.
 - System sends a magic-link invite email. Invitee clicks link → sets password → lands on `/admin` (dashboard, with the first active location selected in the topbar switcher).
 
 **Invite token:**
@@ -736,7 +756,7 @@ The page is **Customers** in the nav and lives at `/admin/customers`; `/admin/cl
 - **Converted** means they paid for a package that is not another trial. A comped grant is not a conversion; a second trial is not one either.
 - The tiles count **every member the filter and search match**, across all pages — the backend returns them as `funnel` beside the page — so a search narrows the figures with the list rather than contradicting it, and the page size never changes them.
 - The funnel lives here rather than on Finance because it is a question about a client, not about a period (`be/docs/adr/0003-finance-reads-as-a-general-ledger.md`).
-- "+ Customer" adds a member and emails them an invite (`POST /portal/admin/clients`); most members self-register via the client app or arrive by import.
+- "+ Customer" adds a member (`POST /portal/admin/clients`) with the details sign-up asks for: first and last name, email, phone (country picker, Singapore first) and gender. **Email them an invite** is on by default and sends the `client_invite`; turned off, nothing is mailed and the studio tells the member itself. Either way the account has no password, and the member's first sign-in mails them the set-password link. Most members self-register via the client app or arrive by import.
 
 ### 15b. Customer Profile (`/admin/customers/[id]`)
 

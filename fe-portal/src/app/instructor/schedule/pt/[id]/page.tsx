@@ -74,7 +74,9 @@ export default function InstructorPtPage({ params }: { params: Promise<{ id: str
 }
 
 function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged: () => void | Promise<void> }) {
-  const { api } = useWorkspace();
+  const { api, may } = useWorkspace();
+  // Cancelling a private session they run is Take PT bookings'.
+  const canTakePt = may("take_pt_bookings");
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const state = computeEventState({ startsAt: data.starts_at, endsAt: data.ends_at, lifecycle: data.lifecycle });
@@ -103,7 +105,7 @@ function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged:
           {state === "cancelled" && <Badge tone="error">Cancelled</Badge>}
           {state === "ongoing" && <Badge tone="warning">Ongoing</Badge>}
           {state === "completed" && <Badge tone="sage">Completed</Badge>}
-          {state === "scheduled" && data.pt_request_id && (
+          {state === "scheduled" && data.pt_request_id && canTakePt && (
             <Button
               type="button"
               variant="ghost"

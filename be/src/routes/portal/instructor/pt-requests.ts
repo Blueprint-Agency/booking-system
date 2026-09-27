@@ -27,12 +27,19 @@ import {
   removeMemberParam,
   seatCandidatesJson,
 } from '../pt-manual'
+import { requirePermission } from '../../../middleware/require-permission'
 
 // Instructor PT surface. Instructors see the pending requests they may act on —
 // unbound ones, plus those bound to them — and pick up the ones they can run;
 // the schedule service forces instructor_id = self. A request debited from a
 // package bound to someone else is neither listed nor schedulable here. There is
 // no approve/decline: scheduling is the implicit approval. See be-portal.md §3c.
+//
+// Every route here is the **Take PT bookings** Instructor Permission
+// (be/docs/adr/0012), the queue read included: it names the members behind
+// every unbound request. A PT session an admin schedules for the instructor is
+// taught from the timetable and check-in desk, which this does not gate.
+const takesPtBookings = requirePermission('take_pt_bookings')
 
 const isoDate = z.string().refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
 const idParam = z.object({ id: z.string().uuid() })
@@ -85,7 +92,7 @@ const app = new Hono()
   // The pending queue this instructor may act on: unbound requests, plus the
   // ones bound to them. Somebody else's bound request is not work they can
   // pick up, so it is not work they see.
-  .get('/', async c => {
+  .get('/', takesPtBookings, async c => {
     const rows = await listPtRequestsForAdmin(tenantId(c), {
       status: 'pending',
       visibleToInstructorId: c.get('staffUserId') as string,
@@ -94,7 +101,9 @@ const app = new Hono()
   })
   // A manual session (#334), run by the caller: the session's instructor is
   // always self, and a member bound to another coach is refused, not warned.
-  .post('/manual', zValidator('json', instructorManualSessionSchema), async c => {
+  // Take PT bookings' like the rest of the file: it puts a PT session on the
+  // caller's calendar.
+  .post('/manual', takesPtBookings, zValidator('json', instructorManualSessionSchema), async c => {
     const self = c.get('staffUserId') as string
     const { ptRequestId } = await createManualPtSession(tenantId(c), {
       ...manualSessionFields(c.req.valid('json')),
@@ -108,8 +117,9 @@ const app = new Hono()
   })
   // The member's PT packages read against a session the caller would run
   // (#337): the instructor is always self, so a package bound to another
-  // coach reads as refused, not warned.
-  .get('/seat-candidates', zValidator('query', instructorSeatCandidatesQuery), async c => {
+  // coach reads as refused, not warned. Take PT bookings', with the manual
+  // session it serves.
+  .get('/seat-candidates', takesPtBookings, zValidator('query', instructorSeatCandidatesQuery), async c => {
     const q = c.req.valid('query')
     const res = await listSeatCandidates(tenantId(c), {
       clientId: q.client_id,
@@ -123,6 +133,7 @@ const app = new Hono()
   // coach's session is `403 not_your_session`.
   .post(
     '/sessions/:id/members',
+    takesPtBookings,
     zValidator('param', idParam),
     zValidator('json', addManualMemberSchema),
     async c => {
@@ -142,7 +153,7 @@ const app = new Hono()
   )
   // One member off a manual session the caller runs (#335), refunded on their
   // own package; another coach's session is `403 not_your_session`.
-  .delete('/sessions/:id/members/:clientId', zValidator('param', removeMemberParam), async c => {
+  .delete('/sessions/:id/members/:clientId', takesPtBookings, zValidator('param', removeMemberParam), async c => {
     const { id, clientId } = c.req.valid('param')
     const self = c.get('staffUserId') as string
     const res = await removeManualPtSessionMember(tenantId(c), {
@@ -155,7 +166,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'pt_sessions', id })
     return c.json(removedMemberJson(res))
   })
-  .post('/:id/schedule', zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
+  .post('/:id/schedule', takesPtBookings, zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const self = c.get('staffUserId') as string
@@ -176,7 +187,7 @@ const app = new Hono()
     const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
-  .post('/:id/cancel', zValidator('param', idParam), async c => {
+  .post('/:id/cancel', takesPtBookings, zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const self = c.get('staffUserId') as string
     // source:'admin' = staff-initiated (full refund, doesn't count to client cap),

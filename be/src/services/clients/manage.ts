@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, getTableColumns, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
+import type { clientGenderEnum } from '../../db/enums'
 import { clients } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
@@ -325,11 +326,21 @@ export async function listRecentAdjustments(
     .limit(limit)
 }
 
+type ClientGender = (typeof clientGenderEnum.enumValues)[number]
+
 export interface CreateClientInput {
   tenantId: string
   name: string
   email: string
   phone: string
+  /** As the member's own sign-up asks it; left unset when the admin gave none. */
+  gender?: ClientGender
+  /**
+   * Mail the member the studio's "your account is ready" invite. Off when the
+   * studio tells them itself: the account is made either way, with no password,
+   * and their first sign-in mails them the set-password link (ADR 0005).
+   */
+  sendInvite?: boolean
   invitedByStaffId: string
 }
 
@@ -346,23 +357,25 @@ function buildClientLoginUrl(tenantId: string): Promise<string> {
 
 /**
  * Admin-creates a member: the `client` pool's auth user and the clients row in
- * one transaction, then a branded "your account is ready" invite. The account
- * has no password: the member's first sign-in mails them a link to set one (#173).
+ * one transaction, then — unless the admin asked not to — a branded "your
+ * account is ready" invite. The account has no password either way: the
+ * member's first sign-in mails them a link to set one (#173).
  *
  * The auth user is this studio's login for the address (#231): a member of
  * another studio has a login there, which this one never touches.
  */
-export async function createClientWithInvite(input: CreateClientInput): Promise<ClientRow> {
+export async function createClient(input: CreateClientInput): Promise<ClientRow> {
   const name = input.name.trim()
   const email = input.email.trim().toLowerCase()
   const phone = input.phone.trim()
+  const sendInvite = input.sendInvite ?? true
   if (!name) throw new BadRequestError('name_required')
   if (!email) throw new BadRequestError('email_required')
   if (!phone) throw new BadRequestError('phone_required')
 
   // Resolved before anything is written: an invite email nobody can act on is
   // not worth an account and a member row to go with it.
-  const loginUrl = await buildClientLoginUrl(input.tenantId)
+  const loginUrl = sendInvite ? await buildClientLoginUrl(input.tenantId) : null
 
   // Per studio, like the unique index (`clients_tenant_email_unique`): one
   // person may be a member of two studios, with a record at each.
@@ -387,6 +400,7 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
         email,
         name,
         phone,
+        gender: input.gender ?? null,
         status: 'active',
       })
       .returning()
@@ -394,16 +408,18 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
   })
 
   // Best-effort invite email (failures land in email_log, never block creation).
-  await sendTemplatedEmail({
-    tenantId: input.tenantId,
-    slug: 'client_invite',
-    recipient: { email, userId: row.id, userKind: 'client' },
-    variables: {
-      name,
-      invitee_email: email,
-      login_url: loginUrl,
-    },
-  })
+  if (loginUrl) {
+    await sendTemplatedEmail({
+      tenantId: input.tenantId,
+      slug: 'client_invite',
+      recipient: { email, userId: row.id, userKind: 'client' },
+      variables: {
+        name,
+        invitee_email: email,
+        login_url: loginUrl,
+      },
+    })
+  }
 
   return row
 }

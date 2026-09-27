@@ -8,6 +8,7 @@ import { cancelClass } from '../../../services/bookings/cancel-class'
 import { staffBookClass, staffPackagesForClass } from '../../../services/bookings/book'
 import { sgDayWindow, sgToday } from '../../../lib/time'
 import { tenantId } from '../../../middleware/tenant'
+import { requirePermission } from '../../../middleware/require-permission'
 import { seatFields, staffBookingJson, staffBookingSchema, staffPackagesJson, staffPackagesQuery } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
 import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-window'
@@ -39,7 +40,20 @@ import { hasCapacity, NO_CAPACITY, previewJson, seriesRow, seriesTemplateFields,
  *                           instructor of, with a reason. Same service (and so
  *                           the same member refunds) as the admin path; the
  *                           main-instructor check lives in the service.
+ *
+ * Creating a class, previewing or creating a series, and cancelling a class are
+ * the **Schedule classes** Instructor Permission (be/docs/adr/0012): each is
+ * gated `requirePermission('schedule_classes')`, which refuses an Instructor
+ * without it `403 forbidden_permission` before any ownership check. The rest —
+ * the timetable, booking a member, the waitlist — is not this permission's.
+ *
+ * Booking a member into a buffer seat and the three waitlist actions are the
+ * **Manage rosters** permission. The waitlist factory is shared with the admin
+ * mount, so its gate is applied here, on the paths it mounts, registered before
+ * it so it runs first — never inside the factory.
  */
+const schedulesClasses = requirePermission('schedule_classes')
+const managesRosters = requirePermission('manage_rosters')
 
 const isoDate = z
   .string()
@@ -113,6 +127,8 @@ function entryRow(e: timetable.ScheduleEntryRow) {
 const app = new Hono()
   // The class waitlist of a class the caller teaches: put a member in line,
   // Add to class (never an overbook), Remove (spec-waitlist.md §7).
+  // `/*` matches the bare `/classes/:id/waitlist` (join) too.
+  .use('/classes/:id/waitlist/*', managesRosters)
   .route('/', classWaitlistRoutes('instructor'))
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
@@ -132,7 +148,7 @@ const app = new Hono()
     const entries = await timetable.listSchedule(tenantId(c), { instructorId: self, from, to })
     return c.json({ entries: entries.map(entryRow) })
   })
-  .post('/classes', zValidator('json', createClassSchema), async c => {
+  .post('/classes', schedulesClasses, zValidator('json', createClassSchema), async c => {
     const body = c.req.valid('json')
     const self = c.get('staffUserId')
     const row = await classesSvc.createClass(tenantId(c), {
@@ -175,11 +191,11 @@ const app = new Hono()
     )
   })
   // ── Class Series ── preview, then commit the same input; see services/schedule/series.ts.
-  .post('/series/preview', zValidator('json', seriesSchema), async c => {
+  .post('/series/preview', schedulesClasses, zValidator('json', seriesSchema), async c => {
     const input = ownSeriesInput(c.req.valid('json'), c.get('staffUserId'))
     return c.json(previewJson(await seriesSvc.previewSeries(tenantId(c), input)))
   })
-  .post('/series', zValidator('json', seriesSchema), async c => {
+  .post('/series', schedulesClasses, zValidator('json', seriesSchema), async c => {
     const self = c.get('staffUserId')
     const res = await seriesSvc.createSeries(tenantId(c), {
       ...ownSeriesInput(c.req.valid('json'), self),
@@ -189,9 +205,11 @@ const app = new Hono()
     return c.json({ series: seriesRow(res.series), class_ids: res.classIds }, 201)
   })
   // The member's class packages for a class the caller teaches — the admin
-  // route's read (#333).
+  // route's read (#333). It exists to serve Add member, so it is Manage
+  // rosters' like the member search.
   .get(
     '/classes/:id/packages',
+    managesRosters,
     zValidator('param', z.object({ id: z.string().uuid() })),
     zValidator('query', staffPackagesQuery),
     async c => {
@@ -210,6 +228,7 @@ const app = new Hono()
   // may pick the member's package, as an admin may.
   .post(
     '/classes/:id/bookings',
+    managesRosters,
     zValidator('param', z.object({ id: z.string().uuid() })),
     zValidator('json', staffBookingSchema),
     async c => {
@@ -228,6 +247,7 @@ const app = new Hono()
   )
   .post(
     '/classes/:id/cancel',
+    schedulesClasses,
     zValidator('param', z.object({ id: z.string().uuid() })),
     zValidator('json', z.object({ reason: z.string().trim().min(1).max(500) })),
     async c => {

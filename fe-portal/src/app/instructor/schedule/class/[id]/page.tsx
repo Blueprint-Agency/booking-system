@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui";
 import { ClassRoster, SeatStats, Stat } from "@/components/schedule/class-roster";
 import { WaitlistPanel } from "@/components/schedule/waitlist-panel";
 import { useWorkspace } from "@/lib/workspace-context";
+import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime } from "@/lib/formatters";
@@ -15,7 +16,8 @@ import { acceptsLine } from "@/lib/package-rule";
 /**
  * An instructor's own class (spec-waitlist.md §10): the seats, the roster with
  * each member's seat, the attendance tick, Add member into a buffer seat (or
- * the waitlist), and the Waitlist panel.
+ * the waitlist), and the Waitlist panel. Without Manage rosters the roster, the
+ * line and the ticks stay; Add member, Cancel… and the line's actions go.
  * No pay and no editing — those are the admin's page.
  */
 export default function InstructorClassPage({ params }: { params: Promise<{ id: string }> }) {
@@ -33,13 +35,15 @@ export default function InstructorClassPage({ params }: { params: Promise<{ id: 
       setData(await fetchInstructorClass(api, id));
     } catch (err) {
       setError(
-        !(err instanceof ApiError)
+        // A switch's refusal is a 403 too, so it is named before ownership is.
+        permissionRefusal(err) ??
+        (!(err instanceof ApiError)
           ? "Network error"
           : err.status === 403
             ? "This class is not one you are teaching."
             : err.status === 404
               ? "Class not found."
-              : `HTTP ${err.status}`,
+              : `HTTP ${err.status}`),
       );
     } finally {
       setLoading(false);
@@ -75,6 +79,10 @@ export default function InstructorClassPage({ params }: { params: Promise<{ id: 
 }
 
 function ClassPage({ data, onChanged }: { data: InstructorClassDetail; onChanged: () => void }) {
+  const { may } = useWorkspace();
+  // Add member (and its waitlist offer), Cancel… and the Waitlist actions are
+  // Manage rosters; the roster, the line and the check-in ticks are not.
+  const managesRosters = may("manage_rosters");
   const state = computeEventState({
     startsAt: data.starts_at,
     endsAt: data.ends_at,
@@ -115,14 +123,15 @@ function ClassPage({ data, onChanged }: { data: InstructorClassDetail; onChanged
         classId={data.id}
         attendees={data.attendees}
         cancelled={data.lifecycle === "cancelled"}
-        canAdd={state === "scheduled"}
+        canAdd={managesRosters && state === "scheduled"}
+        canCancel={managesRosters}
         onChanged={onChanged}
       />
       <WaitlistPanel
         role="instructor"
         classId={data.id}
         data={data}
-        canAct={state === "scheduled"}
+        canAct={managesRosters && state === "scheduled"}
         onChanged={onChanged}
       />
     </>

@@ -13,6 +13,7 @@ import { AccessDenied } from "@/components/auth/access-denied";
 import { authFailure } from "@/lib/access-refusal";
 import { ApiError, makeApi, type Api } from "@/lib/api";
 import { reportError } from "@/lib/report-error";
+import { knownPermissions, mayDo, type InstructorPermission } from "@/lib/instructor-permissions";
 import { runsStudio } from "@/lib/staff-role";
 import { sessionTenantRefusal } from "@/lib/session-tenant";
 import { getPortalToken, signOutPortal, usePortalSession } from "@/lib/portal-auth";
@@ -33,6 +34,8 @@ interface AuthMePayload {
   name: string;
   role: StaffRole;
   status: "pending" | "active" | "archived";
+  /** The Instructor Permissions held: all three for an Admin (be/docs/adr/0012). */
+  permissions?: string[];
   locations: Array<{ id: string; name: string; address: string | null }>;
 }
 
@@ -60,6 +63,10 @@ interface WorkspaceContextValue {
   loading: boolean;
   currentStaff: StaffUser | null;
   role: StaffRole | null;
+  /** The Instructor Permissions `me` reported, known keys only. */
+  permissions: InstructorPermission[];
+  /** Whether the signed-in staff member may do what `key` grants (`mayDo`). */
+  may: (key: InstructorPermission) => boolean;
   locations: Location[]; // all locations (incl archived) for admin views
   accessibleLocations: Location[];
   activeLocation: Location | null;
@@ -113,6 +120,8 @@ export function WorkspaceProvider({
    */
   const [denied, setDenied] = useState<{ reason: string | null } | null>(null);
   const [currentStaff, setCurrentStaff] = useState<StaffUser | null>(null);
+  // Read on every `me`, so a switch an Admin flipped shows after the next load.
+  const [permissions, setPermissions] = useState<InstructorPermission[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [activeLocationId, setActiveLocationIdState] = useState<string | null>(
     null,
@@ -167,6 +176,7 @@ export function WorkspaceProvider({
         role: me.role,
         status: me.status,
       });
+      setPermissions(knownPermissions(me.permissions));
       setLocations(accessible);
       setDenied(null);
     } catch (err) {
@@ -362,10 +372,18 @@ export function WorkspaceProvider({
     [accessibleLocations, activeLocationId],
   );
 
+  const may = useCallback(
+    (key: InstructorPermission) =>
+      mayDo(currentStaff ? { role: currentStaff.role, permissions } : null, key),
+    [currentStaff, permissions],
+  );
+
   const value: WorkspaceContextValue = {
     loading,
     currentStaff,
     role: currentStaff?.role ?? null,
+    permissions,
+    may,
     locations,
     accessibleLocations,
     activeLocation,

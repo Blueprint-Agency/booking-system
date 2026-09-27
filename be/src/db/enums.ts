@@ -9,6 +9,18 @@ export const clientStatusEnum = pgEnum('client_status', ['active', 'suspended'])
 export const clientGenderEnum = pgEnum('client_gender', ['female', 'male', 'non_binary', 'prefer_not_to_say'])
 export const staffRoleEnum = pgEnum('staff_role', ['admin', 'instructor'])
 export const staffStatusEnum = pgEnum('staff_status', ['pending', 'active', 'archived'])
+// An **Instructor Permission** (be/CONTEXT.md § Staff, be/docs/adr/0012): one of
+// a fixed, small set of switches an Admin sets per Instructor, each granting a
+// job-shaped bundle of actions. Never gates an Admin. The list is fixed here and
+// grows only by decision; a new value is an enum value plus a backfill.
+export const instructorPermissionEnum = pgEnum('instructor_permission', [
+  'schedule_classes',
+  'take_pt_bookings',
+  'manage_rosters',
+])
+export type InstructorPermission = (typeof instructorPermissionEnum.enumValues)[number]
+/** Every Instructor Permission: what a new Instructor gets, and what an Admin resolves to. */
+export const ALL_INSTRUCTOR_PERMISSIONS: readonly InstructorPermission[] = instructorPermissionEnum.enumValues
 export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'accepted', 'revoked', 'expired'])
 
 // Sign-in audit log (`auth_events`, #114). The pools are the three Better Auth

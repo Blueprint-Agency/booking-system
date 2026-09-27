@@ -4,6 +4,7 @@
 // (balance, backdating, clashes, half-day boundary) lives in the backend.
 
 import { formatDate } from "./formatters";
+import { permissionRefusal } from "./access-refusal";
 import { ApiError } from "./api";
 
 /** The self-service leave mount, one for both roles: leave belongs to a staff
@@ -109,6 +110,8 @@ export function formatLeaveDayRange(from: string, to: string): string {
 
 /** The backend's refusals carry the sentence to show; fall back only if one doesn't. */
 export function leaveErrorMessage(err: unknown, fallback: string): string {
+  const refused = permissionRefusal(err);
+  if (refused) return refused;
   if (err instanceof ApiError) {
     const body = err.body as { message?: string } | null;
     if (body && typeof body.message === "string") return body.message;

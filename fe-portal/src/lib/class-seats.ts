@@ -6,6 +6,7 @@
 // staff booking for whoever made it. Shapes mirror
 // be/src/routes/portal/class-seats.ts.
 
+import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError, type Api } from "@/lib/api";
 import { NOT_ACCEPTED_COPY } from "@/lib/package-rule";
 import { formatDate } from "@/lib/formatters";
@@ -226,6 +227,8 @@ export function staffRefusalCopy(code: string | undefined): string | undefined {
  */
 export function staffBookingRefusal(err: unknown, role: StaffRole): StaffBookingRefusal {
   if (!(err instanceof ApiError)) return { kind: "error", message: "Network error" };
+  const refused = permissionRefusal(err);
+  if (refused) return { kind: "error", message: refused };
   const code = (err.body as { error?: string } | null)?.error;
   if (code === "class_full") {
     return role === "admin"

@@ -4,6 +4,13 @@ import { AtSign, Pencil, RotateCcw, ShieldOff } from "lucide-react";
 import { ResendInvitationButton } from "@/components/access/resend-invitation-button";
 import { SessionsPanel } from "@/components/access/sessions-panel";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
+import {
+  INSTRUCTOR_PERMISSIONS,
+  PERMISSION_LABEL,
+  knownPermissions,
+  type InstructorPermission,
+} from "@/lib/instructor-permissions";
+import { PermissionSwitches } from "./permission-switches";
 import { PendingEmailNotice, StaffEmailChange } from "./staff-email-change";
 import {
   Badge,
@@ -70,6 +77,8 @@ export interface StaffEditableFields {
   languages: string[] | null;
   role: "admin" | "instructor";
   status: "pending" | "active" | "archived";
+  /** An Instructor's granted Instructor Permissions; null for an Admin. */
+  permissions: string[] | null;
   /** Assigned Days — every staff member's, admins included. */
   annual_leave_days?: number;
   medical_leave_days?: number;
@@ -96,6 +105,8 @@ export interface StaffEditPatch {
   bio?: string | null;
   languages?: string[];
   role?: StaffEditableFields["role"];
+  /** The whole grant, replacing what is stored. An Instructor's only. */
+  permissions?: InstructorPermission[];
   annual_leave_days?: number;
   medical_leave_days?: number;
   study_leave_days?: number;
@@ -331,6 +342,11 @@ function StaffProfileView({
             label={staff.status === "archived" ? "Archived" : undefined}
           />
         </Field>
+        {staff.role === "instructor" && (
+          <Field label="Permissions" full>
+            <PermissionsSummary granted={knownPermissions(staff.permissions)} />
+          </Field>
+        )}
       </dl>
 
       {/* Every staff member takes leave, admins included. */}
@@ -386,6 +402,26 @@ function Field({
       {/* An empty optional field reads as an em dash, never as blank space. */}
       <dd className="text-ink">{children || <span className="text-muted">—</span>}</dd>
     </div>
+  );
+}
+
+/** Each switch by name, held or not — "none" would hide which ones are off. */
+function PermissionsSummary({ granted }: { granted: InstructorPermission[] }) {
+  return (
+    <ul className="flex flex-wrap gap-1.5">
+      {INSTRUCTOR_PERMISSIONS.map(key => (
+        <li key={key}>
+          {granted.includes(key) ? (
+            <Badge tone="sage">{PERMISSION_LABEL[key]}</Badge>
+          ) : (
+            <Badge tone="neutral" className="text-muted">
+              <span className="line-through">{PERMISSION_LABEL[key]}</span>
+              <span className="sr-only"> (off)</span>
+            </Badge>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -513,6 +549,13 @@ function StaffProfileForm({
   onCancel: () => void;
 }) {
   const [role, setRole] = useState(staff.role);
+  const storedPermissions = knownPermissions(staff.permissions);
+  const [permissions, setPermissions] = useState(storedPermissions);
+  // Switches only for an Instructor who stays one. A promotion takes none (they
+  // are refused on an Admin); a demotion keeps the grant the backend holds —
+  // all three, or what they had before — which this row, an Admin's, cannot show.
+  const editsPermissions = canChangeRole && staff.role === "instructor" && role === "instructor";
+  const permissionsChanged = permissions.join() !== storedPermissions.join();
   const [firstName, setFirstName] = useState(staff.first_name ?? "");
   const [lastName, setLastName] = useState(staff.last_name ?? "");
   const [phone, setPhone] = useState(staff.phone ?? "");
@@ -566,6 +609,7 @@ function StaffProfileForm({
         .filter(Boolean),
       // Only a real change: the server refuses `role` from anyone but an admin.
       ...(canChangeRole && role !== staff.role ? { role } : {}),
+      ...(editsPermissions && permissionsChanged ? { permissions } : {}),
       // Every leave field goes only if the admin moved it off what the server
       // sent — never off a placeholder.
       ...(assigned && annualLeave !== staff.annual_leave_days
@@ -653,6 +697,23 @@ function StaffProfileForm({
               </option>
             ))}
           </Select>
+          {staff.role === "admin" && role === "instructor" && (
+            <p className="text-xs text-muted">
+              Their instructor permissions can be set once this is saved.
+            </p>
+          )}
+        </div>
+      )}
+
+      {editsPermissions && (
+        <div className="space-y-2">
+          <Label>Permissions</Label>
+          <PermissionSwitches
+            idPrefix="edit-perm"
+            value={permissions}
+            onChange={setPermissions}
+            disabled={submitting}
+          />
         </div>
       )}
 

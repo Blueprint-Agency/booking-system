@@ -25,6 +25,7 @@ import { randomBytes } from 'node:crypto'
 import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { db } from '../../db'
+import type { InstructorPermission } from '../../db/enums'
 import type * as schema from '../../db/schema'
 import { staffUsers, staffInvitations } from '../../db/schema/identity'
 import { instructors } from '../../db/schema/catalog'
@@ -44,6 +45,7 @@ import {
   renameStaffUser,
   setFirstStaffPassword,
 } from './auth-users'
+import { assertPermissionsTargetInstructor, withInstructorPermissions } from './instructor-permissions'
 import type { StaffProfileRow } from './staff-archive'
 
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -58,6 +60,12 @@ export interface InviteAdminInput {
   email: string
   role?: InvitableRole
   invitedByStaffId: string
+  /**
+   * An Instructor's permissions from their first sign-in (be/docs/adr/0012).
+   * Omitted: the column's default, all three. On an admin invitation it is
+   * refused `permissions_require_instructor`, as a staff update is.
+   */
+  permissions?: InstructorPermission[]
 }
 
 /** A handle an invitation can be written through — `db`, or a transaction on it. */
@@ -97,6 +105,8 @@ export interface PendingStaffInput {
   bio?: string | null
   phone?: string | null
   photoR2Key?: string | null
+  /** Written onto the instructors row an Instructor invitation makes; omitted takes the default. */
+  permissions?: InstructorPermission[]
 }
 
 /**
@@ -140,12 +150,15 @@ export async function writePendingStaff(
 
   // Instructor role requires a profile row so the catalog INNER JOIN in
   // listInstructors/loadById matches. Profile fields are populated later
-  // when the instructor edits their bio/photo.
+  // when the instructor edits their bio/photo. The permissions the invitation
+  // stated go on it now, so a teach-only instructor is teach-only from their
+  // first sign-in; unstated, the column's default gives all three.
   if (input.role === 'instructor') {
     await tx.insert(instructors).values({
       tenantId: input.tenantId,
       staffUserId: staff.id,
       photoR2Key: input.photoR2Key ?? null,
+      ...(input.permissions !== undefined ? { permissions: input.permissions } : {}),
     })
   }
 
@@ -438,6 +451,9 @@ export async function acceptInvitationOnPasswordReset(tenantId: string, authUser
 export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitationRow> {
   const email = input.email.trim().toLowerCase()
   const role: InvitableRole = input.role ?? 'admin'
+  // Permissions describe Instructors only; stated on an admin invitation they
+  // are refused rather than stored nowhere and silently dropped.
+  if (input.permissions !== undefined) assertPermissionsTargetInstructor(role)
 
   // Resolved before anything is written. The link is the whole point of an
   // invitation, so a studio the platform cannot build a portal URL for must fail
@@ -478,6 +494,7 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
       name: emailLocalPart(email),
       role,
       invitedByStaffId: input.invitedByStaffId,
+      ...(input.permissions !== undefined ? { permissions: input.permissions } : {}),
     })
     return invitation
   })
@@ -511,8 +528,6 @@ export async function listStaffAndInvitations(
 ): Promise<ListStaffResult> {
   const includeArchived = opts?.includeArchived ?? false
 
-  // Assigned Days are columns on the staff row, and every staff member has
-  // this Leave Year's figures attached — admins take leave too.
   const staffRows = await db
     .select()
     .from(staffUsers)
@@ -525,7 +540,10 @@ export async function listStaffAndInvitations(
     )
     .orderBy(desc(staffUsers.createdAt))
 
-  const staff = await withLeaveFigures(tenantId, staffRows)
+  // Assigned Days are columns on the staff row, and every staff member has
+  // this Leave Year's figures attached — admins take leave too. An
+  // Instructor's permissions ride along from their profile row.
+  const staff = await withInstructorPermissions(tenantId, await withLeaveFigures(tenantId, staffRows))
 
   // Denormalise inviter name via a correlated subquery.
   const invitations = await db

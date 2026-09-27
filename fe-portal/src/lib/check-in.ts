@@ -9,6 +9,7 @@
  *
  * Pure: no React, no fetch. See check-in.test.ts.
  */
+import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
 
 /** Which mount of the surface the page talks to. */
@@ -115,6 +116,8 @@ export function pickActiveSession(sessions: CheckInSession[], now: Date): string
 
 /** The server's sentence for a refusal; `fallback` only when it sent none. */
 export function checkInErrorMessage(err: unknown, fallback: string): string {
+  const refused = permissionRefusal(err);
+  if (refused) return refused;
   if (err instanceof ApiError) {
     const body = err.body as { message?: unknown } | null;
     if (body && typeof body.message === "string" && body.message) return body.message;

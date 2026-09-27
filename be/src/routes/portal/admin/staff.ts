@@ -1,8 +1,10 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
+import { instructorPermissionEnum } from '../../../db/enums'
 import { requireRole } from '../../../middleware/require-role'
 import { tenantId } from '../../../middleware/tenant'
+import { permissionsView, withInstructorPermissions } from '../../../services/auth/instructor-permissions'
 import * as svc from '../../../services/auth/invitations'
 import {
   archiveStaff,
@@ -29,9 +31,18 @@ import { sessionView } from '../session-view'
 // Trimming and lower-casing are the service's, so a refusal can name what was typed.
 const emailChangeSchema = z.object({ email: z.string().email().max(254) })
 
+// The three Instructor Permissions (be/docs/adr/0012), each at most once. A
+// duplicate is a malformed request, not a grant made twice.
+const permissionsSchema = z
+  .array(z.enum(instructorPermissionEnum.enumValues))
+  .max(instructorPermissionEnum.enumValues.length)
+  .refine(keys => new Set(keys).size === keys.length, { message: 'each permission at most once' })
+
 const inviteSchema = z.object({
   email: z.string().email().max(254),
   role: z.enum(['admin', 'instructor']).optional(), // default 'admin' in the service
+  // An Instructor's permissions from their first sign-in; omitted = all three.
+  permissions: permissionsSchema.optional(),
 })
 
 const genderEnum = z.enum(['female', 'male', 'non_binary', 'prefer_not_to_say'])
@@ -45,6 +56,9 @@ const updateStaffSchema = z.object({
   bio: z.string().max(4000).nullable().optional(),
   languages: z.array(z.string().trim().min(1).max(60)).optional(),
   role: z.enum(['admin', 'instructor']).optional(),
+  // The whole grant, replacing what is stored. An Instructor's only: on an
+  // admin, or with a role change to admin, 400 `permissions_require_instructor`.
+  permissions: permissionsSchema.optional(),
   // Assigned Days — any staff member's, admins included.
   annual_leave_days: z.number().int().min(0).max(365).optional(),
   medical_leave_days: z.number().int().min(0).max(365).optional(),
@@ -75,6 +89,15 @@ async function pendingEmailOf(tenant: string, staffId: string) {
 }
 
 /**
+ * A staff row a write returned, with the Instructor's stored permissions on it,
+ * so the response reports the grant rather than the default.
+ */
+async function withPermissionsOf(tenant: string, row: StaffProfileRow): Promise<StaffProfileRow> {
+  const [profile] = await withInstructorPermissions(tenant, [row])
+  return profile ?? row
+}
+
+/**
  * `pending_email` is an address saved but not yet confirmed by its link: the
  * portal labels it Unverified, and `email` still signs the person in.
  */
@@ -93,6 +116,9 @@ function serializeStaff(row: StaffProfileRow, pendingEmail: PendingStaffEmail | 
     languages: row.languages,
     role: row.role,
     status: row.status,
+    // The Instructor Permissions held: the granted keys for an Instructor,
+    // null for an Admin, whom the switches never gate.
+    permissions: permissionsView(row.role, row.permissions),
     invited_at: row.invitedAt,
     accepted_at: row.acceptedAt,
     archived_at: row.archivedAt,
@@ -154,6 +180,7 @@ const app = new Hono()
       email: body.email,
       role: body.role,
       invitedByStaffId: actor,
+      ...(body.permissions !== undefined ? { permissions: body.permissions } : {}),
     })
     c.set('auditTarget' as any, { table: 'staff_invitations', id: inv.id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }), 201)
@@ -193,6 +220,7 @@ const app = new Hono()
         ...(body.bio !== undefined ? { bio: body.bio } : {}),
         ...(body.languages !== undefined ? { languages: body.languages } : {}),
         ...(body.role !== undefined ? { role: body.role } : {}),
+        ...(body.permissions !== undefined ? { permissions: body.permissions } : {}),
         ...(body.annual_leave_days !== undefined
           ? { annualLeaveDays: body.annual_leave_days }
           : {}),
@@ -255,7 +283,7 @@ const app = new Hono()
       from: c.req.raw.headers,
     })
     c.set('auditTarget' as any, { table: 'staff_users', id })
-    return c.json(serializeStaff(row, await pendingEmailOf(tenantId(c), id)))
+    return c.json(serializeStaff(await withPermissionsOf(tenantId(c), row), await pendingEmailOf(tenantId(c), id)))
   })
   .post('/:id/unarchive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
@@ -267,7 +295,7 @@ const app = new Hono()
       from: c.req.raw.headers,
     })
     c.set('auditTarget' as any, { table: 'staff_users', id })
-    return c.json(serializeStaff(row, await pendingEmailOf(tenantId(c), id)))
+    return c.json(serializeStaff(await withPermissionsOf(tenantId(c), row), await pendingEmailOf(tenantId(c), id)))
   })
   .get('/:id/sessions', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')

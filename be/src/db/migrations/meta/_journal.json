@@ -680,6 +680,13 @@
       "when": 1790495025819,
       "tag": "0096_pt_manual_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1790497190737,
+      "tag": "0097_instructor_permissions",
+      "breakpoints": true
     }
   ]
 }

@@ -246,6 +246,7 @@ function ClassDetail({ id }: { id: string }) {
         attendees={data.attendees ?? []}
         cancelled={data.lifecycle === "cancelled"}
         canAdd={state === "scheduled"}
+        canCancel
         onChanged={load}
       />
       <WaitlistPanel

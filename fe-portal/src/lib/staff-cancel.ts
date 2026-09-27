@@ -3,6 +3,7 @@
 // Return credit or Keep credit, with neither picked; the backend's
 // `cancel_preview` on the row carries everything the question needs.
 
+import { permissionRefusal } from "./access-refusal";
 import { ApiError } from "./api";
 import type { StaffRole } from "./class-seats";
 
@@ -80,6 +81,8 @@ const REFUSALS: Record<string, string> = {
 
 /** A refused cancel, in staff's words; the server's own sentence otherwise. */
 export function staffCancelRefusal(err: unknown): string {
+  const refused = permissionRefusal(err);
+  if (refused) return refused;
   if (err instanceof ApiError) {
     const body = err.body as { error?: unknown; message?: unknown } | null;
     const code = typeof body?.error === "string" ? body.error : null;

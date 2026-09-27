@@ -5,6 +5,7 @@
 // words what it said. Shapes mirror be/src/routes/portal/class-seats.ts and
 // class-waitlist.ts.
 
+import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError, type Api } from "@/lib/api";
 import { fetchFeatureFlags, WAITLIST_FLAG } from "@/lib/feature-flags";
 import { NOT_ACCEPTED_REASON } from "@/lib/package-rule";
@@ -114,6 +115,8 @@ const JOIN_REFUSAL_COPY: Record<string, string> = {
 /** Why staff couldn't put a member in the line: the member's own join refusals, in staff terms. */
 export function staffJoinRefusal(err: unknown): string {
   if (!(err instanceof ApiError)) return "Network error";
+  const refused = permissionRefusal(err);
+  if (refused) return refused;
   const body = err.body as { error?: string; window_hours?: number } | null;
   if (body?.error === "waitlist_closed") {
     return `This class starts within ${body.window_hours ?? "a few"} hours, so the waitlist has closed.`;

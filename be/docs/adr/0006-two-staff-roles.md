@@ -1,6 +1,7 @@
 # A studio's portal has two staff roles: admin and instructor
 
-**Status**: accepted (2026-09-16).
+**Status**: accepted (2026-09-16). The "no finer-grained permissions" consequence is superseded by
+`0012-instructor-permissions.md` (2026-09-27); everything else stands.
 
 ## Context
 
@@ -72,7 +73,9 @@ workflow, the test harness, and `db/seed/`.
   user as actor, as before.
 - **No finer-grained permissions.** There is no per-feature toggle and no per-location admin. If
   location-scoped admins are needed again, that is a new decision, and grants would come back
-  with a role that reads them.
+  with a role that reads them. _Superseded in part by ADR 0012: an Instructor now has three
+  fixed, job-shaped **Instructor Permissions** an Admin switches. There is still no per-location
+  admin, no third role and no role editor._
 - **Platform administrators are untouched** — the super portal, the `platform` pool and
   `PLATFORM_ADMIN_EMAIL` do not change, and neither role is ever called by the platform's name.
 - Historical plans under `docs/superpowers/` keep the old word; they are records of past decisions.
