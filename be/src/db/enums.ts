@@ -101,6 +101,13 @@ export const ptRequestStatusEnum = pgEnum('pt_request_status', [
   'attended',
 ])
 
+// Who wrote a pt_requests row (#334):
+//   member — the member asked from their app, debiting their package at submit
+//   portal — staff created a manual session; the portal wrote the request itself
+//            so every session keeps one behind it. Each attendee's booking carries
+//            the package that paid for their seat; the request debits nothing.
+export const ptRequestOriginEnum = pgEnum('pt_request_origin', ['member', 'portal'])
+
 // Corporate request lifecycle. Mirrors pt_request_status but simpler: corporate
 // has no slots, so there's no pre/post-schedule cancel split — one `cancelled`.
 //   pending    — client purchased, admin hasn't scheduled yet (negotiated via WhatsApp)
@@ -247,6 +254,7 @@ export type PromoCodeStatus = (typeof promoCodeStatusEnum.enumValues)[number]
 export type PromoCodeProduct = (typeof promoCodeProductEnum.enumValues)[number]
 export type PromoCodeRedemptionStatus = (typeof promoCodeRedemptionStatusEnum.enumValues)[number]
 export type PtRequestStatus = (typeof ptRequestStatusEnum.enumValues)[number]
+export type PtRequestOrigin = (typeof ptRequestOriginEnum.enumValues)[number]
 export type CorporateRequestStatus = (typeof corporateRequestStatusEnum.enumValues)[number]
 export type BookingKind = (typeof bookingKindEnum.enumValues)[number]
 export type BookingState = (typeof bookingStateEnum.enumValues)[number]

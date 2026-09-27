@@ -53,8 +53,11 @@ export interface ApiPtRequest {
   status: PtStatus;
   session_type: "1on1" | "2on1";
   message: string | null;
+  // `portal` marks a manual session staff created with no member request.
+  origin: "member" | "portal";
   created_at: string;
-  expires_at: string;
+  // Null on a manual session's request, which is never pending.
+  expires_at: string | null;
   resolved_at: string | null;
   refund_outcome: PtRefundOutcome;
   client: { id: string; name: string; email: string };

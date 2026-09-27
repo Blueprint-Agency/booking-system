@@ -21,7 +21,7 @@ interface InstructorPtRequest {
   session_type: "1on1" | "2on1";
   message: string | null;
   created_at: string;
-  expires_at: string;
+  expires_at: string | null;
   client: { id: string; name: string; email: string };
   class_type: { id: string; name: string } | null;
   location: { id: string; name: string };

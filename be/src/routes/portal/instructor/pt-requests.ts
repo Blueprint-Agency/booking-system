@@ -10,6 +10,8 @@ import { schedulePtRequest } from '../../../services/pt-sessions/schedule'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
 import { statusForScheduleError } from '../pt-schedule-status'
 import { tenantId } from '../../../middleware/tenant'
+import { createManualPtSession } from '../../../services/pt-sessions/manual'
+import { instructorManualSessionSchema, manualSessionFields } from '../pt-manual'
 
 // Instructor PT surface. Instructors see the pending requests they may act on —
 // unbound ones, plus those bound to them — and pick up the ones they can run;
@@ -39,8 +41,9 @@ function serialize(r: AdminPtRequestView) {
     status: r.status,
     session_type: r.sessionType,
     message: r.message,
+    origin: r.origin,
     created_at: r.createdAt.toISOString(),
-    expires_at: r.expiresAt.toISOString(),
+    expires_at: r.expiresAt ? r.expiresAt.toISOString() : null,
     resolved_at: r.resolvedAt ? r.resolvedAt.toISOString() : null,
     refund_outcome: r.refundOutcome,
     client: r.client,
@@ -73,6 +76,20 @@ const app = new Hono()
       visibleToInstructorId: c.get('staffUserId') as string,
     })
     return c.json({ pt_requests: rows.map(serialize) })
+  })
+  // A manual session (#334), run by the caller: the session's instructor is
+  // always self, and a member bound to another coach is refused, not warned.
+  .post('/manual', zValidator('json', instructorManualSessionSchema), async c => {
+    const self = c.get('staffUserId') as string
+    const { ptRequestId } = await createManualPtSession(tenantId(c), {
+      ...manualSessionFields(c.req.valid('json')),
+      instructorId: self,
+      actorStaffId: self,
+      actorIsAdmin: false,
+    })
+    c.set('auditTarget' as any, { table: 'pt_requests', id: ptRequestId })
+    const row = await getPtRequestForAdmin(tenantId(c), ptRequestId)
+    return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
   .post('/:id/schedule', zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
     const { id } = c.req.valid('param')

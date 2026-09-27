@@ -673,6 +673,13 @@
       "when": 1790493712160,
       "tag": "0095_pt_activation_by_session",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1790495025819,
+      "tag": "0096_pt_manual_sessions",
+      "breakpoints": true
     }
   ]
 }

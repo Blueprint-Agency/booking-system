@@ -13,6 +13,8 @@ import { schedulePtRequest, updatePtSession } from '../../../services/pt-session
 import { statusForScheduleError } from '../pt-schedule-status'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
 import { getPtSessionDetail, type PtSessionDetail } from '../../../services/schedule/detail'
+import { createManualPtSession } from '../../../services/pt-sessions/manual'
+import { adminManualSessionSchema, manualSessionFields } from '../pt-manual'
 
 // PT request triage for admins. No "approve"/"decline" in the simplified flow —
 // admin negotiates over WhatsApp, then either schedules (the implicit approval)
@@ -82,8 +84,10 @@ function serialize(r: AdminPtRequestView) {
     status: r.status,
     session_type: r.sessionType,
     message: r.message,
+    // `portal` marks a manual session staff created (#334).
+    origin: r.origin,
     created_at: r.createdAt.toISOString(),
-    expires_at: r.expiresAt.toISOString(),
+    expires_at: r.expiresAt ? r.expiresAt.toISOString() : null,
     resolved_at: r.resolvedAt ? r.resolvedAt.toISOString() : null,
     refund_outcome: r.refundOutcome,
     client: r.client,
@@ -164,6 +168,21 @@ const app = new Hono()
     if (!result.ok) return c.json({ error: result.error }, statusForScheduleError(result.error))
     c.set('auditTarget' as any, { table: 'pt_requests', id })
     const row = await getPtRequestForAdmin(tenantId(c), id)
+    return c.json({ pt_request: row ? serialize(row) : null }, 201)
+  })
+  // A manual session (#334): no member request, so the portal writes one
+  // itself and schedules it, seating each named member on their own package.
+  .post('/manual', zValidator('json', adminManualSessionSchema), async c => {
+    const body = c.req.valid('json')
+    const actor = c.get('staffUserId') as string
+    const { ptRequestId } = await createManualPtSession(tenantId(c), {
+      ...manualSessionFields(body),
+      instructorId: body.instructor_id,
+      actorStaffId: actor,
+      actorIsAdmin: true,
+    })
+    c.set('auditTarget' as any, { table: 'pt_requests', id: ptRequestId })
+    const row = await getPtRequestForAdmin(tenantId(c), ptRequestId)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
   // Edit/reschedule a SCHEDULED session. :id here is the pt_session id — kept under

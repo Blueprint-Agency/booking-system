@@ -6,6 +6,7 @@ import { classTypes, locations, rooms } from '../../db/schema/catalog'
 import { ptRequests, ptRequestSlots, ptSessions } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { clientPackages } from '../../db/schema/packages'
+import type { PtRequestOrigin } from '../../db/enums'
 
 export interface ClientPtRequestView {
   id: string
@@ -23,7 +24,8 @@ export interface ClientPtRequestView {
   message: string | null
   coClientName: string | null
   createdAt: Date
-  expiresAt: Date
+  /** Null on a manual session's request, which never waits pending. */
+  expiresAt: Date | null
   /** `endTime` is null on requests made since members propose start times only. */
   slots: { proposedDate: string; startTime: string; endTime: string | null }[]
   /** Populated once the request is scheduled — the final session details. */
@@ -188,8 +190,11 @@ export interface AdminPtRequestView {
   status: string
   sessionType: '1on1' | '2on1'
   message: string | null
+  /** `portal` for a manual session staff created, `member` for a member's request. */
+  origin: PtRequestOrigin
   createdAt: Date
-  expiresAt: Date
+  /** Null on a manual session's request, which never waits pending. */
+  expiresAt: Date | null
   resolvedAt: Date | null
   client: { id: string; name: string; email: string }
   /** Preferred class type; null when the member asked for "any". */
@@ -232,6 +237,7 @@ function adminSelect() {
       status: ptRequests.status,
       sessionType: ptRequests.sessionType,
       message: ptRequests.message,
+      origin: ptRequests.origin,
       createdAt: ptRequests.createdAt,
       expiresAt: ptRequests.expiresAt,
       resolvedAt: ptRequests.resolvedAt,
@@ -337,6 +343,7 @@ async function hydrateAdminRows(
       status: r.status,
       sessionType: r.sessionType as '1on1' | '2on1',
       message: r.message,
+      origin: r.origin,
       createdAt: r.createdAt,
       expiresAt: r.expiresAt,
       resolvedAt: r.resolvedAt,

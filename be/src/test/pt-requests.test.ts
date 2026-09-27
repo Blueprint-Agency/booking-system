@@ -398,6 +398,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       .where(eq(schema.ptBookingConfig.tenantId, one.id))
     assert.ok(config)
     const expected = before + config.days * DAY
+    assert.ok(row.expiresAt, 'a member request lapses')
     assert.ok(Math.abs(row.expiresAt.getTime() - expected) < 5 * MINUTE, `expires ${config.days} days after submit`)
 
     // No payment: nothing was sold, nothing charged.
@@ -807,7 +808,9 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.deepEqual(statuses, [201, 409], `statuses were ${statuses.join(', ')}`)
   })
 
-  test('PT-30 there is no way to make a PT session without a PT request', async () => {
+  // The manual path (PT-76) is the one way staff make a session with no member
+  // request, and it writes the request itself first.
+  test('PT-30 there is no way to make a PT session without a PT request row behind it', async () => {
     const before = await harness.db.select({ n: sql<number>`count(*)::int` }).from(schema.ptSessions)
     const startsAt = far()
     const body = JSON.stringify({
@@ -1455,6 +1458,356 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal((await sessionRow(sessionId)).sessionType, '1on1')
     assert.equal((await requestRow(requestId)).sessionType, '1on1')
     assert.deepEqual((await bookingsOn(sessionId)).map(b => b.clientId), [fox.clientId])
+  })
+
+  // ── Manual sessions (#334) ───────────────────────────────────────────────
+
+  type ManualMember = { client_id: string; client_package_id?: string }
+  type ManualOpts = ScheduleOpts & { sessionType?: SessionType; override?: boolean; instructor_id?: string }
+
+  function manualBody(at: Studio, members: ManualMember[], opts: ManualOpts) {
+    return {
+      ...scheduleBody(at, opts),
+      session_type: opts.sessionType ?? '1on1',
+      instructor_pay_sgd: 60,
+      members,
+      ...(opts.override !== undefined ? { override: opts.override } : {}),
+    }
+  }
+
+  const adminManual = (by: Staff, members: ManualMember[], opts: ManualOpts = {}) =>
+    harness.app.request('/api/v1/portal/admin/pt-sessions/manual', {
+      method: 'POST',
+      headers: { ...by.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...manualBody(one, members, opts), instructor_id: (opts.instructor ?? coachA).staffId }),
+    })
+
+  const instructorManual = (by: Staff, members: ManualMember[], opts: ManualOpts = {}) =>
+    harness.app.request('/api/v1/portal/instructor/pt-requests/manual', {
+      method: 'POST',
+      headers: { ...by.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...manualBody(one, members, opts),
+        ...(opts.instructor_id ? { instructor_id: opts.instructor_id } : {}),
+      }),
+    })
+
+  /** The session a manual create made, through the request it wrote. */
+  async function manualSession(res: Response): Promise<{ requestId: string; sessionId: string }> {
+    const body = await expectStatus(res, 201)
+    assert.equal(body.pt_request.origin, 'portal')
+    return { requestId: body.pt_request.id, sessionId: body.pt_request.session.id }
+  }
+
+  const ptSessionCount = async () =>
+    (await harness.db.select({ n: sql<number>`count(*)::int` }).from(schema.ptSessions))[0]!.n
+
+  test('PT-76, PT-30 an admin creates a 1on1 with no member request: the portal writes a scheduled request with no expiry, and the member pays one session on their own booking', async () => {
+    const mia = await member(one, 'Mia Manual')
+    const packageId = await givePt(one, mia, '1on1')
+
+    const { requestId, sessionId } = await manualSession(
+      await adminManual(adminAtOne, [{ client_id: mia.clientId }], { instructor: coachB }),
+    )
+
+    const req = await requestRow(requestId)
+    assert.equal(req.origin, 'portal')
+    assert.equal(req.status, 'scheduled')
+    assert.equal(req.clientId, mia.clientId)
+    assert.equal(req.coClientId, null)
+    assert.equal(req.expiresAt, null, 'never pending, so never lapses')
+    assert.equal(req.createdByStaffId, adminAtOne.staffId)
+    assert.equal(req.scheduledPtSessionId, sessionId)
+    assert.equal(req.debitedClientPackageId, null, 'the request debits nothing; the seat does')
+    const slots = await harness.db.select().from(schema.ptRequestSlots).where(eq(schema.ptRequestSlots.ptRequestId, requestId))
+    assert.equal(slots.length, 0)
+
+    const session = await sessionRow(sessionId)
+    assert.equal(session.ptRequestId, requestId, 'PT-30: still no session without a request behind it')
+    assert.equal(session.instructorId, coachB.staffId)
+    assert.equal(session.sessionType, '1on1')
+    assert.equal(session.capacityOnline, 1)
+    assert.equal(session.scheduledByStaffId, adminAtOne.staffId)
+
+    const [booking, ...rest] = await bookingsOn(sessionId)
+    assert.equal(rest.length, 0)
+    assert.equal(booking!.clientId, mia.clientId)
+    assert.equal(booking!.state, 'confirmed')
+    assert.equal(booking!.clientPackageId, packageId)
+    assert.equal(booking!.creditsOrSessionsUsed, 1)
+    assert.ok(booking!.qrToken && booking!.code)
+    assert.equal(await sessionsLeft(packageId), 9)
+
+    // It shows in the member's account like any scheduled private session.
+    const [mine] = await myRequests(mia)
+    assert.equal(mine.id, requestId)
+    assert.equal(mine.status, 'scheduled')
+    assert.equal(mine.expires_at, null)
+  })
+
+  test('PT-77 a 2on1 created manually seats two members, each paying one session from their own package', async () => {
+    const nia = await member(one, 'Nia Pair One')
+    const noa = await member(one, 'Noa Pair Two')
+    const niaPackage = await givePt(one, nia, '2on1')
+    const noaPackage = await givePt(one, noa, '2on1')
+
+    const { requestId, sessionId } = await manualSession(
+      await adminManual(adminAtOne, [{ client_id: nia.clientId }, { client_id: noa.clientId }], { sessionType: '2on1' }),
+    )
+
+    const req = await requestRow(requestId)
+    assert.equal(req.clientId, nia.clientId)
+    assert.equal(req.coClientId, noa.clientId)
+    assert.equal((await sessionRow(sessionId)).capacityOnline, 2)
+    const seats = await bookingsOn(sessionId)
+    assert.deepEqual(
+      seats.map(b => [b.clientId, b.clientPackageId, b.creditsOrSessionsUsed]).sort(),
+      [
+        [nia.clientId, niaPackage, 1],
+        [noa.clientId, noaPackage, 1],
+      ].sort(),
+    )
+    assert.equal(await sessionsLeft(niaPackage), 9)
+    assert.equal(await sessionsLeft(noaPackage), 9)
+    const attendees = await harness.db
+      .select()
+      .from(schema.ptSessionClients)
+      .where(eq(schema.ptSessionClients.ptSessionId, sessionId))
+    assert.equal(attendees.length, 2)
+  })
+
+  test('PT-78 an instructor creates a manual session as themselves, whatever instructor the body names', async () => {
+    const ola = await member(one, 'Ola Coach Own')
+    await givePt(one, ola, '1on1')
+
+    const { requestId, sessionId } = await manualSession(
+      await instructorManual(coachA, [{ client_id: ola.clientId }], { instructor_id: coachB.staffId }),
+    )
+
+    assert.equal((await sessionRow(sessionId)).instructorId, coachA.staffId)
+    assert.equal((await requestRow(requestId)).createdByStaffId, coachA.staffId)
+  })
+
+  test('PT-79 a manual session with nobody, the same member twice, or more members than the type seats is refused, and nothing is made', async () => {
+    const pia = await member(one, 'Pia Roster')
+    const pax = await member(one, 'Pax Roster')
+    const piaPackage = await givePt(one, pia, '2on1')
+    const paxPackage = await givePt(one, pax, '2on1')
+    const before = await ptSessionCount()
+
+    await expectStatus(await adminManual(adminAtOne, []), 400)
+    const twice = await expectStatus(
+      await adminManual(adminAtOne, [{ client_id: pia.clientId }, { client_id: pia.clientId }], { sessionType: '2on1' }),
+      409,
+    )
+    assert.equal(twice.error, 'already_booked')
+    const full = await expectStatus(
+      await adminManual(adminAtOne, [{ client_id: pia.clientId }, { client_id: pax.clientId }], {
+        sessionType: '1on1',
+        override: true,
+      }),
+      409,
+    )
+    assert.equal(full.error, 'session_full')
+
+    assert.equal(await ptSessionCount(), before)
+    assert.equal((await requestsOf(pia)).length, 0)
+    assert.equal(await sessionsLeft(piaPackage), 10)
+    assert.equal(await sessionsLeft(paxPackage), 10)
+  })
+
+  test('PT-80 an attendee with no PT package, only a class package, an expired or empty one, a blocked or deleted account, or at another studio is refused, and nothing is made or debited', async () => {
+    const none = await member(one, 'Quin None')
+    const classOnly = await member(one, 'Quin Class')
+    await giveClassCredits(one, classOnly)
+    const expired = await member(one, 'Quin Expired')
+    const expiredPackage = await givePt(one, expired, '1on1')
+    await harness.db
+      .update(schema.clientPackages)
+      .set({ expiresAt: new Date(Date.now() - DAY), active: false })
+      .where(eq(schema.clientPackages.id, expiredPackage))
+    const empty = await member(one, 'Quin Empty')
+    await givePt(one, empty, '1on1', { sessions: 0 })
+    const blocked = await member(one, 'Quin Blocked')
+    await givePt(one, blocked, '1on1')
+    await harness.db.update(schema.clients).set({ status: 'suspended' }).where(eq(schema.clients.id, blocked.clientId))
+    const deleted = await member(one, 'Quin Deleted')
+    await givePt(one, deleted, '1on1')
+    await harness.db.update(schema.clients).set({ deletedAt: new Date() }).where(eq(schema.clients.id, deleted.clientId))
+    const away = await member(two, 'Quin Away')
+    const awayPackage = await givePt(two, away, '1on1')
+    const before = await ptSessionCount()
+
+    const cases: [Member, number, string][] = [
+      [none, 409, 'not_a_pt_package'],
+      [classOnly, 409, 'not_a_pt_package'],
+      [expired, 409, 'package_expired'],
+      [empty, 409, 'insufficient_pt_credit'],
+      [blocked, 409, 'client_blocked'],
+      [deleted, 404, 'client_not_found'],
+      [away, 404, 'client_not_found'],
+    ]
+    for (const [who, status, error] of cases) {
+      const res = await expectStatus(await adminManual(adminAtOne, [{ client_id: who.clientId }], { override: true }), status)
+      assert.equal(res.error, error, who.name)
+    }
+    // Naming the class package outright is the same refusal.
+    const [classPackage] = await harness.db
+      .select({ id: schema.clientPackages.id })
+      .from(schema.clientPackages)
+      .where(eq(schema.clientPackages.clientId, classOnly.clientId))
+    const named = await expectStatus(
+      await adminManual(adminAtOne, [{ client_id: classOnly.clientId, client_package_id: classPackage!.id }]),
+      409,
+    )
+    assert.equal(named.error, 'not_a_pt_package')
+    // Another studio's package cannot pay here, even with its own member's id beside it.
+    const foreign = await expectStatus(
+      await adminManual(adminAtOne, [{ client_id: none.clientId, client_package_id: awayPackage }]),
+      404,
+    )
+    assert.equal(foreign.error, 'client_package_not_found')
+
+    assert.equal(await ptSessionCount(), before)
+    assert.equal(await sessionsLeft(awayPackage), 10)
+  })
+
+  test('PT-81 the package staff name pays; with none named the Default payer does — matching type, running before Dormant, soonest-ending first', async () => {
+    const rae = await member(one, 'Rae Chooses')
+    const dormant = await givePt(one, rae, '1on1')
+    const runningLate = await givePt(one, rae, '1on1')
+    const runningSoon = await givePt(one, rae, '1on1')
+    const otherType = await givePt(one, rae, '2on1')
+    const set = (id: string, expiresAt: Date) =>
+      harness.db.update(schema.clientPackages).set({ expiresAt }).where(eq(schema.clientPackages.id, id))
+    await set(runningLate, new Date(Date.now() + 60 * DAY))
+    await set(runningSoon, new Date(Date.now() + 20 * DAY))
+    await set(otherType, new Date(Date.now() + 5 * DAY))
+
+    const byDefault = await manualSession(await adminManual(adminAtOne, [{ client_id: rae.clientId }]))
+    assert.equal((await bookingsOn(byDefault.sessionId))[0]!.clientPackageId, runningSoon)
+    assert.equal(await sessionsLeft(runningSoon), 9)
+
+    const named = await manualSession(
+      await adminManual(adminAtOne, [{ client_id: rae.clientId, client_package_id: dormant }]),
+    )
+    assert.equal((await bookingsOn(named.sessionId))[0]!.clientPackageId, dormant)
+    assert.equal(await sessionsLeft(dormant), 9)
+    assert.equal(await sessionsLeft(runningLate), 10)
+    assert.equal(await sessionsLeft(otherType), 10)
+  })
+
+  test('PT-82 a package of the other type is a warning: 409 seat_needs_override naming it, then Add anyway charges one session', async () => {
+    const sid = await member(one, 'Sid Mismatch')
+    const pairs = await givePt(one, sid, '2on1')
+    const before = await ptSessionCount()
+
+    const warned = await expectStatus(await adminManual(adminAtOne, [{ client_id: sid.clientId }]), 409)
+    assert.equal(warned.error, 'seat_needs_override')
+    assert.deepEqual(warned.warnings, ['session_type_mismatch'])
+    assert.equal(warned.client_id, sid.clientId)
+    assert.equal(warned.client_package_id, pairs)
+    assert.equal(await ptSessionCount(), before)
+    assert.equal(await sessionsLeft(pairs), 10)
+
+    const { sessionId } = await manualSession(await adminManual(adminAtOne, [{ client_id: sid.clientId }], { override: true }))
+    assert.equal((await bookingsOn(sessionId))[0]!.clientPackageId, pairs)
+    assert.equal(await sessionsLeft(pairs), 9, 'one seat, one session — not the two a 2on1 package would pay for a request')
+  })
+
+  test("PT-83 a package bound to another coach: an admin is warned and may Add anyway, an instructor is refused whatever they send; an instructor may seat their own and open clients", async () => {
+    const tam = await member(one, 'Tam Bound B')
+    const boundToB = await givePt(one, tam, '1on1', { boundTo: coachB })
+    const before = await ptSessionCount()
+
+    const warned = await expectStatus(await adminManual(adminAtOne, [{ client_id: tam.clientId }], { instructor: coachA }), 409)
+    assert.equal(warned.error, 'seat_needs_override')
+    assert.deepEqual(warned.warnings, ['bound_to_other_instructor'])
+
+    for (const override of [false, true]) {
+      const refused = await expectStatus(await instructorManual(coachA, [{ client_id: tam.clientId }], { override }), 403)
+      assert.equal(refused.error, 'bound_to_other_instructor')
+    }
+    assert.equal(await ptSessionCount(), before)
+    assert.equal(await sessionsLeft(boundToB), 10)
+
+    await manualSession(await adminManual(adminAtOne, [{ client_id: tam.clientId }], { instructor: coachA, override: true }))
+    assert.equal(await sessionsLeft(boundToB), 9)
+
+    const tia = await member(one, 'Tia Bound A')
+    const boundToA = await givePt(one, tia, '1on1', { boundTo: coachA })
+    const tod = await member(one, 'Tod Open')
+    const open = await givePt(one, tod, '1on1')
+    await manualSession(await instructorManual(coachA, [{ client_id: tia.clientId }]))
+    await manualSession(await instructorManual(coachA, [{ client_id: tod.clientId }]))
+    assert.equal(await sessionsLeft(boundToA), 9)
+    assert.equal(await sessionsLeft(open), 9)
+  })
+
+  test('PT-84 a Dormant package Activates on its seat, its end date counted from the creation moment, and records the session', async () => {
+    const uma = await member(one, 'Uma Dormant')
+    const packageId = await givePt(one, uma, '1on1')
+    assert.equal((await pkg(packageId)).expiresAt, null)
+
+    const beforeCreate = Date.now()
+    const { sessionId } = await manualSession(await adminManual(adminAtOne, [{ client_id: uma.clientId }]))
+
+    const activated = await pkg(packageId)
+    assert.ok(withinMinutes(activated.expiresAt, beforeCreate + activated.validityDays! * DAY))
+    assert.equal(activated.activatedByPtSessionId, sessionId)
+  })
+
+  test('PT-85 two manual creates racing for one room, or one instructor, make one session', async () => {
+    const vic = await member(one, 'Vic Race One')
+    const val = await member(one, 'Val Race Two')
+    await givePt(one, vic, '1on1')
+    await givePt(one, val, '1on1')
+    const before = await ptSessionCount()
+
+    // The same room, different instructors.
+    const roomSlot = far()
+    const byRoom = await Promise.all([
+      adminManual(adminAtOne, [{ client_id: vic.clientId }], { startsAt: roomSlot, instructor: coachA }),
+      adminManual(adminAtOne, [{ client_id: val.clientId }], { startsAt: roomSlot, instructor: coachB }),
+    ])
+    assert.deepEqual(byRoom.map(r => r.status).sort(), [201, 409])
+
+    // The same instructor, rooms at different Locations.
+    const coachSlot = far()
+    const byCoach = await Promise.all([
+      adminManual(adminAtOne, [{ client_id: vic.clientId }], { startsAt: coachSlot, place: one.places[0] }),
+      adminManual(adminAtOne, [{ client_id: val.clientId }], { startsAt: coachSlot, place: one.places[1] }),
+    ])
+    assert.deepEqual(byCoach.map(r => r.status).sort(), [201, 409])
+    for (const res of [...byRoom, ...byCoach].filter(r => r.status === 409)) {
+      assert.equal(((await res.json()) as any).error, 'schedule_conflict')
+    }
+    assert.equal(await ptSessionCount(), before + 2)
+  })
+
+  test('PT-86 a manual session into a room at another Location, a room already taken, or with a busy instructor is refused as a request would be', async () => {
+    const wes = await member(one, 'Wes Clash')
+    const packageId = await givePt(one, wes, '1on1')
+    const taken = far()
+    await manualSession(await adminManual(adminAtOne, [{ client_id: wes.clientId }], { startsAt: taken, instructor: coachA }))
+    const before = await ptSessionCount()
+
+    const wrongRoom = { locationId: one.places[0]!.locationId, roomId: one.places[1]!.roomId }
+    const mismatch = await expectStatus(await adminManual(adminAtOne, [{ client_id: wes.clientId }], { place: wrongRoom }), 400)
+    assert.equal(mismatch.error, 'room_location_mismatch')
+    const roomTaken = await expectStatus(
+      await adminManual(adminAtOne, [{ client_id: wes.clientId }], { startsAt: taken, instructor: coachB }),
+      409,
+    )
+    assert.equal(roomTaken.error, 'schedule_conflict')
+    const coachBusy = await expectStatus(
+      await adminManual(adminAtOne, [{ client_id: wes.clientId }], { startsAt: taken, place: one.places[1], instructor: coachA }),
+      409,
+    )
+    assert.equal(coachBusy.error, 'schedule_conflict')
+
+    assert.equal(await ptSessionCount(), before)
+    assert.equal(await sessionsLeft(packageId), 9)
   })
 
   // ── Who may ──────────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ import {
   packageRuleModeEnum,
   ptSessionTypeEnum,
   ptRequestStatusEnum,
+  ptRequestOriginEnum,
   corporateRequestStatusEnum,
   workshopInstructorRoleEnum,
 } from '../enums'
@@ -544,7 +545,16 @@ export const ptRequests = pgTable(
     coClientEmail: text('co_client_email'),
     message: text('message'),
     status: ptRequestStatusEnum('status').notNull().default('pending'),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    // `portal` for a manual session's request (#334): written by staff and
+    // scheduled in the same transaction, with no slots, no expiry and no debit
+    // of its own — each attendee's booking names the package that paid.
+    origin: ptRequestOriginEnum('origin').notNull().default('member'),
+    // The staff member who created a `portal` request. Null on a member's.
+    createdByStaffId: uuid('created_by_staff_id').references(() => staffUsers.id, {
+      onDelete: 'restrict',
+    }),
+    // When a pending request lapses. Null on a `portal` request, which is never pending.
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
     // FK to pt_sessions.id added via a separate foreignKey() declaration below to break the
     // circular reference at TS-declaration time.
     scheduledPtSessionId: uuid('scheduled_pt_session_id'),
@@ -562,6 +572,7 @@ export const ptRequests = pgTable(
     classTypeIdFkIdx: index('pt_requests_class_type_id_fk_idx').on(table.classTypeId),
     clientIdFkIdx: index('pt_requests_client_id_fk_idx').on(table.clientId),
     coClientIdFkIdx: index('pt_requests_co_client_id_fk_idx').on(table.coClientId),
+    createdByStaffIdFkIdx: index('pt_requests_created_by_staff_id_fk_idx').on(table.createdByStaffId),
     debitedClientPackageIdFkIdx: index('pt_requests_debited_client_package_id_fk_idx').on(table.debitedClientPackageId),
     locationIdFkIdx: index('pt_requests_location_id_fk_idx').on(table.locationId),
     resolvedByStaffIdFkIdx: index('pt_requests_resolved_by_staff_id_fk_idx').on(table.resolvedByStaffId),

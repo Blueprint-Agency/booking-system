@@ -104,9 +104,10 @@ async function boundInstructorFor(
  * Dormant starts its clock now, from the scheduling moment, and records this
  * session as the one that started it. A package already running keeps its
  * date. The row is locked, so two requests on one Dormant package scheduled
- * at once Activate it once.
+ * at once Activate it once. A manual session's seat Activates its package the
+ * same way (./manual.ts).
  */
-async function activateOnSchedule(
+export async function activateOnSchedule(
   tx: Tx,
   tenantId: string,
   clientPackageId: string,
