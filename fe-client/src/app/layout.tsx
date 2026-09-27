@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import { getBrand } from "@/lib/brand";
 import { BrandProvider } from "@/components/brand/brand-provider";
 import { TelemetryUser } from "@/components/telemetry-user";
+import { ViewTransitionGuard } from "@/components/layout/view-transition-guard";
 import "./globals.css";
 
 // Self-hosted via next/font (same pattern as fe-portal) — no render-blocking
@@ -50,8 +51,11 @@ export default async function RootLayout({
   const brand = await getBrand();
 
   return (
-    <html lang="en" className={sans.variable}>
+    // `data-scroll-behavior` tells Next the smooth scrolling in `globals.css` is
+    // deliberate, so it turns it off while it restores scroll on a navigation.
+    <html lang="en" className={sans.variable} data-scroll-behavior="smooth">
       <body className="antialiased">
+        <ViewTransitionGuard />
         <BrandProvider brand={brand}>{children}</BrandProvider>
         <TelemetryUser />
         <Toaster position="top-center" richColors />
