@@ -7,6 +7,7 @@
 
 import { ApiError, type Api } from "@/lib/api";
 import { scheduleErrorMessage } from "@/lib/schedule";
+import type { NamedPackageRule, PackageRuleInput } from "@/lib/package-rule";
 
 /** ISO weekday: Monday 1 … Sunday 7. */
 export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -57,6 +58,8 @@ export interface SeriesInput {
   credit_cost: number;
   /** Copied onto every class the series creates; null = the studio's window. */
   cancel_window_hours?: number | null;
+  /** Copied onto every class the series creates and extends; omitted = accepts all. */
+  package_rule?: PackageRuleInput;
   first_date: string;
   last_date: string;
   excluded_dates: string[];
@@ -73,7 +76,9 @@ export type OwnSeriesInput = Omit<
 
 export type SeriesRole = "admin" | "instructor";
 
-export interface Series extends SeriesInput {
+/** A series as it is read back: its Package rule comes named. */
+export interface Series extends Omit<SeriesInput, "package_rule"> {
+  package_rule: NamedPackageRule;
   id: string;
   ended_from: string | null;
   created_at: string;
@@ -125,6 +130,15 @@ export const extendSeries = (api: Api, id: string, lastDate: string, excluded: s
     last_date: lastDate,
     excluded_dates: excluded,
   });
+
+/**
+ * Replace the series' Package rule. It reaches only the classes the series makes
+ * from now on (every class an Extend adds); the classes it already made keep
+ * their own rule, changed one by one on the class editor — so nothing is
+ * cancelled and there is nothing to preview.
+ */
+export const updateSeriesRule = (api: Api, id: string, rule: PackageRuleInput) =>
+  api.put<Series>(`${BASE}/${id}/package-rule`, rule);
 
 export const endSeries = (api: Api, id: string, fromDate: string) =>
   api.post<EndResult>(`${BASE}/${id}/end`, { from_date: fromDate });

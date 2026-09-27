@@ -6,6 +6,7 @@ import { searchClients } from '../../../services/clients/manage'
 import { tenantId } from '../../../middleware/tenant'
 import { classSeatsJson } from '../class-seats'
 import { cancelWindowJson } from '../class-cancel-window'
+import { namedRuleJson } from '../../../services/schedule/package-rules'
 
 /**
  * The instructor's session page (spec-waitlist.md §10):
@@ -41,6 +42,7 @@ const app = new Hono()
         capacity_buffer: d.capacityBuffer,
         credit_cost: d.creditCost,
         ...(await cancelWindowJson(tenantId(c), d)),
+        package_rule: namedRuleJson(d.packageRule),
         ...classSeatsJson(d),
         check_in_state: d.checkInState,
       })

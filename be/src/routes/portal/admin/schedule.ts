@@ -13,6 +13,8 @@ import { tenantId } from '../../../middleware/tenant'
 import { classSeatsJson, seatFields, staffBookingJson, staffBookingSchema } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
 import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-window'
+import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
+import { namedRuleJson } from '../../../services/schedule/package-rules'
 import {
   hasCapacity,
   NO_CAPACITY,
@@ -79,6 +81,8 @@ const createClassSchema = z
     instructor_pay_sgd: z.number().min(0).nullable().optional(),
     // Blank (omitted or null) follows the studio's class window.
     cancel_window_hours: cancelWindowHoursSchema.optional(),
+    // Omitted = accepts all.
+    package_rule: packageRuleSchema.optional(),
   })
   .refine(v => v.capacity_online + v.capacity_waitlist + v.capacity_buffer > 0, {
     message: 'capacity must be positive',
@@ -108,6 +112,12 @@ const updateClassSchema = z.object({
   instructor_pay_sgd: z.number().min(0).nullable().optional(),
   // Omitted = unchanged; an explicit null puts the class back on the studio's window.
   cancel_window_hours: cancelWindowHoursSchema.optional(),
+  // Omitted = unchanged. Saving one cancels the bookings paid by a package it
+  // no longer accepts, so the portal previews first.
+  package_rule: packageRuleSchema.optional(),
+  // Set: nothing is saved, and the answer is `{ would_cancel: n }` for the
+  // `package_rule` sent.
+  preview: z.boolean().optional(),
 })
 
 const seriesSchema = seriesTemplateFields
@@ -194,6 +204,7 @@ async function classRow(tenant: string, c: classesSvc.ClassRow) {
     credit_cost: c.creditCost,
     instructor_pay_sgd: c.instructorPaySgd == null ? null : Number(c.instructorPaySgd),
     ...(await cancelWindowJson(tenant, c)),
+    package_rule: await classPackageRuleJson(tenant, c),
     lifecycle: c.lifecycle,
     series_id: c.seriesId,
   }
@@ -241,6 +252,7 @@ const app = new Hono()
       capacity_buffer: d.capacityBuffer,
       credit_cost: d.creditCost,
       ...(await cancelWindowJson(tenantId(c), d)),
+      package_rule: namedRuleJson(d.packageRule),
       ...classSeatsJson(d),
       check_in_state: d.checkInState,
       created_at: d.createdAt.toISOString(),
@@ -320,6 +332,7 @@ const app = new Hono()
       creditCost: body.credit_cost,
       instructorPaySgd: body.instructor_pay_sgd ?? null,
       cancelWindowHours: body.cancel_window_hours ?? null,
+      ...(body.package_rule ? { packageRule: toPackageRule(body.package_rule) } : {}),
       createdByStaffId: staffId,
     })
     c.set('auditTarget' as any, { table: 'classes', id: row.id })
@@ -332,7 +345,13 @@ const app = new Hono()
     async c => {
       const { id } = c.req.valid('param')
       const body = c.req.valid('json')
-      const row = await classesSvc.updateClass(tenantId(c), id, {
+      if (body.preview) {
+        const wouldCancel = body.package_rule
+          ? await classesSvc.previewClassRuleChange(tenantId(c), id, toPackageRule(body.package_rule))
+          : 0
+        return c.json({ would_cancel: wouldCancel })
+      }
+      const patch: classesSvc.UpdateClassInput = {
         ...(body.class_type_id !== undefined ? { classTypeId: body.class_type_id } : {}),
         ...(body.main_instructor_id !== undefined
           ? { mainInstructorId: body.main_instructor_id }
@@ -359,7 +378,9 @@ const app = new Hono()
         ...(body.cancel_window_hours !== undefined
           ? { cancelWindowHours: body.cancel_window_hours }
           : {}),
-      })
+        ...(body.package_rule !== undefined ? { packageRule: toPackageRule(body.package_rule) } : {}),
+      }
+      const row = await classesSvc.updateClass(tenantId(c), id, patch, c.get('staffUserId'))
       c.set('auditTarget' as any, { table: 'classes', id })
       return c.json(await classRow(tenantId(c), row))
     },
@@ -424,6 +445,14 @@ const app = new Hono()
     })
     c.set('auditTarget' as any, { table: 'class_series', id })
     return c.json({ series: seriesRow(res.series), class_ids: res.classIds })
+  })
+  // The rule every class the series makes from now on is given; its existing
+  // classes keep theirs (services/schedule/series.ts: setSeriesRule).
+  .put('/series/:id/package-rule', seriesParam, zValidator('json', packageRuleSchema), async c => {
+    const { id } = c.req.valid('param')
+    const series = await seriesSvc.setSeriesRule(tenantId(c), id, toPackageRule(c.req.valid('json')))
+    c.set('auditTarget' as any, { table: 'class_series', id })
+    return c.json(seriesRow(series))
   })
   .post('/series/:id/end', seriesParam, zValidator('json', endSchema), async c => {
     const { id } = c.req.valid('param')

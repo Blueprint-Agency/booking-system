@@ -11,12 +11,19 @@ export function notCoveredCopy(planLocationName: string | null): string {
 
 /**
  * `plan_expires_before_class`. Not a coverage problem: the package covers this
- * studio but runs out first. `creditsCanStart` is whether credits could step
- * in now; when they cannot, the member waits for the next package to start.
+ * studio but runs out first. Several packages may run at once, so there is no
+ * waiting for it to end: another package can be picked on the Book sheet.
  */
-export function planRunsOutCopy(creditsCanStart: boolean): string {
-  return (
-    "Your current package runs out before this class starts, so it can't cover it." +
-    (creditsCanStart ? "" : " Try again once it has ended and your next package is running.")
-  );
+export function planRunsOutCopy(): string {
+  return "Your current package runs out before this class starts, so it can't cover it.";
+}
+
+/**
+ * `not_accepted`: the class's Package rule does not take the package — the one
+ * picked, or (joining a waitlist, where none is picked) every one the member
+ * holds. Nothing about the package can change that, so the way on is the
+ * class detail, which names the packages it does take.
+ */
+export function notAcceptedCopy(): string {
+  return "Your package isn't accepted for this class. Tap the class to see which packages are.";
 }

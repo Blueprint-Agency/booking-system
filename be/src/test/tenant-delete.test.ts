@@ -93,6 +93,7 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
     class_series: async () => ({ start_time: '09:00', end_time: '10:00' }),
     workshop_days: async () => ({ starts_at: new Date().toISOString(), ends_at: later() }),
     class_series_supporting_instructors: async t => ({ series_id: await firstId('class_series', t) }),
+    class_series_rule_packages: async t => ({ series_id: await firstId('class_series', t) }),
     workshop_tier_days: async t => ({ workshop_day_id: await firstId('workshop_days', t) }),
     leave_conflicts: async t => {
       const pair = [

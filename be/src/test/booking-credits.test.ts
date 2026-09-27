@@ -512,15 +512,22 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
     const row = await bookingRow(await bookOk(ed, await addClass(one, { atSecond: true })))
     assert.equal(row.creditsOrSessionsUsed, 0)
 
-    // Without the Add-On the plan covers its Home Location only — and the
-    // bundle it holds is not silently spent instead.
+    // Without the Add-On the plan covers its Home Location only: picked there
+    // it is refused, and the bundle it holds is not spent in its place.
     const flo = await member(one, 'flo')
-    await give(one, flo, 'unlimited', { expiresAt: new Date(Date.now() + 30 * DAY) })
+    const plan = await give(one, flo, 'unlimited', { expiresAt: new Date(Date.now() + 30 * DAY) })
     const bundle = await give(one, flo, 'credit_bundle', { credits: 5 })
     const elsewhere = await addClass(one, { atSecond: true })
-    await expectStatus(await book(flo, elsewhere), 409, 'location_not_covered')
+    await expectStatus(await book(flo, elsewhere, { client_package_id: plan }), 409, 'location_not_covered')
     assert.equal((await bookingsOf(flo, elsewhere)).length, 0)
     assert.equal(await balanceOf(bundle), 5)
+
+    // Naming nothing, the Default payer is the bundle — the one package that
+    // can pay there — and it pays its credit.
+    const row2 = await bookingRow(await bookOk(flo, elsewhere))
+    assert.equal(row2.clientPackageId, bundle)
+    assert.equal(row2.creditsOrSessionsUsed, 1)
+    assert.equal(await balanceOf(bundle), 4)
     await assertLedger(bundle)
   })
 
@@ -578,11 +585,13 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
     assert.equal(await balanceOf(running), 5)
     await assertLedger(running)
 
-    // Dormant, but its 90 days would run out before a class further away than that.
+    // Dormant, but its 90 days would run out before a class further away than
+    // that. It holds credits enough; what it lacks is time, and the refusal is
+    // that package's own reason (be/docs/adr/0010), as the Book sheet shows it.
     const lu = await member(one, 'lu')
     const dormant = await give(one, lu, 'credit_bundle', { credits: 5 })
     const farOff = await addClass(one, { startsIn: 100 * DAY })
-    await expectStatus(await book(lu, farOff), 409, 'insufficient_credits')
+    await expectStatus(await book(lu, farOff), 409, 'plan_expires_before_class')
     assert.equal((await bookingsOf(lu, farOff)).length, 0)
     assert.equal(await balanceOf(dormant), 5)
     assert.equal((await pkg(dormant)).expiresAt, null)
@@ -1129,11 +1138,13 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
     await assertLedger(bundle)
   })
 
-  test('CRD-19 a refund into a spent bundle while an Unlimited Plan runs returns it to Dormant, and the cancel succeeds', async () => {
+  test('CRD-19 a refund into a spent bundle while an Unlimited Plan runs lands back on it with its expiry untouched, and the cancel succeeds', async () => {
     const oli = await member(one, 'oli')
     const bundle = await give(one, oli, 'credit_bundle', { credits: 1, purchasedAt: new Date(Date.now() - 2 * DAY) })
     const paidByBundle = await bookOk(oli, await addClass(one))
-    assert.equal((await pkg(bundle)).active, false)
+    const spent = await pkg(bundle)
+    assert.equal(spent.active, false)
+    assert.ok(spent.expiresAt, 'the bundle carries the stamp its booking gave it')
 
     // The plan, bought afterwards, Activates on the next booking.
     const plan = await give(one, oli, 'unlimited')
@@ -1145,8 +1156,9 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
 
     const back = await pkg(bundle)
     assert.equal(back.creditsOrSessionsRemaining, 1)
-    assert.equal(back.expiresAt, null, 'back to Dormant, not running beside the plan')
+    assert.equal(back.expiresAt?.getTime(), spent.expiresAt!.getTime(), 'its expiry is untouched, running beside the plan')
     assert.equal(back.active, true)
+    assert.ok((await pkg(plan)).expiresAt, 'the plan keeps running too')
     assert.equal((await bookingRow(paidByBundle)).refundOutcome, 'credit_returned')
     await assertLedger(bundle)
   })

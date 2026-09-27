@@ -348,15 +348,16 @@ function ClassCreditsSection({
       />
 
       {/* Nothing blocks a purchase on top of what the member holds: every
-          package waits Dormant and starts on the first booking after the one in
-          front has ended (§3). Only one class package runs at a time, and a
-          member with one running is told the new one will wait, not refused. */}
+          package waits Dormant and starts on the first booking it pays for
+          (§3). Several may run at once and the member picks which one pays on
+          the Book sheet, so a member holding one is told the new one waits
+          until they book with it, not refused. */}
       {subTab === "bundle" && (
         <>
           {(hasUnlimited || hasBundle) && (
             <p className={NOTE}>
               You already have a {hasUnlimited ? "class pass" : "credit bundle"}. A new bundle
-              starts on your first booking after it ends or runs out.
+              starts the first time you book a class with it.
             </p>
           )}
           {bundles.length === 0 ? (
@@ -375,14 +376,14 @@ function ClassCreditsSection({
         <>
           {hasBundle && !hasUnlimited && (
             <p className={NOTE}>
-              You still have class credits. A new pass starts on your first booking after
-              they run out or expire.
+              You still have class credits. A new pass starts the first time you book a
+              class with it.
             </p>
           )}
           {hasUnlimited && (
             <p className={NOTE}>
-              You already have an Unlimited pass. A new one starts on your first booking after
-              it ends, at the same home studio.
+              You already have an Unlimited pass. A new one starts the first time you book a
+              class with it, and can be for any home studio.
             </p>
           )}
           {unlimited.length === 0 ? (

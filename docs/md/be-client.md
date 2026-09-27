@@ -66,6 +66,8 @@ Resolution is server-side via `services/promotions/resolve.ts:bestPriceFor(paren
 
 **Cancellation Window** — every class in `/classes`, `/classes/:id` and `/me/classes`, and every row of `/me/bookings/upcoming`, `/me/bookings/past` and `/me/bookings/:id`, carries `effective_cancel_window_hours`: that class's own window if staff set one, else the studio's `class_window_hours`, read now (#313, `be/CONTEXT.md` § Cancellation Window). The member app states and gates a class's cancel by it, never by the studio-wide number.
 
+**Package rule** (`be/CONTEXT.md` § Package rule) — every class in `/classes` and `/me/classes` carries only `restricted: boolean` (its rule is not *accepts all*), so a row can say "Some packages". `/classes/:id` and the authenticated `/me/classes/:id` carry the rule itself: `package_rule: { mode: 'all' | 'only' | 'except', packages: [{ id, name, kind, archived }] }`, the packages named Unlimited Plans first, then Credit Bundles, then Trials, each by name. Booking with a package the rule refuses, or with nothing it accepts, is `409 not_accepted`; so is joining the waitlist.
+
 **Waitlist shape** — every class in `/classes`, `/classes/:id` and the authenticated `/me/classes` carries its line (`spec-waitlist.md` §9):
 
 ```jsonc
@@ -107,7 +109,7 @@ All endpoints prefixed with `/api/v1/me`.
 | GET | `/` | Own profile: `{ name, email, phone, gender, dob, joined_at, status, waiver_signed }`. |
 | PATCH | `/` | Update `name`, `phone`, `gender`, `dob`. The password is changed through the auth pool (§4f), not here, and changing the email is not offered. |
 | GET | `/dashboard` | Aggregated home payload: next-up booking, package balances (credits + sessions remaining + days to expiry), referral conversions count. One round-trip for the `/account` landing page. |
-| GET | `/packages` | List `client_packages` for this client with each linked source (class_packages or pt_packages) and the `applied_promotion` frozen at purchase (if any). Each row carries `cross_location_paid_sgd` — null means the plan Covers its Home Location only. The `entitlements` block also carries `unlimited_plan_id` (the plan a **Cross-Location Add-On** would attach to), `unlimited_covers_both` (it already carries one) and `cross_location_rate_sgd` (the Global Policy rate right now), which is what the member surfaces quote the Add-On at. The same three appear on `/me/class-packages`, where the schedule's blocked-class nudge reads them. |
+| GET | `/packages` | List `client_packages` for this client with each linked source (class_packages or pt_packages) and the `applied_promotion` frozen at purchase (if any). Each row carries `cross_location_paid_sgd` — null means the plan Covers its Home Location only. The `entitlements` block also carries `unlimited_plan_id` (the plan a **Cross-Location Add-On** would attach to), `unlimited_covers_both` (it already carries one) and `cross_location_rate_sgd` (the Global Policy rate right now), which is what the member surfaces quote the Add-On at. A member may hold several plans at once (be/docs/adr/0010), so the block also carries `unlimited_plans: [{ id, location, covers_both, running }]` — every live plan — and `class_family_running` / `pt_family_running` mean "any package of that Family is running". The same fields appear on `/me/class-packages`, where the schedule's blocked-class nudge reads them. |
 | GET | `/cards` | The member's **Saved Cards** (#185): `{ cards: [{ id, brand, last4, exp_month, exp_year }] }`, read live from the payment provider for the `payment_customers` row matching `(tenant, client, current Payment Account)`. Never a card number — the brand, last four and expiry are the whole of what this platform sees. A member who has saved none, or who is not a Provider Customer yet, gets `{ cards: [] }`: an empty list is the honest answer and not an error. |
 | DELETE | `/cards/:id` | Detach one Saved Card, so it is no longer offered. `:id` is a provider payment-method id (`pm_…`), not a uuid. The service fetches the method and compares its Customer with **this** member's before detaching anything — a card that is not theirs, and an id that does not exist, both answer 404 `card_not_found`, so the route cannot be used to ask whether a given card exists at this studio. Detached, not deleted: the provider keeps its record against the payments already made with it, which Refunds still need. |
 | GET | `/packages/eligibility` | `{ trial_used: bool, holds_active_bundle: bool, holds_active_unlimited: bool }` — drives fe-client `/packages` gating per `fe-client-features.md` §6.1. `trial_used` is `true` if any `client_packages WHERE client_id=me AND kind='trial'` exists (active or expired). `holds_active_bundle` / `holds_active_unlimited` derive the "Bundle excludes Unlimited and vice versa" rule. Cheap query — call on every `/packages` page load. |
@@ -117,6 +119,7 @@ All endpoints prefixed with `/api/v1/me`.
 ### `catalog.ts` (authenticated browse)
 Same shape as `routes/public/catalog.ts` but adds:
 - `?include_my_bookings=true` — joins to indicate which sessions the client already booked.
+- `GET /classes/:id` — one class, signed in (be/docs/adr/0010): the public class detail plus `default_client_package_id` (the **Default payer**, or null when nothing is Eligible) and `my_packages: [{ id, name, kind, running, remaining, expires_at, activation_end_if_picked, location, eligible, reason }]` — every live class package of the member, classified against this class in default order (running soonest-ending first, then Dormant with Unlimited Plans before credit kinds, each in purchase order). `remaining` is null on an Unlimited Plan; `activation_end_if_picked` is the expiry a Dormant package would be stamped with if picked now (null on a running one); `location` is `{ id, name }` on an Unlimited Plan, else null; `reason` is null when `eligible`, else `not_accepted` / `location_not_covered` / `plan_expires_before_class` / `insufficient_credits`. What the Book sheet's package picker lists. A class that is not active is `404 class_not_found`. The class list stays anonymous and unchanged; packages are read only for the class opened. Service: `services/bookings/book.ts:memberPackagesForClass`.
 - `GET /instructors` — list of bookable instructors (powers the `/private-sessions` browse page per `fe-client-features.md` §5.1). Each row includes class-type eligibility for filter chips. **No stored availability calendar** — the PT Request form (§4d below) lets clients submit any preferred slot; admin schedules and resolves conflicts at approve time.
 
 ### `bookings.ts` (verification gate applies)
@@ -126,7 +129,7 @@ Same shape as `routes/public/catalog.ts` but adds:
 | GET | `/bookings/past` | `bookings WHERE client_id=me AND session.starts_at < now()`, any `state` — attended, no-show and cancelled all appear, each with its `state` and `check_in_state` (fe-client-features §8.3) |
 | GET | `/bookings/attendance` | `?period=month\|quarter\|year\|all` (default `month`) — the "Your practice" summary (#317, fe-client-features §8.1). `{ period, from, to, attended, previous_attended, buckets: [{ starts_on, attended }], top_class_types: [{ name, attended }], last_attended_at }`. Counts `kind='class'` bookings with `check_in_state='attended'` — from `bookings`, not `check_ins`, so imported history counts; PT and workshops are other kinds, corporate sessions are not bookings. Grouped by the class's start on the Tenant's own calendar, today from the shared clock. `month`: this calendar month in Monday weeks; `quarter`: this month and the two before, in weeks; `year`: this calendar year by month; `all`: by year from the first attended class. The first bucket is clipped to the period's first day; `from`/`to` and `starts_on` are plain dates, `to` inclusive. `previous_attended` is the equal-length period before (last month, the three months before, last year), `null` for `all`. `top_class_types` is at most 3, most attended first, then by name. `last_attended_at` is the start of the most recent attended class in any period. Service: `services/bookings/attendance.ts`, calendar `attendance-periods.ts` |
 | GET | `/bookings/:id` | Detail incl. `qr_token` + `code`. The app draws the QR from the token itself; there is no server-rendered QR image (#192). Also `cancel_preview: { late, credit_back, credits, unlimited } \| null` (#318): what `DELETE /bookings/:id` would do now — the same evaluation and settlement, without writing. `null` when the member could not cancel it now (not confirmed, attended, or the class has started). Service: `services/bookings/cancel-preview.ts` |
-| POST | `/bookings/class` | `{ class_id, use_credits? }` — see §4a class booking flow. The server picks the package; `use_credits: true` is the one exception (spec §2), asking to pay with credits for a class the member's Unlimited Plan does not cover. |
+| POST | `/bookings/class` | `{ class_id, client_package_id? }`, strict — see §4a class booking flow. `client_package_id` is the package the member picked on the Book sheet; absent, the **Default payer** pays (be/docs/adr/0010). A picked package that is not one of the member's live class packages is `404 client_package_not_found`; one that is Ineligible is refused with its own reason. `use_credits` is gone: a body still carrying it (or any other unknown key) is `400`. `201 { booking_id, qr_token, code, paid_with: { client_package_id, name, kind } }`. |
 | POST | `/bookings/workshop` | `{ workshop_id, workshop_tier_id }` — initiates Stripe checkout; see §4b |
 | DELETE | `/bookings/:id` | Self-cancel — see §4c |
 
@@ -154,7 +157,7 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 ### `purchases.ts` (verification gate applies)
 | Method | Path | Effect |
 |---|---|---|
-| POST | `/checkout/package` | `{ package_kind: 'class' \| 'pt' \| 'corporate', package_id, promo_code?, location_id? }` — creates Stripe checkout, returns `{ url }`. `location_id` is the Home Location the member picked on the review page: **required** for `class_packages.kind='unlimited'` (400 `unlimited_requires_location`), refused for every other kind (400 `location_only_applies_to_unlimited`), and 409 `unlimited_renewal_location_mismatch` when the client holds a live Unlimited Plan at another Location (§6). A member holds one Activated plan plus at most one Dormant, so a third live plan is refused with 409 `unlimited_limit_reached` (§6) — the other Location is the Add-On, not another plan. The same rules run again in the grant; running them here is what stops a member being charged for a purchase the webhook would refuse. It rides the intent metadata as `location_id` so the webhook can freeze it onto `client_packages`. **Server resolves the best-price-wins promotion and the intent amount is derived from `effective_price_sgd`** — client-supplied price is never trusted. For `class_packages.kind='trial'`: pre-check the `(client_id) WHERE kind='trial'` partial unique index — 409 `trial_already_used` if the client already holds one. The intent metadata carries `applied_promotion_id` so the webhook can freeze it onto `client_packages`. **`package_kind='corporate'`** is paid (no promotions); on success the webhook records a `stripe_payments` row (kind `corporate_package`) and auto-creates ONE pending `corporate_requests` row — it does **not** insert a `client_packages` row (no credits; the request is the entitlement). See §4e. |
+| POST | `/checkout/package` | `{ package_kind: 'class' \| 'pt' \| 'corporate', package_id, promo_code?, location_id? }` — creates Stripe checkout, returns `{ url }`. `location_id` is the Home Location the member picked on the review page: **required** for `class_packages.kind='unlimited'` (400 `unlimited_requires_location`), refused for every other kind (400 `location_only_applies_to_unlimited`). A member may hold any number of Unlimited Plans, homed at any Locations — a second plan, a renewal at another Location, a third live plan are all sold and land Dormant (be/docs/adr/0010 retired `unlimited_renewal_location_mismatch` and `unlimited_limit_reached`). The same rules run again in the grant; running them here is what stops a member being charged for a purchase the webhook would refuse. It rides the intent metadata as `location_id` so the webhook can freeze it onto `client_packages`. **Server resolves the best-price-wins promotion and the intent amount is derived from `effective_price_sgd`** — client-supplied price is never trusted. For `class_packages.kind='trial'`: pre-check the `(client_id) WHERE kind='trial'` partial unique index — 409 `trial_already_used` if the client already holds one. The intent metadata carries `applied_promotion_id` so the webhook can freeze it onto `client_packages`. **`package_kind='corporate'`** is paid (no promotions); on success the webhook records a `stripe_payments` row (kind `corporate_package`) and auto-creates ONE pending `corporate_requests` row — it does **not** insert a `client_packages` row (no credits; the request is the entitlement). See §4e. |
 | POST | `/checkout/cross-location/quote` | `{ client_package_id }` — prices the **Cross-Location Add-On** against a plan the member already holds (§5). Returns `{ client_package_id, months, rate_sgd, price_sgd }`: months is the plan's whole months remaining with part months rounded up, or its full stored Duration while Dormant, and the rate is read from Global Policy at this moment. 400 `cross_location_requires_unlimited`, 400 `cross_location_plan_not_live`, 409 `cross_location_already_added` — one Add-On per plan, never two. |
 | POST | `/checkout/cross-location` | `{ client_package_id }` — the same refusals, then its own Stripe session carrying `kind='cross_location_add_on'` and `client_package_id` in the metadata; the webhook fills `client_packages.cross_location_paid_sgd` on the named plan. Bought **with** a plan instead, it rides `/checkout/package` as `cross_location_add_on: true` — one session, two line items, `amount_sgd` (plan) plus `cross_location_sgd` (Add-On) equalling the charge. A Promo Code discounts the plan line only: the Add-On is a Global Policy rate, not a product. |
 | POST | `/checkout/workshop` | `{ workshop_id, workshop_tier_id }` — same. Server resolves the workshop's best-price-wins promotion plus tier-level early-bird (early_bird wins over regular, then promotion further reduces if applicable — see §4b for the ordering). Free workshops (effective_price = 0) **bypass Stripe entirely** and route through `/workshops/:id/register` semantics inline. |
@@ -188,7 +191,7 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 `POST /me/bookings/class`:
 
 ```
-services/bookings/book.ts:bookClass({ client_id, class_id, use_credits? })
+services/bookings/book.ts:bookClass({ client_id, class_id, client_package_id? })
   ↓
 tx start
 1. Verify waiver_signatures exists for client_id → else 403 waiver_unsigned
@@ -197,17 +200,21 @@ tx start
 3. SELECT bookings count WHERE class_id=X AND state='confirmed' → if >= class.capacity: 409 class_full
 4. Sweep the member's own expired-but-still-active rows (services/packages/activation.ts),
    then SELECT client_packages FOR UPDATE WHERE client_id=me AND active
-   → services/packages/selection.ts:selectPackage (pure; spec §2, ADR 0004)
-   - one Activated package per class family (bundle + Unlimited + trial). If one
-     is running it is the ONLY candidate: a running plan must cover the Location
-     (409 location_not_covered) and last to the class (409 plan_expires_before_class);
-     a running bundle must have enough credits (409 insufficient_credits) and last
-     to the class. Nothing waiting behind it starts, use_credits or not.
-   - nothing running: the Dormant package bought first starts on this booking —
-     a plan covering the Location (prospective test: now + duration_months >= class
-     start), unless use_credits, then a bundle/trial (now + validity_days >= class
-     start). A plan that covers nothing here → 409 location_not_covered, NOT a
-     silent fall-through to credits.
+   → services/packages/selection.ts:selectPackage (pure; be/docs/adr/0010)
+   - CLASSIFY every live class package (bundle + Unlimited + trial; any number may
+     be running at once): Eligible, or the first reason it is not —
+       location_not_covered       an Unlimited Plan that does not Cover the class's
+                                  Location (Home Location, or any with the Add-On)
+       plan_expires_before_class  running: expires_at < class start;
+                                  Dormant: now + duration_months / validity_days
+                                  < class start (prospective test)
+       insufficient_credits       a credit kind with remaining < credit_cost
+   - CHOOSE: client_package_id if sent — not one of the member's live class
+     packages → 404 client_package_not_found; Ineligible → 409 with its reason.
+     Otherwise the Default payer: the first Eligible package in default order —
+     running soonest-ending first, then Dormant with Unlimited before credit
+     kinds, each in purchase order. Nothing Eligible → 409 with the reason of the
+     first package in default order (none held → insufficient_credits).
 5. Insert bookings row: kind='class', class_id, client_package_id, state='confirmed',
    credits_or_sessions_used = (credit_bundle ? credit_cost : NULL),
    refund_outcome='n_a', check_in_state='pending'
@@ -215,12 +222,12 @@ tx start
 7. If credit_bundle: UPDATE client_packages SET credits_or_sessions_remaining -= credit_cost
 7b. Activation (§3, ADR 0004): if the chosen package was Dormant, UPDATE client_packages
    SET expires_at = booking moment + duration_months (Unlimited) or + validity_days
-   (every other kind). One-way — no cancellation un-stamps it. A second Activated
-   package in the family trips the partial unique index → 409 family_already_activated.
+   (every other kind). One-way — no cancellation un-stamps it. Other packages of the
+   family may be running beside it (ADR 0010); nothing refuses a second.
 8. enqueueEmail('class_booking_confirmed', client.email, { class_name, date, instructor, location, qr_url, code, credits_remaining })
 tx commit
 
-Returns { booking_id, qr_token, code }
+Returns { booking_id, qr_token, code, paid_with: { client_package_id, name, kind } }
 ```
 
 ### 4b. Workshop booking flow (paid + free paths)
@@ -365,9 +372,9 @@ tx start
    WHERE id=client_package_id AND client_id=ctx.client_id.
    Required: kind='pt', not expired, session_type matches, credits_or_sessions_remaining >=
    (1 for 1on1, 2 for 2on1) → else 422 insufficient_pt_sessions.
-   One Activated PT package at a time (ADR 0004): if a DIFFERENT PT package is running
-   → 409 pt_package_not_current. If the chosen one is Dormant, this request Activates it:
-   expires_at = now + validity_days (409 family_already_activated on a race).
+   If the chosen one is Dormant, this request Activates it: expires_at = now +
+   validity_days — whether or not another PT package is running (ADR 0010: any number
+   of PT packages may run at once; pt_package_not_current is retired).
 5. DEBIT the package: credits_or_sessions_remaining -= (1 for 1on1, 2 for 2on1).
    The debit is recorded against pt_requests.id via the manual_adjustments shape with
    reason='pt_request_submit' so cancellation can reverse it precisely.
@@ -403,10 +410,10 @@ services/packages/purchase.ts
    - class_packages.kind='trial' → reject 409 trial_already_used if client_packages row with kind='trial'
      exists for this client (active OR expired). Defence-in-depth: the partial unique index will also catch.
    - class_packages.kind='unlimited' → assertPurchasableLocation(): location_id is REQUIRED
-     (409 unlimited_requires_location), one Activated plus at most one Dormant plan per client
-     (409 unlimited_limit_reached on a third), and a renewal bought while a live plan exists may only pick
-     that plan's own Home Location (409 unlimited_renewal_location_mismatch otherwise) — see
-     `class-booking-lifecycle.md` §1a and `spec-pre-launch-batch.md` §6
+     (409 unlimited_requires_location). Nothing else: a member may hold any number of plans,
+     homed at any Locations, running or Dormant (be/docs/adr/0010 retired
+     unlimited_limit_reached and unlimited_renewal_location_mismatch, and supersedes
+     `spec-pre-launch-batch.md` §6)
    - pt_packages.instructor_bound=true → resolveBoundInstructor(): instructor_id is REQUIRED
      (400 pt_bound_requires_instructor) and must be an active instructor of this Tenant
      (400 instructor_not_active). On an unbound PT package, and on every class package,
@@ -456,11 +463,10 @@ tx start
    duration_months = the catalogue's duration, frozen (unlimited only),
    cross_location_paid_sgd = intent.metadata.cross_location_sgd (unlimited only, nullable),
    credits_or_sessions_remaining = (credit_bundle | trial ? credits : pt ? num_sessions : NULL),
-   expires_at = (credit_bundle ? now + validity_days
-                : trial ? (validity_days IS NULL ? NULL : now + validity_days)
-                : unlimited, no live plan in front ? now + duration_months  — NOT Dormant, real end date
-                : unlimited, a live plan already running ? NULL             — Dormant, clock waits
-                : NULL),
+   validity_days = the catalogue's validity, frozen (every kind but unlimited),
+   expires_at = NULL on every kind — every purchase lands Dormant and Activates on the
+                first booking it pays for (be/docs/adr/0004), whatever else the member
+                holds or has running (be/docs/adr/0010),
    purchased_at = now(),
    amount_paid_sgd = stripe_payments.amount_sgd,
    purchase_id = P
@@ -501,7 +507,7 @@ Four paths send, one deliberately does not:
 The slug is decided by the granted package's **kind**, not by which code path granted it — a *priced* trial still goes through Stripe and the webhook, so branching on the path would send it the paid-package copy. `services/notifications/purchase-email.ts:composePurchaseEmail()` builds two whole composed sentences per send (the renderer is substitution-only with no conditionals, so a fragment-shaped variable produces a wrong sentence for some kind):
 
 - `contents_line` — "Unlimited classes" · "10 class credits" · "5 private sessions" · "3 classes" (trial, which counts classes rather than credits — a first-timer has never heard of a credit).
-- `validity_line` — **reads `isDormant`, not the package kind.** A Dormant Unlimited Plan (bought while a live plan is still running) is the only purchase with no date, so it alone gets "Valid 6 months from your first class — your plan activates when you make your first booking," reading the frozen `duration_months`. **An Unlimited Plan bought with no live plan in front is not Dormant** — its clock started at purchase, it has a real end date already stamped on the row, and its email prints that date exactly like a Credit Bundle's does. This is a deliberate deviation from an earlier reading of the spec that branched on package kind alone; the shipped code branches on `isDormant` because the promise "activates on your first booking" would otherwise be printed on a plan that had already started.
+- `validity_line` — **reads `isDormant`, not the package kind.** A Dormant purchase gets "Valid {Duration or validity} from your first class — your package activates when you make your first booking," reading the frozen `duration_months` or `validity_days`; a row that already has an expiry prints "Expires {date}". Since every purchase lands Dormant (be/docs/adr/0004) — whatever else the member holds, since several may run at once (be/docs/adr/0010) — a purchase email is the Dormant sentence in practice. *(This used to read that only an Unlimited Plan bought behind a live plan was Dormant, and one bought with nothing in front carried a real end date; both halves predate ADR 0004.)* This is a deliberate deviation from an earlier reading of the spec that branched on package kind alone; the shipped code branches on `isDormant` because the promise "activates on your first booking" would otherwise be printed on a plan that had already started.
 
 `receipt_url` is never empty: a paid purchase gets the Stripe receipt (retrieved with the latest charge expanded, since the webhook's own event carries none), a free one falls back to the account page with neutral anchor text — an escaped empty string in an href is a visible link to nowhere, which is not a safe default here.
 

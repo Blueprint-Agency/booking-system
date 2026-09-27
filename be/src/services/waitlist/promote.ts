@@ -67,7 +67,8 @@ export async function promoteFromWaitlist(
       continue
     }
 
-    const paid = await payAndBook(tx, tenantId, cls, { clientId: next.clientId, seat: 'online', useCredits: false, now })
+    // Nobody is there to pick, so the Default payer pays.
+    const paid = await payAndBook(tx, tenantId, cls, { clientId: next.clientId, seat: 'online', clientPackageId: null, now })
     if (!paid.ok) {
       outcomes.set(next.id, paid.refusal)
       continue

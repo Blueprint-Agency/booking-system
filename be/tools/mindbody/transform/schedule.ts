@@ -72,7 +72,7 @@ export function mapSchedule(input: {
   /** Those of them who already have an instructor profile. */
   instructorIds: Set<string>
   ownerId: string
-  /** The `client_packages` rows already mapped: a booking is paid by the member's running one, or the one waiting behind it. */
+  /** The `client_packages` rows already mapped: a booking is paid by one the member is running, or else a Dormant one. */
   clientPackages: Row[]
   /** What members hold in Mindbody, to say whether a seat nothing here pays for was unpaid there too. */
   holdings: HoldingRow[]
@@ -251,30 +251,34 @@ export function mapSchedule(input: {
   /* ── Who is already booked ─────────────────────────────────────────────── */
 
   /**
-   * The package that pays for a member's session: the one running in its
-   * Family, where it lasts until then; else the first one waiting behind it
-   * that will still be running then — it starts when the running one ends (or
-   * today, where none runs) and lasts its whole validity. A package that runs
-   * out before the session cannot pay for it — the platform refuses exactly that
-   * (`plan_expires_before_class`) — so a seat nothing can pay for is imported
-   * unpaid and listed, rather than pinned to a package the studio could never charge.
+   * The package that pays for a member's session: of the packages running in
+   * its Family that Cover its Location and last until it, the soonest-ending;
+   * else the first Dormant one that Covers it, in the platform's Default payer
+   * order (Unlimited Plans before credits, then as bought). A Dormant package
+   * has no end yet — importing a booking on it does not start its clock — and
+   * its validity counted from the session's own day always reaches the session.
+   *
+   * A package that runs out before the session cannot pay for it
+   * (`plan_expires_before_class`), nor can a plan homed at another Location
+   * without the Cross-Location Add-On (`location_not_covered`) — the platform
+   * refuses exactly those — so a seat nothing can pay for is imported unpaid and
+   * listed, rather than pinned to a package the studio could never charge.
+   * `locationId` is null for a PT session: only an Unlimited Plan has a Location.
    */
-  const payingPackage = (clientId: string, family: 'class' | 'pt', startsAt: Date) => {
+  const payingPackage = (clientId: string, family: 'class' | 'pt', startsAt: Date, locationId: unknown = null) => {
+    // As `covers` in `src/services/packages/selection.ts`: a plan Covers its Home Location, and every one with the Add-On.
+    const covers = (p: Row) =>
+      p.kind !== 'unlimited' || locationId == null || p.location_id === locationId || p.cross_location_paid_sgd != null
     const mine = input.clientPackages.filter(
-      p => p.client_id === ids.clients![clientId] && p.active === true && (p.kind === 'pt') === (family === 'pt'),
+      p => p.client_id === ids.clients![clientId] && p.active === true && (p.kind === 'pt') === (family === 'pt') && covers(p),
     )
-    const running = mine.find(p => p.expires_at != null)
-    if (running && String(running.expires_at) >= startsAt.toISOString()) return running
-    // The waiting ones run one after another, in the order they queue.
-    let until = running ? new Date(String(running.expires_at)) : asOf
-    for (const p of mine.filter(p => p.expires_at == null)) {
-      const from = until
-      until = new Date(from)
-      if (p.duration_months != null) until.setUTCMonth(until.getUTCMonth() + Number(p.duration_months))
-      else until.setTime(until.getTime() + Number(p.validity_days) * 86_400_000)
-      if (startsAt > from && startsAt <= until) return p
-    }
-    return undefined
+    const lasting = mine
+      .filter(p => p.expires_at != null && String(p.expires_at) >= startsAt.toISOString())
+      .sort((a, b) => String(a.expires_at).localeCompare(String(b.expires_at)))
+    const dormant = mine
+      .filter(p => p.expires_at == null)
+      .sort((a, b) => Number(b.kind === 'unlimited') - Number(a.kind === 'unlimited') || String(a.purchased_at).localeCompare(String(b.purchased_at)))
+    return lasting[0] ?? dormant[0]
   }
 
   /**
@@ -299,8 +303,17 @@ export function mapSchedule(input: {
   ids.classes ??= {}
   ids.bookings ??= {}
   const bookings: Row[] = []
-  const booking = (key: string, clientId: string, target: Row, family: 'class' | 'pt', label: string, startsAt: Date, on: CalendarDate): void => {
-    const pkg = payingPackage(clientId, family, startsAt)
+  const booking = (
+    key: string,
+    clientId: string,
+    target: Row,
+    family: 'class' | 'pt',
+    label: string,
+    startsAt: Date,
+    on: CalendarDate,
+    locationId: unknown = null,
+  ): void => {
+    const pkg = payingPackage(clientId, family, startsAt, locationId)
     if (!pkg) {
       const what = family === 'pt' ? 'PT' : 'class'
       const who = `${clientId} ${memberNames.get(clientId)}`
@@ -309,7 +322,7 @@ export function mapSchedule(input: {
       notes.push(
         `${who}: booked into ${label} with no ${what} package to pay for it — ` +
           (held
-            ? 'unmatched: Mindbody has something to pay for it that did not come across as a package lasting until then'
+            ? 'unmatched: Mindbody has something to pay for it that did not come across as a package lasting until then and Covering its Location'
             : 'unpaid in Mindbody too: nothing they hold there lasts until then'),
       )
     }
@@ -395,7 +408,7 @@ export function mapSchedule(input: {
       continue
     }
     seats.add(r.clientId)
-    booking(`${cls.id}/${r.clientId}`, r.clientId, { class_id: cls.id }, 'class', label, instant(cls.date, cls.start), cls.date)
+    booking(`${cls.id}/${r.clientId}`, r.clientId, { class_id: cls.id }, 'class', label, instant(cls.date, cls.start), cls.date, cls.row.location_id)
   }
   for (const cls of classes.values()) {
     ids.classes[cls.label] = cls.id

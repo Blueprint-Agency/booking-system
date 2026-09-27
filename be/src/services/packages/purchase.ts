@@ -83,33 +83,19 @@ type PackageKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
 /**
  * The Home Location this purchase lands on — null for every kind that has none.
  * Pure, so the grant and the checkout that precedes it apply exactly the same
- * rules (§1, §6). `livePlanLocations` carries one entry per live Unlimited Plan,
- * so its length is the plan count the §6 limit is checked against.
+ * rules (§1).
  *
- * A renewal must sit at the Home Location of the plan it renews. That is what
- * keeps a member's two plans at one Location, which is in turn what stops
- * booking from reaching past an Activated plan to a Dormant one and running two
- * Activated plans into the partial unique index. A plan bought after the old one
- * has ended is a fresh purchase and picks freely.
+ * A member may hold any number of Unlimited Plans, homed wherever they like
+ * (be/docs/adr/0010): several run at once and the member picks which one pays,
+ * so a plan for another Location no longer has anything to collide with. The
+ * Cross-Location Add-On stays the way to make one plan Cover every Location.
  */
-export function locationForPurchase(
-  kind: PackageKind,
-  locationId: string | null | undefined,
-  livePlanLocations: (string | null)[],
-): string | null {
+export function locationForPurchase(kind: PackageKind, locationId: string | null | undefined): string | null {
   if (kind !== 'unlimited') {
     if (locationId) throw new BadRequestError('location_only_applies_to_unlimited')
     return null
   }
   if (!locationId) throw new BadRequestError('unlimited_requires_location')
-  // One Activated plan plus at most one Dormant (§6). The partial unique index
-  // holds the Activated half; an index cannot usefully count to two, so the
-  // Dormant half is this. Wanting the other Location means the Add-On, not a
-  // third plan.
-  if (livePlanLocations.length >= 2) throw new ConflictError('unlimited_limit_reached')
-  if (livePlanLocations.some(l => l !== null && l !== locationId)) {
-    throw new ConflictError('unlimited_renewal_location_mismatch')
-  }
   return locationId
 }
 
@@ -238,18 +224,12 @@ export function homeLocationMove(
 }
 
 /**
- * `locationForPurchase` against the client's live plans. Checkout calls this
- * BEFORE Stripe: the grant applies the same rules, but only once the webhook
- * fires, and a refusal there charges a member for nothing.
+ * `locationForPurchase`, run by checkout BEFORE Stripe: the grant applies the
+ * same rule, but only once the webhook fires, and a refusal there charges a
+ * member for nothing.
  */
-export async function assertPurchasableLocation(
-  tenantId: string,
-  clientId: string,
-  kind: PackageKind,
-  locationId: string | null | undefined,
-): Promise<void> {
-  const live = kind === 'unlimited' ? await liveUnlimited(tenantId, clientId, clockNow()) : []
-  locationForPurchase(kind, locationId, live.map(r => r.locationId))
+export function assertPurchasableLocation(kind: PackageKind, locationId: string | null | undefined): void {
+  locationForPurchase(kind, locationId)
 }
 
 /**
@@ -527,8 +507,7 @@ export async function grantPackage(
   let durationMonths: number | null = null
   let validityDays: number | null = null
 
-  const live = kind === 'unlimited' ? await liveUnlimited(tenantId, input.clientId, now) : []
-  const locationId = locationForPurchase(kind, input.locationId, live.map(r => r.locationId))
+  const locationId = locationForPurchase(kind, input.locationId)
   // The same rule checkout already applied, applied again against the roster as
   // it stands now. Checkout is what saves the member from paying for a refusal;
   // this is what makes the refusal true of the row that actually lands.

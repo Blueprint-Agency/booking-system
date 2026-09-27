@@ -6,6 +6,7 @@ import { clientGenderEnum } from '../../db/enums'
 import { editOwnProfile } from '../../services/clients/edit-profile'
 import {
   getClientEntitlements,
+  serializeUnlimitedPlan,
   listClientPackages,
 } from '../../services/packages/entitlements'
 import {
@@ -115,9 +116,11 @@ const app = new Hono()
         // carries one, and the rate it prices at (§5).
         unlimited_plan_id: ent.unlimitedPlanId,
         unlimited_covers_both: ent.unlimitedCoversBoth,
+        unlimited_plans: ent.unlimitedPlans.map(serializeUnlimitedPlan),
         cross_location_rate_sgd: ent.crossLocationRateSgd,
         dormant: ent.dormant,
-        // One package per family runs at a time (§3); these say whether one is.
+        // Several packages may run per Family (be/docs/adr/0010); these say
+        // whether any is.
         class_family_running: ent.classFamilyRunning,
         pt_family_running: ent.ptFamilyRunning,
         has_active_bundle_credits: ent.hasActiveBundleCredits,

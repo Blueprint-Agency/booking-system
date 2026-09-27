@@ -6,6 +6,14 @@ import { ArrowLeft, Loader2, Repeat, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
 import { CancelWindowField } from "@/components/schedule/cancel-window-field";
+import { PackageRuleField } from "@/components/schedule/package-rule-field";
+import {
+  ACCEPTS_ALL_DRAFT,
+  SERIES_RULE_HINT,
+  packageRuleBody,
+  packageRuleProblem,
+  type PackageRuleDraft,
+} from "@/lib/package-rule";
 import {
   RepeatRangeFields,
   RepeatWeeklySwitch,
@@ -83,6 +91,7 @@ function NewClassForm() {
   });
   const [creditCost, setCreditCost] = useState("1");
   const [cancelWindow, setCancelWindow] = useState("");
+  const [packageRule, setPackageRule] = useState<PackageRuleDraft>(ACCEPTS_ALL_DRAFT);
   const [difficulty, setDifficulty] = useState<ClassTypeDifficulty>("general");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -138,6 +147,8 @@ function NewClassForm() {
     if (endTime <= startTime) return "End time must be after start time.";
     const ownWindow = parseCancelWindow(cancelWindow);
     if (!ownWindow.ok) return ownWindow.message;
+    const ruleProblem = packageRuleProblem(packageRule);
+    if (ruleProblem) return ruleProblem;
     return {
       class_type_id: classTypeId,
       main_instructor_id: mainInstructorId,
@@ -156,6 +167,7 @@ function NewClassForm() {
       capacity_buffer: capacity.buffer,
       credit_cost: Number(creditCost),
       cancel_window_hours: ownWindow.hours,
+      package_rule: packageRuleBody(packageRule),
       first_date: date,
       last_date: lastDate,
       excluded_dates: [],
@@ -186,6 +198,11 @@ function NewClassForm() {
       setSubmitError(ownWindow.message);
       return;
     }
+    const ruleProblem = packageRuleProblem(packageRule);
+    if (ruleProblem) {
+      setSubmitError(ruleProblem);
+      return;
+    }
 
     setSubmitting(true);
     setSubmitError(null);
@@ -207,6 +224,7 @@ function NewClassForm() {
         credit_cost: Number(creditCost),
         instructor_pay_sgd: payOrNull(mainPay),
         cancel_window_hours: ownWindow.hours,
+        package_rule: packageRuleBody(packageRule),
       });
       router.push("/admin/schedule");
     } catch (err) {
@@ -399,6 +417,12 @@ function NewClassForm() {
               value={cancelWindow}
               onChange={setCancelWindow}
               {...(repeat ? { hint: SERIES_WINDOW_HINT } : {})}
+            />
+            <PackageRuleField
+              role="admin"
+              value={packageRule}
+              onChange={setPackageRule}
+              {...(repeat ? { hint: SERIES_RULE_HINT } : {})}
             />
           </div>
         </section>

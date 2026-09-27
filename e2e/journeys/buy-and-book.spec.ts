@@ -32,10 +32,11 @@ test('PAY-16 a member buys a plan with a test card and books a class', async ({ 
     .filter({ has: page.getByRole('button', { name: 'Book Now' }) })
     .last()
   await row.getByRole('button', { name: 'Book Now' }).locator('visible=true').click()
-  await page
-    .getByRole('dialog', { name: `Book ${catalogue.buyClassType}?` })
-    .getByRole('button', { name: 'Book class' })
-    .click()
+  const sheet = page.getByRole('dialog', { name: `Book ${catalogue.buyClassType}?` })
+  // The Book sheet lists the member's packages with the one that will pay
+  // already picked, so booking stays one tap: here, the plan just bought.
+  await expect(sheet.getByRole('radio', { name: catalogue.packageName })).toBeChecked()
+  await sheet.getByRole('button', { name: 'Book class' }).click()
   await expect(row.getByText('Booked', { exact: true }).locator('visible=true')).toBeVisible()
 })
 

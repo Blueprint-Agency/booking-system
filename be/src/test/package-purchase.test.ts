@@ -516,7 +516,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     await assertNothingSold(zed, asked)
   })
 
-  test("PAY-04 with a live Unlimited Plan, the checkout's Home Location is locked to the plan's", async () => {
+  test("PAY-04 with a live Unlimited Plan, the member's entitlements name the plan's Home Location", async () => {
     const kim = await member(one)
     await holds(one, kim, 'unlimited', { locationId: one.secondLocationId, expiresAt: new Date(Date.now() + 30 * DAY) })
 
@@ -531,31 +531,41 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal((await get(fay, '/api/v1/me/class-packages')).entitlements.unlimited_location, null)
   })
 
-  test('PAY-05 a renewal at a different Location is refused; at the same Location it is sold and waits Dormant', async () => {
+  /** Buy a plan and return the one new row it granted — ids, not the catalogue, tell several plans apart. */
+  async function buyPlan(who: Member, locationId: string) {
+    const held = new Set((await packagesOf(who)).map(r => r.id))
+    await expectStatus(await buyClass(who, one.unlimitedId, { location_id: locationId }), 200)
+    await expectStatus(await deliver(), 200)
+    const added = (await packagesOf(who)).filter(r => !held.has(r.id))
+    assert.equal(added.length, 1, 'the webhook granted exactly one plan')
+    return added[0]!
+  }
+
+  test('PAY-05 a renewal is sold at the live plan’s own Location or at another one, and waits Dormant', async () => {
     const ray = await member(one)
     const current = await holds(one, ray, 'unlimited', { locationId: one.locationId, expiresAt: new Date(Date.now() + 20 * DAY) })
-    const asked = sessionsAsked()
-    await expectStatus(
-      await buyClass(ray, one.unlimitedId, { location_id: one.secondLocationId }),
-      409,
-      'unlimited_renewal_location_mismatch',
-    )
-    await assertNothingSold(ray, asked, 1)
 
-    const renewal = await purchase(ray, { package_kind: 'class', package_id: one.unlimitedId, location_id: one.locationId })
+    const elsewhere = await buyPlan(ray, one.secondLocationId)
+    assert.equal(elsewhere.locationId, one.secondLocationId, 'homed where the member asked (be/docs/adr/0010)')
+    assert.equal(elsewhere.expiresAt, null, 'it waits Dormant')
+
+    const renewal = await buyPlan(ray, one.locationId)
     assert.notEqual(renewal.id, current)
     assert.equal(renewal.locationId, one.locationId)
     assert.equal(renewal.expiresAt, null, 'the renewal waits Dormant')
     assert.ok((await pkg(current)).expiresAt, 'the current plan is untouched')
   })
 
-  test('PAY-15 holding an Activated plan and a Dormant renewal, a third plan is refused 409 unlimited_limit_reached before any charge', async () => {
+  test('PAY-15 holding an Activated plan and a Dormant renewal, a third plan is sold and waits Dormant beside them', async () => {
     const amy = await member(one)
-    await holds(one, amy, 'unlimited', { expiresAt: new Date(Date.now() + 20 * DAY) })
-    await holds(one, amy, 'unlimited')
-    const asked = sessionsAsked()
-    await expectStatus(await buyClass(amy, one.unlimitedId, { location_id: one.locationId }), 409, 'unlimited_limit_reached')
-    await assertNothingSold(amy, asked, 2)
+    const running = await holds(one, amy, 'unlimited', { expiresAt: new Date(Date.now() + 20 * DAY) })
+    const waiting = await holds(one, amy, 'unlimited')
+    const third = await buyPlan(amy, one.locationId)
+    assert.equal(third.expiresAt, null)
+    assert.equal(third.active, true)
+    assert.equal((await packagesOf(amy)).length, 3, 'no cap on live plans any more')
+    assert.ok((await pkg(running)).expiresAt, 'the running plan is untouched')
+    assert.equal((await pkg(waiting)).expiresAt, null)
   })
 
   test('PKG-06 a member holding a Trial Pass or a PT package may buy a Credit Bundle, an Unlimited Plan or a PT package alongside it', async () => {

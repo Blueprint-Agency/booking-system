@@ -7,6 +7,7 @@
 
 import { ApiError, type Api } from "@/lib/api";
 import { fetchFeatureFlags, WAITLIST_FLAG } from "@/lib/feature-flags";
+import { NOT_ACCEPTED_REASON } from "@/lib/package-rule";
 import {
   staffBookingRefusal,
   staffRefusalCopy,
@@ -17,7 +18,9 @@ import {
 export type SelectionRefusal =
   | "insufficient_credits"
   | "location_not_covered"
-  | "plan_expires_before_class";
+  | "plan_expires_before_class"
+  /** The class's Package rule accepts none of the member's packages. */
+  | "not_accepted";
 
 /** Whether the member's packages could pay if they were added now. */
 export type WaitlistPaymentStatus =
@@ -44,6 +47,7 @@ const CANNOT_PAY: Record<SelectionRefusal, string> = {
   insufficient_credits: "no package with enough credits",
   location_not_covered: "their plan doesn't cover this studio",
   plan_expires_before_class: "their plan ends before the class",
+  not_accepted: NOT_ACCEPTED_REASON,
 };
 
 /** "Pending: <package>" or "Can't pay: <reason>". */

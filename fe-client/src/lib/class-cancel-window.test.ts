@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classBookingPolicy, type CancellationPolicy } from "./cancellation-copy.ts";
+import { classBookingPolicy, classCancelWindowLine, type CancellationPolicy } from "./cancellation-copy.ts";
 
 /**
  * A class may carry its own Cancellation Window (#313). Where a member books
@@ -27,4 +27,10 @@ test("the booking sentence states the class's own window when it has one", () =>
 
 test("without a class's window the sentence is the studio's", () => {
   assert.match(classBookingPolicy(policy), /up to 24 hours before it starts/);
+});
+
+test("the class detail states that class's window on its own", () => {
+  assert.equal(classCancelWindowLine(12), "Cancel up to 12 hours before it starts.");
+  assert.equal(classCancelWindowLine(1), "Cancel up to 1 hour before it starts.");
+  assert.equal(classCancelWindowLine(0), "Cancel any time before it starts.");
 });

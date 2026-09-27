@@ -141,6 +141,14 @@ export function classBookingPolicy(
 export const LATE_CANCEL_LINE = "This is a late cancellation — your credit won't be returned.";
 
 /**
+ * One class's Cancellation Window, alone — the class detail's line, where the
+ * studio's cap is not the point. "Cancel up to 12 hours before it starts."
+ */
+export function classCancelWindowLine(windowHours: number): string {
+  return `Cancel ${deadline(windowHours, "it")}.`;
+}
+
+/**
  * The class cancel dialog: what this cancellation will cost the member.
  *
  * `preview` is the server's own answer for this booking, cap and window

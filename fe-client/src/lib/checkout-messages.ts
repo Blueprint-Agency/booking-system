@@ -29,10 +29,6 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   [ERROR_CODES.package_archived]: "This package isn't on sale any more.",
   [ERROR_CODES.trial_already_used]: "You've already used your trial.",
   [ERROR_CODES.trial_not_eligible]: "The trial is for new members only.",
-  [ERROR_CODES.unlimited_limit_reached]:
-    "You already have an unlimited plan and a renewal waiting. You can buy another once one of them ends.",
-  [ERROR_CODES.unlimited_renewal_location_mismatch]:
-    "A renewal has to be at the same home studio as your current plan. Contact the studio to move it.",
   [ERROR_CODES.unlimited_requires_location]: "Choose your home studio to continue.",
   [ERROR_CODES.location_required]: "Choose your home studio to continue.",
   [ERROR_CODES.location_not_found]: "That studio isn't available. Choose another one.",

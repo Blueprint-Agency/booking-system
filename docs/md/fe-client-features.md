@@ -17,7 +17,7 @@ These show up in many features. Understanding them up front makes the rest read 
 ### 0.1 Credit system (group classes)
 
 - **Credit** = currency for **group classes only**. Earned by purchasing a Bundle, or held implicitly by an Unlimited package.
-- A user can hold a Bundle **OR** Unlimited at a time, **never both** at the same time.
+- ~~A user can hold a Bundle **OR** Unlimited at a time, **never both** at the same time.~~ Superseded: a member may hold, and have running, any number of Credit Bundles, Unlimited Plans and a Trial at once, and picks which one pays when they book (§3.1; `be/docs/adr/0010-several-packages-run-per-family.md`).
 - A class booking deducts **1 credit** at the moment of confirmation.
 - Cancelling before the class's window returns the credit while the member is under the cancellation cap (or always, with the cap switched off), and loses it once they are over; inside the window the cancel is a **late cancellation** and the credit is kept; once the class starts it cannot be cancelled (§0.6).
 - Workshops do **not** consume credits — they're paid directly per workshop.
@@ -229,11 +229,44 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 | Already booked by user | "Booked" (link → `/account/classes`). A booked class never shows a waitlist control. |
 | In this class's line (`waitlist.my_entry`) | "On waitlist · #N" with a secondary "Leave" → confirm dialog → toast *"Left the waitlist."*; the row then reads "Join waitlist" if the line is still open, else "Full" |
 | Logged out, seat available | "Book Now" → `/login?next=/booking/confirmation?sessionId=...` |
-| Logged in, has credits, seat available | "Book Now" (sage, filled) → confirm sheet *"Book {class}?"* (date, time, location, instructor, what pays — "Uses 1 credit" / "Covered by your plan" — and the cancellation policy) → "Book class" books it, "Not now" closes it; nothing is spent until "Book class" |
+| Logged in, has credits, seat available | "Book Now" (sage, filled) → the **Book sheet** *"Book {class}?"* (date, time, location, instructor, the package picker below, and the cancellation policy) → "Book class" books it with the picked package, "Not now" closes it; nothing is spent until "Book class" |
 | Logged in, no credits / exhausted | Grey "Book Now" → popup *"You need a package to book this class"* → "Buy a Package" CTA → `/packages` |
 | Online seats full + `waitlist.open` (studio switch on, before the Cancellation Window, room in the line) | "Join waitlist" (warning, outlined). Joining debits nothing; the row becomes "On waitlist · #N" without a reload |
 | Online seats full, waitlist off / closed / full | "Full" (muted, disabled) |
 | Class started/ended | "Ended" (disabled) |
+
+**The Book sheet is the package picker** (`be/docs/adr/0010-several-packages-run-per-family.md`). A member may have several class packages running at once — Credit Bundles, Unlimited Plans, the Trial — and chooses which one pays. The sheet reads `GET /me/classes/:id` for the class it opened (the class list stays cheap and anonymous) and lists the member's class packages as a radio list, in the server's default order:
+
+- **Pre-selected: the Default payer** (`default_client_package_id`) — a running package before a Dormant one, the soonest-ending running one first; with nothing running, an Unlimited Plan before credits. Booking stays one tap.
+- Each row: the package's name, what it has left (credits, or "Unlimited"), and its end date if running.
+- **Ineligible packages are shown greyed and cannot be picked**, each with its reason:
+
+  | `reason` | Row says |
+  |---|---|
+  | `not_accepted` | "Not accepted for this class" — the class's **Package rule** does not take it (be/CONTEXT.md § Package rule) |
+  | `location_not_covered` | "Covers {Location} only", with the Cross-Location Add-On link beside it (§7) |
+  | `plan_expires_before_class` | "Ends before this class" |
+  | `insufficient_credits` | "Not enough credits" |
+
+- **Picking a Dormant package** adds "Starts today, runs until {date}" (`activation_end_if_picked`) — picking it starts its clock at this booking, beside whatever else is running.
+- The cost line reads from the picked package ("Uses 1 credit" / "Covered by your plan").
+- "Book class" sends `{ class_id, client_package_id }`; the response's `paid_with` names the package that paid. A refusal for the picked package (a stale sheet) shows that reason's copy. With nothing Eligible the sheet has nothing to pick and the row's own blocked state applies (the "You need a package" popup, or the Location nudge in §7).
+
+There is no other way to choose: the old "use N credits" shortcut on a blocked row is gone (§7), and `use_credits` is no longer accepted by the server.
+
+**Package rules.** A class may accept only some packages, or all but some (be/CONTEXT.md § Package rule). The class list carries only a boolean `restricted`, and a restricted row shows a small **"Some packages"** hint; which ones is on the class detail. A package the class does not take is greyed on the Book sheet with "Not accepted for this class", and a booking refused `409 not_accepted` (a stale sheet, or nothing the member holds is accepted) says the same in the member's words.
+
+**Class detail overlay.** Tapping anywhere on a class row opens the class's detail — the row's own Book / Join waitlist button still acts directly and does not open it. A wide panel from `sm`, a full-height sheet on phones; rendered on `document.body`, focus-trapped, closing on Escape and on the backdrop, and fitting 360px with its own scroll. It reads `GET /public/classes/:id` signed out and `GET /me/classes/:id` signed in, for the class opened only, and shows:
+
+- the class type and its description; the date, start, end and length;
+- the instructor and every supporting instructor;
+- the Location with its address and a map link, and the room;
+- the credit cost, and the spots left or the waitlist state;
+- the effective Cancellation Window;
+- the packages accepted: **"All packages"**, **"Only: …"** or **"All except: …"**, naming each;
+- signed in, the member's own class packages, each ticked or with the reason it cannot pay (the Book sheet's reasons above); signed out, a prompt to sign in to see which of theirs can pay.
+
+Its **Book** button opens the same Book sheet as the row's. A class the member is already booked into, or waiting for, opens with that state.
 
 A waitlist is never offered while a seat is free — the member books it. Refused joins, in the member's words:
 
@@ -245,7 +278,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 | `class_not_full` | "A spot just opened in this class — you can book it now." (the row is re-read and offers Book Now) |
 | `already_waitlisted` / `already_booked` | Nothing to explain: the row is re-read and shows the member's place or "Booked" |
 | `insufficient_credits` | The "You need a package" popup, as for booking |
-| `location_not_covered` / `plan_expires_before_class` | The booking's own copy for the same refusal |
+| `location_not_covered` / `plan_expires_before_class` / `not_accepted` | The booking's own copy for the same refusal |
 | anything else | The generic "Something went wrong. Please try again." dialog |
 
 **My Bookings** (`/account/classes`) lists the member's places in line in a **Waitlisted** group above Upcoming — class, instructor, location, time, "#N in line" and "Leave waitlist" (confirm dialog, then the banner *"Left the waitlist."*). Read from `GET /me/waitlist` in the same load as the bookings. When a seat opens the member is booked automatically and the class moves to Upcoming (`spec-waitlist.md` §5).
@@ -265,7 +298,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 ### 3.2 Booking confirmation `/booking/confirmation`
 
 **Business logic**
-- This is a **pre-confirmation reserve step** (not a success page) for class bookings — confirms session details, shows credit balance, lets user pick which package the credit is drawn from (if multiple), and exposes the cancellation window.
+- This is a **pre-confirmation reserve step** (not a success page) for class bookings — confirms session details, shows credit balance, lets user pick which package the credit is drawn from (if multiple), and exposes the cancellation window. *(Not built as a page: the class's details are the class detail overlay and the package choice the Book sheet's picker, both in §3.1 — BKG-06.)*
 - For workshop purchases and package buys, this page acts as the success endpoint after `/checkout` completes.
 - Requires auth + verified user + signed waiver.
 
@@ -469,7 +502,7 @@ The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a re
 **What the page carries, top to bottom** — rows marked *(unlimited)* render only when the item being bought is an Unlimited Plan:
 
 1. **Order summary** — item, validity / event date, price.
-2. **Home studio** *(unlimited)* — two radios, one per Location, address shown on each, **no pre-selected default**. Pay stays disabled and reads "Choose your home studio to continue" until one is picked. **A renewal** — bought while the member already holds a live Unlimited Plan — replaces the radios with a locked row: "Your renewal continues at Harbour Studio. Ask us if you need to move it." A member may only renew at their existing plan's Home Location; changing it is a portal-only, admin-audited action.
+2. **Home studio** *(unlimited)* — two radios, one per Location, address shown on each, **no pre-selected default**. Pay stays disabled and reads "Choose your home studio to continue" until one is picked. ~~**A renewal** — bought while the member already holds a live Unlimited Plan — replaces the radios with a locked row: "Your renewal continues at Harbour Studio. Ask us if you need to move it." A member may only renew at their existing plan's Home Location.~~ Superseded by `be/docs/adr/0010-several-packages-run-per-family.md`: a member holding a live plan may buy another at any Location, including one homed elsewhere, so a renewal gets the same radios; there is no cap on how many plans a member holds. Moving an existing plan's Home Location is still a portal-only, admin-audited action.
 3. **Cross-Location Add-On** *(unlimited)* — a checkbox block, **disabled until a studio is picked**, showing the rate even while disabled so it advertises rather than reads as broken. Live, it names the other studio and shows the arithmetic — months (rounded up) × rate = total — and closes with "Expires with the plan it's attached to." Greyed copy is always a precondition, never "Unavailable": the three disabled reasons are *no studio picked yet*, *this plan already carries one*, and *nothing to attach to* (no Unlimited Plan held at all, worded away from "nothing chosen yet" and routed to the plans). A Dormant plan's Add-On prices at its full stored Duration with no remainder wording; an Activated plan's remainder sentence comes **before** the arithmetic — "Your plan runs to 26 Nov 2026 — 3 months, 10 days left. Part months are charged as whole months, so that's 4." — so the surprising part is answered before the number that provokes it.
 4. **Promo code** — a text input, case- and whitespace-insensitive. A code is checked against the specific item being bought, so a green tick is never contradicted by a refusal seconds later. Five distinct outcomes, four of them specific:
 
@@ -488,7 +521,7 @@ The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a re
 
 **Two entry points for a standalone Add-On purchase** against a plan the member already holds — no new Unlimited purchase involved: the nudge on a blocked class (below), and the plan card on the account page. Same review page, entered with the target plan's id instead of a catalogue item.
 
-**The blocked class is a nudge, not an ad.** On `/classes`, a class outside a member's plan coverage is shown, not hidden — the row dims, takes a "Not in your plan" lock chip where the Book button was, and carries one line under a hairline: "Your plan covers **Harbour Studio** only. [Add Parkside Studio for $30/month] · or [use 1 credit]" if the member also holds credits. Both are links, weighted below the class itself — a louder treatment was tried and rejected because this state repeats on every wrong-Location class in the week's schedule, and at that density an accent border and a filled button read as an ad break. A blocked class never silently spends a credit; a member choosing to pay with credits does so explicitly through the "use 1 credit" link.
+**The blocked class is a nudge, not an ad.** On `/classes`, a class outside a member's plan coverage is shown, not hidden — the row dims, takes a "Not in your plan" lock chip where the Book button was, and carries one line under a hairline: "Your plan covers **Harbour Studio** only. [Add Parkside Studio for $30/month]". The link is weighted below the class itself — a louder treatment was tried and rejected because this state repeats on every wrong-Location class in the week's schedule, and at that density an accent border and a filled button read as an ad break. Coverage is read across **every** plan the member holds (`entitlements.unlimited_plans`), not one; a member who also holds credits, or a second plan homed at that Location, pays with it by picking it on the Book sheet (§3.1). *(The "· or [use 1 credit]" link that used to follow is gone with `use_credits` — `be/docs/adr/0010-several-packages-run-per-family.md`.)* A blocked class never silently spends a credit.
 
 **Four confirmation emails**, one per completed purchase, none for an admin's complimentary grant:
 
@@ -499,7 +532,7 @@ The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a re
 | Free trial pass | `trial_pass_purchase_confirmed` |
 | Free workshop tier | `workshop_purchase_confirmed` |
 
-Every purchase succeeds even if the email fails to send — the send is a fire-and-forget step after the entitlement is already granted. An Unlimited Plan's confirmation reads "Valid 6 months from your first class — your plan activates when you make your first booking" only when the purchase is actually Dormant; a plan bought with no live plan in front is **not** Dormant, gets a real end date immediately, and its email carries that date like any other kind's does — see `be-client.md` §4e for the exact branch. The receipt link never points nowhere: a paid purchase links to the Stripe receipt, a free one falls back to the account page.
+Every purchase succeeds even if the email fails to send — the send is a fire-and-forget step after the entitlement is already granted. An Unlimited Plan's confirmation reads "Valid 6 months from your first class — your plan activates when you make your first booking" only when the purchase is actually Dormant — which, since every purchase lands Dormant (`be/docs/adr/0004-every-package-activates-on-first-booking.md`), is every purchase, whatever else the member holds; the dated "Expires {date}" line is left for a row that already has an expiry — see `be-client.md` §4e for the exact branch. The receipt link never points nowhere: a paid purchase links to the Stripe receipt, a free one falls back to the account page.
 
 - Two-column layout on the payment step: **order summary** (left) — item, qty, subtotal, GST line, promo line, total; **payment form** (right) — card number, expiry, CVC, name on card, "Pay S$XX".
 - Failure → inline error, retry without losing form state.
@@ -526,7 +559,7 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 
 **Business logic**
 - Summary / hub view that consolidates:
-  - **My Packages** card group (per studio): bundle credits with a CreditRing visual + expiry; unlimited with an "Unlimited" badge + expiry; PT sessions remaining per format (1-on-1 / 2-on-1) + expiry. Expired packages render greyed with an "Expired" badge.
+  - **My Packages** card group (per studio): bundle credits with a CreditRing visual + expiry; unlimited with an "Unlimited" badge + expiry; PT sessions remaining per format (1-on-1 / 2-on-1) + expiry. Expired packages render greyed with an "Expired" badge. **Every running package is listed**, not one per kind — a member may have several running at once in either Family (`be/docs/adr/0010-several-packages-run-per-family.md`), and each clock is shown.
   - **Membership** card (per studio): plan name, status badge (Active / Expired), package expiry. **No "Cancel Membership" button** — replaced with **"Contact Sales Team"** → WhatsApp deep link (`wa.me/65...`).
   - **Expiry banner** appears at t-30 / 15 / 7 / 1 days / 12h / 2h before package end. Banner only renders if the chosen milestone is shorter than the package's full duration (avoids absurd "expires in 30 days" on a 1-day pass).
   - **Upcoming bookings** (cards): class/workshop/private. Each card has the per-booking QR, cancel, reschedule actions (gated by cancellation window).

@@ -11,10 +11,16 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { waitlistEntries } from '../../db/schema/bookings'
-import { classPackages, clientPackages, ptPackages } from '../../db/schema/packages'
-import { candidatePackages, holdsSeat, lockClass, payAndBook, type BookClassResult } from '../bookings/book'
+import {
+  candidatePackages,
+  holdsSeat,
+  lockClass,
+  packageDisplayName,
+  payAndBook,
+  type BookClassResult,
+} from '../bookings/book'
 import { countSeats, staffPromotionSeat } from '../bookings/seats'
-import { selectPackage, type SelectionRefusal } from '../packages/selection'
+import { selectPackage, type PackageRule, type SelectionRefusal } from '../packages/selection'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
 import { beforeWindow } from './rules'
@@ -54,71 +60,44 @@ export interface WaitlistPanelRow {
   paymentStatus: WaitlistPaymentStatus
 }
 
-const KIND_NAME: Record<string, string> = {
-  credit_bundle: 'Credit bundle',
-  unlimited: 'Unlimited',
-  trial: 'Trial pass',
-  pt: 'PT package',
-}
-
 /**
  * The class's line in queue order, each row with whether the member could pay.
- * Selection runs exactly as a booking would at this instant, and nothing is
- * written: no sweep, no lock, no debit.
+ * The Default payer is chosen exactly as a promotion would at this instant, and
+ * nothing is written: no sweep, no lock, no debit.
  */
 export async function waitlistPanel(
   tenantId: string,
-  cls: { id: string; locationId: string; startsAt: Date; creditCost: number },
+  cls: { id: string; locationId: string; startsAt: Date; creditCost: number; rule: PackageRule },
   now: Date = clockNow(),
 ): Promise<WaitlistPanelRow[]> {
   const line = await listForClass(tenantId, cls.id, now)
   if (line.length === 0) return []
 
   return db.transaction(async tx => {
-    const choices = new Map<string, ReturnType<typeof selectPackage>>()
+    const rows: WaitlistPanelRow[] = []
     for (const e of line) {
-      choices.set(
-        e.id,
-        selectPackage({
-          packages: await candidatePackages(tx, tenantId, e.clientId),
-          classLocationId: cls.locationId,
-          classStartsAt: cls.startsAt,
-          creditCost: cls.creditCost,
-          useCredits: false,
-          now,
-        }),
-      )
-    }
-
-    const chosenIds = [...choices.values()].flatMap(c => (c.ok ? [c.clientPackageId] : []))
-    const names = new Map<string, string>()
-    if (chosenIds.length > 0) {
-      const rows = await tx
-        .select({
-          id: clientPackages.id,
-          kind: clientPackages.kind,
-          classPackageName: classPackages.name,
-          ptPackageName: ptPackages.name,
-        })
-        .from(clientPackages)
-        .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
-        .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
-        .where(and(eq(clientPackages.tenantId, tenantId), inArray(clientPackages.id, chosenIds)))
-      for (const r of rows) names.set(r.id, r.classPackageName ?? r.ptPackageName ?? KIND_NAME[r.kind] ?? 'Package')
-    }
-
-    return line.map(e => {
-      const choice = choices.get(e.id)!
-      return {
+      const pkgs = await candidatePackages(tx, tenantId, e.clientId)
+      const choice = selectPackage({
+        packages: pkgs,
+        classLocationId: cls.locationId,
+        classStartsAt: cls.startsAt,
+        creditCost: cls.creditCost,
+        rule: cls.rule,
+        now,
+      })
+      const payer = choice.ok ? pkgs.find(p => p.id === choice.clientPackageId)! : null
+      rows.push({
         entryId: e.id,
         position: e.position,
         client: { id: e.clientId, name: e.clientName || 'Member' },
         joinedAt: e.joinedAt,
-        paymentStatus: choice.ok
-          ? { status: 'pending', packageName: names.get(choice.clientPackageId) ?? 'Package' }
-          : { status: 'cannot_pay', reason: choice.refusal },
-      }
-    })
+        paymentStatus: payer
+          ? { status: 'pending', packageName: packageDisplayName(payer.kind, payer.catalogueName) }
+          : // No pick is passed, so a refusal is always one of selection's own reasons.
+            { status: 'cannot_pay', reason: (choice as { refusal: SelectionRefusal }).refusal },
+      })
+    }
+    return rows
   })
 }
 
@@ -172,10 +151,11 @@ export async function staffPromote(tenantId: string, input: StaffPromoteInput): 
       })
     }
 
+    // Nobody is there to pick, so the Default payer pays.
     const paid = await payAndBook(tx, tenantId, cls, {
       clientId: entry.clientId,
       seat: decision.seat,
-      useCredits: false,
+      clientPackageId: null,
       now,
     })
     if (!paid.ok) throw new ConflictError(paid.refusal)

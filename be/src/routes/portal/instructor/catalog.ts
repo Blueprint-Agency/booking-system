@@ -3,13 +3,15 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as classTypesSvc from '../../../services/catalog/class-types'
 import * as roomsSvc from '../../../services/catalog/rooms'
+import * as classPackagesSvc from '../../../services/packages/class-packages'
 import { waitlistEnabled } from '../../../services/waitlist/line'
 import { tenantId } from '../../../middleware/tenant'
 
 /**
  * Read-only catalog for the instructor scheduling forms. Mirrors the admin
  * catalog reads but lives under /portal/instructor/* so the instructor surface
- * never has to call an admin endpoint. Archived rows are excluded.
+ * never has to call an admin endpoint. Archived rows are excluded, except from
+ * the class packages a Package rule may name.
  */
 
 const roomsQuery = z.object({ location_id: z.string().uuid().optional() })
@@ -19,6 +21,15 @@ const app = new Hono()
     const rows = await classTypesSvc.listClassTypes(tenantId(c), { includeArchived: false })
     return c.json({
       class_types: rows.map(r => ({ id: r.id, name: r.name, difficulty: r.difficulty })),
+    })
+  })
+  // What a class's Package rule may name: every class package, archived ones
+  // included, since members may still hold one (be/CONTEXT.md § Package rule).
+  // No prices — the picker needs names only.
+  .get('/class-packages', async c => {
+    const rows = await classPackagesSvc.listClassPackages(tenantId(c), {})
+    return c.json({
+      class_packages: rows.map(r => ({ id: r.id, name: r.name, kind: r.kind, status: r.status })),
     })
   })
   // The studio switches a scheduling form reads: the capacity fields label the

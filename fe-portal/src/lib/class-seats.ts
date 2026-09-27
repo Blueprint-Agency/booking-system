@@ -7,6 +7,7 @@
 // be/src/routes/portal/class-seats.ts.
 
 import { ApiError, type Api } from "@/lib/api";
+import { NOT_ACCEPTED_COPY } from "@/lib/package-rule";
 
 export type BookingSeat = "online" | "buffer" | "overbook";
 export type StaffRole = "admin" | "instructor";
@@ -100,6 +101,8 @@ const REFUSAL_COPY: Record<string, string> = {
   insufficient_credits: "This member has no package that can pay for this class.",
   location_not_covered: "This member's plan doesn't cover this studio.",
   plan_expires_before_class: "This member's plan ends before the class.",
+  // The class's Package rule accepts none of the member's packages.
+  not_accepted: NOT_ACCEPTED_COPY,
   already_booked: "This member is already booked on this class.",
   class_already_started: "This class has already started.",
   class_not_found: "This class is no longer running.",

@@ -16,53 +16,38 @@ const LOC_B = '22222222-2222-2222-2222-222222222222'
 // --- only an Unlimited Plan carries a Home Location ---
 
 assert.throws(
-  () => locationForPurchase('unlimited', null, []),
+  () => locationForPurchase('unlimited', null),
   /unlimited_requires_location/,
   'an Unlimited Plan must name the one Location it covers',
 )
 assert.strictEqual(
-  locationForPurchase('unlimited', LOC_A, []),
+  locationForPurchase('unlimited', LOC_A),
   LOC_A,
   'a first Unlimited Plan takes the Location the member picked',
 )
 
 for (const kind of ['credit_bundle', 'trial', 'pt'] as const) {
   assert.throws(
-    () => locationForPurchase(kind, LOC_A, []),
+    () => locationForPurchase(kind, LOC_A),
     /location_only_applies_to_unlimited/,
     `a ${kind} must not carry a Home Location`,
   )
   assert.strictEqual(
-    locationForPurchase(kind, null, []),
+    locationForPurchase(kind, null),
     null,
     `a ${kind} lands with no Location at all`,
   )
 }
 
-// --- the renewal rule (§6) ---
+// --- no renewal rule and no plan cap any more (be/docs/adr/0010) ---
+// A member's plans each answer for themselves at booking, so the rule takes no
+// live plans at all: whatever the member holds, any Location the purchase names
+// is the one it lands on. The HTTP side is PAY-05 and PAY-15.
 
 assert.strictEqual(
-  locationForPurchase('unlimited', LOC_A, [LOC_A]),
-  LOC_A,
-  'a renewal at the live plan’s own Location is allowed',
-)
-assert.throws(
-  () => locationForPurchase('unlimited', LOC_B, [LOC_A]),
-  /unlimited_renewal_location_mismatch/,
-  'a renewal may not sit at a Location other than the live plan’s',
-)
-assert.strictEqual(
-  locationForPurchase('unlimited', LOC_B, [null]),
+  locationForPurchase('unlimited', LOC_B),
   LOC_B,
-  'a live plan with no Home Location constrains nothing',
-)
-
-// --- at most one Activated plus one Dormant ---
-
-assert.throws(
-  () => locationForPurchase('unlimited', LOC_A, [LOC_A, LOC_A]),
-  /unlimited_limit_reached/,
-  'a third Unlimited Plan is refused — one Activated plus at most one Dormant',
+  'a plan lands at whichever Location is named, the second one included',
 )
 
 // --- an admin moves a Home Location (§7) ---

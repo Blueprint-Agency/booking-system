@@ -80,8 +80,9 @@ function CheckoutContent() {
   const [redirecting, setRedirecting] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
-  // Home studio (§12). Only an Unlimited Plan carries one; a member already
-  // holding a live plan renews at that plan's Location and gets no choice.
+  // Home studio (§12). Only an Unlimited Plan carries one. A member may hold
+  // plans homed at different Locations (be/docs/adr/0010), so there is always a
+  // choice; one already holding a plan starts from that plan's Location.
   const [homeLocationId, setHomeLocationId] = useState<string | null>(null);
   const { data: locations, loading: locationsLoading } = useLocations();
   const { unlimitedLocation, crossLocation, loading: packagesLoading } = useClientPackages();
@@ -100,10 +101,11 @@ function CheckoutContent() {
   const [partChecked, setPartChecked] = useState(false);
   const [partAmount, setPartAmount] = useState("");
   const isUnlimited = pkg?._kind === "class" && pkg.kind === "unlimited";
+  const pickedLocationId = homeLocationId ?? unlimitedLocation?.id ?? null;
   const chosenLocation = isUnlimited
-    ? unlimitedLocation ?? locations?.find((l) => l.id === homeLocationId) ?? null
+    ? locations?.find((l) => l.id === pickedLocationId) ?? null
     : null;
-  const needsHomeStudio = isUnlimited && !unlimitedLocation && !homeLocationId;
+  const needsHomeStudio = isUnlimited && !chosenLocation;
 
   // The instructor an Instructor-Bound PT package's sessions will be with. Only
   // a bound package asks; an open one shows nothing and sends nothing, and the
@@ -410,15 +412,6 @@ function CheckoutContent() {
                 <p className="text-sm font-medium text-ink mb-1">Home studio</p>
                 {packagesLoading || locationsLoading ? (
                   <p className="text-xs text-muted py-3">Loading…</p>
-                ) : unlimitedLocation ? (
-                  <div className="flex items-start gap-2.5 rounded-xl border border-ink/10 bg-warm px-4 py-3">
-                    <Lock className="h-4 w-4 text-muted shrink-0 mt-0.5" />
-                    <p className="text-sm text-ink">
-                      Your renewal continues at{" "}
-                      <span className="font-medium">{unlimitedLocation.name}</span>. Ask us if you
-                      need to move it.
-                    </p>
-                  </div>
                 ) : !locations?.length ? (
                   // useLocations swallows a failed fetch into an empty list. Without
                   // this, Pay sits disabled above a picker with nothing to click.
@@ -429,6 +422,12 @@ function CheckoutContent() {
                   <>
                     <p className="text-xs text-muted mb-3">
                       This plan covers one studio. Pick the one you&apos;ll practise at.
+                      {unlimitedLocation && (
+                        <>
+                          {" "}You already have a plan at {unlimitedLocation.name}; this one can be
+                          for any studio.
+                        </>
+                      )}
                     </p>
                     <div className="space-y-2">
                       {locations.map((loc) => (
@@ -436,7 +435,7 @@ function CheckoutContent() {
                           key={loc.id}
                           className={cn(
                             "flex items-start gap-3 rounded-xl border px-4 py-3 cursor-pointer transition-colors",
-                            homeLocationId === loc.id
+                            pickedLocationId === loc.id
                               ? "border-accent-deep bg-accent/10"
                               : "border-ink/10 hover:border-accent",
                           )}
@@ -445,7 +444,7 @@ function CheckoutContent() {
                             type="radio"
                             name="home-studio"
                             value={loc.id}
-                            checked={homeLocationId === loc.id}
+                            checked={pickedLocationId === loc.id}
                             onChange={() => setHomeLocationId(loc.id)}
                             className="mt-0.5 h-4 w-4 border-ink/30 text-accent focus:ring-accent"
                           />
@@ -661,8 +660,9 @@ function CheckoutContent() {
               Your home studio is{" "}
               <span className="font-medium">{chosenLocation.name}</span>
               {pkg?._kind === "class" && pkg.duration_months != null
-                ? // A renewal waits for the running plan to end, so "the next N
-                  // months" would name a stretch of time that hasn't started.
+                ? // A plan bought beside a live one waits Dormant until a booking
+                  // picks it, so "the next N months" would name a stretch of
+                  // time that hasn't started.
                   unlimitedLocation
                   ? ` for the ${formatDurationMonths(pkg.duration_months)} of this plan.`
                   : ` for the next ${formatDurationMonths(pkg.duration_months)}.`

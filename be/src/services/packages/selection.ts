@@ -1,28 +1,59 @@
 /**
- * Which package pays for a class booking (spec §2, §3).
+ * Which package pays for a class booking (be/docs/adr/0010).
  *
- * Two rules live here and nowhere else:
+ * Two steps, and every path that picks a payer comes through both:
  *
- *  1. **One Activated package per family.** The class family is Credit Bundle
- *     + Unlimited + trial. While one of them is running, it is the only one that
- *     can pay — nothing waiting behind it starts, even for a class it cannot
- *     cover. When it has ended (expired, or spent to zero), the next booking
- *     Activates the package that has been waiting longest.
- *  2. **Coverage is a refusal, not a fallback.** A member holding a plan for one
- *     studio who books at the other used to have their credits spent silently —
- *     the old booking path found no usable plan and fell straight through to the
- *     credit branch.
+ *  1. **Classify** every live class package the member holds against the class:
+ *     **Eligible**, or the first reason it is not. Any number of packages may be
+ *     running at once in a Family, so there is no "the running one" to defer to;
+ *     each package answers for itself.
+ *  2. **Choose.** The member's named package if it is Eligible (refused with its
+ *     own reason if not), else the **Default payer**: the first Eligible package
+ *     in default order — running packages soonest-ending first, then Dormant ones,
+ *     Unlimited Plans before credits, each in the order they were bought.
+ *
+ * Coverage is a refusal, never a silent fall-through: a plan that does not Cover
+ * the class's Location is Ineligible with `location_not_covered`, and the member
+ * is told so if nothing else can pay.
+ *
+ * The class's **Package rule** is tested first: a package whose catalogue package
+ * the class does not accept is Ineligible with `not_accepted`, whatever else is
+ * true of it (be/CONTEXT.md § Package rule).
  *
  * Pure on purpose. `bookings/book.ts` loads and locks the rows, calls in, and
- * translates the refusal into a typed error; nothing here touches the database,
- * so every rule below is testable without one. Refusals are returned rather than
- * thrown, exactly as `./validity.ts` does for credit movements.
+ * translates the refusal into a typed error; nothing here touches the database.
  */
+import type { PackageRuleMode } from '../../db/enums'
 import { activationExpiry, isActivated, isDormant } from './validity'
+
+/**
+ * What a class accepts: every class package (`all`), only the catalogue
+ * packages named, or all but them. Its absence on a class is `all`.
+ */
+export interface PackageRule {
+  mode: PackageRuleMode
+  /** Catalogue class package ids. Empty under `all`. */
+  packageIds: readonly string[]
+}
+
+export const ACCEPTS_ALL: PackageRule = { mode: 'all', packageIds: [] }
+
+/**
+ * Whether the rule lets a package bought from this catalogue package pay. A
+ * package with no catalogue source is named by no list, so `only` refuses it and
+ * `except` takes it.
+ */
+export function acceptsPackage(rule: PackageRule, sourceClassPackageId: string | null): boolean {
+  if (rule.mode === 'all') return true
+  const named = sourceClassPackageId !== null && rule.packageIds.includes(sourceClassPackageId)
+  return rule.mode === 'only' ? named : !named
+}
 
 export interface CandidatePackage {
   id: string
   kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+  /** The catalogue package it was bought as — what a class's Package rule names. */
+  sourceClassPackageId: string | null
   /** Null means Dormant, and nothing else (§3). */
   expiresAt: Date | null
   /** Home Location — set on an Unlimited Plan, null on every other kind (§1). */
@@ -37,39 +68,63 @@ export interface CandidatePackage {
    * Cover the other Location as well. Null means Home Location only.
    */
   crossLocationPaidSgd: string | null
-  /** Waiting packages Activate in the order they were bought. */
+  /** Dormant packages are offered in the order they were bought. */
   purchasedAt: Date
 }
 
-export interface SelectionInput {
-  /** The client's active package rows, already locked by the caller. */
+export interface ClassifyInput {
+  /** The client's active package rows, as the caller read them. */
   packages: CandidatePackage[]
   classLocationId: string
   classStartsAt: Date
   creditCost: number
-  /**
-   * The member asked to pay with credits (§2 point 5). Deliberately the one
-   * piece of client input the booking path accepts.
-   *
-   * Read only when nothing in the class family is running: it is how a member
-   * holding a Dormant plan and Dormant credits starts the credits and keeps the
-   * plan waiting (§3). While a package IS running, it is the only one that can
-   * pay, and the flag changes nothing.
-   */
-  useCredits: boolean
+  /** The class's Package rule — `ACCEPTS_ALL` for a class that has none. */
+  rule: PackageRule
   now: Date
 }
 
+export interface SelectionInput extends ClassifyInput {
+  /**
+   * The package the member picked on the Book sheet. Absent where nobody is
+   * there to pick — a promotion, staff booking, an old client — and the Default
+   * payer is used.
+   */
+  clientPackageId?: string | null
+}
+
 /**
- * `plan_expires_before_class` is NOT a coverage problem: the running package
- * does cover the class's Location, it simply runs out before the class runs
- * (§3). Told the coverage refusal instead, a member buys the Cross-Location
- * Add-On to fix a problem the Add-On cannot touch.
+ * Why a package cannot pay for this class, in the order they are tested.
+ *
+ * `plan_expires_before_class` is NOT a coverage problem: the package does cover
+ * the class's Location, it simply runs out before the class runs. Told the
+ * coverage refusal instead, a member buys the Cross-Location Add-On to fix a
+ * problem the Add-On cannot touch.
+ *
+ * `not_accepted` comes first: no Add-On, top-up or renewal of that package can
+ * make the class take it.
  */
 export type SelectionRefusal =
+  | 'not_accepted'
   | 'location_not_covered'
   | 'plan_expires_before_class'
   | 'insufficient_credits'
+
+/** One live class package, read against one class. */
+export interface ClassifiedPackage {
+  pkg: CandidatePackage
+  /** Activated: its clock is running. False means Dormant. */
+  running: boolean
+  /** Null when the package is Eligible to pay for this class. */
+  reason: SelectionRefusal | null
+  /** What paying would debit: the class's credit cost, or 0 on an Unlimited Plan. */
+  creditsUsed: number
+  /**
+   * Dormant only: the expiry picking it would stamp, counted from the booking
+   * moment and never from the class date — from the class date a member could
+   * book the furthest-out class on the schedule for a free extension (§3).
+   */
+  activateUntil: Date | null
+}
 
 export type SelectionResult =
   | {
@@ -78,50 +133,59 @@ export type SelectionResult =
       creditsUsed: number
       /**
        * Non-null when the chosen package was Dormant: the `expires_at` the caller
-       * must stamp on it in the same transaction. Counted from the booking
-       * moment, never from the class date — from the class date a member could
-       * book the furthest-out class on the schedule for a free extension (§3).
+       * must stamp on it in the same transaction.
        */
       activateUntil: Date | null
     }
   | { ok: false; refusal: SelectionRefusal }
-
-/** Bought first, starts first. */
-function byPurchase(a: CandidatePackage, b: CandidatePackage): number {
-  return a.purchasedAt.getTime() - b.purchasedAt.getTime()
-}
-
-/**
- * When this package's cover runs out, or null if it can never cover the class.
- * An Activated package is tested against its own expiry; a Dormant one's test is
- * prospective — `now + its length` — or a member with a three-month plan booking
- * four months out would activate it and instantly invalidate it for the very
- * class that activated it.
- */
-function coverEnd(p: CandidatePackage, now: Date): Date | null {
-  return isDormant(p) ? activationExpiry(p, now) : p.expiresAt
-}
-
-/**
- * Which Locations this plan Covers: its Home Location always, and the other one
- * too while it carries a Cross-Location Add-On (§5).
- */
-function covers(p: CandidatePackage, classLocationId: string): boolean {
-  return p.locationId === classLocationId || p.crossLocationPaidSgd !== null
-}
+  /** The member named a package that is not one of their live class packages. */
+  | { ok: false; refusal: 'client_package_not_found' }
 
 function isCreditKind(p: CandidatePackage): boolean {
   return p.kind === 'credit_bundle' || p.kind === 'trial'
 }
 
-export function selectPackage(input: SelectionInput): SelectionResult {
-  const { packages, classLocationId, classStartsAt, creditCost, useCredits, now } = input
+/**
+ * Which Locations this plan Covers: its Home Location always, and every other
+ * one too while it carries a Cross-Location Add-On (§5).
+ */
+function covers(p: CandidatePackage, classLocationId: string): boolean {
+  return p.locationId === classLocationId || p.crossLocationPaidSgd !== null
+}
 
-  // PT packages pay for private sessions, never classes — a different family.
+/**
+ * Default order. Running packages first, soonest-ending first, so the clock
+ * about to run out is spent before a longer one; then Dormant packages, an
+ * Unlimited Plan before credits (credits are kept for classes a plan cannot pay
+ * for), each in the order bought. A running package is always preferred to a
+ * Dormant one, so a booking never starts a new clock the member did not ask for.
+ */
+function defaultOrder(a: CandidatePackage, b: CandidatePackage): number {
+  const aRunning = !isDormant(a)
+  const bRunning = !isDormant(b)
+  if (aRunning !== bRunning) return aRunning ? -1 : 1
+  if (aRunning) {
+    const byEnd = a.expiresAt!.getTime() - b.expiresAt!.getTime()
+    if (byEnd !== 0) return byEnd
+  } else {
+    const aPlan = a.kind === 'unlimited'
+    const bPlan = b.kind === 'unlimited'
+    if (aPlan !== bPlan) return aPlan ? -1 : 1
+  }
+  return a.purchasedAt.getTime() - b.purchasedAt.getTime()
+}
+
+/**
+ * Every live class package the member holds, read against one class, in default
+ * order. What the Book sheet lists, and what `selectPackage` chooses from.
+ */
+export function classifyPackages(input: ClassifyInput): ClassifiedPackage[] {
+  const { packages, classLocationId, classStartsAt, creditCost, rule, now } = input
+
+  // PT packages pay for private sessions, never classes — a different Family.
   // A package spent to zero has ended as surely as an expired one: the ledger
   // flips `active` off and the caller filters on it, but the rule must not
-  // depend on that — an empty bundle holding the family's one slot would
-  // strand every package behind it.
+  // depend on that.
   const live = packages.filter(
     p =>
       p.kind !== 'pt' &&
@@ -129,71 +193,59 @@ export function selectPackage(input: SelectionInput): SelectionResult {
       (!isCreditKind(p) || (p.creditsOrSessionsRemaining ?? 0) > 0),
   )
 
-  // The one running package in the family, if any. The partial unique index
-  // guarantees there is at most one; a second here is a bug upstream, and the
-  // earliest-ending one is the least wrong to answer with.
-  const running = live
-    .filter(p => !isDormant(p))
-    .sort((a, b) => a.expiresAt!.getTime() - b.expiresAt!.getTime())[0]
+  return [...live].sort(defaultOrder).map(p => {
+    const running = !isDormant(p)
+    // A Dormant package's test is prospective — `now + its length` — or a member
+    // with a three-month plan booking four months out would activate it and
+    // instantly invalidate it for the very class that activated it.
+    const activateUntil = running ? null : activationExpiry(p, now)
+    const coverEnd = running ? p.expiresAt : activateUntil
+    const credit = isCreditKind(p)
 
-  if (running) {
-    // It is the only package that may pay. Nothing waiting behind it starts
-    // while it runs — not for the other studio, not for a class after it ends,
-    // not because the member asked for credits. Refuse with the reason that
-    // actually happened, so the member is not sold the wrong remedy.
-    if (running.kind === 'unlimited' && !covers(running, classLocationId)) {
-      return { ok: false, refusal: 'location_not_covered' }
-    }
-    if (running.expiresAt! < classStartsAt) {
-      return { ok: false, refusal: 'plan_expires_before_class' }
-    }
-    if (isCreditKind(running) && (running.creditsOrSessionsRemaining ?? 0) < creditCost) {
-      return { ok: false, refusal: 'insufficient_credits' }
-    }
-    return {
-      ok: true,
-      clientPackageId: running.id,
-      creditsUsed: isCreditKind(running) ? creditCost : 0,
-      activateUntil: null,
-    }
+    let reason: SelectionRefusal | null = null
+    if (!acceptsPackage(rule, p.sourceClassPackageId)) reason = 'not_accepted'
+    else if (p.kind === 'unlimited' && !covers(p, classLocationId)) reason = 'location_not_covered'
+    else if (!coverEnd || coverEnd < classStartsAt) reason = 'plan_expires_before_class'
+    else if (credit && (p.creditsOrSessionsRemaining ?? 0) < creditCost) reason = 'insufficient_credits'
+
+    return { pkg: p, running, reason, creditsUsed: credit ? creditCost : 0, activateUntil }
+  })
+}
+
+/**
+ * Why nothing can pay: the reason of the first package in default order — the
+ * one the member would have expected to pay — passing over packages the class
+ * does not accept, since whatever is wrong with an accepted one is what the
+ * member can fix. `not_accepted` only when that is true of every package, and a
+ * member holding nothing at all is out of credits.
+ */
+function refusalOf(classified: ClassifiedPackage[]): SelectionRefusal {
+  const fixable = classified.find(c => c.reason !== 'not_accepted')
+  if (fixable) return fixable.reason!
+  return classified.length > 0 ? 'not_accepted' : 'insufficient_credits'
+}
+
+/**
+ * The package that pays: the member's pick if they made one and it is Eligible,
+ * else the Default payer. Nothing Eligible refuses with `refusalOf`'s reason.
+ */
+export function selectPackage(input: SelectionInput): SelectionResult {
+  const classified = classifyPackages(input)
+
+  let chosen: ClassifiedPackage | undefined
+  if (input.clientPackageId) {
+    chosen = classified.find(c => c.pkg.id === input.clientPackageId)
+    if (!chosen) return { ok: false, refusal: 'client_package_not_found' }
+    if (chosen.reason) return { ok: false, refusal: chosen.reason }
+  } else {
+    chosen = classified.find(c => c.reason === null)
+    if (!chosen) return { ok: false, refusal: refusalOf(classified) }
   }
-
-  // Nothing is running: this booking Activates the next package, the one that
-  // has waited longest (§3).
-  const waiting = live.sort(byPurchase)
-  const plans = waiting.filter(p => p.kind === 'unlimited')
-
-  // A member holding no plan at all has nothing to be refused about — they go
-  // to credits as they always did.
-  if (plans.length > 0 && !useCredits) {
-    // Set when a plan that DOES cover this Location was passed over for running
-    // out first — the difference between the two refusals below.
-    let ranOutFirst = false
-    for (const plan of plans.filter(p => covers(p, classLocationId))) {
-      const end = coverEnd(plan, now)
-      if (!end || end < classStartsAt) {
-        ranOutFirst = true
-        continue
-      }
-      return { ok: true, clientPackageId: plan.id, creditsUsed: 0, activateUntil: end }
-    }
-    // No plan covers this class at the Location AND on the day. Refuse — a
-    // silent fall-through here is the whole defect.
-    return { ok: false, refusal: ranOutFirst ? 'plan_expires_before_class' : 'location_not_covered' }
-  }
-
-  const credit = waiting.filter(p => {
-    if (!isCreditKind(p) || (p.creditsOrSessionsRemaining ?? 0) < creditCost) return false
-    // Still valid when the class actually runs, not merely today.
-    const end = coverEnd(p, now)
-    return end !== null && end >= classStartsAt
-  })[0]
-  if (!credit) return { ok: false, refusal: 'insufficient_credits' }
 
   return {
     ok: true,
-    clientPackageId: credit.id,
-    creditsUsed: creditCost,
-    activateUntil: coverEnd(credit, now),
+    clientPackageId: chosen.pkg.id,
+    creditsUsed: chosen.creditsUsed,
+    activateUntil: chosen.activateUntil,
   }
 }

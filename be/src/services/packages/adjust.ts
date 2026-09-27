@@ -11,11 +11,9 @@ import { clientPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { manualAdjustments } from '../../db/schema/ledger'
-import { isUniqueViolation } from '../../db/unique-violation'
-import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { listActiveInstructors } from '../schedule/client-catalog'
 import { computeActive } from './validity'
-import { revivalPatch } from './activation'
 import { boundInstructorChange, homeLocationMove, liveUnlimited } from './purchase'
 
 export type ClientPackageRow = typeof clientPackages.$inferSelect
@@ -88,9 +86,9 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
       expiresAt: pkg.expiresAt,
       creditsOrSessionsRemaining: next,
     })
-    // Topping up a spent package while the next one in its family runs
-    // returns it to Dormant rather than tripping the one-Activated index.
-    const patch = await revivalPatch(tx, { ...pkg, clientId: input.clientId }, nextActive, new Date())
+    // Topping up a spent package revives it with its expiry untouched, whatever
+    // else of its Family is running (be/docs/adr/0010).
+    const patch = { active: nextActive, expiresAt: pkg.expiresAt }
 
     await tx
       .update(clientPackages)
@@ -421,18 +419,12 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
       creditsOrSessionsRemaining: pkg.creditsOrSessionsRemaining,
     })
 
-    // Giving a Dormant package a date IS an Activation by hand, and the
-    // one-per-family index applies to staff too: two running in a family is
-    // the state the whole rule exists to prevent, whoever writes it.
-    try {
-      await tx
-        .update(clientPackages)
-        .set({ expiresAt: input.expiresAt, active: nextActive })
-        .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
-    } catch (err: unknown) {
-      if (isUniqueViolation(err)) throw new ConflictError('family_already_activated')
-      throw err
-    }
+    // Giving a Dormant package a date IS an Activation by hand, allowed while
+    // another of its Family runs — several may run at once (be/docs/adr/0010).
+    await tx
+      .update(clientPackages)
+      .set({ expiresAt: input.expiresAt, active: nextActive })
+      .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
 
     await tx.insert(manualAdjustments).values({
       tenantId: input.tenantId,

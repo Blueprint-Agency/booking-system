@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import * as seriesSvc from '../../services/schedule/series'
 import { cancelWindowHoursSchema } from './class-cancel-window'
+import { packageRuleSchema, toPackageRule } from './class-package-rule'
+import { namedRuleJson } from '../../services/schedule/package-rules'
 
 /**
  * A Class Series on the wire, shared by the admin and instructor schedule
@@ -27,6 +29,8 @@ export const seriesTemplateFields = z.object({
   credit_cost: z.number().int().min(0),
   // Copied onto every class the series creates; blank = the studio's window.
   cancel_window_hours: cancelWindowHoursSchema.optional(),
+  // Copied onto every class the series creates, extends included; omitted = accepts all.
+  package_rule: packageRuleSchema.optional(),
   first_date: plainDate,
   last_date: plainDate,
   excluded_dates: z.array(plainDate).default([]),
@@ -58,6 +62,7 @@ export function toSeriesInput(b: TemplateBody, staffing: SeriesStaffing): series
     capacityBuffer: b.capacity_buffer,
     creditCost: b.credit_cost,
     cancelWindowHours: b.cancel_window_hours ?? null,
+    ...(b.package_rule ? { packageRule: toPackageRule(b.package_rule) } : {}),
     firstDate: b.first_date,
     lastDate: b.last_date,
     excludedDates: b.excluded_dates,
@@ -84,6 +89,7 @@ export function seriesRow(s: seriesSvc.SeriesDetail) {
     capacity_buffer: s.capacityBuffer,
     credit_cost: s.creditCost,
     cancel_window_hours: s.cancelWindowHours,
+    package_rule: namedRuleJson(s.packageRuleNamed),
     first_date: s.firstDate,
     last_date: s.lastDate,
     excluded_dates: s.excludedDates,

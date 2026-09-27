@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { CalendarPlus, CalendarX, Loader2, Repeat } from "lucide-react";
+import { CalendarPlus, CalendarX, Loader2, Pencil, Repeat, Save } from "lucide-react";
 import { Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { SeriesPreviewList, blockingDates } from "@/components/schedule/series-preview";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -13,10 +13,21 @@ import {
   previewExtend,
   seriesCadence,
   seriesErrorMessage,
+  updateSeriesRule,
   type EndResult,
   type Preview,
   type Series,
 } from "@/lib/series";
+import { PackageRuleField } from "@/components/schedule/package-rule-field";
+import {
+  SERIES_EDIT_RULE_HINT,
+  acceptsLine,
+  draftFromRule,
+  packageRuleBody,
+  packageRuleProblem,
+  sameRule,
+  type PackageRuleDraft,
+} from "@/lib/package-rule";
 
 /** `YYYY-MM-DD` → the same day, as `formatDate` reads an instant. */
 const dayLabel = (date: string) => formatDate(`${date}T12:00:00`, "d MMM yyyy");
@@ -41,6 +52,7 @@ export function SeriesPanel({
   const [series, setSeries] = useState<Series | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<"extend" | "end" | null>(null);
+  const [editingRule, setEditingRule] = useState(false);
 
   const [version, setVersion] = useState(0);
 
@@ -79,6 +91,22 @@ export function SeriesPanel({
           ) : (
             <p className="mt-1 text-sm text-muted">{error ?? "Loading…"}</p>
           )}
+          {series && (
+            // The series' own rule: copied onto each class it makes and extends.
+            <div className="mt-1 flex flex-wrap items-center gap-x-2">
+              <p className="min-w-0 break-words text-sm text-muted">{acceptsLine(series.package_rule)}</p>
+              {/* An ended series adds no more classes, so its rule has nothing left to reach. */}
+              {!series.ended_from && !editingRule && (
+                <button
+                  type="button"
+                  onClick={() => setEditingRule(true)}
+                  className="inline-flex min-h-9 items-center gap-1 text-xs font-semibold text-accent underline-offset-2 hover:underline sm:min-h-0"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+              )}
+            </div>
+          )}
           <p className="mt-1 text-xs text-muted">
             Changes to this class only affect this class.
           </p>
@@ -97,6 +125,17 @@ export function SeriesPanel({
         )}
       </div>
 
+      {series && editingRule && (
+        <SeriesRuleEditor
+          series={series}
+          onClose={() => setEditingRule(false)}
+          onSaved={(next) => {
+            setSeries(next);
+            setEditingRule(false);
+          }}
+        />
+      )}
+
       {series && open === "extend" && (
         <ExtendDialog series={series} onClose={() => setOpen(null)} onDone={changed} />
       )}
@@ -104,6 +143,63 @@ export function SeriesPanel({
         <EndDialog series={series} defaultFrom={classDate} onClose={() => setOpen(null)} onDone={changed} />
       )}
     </section>
+  );
+}
+
+/**
+ * The series' Package rule, edited in place. It reaches only the classes the
+ * series adds from now on, so it saves at once — no preview, nobody cancelled.
+ */
+function SeriesRuleEditor({
+  series,
+  onClose,
+  onSaved,
+}: {
+  series: Series;
+  onClose: () => void;
+  onSaved: (next: Series) => void;
+}) {
+  const { api } = useWorkspace();
+  const [draft, setDraft] = useState<PackageRuleDraft>(() => draftFromRule(series.package_rule));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    if (!api) return;
+    const problem = packageRuleProblem(draft);
+    if (problem) return setError(problem);
+    if (sameRule(draft, draftFromRule(series.package_rule))) return onClose();
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await updateSeriesRule(api, series.id, packageRuleBody(draft)));
+    } catch (err) {
+      setError(seriesErrorMessage(err, "Saving the rule failed"));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-border pt-4">
+      <PackageRuleField
+        role="admin"
+        value={draft}
+        onChange={setDraft}
+        named={series.package_rule.packages}
+        hint={SERIES_EDIT_RULE_HINT}
+        disabled={busy}
+      />
+      {error && <p className="mt-2 text-xs text-error">{error}</p>}
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={save} disabled={busy}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Save rule
+        </Button>
+      </div>
+    </div>
   );
 }
 

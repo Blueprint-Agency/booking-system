@@ -267,31 +267,42 @@ describe('home location and member cancellations over HTTP', { skip: integration
     await expectStatus(await book(ben, await addClass(one, 'home')), 201)
   })
 
-  test('LOC-13 holding a plan for home and a Credit Bundle, a booking elsewhere without use_credits is refused and no credit is spent', async () => {
+  test('LOC-13 holding a plan for home and a Credit Bundle, a booking elsewhere naming no package is paid by the bundle, and naming the plan is refused', async () => {
     const cat = await member(one, 'cat')
-    await plan(one, cat)
+    const planId = await plan(one, cat)
     const credits = await bundle(one, cat)
     const away = await addClass(one, 'away')
 
-    await expectStatus(await book(cat, away), 409, 'location_not_covered')
+    // The plan is picked by name: it does not Cover the class, so the member is
+    // told so rather than having credits spent they did not choose.
+    await expectStatus(await book(cat, away, { client_package_id: planId }), 409, 'location_not_covered')
     assert.equal((await bookingsOn(cat, away)).length, 0)
+    assert.equal((await pkg(credits)).creditsOrSessionsRemaining, 5, 'nothing spent on a refusal')
+
+    // Naming nothing, the Default payer is the one package that can pay: the bundle.
+    const { booking_id, paid_with } = await expectStatus(await book(cat, away), 201)
+    assert.equal((await bookingRow(booking_id)).clientPackageId, credits)
+    assert.equal(paid_with.client_package_id, credits, 'the response names the package that paid')
     const held = await pkg(credits)
-    assert.equal(held.creditsOrSessionsRemaining, 5, 'the bundle was not silently spent')
-    assert.equal(held.expiresAt, null, 'nor started')
-    assert.equal((await adjustmentsOf(cat)).length, 0)
+    assert.equal(held.creditsOrSessionsRemaining, 4)
+    assert.ok(held.expiresAt, 'the bundle started beside the running plan')
   })
 
-  test('LOC-10 with the plan running, use_credits does not start a waiting bundle: refused, nothing debited, the bundle stays Dormant', async () => {
+  test('LOC-10 with the plan running, picking a waiting bundle for a class elsewhere pays by credits and starts the bundle', async () => {
     const dan = await member(one, 'dan')
-    await plan(one, dan)
+    const planId = await plan(one, dan)
     const credits = await bundle(one, dan)
     const away = await addClass(one, 'away')
 
-    await expectStatus(await book(dan, away, { use_credits: true }), 409, 'location_not_covered')
-    assert.equal((await bookingsOn(dan, away)).length, 0)
+    const { booking_id } = await expectStatus(await book(dan, away, { client_package_id: credits }), 201)
+    const row = await bookingRow(booking_id)
+    assert.equal(row.clientPackageId, credits)
+    assert.equal(row.creditsOrSessionsUsed, 1)
     const held = await pkg(credits)
-    assert.equal(held.creditsOrSessionsRemaining, 5)
-    assert.equal(held.expiresAt, null, 'still Dormant')
+    assert.equal(held.creditsOrSessionsRemaining, 4)
+    assert.ok(held.expiresAt, 'Activated beside the running plan')
+    assert.ok((await pkg(planId)).expiresAt, 'and the plan keeps running')
+    // A class-booking debit stays out of the admin adjustments panel.
     assert.equal((await adjustmentsOf(dan)).length, 0)
   })
 

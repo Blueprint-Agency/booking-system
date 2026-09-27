@@ -13,6 +13,7 @@ import { countSeats, countSeatsByClass, seatsOf, spotsLeft, type SeatCounts } fr
 import { lineupsOf } from './lineup'
 import { waitlistSummaries, type WaitlistSummary } from '../waitlist/line'
 import { cancelWindowResolver, classCancelWindow } from '../policy/cancel-window'
+import { namedClassRule, namedRuleJson } from './package-rules'
 
 export interface LocationLite {
   id: string
@@ -41,12 +42,20 @@ export interface ClassCardPayload {
   effective_cancel_window_hours: number
   /** The class's line (spec-waitlist.md §9). `my_entry` is null for a signed-out reader. */
   waitlist: WaitlistSummary
+  /**
+   * The class takes only some packages (a Package rule other than `all`). Just
+   * the flag, for the row's "Some packages" hint: which ones is in the detail,
+   * read for the class opened.
+   */
+  restricted: boolean
 }
 
 export interface ClassDetailPayload extends ClassCardPayload {
   class_type: { id: string; name: string; difficulty: ClassLevel; description: string | null }
   location: { id: string; name: string; address: string | null; gmaps_url: string | null } | null
   supporting_instructors: { id: string; name: string }[]
+  /** Which packages may pay for the class, each named (be/CONTEXT.md § Package rule). */
+  package_rule: ReturnType<typeof namedRuleJson>
 }
 
 export type ClassLevel = (typeof classDifficultyEnum.enumValues)[number]
@@ -139,6 +148,7 @@ export async function listClassCards(
       capacityOnline: classes.capacityOnline,
       capacityWaitlist: classes.capacityWaitlist,
       cancelWindowHours: classes.cancelWindowHours,
+      packageRuleMode: classes.packageRuleMode,
       lifecycle: classes.lifecycle,
     })
     .from(classes)
@@ -192,6 +202,7 @@ export async function listClassCards(
       lifecycle: r.lifecycle,
       effective_cancel_window_hours: windowOf(r),
       waitlist: waitlists.get(r.id)!,
+      restricted: r.packageRuleMode !== 'all',
     }
   })
 }
@@ -234,6 +245,7 @@ export async function getClassDetail(
       capacityOnline: classes.capacityOnline,
       capacityWaitlist: classes.capacityWaitlist,
       cancelWindowHours: classes.cancelWindowHours,
+      packageRuleMode: classes.packageRuleMode,
       lifecycle: classes.lifecycle,
     })
     .from(classes)
@@ -300,6 +312,8 @@ export async function getClassDetail(
     effective_cancel_window_hours: await classCancelWindow(tenantId, r),
     // Public route: the line's length, never anyone's place in it.
     waitlist: (await waitlistSummaries(tenantId, [r], null)).get(r.id)!,
+    restricted: r.packageRuleMode !== 'all',
+    package_rule: namedRuleJson(await namedClassRule(tenantId, r)),
   }
 }
 

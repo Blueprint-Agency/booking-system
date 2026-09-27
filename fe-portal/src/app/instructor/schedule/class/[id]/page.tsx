@@ -10,6 +10,7 @@ import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime } from "@/lib/formatters";
 import { fetchInstructorClass, type InstructorClassDetail } from "@/lib/schedule";
+import { acceptsLine } from "@/lib/package-rule";
 
 /**
  * An instructor's own class (spec-waitlist.md §10): the seats, the roster with
@@ -98,6 +99,7 @@ function ClassPage({ data, onChanged }: { data: InstructorClassDetail; onChanged
             .filter(Boolean)
             .join(" · ")}
         </p>
+        <p className="mt-1 break-words text-sm text-muted">{acceptsLine(data.package_rule)}</p>
       </header>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

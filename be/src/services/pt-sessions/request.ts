@@ -7,7 +7,7 @@
  * implicit approval. See docs/md/be-client.md §PT for the full contract.
  */
 
-import { and, eq, isNotNull, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
@@ -67,8 +67,8 @@ export async function submitPtRequest(
 
   return db.transaction(async tx => {
     const now = new Date()
-    // Same as the class path: an ended package must not hold the family's one
-    // Activated slot until the nightly sweep gets to it.
+    // Same as the class path: an ended package reads as ended now, not only
+    // once the nightly sweep gets to it.
     await sweepExpired(tx, tenantId, input.clientId, now)
     const [pkg] = await tx
       .select({
@@ -101,25 +101,9 @@ export async function submitPtRequest(
     const notExpired = pkg.expiresAt === null || pkg.expiresAt > now
     if (!pkg.active || !notExpired) throw new ConflictError('package_not_consumable')
 
-    // One Activated PT package at a time (§3). The member picks which package
-    // pays, so the rule is a check rather than a selection: while one PT
-    // package is running, it is the only one a request may be debited from,
-    // and a Dormant one waits behind it whatever its session type. A Dormant
-    // pick with nothing running is this request's Activation.
-    const [running] = await tx
-      .select({ id: clientPackages.id })
-      .from(clientPackages)
-      .where(
-        and(
-          eq(clientPackages.tenantId, tenantId),
-          eq(clientPackages.clientId, input.clientId),
-          eq(clientPackages.kind, 'pt'),
-          eq(clientPackages.active, true),
-          isNotNull(clientPackages.expiresAt),
-        ),
-      )
-      .limit(1)
-    if (running && running.id !== pkg.id) throw new ConflictError('pt_package_not_current')
+    // The member picks which PT package pays, and any number may run at once
+    // (be/docs/adr/0010): a Dormant pick is this request's Activation, whether
+    // or not another PT package is running.
 
     // 1on1 debits 1 session, 2on1 debits 2 (one per attendee).
     const cost = ptSessionCost(input.sessionType)

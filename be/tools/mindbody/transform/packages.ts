@@ -21,11 +21,11 @@ import {
  * Pure, like the rest of the mapper. The config's catalogue says what each
  * Mindbody pricing option is here; the Visits Remaining report says who holds
  * what. A holding becomes one `client_packages` row under the platform's own
- * rule (ADR 0004): one package runs per Family, and the rest wait Dormant.
+ * rule (`be/docs/adr/0010`): any number of packages may run at once in a
+ * Family, as they did in Mindbody.
  *
- *  - The package ending soonest runs, and keeps its Mindbody expiry.
- *  - The others wait with the time they had left, so nothing is lost by queueing.
- *  - One that Mindbody had not started yet waits with its whole validity.
+ *  - One Mindbody had started runs beside any others, with its Mindbody expiry.
+ *  - One Mindbody had not started yet waits Dormant with its whole validity.
  *
  * Balances are the report's *unbooked* count: a booking here spends its credit
  * when it is made, so a visit already booked is a credit already spent.
@@ -117,7 +117,7 @@ function combine(clientId: string, entry: Sold, holdings: HoldingRow[], home: st
  *
  * Only where the register accounts for the holding exactly: its live purchases'
  * credits add up to the report's Remaining. The credits Mindbody set aside for
- * future bookings come off the soonest-ending purchase first, the one that runs.
+ * future bookings come off the soonest-ending purchase first, the one a booking is paid by first.
  * Anything short of that and the holding stays combined, as Mindbody shows it.
  */
 function split(combined: Held, holdings: HoldingRow[], purchases: OptionSaleRow[], discountOf: (p: OptionSaleRow) => number): Held[] | null {
@@ -228,12 +228,6 @@ export function memberHomes(
     if (key) homes.set(r.id, { location: key, source: 'retention' })
   }
   return homes
-}
-
-/** The fewest whole calendar months from `from` that reach `to`: a waiting plan is never shortened. */
-function monthsToReach(from: CalendarDate, to: CalendarDate): number {
-  const whole = (to.year - from.year) * 12 + (to.month - from.month) + (to.day > from.day ? 1 : 0)
-  return Math.max(1, whole)
 }
 
 export function mapPackages(input: {
@@ -496,24 +490,20 @@ export function mapPackages(input: {
           (a.home ?? '').localeCompare(b.home ?? '') ||
           a.suffix.localeCompare(b.suffix),
       )
-    const running = new Set<'class' | 'pt'>()
     let addOnTaken = false
 
     for (const h of held) {
       const { entry } = h
-      const family = entry.kind === 'pt' ? 'pt' : 'class'
-      const notStarted = h.firstActivation !== null && dayNumber(h.firstActivation) > dayNumber(today)
-      const runs = !notStarted && !running.has(family)
-      if (runs) running.add(family)
+      // Started in Mindbody: it runs, beside whatever else does. Not yet: Dormant,
+      // and its clock starts on the first booking it pays for, as a purchase's does.
+      const runs = h.firstActivation === null || dayNumber(h.firstActivation) <= dayNumber(today)
       if (entry.kind === 'trial') hasTrial.add(clientId)
 
-      // Waiting: the days (or, for a plan, the months) it had left — today
-      // counts, as it would have in Mindbody. Not yet started: all of it.
-      const daysLeft = dayNumber(h.lastExpiration) - dayNumber(today) + 1
+      // The catalogue's length either way: a running package's end is its expiry, and a Dormant one has all of it to come.
       const length =
         entry.kind === 'unlimited'
-          ? { duration_months: runs || notStarted ? entry.durationMonths : monthsToReach(today, h.lastExpiration), validity_days: null }
-          : { duration_months: null, validity_days: runs || notStarted ? entry.validityDays : daysLeft }
+          ? { duration_months: entry.durationMonths, validity_days: null }
+          : { duration_months: null, validity_days: entry.validityDays }
 
       let home: string | null = null
       let addOn: string | null = null
@@ -522,8 +512,8 @@ export function mapPackages(input: {
         // A pass into the Location the plan is homed at opens nothing the plan does not: it is covered, not left behind.
         passes.set(clientId, (passes.get(clientId) ?? []).filter(p => passLocation(p) !== home))
         const elsewhere = passes.get(clientId)!
-        // One Add-On per member, on the plan that is running (or next to run):
-        // that is the plan the pass was bought beside.
+        // One Add-On per member, on the soonest-ending plan: the one the pass
+        // was bought beside, and the first to pay for a class (`./schedule.ts`).
         if (!addOnTaken && elsewhere.length > 0) {
           addOn = money(elsewhere.reduce((sum, p) => sum + p.totalPaid, 0))
           addOnTaken = true

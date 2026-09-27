@@ -12,7 +12,7 @@
  */
 import type { Api } from "./api.ts";
 import { ERROR_CODES } from "./error-codes.ts";
-import { notCoveredCopy, planRunsOutCopy } from "./booking-copy.ts";
+import { notAcceptedCopy, notCoveredCopy, planRunsOutCopy } from "./booking-copy.ts";
 
 /** The member's own entry, as the catalogue's `waitlist.my_entry` states it. */
 export interface WaitlistPlace {
@@ -63,22 +63,41 @@ export interface ClassActionInput {
   myEntry: WaitlistPlace | null;
   spotsLeft: number;
   waitlistOpen: boolean;
-  /** The member's plan covers another studio (class-row.tsx). Only matters for a free seat. */
+  /**
+   * Nothing the member holds can pay here: their plans cover other studios and
+   * they hold no credits (class-row.tsx). Only matters for a free seat.
+   */
   notCovered: boolean;
+  /**
+   * The class's Package rule takes none of the packages the member holds —
+   * learnt from the class detail or a refused join, never guessed from the
+   * list. Optional: a row that has not learnt it offers Book as usual.
+   */
+  notAccepted?: boolean;
 }
 
-export type ClassAction = "booked" | "waitlisted" | "book" | "not_covered" | "join_waitlist" | "full";
+export type ClassAction =
+  | "booked"
+  | "waitlisted"
+  | "book"
+  | "not_covered"
+  | "not_accepted"
+  | "join_waitlist"
+  | "full";
 
 /**
  * The class row's button, in the precedence §9 sets: Booked, then the member's
  * place in line, then a free seat, then the waitlist, then Full. A booked
- * class never shows a waitlist control.
+ * class never shows a waitlist control. A class that takes none of the
+ * member's packages offers neither a seat nor a place in line: both would be
+ * refused `not_accepted`.
  */
 export function classAction(s: ClassActionInput): ClassAction {
   if (s.booked) return "booked";
   if (s.myEntry) return "waitlisted";
-  if (s.spotsLeft > 0) return s.notCovered ? "not_covered" : "book";
-  return s.waitlistOpen ? "join_waitlist" : "full";
+  if (s.spotsLeft > 0) return s.notAccepted ? "not_accepted" : s.notCovered ? "not_covered" : "book";
+  if (!s.waitlistOpen) return "full";
+  return s.notAccepted ? "not_accepted" : "join_waitlist";
 }
 
 /** The toast on joining. There is no email on join, so this and My Bookings are all the member sees. */
@@ -87,8 +106,11 @@ export function joinedToast(position: number): string {
 }
 
 export type WaitlistRefusal =
-  /** Tell the member. `closed`: the line no longer takes joins, so the row reads Full. `refresh`: re-read the row. */
-  | { kind: "message"; msg: string; closed?: true; refresh?: true }
+  /**
+   * Tell the member. `closed`: the line no longer takes joins, so the row reads Full. `refresh`: re-read the row.
+   * `notAccepted`: the class takes none of the member's packages, so the row stops offering it.
+   */
+  | { kind: "message"; msg: string; closed?: true; refresh?: true; notAccepted?: true }
   /** The row is stale (already booked, already in line): re-read it rather than explain. */
   | { kind: "refresh" }
   /** Nothing can pay: the same "You need a package" dialog booking opens. */
@@ -142,9 +164,13 @@ export function waitlistRefusal(
     case ERROR_CODES.location_not_covered:
       return { kind: "message", msg: notCoveredCopy(planLocationName) };
     case ERROR_CODES.plan_expires_before_class:
-      // Booking's copy for the case where nothing behind the plan can step in:
-      // a join has no "use credits instead", the package is chosen at promotion.
-      return { kind: "message", msg: planRunsOutCopy(false) };
+      // Booking's copy. A join names no package: the Default payer is chosen
+      // at promotion, and this is the first reason in default order.
+      return { kind: "message", msg: planRunsOutCopy() };
+    case ERROR_CODES.not_accepted:
+      // A join names no package, so this is the server saying the class's
+      // Package rule takes none of them (`refusalOf` in selection.ts).
+      return { kind: "message", msg: notAcceptedCopy(), notAccepted: true };
     default:
       return null;
   }

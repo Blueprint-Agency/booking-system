@@ -14,6 +14,10 @@ import {
   type RosterPatch,
 } from './roster'
 
+import { ACCEPTS_ALL, validateRule, writeClassRule, type PackageRule } from './package-rules'
+import { applyRuleChange, previewRuleChange, sendRuleCancelledEmails } from './package-rule-change'
+import { sendPromotionEmails } from '../waitlist/promote'
+
 export type { RosterAssignment } from './roster'
 
 export interface CreateClassInput {
@@ -40,6 +44,8 @@ export interface CreateClassInput {
   instructorPaySgd?: number | null
   /** This class's own Cancellation Window in hours. null/absent = follow the studio's. */
   cancelWindowHours?: number | null
+  /** Which packages may pay for the class. Absent = accepts all. */
+  packageRule?: PackageRule
   createdByStaffId: string
 }
 
@@ -61,6 +67,7 @@ export async function createClass(tenantId: string, input: CreateClassInput): Pr
     ],
     { startsAt: input.startsAt, endsAt: input.endsAt },
   )
+  const rule = input.packageRule ? await validateRule(db, tenantId, input.packageRule) : ACCEPTS_ALL
 
   return db.transaction(async tx => {
     // The class row's own main_instructor_id FK points at instructors.staff_user_id,
@@ -88,10 +95,14 @@ export async function createClass(tenantId: string, input: CreateClassInput): Pr
         createdByStaffId: input.createdByStaffId,
       })
       .returning()
-    const row = rows[0]
+    let row = rows[0]
     // Unreachable DB invariant, not a client error — deliberately left untyped so
     // errorBoundary logs + reports it as a 500 rather than blaming the caller.
     if (!row) throw new Error('insert returned no rows')
+    if (rule.mode !== 'all') {
+      await writeClassRule(tx, tenantId, [row.id], rule)
+      row = { ...row, packageRuleMode: rule.mode }
+    }
 
     if (input.supportingInstructors !== undefined || input.supportingInstructorIds !== undefined) {
       await replaceRoster(
@@ -129,12 +140,34 @@ export interface UpdateClassInput {
   instructorPaySgd?: number | null
   /** undefined = leave unchanged; null = back to the studio's window; number = this class's own. */
   cancelWindowHours?: number | null
+  /**
+   * undefined = leave unchanged. A new rule cancels the bookings paid by a
+   * package it no longer accepts (./package-rule-change) — preview the count
+   * first with `previewClassRuleChange`.
+   */
+  packageRule?: PackageRule
+}
+
+/**
+ * How many bookings setting this rule on the class would cancel. Validates the
+ * rule as saving it would, and writes nothing.
+ */
+export async function previewClassRuleChange(tenantId: string, id: string, rule: PackageRule): Promise<number> {
+  const [existing] = await db
+    .select({ id: classes.id })
+    .from(classes)
+    .where(and(eq(classes.tenantId, tenantId), eq(classes.id, id)))
+    .limit(1)
+  if (!existing) throw new NotFoundError('class_not_found')
+  return previewRuleChange(tenantId, id, await validateRule(db, tenantId, rule))
 }
 
 export async function updateClass(
   tenantId: string,
   id: string,
   patch: UpdateClassInput,
+  /** Who made the edit — named on the refunds a rule change makes. */
+  actorStaffId?: string,
 ): Promise<ClassRow> {
   const [existing] = await db
     .select()
@@ -217,8 +250,9 @@ export async function updateClass(
       { kind: 'class', id },
     )
   }
+  const rule = patch.packageRule ? await validateRule(db, tenantId, patch.packageRule) : undefined
 
-  return db.transaction(async tx => {
+  const { row, ruleChange } = await db.transaction(async tx => {
     const set: Partial<typeof classes.$inferInsert> = {}
     if (patch.classTypeId !== undefined) set.classTypeId = patch.classTypeId
     if (patch.locationId !== undefined) set.locationId = patch.locationId
@@ -253,8 +287,22 @@ export async function updateClass(
         .limit(1)
       if (fresh) row = fresh
     }
-    return row
+
+    // Last, once the class row is locked by the writes above or by the rule's
+    // own: a booking made meanwhile waits on it and is then judged by the new rule.
+    let ruleChange: Awaited<ReturnType<typeof applyRuleChange>> | null = null
+    if (rule) {
+      ruleChange = await applyRuleChange(tx, tenantId, id, rule, actorStaffId ?? null)
+      row = { ...row, packageRuleMode: rule.mode }
+    }
+    return { row, ruleChange }
   })
+
+  if (ruleChange) {
+    await sendPromotionEmails(tenantId, ruleChange.promotions)
+    await sendRuleCancelledEmails(tenantId, ruleChange.cancellations)
+  }
+  return row
 }
 
 export async function listSupportingInstructors(

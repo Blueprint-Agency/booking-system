@@ -13,6 +13,7 @@ import { clients } from '../../db/schema/identity'
 import { candidatePackages, holdsSeat, lockClass } from '../bookings/book'
 import { countSeats } from '../bookings/seats'
 import { selectPackage } from '../packages/selection'
+import { readClassRule } from '../schedule/package-rules'
 import { ConflictError, NotFoundError } from '../../shared/errors'
 import { beforeWindow, joinRefusal, positions } from './rules'
 import { waitingLine, waitlistEnabled } from './line'
@@ -74,14 +75,14 @@ export async function join(
     if (refusal === 'waitlist_closed') throw new ConflictError(refusal, { window_hours: windowHours })
     if (refusal) throw new ConflictError(refusal)
 
-    // Could the member pay if a seat opened now? The same selection as a
-    // booking, read without locking or spending anything.
+    // Could the member pay if a seat opened now? The Default payer a promotion
+    // would use, read without locking or spending anything.
     const choice = selectPackage({
       packages: await candidatePackages(tx, tenantId, clientId),
       classLocationId: cls!.locationId,
       classStartsAt: cls!.startsAt,
       creditCost: cls!.creditCost,
-      useCredits: false,
+      rule: await readClassRule(tx, tenantId, cls!),
       now,
     })
     if (!choice.ok) throw new ConflictError(choice.refusal)

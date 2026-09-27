@@ -22,10 +22,11 @@ test('a member shows their code at the desk and is checked in', async ({ browser
     .filter({ has: member.getByRole('button', { name: 'Book Now' }) })
     .last()
   await row.getByRole('button', { name: 'Book Now' }).locator('visible=true').click()
-  await member
-    .getByRole('dialog', { name: `Book ${catalogue.checkInClassType}?` })
-    .getByRole('button', { name: 'Book class' })
-    .click()
+  const sheet = member.getByRole('dialog', { name: `Book ${catalogue.checkInClassType}?` })
+  // The Book sheet lists the member's packages with the one that will pay
+  // already picked, so booking stays one tap.
+  await expect(sheet.getByRole('radio', { name: catalogue.packageName })).toBeChecked()
+  await sheet.getByRole('button', { name: 'Book class' }).click()
   await expect(row.getByText('Booked', { exact: true }).locator('visible=true')).toBeVisible()
 
   await member.reload()

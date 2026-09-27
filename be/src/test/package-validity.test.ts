@@ -353,11 +353,11 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     assert.equal((await ledgerOf(bundle)).length, 0)
   })
 
-  test('PKG-16 with a Dormant plan and a Credit Bundle, booking with use_credits pays by credits and the plan stays Dormant', async () => {
+  test('PKG-16 with a Dormant plan and a Credit Bundle, booking with the bundle picked pays by credits and the plan stays Dormant', async () => {
     const fin = await member(one)
     const plan = await holds(one, fin, 'unlimited')
     const bundle = await holds(one, fin, 'credit_bundle', { credits: 5 })
-    const bookingId = await bookOk(fin, await addClass(one), { use_credits: true })
+    const bookingId = await bookOk(fin, await addClass(one), { client_package_id: bundle })
 
     const booking = await bookingRow(bookingId)
     assert.equal(booking.clientPackageId, bundle)
@@ -464,7 +464,7 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     assert.equal((await pkg(plan)).expiresAt?.toISOString(), addUtcMonths(T, 1).toISOString())
   })
 
-  test('PKG-11 a class-family package an Admin gives beside an Activated one lands Dormant, and Activates only on the first booking after the current one ends', async () => {
+  test('PKG-11 a class-family package an Admin gives beside an Activated one lands Dormant, and with no pick the Default payer starts it once the current one has ended', async () => {
     const lea = await member(one)
     const current = await holds(one, lea, 'credit_bundle', { credits: 2 })
     await bookOk(lea, await addClass(one))
@@ -563,15 +563,17 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     assert.equal(after.clientPackageId, before.clientPackageId)
   })
 
-  test('PKG-31 an Admin setting an expiry on a Dormant package while another of its family runs is refused 409 family_already_activated, and nothing changes', async () => {
+  test('PKG-31 an Admin setting an expiry on a Dormant package while another of its family runs is accepted, and both run', async () => {
     const pam = await member(one)
     const running = await holds(one, pam, 'credit_bundle', { expiresAt: days(20) })
     const waiting = await holds(one, pam, 'credit_bundle')
 
-    await expectStatus(await setExpiry(one.admin, pam, waiting, days(40)), 409, 'family_already_activated')
-    assert.equal((await pkg(waiting)).expiresAt, null)
-    assert.equal((await pkg(running)).expiresAt?.toISOString(), days(20).toISOString())
-    assert.equal((await ledgerOf(waiting)).length, 0)
+    await expectStatus(await setExpiry(one.admin, pam, waiting, days(40)), 200)
+    const dated = await pkg(waiting)
+    assert.equal(dated.expiresAt?.toISOString(), days(40).toISOString(), 'the Dormant package now runs')
+    assert.equal(dated.active, true)
+    assert.equal((await pkg(running)).expiresAt?.toISOString(), days(20).toISOString(), 'the running one is unchanged')
+    assert.equal((await ledgerOf(waiting)).length, 1, 'one zero-delta ledger row names the change')
     assert.equal((await ledgerOf(running)).length, 0)
   })
 

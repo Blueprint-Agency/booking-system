@@ -2,7 +2,7 @@
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Ban, Loader2, Save } from "lucide-react";
-import { Badge, Button, Input, Label } from "@/components/ui";
+import { Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { SeriesPanel } from "@/components/schedule/series-panel";
 import { ClassRoster, SeatStats, Stat } from "@/components/schedule/class-roster";
@@ -10,6 +10,17 @@ import { WaitlistPanel } from "@/components/schedule/waitlist-panel";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
 import { CancelWindowField } from "@/components/schedule/cancel-window-field";
 import { cancelWindowText, parseCancelWindow } from "@/lib/cancel-window";
+import { PackageRuleField } from "@/components/schedule/package-rule-field";
+import {
+  EDIT_RULE_HINT,
+  draftFromRule,
+  packageRuleBody,
+  packageRuleProblem,
+  ruleSentence,
+  sameRule,
+  wouldCancelCopy,
+  type PackageRuleDraft,
+} from "@/lib/package-rule";
 import { useWaitlistsOn } from "@/lib/use-waitlists-on";
 import {
   SupportingInstructorsField,
@@ -36,7 +47,9 @@ import {
   patchClass,
   patchCorporateSession,
   patchPtSession,
+  previewClassRule,
   scheduleErrorMessage,
+  type ClassPatch,
   type ScheduleClassDetail,
   type ClassDifficulty,
   type ScheduleCorporatePackageBrief,
@@ -210,6 +223,7 @@ function ClassDetail({ id }: { id: string }) {
             value={data.scheduled_by?.name ?? "—"}
             sub={`on ${formatDateTime(data.created_at)}`}
           />
+          <DetailField label="Accepts" value={ruleSentence(data.package_rule)} />
         </dl>
       </section>
 
@@ -297,8 +311,11 @@ function ClassEditor({
   const [endTime, setEndTime] = useState(toHHMM(data.ends_at));
   const [capacity, setCapacity] = useState<Capacity>(capacityOf(data));
   const [cancelWindow, setCancelWindow] = useState(cancelWindowText(data.cancel_window_hours));
+  const [packageRule, setPackageRule] = useState<PackageRuleDraft>(draftFromRule(data.package_rule));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // A rule change that cancels bookings waits here for the admin's say-so.
+  const [confirmCancel, setConfirmCancel] = useState<{ count: number; patch: ClassPatch } | null>(null);
   const onLeave = useInstructorsOnLeave(date);
   const waitlistsOn = useWaitlistsOn("admin");
 
@@ -320,6 +337,7 @@ function ClassEditor({
     setStartTime(toHHMM(data.starts_at));
     setEndTime(toHHMM(data.ends_at));
     setCancelWindow(cancelWindowText(data.cancel_window_hours));
+    setPackageRule(draftFromRule(data.package_rule));
   }, [data]);
 
   async function handleSave() {
@@ -347,33 +365,50 @@ function ClassEditor({
       setErr(ownWindow.message);
       return;
     }
+    const ruleProblem = packageRuleProblem(packageRule);
+    if (ruleProblem) {
+      setErr(ruleProblem);
+      return;
+    }
+    const ruleChanged = !sameRule(packageRule, draftFromRule(data.package_rule));
+    const patch: ClassPatch = {
+      class_type_id: classTypeId,
+      main_instructor_id: mainInstructorId,
+      instructor_pay_sgd: mainPay.trim() === "" ? null : Number(mainPay),
+      supporting_instructors: supporting.map((s) => ({
+        instructor_id: s.instructorId,
+        pay_sgd: s.pay.trim() === "" ? null : Number(s.pay),
+      })),
+      location_id: locationId,
+      room_id: roomId,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      // Only what changed: an imported class can already hold more online
+      // bookings than its online seats, and resending that number is refused.
+      ...(capacity.onlineBooking !== data.capacity_online
+        ? { capacity_online: capacity.onlineBooking }
+        : {}),
+      ...(capacity.waitlist !== data.capacity_waitlist
+        ? { capacity_waitlist: capacity.waitlist }
+        : {}),
+      ...(capacity.buffer !== data.capacity_buffer ? { capacity_buffer: capacity.buffer } : {}),
+      // Blank clears it: the class goes back to the studio's window.
+      cancel_window_hours: ownWindow.hours,
+      // Only when changed: saving a rule cancels the bookings it no longer accepts.
+      ...(ruleChanged ? { package_rule: packageRuleBody(packageRule) } : {}),
+    };
     setSaving(true);
     setErr(null);
     try {
-      await patchClass(api, data.id, {
-        class_type_id: classTypeId,
-        main_instructor_id: mainInstructorId,
-        instructor_pay_sgd: mainPay.trim() === "" ? null : Number(mainPay),
-        supporting_instructors: supporting.map((s) => ({
-          instructor_id: s.instructorId,
-          pay_sgd: s.pay.trim() === "" ? null : Number(s.pay),
-        })),
-        location_id: locationId,
-        room_id: roomId,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
-        // Only what changed: an imported class can already hold more online
-        // bookings than its online seats, and resending that number is refused.
-        ...(capacity.onlineBooking !== data.capacity_online
-          ? { capacity_online: capacity.onlineBooking }
-          : {}),
-        ...(capacity.waitlist !== data.capacity_waitlist
-          ? { capacity_waitlist: capacity.waitlist }
-          : {}),
-        ...(capacity.buffer !== data.capacity_buffer ? { capacity_buffer: capacity.buffer } : {}),
-        // Blank clears it: the class goes back to the studio's window.
-        cancel_window_hours: ownWindow.hours,
-      });
+      if (patch.package_rule) {
+        // Count what the new rule would cancel first; ask before cancelling anyone.
+        const count = await previewClassRule(api, data.id, patch.package_rule);
+        if (count > 0) {
+          setConfirmCancel({ count, patch });
+          return;
+        }
+      }
+      await patchClass(api, data.id, patch);
       await onSaved();
     } catch (e) {
       setErr(scheduleErrorMessage(e));
@@ -381,6 +416,25 @@ function ClassEditor({
       setSaving(false);
     }
   }
+
+  /** The confirmed save of a rule change that cancels bookings. */
+  async function handleConfirmedSave() {
+    if (!api || !confirmCancel) return;
+    const { patch } = confirmCancel;
+    setConfirmCancel(null);
+    setSaving(true);
+    setErr(null);
+    try {
+      await patchClass(api, data.id, patch);
+      await onSaved();
+    } catch (e) {
+      setErr(scheduleErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const cancelCopy = confirmCancel ? wouldCancelCopy(confirmCancel.count) : null;
 
   return (
     <section
@@ -502,6 +556,16 @@ function ClassEditor({
             hint="Applies to members already booked. Leave blank to follow the studio's cancellation policy."
           />
         </fieldset>
+        <div className="min-w-0 sm:col-span-2">
+          <PackageRuleField
+            role="admin"
+            value={packageRule}
+            onChange={setPackageRule}
+            named={data.package_rule.packages}
+            hint={EDIT_RULE_HINT}
+            disabled={disabled || saving}
+          />
+        </div>
       </div>
       {err && (
         <p className="mt-3 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
@@ -540,6 +604,23 @@ function ClassEditor({
             Save changes
           </Button>
         </div>
+      )}
+      {cancelCopy && (
+        <Dialog
+          open
+          onOpenChange={(o) => !o && setConfirmCancel(null)}
+          title={cancelCopy.title}
+          description={cancelCopy.body}
+        >
+          <DialogFooter className="mt-0">
+            <Button variant="ghost" onClick={() => setConfirmCancel(null)}>
+              {cancelCopy.keep}
+            </Button>
+            <Button variant="danger" onClick={handleConfirmedSave}>
+              {cancelCopy.confirm}
+            </Button>
+          </DialogFooter>
+        </Dialog>
       )}
     </section>
   );

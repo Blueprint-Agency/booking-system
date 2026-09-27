@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useMemberSession } from "./member-auth";
 import { ApiError, publicApi, useApi, type Api } from "./api";
 import type { ApiClassWaitlist } from "./waitlist";
+import type { PickerPayload, UnlimitedPlanCoverage } from "./package-picker";
+import type { ApiPackageRule } from "./package-rule";
 
 export interface ApiClassLocation {
   id: string;
@@ -34,6 +36,23 @@ export interface ApiClassCard {
   is_booked?: boolean;
   /** The class's line (spec-waitlist.md §9). `my_entry` is null when signed out. */
   waitlist: ApiClassWaitlist;
+  /**
+   * The class takes only some packages (its Package rule is not `all`). Just
+   * the flag, for the row's "Some packages" hint; which ones is in the detail.
+   */
+  restricted: boolean;
+}
+
+/**
+ * `GET /public/classes/:id` — the card, plus what only the class detail
+ * overlay shows: the class type's description, the Location's address and map
+ * link, the supporting instructors, and the Package rule with its packages named.
+ */
+export interface ApiClassDetail extends Omit<ApiClassCard, "class_type" | "location"> {
+  class_type: { id: string; name: string; difficulty: string; description: string | null };
+  location: (ApiClassLocation & { gmaps_url: string | null }) | null;
+  supporting_instructors: { id: string; name: string }[];
+  package_rule: ApiPackageRule;
 }
 
 export interface ApiLocationFull {
@@ -244,28 +263,45 @@ export interface ClassEntitlements {
   has_active_unlimited: boolean;
   has_active_bundle_credits: boolean;
   /**
-   * The one studio the member's Unlimited Plan covers, or null when they hold
-   * none. The backend decides which plan this is; the schedule only compares it
-   * against the Location already on every class card, so the class list stays
-   * anonymous and cacheable. Presentation only — booking is the enforcement.
+   * The Home Location of the member's first live Unlimited Plan (a running one
+   * before a Dormant one), or null when they hold none. A member may hold plans
+   * at several Locations; `unlimited_plans` lists them all.
    */
   unlimited_location: { id: string; name: string } | null;
   /**
-   * The Cross-Location Add-On the nudge on a blocked class offers (§5): the plan
-   * it would attach to, whether that plan already Covers both Locations, and the
-   * rate to quote. All three are decided by the backend — the schedule only
-   * renders them.
+   * Every live Unlimited Plan, running ones first: its Home Location and
+   * whether an Add-On makes it Cover every Location. The schedule compares
+   * these against the Location already on every class card, so the class list
+   * stays anonymous and cacheable (`planCoverage` in package-picker.ts).
+   * Presentation only — booking is the enforcement.
+   */
+  unlimited_plans: UnlimitedPlanCoverage[];
+  /**
+   * The plan `unlimited_location` names, and whether it already Covers both
+   * Locations. Decided by the backend.
    */
   unlimited_plan_id: string | null;
   unlimited_covers_both: boolean;
+  /** The Cross-Location Add-On's rate, as the nudge on an uncovered class quotes it (§5). */
   cross_location_rate_sgd: string;
-  /**
-   * A class package is running right now. While it is, it is the only one
-   * that can pay, so "use a credit instead" is off the table — the credits
-   * would have to start, and only one package per family runs at a time.
-   * Backend-derived; the booking refusal stays the enforcement.
-   */
+  /** Some class package is running right now. Several may be. Backend-derived. */
   class_family_running: boolean;
+}
+
+/**
+ * `GET /me/classes/:id`: the class detail plus the member's own class
+ * packages, each Eligible to pay or with the reason it is not, and the Default
+ * payer.
+ */
+export type ApiMemberClassDetail = ApiClassDetail & PickerPayload;
+
+export function fetchMemberClass(api: Api, classId: string): Promise<ApiMemberClassDetail> {
+  return api.get<ApiMemberClassDetail>(`/me/classes/${classId}`);
+}
+
+/** `GET /public/classes/:id`: the class detail for a visitor who is not signed in. */
+export function fetchPublicClass(classId: string): Promise<ApiClassDetail> {
+  return publicApi.get<ApiClassDetail>(`/public/classes/${classId}`);
 }
 
 /** Whether the signed-in client currently holds something that can pay for a class. */

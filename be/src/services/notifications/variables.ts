@@ -29,6 +29,9 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   pt_cancelled_session_returned: ['client_name', 'instructor_name', 'starts_at'],
   pt_cancelled_forfeited: ['client_name', 'instructor_name', 'starts_at', 'reason_line'],
   admin_cancel_class: ['client_name', 'class_name', 'date', 'credits_returned'],
+  // The studio changed which packages a class accepts, and the one that paid for
+  // this booking is no longer one of them (services/schedule/package-rules.ts).
+  class_rule_cancelled: ['client_name', 'class_name', 'date', 'package_name', 'credits_returned'],
   admin_cancel_pt: ['client_name', 'instructor_name', 'starts_at'],
   admin_cancel_workshop: ['client_name', 'workshop_name', 'refund_sgd'],
   // Goes to admins, not clients — the instructor cancelled their own class.

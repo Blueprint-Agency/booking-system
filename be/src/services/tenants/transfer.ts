@@ -620,6 +620,11 @@ function literal(value: unknown, kind: ColumnKind | undefined) {
   if (kind?.type === 'json') return sql`${asJsonb(value)}::jsonb`
   if (kind?.type === 'array') {
     if (value == null) return sql`${null}`
+    // The driver parses the arrays of the types it knows (`text[]`) and hands
+    // the rest back as Postgres's own array text — a `date[]` such as
+    // `class_series.excluded_dates` arrives as `{}` or `{2026-12-25}`. That is
+    // already the literal; wrapping it as one element would make `{"{}"}`.
+    if (typeof value === 'string' && value.startsWith('{')) return sql`${value}::${sql.raw(kind.element)}[]`
     const items = Array.isArray(value) ? value : [value]
     return sql`${pgArray(items)}::${sql.raw(kind.element)}[]`
   }

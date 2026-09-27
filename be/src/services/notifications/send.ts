@@ -23,6 +23,7 @@ export type TemplateSlug =
   | 'pt_cancelled_session_returned'
   | 'pt_cancelled_forfeited'
   | 'admin_cancel_class'
+  | 'class_rule_cancelled'
   | 'admin_cancel_pt'
   | 'admin_cancel_workshop'
   | 'instructor_cancel_class'

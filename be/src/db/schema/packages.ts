@@ -425,24 +425,9 @@ export const clientPackages = pgTable(
     trialUniquePerClient: uniqueIndex('client_packages_trial_unique_per_client')
       .on(table.clientId)
       .where(sql`${table.kind} = 'trial'`),
-    // One Activated package per **family** per client. The class family is
-    // Credit Bundle + Unlimited + trial; PT is its own. A Dormant row (null
-    // expiry) sits outside the predicate, which is what lets any number of
-    // purchases wait behind the running one. Selection is the enforcement;
-    // these indexes are the backstop that catches a race or a bug.
-    //
-    // `active` is in the predicate so an ended package (expired and swept, or
-    // spent to zero) frees the slot. Between an expiry passing and the nightly
-    // sweep the booking path sweeps the member's own rows first, so a stale
-    // `active` never blocks the next Activation.
-    activatedClassUniquePerClient: uniqueIndex('client_packages_one_activated_class_per_client')
-      .on(table.clientId)
-      .where(
-        sql`${table.kind} IN ('credit_bundle', 'unlimited', 'trial') AND ${table.active} AND ${table.expiresAt} IS NOT NULL`,
-      ),
-    activatedPtUniquePerClient: uniqueIndex('client_packages_one_activated_pt_per_client')
-      .on(table.clientId)
-      .where(sql`${table.kind} = 'pt' AND ${table.active} AND ${table.expiresAt} IS NOT NULL`),
+    // No "one Activated package per Family" index: any number of packages may
+    // run at once in either Family, and the member picks the payer
+    // (be/docs/adr/0010; migration 0093 dropped the two partial unique indexes).
     // A comp took no money and never reached the payment provider — so no
     // Purchase bought it. (Read off the payment intent until #92 took that
     // column off; migration 0065 re-states the check against `purchase_id`.)

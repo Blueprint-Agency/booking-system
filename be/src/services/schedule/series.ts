@@ -36,6 +36,16 @@ import { assertRoomInLocation } from './room-conflicts'
 import { findClash, type SubjectClash } from './occupancy'
 import { ensureInstructors, exec, replaceRoster, type Tx } from './roster'
 import {
+  ACCEPTS_ALL,
+  nameRule,
+  readSeriesRule,
+  validateRule,
+  writeClassRule,
+  writeSeriesRule,
+  type NamedPackageRule,
+  type PackageRule,
+} from './package-rules'
+import {
   addDays,
   daysFrom,
   localDateOf,
@@ -68,6 +78,8 @@ export interface SeriesTemplate {
   creditCost: number
   /** Copied onto every class the series creates. null/absent = those classes follow the studio's window. */
   cancelWindowHours?: number | null
+  /** Copied onto every class the series creates, extends included. Absent = accepts all. */
+  packageRule?: PackageRule
 }
 
 export interface CreateSeriesInput extends SeriesTemplate {
@@ -90,6 +102,9 @@ export interface PreviewDate extends Occurrence {
 export type SeriesRow = typeof classSeries.$inferSelect
 
 export interface SeriesDetail extends SeriesTemplate {
+  packageRule: PackageRule
+  /** The same rule with its packages named, for the series panel. */
+  packageRuleNamed: NamedPackageRule
   id: string
   firstDate: PlainDate
   lastDate: PlainDate
@@ -112,7 +127,10 @@ export async function previewSeries(
   input: CreateSeriesInput,
   now = new Date(),
 ): Promise<PreviewDate[]> {
-  return withClashes(tenantId, input, await planCreate(tenantId, input, now))
+  const occurrences = await planCreate(tenantId, input, now)
+  // A rule the commit would refuse is refused here, before anyone ticks dates.
+  if (input.packageRule) await validateRule(db, tenantId, input.packageRule)
+  return withClashes(tenantId, input, occurrences)
 }
 
 export async function createSeries(
@@ -121,6 +139,7 @@ export async function createSeries(
   now = new Date(),
 ): Promise<SeriesCommit> {
   const occurrences = await planCreate(tenantId, input, now)
+  const packageRule = input.packageRule ? await validateRule(db, tenantId, input.packageRule) : ACCEPTS_ALL
   const created = await db.transaction(async tx => {
     await ensureInstructors(
       tenantId,
@@ -151,6 +170,7 @@ export async function createSeries(
       })
       .returning({ id: classSeries.id })
     if (!row) throw new Error('insert returned no rows')
+    if (packageRule.mode !== 'all') await writeSeriesRule(tx, tenantId, row.id, packageRule)
     if (input.supportingInstructors.length) {
       await tx.insert(classSeriesSupportingInstructors).values(
         input.supportingInstructors.map(s => ({
@@ -165,7 +185,7 @@ export async function createSeries(
       tx,
       tenantId,
       row.id,
-      input,
+      { ...input, packageRule },
       occurrences,
       input.createdByStaffId,
     )
@@ -387,6 +407,25 @@ export async function endSeries(
 }
 
 // ---------------------------------------------------------------------------
+// package rule
+// ---------------------------------------------------------------------------
+
+/**
+ * Change the Package rule the series gives the classes it makes. Like the rest
+ * of the template, it reaches only classes created from now on — every class an
+ * extend adds. The classes it already made keep their own rule; each is changed
+ * on the class, where the bookings it would cancel are previewed first.
+ */
+export async function setSeriesRule(tenantId: string, seriesId: string, rule: PackageRule): Promise<SeriesDetail> {
+  const valid = await validateRule(db, tenantId, rule)
+  await db.transaction(async tx => {
+    await loadSeries(tenantId, seriesId, tx)
+    await writeSeriesRule(tx, tenantId, seriesId, valid)
+  })
+  return getSeries(tenantId, seriesId)
+}
+
+// ---------------------------------------------------------------------------
 // read
 // ---------------------------------------------------------------------------
 
@@ -412,6 +451,7 @@ async function loadSeries(tenantId: string, seriesId: string, tx?: Tx): Promise<
         eq(classSeriesSupportingInstructors.seriesId, seriesId),
       ),
     )
+  const packageRule = await readSeriesRule(exec(tx), tenantId, row)
   return {
     id: row.id,
     classTypeId: row.classTypeId,
@@ -434,6 +474,8 @@ async function loadSeries(tenantId: string, seriesId: string, tx?: Tx): Promise<
     capacityBuffer: row.capacityBuffer,
     creditCost: row.creditCost,
     cancelWindowHours: row.cancelWindowHours,
+    packageRule,
+    packageRuleNamed: await nameRule(exec(tx), tenantId, packageRule),
     firstDate: row.firstDate,
     lastDate: row.lastDate,
     excludedDates: [...row.excludedDates].sort(),
@@ -515,6 +557,10 @@ async function createClasses(
       })),
     )
     .returning({ id: classes.id })
+
+  // The series' Package rule, copied as its Cancellation Window is.
+  const rule = template.packageRule ?? ACCEPTS_ALL
+  if (rule.mode !== 'all') await writeClassRule(tx, tenantId, rows.map(r => r.id), rule)
 
   // Supporting instructors join each class through the roster module, like any
   // class's — its instructor checks are the ones that apply. A null pay is passed

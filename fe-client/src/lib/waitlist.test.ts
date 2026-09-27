@@ -36,6 +36,16 @@ test("a full class with an open line offers the waitlist; otherwise it is Full",
   assert.equal(classAction(row({ spotsLeft: 0, waitlistOpen: false })), "full");
 });
 
+test("a class that takes none of the member's packages offers neither a seat nor the line", () => {
+  assert.equal(classAction(row({ spotsLeft: 3, notAccepted: true })), "not_accepted");
+  assert.equal(classAction(row({ spotsLeft: 3, notAccepted: true, notCovered: true })), "not_accepted");
+  assert.equal(classAction(row({ spotsLeft: 0, waitlistOpen: true, notAccepted: true })), "not_accepted");
+  // Full is full, whatever the rule; and the member's own booking or place still shows.
+  assert.equal(classAction(row({ spotsLeft: 0, waitlistOpen: false, notAccepted: true })), "full");
+  assert.equal(classAction(row({ booked: true, notAccepted: true })), "booked");
+  assert.equal(classAction(row({ myEntry: { id: "e", position: 1 }, notAccepted: true })), "waitlisted");
+});
+
 test("the join toast names the member's place", () => {
   assert.equal(
     joinedToast(3),
@@ -84,7 +94,19 @@ test("the package-selection refusals read as they do when booking", () => {
   });
   assert.deepEqual(waitlistRefusal("plan_expires_before_class", {}), {
     kind: "message",
-    msg: "Your current package runs out before this class starts, so it can't cover it. Try again once it has ended and your next package is running.",
+    msg: "Your current package runs out before this class starts, so it can't cover it.",
+  });
+  // Several packages may run at once, so nothing tells the member to wait for one to end.
+  const runsOut = waitlistRefusal("plan_expires_before_class", {});
+  assert.ok(runsOut && runsOut.kind === "message");
+  assert.doesNotMatch(runsOut.msg, /once it has ended|next package/);
+});
+
+test("a join the class's package rule refuses says so and stops the row offering the line", () => {
+  assert.deepEqual(waitlistRefusal("not_accepted", {}), {
+    kind: "message",
+    msg: "Your package isn't accepted for this class. Tap the class to see which packages are.",
+    notAccepted: true,
   });
 });
 

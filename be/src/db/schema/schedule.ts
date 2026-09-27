@@ -18,9 +18,10 @@ import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
 import { staffUsers, clients } from './identity'
 import { instructors, classTypes, locations, rooms } from './catalog'
-import { clientPackages, corporatePackages } from './packages'
+import { classPackages, clientPackages, corporatePackages } from './packages'
 import {
   lifecycleEnum,
+  packageRuleModeEnum,
   ptSessionTypeEnum,
   ptRequestStatusEnum,
   corporateRequestStatusEnum,
@@ -58,6 +59,10 @@ export const classes = pgTable(
     // This class's own Cancellation Window, in hours. NULL = follow the studio's
     // class window (Global Policy), live — services/policy/cancel-window.ts.
     cancelWindowHours: integer('cancel_window_hours'),
+    // The class's Package rule: which catalogue class packages may pay for it.
+    // `all` (every existing and imported class) has no list; `only` / `except`
+    // name theirs in class_rule_packages — services/schedule/package-rules.ts.
+    packageRuleMode: packageRuleModeEnum('package_rule_mode').notNull().default('all'),
     // Gross pay to the main instructor for this single class, in SGD. Manually
     // entered at scheduling and editable from the Payroll page. NULL = not priced yet.
     instructorPaySgd: numeric('instructor_pay_sgd', { precision: 10, scale: 2 }),
@@ -185,6 +190,9 @@ export const classSeries = pgTable(
     // Copied onto every class the series creates, extends included. NULL = those
     // classes follow the studio's class window.
     cancelWindowHours: integer('cancel_window_hours'),
+    // Copied onto every class the series creates, extends included, with its
+    // list (class_series_rule_packages). Editing one class's rule never reaches back.
+    packageRuleMode: packageRuleModeEnum('package_rule_mode').notNull().default('all'),
     firstDate: date('first_date').notNull(),
     // Moves forward on every extend.
     lastDate: date('last_date').notNull(),
@@ -248,6 +256,51 @@ export const classSeriesSupportingInstructors = pgTable(
       table.tenantId,
       table.instructorId,
     ),
+  }),
+)
+
+// ============================================================================
+// Package rule lists (be/CONTEXT.md § Package rule). The mode lives on the class
+// or series row; these are the catalogue class packages it names — the only
+// ones it takes (`only`) or the ones it refuses (`except`). Exact packages,
+// archived ones included. Empty under `all`.
+// ============================================================================
+
+export const classRulePackages = pgTable(
+  'class_rule_packages',
+  {
+    tenantId: tenantIdColumn(),
+    classId: uuid('class_id')
+      .notNull()
+      .references(() => classes.id, { onDelete: 'cascade' }),
+    // `restrict`: a catalogue package a rule names is never deleted, only archived.
+    classPackageId: uuid('class_package_id')
+      .notNull()
+      .references(() => classPackages.id, { onDelete: 'restrict' }),
+  },
+  table => ({
+    pk: primaryKey({ columns: [table.classId, table.classPackageId] }),
+    classPackageIdFkIdx: index('class_rule_packages_class_package_id_fk_idx').on(table.classPackageId),
+    packageIdx: index('class_rule_packages_package_idx').on(table.tenantId, table.classPackageId),
+  }),
+)
+
+/** The list every class of a series is created with — copied, as the mode is. */
+export const classSeriesRulePackages = pgTable(
+  'class_series_rule_packages',
+  {
+    tenantId: tenantIdColumn(),
+    seriesId: uuid('series_id')
+      .notNull()
+      .references(() => classSeries.id, { onDelete: 'cascade' }),
+    classPackageId: uuid('class_package_id')
+      .notNull()
+      .references(() => classPackages.id, { onDelete: 'restrict' }),
+  },
+  table => ({
+    pk: primaryKey({ columns: [table.seriesId, table.classPackageId] }),
+    classPackageIdFkIdx: index('class_series_rule_packages_class_package_id_fk_idx').on(table.classPackageId),
+    packageIdx: index('class_series_rule_packages_package_idx').on(table.tenantId, table.classPackageId),
   }),
 )
 

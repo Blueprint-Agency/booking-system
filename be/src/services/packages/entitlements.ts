@@ -20,11 +20,19 @@ export interface ClientEntitlements {
   trialEligible: boolean
   hasActiveUnlimited: boolean
   /**
-   * Home Location of the Unlimited Plan that would pay for a booking today (§8).
-   * Null when the client holds none. The renewal rule keeps a member's two plans
-   * at one Location, so this is unambiguous.
+   * Home Location of the member's first live Unlimited Plan — a running one
+   * before a Dormant one (§8). Null when the client holds none. A member may
+   * hold plans at several Locations (be/docs/adr/0010); `unlimitedPlans` lists
+   * them all, and this names the one an Add-On is offered on.
    */
   unlimitedLocation: { id: string; name: string } | null
+  /**
+   * Every live Unlimited Plan, running ones first, each with the Location it is
+   * homed at and whether an Add-On makes it Cover every Location. The schedule
+   * reads it to tell whether any plan Covers a class — a commented mirror of
+   * `covers()` in `selection.ts`, which stays the enforcement.
+   */
+  unlimitedPlans: { id: string; location: { id: string; name: string }; coversBoth: boolean; running: boolean }[]
   /**
    * The plan a **Cross-Location Add-On** would attach to — the same plan
    * `unlimitedLocation` names. Null when the client holds none. An Add-On belongs
@@ -47,17 +55,20 @@ export interface ClientEntitlements {
   dormant: boolean
   /**
    * A class-family package (Credit Bundle, Unlimited or trial) is Activated
-   * right now — clock running, not yet ended. While it is, it is the only one
-   * that can pay for a class and nothing waiting behind it can start, so the
-   * member surface must not offer "use a credit instead" on top of a running
-   * plan. Derived HERE, from the same reading selection uses.
+   * right now — clock running, not yet ended. Several may be; this says only
+   * whether any is. Derived HERE, from the same reading selection uses.
    */
   classFamilyRunning: boolean
-  /** The same for the PT family: one PT package is running, and only it can pay. */
+  /** The same for the PT family: at least one PT package is running. */
   ptFamilyRunning: boolean
   hasActiveBundleCredits: boolean
   pt1on1Remaining: number
   pt2on1Remaining: number
+}
+
+/** A live Unlimited Plan as both member payloads carry it. */
+export function serializeUnlimitedPlan(p: ClientEntitlements['unlimitedPlans'][number]) {
+  return { id: p.id, location: p.location, covers_both: p.coversBoth, running: p.running }
 }
 
 /**
@@ -94,6 +105,7 @@ export async function getClientEntitlements(
   let unlimitedLocation: ClientEntitlements['unlimitedLocation'] = null
   let unlimitedPlanId: string | null = null
   let unlimitedCoversBoth = false
+  const unlimitedPlans: (ClientEntitlements['unlimitedPlans'][number] & { expiresAt: Date | null })[] = []
   let locationIsDormant = false
   let dormant = false
   let classFamilyRunning = false
@@ -119,9 +131,16 @@ export async function getClientEntitlements(
       if (consumable) {
         hasActiveUnlimited = true
         if (isDormant({ kind: 'unlimited', expiresAt: r.expiresAt })) dormant = true
-        // §3 orders Activated first, Dormant last — the plan paying today is the
-        // one with a running clock. The §6 renewal rule keeps a member's two plans
-        // at one Location anyway, so this only settles the tie-break.
+        if (r.locationId && r.locationName) {
+          unlimitedPlans.push({
+            id: r.id,
+            location: { id: r.locationId, name: r.locationName },
+            coversBoth: r.crossLocationPaidSgd !== null,
+            running: r.expiresAt !== null,
+            expiresAt: r.expiresAt,
+          })
+        }
+        // A running plan before a Dormant one: the plan an Add-On is offered on.
         if (r.locationId && r.locationName && (unlimitedLocation === null || locationIsDormant)) {
           unlimitedLocation = { id: r.locationId, name: r.locationName }
           unlimitedPlanId = r.id
@@ -149,6 +168,13 @@ export async function getClientEntitlements(
     unlimitedLocation,
     unlimitedPlanId,
     unlimitedCoversBoth,
+    unlimitedPlans: unlimitedPlans
+      .sort(
+        (a, b) =>
+          Number(!a.running) - Number(!b.running) ||
+          (a.expiresAt?.getTime() ?? Infinity) - (b.expiresAt?.getTime() ?? Infinity),
+      )
+      .map(({ expiresAt: _expiresAt, ...p }) => p),
     crossLocationRateSgd: await readCrossLocationRateSgd(tenantId),
     dormant,
     classFamilyRunning,

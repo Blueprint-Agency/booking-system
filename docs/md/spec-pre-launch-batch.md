@@ -258,11 +258,15 @@ The package-selection decision moves out of the booking transaction and into a p
 
 Point 5 deliberately breaks the "server picks the package, no client input" rule the booking service documents. It is the only way to honour "shown, blocked, and upsold" without stranding a member who holds both a plan for one Location and paid credits.
 
+> **Superseded in part by `be/docs/adr/0010-several-packages-run-per-family.md` (2026-09-27).** Points 1–3 stand as tests on each package: a plan must Cover the class's Location, and a Dormant one must pass the prospective `now + its length >= class start`. Points 4 and 5 are replaced. Selection now **classifies** every live class package of the member — Eligible, or its first reason: `location_not_covered`, `plan_expires_before_class`, `insufficient_credits` — then **chooses** the package the member named (`client_package_id`) if Eligible, else the **Default payer**: running packages soonest-ending first, then Dormant ones with Unlimited Plans before credit kinds, each in purchase order. A plan that does not Cover the Location is still never silently stepped around: it is simply Ineligible, and a bundle pays only when it is the member's pick or the first Eligible package in that order. Nothing Eligible refuses with the first package's reason. `use_credits` is gone; a client still sending it gets `400`.
+
 **Coverage is tested once, at booking, and never re-tested.** A confirmed booking was paid for by the plan that covered it at the time. A member who books at the other Location and then renews without an Add-On keeps that booking.
 
 ### 3. Activation, and what a null expiry means
 
 > **Superseded in part by `be/docs/adr/0004-every-package-activates-on-first-booking.md` (2026-09-12).** Every kind — Credit Bundle, Unlimited, trial and PT — now lands Dormant at purchase and Activates on its first booking, with `validity_days` frozen onto the purchase beside `duration_months`. One package per **Family** (class: bundle + Unlimited + trial; PT on its own) runs at a time. The table and the "only an Unlimited Plan can be Dormant" paragraph below describe the rule as it stood before that ADR; everything else in this section stands.
+>
+> **Superseded in part again by `be/docs/adr/0010-several-packages-run-per-family.md` (2026-09-27).** The "one package per Family runs at a time" sentence above no longer holds: any number of class packages and any number of PT packages may be Activated at once. A purchase still lands Dormant and still Activates on the first booking it pays for, but that booking may be one the member makes while another package runs — picking a Dormant package on the Book sheet starts its clock from the booking moment. The Trial stays one per member, ever. The closing `use_credits` sentence of this section is replaced by the member naming the package: a member who picks a Credit Bundle books on credits and their Dormant plan stays Dormant.
 
 **A null `expires_at` means Dormant, and nothing else.** "Never expires" leaves the domain.
 
@@ -281,7 +285,7 @@ Two changes fence "never expires" out: `class_packages.validity_days` becomes **
 
 **Activation is one-way.** No cancellation un-stamps it, from any actor. Reversing automatically would mean deciding what a second and third cancellation do and whether start dates can be farmed. Staff handle the rare genuine case by returning the plan to Dormant by hand.
 
-A member who passes `use_credits: true` books on credits and **their plan stays Dormant**.
+A member who passes `use_credits: true` books on credits and **their plan stays Dormant**. *(Since ADR 0010: a member who picks a Credit Bundle by `client_package_id` books on credits and their plan stays Dormant; `use_credits` is refused `400`.)*
 
 ### 4. Duration is calendar months, frozen at purchase
 
@@ -321,6 +325,8 @@ Money splits without overlap — the plan's amount and the Add-On's amount toget
 **Staff** attach or remove an Add-On from the client detail page. Every change writes a manual-adjustment row with a reason and a zero delta — exactly how an expiry-only edit is already recorded. Checkout refuses when the target plan already carries one.
 
 ### 6. One Activated plan, and the renewal rule
+
+> **Superseded by `be/docs/adr/0010-several-packages-run-per-family.md` (2026-09-27).** Both rules in this section are lifted. A member may hold any number of Unlimited Plans, running or Dormant — no "one Activated plus at most one Dormant" cap (`unlimited_limit_reached` is retired) — and a plan bought while another is live may be homed at any Location (`unlimited_renewal_location_mismatch` is retired), so a member may hold plans homed at different Locations. The partial unique index over the class family (and its PT sibling) is dropped by migration 0093. The hole this section closed — booking at the other Location reaching a Dormant plan and making two Activated — is no longer a hole: two Activated plans are allowed, and a Dormant plan homed at the class's Location is Eligible and Activates when it pays. The Cross-Location Add-On is unchanged: one per plan, and still the way to make a single plan Cover every Location. The text below records the rule as it stood.
 
 A member holds **one Activated plan plus at most one Dormant plan**. A third purchase is refused; wanting the other Location means buying the Add-On, not a second plan.
 

@@ -15,20 +15,23 @@
  * client's package rows are locked too so a double-click can't double-debit —
  * and so a Dormant package has exactly one writer at Activation.
  */
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { classes } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
-import { clientPackages } from '../../db/schema/packages'
+import { classPackages, clientPackages } from '../../db/schema/packages'
+import { locations } from '../../db/schema/catalog'
 import type { BookingSeat } from '../../db/enums'
 import { generateBookingCodes } from './qr'
 import { countSeats, seatFor, type SeatRole } from './seats'
 import type { Tx } from '../schedule/roster'
 import { debitCredits } from '../packages/ledger'
 import { activatePackage, sweepExpired } from '../packages/activation'
-import { selectPackage, type SelectionRefusal } from '../packages/selection'
+import { classifyPackages, selectPackage, type CandidatePackage, type SelectionRefusal } from '../packages/selection'
 import { lineState, settleWaitingOnBooking } from '../waitlist/line'
+import { readClassRule } from '../schedule/package-rules'
+import type { PackageRuleMode } from '../../db/enums'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
 
@@ -36,10 +39,17 @@ export interface BookClassInput {
   clientId: string
   classId: string
   /**
-   * Pay with credits for a class the member's Unlimited Plan does not cover
-   * (§2). The one piece of client input selection accepts.
+   * The package the member picked on the Book sheet — the one piece of client
+   * input selection accepts. Absent, the Default payer pays (be/docs/adr/0010).
    */
-  useCredits?: boolean
+  clientPackageId?: string | null
+}
+
+/** The package that paid for a booking, named for the member or staff who made it. */
+export interface PaidWith {
+  id: string
+  name: string
+  kind: CandidateKind
 }
 
 export interface BookClassResult {
@@ -47,6 +57,7 @@ export interface BookClassResult {
   qrToken: string
   code: string
   seat: BookingSeat
+  paidWith: PaidWith
 }
 
 /** A member booking themselves: an online seat or nothing. */
@@ -137,7 +148,7 @@ async function bookIntoClass(
     const paid = await payAndBook(tx, tenantId, cls, {
       clientId,
       seat: decision.seat,
-      useCredits: input.useCredits ?? false,
+      clientPackageId: input.clientPackageId ?? null,
       now,
     })
     if (!paid.ok) throw new ConflictError(paid.refusal)
@@ -167,6 +178,8 @@ export interface LockedClass {
   mainInstructorId: string
   /** The class's own Cancellation Window; null = the studio's (policy/cancel-window.ts). */
   cancelWindowHours: number | null
+  /** The class's Package rule mode; its list is read by `readClassRule` when it has one. */
+  packageRuleMode: PackageRuleMode
 }
 
 /**
@@ -187,6 +200,7 @@ export async function lockClass(tx: Tx, tenantId: string, classId: string): Prom
       lifecycle: classes.lifecycle,
       mainInstructorId: classes.mainInstructorId,
       cancelWindowHours: classes.cancelWindowHours,
+      packageRuleMode: classes.packageRuleMode,
     })
     .from(classes)
     .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
@@ -212,15 +226,37 @@ export async function holdsSeat(tx: Tx, tenantId: string, clientId: string, clas
   return !!row
 }
 
+type CandidateKind = CandidatePackage['kind']
+
+const KIND_NAME: Record<CandidateKind, string> = {
+  credit_bundle: 'Credit bundle',
+  unlimited: 'Unlimited',
+  trial: 'Trial pass',
+  pt: 'PT package',
+}
+
+/** A package as a member reads it: its catalogue name, or its kind when it has none. */
+export function packageDisplayName(kind: CandidateKind, catalogueName: string | null): string {
+  return catalogueName ?? KIND_NAME[kind]
+}
+
+/** `paid_with` as the member's and the staff booking responses both carry it. */
+export function serializePaidWith(p: PaidWith) {
+  return { client_package_id: p.id, name: p.name, kind: p.kind }
+}
+
 /**
- * The member's packages that could pay for a class, as selection reads them.
- * Add `.for('update')` when about to spend one.
+ * The member's packages that could pay for a class, as selection reads them,
+ * with the catalogue name the Book sheet and staff are shown. Add
+ * `.for('update', { of: clientPackages })` when about to spend one — Postgres
+ * refuses to lock the nullable side of the outer join.
  */
-export function candidatePackages(reader: Tx, tenantId: string, clientId: string) {
+export function candidatePackages(reader: Tx | typeof db, tenantId: string, clientId: string) {
   return reader
     .select({
       id: clientPackages.id,
       kind: clientPackages.kind,
+      sourceClassPackageId: clientPackages.sourceClassPackageId,
       creditsOrSessionsRemaining: clientPackages.creditsOrSessionsRemaining,
       expiresAt: clientPackages.expiresAt,
       locationId: clientPackages.locationId,
@@ -228,8 +264,10 @@ export function candidatePackages(reader: Tx, tenantId: string, clientId: string
       validityDays: clientPackages.validityDays,
       crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
       purchasedAt: clientPackages.purchasedAt,
+      catalogueName: classPackages.name,
     })
     .from(clientPackages)
+    .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
     .where(
       and(
         // The credit-isolation rule, at the one place credits are chosen to be
@@ -257,29 +295,41 @@ export async function payAndBook(
   tx: Tx,
   tenantId: string,
   cls: LockedClass,
-  input: { clientId: string; seat: BookingSeat; useCredits: boolean; now: Date },
+  input: {
+    clientId: string
+    seat: BookingSeat
+    /** The member's pick; null wherever nobody is there to pick, and the Default payer pays. */
+    clientPackageId: string | null
+    now: Date
+  },
 ): Promise<PayAndBookResult> {
   const { clientId, now } = input
 
   // Pick a package to pay with (lock the client's rows).
   // A package whose expiry has passed since the nightly sweep still says
-  // `active`, and the one-Activated-per-family index counts it. Sweep the
-  // member's own rows first so an ended package can never block the next
-  // one from starting — the same flip the cron does, a day early.
+  // `active`. Sweep the member's own rows first so the rows read below are the
+  // ones the cron would leave — the same flip it does, a day early.
   await sweepExpired(tx, tenantId, clientId, now)
-  const pkgs = await candidatePackages(tx, tenantId, clientId).for('update')
+  const pkgs = await candidatePackages(tx, tenantId, clientId).for('update', { of: clientPackages })
 
   const choice = selectPackage({
     packages: pkgs,
     classLocationId: cls.locationId,
     classStartsAt: cls.startsAt,
     creditCost: cls.creditCost,
-    useCredits: input.useCredits,
+    rule: await readClassRule(tx, tenantId, cls),
+    clientPackageId: input.clientPackageId,
     now,
   })
-  if (!choice.ok) return { ok: false, refusal: choice.refusal }
+  if (!choice.ok) {
+    // Another member's package, a PT package, or one already spent: not one of
+    // this member's to pay with, whatever id the client sent.
+    if (choice.refusal === 'client_package_not_found') throw new NotFoundError('client_package_not_found')
+    return { ok: false, refusal: choice.refusal }
+  }
 
   const { clientPackageId, creditsUsed } = choice
+  const payer = pkgs.find(p => p.id === clientPackageId)!
 
   if (creditsUsed > 0) {
     // The ledger re-derives `active` — a bundle spent to exactly zero stops
@@ -298,6 +348,7 @@ export async function payAndBook(
   // Activation (§3): the first confirmed class booking a Dormant package pays
   // for starts its clock, stamped here because this transaction already holds
   // the row locked — one writer, no race. One-way: no cancellation un-stamps it.
+  // Other packages of the Family may be running beside it (ADR 0010).
   if (choice.activateUntil) {
     await activatePackage(tx, tenantId, clientPackageId, choice.activateUntil)
   }
@@ -320,5 +371,97 @@ export async function payAndBook(
     })
     .returning({ id: bookings.id })
 
-  return { ok: true, booking: { bookingId: row!.id, qrToken, code, seat: input.seat } }
+  return {
+    ok: true,
+    booking: {
+      bookingId: row!.id,
+      qrToken,
+      code,
+      seat: input.seat,
+      paidWith: { id: payer.id, name: packageDisplayName(payer.kind, payer.catalogueName), kind: payer.kind },
+    },
+  }
+}
+
+/** One of the member's class packages, read against one class for the Book sheet. */
+export interface MemberPackageForClass {
+  id: string
+  name: string
+  kind: CandidateKind
+  /** Activated: its clock is running. False means Dormant. */
+  running: boolean
+  /** Credits left; null on an Unlimited Plan. */
+  remaining: number | null
+  expiresAt: Date | null
+  /** Dormant only: the end date picking it for this class would stamp. */
+  activationEndIfPicked: Date | null
+  /** Home Location of an Unlimited Plan, for "Covers {Location} only". */
+  location: { id: string; name: string } | null
+  eligible: boolean
+  reason: SelectionRefusal | null
+}
+
+/**
+ * Every live class package the member holds, each Eligible for this class or
+ * with the reason it is not, in default order — so the first Eligible row IS
+ * the Default payer the Book sheet pre-selects. Read-only: no sweep, no lock.
+ * Null when the class is not bookable.
+ */
+export async function memberPackagesForClass(
+  tenantId: string,
+  clientId: string,
+  classId: string,
+): Promise<{ packages: MemberPackageForClass[]; defaultPayerId: string | null } | null> {
+  const now = clockNow()
+  const [cls] = await db
+    .select({
+      id: classes.id,
+      locationId: classes.locationId,
+      startsAt: classes.startsAt,
+      creditCost: classes.creditCost,
+      lifecycle: classes.lifecycle,
+      packageRuleMode: classes.packageRuleMode,
+    })
+    .from(classes)
+    .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
+    .limit(1)
+  if (!cls || cls.lifecycle !== 'active') return null
+
+  const pkgs = await candidatePackages(db, tenantId, clientId)
+  const locationIds = [...new Set(pkgs.flatMap(p => (p.locationId ? [p.locationId] : [])))]
+  const locationNames = new Map(
+    locationIds.length === 0
+      ? []
+      : (
+          await db
+            .select({ id: locations.id, name: locations.name })
+            .from(locations)
+            .where(and(eq(locations.tenantId, tenantId), inArray(locations.id, locationIds)))
+        ).map(l => [l.id, l.name] as const),
+  )
+
+  const classified = classifyPackages({
+    packages: pkgs,
+    classLocationId: cls.locationId,
+    classStartsAt: cls.startsAt,
+    creditCost: cls.creditCost,
+    rule: await readClassRule(db, tenantId, cls),
+    now,
+  })
+  const packages = classified.map(({ pkg, running, reason, activateUntil }) => {
+    const p = pkgs.find(x => x.id === pkg.id)!
+    return {
+      id: p.id,
+      name: packageDisplayName(p.kind, p.catalogueName),
+      kind: p.kind,
+      running,
+      remaining: p.kind === 'unlimited' ? null : p.creditsOrSessionsRemaining,
+      expiresAt: p.expiresAt,
+      activationEndIfPicked: activateUntil,
+      location: p.locationId ? { id: p.locationId, name: locationNames.get(p.locationId) ?? 'another studio' } : null,
+      eligible: reason === null,
+      reason,
+    }
+  })
+  return { packages, defaultPayerId: packages.find(p => p.eligible)?.id ?? null }
 }

@@ -16,7 +16,7 @@ import { PreferredClassType } from "@/components/booking/preferred-class-type";
 import { usePtSessionsApi, HALF_HOUR_TIMES, formatSlotTime } from "@/lib/pt-sessions";
 import { ApiError } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
-import { cn, formatExpiryDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 type Slot = { proposedDate: string; startTime: string };
 
@@ -155,9 +155,7 @@ export default function PrivateSessionsPage() {
       const msg =
         code === ERROR_CODES.insufficient_pt_credit
           ? `This ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} request uses ${requestCost} session${requestCost === 1 ? "" : "s"}. Choose a package with enough sessions or buy another package.`
-          : code === ERROR_CODES.pt_package_not_current || code === ERROR_CODES.family_already_activated
-            ? "Another private session package of yours is already running. Only one runs at a time — your next package starts once it ends or is used up."
-            : err instanceof Error
+          : err instanceof Error
             ? err.message
             : "We couldn't submit your request. Please try again.";
       if (code === ERROR_CODES.insufficient_pt_credit) setShowBuyPrompt(true);
@@ -187,22 +185,18 @@ export default function PrivateSessionsPage() {
 
   const balanceForType = (t: "1on1" | "2on1") => (t === "2on1" ? pt2on1 : pt1on1);
   const requestCost = computedSessionType === "2on1" ? 2 : 1;
-  // One PT package runs at a time (§3). While one is running it is the only
-  // package a request can be debited from; every other one waits Dormant
-  // behind it, whatever its session type. With nothing running, the member's
-  // pick is the package that starts. Backend-derived `dormant`, never re-tested.
-  const runningPt = useMemo(() => ptPackages.find((p) => !p.dormant) ?? null, [ptPackages]);
-  const waitingPtCount = ptPackages.length - (runningPt ? 1 : 0);
-  // Every package that could pay for this request. More than one means the
-  // member picks, because the package they pick decides the instructor.
+  // Every package that could pay for this request. Any number of PT packages
+  // may run at once (be/docs/adr/0010), so a Dormant pick simply starts. More
+  // than one means the member picks, because the package they pick decides the
+  // instructor.
   const eligiblePackages = useMemo(
     () =>
-      (runningPt ? [runningPt] : ptPackages).filter(
+      ptPackages.filter(
         (p) =>
           p.sessionType === computedSessionType &&
           (p.creditsOrSessionsRemaining ?? 0) >= requestCost,
       ),
-    [ptPackages, runningPt, computedSessionType, requestCost],
+    [ptPackages, computedSessionType, requestCost],
   );
   // A pick that no longer fits (the session type changed under it) falls back
   // rather than lingering — the request must never be debited from a package
@@ -211,18 +205,6 @@ export default function PrivateSessionsPage() {
     eligiblePackages.find((p) => p.id === packageId) ?? eligiblePackages[0];
   const hasPackageForType = ptPackages.some((p) => p.sessionType === computedSessionType);
   const hasEnoughCredits = Boolean(matchingPackage) && balanceForType(computedSessionType) >= requestCost;
-  // The running package cannot pay for this request (wrong type, or too few
-  // sessions) and a Dormant one is waiting that could — but it may not start
-  // until the running one ends. Named so the prompt says that, not "buy one".
-  const blockedByRunning =
-    !!runningPt &&
-    !matchingPackage &&
-    ptPackages.some(
-      (p) =>
-        p.id !== runningPt.id &&
-        p.sessionType === computedSessionType &&
-        (p.creditsOrSessionsRemaining ?? 0) >= requestCost,
-    );
 
   return (
     <BookingSurface>
@@ -299,17 +281,6 @@ export default function PrivateSessionsPage() {
           {matchingPackage?.boundInstructor && (
             <p className="rounded-xl border border-accent/25 bg-accent/5 px-3 py-2.5 text-sm text-ink">
               Your sessions will be with {matchingPackage.boundInstructor.name}.
-            </p>
-          )}
-
-          {/* A running package and others waiting: say so, so a member who
-              bought a second package is not left wondering why it is not
-              offered. Only one runs at a time; the next starts when it ends. */}
-          {runningPt && waitingPtCount > 0 && (
-            <p className="text-xs text-muted">
-              Requests come off your {runningPt.name} while it runs. Your{" "}
-              {waitingPtCount === 1 ? "other package starts" : `${waitingPtCount} other packages start`}{" "}
-              once it ends or is used up.
             </p>
           )}
 
@@ -465,16 +436,7 @@ export default function PrivateSessionsPage() {
             />
           </div>
 
-          {showBuyPrompt && blockedByRunning && runningPt && (
-            <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink">
-              Your {runningPt.name} is running, and only one private session package
-              can run at a time. Your next package starts once it ends
-              {runningPt.expiresAt ? ` (${formatExpiryDate(runningPt.expiresAt)})` : ""} or is
-              used up.
-            </div>
-          )}
-
-          {showBuyPrompt && !blockedByRunning && (
+          {showBuyPrompt && (
             <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink">
               {!hasPackageForType
                 ? `You don't have an active ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} PT package yet.`

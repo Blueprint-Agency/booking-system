@@ -311,6 +311,22 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     link(CLASSES_URL, 'Find another class'),
   ])
 
+  // Sent once per booking a Package rule change cancelled. Every such booking
+  // is refunded in full through the admin cancel, so the credits line is always
+  // true — 0 for an Unlimited Plan, which spent none.
+  const CLASS_RULE_CANCELLED_BODY = body('Your booking is cancelled — the class changed', [
+    'Hi {{client_name}},',
+    'The studio has changed which packages <strong>{{class_name}}</strong> accepts, and the package that paid for your booking is no longer one of them, so we have cancelled that booking.',
+    facts([
+      ['Class', '{{class_name}}'],
+      ['Date', '{{date}}'],
+      ['Paid with', '{{package_name}}'],
+      ['Credits returned', '{{credits_returned}}'],
+    ]),
+    'Whatever the booking used is back on that package, and this cancellation does not count against your cancellations.',
+    link(CLASSES_URL, 'Find another class'),
+  ])
+
   /* ── Private sessions ────────────────────────────────────────────────── */
 
   // No promise of a decision email: nothing in `be/src` sends
@@ -609,6 +625,11 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       slug: 'admin_cancel_class',
       subject: '{{class_name}} on {{date}} was cancelled',
       bodyHtml: ADMIN_CANCEL_CLASS_BODY,
+    },
+    {
+      slug: 'class_rule_cancelled',
+      subject: 'Your booking for {{class_name}} on {{date}} was cancelled',
+      bodyHtml: CLASS_RULE_CANCELLED_BODY,
     },
     {
       slug: 'admin_cancel_pt',

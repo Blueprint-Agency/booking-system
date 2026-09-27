@@ -517,7 +517,7 @@ Polymorphic — a promotion belongs to exactly one parent (`class_package`, `pt_
 
 **`client_packages_kind_fields` CHECK** (`spec-pre-launch-batch.md` §1): `kind='unlimited'` requires `location_id` and `duration_months` NOT NULL; every other kind requires both NULL and `expires_at` NOT NULL. Extended in `0045`: `bound_instructor_id` must be NULL on every kind but `pt` — the column is the whole of what "bound" means, so a binding on any other kind would be one no rule in the domain knows how to read. Strict, no grandfathering — the backfill probe found zero Unlimited Plans in either database before this shipped.
 
-**Indexes:** `(client_id, kind)`, `(client_id, expires_at)` for upcoming-expiry sweep, `(purchase_id) unique where not null` — one plan per sale, the index that decides a webhook-redelivery race — a **unique partial index `(client_id) WHERE kind='trial'`** — enforces the one-trial-per-client-ever invariant from `fe-client-features.md` §6.1 (a previously-purchased trial, active OR expired, blocks any further trial purchase; the purchase service catches the unique-violation and returns `409 trial_already_used`) — and a **unique partial index `(client_id) WHERE kind='unlimited' AND active AND expires_at IS NOT NULL`**, capping a client at one Activated Unlimited Plan (plus, enforced in the purchase path rather than an index, at most one Dormant one).
+**Indexes:** `(client_id, kind)`, `(client_id, expires_at)` for upcoming-expiry sweep, `(purchase_id) unique where not null` — one plan per sale, the index that decides a webhook-redelivery race — a **unique partial index `(client_id) WHERE kind='trial'`** — enforces the one-trial-per-client-ever invariant from `fe-client-features.md` §6.1 (a previously-purchased trial, active OR expired, blocks any further trial purchase; the purchase service catches the unique-violation and returns `409 trial_already_used`) . *(There used to be a unique partial index capping a client at one Activated Unlimited Plan, widened by ADR 0004 to one Activated package per Family with a PT sibling, plus a purchase-path cap of one Dormant plan. Migration 0093 dropped both indexes and the cap is gone: any number of packages may be Activated at once in either Family — `be/docs/adr/0010-several-packages-run-per-family.md`.)*
 
 Promo Code tables (`promo_codes`, `promo_code_products`, `promo_code_redemptions`) live beside this table and are documented in full in `spec-pre-launch-batch.md` §9–§11 rather than repeated here — the model is the shipped one, not the used-count-plus-valid-from-window model an earlier draft of this document sketched.
 
@@ -546,6 +546,7 @@ lifecycle = 'active' AND now > ends_at         → 'completed'
 | capacity_waitlist | int | not null, default 0, CHECK ≥ 0 — how many members may stand in the class's line (`waitlist_entries`) once `capacity_online` is exhausted. Not a seat (`spec-waitlist.md` §1) |
 | capacity_buffer | int | not null, default 0, CHECK ≥ 0 — reserve held back from self-booking (admin manual add / walk-in) |
 | credit_cost | int | not null, CHECK ≥ 0 |
+| package_rule_mode | enum `package_rule_mode` | not null, default `'all'` — the class's **Package rule** (`be/CONTEXT.md`): `all`, `only`, `except`; the packages named are rows of `class_rule_packages` |
 | lifecycle | enum `lifecycle` | not null, default `'active'` — `active`, `cancelled` |
 | cancelled_at | timestamptz | nullable |
 | cancelled_by_staff_id | uuid | FK → staff_users.id, nullable |
@@ -553,6 +554,10 @@ lifecycle = 'active' AND now > ends_at         → 'completed'
 | created_by_staff_id | uuid | FK → staff_users.id |
 
 **Derived:** attendance capacity `= capacity_online + capacity_buffer` (`spec-waitlist.md` §1; the waitlist is not a seat). Computed at read time by `services/bookings/seats.ts`, never stored. CHECK that at least one of the three is > 0.
+
+#### `class_rule_packages` / `class_series_rule_packages`
+
+The catalogue class packages a class's (or a Class Series') Package rule names — the only ones it takes under `only`, the ones it refuses under `except`; empty under `all`. `(tenant_id, class_id | series_id, class_package_id)`, PK on the owner and package; the owner FK cascades, the `class_packages` FK restricts (a named package is archived, never deleted). Row-Level Security like every domain table (migration 0090). Written only by `services/schedule/package-rules.ts`; a series copies its rows onto every class it creates or extends.
 
 #### `waitlist_entries`
 

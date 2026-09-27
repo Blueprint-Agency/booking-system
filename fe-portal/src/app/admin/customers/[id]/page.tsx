@@ -285,8 +285,6 @@ interface ApiProfile {
  * this only says so. Anything not listed falls back to the status code.
  */
 const REFUSALS: Record<string, string> = {
-  family_already_activated:
-    "Another package of this type is already running. Only one class package and one PT package can run at a time — return the running one to Dormant first, or wait for it to end.",
   package_touched:
     "A class this package paid for has already been held, so it cannot be removed. Adjust the balance or the expiry instead.",
   package_has_live_bookings:

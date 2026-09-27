@@ -136,7 +136,7 @@ The join check that the class starts outside the window is Mindbody's reason and
 1. If `now ≥ starts_at − window`, return. (Mindbody's default: no auto-add inside the window. Its "First to Claim" / "Continue auto-add" modes are SMS features and out of scope.)
 2. While `online_used < capacity_online`:
    - Take the first `waiting` entry in order that has not been tried in this call.
-   - Run `sweepExpired` and `selectPackage` for it. If refused, leave it `waiting` and try the next (Mindbody: "Invalid" clients stay on the list and are re-checked when the next spot opens).
+   - Run `sweepExpired` and `selectPackage` for it, with no package named — so the member's **Default payer** pays (`be/docs/adr/0010-several-packages-run-per-family.md`: running soonest-ending first, then Dormant with Unlimited Plans before credits). The same holds for the join check (§4), staff Add to class (§7) and the panel's "Pending: <package>" (§10). If refused, leave it `waiting` and try the next (Mindbody: "Invalid" clients stay on the list and are re-checked when the next spot opens).
    - Otherwise create the booking through the same code path as `bookClass` (debit, dormant activation, QR token, `seat = 'online'`), set the entry `promoted` with `booking_id`, and enqueue the `class_waitlist_promoted` email.
 3. Stop when the seats are full or the line is exhausted.
 

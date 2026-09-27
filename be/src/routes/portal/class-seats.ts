@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { BookClassResult } from '../../services/bookings/book'
+import { serializePaidWith, type BookClassResult } from '../../services/bookings/book'
 import type { ClassDetail } from '../../services/schedule/detail'
 import type { ScheduleEntryRow } from '../../services/schedule/timetable'
 import { staffCancelPreviewJson } from '../../services/bookings/staff-cancel-preview'
@@ -17,7 +17,14 @@ export const staffBookingSchema = z.object({
 })
 
 export function staffBookingJson(res: BookClassResult) {
-  return { booking_id: res.bookingId, seat: res.seat, qr_token: res.qrToken, code: res.code }
+  return {
+    booking_id: res.bookingId,
+    seat: res.seat,
+    qr_token: res.qrToken,
+    code: res.code,
+    // The Default payer staff charged, named so they know what was spent.
+    paid_with: serializePaidWith(res.paidWith),
+  }
 }
 
 /** A timetable entry's seats. Null on every kind but a class. */

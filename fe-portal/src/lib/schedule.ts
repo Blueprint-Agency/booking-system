@@ -57,6 +57,11 @@ import { ApiError, type Api } from "@/lib/api";
 import type { BookingSeat, ClassSeats } from "@/lib/class-seats";
 import type { ClassWaitlist } from "@/lib/class-waitlist";
 import type { StaffCancelPreview } from "@/lib/staff-cancel";
+import {
+  PACKAGE_RULE_ERROR_COPY,
+  type NamedPackageRule,
+  type PackageRuleInput,
+} from "@/lib/package-rule";
 
 export interface NamedRef {
   id: string;
@@ -102,6 +107,8 @@ export interface ScheduleClassDetail extends ClassSeats, ClassWaitlist {
   cancel_window_hours: number | null;
   /** The window that applies now: its own, else the studio's. */
   effective_cancel_window_hours: number;
+  /** Which class packages may pay for this class, named. */
+  package_rule: NamedPackageRule;
   /** Every confirmed booking — the same number as `attending`. */
   booked_count: number;
   attendees: ScheduleClassAttendee[];
@@ -236,6 +243,11 @@ export interface ClassPatch {
   capacity_buffer?: number;
   /** The class's own Cancellation Window; null puts it back on the studio's. */
   cancel_window_hours?: number | null;
+  /**
+   * Sent only when changed. Saving it cancels the bookings paid by a package
+   * the class no longer accepts — `previewClassRule` counts them first.
+   */
+  package_rule?: PackageRuleInput;
 }
 
 /** PT names the main instructor `instructor_id`, not `main_instructor_id`. */
@@ -263,6 +275,18 @@ export interface CorporatePatch {
 
 export function patchClass(api: Api, classId: string, input: ClassPatch): Promise<unknown> {
   return api.patch(`/portal/admin/schedule/classes/${classId}`, input);
+}
+
+/**
+ * How many bookings saving `rule` on this class would cancel — those paid by a
+ * package it would no longer accept. Writes nothing.
+ */
+export async function previewClassRule(api: Api, classId: string, rule: PackageRuleInput): Promise<number> {
+  const res = await api.patch<{ would_cancel: number }>(`/portal/admin/schedule/classes/${classId}`, {
+    package_rule: rule,
+    preview: true,
+  });
+  return res.would_cancel;
 }
 
 export function patchPtSession(api: Api, sessionId: string, input: PtPatch): Promise<unknown> {
@@ -318,6 +342,8 @@ const SCHEDULE_ERROR_COPY: Record<string, string> = {
     "Online booking can't go below the members already booked online. Cancel a booking first, or add seats as buffer.",
   class_ongoing: "This class has started, so it can no longer be edited.",
   class_completed: "This class has ended, so it can no longer be edited.",
+  // A class's or series' Package rule.
+  ...PACKAGE_RULE_ERROR_COPY,
 };
 
 /**

@@ -4,11 +4,11 @@ import { eq, sql } from 'drizzle-orm'
 import { startTestApp, integrationTestsEnabled, inTenantContext, SKIP_REASON, type TestApp } from './harness'
 
 /**
- * Activation on first booking, and one Activated package per Family (ADR 0004)
- * — against a real database, because the half that the pure tests in
- * `services/packages/selection.test.ts` cannot reach is exactly the half that
- * matters here: the row lands Dormant, the booking stamps it, the partial
- * unique index refuses a second one, and the PT path applies the same rule.
+ * Activation on first booking (ADR 0004), with several packages running per
+ * Family (ADR 0010) — against a real database, because the half that the pure
+ * tests in `services/packages/selection.test.ts` cannot reach is exactly the
+ * half that matters here: the row lands Dormant, the booking stamps it, a
+ * second one may run beside it, and the PT path applies the same rule.
  */
 
 const HOUR = 60 * 60 * 1000
@@ -256,7 +256,7 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.ok((await row(second)).expiresAt, 'the third booking Activates the second bundle')
   })
 
-  test('credits returning to a spent bundle while the next one runs send it back to Dormant', async () => {
+  test('credits returning to a spent bundle while the next one runs land back on it with its expiry untouched', async () => {
     const clientId = await newMember()
     const first = (await grantBundle(clientId)).clientPackageId
     const second = (await grantBundle(clientId)).clientPackageId
@@ -264,67 +264,64 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
     const { bookingId } = await bookSvc.bookClass(tenantId, { clientId, classId: await newClass() })
     await bookSvc.bookClass(tenantId, { clientId, classId: await newClass() })
     await bookSvc.bookClass(tenantId, { clientId, classId: await newClass() })
-    assert.equal((await row(first)).active, false, 'first is spent')
+    const spent = await row(first)
+    assert.equal(spent.active, false, 'first is spent')
+    assert.ok(spent.expiresAt, 'and keeps the stamp its first booking gave it')
     assert.ok((await row(second)).expiresAt, 'second is running')
 
     // A member cancels the class the first bundle paid for: the credit comes
-    // back, but the second bundle holds the family's slot, so the first
-    // waits again rather than tripping the index.
+    // back onto the first bundle, which runs again beside the second with the
+    // expiry it already had — no return to Dormant, no fresh clock.
     await cancelSvc.cancelBooking(tenantId, { bookingId, source: 'admin', actorStaffId: staffId, credit: 'return' })
     const refunded = await row(first)
     assert.equal(refunded.creditsOrSessionsRemaining, 1)
     assert.equal(refunded.active, true, 'the credit is spendable again')
-    assert.equal(refunded.expiresAt, null, 'back to Dormant behind the running bundle')
+    assert.equal(refunded.expiresAt?.getTime(), spent.expiresAt!.getTime(), 'its expiry is untouched')
+    assert.ok((await row(second)).expiresAt, 'both run at once')
 
-    // Spend both out: the second's last credit, then the first resumes with a
-    // fresh clock and is spent too. Now nothing runs, and both carry a stamp.
+    // The first ends sooner, so the Default payer spends it first.
     await bookSvc.bookClass(tenantId, { clientId, classId: await newClass() })
-    assert.equal((await row(second)).active, false, 'second spent')
-    await bookSvc.bookClass(tenantId, { clientId, classId: await newClass() })
-    const resumed = await row(first)
-    assert.ok(resumed.expiresAt, 'first resumed with a fresh clock')
-    assert.equal(resumed.active, false, 'and is spent again')
+    const respent = await row(first)
+    assert.equal(respent.active, false, 'the soonest-ending bundle paid, and is spent again')
+    assert.equal(respent.expiresAt?.getTime(), spent.expiresAt!.getTime(), 'still on its original clock')
+    assert.equal((await row(second)).creditsOrSessionsRemaining, 1, 'the second was not touched')
 
-    // An admin top-up with nothing running revives the package in place …
-    const topUp = (clientPackageId: string) =>
-      adjustSvc.adjustBalance({
-        tenantId,
-        clientId,
-        clientPackageId,
-        delta: 2,
-        reason: 'test: top-up',
-        actedByStaffId: staffId,
-      })
-    const revivedSecond = await topUp(second)
-    assert.equal(revivedSecond.active, true)
-    assert.ok(revivedSecond.expiresAt, 'nothing was running, so it keeps its stamp')
-
-    // … and a top-up while another package runs sends it back to Dormant.
-    const revivedFirst = await topUp(first)
+    // An admin top-up revives the package in place, whatever else is running.
+    const revivedFirst = await adjustSvc.adjustBalance({
+      tenantId,
+      clientId,
+      clientPackageId: first,
+      delta: 2,
+      reason: 'test: top-up',
+      actedByStaffId: staffId,
+    })
     assert.equal(revivedFirst.active, true)
-    assert.equal(revivedFirst.expiresAt, null, 'the second holds the slot, the first waits')
+    assert.equal(revivedFirst.expiresAt?.getTime(), spent.expiresAt!.getTime(), 'a top-up keeps the stamp too')
   })
 
-  test('the index refuses a second Activated package in a family, staff included', async () => {
+  test('with the per-Family index gone, staff may date a Dormant package while another of its Family runs', async () => {
     const clientId = await newMember()
     const first = (await grantBundle(clientId)).clientPackageId
     const second = (await grantBundle(clientId)).clientPackageId
     await bookSvc.bookClass(tenantId, { clientId, classId: await newClass() })
 
-    await assert.rejects(
-      () =>
-        adjustSvc.setPackageExpiry({
-          tenantId,
-          clientId,
-          clientPackageId: second,
-          expiresAt: soon(30),
-          reason: 'activation probe',
-          actedByStaffId: staffId,
-        }),
-      (err: { code?: string }) => err.code === 'family_already_activated',
-    )
+    const until = soon(30)
+    await adjustSvc.setPackageExpiry({
+      tenantId,
+      clientId,
+      clientPackageId: second,
+      expiresAt: until,
+      reason: 'activation probe',
+      actedByStaffId: staffId,
+    })
+    assert.ok((await row(first)).expiresAt, 'the first still runs')
+    assert.equal((await row(second)).expiresAt?.getTime(), until.getTime(), 'the second runs beside it')
+    const [{ n }] = (await harness.db.execute(
+      sql`SELECT count(*)::int AS n FROM pg_indexes WHERE indexname IN ('client_packages_one_activated_class_per_client', 'client_packages_one_activated_pt_per_client')`,
+    )) as unknown as [{ n: number }]
+    assert.equal(n, 0, 'migration 0089 dropped both per-Family indexes')
 
-    // Returning the running one to Dormant frees the slot, for any kind.
+    // Returning a running one to Dormant is still the admin's escape hatch.
     await adjustSvc.setPackageExpiry({
       tenantId,
       clientId,
@@ -334,15 +331,6 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
       actedByStaffId: staffId,
     })
     assert.equal((await row(first)).expiresAt, null)
-    await adjustSvc.setPackageExpiry({
-      tenantId,
-      clientId,
-      clientPackageId: second,
-      expiresAt: soon(30),
-      reason: 'activation probe',
-      actedByStaffId: staffId,
-    })
-    assert.ok((await row(second)).expiresAt)
   })
 
   test('an expired package still marked active is swept before the next one starts', async () => {
@@ -362,7 +350,7 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.ok((await row(second)).expiresAt, 'and the next package started')
   })
 
-  test('a PT package Activates on its first session request, and holds the PT family', async () => {
+  test('a PT package Activates on its first session request, and another starts beside it when picked', async () => {
     const clientId = await newMember()
     const first = (await grantPt(clientId)).clientPackageId
     const other = (await grantPt(clientId, pt2on1CatalogId)).clientPackageId
@@ -374,12 +362,11 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.ok(started.expiresAt, 'the request Activates it')
     assert.equal(started.creditsOrSessionsRemaining, 2)
 
-    // The waiting 2-on-1 package cannot pay while the 1-on-1 is running.
-    await assert.rejects(
-      () => ptRequest(clientId, other, '2on1'),
-      (err: { code?: string }) => err.code === 'pt_package_not_current',
-    )
-    assert.equal((await row(other)).expiresAt, null)
+    // The member picks the waiting 2-on-1 package while the 1-on-1 runs: it
+    // pays, and starts its own clock beside the first.
+    await ptRequest(clientId, other, '2on1')
+    assert.ok((await row(other)).expiresAt, 'the 2-on-1 package Activates too')
+    assert.ok((await row(first)).expiresAt, 'and the 1-on-1 keeps running')
 
     const ent = await entitlementsSvc.getClientEntitlements(tenantId, clientId)
     assert.equal(ent.ptFamilyRunning, true)

@@ -383,11 +383,12 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
         assert.equal(res.status, 200, await res.clone().text())
         return ((await res.json()) as { client_packages: MemberPackage[] }).client_packages
       }
-      const book = async (classId: string) => {
+      /** Books the class, paid by the package named, else by the Default payer. */
+      const book = async (classId: string, clientPackageId?: string) => {
         const res = await harness.app.request('/api/v1/me/bookings/class', {
           method: 'POST',
           headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ class_id: classId }),
+          body: JSON.stringify({ class_id: classId, ...(clientPackageId ? { client_package_id: clientPackageId } : {}) }),
         })
         const body = (await res.json()) as Record<string, any>
         assert.equal(res.status, 201, JSON.stringify(body))
@@ -422,42 +423,30 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal((await pack()).credits_or_sessions_remaining, 5)
   })
 
-  test('a second live class pack waits Dormant, and starts with the days it had left once the first is gone', async () => {
+  test('a second live class pack runs beside the first with its own expiry: the soonest-ending pays by default, and the member may pick the other', async () => {
     const studio = await importedStudio()
-    const adjust = inTenantContext(await import('../../../src/services/packages/adjust'))
     const jane = await studio.member('jane.doe@example.test')
-    const [client] = await harness.db
-      .select({ id: schema.clients.id })
-      .from(schema.clients)
-      .where(and(eq(schema.clients.tenantId, studio.tenantId), eq(schema.clients.email, 'jane.doe@example.test')))
-
     const held = await jane.packages()
     const first = held.find(p => p.package_name === 'Class Pack - Bundle of 10')!
     const second = held.find(p => p.package_name === 'Class Pack - Bundle of 20')!
-    assert.deepEqual([second.dormant, second.expires_at, second.credits_or_sessions_remaining], [true, null, 20])
-    const daysLeft = second.validity_days!
-    assert.ok(daysLeft > 20_000, 'the days it had left on the day of the download, not the 120 the catalogue sells')
+    assert.deepEqual(
+      [second.dormant, second.expires_at, second.credits_or_sessions_remaining, second.validity_days],
+      [false, '2090-06-01T15:59:59.000Z', 20, 120],
+      'started in Mindbody, so running with its Mindbody expiry and the catalogue s validity',
+    )
+    const balances = async () => {
+      const now = await jane.packages()
+      return [first, second].map(p => now.find(n => n.id === p.id)!.credits_or_sessions_remaining)
+    }
 
-    // While the first runs it is the only one that pays.
+    // Nobody picks: the Default payer, the one ending soonest.
     await jane.book(await studio.newClass('Hot Room'))
-    assert.equal((await jane.packages()).find(p => p.id === second.id)!.credits_or_sessions_remaining, 20)
+    assert.deepEqual(await balances(), [4, 20])
 
-    // The first is used up; the next booking starts the second.
-    await adjust.setBalance({
-      tenantId: studio.tenantId,
-      clientId: client!.id,
-      clientPackageId: first.id,
-      balance: 0,
-      reason: 'used up, for the test',
-      actedByStaffId: studio.ownerId,
-    })
-    const bookedAt = Date.now()
-    await jane.book(await studio.newClass('Hot Room'))
-    const started = (await jane.packages()).find(p => p.id === second.id)!
-    assert.equal(started.credits_or_sessions_remaining, 19)
-    assert.equal(started.dormant, false)
-    const runsFor = (new Date(started.expires_at!).getTime() - bookedAt) / 86_400_000
-    assert.ok(Math.abs(runsFor - daysLeft) < 1, `runs ${daysLeft} days from its first booking, not ${runsFor}`)
+    // Jane picks the later one: it pays, and its expiry stays its own.
+    await jane.book(await studio.newClass('Hot Room'), second.id)
+    assert.deepEqual(await balances(), [4, 19])
+    assert.equal((await jane.packages()).find(p => p.id === second.id)!.expires_at, '2090-06-01T15:59:59.000Z')
   })
 
   test('a migrated Unlimited Plan keeps its expiry and Home Location, and with a migrated access pass covers both', async () => {

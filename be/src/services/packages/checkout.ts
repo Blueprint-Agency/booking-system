@@ -122,7 +122,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     // The grant applies these same rules, but only once the webhook fires — by
     // then the member has paid, and a refusal there charges them for nothing.
     // Same rule, run before Stripe.
-    await assertPurchasableLocation(tenantId, clientId, pkg.kind, locationId)
+    assertPurchasableLocation(pkg.kind, locationId)
     // No class package is ever Instructor-Bound, so this only ever refuses —
     // but it refuses HERE rather than letting a stray pick reach the grant and
     // fail after the charge.
@@ -180,7 +180,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
       .limit(1)
     if (!pkg) throw new NotFoundError('pt_package_not_found')
     if (pkg.status !== 'active') throw new BadRequestError('pt_package_not_active')
-    await assertPurchasableLocation(tenantId, clientId, 'pt', locationId)
+    assertPurchasableLocation('pt', locationId)
     // The binding rule, run before the provider. The grant runs it again on the
     // roster as it stands then; this is the run that stops a member paying for
     // a purchase that was never going to land.

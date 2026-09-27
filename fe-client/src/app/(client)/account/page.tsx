@@ -23,11 +23,13 @@ const ACTIVATION_LINE = "Starts when you book your first class";
 
 /**
  * The same promise with the length attached, for a package card. Every kind
- * waits Dormant until its first booking; a PT package starts on its first
- * session request rather than a class.
+ * waits Dormant until the first booking it pays for; a PT package starts on
+ * the first session request it pays for rather than a class. With another
+ * package running, that is the booking the member picks it on.
  */
 function dormantLine(pkg: LivePackage): string {
-  const start = pkg.kind === "pt" ? "Starts at your first session request" : ACTIVATION_LINE;
+  const start =
+    pkg.kind === "pt" ? "Starts the first time a session request uses it" : "Starts the first time you book with it";
   if (pkg.validityDays == null) return start;
   return `${start} · valid ${pkg.validityDays} ${pkg.validityDays === 1 ? "day" : "days"} from then`;
 }
@@ -78,9 +80,16 @@ export default function AccountOverview() {
   const ptSessionsRemaining = pt1on1 + pt2on1;
   const firstName = user?.firstName || "there";
 
-  const packages = livePackages.filter(
-    (p) => p.kind === "credit_bundle" || p.kind === "unlimited" || p.kind === "pt",
-  );
+  // Every live package, each on its own card: several of a Family may run at
+  // once (be/docs/adr/0010), so none is singled out as "the current one". The
+  // running ones lead, soonest-ending first, then those still waiting to start.
+  // A Trial is listed too: it can run beside a bundle.
+  const packages = [...livePackages]
+    .sort(
+      (a, b) =>
+        Number(a.dormant) - Number(b.dormant) ||
+        (a.expiresAt ?? "").localeCompare(b.expiresAt ?? ""),
+    );
 
   return (
     <div>

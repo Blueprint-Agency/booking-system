@@ -26,6 +26,7 @@ import { waitlistPanel, type WaitlistPanelRow } from '../waitlist/staff'
 import { staffCancelPreview, type StaffCancelPreview } from '../bookings/staff-cancel-preview'
 import { classCancelWindow } from '../policy/cancel-window'
 import { now as clockNow } from '../../lib/clock'
+import { nameRule, readClassRule, type NamedPackageRule } from './package-rules'
 
 export interface NamedRef {
   id: string
@@ -67,6 +68,8 @@ export interface ClassDetail {
   creditCost: number
   /** The class's own Cancellation Window; null = the studio's. */
   cancelWindowHours: number | null
+  /** Which packages may pay for the class, each named. */
+  packageRule: NamedPackageRule
   /** Every confirmed booking — the same number as `seats.attending`. */
   bookedCount: number
   /** Online plus buffer seats; the waitlist is not a seat. */
@@ -98,6 +101,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       capacityBuffer: classes.capacityBuffer,
       creditCost: classes.creditCost,
       cancelWindowHours: classes.cancelWindowHours,
+      packageRuleMode: classes.packageRuleMode,
       instructorPaySgd: classes.instructorPaySgd,
       classTypeId: classes.classTypeId,
       classTypeName: classTypes.name,
@@ -187,11 +191,13 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     }
   })
 
+  const rule = await readClassRule(db, tenantId, row)
   const waitlist = await waitlistPanel(tenantId, {
     id: row.id,
     locationId: row.locationId,
     startsAt: row.startsAt,
     creditCost: row.creditCost,
+    rule,
   })
 
   const supportingRows = await db
@@ -237,6 +243,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     creditCost: row.creditCost,
     cancelWindowHours: row.cancelWindowHours,
     bookedCount: seats.attending,
+    packageRule: await nameRule(db, tenantId, rule),
     attendanceCapacity: attendanceCapacity(row),
     seats,
     attendees,

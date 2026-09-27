@@ -550,7 +550,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(packageId), 10)
   })
 
-  test('PT-67 a Dormant PT package waits behind a running one, and with nothing running a request Activates it', async () => {
+  test('PT-67, PKG-36 a request against a Dormant PT package Activates it, whether or not another PT package is running', async () => {
     const hal = await member(one, 'Hal Dormant')
     const first = await givePt(one, hal, '1on1')
     const second = await givePt(one, hal, '1on1')
@@ -563,10 +563,15 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const validity = activated.validityDays!
     assert.ok(Math.abs(activated.expiresAt.getTime() - (before + validity * DAY)) < 5 * MINUTE)
 
-    const refused = await expectStatus(await submit(one, hal, { sessionType: '1on1', clientPackageId: second }), 409)
-    assert.equal(refused.error, 'pt_package_not_current')
-    assert.equal(await sessionsLeft(second), 10)
-    assert.equal((await pkg(second)).expiresAt, null)
+    // The member picks the second while the first runs: it pays, and starts its
+    // own clock beside the first (be/docs/adr/0010).
+    const beforeSecond = Date.now()
+    await expectStatus(await submit(one, hal, { sessionType: '1on1', clientPackageId: second }), 201)
+    assert.equal(await sessionsLeft(second), 9)
+    const secondRow = await pkg(second)
+    assert.ok(secondRow.expiresAt, 'the second request Activates the second package')
+    assert.ok(Math.abs(secondRow.expiresAt.getTime() - (beforeSecond + secondRow.validityDays! * DAY)) < 5 * MINUTE)
+    assert.equal((await pkg(first)).expiresAt?.getTime(), activated.expiresAt.getTime(), 'the first keeps running')
   })
 
   test('PT-18 two requests racing for the last session: exactly one wins, and the balance never goes below zero', async () => {

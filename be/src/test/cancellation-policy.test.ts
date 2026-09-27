@@ -545,7 +545,7 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     assert.equal((await judge(lateAt)).refund, 'forfeit')
 
     harness.clock.set(t0)
-    const inTime = await cancelInTime(one, eve, t0, cancelCapCount, { use_credits: true })
+    const inTime = await cancelInTime(one, eve, t0, cancelCapCount, { client_package_id: bundle })
     for (const id of inTime) {
       const row = await bookingRow(id)
       assert.equal(row.refundOutcome, 'credit_returned')

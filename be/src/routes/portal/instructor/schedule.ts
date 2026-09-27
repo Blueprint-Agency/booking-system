@@ -11,6 +11,7 @@ import { tenantId } from '../../../middleware/tenant'
 import { seatFields, staffBookingJson, staffBookingSchema } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
 import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-window'
+import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
 import { hasCapacity, NO_CAPACITY, previewJson, seriesRow, seriesTemplateFields, toSeriesInput } from '../class-series'
 
 /**
@@ -60,6 +61,8 @@ const createClassSchema = z
     credit_cost: z.number().int().min(0),
     // Blank (omitted or null) follows the studio's class window.
     cancel_window_hours: cancelWindowHoursSchema.optional(),
+    // Omitted = accepts all. Instructors set it on the classes they schedule.
+    package_rule: packageRuleSchema.optional(),
   })
   .refine(v => v.capacity_online + v.capacity_waitlist + v.capacity_buffer > 0, {
     message: 'capacity must be positive',
@@ -143,6 +146,7 @@ const app = new Hono()
       creditCost: body.credit_cost,
       instructorPaySgd: null, // left unpriced; an admin sets pay from Payroll
       cancelWindowHours: body.cancel_window_hours ?? null,
+      ...(body.package_rule ? { packageRule: toPackageRule(body.package_rule) } : {}),
       createdByStaffId: self,
     })
     c.set('auditTarget' as any, { table: 'classes', id: row.id })
@@ -161,6 +165,7 @@ const app = new Hono()
         credit_cost: row.creditCost,
         instructor_pay_sgd: null,
         ...(await cancelWindowJson(tenantId(c), row)),
+        package_rule: await classPackageRuleJson(tenantId(c), row),
         lifecycle: row.lifecycle,
       },
       201,

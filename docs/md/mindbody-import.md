@@ -45,7 +45,7 @@ the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be
 | 10 | Staff | Email and role (Admin or Instructor) for each person migrated; who is the owner; which of two records sharing a name is which | Instructor; former teachers archived |
 | 11 | Members with no email | Real email, fixed in Mindbody before the final download | Placeholder email, fixed later by an admin |
 | 12 | Members sharing an email | Which member keeps it; real emails for the others | The one whose last visit (attendance history) is latest keeps it; others get placeholders |
-| 13 | Two live packages at once | Accept "the one ending soonest runs, the others wait with their days left" | Accepted |
+| 13 | Several live packages at once | Nothing to choose any more (`be/docs/adr/0010`): each one Mindbody had started comes across running beside the others with its own Mindbody expiry, and one not started yet waits Dormant with its whole validity; a booking to come is paid by the soonest-ending running one that Covers the class and lasts until it, else the first Dormant one, and the member picks the payer from launch on | Accepted |
 | 14 | Unlimited Home Location | Location for a member no report places | A plan Mindbody sold once per Location: the Location the option bought names (unlabelled: the main Location). Any other plan: Retention Management's location, then Membership's, then where their visits were sold, then the plan's name, then the main Location — the preflight counts each |
 | 15 | Workshops and retreats, to come and past | Which to migrate (one `migrate` covers a category's days to come and its past runs inside `history`); tier (room type) prices; which days a tier grants, where not all; how instalments count | All with paid attendees; price = amount paid; every tier grants every day |
 | 16 | Teacher pay | Use the pay-rate report's per-class amount for future classes; what to pay a per-head teacher's classes | Per-class rate, else Unpriced; PT at the trainer's Payroll PT rate |
@@ -300,9 +300,11 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   "access_pass"` is no catalogue row: beside an Unlimited Plan homed elsewhere it becomes that
   plan's Cross-Location Add-On, and alone it is listed in the preflight.
 - **Live packages** come from Visits Remaining (Detail): something left, and not expired on the
-  day of `asOf`. The balance is the report's *Unbooked*. Per member and Family the soonest-ending
-  runs with its Mindbody expiry; the others wait Dormant with the days they had left (an
-  Unlimited Plan: the whole months that reach its expiry, rounded up). A member's holdings of one
+  day of `asOf`. The balance is the report's *Unbooked*. A member may hold any number at once, in
+  either Family, as they could in Mindbody: every one Mindbody had started by `asOf` runs, beside
+  the others, with its Mindbody expiry (the end of that day at the studio); one Mindbody had not
+  started yet waits Dormant with its whole validity, and starts on the first booking it pays for.
+  Both carry the catalogue's validity or duration. A member's holdings of one
   option are one package, as they are in the report, and every trial spelling is one trial. A
   trial used up long ago comes across spent and inactive, so the one-trial rule holds. A holding
   Mindbody sold with **no expiration at all** cannot be answered for by that rule, and no package
@@ -313,7 +315,7 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   register instead, its credits all counted as booked ahead so the imported bookings settle its
   balance. A holding filed under a `workshopCategories` service category is a place on a workshop
   or retreat, never a package, even where the catalogue did not skip its option: it is listed in
-  the preflight, so a retreat place cannot take the running slot in front of a member's plan.
+  the preflight, never a package beside a member's plan.
 - **The timetable to come** is every class on the all-teachers Staff Schedule ("Scheduled")
   that starts after `asOf`, whether or not anybody booked it. Its Class Type, Room and Location
   are matched through the config (`classTypes[].mindbodyNames`, `rooms[].mindbodyNames`,
@@ -332,9 +334,10 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
 - **Future bookings** come from Schedule at a Glance over future dates, joined to a class on
   date, start time, class name and teacher — or, where only one class is on at that minute
   under that name, on that alone, since the two reports disagree about a covered class's teacher
-  and the seat is a real one. Each seat is `confirmed`, paid by the member's running package in
-  that Family — one that lasts until the class; a seat whose only package runs out first comes
-  across unpaid and listed — and carrying the 1 credit it cost, so cancelling returns it
+  and the seat is a real one. Each seat is `confirmed`, paid by the member's soonest-ending
+  running package in that Family that Covers the class's Location and lasts until the class, else
+  their first Dormant one that Covers it; a seat nothing can pay for comes across unpaid and listed — and
+  carrying the 1 credit it cost, so cancelling returns it
   (0 on an Unlimited Plan, which was never charged). Its code and QR token are keyed by the
   config's `secret`, so a rerun writes the same ones. A roster row under a
   `ptAppointmentNames` name is a PT appointment instead: a scheduled `pt_request` (its focus the
@@ -437,8 +440,11 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   its classes, and every class an extend adds, show up in Finance for pricing. The portal cannot
   yet change a series' pay, so settle the rate in the answers before the final build.
 - A Class Type with no future class and no Class Series arrives archived; history still names it.
-- A future booking the running package cannot cover (it ends first) is paid by the member's
-  package waiting behind it, where that will still be running then. The rest are preflight
+- A future booking none of the member's running packages can pay for (each ends first, or is a
+  plan homed at another Location without the Add-On) is paid by their first Dormant package that
+  Covers it (Unlimited Plans before credits, as the platform's Default payer): it has no end yet,
+  and the imported booking does not start its clock.
+  Imported classes carry no package rule, so every package is accepted. The rest are preflight
   lines, split into "unpaid in Mindbody too" and "unmatched" (Mindbody holds something that
   would pay for it).
 - **The studio's past** is optional and off by default: `history` in the config is `null` for a

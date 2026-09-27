@@ -358,6 +358,7 @@ Fields:
 - `difficulty: "general" | "beginner" | "intermediate" | "advanced"` — per-instance (moved off class type, see §2).
 - **Capacity** — structured, see §7d below.
 - Credit cost (set manually per class instance — varies by class type but entered at scheduling time)
+- **Packages accepted** — the class's **Package rule** (`PackageRuleField`, be/CONTEXT.md § Package rule): a mode control, *All packages* (the default) / *Only these* / *All except*, and for the last two a checklist of the studio's class packages grouped by kind (Unlimited Plans, Credit Bundles, Trials), searchable, with archived packages under their own heading — they are pickable, because members may still hold one. Exact packages only: no kind-level rule, no Class Type default. "Only these" with nothing ticked is refused (`package_rule_empty`); a PT, corporate or another studio's package is refused (`package_rule_invalid_package`). Sent as `package_rule: { mode, package_ids }`. Admins and Instructors both set it on the new-class screen; Admins also on the class editor (§10).
 
 ### 7b-bis. Class Series — "+ Class" with Repeat weekly
 
@@ -366,7 +367,7 @@ There is one `+ Class` on the Schedule; the slot picked seeds the date and times
 - **Date** becomes **First date**; the weekday is taken from it and shown read-only ("Every Tuesday"); **Last date** appears, at most a year after the first date.
 - **Preview dates** is required before anything is created. It lists every date with its clashes (room, instructor, leave); clashing dates start unticked, and unticking any date skips it (a public holiday). Any change to the form makes the preview stale, and a create refused with `409` previews again, keeping the dates already unticked.
 - The submit reads **Create N classes** and is enabled only when no ticked date clashes; it creates all or nothing.
-- Pay reads "Main instructor pay per class (S$) · optional". The optional **Cancellation window (hours)** is copied onto every class.
+- Pay reads "Main instructor pay per class (S$) · optional". The optional **Cancellation window (hours)** is copied onto every class, and so are the **Packages accepted** (§7b) — onto every class an Extend adds too. The series panel shows the rule and an admin may change it there; the change reaches only the classes the series adds from then on, and the classes it already made keep theirs (each is changed on the class, §10). Editing one class's rule changes that class only.
 
 The retired `/admin/schedule/new/series` redirects to the class screen with Repeat weekly on (`?repeat=weekly`), keeping any slot.
 
@@ -528,6 +529,7 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 - Check-in state chip: `pending` / `completed` (manual flip — see §11)
 - Cancel-this-instance action (admin) → triggers full credit refund + Inbox notification
 - **Cancel…** on each confirmed, not-attended roster row (admin on any class; instructor on a class they lead) → the staff cancel dialog, Return credit or Keep credit (§12)
+- **Packages accepted** — the class's Package rule as a sentence ("All packages" / "Only: …" / "All except: …"), on the admin page and the instructor's session page. The admin editor changes it with the same `PackageRuleField` as §7b. A change that would cancel bookings is previewed first (`PATCH …/classes/:id` with `preview: true` → `{ would_cancel: n }`): above zero, a confirm step says **"This will cancel N bookings"** before anything is saved. Saving cancels exactly the bookings paid by a package the class no longer accepts (never one already checked in) — each refunded in full to the package that paid, its seat offered to the waitlist, not counted against the member's cancellations, and the member emailed `class_rule_cancelled`. A change that cancels nobody saves without the confirm.
 
 **Workshop detail page additions:**
 - Per-tier breakdown (which tier each attendee bought)
@@ -858,6 +860,7 @@ The actions on a client's active-package kebab, all written into the same immuta
 | 12 | Class cancelled by admin | Admin cancels a class instance (§7a) | All booked clients | `{{client_name}}`, `{{class_name}}`, `{{date}}`, `{{credits_returned}}` |
 | 13 | PT cancelled by admin | Admin/instructor cancels PT session (§7a) | Client | `{{client_name}}`, `{{instructor_name}}`, `{{date}}`, `{{sessions_returned}}` |
 | 14 | Workshop cancelled by admin | Admin cancels a workshop (§7a) | All attendees | `{{client_name}}`, `{{workshop_name}}`, `{{amount_refunded}}` |
+| 14b | Booking cancelled by a package rule change (`class_rule_cancelled`) | Admin changes a class's Packages accepted so the package that paid is refused (§10) | Each client whose booking it cancelled | `{{client_name}}`, `{{class_name}}`, `{{date}}`, `{{package_name}}`, `{{credits_returned}}` |
 
 **Packages**
 

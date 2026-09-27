@@ -13,6 +13,7 @@ import {
 import { usePathname } from "next/navigation";
 import { fetchApi } from "./api-url";
 import { reportError } from "./report-error";
+import type { UnlimitedPlanCoverage } from "./package-picker";
 
 export interface LivePackage {
   id: string;
@@ -25,8 +26,8 @@ export interface LivePackage {
   active: boolean;
   /**
    * Backend-derived. Never re-tested here as "no end date". Every package
-   * starts Dormant and Activates on the first booking it pays for; one per
-   * family (class / PT) runs at a time.
+   * starts Dormant and Activates on the first booking it pays for; any number
+   * per family (class / PT) may run at once (be/docs/adr/0010).
    */
   dormant: boolean;
   /** How long a Dormant package runs once it starts; null on an Unlimited Plan. */
@@ -59,6 +60,8 @@ export interface ClientPackagesData {
   };
   ptSessions: { oneOnOne: number; twoOnOne: number };
   packages: LivePackage[];
+  /** Every live Unlimited Plan, running ones first. Several may be homed at different Locations. */
+  unlimitedPlans: UnlimitedPlanCoverage[];
   /** The Cross-Location Add-On, as the backend states it (§5). */
   crossLocation: {
     /** The plan an Add-On would attach to — the same plan `unlimitedLocation` names. */
@@ -76,6 +79,8 @@ export interface ClientPackagesValue {
   /** The member holds a Dormant plan — backend-derived, never re-tested here. */
   unlimitedDormant: boolean;
   unlimitedLocation: UnlimitedLocation | null;
+  /** Every live Unlimited Plan, running ones first. */
+  unlimitedPlans: UnlimitedPlanCoverage[];
   /** The Cross-Location Add-On, as the backend states it (§5). */
   crossLocation: ClientPackagesData["crossLocation"];
   pt1on1: number;
@@ -112,6 +117,7 @@ interface RawPackagesResponse {
     unlimited_location: UnlimitedLocation | null;
     unlimited_plan_id: string | null;
     unlimited_covers_both: boolean;
+    unlimited_plans?: UnlimitedPlanCoverage[];
     cross_location_rate_sgd: string;
     dormant: boolean;
     has_active_bundle_credits: boolean;
@@ -134,6 +140,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
     unlimited_location: null,
     unlimited_plan_id: null,
     unlimited_covers_both: false,
+    unlimited_plans: [],
     cross_location_rate_sgd: "0.00",
     dormant: false,
     has_active_bundle_credits: false,
@@ -143,8 +150,8 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
 
   // `active` is authoritative; the live expiry check covers the gap between a
   // package ending and the nightly sweep flipping the flag (the BE entitlements
-  // make the same allowance). Without it an ended PT package still looks like
-  // the running one and hides the package waiting behind it.
+  // make the same allowance). Without it an ended package would still be listed
+  // as running.
   const now = Date.now();
   const isActive = (p: RawClientPackage) =>
     p.active && (p.expires_at === null || new Date(p.expires_at).getTime() > now);
@@ -157,9 +164,12 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
     if (p.kind === "credit_bundle" || p.kind === "trial") {
       classTotal += p.credits_or_sessions_remaining ?? 0;
     } else if (p.kind === "unlimited" && p.expires_at) {
-      // Only an Activated plan has a date to show. A member holding an Activated
-      // plan plus a Dormant renewal must not have the date overwritten by the null.
-      unlimitedExpiresAt = p.expires_at;
+      // Only an Activated plan has a date to show, so a Dormant plan's null never
+      // overwrites it. Several plans may run at once; the balance names the last
+      // day any of them runs to.
+      if (unlimitedExpiresAt === null || new Date(p.expires_at) > new Date(unlimitedExpiresAt)) {
+        unlimitedExpiresAt = p.expires_at;
+      }
     }
   }
 
@@ -193,6 +203,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
     },
     ptSessions: { oneOnOne: ent.pt_1on1_remaining ?? 0, twoOnOne: ent.pt_2on1_remaining ?? 0 },
     packages,
+    unlimitedPlans: ent.unlimited_plans ?? [],
     crossLocation: {
       planId: ent.unlimited_plan_id ?? null,
       coversBoth: Boolean(ent.unlimited_covers_both),
@@ -274,6 +285,7 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
     unlimitedExpiresAt: data?.classCredits?.unlimitedExpiresAt ?? null,
     unlimitedDormant: data?.classCredits?.unlimitedDormant ?? false,
     unlimitedLocation: data?.classCredits?.unlimitedLocation ?? null,
+    unlimitedPlans: data?.unlimitedPlans ?? [],
     crossLocation: data?.crossLocation ?? { planId: null, coversBoth: false, rateSgd: "0.00" },
     pt1on1: data?.ptSessions?.oneOnOne ?? 0,
     pt2on1: data?.ptSessions?.twoOnOne ?? 0,

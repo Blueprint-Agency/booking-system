@@ -70,6 +70,8 @@ Schema is already refund-ready: `bookings.clientPackageId` (which package paid),
 
 ### 1a. Home Location, Activation and the `use_credits` escape (landed later, `spec-pre-launch-batch.md` §1–§3)
 
+> **Superseded in part by `be/docs/adr/0010-several-packages-run-per-family.md` (2026-09-27).** The `use_credits` escape is gone, and so is the ordering below: several class packages may run at once, and selection classifies every live class package (Eligible, or `location_not_covered` / `plan_expires_before_class` / `insufficient_credits`) and then takes the package the member named (`client_package_id`) if Eligible, else the **Default payer** — running soonest-ending first, then Dormant with Unlimited Plans before credits. A plan that does not Cover the Location is still never silently stepped around; it is Ineligible, and credits pay only when picked or when they are the first Eligible package. Activation of any kind (not just an Unlimited Plan) stamps from the booking moment, and coverage is still tested once, at booking. `be-client.md` §4a has the current flow; the bullets below record the rule as it stood.
+
 Package selection was pulled out of `book.ts` into a pure module,
 `services/packages/selection`. `book.ts` loads and locks rows and calls in; the module
 returns which package pays and why, or a refusal.

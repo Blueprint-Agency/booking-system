@@ -35,8 +35,9 @@ test('the archive is for the Tenant it was built for, and asks for accounts to b
   const archive = await unpackArchive(zip)
   assert.equal(archive.manifest.tenant.id, TENANT)
   assert.equal(archive.manifest.ensureAccounts, true)
-  // Every template a provisioned studio gets, class_waitlist_promoted (#308) included.
-  assert.equal(archive.rows.email_templates!.length, 34)
+  // Every template a provisioned studio gets, class_waitlist_promoted (#308) and
+  // class_rule_cancelled (#323) included.
+  assert.equal(archive.rows.email_templates!.length, 35)
   assert.equal(archive.rows.global_policy!.length, 1)
   assert.equal(archive.rows.pt_booking_config!.length, 1)
   assert.ok(archive.rows.clients!.every(r => r.auth_user_id === null), 'accounts are the importer s to make')
@@ -192,10 +193,6 @@ test('the starter config is filled from the reports and refused until a person c
 
 /* ── The catalogue and what members hold of it (#178) ─────────────────────── */
 
-const AS_OF_DAY = Date.UTC(2026, 8, 17)
-/** Days a package good until `y-m-d` still had on the day of the download, that day included. */
-const daysLeftUntil = (y: number, m: number, d: number) => (Date.UTC(y, m - 1, d) - AS_OF_DAY) / 86_400_000 + 1
-
 test('the catalogue: sell is active at the config price, legacy is archived, skip and access passes are no row', async () => {
   const { archive } = await run()
   const classes = Object.fromEntries(archive.rows.class_packages!.map(r => [r.name, r]))
@@ -215,7 +212,7 @@ test('the catalogue: sell is active at the config price, legacy is archived, ski
   assert.deepEqual([pt!.name, pt!.session_type, pt!.num_sessions, pt!.validity_days, pt!.price_sgd, pt!.status], ['PT - Bundle of 10', '1on1', 10, 90, '1200.00', 'active'])
 })
 
-test('live packages: the soonest-ending runs with its expiry and unbooked balance; the other waits with the days it had left', async () => {
+test('live packages: every holding Mindbody had started runs beside the others, with its own expiry, its unbooked balance and the catalogue s validity', async () => {
   const { archive, ids } = await run()
   const held = (barcode: string) => archive.rows.client_packages!.filter(r => r.client_id === ids.clients![barcode])
   const named = (barcode: string, key: string) => archive.rows.client_packages!.find(r => r.id === ids.client_packages![`${barcode}/${key}`])!
@@ -227,12 +224,13 @@ test('live packages: the soonest-ending runs with its expiry and unbooked balanc
   assert.deepEqual([running.active, running.validity_days, running.amount_paid_sgd, running.list_price_sgd], [true, 60, '250.00', '250.00'])
   assert.equal(running.purchased_at, '2026-07-31T16:00:00.000Z', 'first activation, studio-local')
 
-  const waiting = named('100000001', 'Class Pack - Bundle of 20')
+  // Started in Mindbody too, and ending later: it runs beside the first rather than waiting behind it.
+  const second = named('100000001', 'Class Pack - Bundle of 20')
   assert.deepEqual(
-    [waiting.expires_at, waiting.active, waiting.credits_or_sessions_remaining, waiting.validity_days],
-    [null, true, 20, daysLeftUntil(2090, 6, 1)],
+    [second.expires_at, second.active, second.credits_or_sessions_remaining, second.validity_days],
+    ['2090-06-01T15:59:59.000Z', true, 20, 120],
   )
-  assert.equal(waiting.list_price_sgd, '500.00', 'what was paid, and the 50.00 a promotion took off it (Promotions)')
+  assert.equal(second.list_price_sgd, '500.00', 'what was paid, and the 50.00 a promotion took off it (Promotions)')
 
   const pt = named('100000008', 'PT - Bundle of 10')
   assert.deepEqual([pt.kind, pt.credits_or_sessions_remaining, pt.expires_at, pt.source_class_package_id], ['pt', 7, '2090-04-01T15:59:59.000Z', null])
@@ -264,11 +262,30 @@ test('an Unlimited Plan keeps its expiry, is homed where its member is, and a pa
   // Where no report places the member, a plan whose name names a Location is homed there. Its
   // name, not a second Mindbody spelling: a `- Riverside` spelling would make it a plan sold once
   // per Location, homed by the option bought (location-variants.test.ts).
+  const named = fixtureConfig()
+  named.catalogue.find((e: { name: string }) => e.name === 'Unlimited 12').name = 'Unlimited 12 Riverside'
+  const byName = mapStudio(rickAt(reports, '0'), validateConfig(named), TENANT)
+  assert.equal(
+    byName.archive.rows.client_packages!.find(r => r.kind === 'unlimited')!.location_id,
+    byName.ids.locations!['location-2'],
+    'homed by its own name',
+  )
+
+  // A plan Mindbody sold once per Location (decision 14): Rick bought the plain-named
+  // option, so his plan is homed at the entry's own Location, else the default —
+  // never at the Location a sibling spelling names, and never where the member is.
   const config = fixtureConfig()
-  config.catalogue.find((e: { name: string }) => e.name === 'Unlimited 12').name = 'Unlimited 12 Riverside'
+  const entry = config.catalogue.find((e: { name: string }) => e.name === 'Unlimited 12')
+  entry.mindbodyNames = ['Unlimited 12', 'Unlimited 12 - Riverside']
+  const unlabelled = mapStudio(rickAt(reports, '2'), validateConfig(config), TENANT)
+  const atDefault = unlabelled.archive.rows.client_packages!.find(r => r.kind === 'unlimited')!
+  assert.equal(atDefault.location_id, unlabelled.ids.locations!['location-1'], 'the default, whatever Retention Management says')
+  assert.equal(atDefault.cross_location_paid_sgd, '120.00', 'the pass for Riverside is its Add-On')
+
+  entry.location = 'location-2'
   const homed = mapStudio(rickAt(reports, '0'), validateConfig(config), TENANT)
   const moved = homed.archive.rows.client_packages!.find(r => r.kind === 'unlimited')!
-  assert.equal(moved.location_id, homed.ids.locations!['location-2'])
+  assert.equal(moved.location_id, homed.ids.locations!['location-2'], 'the entry s own Location')
   assert.equal(moved.cross_location_paid_sgd, null, 'a pass for the Location the plan is already homed at adds nothing')
 })
 
@@ -1562,9 +1579,13 @@ test('a holding Mindbody combined is split back into its purchases, each with it
   assert.deepEqual(
     [first.credits_or_sessions_remaining, first.expires_at, first.amount_paid_sgd],
     [1, '2090-02-01T15:59:59.000Z', '240.00'],
-    'the sooner purchase runs, and the credit set aside for the booking comes off it',
+    'the credit set aside for the booking comes off the sooner-ending purchase',
   )
-  assert.deepEqual([second.credits_or_sessions_remaining, second.expires_at, second.amount_paid_sgd], [4, null, '260.00'], 'the later one waits')
+  assert.deepEqual(
+    [second.credits_or_sessions_remaining, second.expires_at, second.validity_days, second.amount_paid_sgd],
+    [4, '2090-03-01T15:59:59.000Z', 60, '260.00'],
+    'the later one was started too, so it runs beside the first with its own expiry',
+  )
   assert.ok(preflight.schedule.some(n => /1 holding\(s\) Mindbody combined were split back into their 2 purchases/.test(n)))
 
   // A register that does not account for the holding exactly leaves it combined, as Mindbody shows it.
@@ -1928,9 +1949,9 @@ test('proposed Validity counts both the first and the last day: a 60-day pack pr
   assert.equal(starter.catalogue!.find(e => e.name === 'Class Pack - Bundle of 10')!.validityDays, 60)
 })
 
-test('a future booking beyond the running package s expiry is paid by the package waiting behind it', async () => {
+test('a future booking is paid by the soonest-ending running package that lasts until it', async () => {
   const reports = await readReports(REPORTS)
-  // Jane's running pack ends on 3 January; her Bundle of 20 waits behind it.
+  // Jane's Bundle of 10 ends on 3 January; her Bundle of 20 runs beside it until June.
   const holdings = reports.holdings.map(h =>
     h.clientId === '100000001' && /bundle of 10/i.test(h.option) ? { ...h, lastExpiration: day(2090, 1, 3) } : h,
   )
@@ -1952,6 +1973,94 @@ test('a future booking beyond the running package s expiry is paid by the packag
   assert.match(notes, /100000004 Sam Lee: booked into HATHA on 2090-01-09 at 19:00 with no class package to pay for it — unpaid in Mindbody too/)
   assert.match(notes, /100000003 Pat Poe: booked into Hatha on 2090-01-09 at 19:00 with no class package to pay for it — unmatched: Mindbody has something to pay for it/)
   assert.match(notes, /future bookings with no package: 1 unpaid in Mindbody too, 1 unmatched/)
+})
+
+test('a holding Mindbody had not started waits Dormant with its whole validity beside a running one, and pays what the running one cannot', async () => {
+  const reports = await readReports(REPORTS)
+  // Jane's Bundle of 10 runs until 3 January; her Bundle of 20 was bought to start after the download.
+  const holdings = reports.holdings.map(h =>
+    h.clientId !== '100000001'
+      ? h
+      : /bundle of 10/i.test(h.option)
+        ? { ...h, lastExpiration: day(2090, 1, 3) }
+        : /bundle of 20/i.test(h.option)
+          ? { ...h, firstActivation: day(2026, 10, 1) }
+          : h,
+  )
+  const seat = { ...reports.roster.find(r => r.date.year === 2090 && r.clientId === '100000001')!, date: { year: 2090, month: 1, day: 9 }, status: 'Reserved' }
+  const { archive, ids } = mapStudio({ ...reports, holdings, roster: [...reports.roster, seat] }, validateConfig(fixtureConfig()), TENANT)
+  const pkg = (key: string) => archive.rows.client_packages!.find(r => r.id === ids.client_packages![`100000001/${key}`])!
+
+  const running = pkg('Class Pack - Bundle of 10')
+  assert.deepEqual([running.expires_at, running.validity_days], ['2090-01-03T15:59:59.000Z', 60])
+  const dormant = pkg('Class Pack - Bundle of 20')
+  assert.deepEqual(
+    [dormant.expires_at, dormant.active, dormant.validity_days, dormant.credits_or_sessions_remaining, dormant.purchased_at],
+    [null, true, 120, 20, '2026-09-16T18:00:00.000Z'],
+    'Dormant with the whole of its validity, bought on the day of the download at the latest',
+  )
+
+  const classOn = (at: string) => archive.rows.classes!.find(c => c.starts_at === at)!.id
+  const paidBy = (at: string) =>
+    archive.rows.bookings!.find(b => b.client_id === ids.clients!['100000001'] && b.class_id === classOn(at))!.client_package_id
+  assert.equal(paidBy('2090-01-02T11:00:00.000Z'), running.id, 'the running one lasts until the class, so it pays')
+  assert.equal(paidBy('2090-01-09T11:00:00.000Z'), dormant.id, 'it does not, so the Dormant one does')
+
+  // Two waiting: an Unlimited Plan pays before credits, as the platform's Default payer.
+  const plan = { ...reports.holdings.find(h => h.option === 'Unlimited 12')!, clientId: '100000001', firstActivation: day(2026, 11, 1), lastExpiration: day(2090, 12, 1) }
+  const both = mapStudio({ ...reports, holdings: [...holdings, plan], roster: [...reports.roster, seat] }, validateConfig(fixtureConfig()), TENANT)
+  const later = both.archive.rows.bookings!.find(
+    b => b.client_id === both.ids.clients!['100000001'] && b.class_id === both.archive.rows.classes!.find(c => c.starts_at === '2090-01-09T11:00:00.000Z')!.id,
+  )!
+  assert.equal(later.client_package_id, both.ids.client_packages!['100000001/Unlimited 12'])
+  assert.equal(later.credits_or_sessions_used, 0)
+})
+
+test('two PT packages run side by side with their own expiries; a session is paid by the soonest-ending that lasts until it', async () => {
+  const reports = await readReports(REPORTS)
+  const config = fixtureConfig()
+  config.catalogue.push({ name: 'PT - Bundle of 5', mindbodyNames: ['PT - Bundle of 5'], migrate: 'sell', kind: 'pt', credits: 5, validityDays: 45, priceSgd: 650, sessionType: '1on1' })
+  const ten = reports.holdings.find(h => h.clientId === '100000008' && h.option === 'PT - Bundle of 10')!
+  const five = { ...ten, option: 'PT - Bundle of 5', firstActivation: day(2026, 9, 1), lastExpiration: day(2090, 3, 1), totalPaid: 650 }
+  const { archive, ids } = mapStudio({ ...reports, holdings: [...reports.holdings, five] }, validateConfig(config), TENANT)
+  const pkg = (name: string) => archive.rows.client_packages!.find(p => p.id === ids.client_packages![`100000008/${name}`])!
+
+  assert.deepEqual(
+    [pkg('PT - Bundle of 5').expires_at, pkg('PT - Bundle of 5').validity_days, pkg('PT - Bundle of 10').expires_at, pkg('PT - Bundle of 10').validity_days],
+    ['2090-03-01T15:59:59.000Z', 45, '2090-04-01T15:59:59.000Z', 90],
+  )
+  const session = archive.rows.bookings!.find(b => b.client_id === ids.clients!['100000008'] && b.kind === 'pt')!
+  assert.equal(session.client_package_id, pkg('PT - Bundle of 5').id)
+})
+
+test('two Unlimited Plans run side by side with their own expiries; a booking is paid by the soonest-ending one that Covers the class', async () => {
+  const reports = await readReports(REPORTS)
+  const config = fixtureConfig()
+  config.catalogue.push({ name: 'Unlimited 6', mindbodyNames: ['Unlimited 6'], migrate: 'sell', kind: 'unlimited', durationMonths: 6, priceSgd: 900 })
+  // Rick renewed early: a six-month plan ending on 5 January runs beside his Unlimited 12.
+  const twelve = reports.holdings.find(h => h.clientId === '100000002' && h.option === 'Unlimited 12')!
+  const six = { ...twelve, option: 'Unlimited 6', firstActivation: day(2026, 8, 1), lastExpiration: day(2090, 1, 5), totalPaid: 900 }
+  const holdings = [...reports.holdings, six]
+  const plans = (r: ReturnType<typeof mapStudio>) => {
+    const pkg = (name: string) => r.archive.rows.client_packages!.find(p => p.id === r.ids.client_packages![`100000002/${name}`])!
+    const rickOn = r.archive.rows.bookings!.find(b => b.client_id === r.ids.clients!['100000002'] && b.class_id != null)!
+    return { six: pkg('Unlimited 6'), twelve: pkg('Unlimited 12'), paidBy: rickOn.client_package_id, locations: r.ids.locations! }
+  }
+
+  const both = plans(mapStudio({ ...rickAt(reports, '1'), holdings }, validateConfig(config), TENANT))
+  assert.deepEqual(
+    [both.six.expires_at, both.six.duration_months, both.twelve.expires_at, both.twelve.duration_months],
+    ['2090-01-05T15:59:59.000Z', 6, '2090-02-01T15:59:59.000Z', 12],
+    'both Activated, each with its own Mindbody expiry and the catalogue s duration',
+  )
+  assert.deepEqual([both.six.cross_location_paid_sgd, both.twelve.cross_location_paid_sgd], ['120.00', null], 'the Add-On is on the soonest-ending plan')
+  assert.equal(both.paidBy, both.six.id, 'the soonest-ending plan that lasts until the class pays')
+
+  // The six-month plan homed at Riverside does not Cover a class at Main Hall: the other plan pays.
+  config.catalogue.find((e: { name: string }) => e.name === 'Unlimited 6').location = 'location-2'
+  const apart = plans(mapStudio({ ...rickAt(reports, '0'), holdings }, validateConfig(config), TENANT))
+  assert.deepEqual([apart.six.location_id, apart.six.cross_location_paid_sgd], [apart.locations['location-2'], null])
+  assert.equal(apart.paidBy, apart.twelve.id)
 })
 
 test('a Class Type with no future class and no Class Series arrives archived; the ones in use stay active', async () => {

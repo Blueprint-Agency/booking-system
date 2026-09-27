@@ -29,7 +29,6 @@ import { clientPackages } from '../../db/schema/packages'
 import { manualAdjustments } from '../../db/schema/ledger'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { applyMovement } from './validity'
-import { revivalPatch } from './activation'
 
 /** The handle `db.transaction(async tx => …)` hands its callback. */
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -103,26 +102,11 @@ async function move(tx: Tx, input: CreditMovementInput, sign: 1 | -1): Promise<M
     throw new BadRequestError('invalid_credit_amount')
   }
 
-  // A refund that revives a spent package while another one in its family
-  // is running sends it back to Dormant rather than tripping the
-  // one-Activated-per-family index — see `revivalPatch`.
-  const patch = await revivalPatch(
-    tx,
-    {
-      tenantId: input.tenantId,
-      clientId: input.clientId,
-      id: input.clientPackageId,
-      kind: pkg.kind,
-      active: pkg.active,
-      expiresAt: pkg.expiresAt,
-    },
-    result.active,
-    new Date(),
-  )
-
+  // A refund into a spent package lands back on it with its expiry untouched,
+  // whatever else of its Family is running (be/docs/adr/0010).
   await tx
     .update(clientPackages)
-    .set({ creditsOrSessionsRemaining: result.remaining, ...patch })
+    .set({ creditsOrSessionsRemaining: result.remaining, active: result.active })
     .where(
       and(
         eq(clientPackages.tenantId, input.tenantId),
@@ -141,7 +125,7 @@ async function move(tx: Tx, input: CreditMovementInput, sign: 1 | -1): Promise<M
     })
   }
 
-  return { remaining: result.remaining, active: patch.active }
+  return { remaining: result.remaining, active: result.active }
 }
 
 /** Spend `amount` credits/sessions. Throws 409 `insufficient_credits` rather than overdrawing. */

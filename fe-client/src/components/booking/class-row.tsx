@@ -3,16 +3,18 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, UserRound, MapPin, Loader2, Lock } from "lucide-react";
-import { cn, formatSgd } from "@/lib/utils";
+import { Check, UserRound, MapPin, Loader2, Lock, Ticket } from "lucide-react";
+import { cn, formatDate, formatSgd } from "@/lib/utils";
 import { Select } from "@/components/ui/select";
 import { Portal } from "@/components/ui/portal";
 import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
-import { notCoveredCopy, planRunsOutCopy } from "@/lib/booking-copy";
+import { notAcceptedCopy, notCoveredCopy, planRunsOutCopy } from "@/lib/booking-copy";
+import { RESTRICTED_HINT } from "@/lib/package-rule";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { formatClassTime, type ApiClassCard, type ClassEntitlements } from "@/lib/classes";
+import { credits, planCoverage } from "@/lib/package-picker";
 import {
   BTN_PRIMARY,
   BTN_SECONDARY,
@@ -34,8 +36,15 @@ import {
 import { toast } from "sonner";
 import { LeaveWaitlistDialog } from "@/components/booking/leave-waitlist-dialog";
 import { ConfirmBookingSheet } from "@/components/booking/confirm-booking-sheet";
+import { ClassDetailOverlay } from "@/components/booking/class-detail-overlay";
 
-const credits = (n: number) => `${n} credit${n === 1 ? "" : "s"}`;
+/** `POST /me/bookings/class`: the booking, and the package that paid for it. */
+interface BookClassResponse {
+  booking_id: string;
+  qr_token: string;
+  code: string;
+  paid_with: { client_package_id: string; name: string; kind: string };
+}
 
 export function ClassRow({
   cls,
@@ -58,17 +67,18 @@ export function ClassRow({
   const router = useRouter();
   const api = useApi();
   const [showNoPackage, setShowNoPackage] = useState(false);
-  // One state, so the message and its offer can't drift apart. `offersCredit` is
-  // set only on the expiry refusal, where credits are the one way through (§3).
   // `title` is set by a waitlist refusal; unset reads "Couldn't book".
-  const [bookError, setBookError] = useState<
-    { msg: string; offersCredit?: boolean; title?: string } | null
-  >(null);
+  const [bookError, setBookError] = useState<{ msg: string; title?: string } | null>(null);
   const [booked, setBooked] = useState(cls.is_booked ?? false);
   const [spotsLeft, setSpotsLeft] = useState(cls.spots_left);
   const [booking, setBooking] = useState(false);
-  // The confirmation open, and whether the member chose to pay with credits.
-  const [confirmBook, setConfirmBook] = useState<{ useCredits: boolean } | null>(null);
+  // The confirmation open: the Book sheet, where the member picks what pays.
+  const [confirmBook, setConfirmBook] = useState(false);
+  // The class detail overlay, opened by a tap anywhere on the row.
+  const [showDetail, setShowDetail] = useState(false);
+  // The class's Package rule takes none of the member's packages — learnt from
+  // the detail or a refused join; the list states only that a rule exists.
+  const [notAccepted, setNotAccepted] = useState(false);
   const [myEntry, setMyEntry] = useState<WaitlistPlace | null>(cls.waitlist.my_entry);
   const [waitlistOpen, setWaitlistOpen] = useState(cls.waitlist.open);
   const [joining, setJoining] = useState(false);
@@ -90,37 +100,33 @@ export function ClassRow({
   const isFull = spotsLeft <= 0;
   const locationName = cls.location?.name ?? null;
 
-  // The member's plan covers one studio; this class is at the other one (§2).
+  // The member's Unlimited Plans cover other studios, and none this one (§2).
   // Shown rather than hidden, and quietly — this state repeats on every class at
   // the other studio, and at that density a louder offer reads as an ad break.
-  const planLocation = entitlements?.unlimited_location ?? null;
-  // A commented mirror of `covers()` in be/src/services/packages/selection.ts —
-  // a plan carrying the Add-On Covers both Locations, so nothing is blocked and
-  // there is nothing left to sell. The server refusal stays the enforcement.
-  const notCovered =
-    !booked &&
-    !!planLocation &&
-    !entitlements?.unlimited_covers_both &&
-    !!cls.location &&
-    cls.location.id !== planLocation.id;
+  // `planCoverage` is a commented mirror of `covers()` in
+  // be/src/services/packages/selection.ts; the server refusal stays the enforcement.
+  const coverage = planCoverage(entitlements?.unlimited_plans, cls.location?.id ?? null);
+  const planLocationName = coverage.planLocationName;
+  const notCovered = !booked && coverage.notCovered;
+  // Credits can still pay where no plan does: the Default payer uses them, so
+  // the row keeps its Book button and only locks when nothing else can pay.
   const hasCredits = !!entitlements?.has_active_bundle_credits;
-  // Credits can only step in while nothing in the class family is running: a
-  // running plan is the only package that can pay, and the credits behind it
-  // cannot start until it ends (§3). The backend refuses either way.
-  const creditsCanStart = hasCredits && !entitlements?.class_family_running;
-  const canUseCredit = notCovered && creditsCanStart;
-  // The upsell: the Add-On on the plan that would pay, at the rate the server states.
+  const lockedOut = notCovered && !hasCredits;
+  // The upsell: the Add-On on a plan homed elsewhere, at the rate the server states.
   const addOn =
-    notCovered && entitlements?.unlimited_plan_id && cls.location
+    notCovered && coverage.addOnPlanId && cls.location && entitlements && Number(entitlements.cross_location_rate_sgd) > 0
       ? {
-          href: `/checkout?add_on=${entitlements.unlimited_plan_id}`,
+          href: `/checkout?add_on=${coverage.addOnPlanId}`,
           label: `Add ${cls.location.name} for ${formatSgd(entitlements.cross_location_rate_sgd)}/month`,
         }
       : null;
 
-  /** A tap on Book: the checks that need no server, then the confirmation. */
-  const requestBook = (e: React.MouseEvent, useCredits = false) => {
-    e.preventDefault();
+  /** A tap on Book, on the row or the detail: the checks that need no server, then the confirmation. */
+  const requestBook = (e?: React.MouseEvent) => {
+    // The row's own button sits over the row's detail button: it books, and
+    // does not also open the detail.
+    e?.preventDefault();
+    e?.stopPropagation();
     if (!isSignedIn) {
       router.push(`/login?next=${encodeURIComponent("/")}`);
       return;
@@ -130,21 +136,23 @@ export function ClassRow({
       return;
     }
     if (booking || booked) return;
-    setConfirmBook({ useCredits });
+    setConfirmBook(true);
   };
 
-  const handleBookClick = async (e: React.MouseEvent | null, useCredits = false) => {
-    e?.preventDefault();
+  /** Book, paid by the package the member picked on the sheet. */
+  const handleBook = async (clientPackageId: string, choices: number) => {
     if (booking || booked) return;
     setBooking(true);
     try {
-      await api.post("/me/bookings/class", {
+      const res = await api.post<BookClassResponse>("/me/bookings/class", {
         class_id: cls.id,
-        ...(useCredits ? { use_credits: true } : {}),
+        client_package_id: clientPackageId,
       });
       setBookError(null);
       setBooked(true);
       setSpotsLeft((s) => Math.max(0, s - 1));
+      // Worth saying only when there was a choice to make.
+      if (choices > 1 && res?.paid_with?.name) toast.success(`Booked with ${res.paid_with.name}.`);
     } catch (err) {
       const code = errCode(err);
       if (code === ERROR_CODES.insufficient_credits) {
@@ -167,31 +175,37 @@ export function ClassRow({
       } else if (code === ERROR_CODES.class_already_started) {
         setBookError({ msg: "This class has already started." });
       } else if (code === ERROR_CODES.location_not_covered) {
-        // Genuinely the wrong studio. The lock chip below catches this before
-        // the click in the normal case; what lands here is entitlements the
-        // client read too early or too late.
-        setBookError({ msg: notCoveredCopy(planLocation?.name ?? null) });
+        // The picked package is for another studio. The sheet greys such a
+        // package before the click; what lands here is a package list read
+        // too early or too late.
+        setBookError({ msg: notCoveredCopy(planLocationName) });
       } else if (code === ERROR_CODES.plan_expires_before_class) {
-        // Not a coverage problem: the package does cover this studio, it just
-        // runs out first. The Cross-Location Add-On sells Locations, not time,
-        // so it is the wrong remedy here — and the next package starts itself
-        // on the first booking after the current one ends. Credits are offered
-        // only when nothing is running yet (a Dormant plan being passed over):
-        // while a package runs, nothing behind it can start.
-        setBookError({ msg: planRunsOutCopy(creditsCanStart), offersCredit: creditsCanStart });
+        // Not a coverage problem: the package covers this studio, it just runs
+        // out first. The Cross-Location Add-On sells Locations, not time, so it
+        // is the wrong remedy here; another package can be picked instead.
+        setBookError({ msg: planRunsOutCopy() });
+      } else if (code === ERROR_CODES.not_accepted) {
+        // The class's Package rule does not take the picked package. The sheet
+        // greys such a package before the click; what lands here is a rule
+        // changed since the sheet read it. Another package may still be taken,
+        // so the row keeps its Book button.
+        setBookError({ msg: notAcceptedCopy() });
+      } else if (code === ERROR_CODES.client_package_not_found) {
+        // The picked package ended or was used up since the sheet read it.
+        setBookError({ msg: "That package can't pay for this class any more. Open the class again to pick another." });
       } else {
         setBookError({ msg: "Couldn't book this class. Please try again." });
       }
     } finally {
       setBooking(false);
-      setConfirmBook(null);
+      setConfirmBook(false);
     }
   };
 
   /** A refused join or leave, told the way §9 words it; an unknown code gets the generic dialog. */
   const handleWaitlistRefusal = (err: unknown, title: string) => {
     const body = err instanceof ApiError ? err.body : null;
-    const out = waitlistRefusal(errCode(err), body, planLocation?.name ?? null);
+    const out = waitlistRefusal(errCode(err), body, planLocationName);
     if (!out) {
       setBookError({ title, msg: "Something went wrong. Please try again." });
     } else if (out.kind === "no_package") {
@@ -200,13 +214,15 @@ export function ClassRow({
       onStale?.();
     } else {
       if (out.closed) setWaitlistOpen(false);
+      if (out.notAccepted) setNotAccepted(true);
       if (out.refresh) onStale?.();
       setBookError({ title, msg: out.msg });
     }
   };
 
-  const handleJoinClick = async (e: React.MouseEvent) => {
-    e.preventDefault();
+  const handleJoinClick = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     if (!isSignedIn) {
       router.push(`/login?next=${encodeURIComponent("/")}`);
       return;
@@ -247,10 +263,10 @@ export function ClassRow({
     }
   };
 
-  const action = classAction({ booked, myEntry, spotsLeft, waitlistOpen, notCovered });
+  const action = classAction({ booked, myEntry, spotsLeft, waitlistOpen, notCovered: lockedOut, notAccepted });
   // Dimmed only when there is nothing to do here; a full class with a line to
   // join, or the member's own place in it, stays at full strength.
-  const dim = action === "full" || action === "not_covered";
+  const dim = action === "full" || action === "not_covered" || action === "not_accepted";
 
   // The time moves into the text block on a phone, so the name, its meta and
   // a compact action all fit on one row at 320px without truncating the name.
@@ -268,6 +284,7 @@ export function ClassRow({
         <button
           onClick={(e) => {
             e.preventDefault();
+            e.stopPropagation();
             setConfirmLeave(true);
           }}
           disabled={leaving}
@@ -295,6 +312,11 @@ export function ClassRow({
         <Lock className="h-3.5 w-3.5" aria-hidden />
         Not in plan
       </span>
+    ) : action === "not_accepted" ? (
+      <span className={cn(shape, "bg-ink/5 text-muted")}>
+        <Lock className="h-3.5 w-3.5" aria-hidden />
+        Not accepted
+      </span>
     ) : (
       <button
         onClick={(e) => requestBook(e)}
@@ -311,11 +333,21 @@ export function ClassRow({
   const timeRange = `${formatClassTime(cls.starts_at)} – ${formatClassTime(cls.ends_at)}`;
 
   return (
-    <div className="px-4 py-3.5 md:px-5 md:py-4">
+    <div className="relative px-4 py-3.5 first:rounded-t-2xl last:rounded-b-2xl md:px-5 md:py-4">
+      {/* The whole row opens the class detail: one button stretched under it,
+          since a button cannot hold the row's own. The row's contents let taps
+          through to it; its action (and the plan nudge) sit above and take
+          their own. */}
+      <button
+        type="button"
+        onClick={() => setShowDetail(true)}
+        aria-label={`Details: ${cls.class_type.name}, ${formatDate(cls.starts_at)} ${timeRange}`}
+        className="absolute inset-0 h-full w-full cursor-pointer rounded-[inherit] hover:bg-ink/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent transition-colors"
+      />
       {/* Dim the row only — not the plan nudge below, which is the way
           through, nor a dialog opened from this row. A full class with a line
           to join, or the member's own place in it, stays at full strength. */}
-      <div className={cn("flex items-center gap-3 md:gap-5", dim && "opacity-60")}>
+      <div className={cn("pointer-events-none relative flex items-center gap-3 md:gap-5", dim && "opacity-60")}>
         {/* Time — its own column once there is room */}
         <div className="hidden sm:block w-[76px] shrink-0 tabular-nums">
           <div className="text-[15px] font-bold tracking-tight text-ink">
@@ -353,55 +385,74 @@ export function ClassRow({
             )}
             <span aria-hidden className="text-ink/20">·</span>
             <span className="tabular-nums">{credits(cls.credit_cost)}</span>
+            {/* The class takes only some packages; which ones is in the detail. */}
+            {cls.restricted && (
+              <>
+                <span aria-hidden className="text-ink/20">·</span>
+                <span className="inline-flex items-center gap-1 font-medium text-ink/70">
+                  <Ticket className="h-3.5 w-3.5 shrink-0 text-ink/30" aria-hidden />
+                  {RESTRICTED_HINT}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
-        <div className="shrink-0">{cta}</div>
+        <div className="pointer-events-auto shrink-0">{cta}</div>
       </div>
 
-      {notCovered && planLocation && (
-        <div className="mt-2.5 rounded-lg bg-ink/[0.03] px-3 py-2 text-xs text-muted">
-          Your plan covers <span className="font-medium text-ink">{planLocation.name}</span> only.
-          {addOn && (
+      {/* The one offer on a class no plan covers: the Add-On. Credits, where
+          the member holds them, pay through the Book button as usual. */}
+      {notCovered && (planLocationName || addOn) && (
+        <div className="relative mt-2.5 rounded-lg bg-ink/[0.03] px-3 py-2 text-xs text-muted">
+          {planLocationName && (
             <>
-              <span aria-hidden className="text-ink/20"> · </span>
-              <Link
-                href={addOn.href}
-                className="underline underline-offset-2 hover:text-ink transition-colors"
-              >
-                {addOn.label}
-              </Link>
+              Your plan covers <span className="font-medium text-ink">{planLocationName}</span> only.
             </>
           )}
-          {canUseCredit && (
-            <>
-              <span aria-hidden className="text-ink/20"> · </span>
-              {addOn && "or "}
-              <button
-                onClick={(e) => requestBook(e, true)}
-                disabled={booking}
-                className="underline underline-offset-2 hover:text-ink transition-colors disabled:cursor-wait"
-              >
-                {booking ? "Booking…" : `use ${credits(cls.credit_cost)}`}
-              </button>
-            </>
+          {planLocationName && addOn && <span aria-hidden className="text-ink/20"> · </span>}
+          {addOn && (
+            <Link
+              href={addOn.href}
+              className="underline underline-offset-2 hover:text-ink transition-colors"
+            >
+              {addOn.label}
+            </Link>
           )}
         </div>
+      )}
+
+      {showDetail && (
+        <ClassDetailOverlay
+          cls={cls}
+          isSignedIn={isSignedIn}
+          action={action}
+          spotsLeft={spotsLeft}
+          waitlistOpen={waitlistOpen}
+          myEntry={myEntry}
+          joining={joining}
+          // The overlay closes first: the Book sheet, the waitlist toast and a
+          // refusal's dialog each trap focus of their own.
+          onBook={() => {
+            setShowDetail(false);
+            requestBook();
+          }}
+          onJoinWaitlist={() => {
+            setShowDetail(false);
+            void handleJoinClick();
+          }}
+          onNoneAccepted={() => setNotAccepted(true)}
+          onClose={() => setShowDetail(false)}
+        />
       )}
 
       {confirmBook && (
         <ConfirmBookingSheet
           cls={cls}
-          cost={
-            // An Unlimited plan pays for a class at a studio it covers; credits
-            // pay otherwise, and whenever the member chose them.
-            planLocation && !notCovered && !confirmBook.useCredits
-              ? "Covered by your Unlimited plan"
-              : `Uses ${credits(cls.credit_cost)}`
-          }
           booking={booking}
-          onConfirm={() => handleBookClick(null, confirmBook.useCredits)}
-          onClose={() => setConfirmBook(null)}
+          addOnRateSgd={entitlements?.cross_location_rate_sgd ?? null}
+          onConfirm={handleBook}
+          onClose={() => setConfirmBook(false)}
         />
       )}
 
@@ -442,20 +493,8 @@ export function ClassRow({
             <p className={SHEET_TEXT}>{bookError.msg}</p>
             <div className={SHEET_ACTIONS}>
               <button onClick={() => setBookError(null)} className={BTN_SECONDARY}>
-                {bookError.offersCredit ? "Not now" : "OK"}
+                OK
               </button>
-              {/* Only the expiry refusal offers credits here — the wrong-studio case
-                  keeps its offer in the row nudge, per stories 25-27. */}
-              {bookError.offersCredit && (
-                <button
-                  onClick={(e) => handleBookClick(e, true)}
-                  disabled={booking}
-                  className={BTN_PRIMARY}
-                >
-                  {booking && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {booking ? "Booking…" : `Use ${credits(cls.credit_cost)}`}
-                </button>
-              )}
             </div>
           </div>
         </div>

@@ -69,6 +69,12 @@ export const promoCodeRedemptionStatusEnum = pgEnum('promo_code_redemption_statu
 
 // Schedule
 export const lifecycleEnum = pgEnum('lifecycle', ['active', 'cancelled'])
+// A class's (or Class Series') **Package rule** (be/CONTEXT.md § Package rule):
+// which catalogue class packages may pay for it. `all` is the default and
+// carries no list; `only` / `except` name packages in class_rule_packages /
+// class_series_rule_packages.
+export const packageRuleModeEnum = pgEnum('package_rule_mode', ['all', 'only', 'except'])
+export type PackageRuleMode = (typeof packageRuleModeEnum.enumValues)[number]
 // Class-type difficulty (§ catalog). Values mirror the fe-portal `ClassTypeDifficulty`
 // union. `general` = "all levels" and is the default for existing/new types.
 export const classDifficultyEnum = pgEnum('class_difficulty', [

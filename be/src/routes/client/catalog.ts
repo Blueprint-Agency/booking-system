@@ -9,7 +9,9 @@ import {
   listActivePromotionsFor,
   serializePromotion,
 } from '../../services/packages/promotions'
-import { getClientEntitlements } from '../../services/packages/entitlements'
+import { getClientEntitlements, serializeUnlimitedPlan } from '../../services/packages/entitlements'
+import { memberPackagesForClass } from '../../services/bookings/book'
+import { NotFoundError } from '../../shared/errors'
 import { tenantId } from '../../middleware/tenant'
 import * as workshopsSvc from '../../services/workshops/catalog'
 import { listMyWorkshopBookings } from '../../services/workshops/my-bookings'
@@ -93,6 +95,33 @@ const app = new Hono()
       classes: cards.map(card => ({ ...card, is_booked: bookedIds.has(card.id) })),
     })
   })
+  // One class, signed in: the public detail plus the member's own class
+  // packages, each Eligible to pay or with the reason it is not, in default
+  // order (be/docs/adr/0010). What the Book sheet's package picker lists. The
+  // list endpoint above stays cheap; packages are read for the class opened.
+  .get('/classes/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
+    const clientId = c.get('clientId')
+    const { id } = c.req.valid('param')
+    const detail = await classCatalog.getClassDetail(tenantId(c), id)
+    const mine = await memberPackagesForClass(tenantId(c), clientId, id)
+    if (!mine) throw new NotFoundError('class_not_found')
+    return c.json({
+      ...detail,
+      default_client_package_id: mine.defaultPayerId,
+      my_packages: mine.packages.map(p => ({
+        id: p.id,
+        name: p.name,
+        kind: p.kind,
+        running: p.running,
+        remaining: p.remaining,
+        expires_at: p.expiresAt?.toISOString() ?? null,
+        activation_end_if_picked: p.activationEndIfPicked?.toISOString() ?? null,
+        location: p.location,
+        eligible: p.eligible,
+        reason: p.reason,
+      })),
+    })
+  })
   .get('/workshops', async c => {
     const cards = await workshopsSvc.listActiveWorkshopCards(tenantId(c))
     return c.json({ workshops: cards })
@@ -130,10 +159,10 @@ const app = new Hono()
         // would pay, at the current rate — and stays quiet once it Covers both.
         unlimited_plan_id: ent.unlimitedPlanId,
         unlimited_covers_both: ent.unlimitedCoversBoth,
+        // Every live plan, so a row can tell whether ANY of them Covers it.
+        unlimited_plans: ent.unlimitedPlans.map(serializeUnlimitedPlan),
         cross_location_rate_sgd: ent.crossLocationRateSgd,
         dormant: ent.dormant,
-        // A class package is running, so "use a credit instead" is not on offer
-        // — nothing behind the running one can start (§3).
         class_family_running: ent.classFamilyRunning,
         has_active_bundle_credits: ent.hasActiveBundleCredits,
       },

@@ -652,6 +652,20 @@
       "when": 1790430250145,
       "tag": "0092_global_policy_cancel_cap_enabled",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1790478608935,
+      "tag": "0093_several_packages_run_per_family",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1790479090030,
+      "tag": "0094_package_rules",
+      "breakpoints": true
     }
   ]
 }

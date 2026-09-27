@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { bookClass } from '../../services/bookings/book'
+import { bookClass, serializePaidWith } from '../../services/bookings/book'
 import { cancelBooking } from '../../services/bookings/cancel'
 import { previewMemberClassCancel } from '../../services/bookings/cancel-preview'
 import { listClassBookings, getClassBookingDetail, type ClassBookingRow } from '../../services/bookings/list'
@@ -81,17 +81,27 @@ const app = new Hono()
     '/class',
     zValidator(
       'json',
-      z.object({ class_id: z.string().uuid(), use_credits: z.boolean().optional() }),
+      // Strict: `use_credits` is gone (be/docs/adr/0010), and a client still
+      // sending it gets a 400 rather than a booking it did not ask for.
+      z.object({ class_id: z.string().uuid(), client_package_id: z.string().uuid().optional() }).strict(),
     ),
     async c => {
       const clientId = c.get('clientId')
-      const { class_id, use_credits } = c.req.valid('json')
+      const { class_id, client_package_id } = c.req.valid('json')
       const res = await bookClass(tenantId(c), {
         clientId,
         classId: class_id,
-        useCredits: use_credits,
+        clientPackageId: client_package_id ?? null,
       })
-      return c.json({ booking_id: res.bookingId, qr_token: res.qrToken, code: res.code }, 201)
+      return c.json(
+        {
+          booking_id: res.bookingId,
+          qr_token: res.qrToken,
+          code: res.code,
+          paid_with: serializePaidWith(res.paidWith),
+        },
+        201,
+      )
     },
   )
   .delete('/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
