@@ -9,6 +9,7 @@ import { AllLocationsRow, CoversRow, LocationChip } from "@/components/ui/locati
 import { useLocations } from "@/lib/classes";
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
+import { StickyFilters } from "@/components/ui/sticky-filters";
 import { OpenPurchases } from "@/components/account/open-purchases";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -90,14 +91,17 @@ export default function YourPackagesPage() {
         <OpenPurchases purchases={openPurchases} partPayment={partPayment} failed={openPurchasesFailed} />
       </div>
 
-      <SegmentedTabs
-        label="Package status"
-        tabs={FILTERS}
-        value={filter}
-        onChange={setFilter}
-        counts={loading ? undefined : counts}
-        centered
-      />
+      <StickyFilters className="mb-4">
+        <SegmentedTabs
+          label="Package status"
+          tabs={FILTERS}
+          value={filter}
+          onChange={setFilter}
+          counts={loading ? undefined : counts}
+          centered
+          className="mb-0"
+        />
+      </StickyFilters>
 
       {loading ? (
         <ContentLoading label="Loading your packages" />

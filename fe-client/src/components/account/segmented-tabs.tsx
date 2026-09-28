@@ -14,6 +14,7 @@ export function SegmentedTabs<T extends string>({
   counts,
   label,
   centered = false,
+  className,
 }: {
   tabs: { value: T; label: string }[];
   value: T;
@@ -23,9 +24,11 @@ export function SegmentedTabs<T extends string>({
   label: string;
   /** Sit in the middle of the page once it no longer fills the width, under a centred header. */
   centered?: boolean;
+  /** On the wrapper — its spacing, e.g. none inside a pinned filter row. */
+  className?: string;
 }) {
   return (
-    <div className="mb-4 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto no-scrollbar">
+    <div className={cn("mb-4 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto no-scrollbar", className)}>
       <div
         role="tablist"
         aria-label={label}

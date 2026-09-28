@@ -76,4 +76,30 @@ describe('checkout rate limit', { skip: integrationTestsEnabled ? false : SKIP_R
     const profile = await harness.app.request('/api/v1/me', { headers: { ...first, ...SHARED_ADDRESS } })
     assert.equal(profile.status, 200, 'non-checkout /me routes stay on the general budget')
   })
+
+  // The budget is for calls that reach the payment provider. The review page
+  // reads its options and the Add-On's quote on every visit, and neither opens
+  // a session: counting them left a member who reloaded the Add-On page a few
+  // times with "We couldn't price the add-on" and a $0 block.
+  test('reads that open no payment session are neither refused nor counted', async () => {
+    const third = await member(`third-${run}@checkout-limit.test`)
+    EMAILS.push(`third-${run}@checkout-limit.test`)
+
+    const reads = () => [
+      harness.app.request('/api/v1/me/checkout/options', { headers: { ...third, ...SHARED_ADDRESS } }),
+      harness.app.request('/api/v1/me/checkout/cross-location/quote', {
+        method: 'POST',
+        headers: { ...third, ...SHARED_ADDRESS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_package_id: '00000000-0000-4000-8000-000000000000' }),
+      }),
+    ]
+    for (let i = 0; i < CHECKOUT_RATE_LIMIT.limit; i++) {
+      for (const res of await Promise.all(reads())) assert.notEqual(res.status, 429, `read round ${i + 1}`)
+    }
+    assert.notEqual((await checkoutCall(third)).status, 429, 'the reads spent none of the checkout budget')
+
+    for (let i = 1; i < CHECKOUT_RATE_LIMIT.limit; i++) await checkoutCall(third)
+    assert.equal((await checkoutCall(third)).status, 429, 'the budget still holds for the rest')
+    for (const res of await Promise.all(reads())) assert.notEqual(res.status, 429, 'reads stay open past it')
+  })
 })

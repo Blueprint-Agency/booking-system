@@ -14,6 +14,8 @@ import { Select } from "@/components/ui/select";
 import { BTN_SECONDARY, CARD } from "@/components/ui/styles";
 import { ComingUp } from "@/components/account/coming-up";
 import { PolicyNotice } from "@/components/booking/policy-notice";
+import { StickyFilters } from "@/components/ui/sticky-filters";
+import { planHomeLocationId } from "@/lib/package-picker";
 import { cn } from "@/lib/utils";
 import { useCancellationPolicyRead } from "@/lib/cancellation-policy";
 import { classPolicyPoints } from "@/lib/cancellation-copy";
@@ -57,22 +59,27 @@ export function ClassFeed() {
   // and a default only fires for undefined.
   const { data: locationData } = useLocations();
   const locations = useMemo(() => locationData ?? [], [locationData]);
+  const { isLoaded: sessionLoaded, isSignedIn } = useMemberSession();
+  const { canBook, loaded: canBookLoaded, entitlements } = useCanBookClass();
   // The schedule is one Location's: two studios' classes side by side read as
-  // repeats and get booked at the wrong one. It opens on the first Location,
-  // and the feed waits for the list rather than showing every studio first.
-  const locationId = selectedLocation || locations[0]?.id || "";
+  // repeats and get booked at the wrong one. A member whose Unlimited Plans all
+  // pay only at one studio opens on that one; anyone else on the first. The
+  // feed waits for the list, and for a signed-in member's plans, rather than
+  // show one studio and then jump to another.
+  const homeId = planHomeLocationId(entitlements?.unlimited_plans);
+  const home = locations.find((l) => l.id === homeId)?.id;
+  const locationId = selectedLocation || home || locations[0]?.id || "";
+  const plansKnown = sessionLoaded && (!isSignedIn || canBookLoaded);
   const { data: classes, loading, refresh } = useClasses(
     { from, to, location_id: locationId || undefined },
-    { enabled: locationData !== null },
+    { enabled: locationData !== null && plansKnown },
   );
-  const { isLoaded: sessionLoaded, isSignedIn } = useMemberSession();
   // A signed-in member's next-booking ticket lands above the rows once the
   // session is known: the page waits for that rather than be pushed down.
   useHoldLoader(!sessionLoaded);
   // The policy notice sits above the rows: the feed waits for it rather than
   // be pushed down when it lands.
   const { policy, settled: policySettled } = useCancellationPolicyRead();
-  const { canBook, loaded: canBookLoaded, entitlements } = useCanBookClass();
 
   // The feed is read without the instructor filter and narrowed here, so the
   // instructor choice lists everyone teaching in the window (at the picked
@@ -128,23 +135,25 @@ export function ClassFeed() {
           Cancel — the same ticket "Your bookings" leads with. */}
       <ComingUp variant="schedule" onChanged={refresh} />
 
-      <div className="grid grid-cols-2 gap-2 mb-3 sm:flex">
-        <Select
-          ariaLabel="Location"
-          value={locationId}
-          onChange={setSelectedLocation}
-          options={locations.map((l) => ({ value: l.id, label: l.name }))}
-          className="min-w-0 flex-1 sm:max-w-[240px]"
-          triggerClassName="border-accent/40 font-medium"
-        />
-        <FilterSelect
-          label="Instructor"
-          value={instructor}
-          onChange={setInstructor}
-          options={instructorOptions}
-          placeholder="All instructors"
-        />
-      </div>
+      <StickyFilters className="mb-3">
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <Select
+            ariaLabel="Location"
+            value={locationId}
+            onChange={setSelectedLocation}
+            options={locations.map((l) => ({ value: l.id, label: l.name }))}
+            className="min-w-0 flex-1 sm:max-w-[240px]"
+            triggerClassName="border-accent/40 font-medium"
+          />
+          <FilterSelect
+            label="Instructor"
+            value={instructor}
+            onChange={setInstructor}
+            options={instructorOptions}
+            placeholder="All instructors"
+          />
+        </div>
+      </StickyFilters>
 
       {/* The rules a member agrees to by booking, stated before they do. Left
           out rather than guessed while the studio's policy is still loading. */}

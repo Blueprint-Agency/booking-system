@@ -12,6 +12,7 @@ import { BookedClassOverlay } from "@/components/account/booked-class-overlay";
 import { CancelBookingDialog, type CancelOutcome } from "@/components/account/cancel-booking-dialog";
 import { LeaveWaitlistDialog } from "@/components/booking/leave-waitlist-dialog";
 import { SubTabs } from "@/components/ui/sub-tabs";
+import { StickyFilters } from "@/components/ui/sticky-filters";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { BTN_BOOK, BTN_SECONDARY, CARD } from "@/components/ui/styles";
@@ -203,15 +204,18 @@ function YourBookings() {
       )}
 
       {/* As the packages page reads: when first, as pills, then which kind, as words on a hairline. */}
-      <SegmentedTabs
-        label="When"
-        tabs={PHASES}
-        value={phase}
-        onChange={setPhase}
-        counts={src ? counts : undefined}
-        centered
-      />
-      <SubTabs label="Booking type" tabs={TYPE_OPTIONS} value={type} onChange={setType} centered className="mb-4" />
+      <StickyFilters className="mb-4">
+        <SegmentedTabs
+          label="When"
+          tabs={PHASES}
+          value={phase}
+          onChange={setPhase}
+          counts={src ? counts : undefined}
+          centered
+          className="mb-2"
+        />
+        <SubTabs label="Booking type" tabs={TYPE_OPTIONS} value={type} onChange={setType} centered />
+      </StickyFilters>
 
       {!src && !loadError ? (
         <ContentLoading label="Loading your bookings" />

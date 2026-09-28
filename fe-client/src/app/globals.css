@@ -56,6 +56,21 @@
   --shadow-modal: 0 16px 64px rgba(31, 29, 26, 0.18);
 }
 
+/* What a sticky element on a page pins beneath. `--top-bar` is where the top
+   bar ends: its `h-16`, and the impersonation banner's `h-10` above it while
+   that shows. In rem like them, so it scales with the member's text size as
+   they do — 64px here left a strip of the page showing under a smaller bar.
+   `--filters-h` is a page's pinned filter row (`StickyFilters`), 0 when the
+   page has none, so a day header pinned under it clears it. A script reads the
+   resolved px off an element's computed `top` or `scroll-margin-top`. */
+:root {
+  --top-bar: 4rem;
+  --filters-h: 0px;
+}
+html:has([data-impersonation-banner]) {
+  --top-bar: 6.5rem;
+}
+
 /* `dark:` utilities follow the member's choice in General settings, not the
    OS: the choice is `data-theme` on <html> (`lib/display-prefs.ts`). */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));

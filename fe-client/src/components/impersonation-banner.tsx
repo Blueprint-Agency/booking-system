@@ -21,6 +21,7 @@ export async function ImpersonationBanner() {
     <div
       role="status"
       aria-live="polite"
+      data-impersonation-banner
       className="fixed top-0 left-0 right-0 z-[60] flex h-10 items-center justify-center gap-2 px-3 bg-warning text-xs sm:text-sm font-medium text-ink dark:text-paper shadow-sm"
     >
       {/* The full sentence does not fit beside the button on a phone, and the

@@ -21,6 +21,7 @@ import {
 } from "@/lib/workshops";
 import { groupWorkshops, isEnded } from "@/lib/workshop-groups";
 import { OneOpenAccordion } from "@/components/booking/one-open-accordion";
+import { StickyFilters } from "@/components/ui/sticky-filters";
 import { MembersOnly } from "@/components/auth/members-only";
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -87,16 +88,17 @@ export default function WorkshopsPage() {
 
       {/* One studio has nothing to choose between. */}
       {locations.length > 1 && (
-        <FilterChips
-          label="Filter by location"
-          className="mb-5"
-          options={[
-            { value: "all", label: "All locations" },
-            ...locations.map((l) => ({ value: l.id, label: l.name })),
-          ]}
-          value={selectedLocation}
-          onChange={setSelectedLocation}
-        />
+        <StickyFilters className="mb-5">
+          <FilterChips
+            label="Filter by location"
+            options={[
+              { value: "all", label: "All locations" },
+              ...locations.map((l) => ({ value: l.id, label: l.name })),
+            ]}
+            value={selectedLocation}
+            onChange={setSelectedLocation}
+          />
+        </StickyFilters>
       )}
 
       {loading && (

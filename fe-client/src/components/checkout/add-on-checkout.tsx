@@ -91,7 +91,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
             data.error === ERROR_CODES.cross_location_requires_unlimited
           )
             setReason("no_plan");
-          else setError("We couldn't price the add-on. Please try again.");
+          else setError(checkoutErrorMessage(data, "We couldn't price the add-on. Please try again."));
           return;
         }
         setQuote(data as AddOnQuote);
@@ -165,15 +165,19 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
                 and the total; a second item row and a second total beside it
                 were a copy of the review page's summary that could only drift
                 from it (§494, #47). */}
-            <CrossLocationBlock
-              rateSgd={quote?.rate_sgd ?? crossLocation.rateSgd}
-              months={quote?.months ?? 0}
-              otherLocations={otherLocations}
-              checked={Boolean(quote)}
-              disabledReason={reason}
-              remainder={remainder}
-              totalSgd={quote?.price_sgd}
-            />
+            {/* Only with a quote or a refusal to state: a failed quote has no
+                months to multiply, and "0 months × S$30 = $0" read as a price. */}
+            {(quote || reason) && (
+              <CrossLocationBlock
+                rateSgd={quote?.rate_sgd ?? crossLocation.rateSgd}
+                months={quote?.months ?? 0}
+                otherLocations={otherLocations}
+                checked={Boolean(quote)}
+                disabledReason={reason}
+                remainder={remainder}
+                totalSgd={quote?.price_sgd}
+              />
+            )}
           </div>
 
           {error && (

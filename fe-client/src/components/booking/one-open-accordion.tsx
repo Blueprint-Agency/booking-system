@@ -69,8 +69,10 @@ export function OneOpenAccordion({
         if (Math.abs(off) >= 8) panel.scrollIntoView({ block: "start", behavior });
       } else {
         const header = panel.previousElementSibling;
-        // Its scroll margin (`scroll-mt-16` below) is the 4rem top bar.
-        if (header && header.getBoundingClientRect().top < 64) {
+        // Its scroll margin (below) is the top bar and any pinned filter row,
+        // which the browser has resolved to px.
+        const pinnedAbove = header ? parseFloat(getComputedStyle(header).scrollMarginTop) || 64 : 64;
+        if (header && header.getBoundingClientRect().top < pinnedAbove) {
           header.scrollIntoView({ block: "start", behavior });
         }
       }
@@ -94,8 +96,8 @@ export function OneOpenAccordion({
             {/* Pinned in the page's own colour so rows slide cleanly beneath it. */}
             <h2
               className={cn(
-                "-mx-4 scroll-mt-16 px-4 md:mx-0 md:px-0",
-                isOpen && "sticky top-16 z-10 bg-paper/95 backdrop-blur-sm",
+                "-mx-4 scroll-mt-[calc(var(--top-bar)+var(--filters-h))] px-4 md:mx-0 md:px-0",
+                isOpen && "sticky top-[calc(var(--top-bar)+var(--filters-h))] z-10 bg-paper/95 backdrop-blur-sm",
               )}
             >
               <button

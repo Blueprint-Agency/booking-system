@@ -13,6 +13,7 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { SubTabs } from "@/components/ui/sub-tabs";
+import { StickyFilters } from "@/components/ui/sticky-filters";
 import { Portal } from "@/components/ui/portal";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { AllLocationsRow, HomeStudioRow } from "@/components/ui/location-chip";
@@ -246,13 +247,16 @@ export default function PackagesPage() {
 
           {!loading && !error && data && (
             <>
-              <SegmentedTabs
-                label="Package family"
-                centered
-                tabs={MAIN_TABS.filter((t) => !t.hidden).map((t) => ({ value: t.key, label: t.label }))}
-                value={activeTab}
-                onChange={setActiveTab}
-              />
+              <StickyFilters className="mb-4">
+                <SegmentedTabs
+                  label="Package family"
+                  centered
+                  tabs={MAIN_TABS.filter((t) => !t.hidden).map((t) => ({ value: t.key, label: t.label }))}
+                  value={activeTab}
+                  onChange={setActiveTab}
+                  className="mb-0"
+                />
+              </StickyFilters>
 
               {/* ── Group tab ───────────────────────────────────────── */}
               {activeTab === "group" && (

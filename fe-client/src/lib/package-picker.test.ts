@@ -8,6 +8,7 @@ import {
   nothingEligibleCopy,
   packageMeta,
   planCoverage,
+  planHomeLocationId,
   reasonText,
   type MyClassPackage,
 } from "./package-picker.ts";
@@ -148,4 +149,19 @@ test("BKG-29 a class is not covered only when no Unlimited Plan covers its Locat
   // No plan, nothing to be uncovered by.
   assert.equal(planCoverage([], WEST.id).notCovered, false);
   assert.equal(planCoverage(undefined, WEST.id).notCovered, false);
+});
+
+test("BKG-45 the schedule opens on the Location a member's Unlimited Plans are all homed at", () => {
+  const east = { id: "p1", location: EAST, covers_both: false, running: true };
+  const eastToo = { id: "p2", location: EAST, covers_both: false, running: false };
+  const west = { id: "p3", location: WEST, covers_both: false, running: false };
+  assert.equal(planHomeLocationId([east]), EAST.id);
+  assert.equal(planHomeLocationId([east, eastToo]), EAST.id);
+  // Plans at two Locations, or one that Covers them all: no one studio to prefer.
+  assert.equal(planHomeLocationId([east, west]), null);
+  assert.equal(planHomeLocationId([{ ...east, covers_both: true }]), null);
+  assert.equal(planHomeLocationId([east, { ...eastToo, covers_both: true }]), null);
+  // No plan, no preference.
+  assert.equal(planHomeLocationId([]), null);
+  assert.equal(planHomeLocationId(undefined), null);
 });

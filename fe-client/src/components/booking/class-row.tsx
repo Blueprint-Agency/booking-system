@@ -481,13 +481,18 @@ export function ClassRow({
             {formatClassTime(cls.starts_at)}
           </div>
           <div className="text-xs text-muted">{formatClassTime(cls.ends_at)}</div>
+          {/* Until the cost has a column of its own. */}
+          <div className="md:hidden mt-0.5 text-xs text-muted">{credits(cls.credit_cost)}</div>
         </div>
 
         {/* The class and who teaches it. From `md` up the location and the
             cost leave this block for columns of their own, so they line up
             down the day however long a name runs. */}
         <div className="min-w-0 flex-1">
-          <p className="sm:hidden text-xs font-semibold text-ink/70 tabular-nums">{timeRange}</p>
+          <p className="sm:hidden text-xs font-semibold text-ink/70 tabular-nums">
+            {timeRange}
+            <span className="font-normal text-muted"> · {credits(cls.credit_cost)}</span>
+          </p>
           <h3 className="font-semibold text-ink leading-snug break-words">
             {cls.class_type.name}
           </h3>
@@ -526,12 +531,11 @@ export function ClassRow({
           <div className="text-muted">{credits(cls.credit_cost)}</div>
         </div>
 
-        {/* Below `md` the cost sits under the action, on the row's right edge,
-            rather than trailing the instructor's name — where it landed at a
-            different place on every row. */}
-        <div className="flex shrink-0 flex-col items-end gap-1 md:min-w-32">
+        {/* Below `sm` the cost rides the time line above the name, the same
+            width on every row, rather than trailing the instructor's name,
+            where it landed at a different place on every row. */}
+        <div className="flex shrink-0 justify-end md:min-w-32">
           <div className="pointer-events-auto">{cta}</div>
-          <span className="md:hidden pr-1 text-xs text-muted tabular-nums">{credits(cls.credit_cost)}</span>
         </div>
       </div>
 

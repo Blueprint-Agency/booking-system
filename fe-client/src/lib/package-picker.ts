@@ -147,6 +147,20 @@ export interface UnlimitedPlanCoverage {
 }
 
 /**
+ * The Location the schedule opens on for this member: the one their Unlimited
+ * Plans are all homed at, when none of them carries the Add-On — the only
+ * studio whose classes those plans can pay for. Null when there is no plan,
+ * plans at several Locations, or a plan that Covers them all; the schedule then
+ * opens on its first Location as for anyone else.
+ */
+export function planHomeLocationId(plans: UnlimitedPlanCoverage[] | null | undefined): string | null {
+  const list = plans ?? [];
+  if (list.length === 0 || list.some((p) => p.covers_both)) return null;
+  const homes = new Set(list.map((p) => p.location.id));
+  return homes.size === 1 ? list[0]!.location.id : null;
+}
+
+/**
  * Whether the member's Unlimited Plans leave this class's Location uncovered,
  * and the Add-On that would fix it. A commented mirror of `covers()` in
  * `be/src/services/packages/selection.ts`: a plan Covers a class at its Home
