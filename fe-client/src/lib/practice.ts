@@ -115,11 +115,6 @@ export function comparisonLine(s: PracticeData): string | null {
   return `${Math.abs(diff)} ${diff > 0 ? "more" : "fewer"} than ${before}`;
 }
 
-/** "Also 1 workshop in September"; none when there were none. */
-export function workshopLine(s: PracticeData): string | null {
-  if (s.attended_workshops === 0) return null;
-  return `Also ${plural(s.attended_workshops, "workshop", "workshops")} ${inPeriod(s)}`;
-}
 
 /**
  * A figure as the page sets it: each number large with its unit small after
@@ -140,21 +135,26 @@ export function durationParts(minutes: number): FigureParts {
       ];
 }
 
-/** Tue 7am; a dash when there is no habit yet. */
-export function usualSlotParts(slot: PracticeData["usual_slot"]): FigureParts {
-  if (!slot) return [{ value: "—", unit: "" }];
-  const h = slot.hour % 12 === 0 ? 12 : slot.hour % 12;
-  return [{ value: WEEKDAYS[slot.weekday - 1]!, unit: `${h}${slot.hour < 12 ? "am" : "pm"}` }];
+/**
+ * Everything attended in the period — group classes, private sessions and
+ * workshops alike: "15 sessions". The headline leaves workshops out (they are
+ * not bucketed by day); this figure is where they count.
+ */
+export function totalParts(s: PracticeData): FigureParts {
+  const n = s.attended + s.attended_workshops;
+  return [{ value: String(n), unit: n === 1 ? "session" : "sessions" }];
 }
 
-/** 1 week, 3 weeks. */
-export function streakParts(weeks: number): FigureParts {
-  return [{ value: String(weeks), unit: weeks === 1 ? "week" : "weeks" }];
-}
-
-/** What the streak figure is: the run going now, or the longest in a period that has ended. */
-export function streakLabel(current: boolean): string {
-  return current ? "In a row" : "Longest run";
+/**
+ * How many of the period's days the member attended on: "11 days". A year's
+ * buckets are months, so a year counts months instead: "9 months".
+ */
+export function practisedFigure(s: PracticeData): { label: string; parts: FigureParts } {
+  const n = s.buckets.filter((b) => b.attended > 0).length;
+  if (s.period === "year") {
+    return { label: "Months practised", parts: [{ value: String(n), unit: n === 1 ? "month" : "months" }] };
+  }
+  return { label: "Days practised", parts: [{ value: String(n), unit: n === 1 ? "day" : "days" }] };
 }
 
 /** "3 Sep", from a plain date. */
@@ -289,21 +289,37 @@ export function yearColumns(s: PracticeData, today: string): YearColumn[] {
   });
 }
 
-/**
- * "What you practised": the class types, then private sessions as one bar
- * when there are any, each as a share of the largest.
- */
-export function practiceBars(s: PracticeData): { name: string; attended: number; share: number }[] {
-  const rows = [...s.top_class_types];
-  if (s.attended_pt > 0) rows.push({ name: s.attended_pt === 1 ? "Private session" : "Private sessions", attended: s.attended_pt });
-  const max = Math.max(1, ...rows.map((r) => r.attended));
-  return rows.map((r) => ({ ...r, share: r.attended / max }));
+export interface PracticePart {
+  name: string;
+  /** A class type, the classes past the top few, private sessions or workshops. */
+  kind: "class" | "other" | "pt" | "workshop";
+  attended: number;
+  /** Of every session in the period, 0–1: the parts fill one bar between them. */
+  share: number;
+  /** `share` as a whole percent, for the list under the bar. */
+  percent: number;
 }
 
-/** "164 sessions since March 2025", or the promise of the first. */
-export function lifetimeLine(lifetime: PracticeData["lifetime"]): string {
-  if (lifetime.attended === 0 || !lifetime.since) return "Your first class will show here";
-  return `${plural(lifetime.attended, "session", "sessions")} since ${monthOf(lifetime.since)} ${lifetime.since.slice(0, 4)}`;
+/**
+ * "What you practised": the period's sessions split into parts that fill one
+ * bar — the most-attended class types, "Other classes" for the rest of the
+ * classes, private sessions, then workshops — each as a share of all of them,
+ * so three single sessions read as thirds, not as three full bars. Workshops
+ * are here though the headline and the chart leave them out: they are
+ * counted by their first day, not bucketed by day (`attended_workshops`).
+ */
+export function practiceSplit(s: PracticeData): PracticePart[] {
+  const rows: Omit<PracticePart, "share" | "percent">[] = s.top_class_types.map((t) => ({ ...t, kind: "class" }));
+  const other = s.attended_classes - s.top_class_types.reduce((n, t) => n + t.attended, 0);
+  if (other > 0) rows.push({ name: "Other classes", kind: "other", attended: other });
+  if (s.attended_pt > 0) {
+    rows.push({ name: s.attended_pt === 1 ? "Private session" : "Private sessions", kind: "pt", attended: s.attended_pt });
+  }
+  if (s.attended_workshops > 0) {
+    rows.push({ name: s.attended_workshops === 1 ? "Workshop" : "Workshops", kind: "workshop", attended: s.attended_workshops });
+  }
+  const total = rows.reduce((n, r) => n + r.attended, 0);
+  return rows.map((r) => ({ ...r, share: r.attended / total, percent: Math.round((r.attended / total) * 100) }));
 }
 
 /** Today's date on the studio's calendar, as every date the app shows is. */

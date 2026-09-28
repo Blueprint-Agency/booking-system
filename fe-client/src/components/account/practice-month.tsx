@@ -41,7 +41,7 @@ export function PracticeMonth({
   const [open, setOpen] = useState<string | null>(null);
 
   return (
-    <figure className="m-0">
+    <figure className="m-0 flex h-full flex-col">
       <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
         {WEEKDAYS.map((d, i) => (
           <span key={i} aria-hidden className="pb-1 text-center text-[11px] font-semibold text-muted">
@@ -62,7 +62,9 @@ export function PracticeMonth({
                 : d.future
                   ? "text-muted/60"
                   : "bg-ink/[0.04] text-muted",
-            d.today && "ring-2 ring-ink ring-offset-2 ring-offset-card",
+            // Today: its date in bold, rather than a ring that reads as a selection.
+            d.today && "font-extrabold",
+            d.today && d.attended === 0 && d.booked === 0 && "text-ink",
           );
           const style = { animationDelay: `${i * 14}ms` };
           if (sessions === 0) {
@@ -83,7 +85,7 @@ export function PracticeMonth({
               key={d.date}
               type="button"
               onClick={() => setOpen(d.date)}
-              aria-label={`${dayTitle(d.date)}: ${said}`}
+              aria-label={`${dayTitle(d.date)}${d.today ? " (today)" : ""}: ${said}`}
               className={cn(
                 tile,
                 "transition-transform hover:scale-[1.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-card active:scale-95",
@@ -100,7 +102,7 @@ export function PracticeMonth({
           );
         })}
       </div>
-      <div className="flex flex-wrap items-end justify-between gap-x-4">
+      <div className="mt-auto flex flex-wrap items-end justify-between gap-x-4">
         <PracticeLegend
           items={[
             { swatch: "solid", label: "Attended" },

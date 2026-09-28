@@ -7,18 +7,15 @@ import {
   emptyLine,
   headline,
   isCurrent,
-  lifetimeLine,
   monthGrid,
-  practiceBars,
+  practiceSplit,
   rangeLabel,
   rhythmSummary,
   stepAnchor,
-  streakLabel,
+  practisedFigure,
   studioToday,
-  streakParts,
-  usualSlotParts,
+  totalParts,
   weekDays,
-  workshopLine,
   yearColumns,
   type FigureParts,
   type PracticeData,
@@ -73,11 +70,6 @@ test("the month is compared with the one before, by name", () => {
   assert.equal(comparisonLine(september({ previous_attended: null })), null);
 });
 
-test("workshops get a line of their own, and none when there were none", () => {
-  assert.equal(workshopLine(september()), "Also 1 workshop in September");
-  assert.equal(workshopLine(september({ attended_workshops: 2 })), "Also 2 workshops in September");
-  assert.equal(workshopLine(september({ attended_workshops: 0 })), null);
-});
 
 /** A figure as it reads: each number with its unit after it. */
 const read = (parts: FigureParts) => parts.map((p) => `${p.value}${p.unit && ` ${p.unit}`}`).join(" ");
@@ -92,23 +84,25 @@ test("time on the mat reads in hours and minutes, each number with its unit", ()
   assert.equal(read(durationParts(0)), "0 m");
 });
 
-test("the usual slot is a short weekday and a 12-hour time", () => {
-  assert.deepEqual(usualSlotParts({ weekday: 2, hour: 7 }), [{ value: "Tue", unit: "7am" }]);
-  assert.equal(read(usualSlotParts({ weekday: 7, hour: 19 })), "Sun 7pm");
-  assert.equal(read(usualSlotParts({ weekday: 1, hour: 12 })), "Mon 12pm");
-  assert.equal(read(usualSlotParts({ weekday: 5, hour: 0 })), "Fri 12am");
-  assert.equal(read(usualSlotParts(null)), "—");
+test("the total counts classes, private sessions and workshops alike", () => {
+  // 11 classes and 2 private sessions, and 1 workshop.
+  assert.equal(read(totalParts(september())), "14 sessions");
+  assert.equal(read(totalParts(september({ attended_workshops: 0 }))), "13 sessions");
+  assert.equal(read(totalParts(september({ attended: 0, attended_workshops: 1 }))), "1 session");
 });
 
-test("the streak counts weeks, one of them singular", () => {
-  assert.equal(read(streakParts(1)), "1 week");
-  assert.equal(read(streakParts(3)), "3 weeks");
-  assert.equal(read(streakParts(0)), "0 weeks");
+test("days practised counts the days attended on, not the sessions or what is only booked", () => {
+  const month = practisedFigure(september({}, { 1: [1, 0], 12: [2, 0], 30: [0, 1] }));
+  assert.equal(month.label, "Days practised");
+  assert.equal(read(month.parts), "2 days");
+  assert.equal(read(practisedFigure(september({}, { 5: [1, 0] })).parts), "1 day");
+  assert.equal(read(practisedFigure(week({}, { 0: [1, 0], 2: [0, 1] })).parts), "1 day");
 });
 
-test("the streak is weeks in a row for the current period", () => {
-  assert.equal(streakLabel(true), "In a row");
-  assert.equal(streakLabel(false), "Longest run");
+test("a year, bucketed by month, counts the months practised", () => {
+  const y = practisedFigure(year({}, [9, 11, 0, 8]));
+  assert.equal(y.label, "Months practised");
+  assert.equal(read(y.parts), "3 months");
 });
 
 test("a month starting on a Tuesday has one blank before the 1st, and today is marked", () => {
@@ -189,23 +183,44 @@ test("the range, the empty month and the chart's text equivalent name the month"
   );
 });
 
-test("the bars are the class types, then private sessions when there are any, against the largest", () => {
-  assert.deepEqual(practiceBars(september()), [
-    { name: "Vinyasa Flow", attended: 7, share: 1 },
-    { name: "Hatha", attended: 4, share: 4 / 7 },
-    { name: "Private sessions", attended: 2, share: 2 / 7 },
+test("the split is the class types, private sessions, then workshops, each a share of all of them", () => {
+  assert.deepEqual(practiceSplit(september()), [
+    { name: "Vinyasa Flow", kind: "class", attended: 7, share: 7 / 14, percent: 50 },
+    { name: "Hatha", kind: "class", attended: 4, share: 4 / 14, percent: 29 },
+    { name: "Private sessions", kind: "pt", attended: 2, share: 2 / 14, percent: 14 },
+    { name: "Workshop", kind: "workshop", attended: 1, share: 1 / 14, percent: 7 },
   ]);
-  assert.deepEqual(practiceBars(september({ attended_pt: 0 })).map((b) => b.name), ["Vinyasa Flow", "Hatha"]);
-  assert.deepEqual(practiceBars(september({ top_class_types: [], attended_pt: 1 })), [
-    { name: "Private session", attended: 1, share: 1 },
-  ]);
+  assert.equal(practiceSplit(september({ attended_workshops: 3 })).at(-1)!.name, "Workshops");
+  assert.ok(practiceSplit(september({ attended_workshops: 0 })).every((p) => p.kind !== "workshop"));
+  // Equal parts read as equal shares, not as bars all full.
+  const thirds = practiceSplit(
+    september({
+      attended_classes: 3,
+      attended_pt: 0,
+      attended_workshops: 0,
+      top_class_types: [
+        { name: "Ashtanga Led", attended: 1 },
+        { name: "Core And Strength", attended: 1 },
+        { name: "Mobility Stretch", attended: 1 },
+      ],
+    }),
+  );
+  assert.deepEqual(thirds.map((p) => p.percent), [33, 33, 33]);
+  assert.equal(practiceSplit(september({ top_class_types: [], attended_classes: 0, attended_pt: 1 }))[0]!.name, "Private session");
 });
 
-test("the lifetime line counts every session since the month of the first, or waits for the first", () => {
-  assert.equal(lifetimeLine({ attended: 164, since: "2025-03-04" }), "164 sessions since March 2025");
-  assert.equal(lifetimeLine({ attended: 1, since: "2026-09-02" }), "1 session since September 2026");
-  assert.equal(lifetimeLine({ attended: 0, since: null }), "Your first class will show here");
+test("classes past the top few are one part, so the split fills the bar", () => {
+  const parts = practiceSplit(september({ attended_classes: 14 }));
+  assert.deepEqual(parts.map((p) => [p.name, p.attended]), [
+    ["Vinyasa Flow", 7],
+    ["Hatha", 4],
+    ["Other classes", 3],
+    ["Private sessions", 2],
+    ["Workshop", 1],
+  ]);
+  assert.ok(Math.abs(parts.reduce((n, p) => n + p.share, 0) - 1) < 1e-9);
 });
+
 
 /** The week of Monday 28 September 2026 as `period=week` answers it. */
 function week(overrides: Partial<PracticeData> = {}, days: Record<number, [number, number]> = {}): PracticeData {
@@ -263,9 +278,7 @@ test("each period is compared with the one before it, by name", () => {
   assert.equal(comparisonLine(year({ previous_attended: 93 })), "Same as 2025");
 });
 
-test("the workshop line and the empty state name the period", () => {
-  assert.equal(workshopLine(week({ attended_workshops: 1 })), "Also 1 workshop this week");
-  assert.equal(workshopLine(year({ attended_workshops: 4 })), "Also 4 workshops in 2026");
+test("the empty state names the period", () => {
   assert.equal(emptyLine(week({ attended: 0 })), "No sessions this week yet.");
   assert.equal(emptyLine(year({ attended: 0 })), "No sessions in 2026 yet.");
   // A period that has passed is not waiting for anything.
@@ -273,11 +286,9 @@ test("the workshop line and the empty state name the period", () => {
   assert.equal(emptyLine(week({ attended: 0, has_next: true })), "No sessions that week.");
 });
 
-test("the period is current until a later one can be stepped to, and the streak says which run it is", () => {
+test("the period is current until a later one can be stepped to", () => {
   assert.equal(isCurrent(september()), true);
   assert.equal(isCurrent(year({ has_next: true })), false);
-  assert.equal(streakLabel(isCurrent(week())), "In a row");
-  assert.equal(streakLabel(isCurrent(year({ has_next: true }))), "Longest run");
 });
 
 test("stepping asks for the day before the period opens, or the day after it closes", () => {

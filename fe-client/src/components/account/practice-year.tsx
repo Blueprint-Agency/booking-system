@@ -21,10 +21,10 @@ export function PracticeYear({ summary, today }: { summary: PracticeData; today:
   const scale = Math.max(1, ...columns.map((c) => c.attended + c.booked));
 
   return (
-    <figure className="m-0">
-      <div aria-hidden className="grid grid-cols-12 gap-1 sm:gap-1.5">
+    <figure className="m-0 flex h-full flex-col">
+      <div aria-hidden className="grid min-h-0 flex-1 grid-cols-12 gap-1 sm:gap-1.5">
         {columns.map((c, i) => (
-          <div key={c.month} className="flex min-w-0 flex-col items-center gap-2">
+          <div key={c.month} className="flex h-full min-h-0 min-w-0 flex-col items-center gap-2 py-1">
             <span className="h-3 text-[10px] font-bold leading-none tabular-nums text-ink">
               {c.future || c.attended === 0 ? "" : c.attended}
             </span>
@@ -34,12 +34,12 @@ export function PracticeYear({ summary, today }: { summary: PracticeData; today:
               scale={scale}
               delay={i * 45}
               future={c.future}
-              className="h-32 w-full max-w-5"
+              className="min-h-0 w-full max-w-5 flex-1"
             />
             <span
               className={cn(
-                "text-[10px] font-semibold leading-none",
-                c.current ? "text-ink" : "text-muted",
+                "text-[10px] leading-none",
+                c.current ? "font-extrabold text-ink" : "font-semibold text-muted",
                 c.future && "opacity-50",
               )}
             >

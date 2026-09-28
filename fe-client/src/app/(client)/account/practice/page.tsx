@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowRight, CalendarPlus, ChevronLeft, ChevronRight } from "lucide-react";
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { PracticeMonth } from "@/components/account/practice-month";
+import { PracticeSplit } from "@/components/account/practice-split";
 import { PracticeWeek } from "@/components/account/practice-week";
 import { PracticeYear } from "@/components/account/practice-year";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
@@ -17,16 +18,12 @@ import {
   durationParts,
   emptyLine,
   headline,
-  isCurrent,
-  lifetimeLine,
-  practiceBars,
+  practiceSplit,
   rangeLabel,
   stepAnchor,
-  streakLabel,
-  streakParts,
+  practisedFigure,
   studioToday,
-  usualSlotParts,
-  workshopLine,
+  totalParts,
   type FigureParts,
   type PracticeData,
 } from "@/lib/practice";
@@ -39,9 +36,8 @@ const VIEWS: { value: PracticeView; label: string }[] = [
 
 /**
  * My activity (#340, #342; once "My practice"): what the member attended in a week, month or year
- * — group classes and private sessions — as a count over a chart of mats, three
- * figures and the class types they practised most, with their lifetime total
- * under the title. It opens on this month; ‹ › step back through earlier
+ * — group classes and private sessions — as a count over a chart, three
+ * figures and the split of what they practised. It opens on this month; ‹ › step back through earlier
  * periods as far as the backend allows (`has_previous`, `has_next`), and
  * switching period returns to the current one. Every figure is the backend's
  * (`GET /me/bookings/attendance`); the words are `lib/practice.ts`.
@@ -62,7 +58,7 @@ export default function PracticePage() {
 
   return (
     <div className="max-w-2xl">
-      <AccountPageHeader title="My activity" description={shown ? lifetimeLine(shown.lifetime) : undefined} />
+      <AccountPageHeader title="My activity" />
 
       <SegmentedTabs label="Period" tabs={VIEWS} value={view} onChange={switchView} />
 
@@ -98,12 +94,14 @@ function PracticeBody({
   /** A booking was cancelled from a day of the month. */
   onChanged: () => void;
 }) {
-  const everAttended = summary.lifetime.attended > 0;
+  // Workshops are not in the lifetime total, but a member who has only been
+  // to workshops still gets the figures — Total attended counts them.
+  const everAttended = summary.lifetime.attended > 0 || summary.attended_workshops > 0;
   const empty = summary.attended === 0;
   const { count, label } = headline(summary);
   const comparison = comparisonLine(summary);
-  const workshops = workshopLine(summary);
-  const bars = practiceBars(summary);
+  const parts = practiceSplit(summary);
+  const practised = practisedFigure(summary);
   const today = studioToday(Date.now());
 
   return (
@@ -117,60 +115,47 @@ function PracticeBody({
       </div>
 
       <section aria-label={rangeLabel(summary)} className={cn(CARD, "mt-4 px-3.5 pb-3 pt-4 sm:px-5 sm:pt-5")}>
-        {empty ? (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-            <p className="text-sm font-semibold text-ink">{emptyLine(summary)}</p>
-            <BookClassLink />
-          </div>
-        ) : (
-          <div className="mb-5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <p className="flex items-baseline gap-1.5 text-ink">
-              <CountUp to={count} className="text-4xl font-extrabold leading-none tracking-tight tabular-nums" />
-              <span className="text-sm font-semibold text-muted">{label}</span>
-            </p>
-            {comparison && <p className="text-[13px] text-muted">{comparison}</p>}
-          </div>
-        )}
-        {summary.period === "week" ? (
-          <PracticeWeek summary={summary} today={today} onChanged={onChanged} />
-        ) : summary.period === "year" ? (
-          <PracticeYear summary={summary} today={today} />
-        ) : (
-          <PracticeMonth summary={summary} today={today} onChanged={onChanged} />
-        )}
+        {/* The head and the chart keep one height across Week, Month and
+            Year, so switching period never makes the card jump. */}
+        <div className="mb-4 flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          {empty ? (
+            <>
+              <p className="text-sm font-semibold text-ink">{emptyLine(summary)}</p>
+              <BookClassLink />
+            </>
+          ) : (
+            <>
+              <p className="flex items-baseline gap-1.5 text-ink">
+                <CountUp to={count} className="text-4xl font-extrabold leading-none tracking-tight tabular-nums" />
+                <span className="text-sm font-semibold text-muted">{label}</span>
+              </p>
+              {comparison && <p className="text-[13px] text-muted">{comparison}</p>}
+            </>
+          )}
+        </div>
+        {/* Sized to a month of six weeks, the tallest the chart gets; the
+            week's and year's columns stretch to fill it. */}
+        <div className="h-[23.5rem]">
+          {summary.period === "week" ? (
+            <PracticeWeek summary={summary} today={today} onChanged={onChanged} />
+          ) : summary.period === "year" ? (
+            <PracticeYear summary={summary} today={today} />
+          ) : (
+            <PracticeMonth summary={summary} today={today} onChanged={onChanged} />
+          )}
+        </div>
       </section>
 
       {everAttended && (
         <dl className={cn(CARD, "mt-4 grid grid-cols-3 divide-x divide-ink/5")}>
           <Figure parts={durationParts(summary.minutes)} label="Time on the mat" />
-          <Figure parts={streakParts(summary.streak_weeks)} label={streakLabel(isCurrent(summary))} />
-          <Figure parts={usualSlotParts(summary.usual_slot)} label="Your usual" />
+          <Figure parts={practised.parts} label={practised.label} />
+          <Figure parts={totalParts(summary)} label="Total attended" />
         </dl>
       )}
 
-      {bars.length > 0 && (
-        <section aria-labelledby="practised-heading" className="mt-6">
-          <h2 id="practised-heading" className="mb-3 text-base font-bold text-ink">
-            What you practised
-          </h2>
-          <ul className="grid gap-2.5">
-            {bars.map((b, i) => (
-              <li key={b.name} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-sm">
-                <span className="truncate text-ink">{b.name}</span>
-                <span className="tabular-nums text-muted">{b.attended}</span>
-                <span aria-hidden className="col-span-2 h-2 overflow-hidden rounded-full bg-ink/[0.05]">
-                  <span
-                    className="practice-grow-x block h-full rounded-full bg-accent"
-                    style={{ width: `${b.share * 100}%`, animationDelay: `${i * 80}ms` }}
-                  />
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {parts.length > 0 && <PracticeSplit parts={parts} />}
 
-      {workshops && <p className="mt-5 border-t border-ink/10 pt-4 text-sm text-muted">{workshops}</p>}
 
       {/* An empty period already offers Book a class at its headline. */}
       {!empty && (

@@ -37,8 +37,8 @@ export function PracticeWeek({
   const [open, setOpen] = useState<string | null>(null);
 
   return (
-    <figure className="m-0">
-      <div className="grid grid-cols-7 gap-2">
+    <figure className="m-0 flex h-full flex-col">
+      <div className="grid min-h-0 flex-1 grid-cols-7 gap-2">
         {days.map((d, i) => {
           const count = d.attended + d.booked;
           const body = (
@@ -52,20 +52,18 @@ export function PracticeWeek({
                 scale={scale}
                 delay={i * 60}
                 future={d.future && count === 0}
-                className="h-28 w-full max-w-8"
+                className="min-h-0 w-full max-w-8 flex-1"
               />
+              {/* Today: the weekday in bold ink, as the month marks it. */}
               <span
                 aria-hidden
-                className={cn(
-                  "rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none",
-                  d.today ? "bg-ink text-card" : "text-muted",
-                )}
+                className={cn("text-[11px] leading-none", d.today ? "font-extrabold text-ink" : "font-semibold text-muted")}
               >
                 {d.weekday}
               </span>
             </>
           );
-          const column = "flex flex-col items-center gap-2 rounded-xl py-1";
+          const column = "flex h-full min-h-0 flex-col items-center gap-2 rounded-xl py-1";
           if (count === 0) {
             return (
               <div key={d.date} aria-hidden className={column}>
@@ -84,7 +82,7 @@ export function PracticeWeek({
               key={d.date}
               type="button"
               onClick={() => setOpen(d.date)}
-              aria-label={`${dayTitle(d.date)}: ${said}`}
+              aria-label={`${dayTitle(d.date)}${d.today ? " (today)" : ""}: ${said}`}
               className={cn(
                 column,
                 "transition-colors hover:bg-ink/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-ink/[0.05]",
