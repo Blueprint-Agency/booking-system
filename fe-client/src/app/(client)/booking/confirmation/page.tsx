@@ -40,7 +40,7 @@ const ctaRow = "mt-8 flex flex-col sm:flex-row gap-3 justify-center";
 /** One centred card on the page — the whole confirmation, nothing nested. */
 function ConfirmationCard({ children }: { children: React.ReactNode }) {
   return (
-    <CheckoutFrame width="wide">
+    <CheckoutFrame width="wide" centred>
       <div className="rounded-3xl border border-ink/5 bg-card shadow-soft px-5 py-8 sm:px-10 sm:py-12">
         {children}
       </div>

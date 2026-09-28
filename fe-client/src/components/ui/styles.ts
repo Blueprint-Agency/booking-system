@@ -7,6 +7,15 @@
 
 export const CARD = "rounded-2xl bg-card border border-ink/5 shadow-soft";
 
+/**
+ * At least the height the app shell leaves a page: the 4rem top bar and,
+ * below `md`, the 5rem (+ safe area) padding that clears the bottom tab bar.
+ * For a page that is one panel — a sign-in card, a members-only notice, a
+ * not-found — so the panel can sit centred in it rather than at the top.
+ */
+export const PAGE_FILL =
+  "min-h-[calc(100dvh-9rem-env(safe-area-inset-bottom))] md:min-h-[calc(100dvh-4rem)]";
+
 export const BTN_PRIMARY =
   "inline-flex min-h-[48px] items-center justify-center gap-1.5 rounded-full bg-ink px-5 text-sm font-semibold text-paper hover:bg-ink/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 

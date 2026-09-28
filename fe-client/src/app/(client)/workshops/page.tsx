@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ChevronRight, GraduationCap, MapPin } from "lucide-react";
-import { BookingSurface } from "@/components/booking/booking-surface";
+import { BookingSurface, SurfaceCentre } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { DateStub } from "@/components/account/date-stub";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -68,13 +68,15 @@ export default function WorkshopsPage() {
 
   if (signedOut) {
     return (
-      <BookingSurface>
+      <BookingSurface fill>
         <PageHeader title="Workshops" />
-        <MembersOnly
-          title="Sign up to see workshops"
-          description="Workshops are shown to members only. Create a free account or log in to see what's on."
-          nextHref="/workshops"
-        />
+        <SurfaceCentre>
+          <MembersOnly
+            title="Sign up to see workshops"
+            description="Workshops are shown to members only. Create a free account or log in to see what's on."
+            nextHref="/workshops"
+          />
+        </SurfaceCentre>
       </BookingSurface>
     );
   }

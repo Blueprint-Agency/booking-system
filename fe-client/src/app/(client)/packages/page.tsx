@@ -12,7 +12,7 @@ import { cn, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
-import { FilterChips } from "@/components/ui/filter-chips";
+import { SubTabs } from "@/components/ui/sub-tabs";
 import { Portal } from "@/components/ui/portal";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { AllLocationsRow, HomeStudioRow } from "@/components/ui/location-chip";
@@ -342,9 +342,9 @@ function ClassCreditsSection({
 
   return (
     <div className="space-y-4">
-      <FilterChips
+      <SubTabs
         label="Class package type"
-        options={subTabs.filter((t) => !t.hidden).map((t) => ({ value: t.key, label: t.label }))}
+        tabs={subTabs.filter((t) => !t.hidden).map((t) => ({ value: t.key, label: t.label }))}
         value={subTab}
         onChange={setSubTab}
       />
@@ -504,9 +504,9 @@ function PrivateSection({
 
   return (
     <div className="space-y-4">
-      <FilterChips
+      <SubTabs
         label="Private session type"
-        options={subTabs.map((t) => ({ value: t.key, label: t.label }))}
+        tabs={subTabs.map((t) => ({ value: t.key, label: t.label }))}
         value={subTab}
         onChange={setSubTab}
       />

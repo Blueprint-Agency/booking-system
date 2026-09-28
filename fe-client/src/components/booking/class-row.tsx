@@ -502,7 +502,6 @@ export function ClassRow({
                 <span className="truncate">{locationName}</span>
               </span>
             )}
-            <span className="md:hidden tabular-nums">{credits(cls.credit_cost)}</span>
             {/* The class takes only some packages; which ones is in the detail. */}
             {cls.restricted && (
               <span className="inline-flex items-center gap-1 font-medium text-ink/70">
@@ -527,7 +526,13 @@ export function ClassRow({
           <div className="text-muted">{credits(cls.credit_cost)}</div>
         </div>
 
-        <div className="pointer-events-auto flex shrink-0 justify-end md:min-w-32">{cta}</div>
+        {/* Below `md` the cost sits under the action, on the row's right edge,
+            rather than trailing the instructor's name — where it landed at a
+            different place on every row. */}
+        <div className="flex shrink-0 flex-col items-end gap-1 md:min-w-32">
+          <div className="pointer-events-auto">{cta}</div>
+          <span className="md:hidden pr-1 text-xs text-muted tabular-nums">{credits(cls.credit_cost)}</span>
+        </div>
       </div>
 
       {/* The one offer on a class no plan covers: the Add-On. Credits, where

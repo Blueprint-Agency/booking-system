@@ -40,7 +40,9 @@ export function SegmentedTabs<T extends string>({
               onClick={() => onChange(t.value)}
               className={cn(
                 "flex flex-1 sm:flex-none items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap rounded-full px-2.5 sm:px-4 min-h-[40px] text-[13px] sm:text-sm font-semibold transition-colors",
-                selected ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink",
+                // The ring keeps the chosen tab visible in dark mode, where the
+                // card is barely lighter than the track.
+                selected ? "bg-card text-ink shadow-soft ring-1 ring-ink/10" : "text-muted hover:text-ink",
               )}
             >
               {t.label}

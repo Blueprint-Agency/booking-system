@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 import { ArrowDown, CalendarDays, MapPin, CalendarX } from "lucide-react";
-import { BookingSurface } from "@/components/booking/booking-surface";
+import { BookingSurface, SurfaceCentre } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { DateStub } from "@/components/account/date-stub";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -57,28 +57,32 @@ export default function WorkshopDetailPage() {
 
   if (signedOut) {
     return (
-      <BookingSurface maxWidth="md">
+      <BookingSurface maxWidth="md" fill>
         <PageHeader title="Workshop" back={{ href: "/workshops", label: "Workshops" }} />
-        <MembersOnly
-          title="Sign up to see this workshop"
-          description="Workshop details are shown to members only. Create a free account or log in to see it and book."
-          nextHref={`/workshops/${id}`}
-        />
+        <SurfaceCentre>
+          <MembersOnly
+            title="Sign up to see this workshop"
+            description="Workshop details are shown to members only. Create a free account or log in to see it and book."
+            nextHref={`/workshops/${id}`}
+          />
+        </SurfaceCentre>
       </BookingSurface>
     );
   }
 
   if (error || !workshop) {
     return (
-      <BookingSurface maxWidth="md">
-        <div className={CARD}>
-          <EmptyState
-            icon={CalendarX}
-            title="Workshop not found"
-            description="It may have been removed."
-            cta={{ href: "/workshops", label: "All workshops" }}
-          />
-        </div>
+      <BookingSurface maxWidth="md" fill>
+        <SurfaceCentre>
+          <div className={CARD}>
+            <EmptyState
+              icon={CalendarX}
+              title="Workshop not found"
+              description="It may have been removed."
+              cta={{ href: "/workshops", label: "All workshops" }}
+            />
+          </div>
+        </SurfaceCentre>
       </BookingSurface>
     );
   }

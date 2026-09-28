@@ -305,7 +305,7 @@ function CheckoutContent() {
   const awaitingSignIn = mode === "workshop" && isLoaded && !isSignedIn;
   if (!awaitingSignIn && (pkgError || !hasItem)) {
     return (
-      <CheckoutFrame>
+      <CheckoutFrame centred>
         <EmptyState
           icon={ShoppingCart}
           title="Nothing to check out"
@@ -323,7 +323,7 @@ function CheckoutContent() {
     const loginHref = `/login?next=${encodeURIComponent(next)}`;
     const registerHref = `/register?next=${encodeURIComponent(next)}`;
     return (
-      <CheckoutFrame>
+      <CheckoutFrame centred>
         <div className={cn(checkoutCardClass, "text-center py-10 sm:py-12")}>
           <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-5">
             <Lock className="w-6 h-6 text-accent-deep" />

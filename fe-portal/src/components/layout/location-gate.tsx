@@ -6,6 +6,13 @@ import { LocationFormDialog } from "@/components/locations/location-form-dialog"
 import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 
+/**
+ * The height `AdminShell` leaves its page: the 3.5rem top bar and `main`'s
+ * own vertical padding at each breakpoint, so the gate's card sits centred.
+ */
+const FILL =
+  "min-h-[calc(100dvh-5.5rem)] sm:min-h-[calc(100dvh-6rem)] lg:min-h-[calc(100dvh-6.5rem)]";
+
 export function LocationGate({ children }: { children: React.ReactNode }) {
   const { role, accessibleLocations, addLocation, setActiveLocationId } = useWorkspace();
   const [open, setOpen] = useState(false);
@@ -15,7 +22,7 @@ export function LocationGate({ children }: { children: React.ReactNode }) {
 
   if (runsStudio(role)) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center p-6">
+      <div className={`flex ${FILL} items-center justify-center p-6`}>
         <div className="max-w-lg rounded-2xl border border-border bg-card p-8 shadow-soft">
           <MapPin className="mb-4 h-8 w-8 text-accent" />
           <h2 className="mb-2 text-lg font-semibold text-ink">Add your first location</h2>
@@ -41,7 +48,7 @@ export function LocationGate({ children }: { children: React.ReactNode }) {
 
   // Anyone who doesn't run the studio has no way to add a location.
   return (
-    <div className="flex min-h-[60vh] items-center justify-center p-6">
+    <div className={`flex ${FILL} items-center justify-center p-6`}>
       <div className="max-w-lg rounded-2xl border border-border bg-card p-8 shadow-soft">
         <Lock className="mb-4 h-8 w-8 text-muted" />
         <h2 className="mb-2 text-lg font-semibold text-ink">No workspace access</h2>

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { PAGE_FILL } from "@/components/ui/styles";
 
 /**
  * The page around a review-and-pay step: one narrow column straight on the
@@ -10,15 +11,18 @@ export function CheckoutFrame({
   title,
   description,
   width = "narrow",
+  centred = false,
   children,
 }: {
   title?: string;
   description?: string;
   width?: "narrow" | "wide";
+  /** Centre the column in the page's height: for a page that is one card. */
+  centred?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <section className="px-4 sm:px-6 py-6 sm:py-10">
+    <section className={cn("px-4 sm:px-6 py-6 sm:py-10", centred && cn("flex flex-col justify-center", PAGE_FILL))}>
       <div className={cn("mx-auto w-full", width === "narrow" ? "max-w-lg" : "max-w-2xl")}>
         {title && (
           <header className="mb-5 sm:mb-6">

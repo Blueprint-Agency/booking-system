@@ -3,7 +3,7 @@ import Link from "next/link";
 /** Default 404 page for unmatched portal routes. */
 export default function NotFound() {
   return (
-    <div className="flex min-h-[60vh] items-center justify-center px-6 py-16">
+    <div className="flex min-h-dvh items-center justify-center px-6 py-16">
       <div className="max-w-md text-center">
         <p className="text-xs uppercase tracking-widest text-muted">404</p>
         <h1 className="mt-3 text-2xl font-bold text-ink">Page not found</h1>

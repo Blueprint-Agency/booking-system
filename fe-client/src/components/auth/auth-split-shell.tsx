@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { img } from "@/data/images";
 import { useBrand } from "@/components/brand/brand-provider";
+import { PAGE_FILL } from "@/components/ui/styles";
+import { cn } from "@/lib/utils";
 
 type AuthSplitShellProps = {
   imageKey: string;
@@ -24,11 +26,7 @@ export function AuthSplitShell({
   const alt = brand.ogImageUrl ? brand.name : image.alt;
 
   return (
-    // Fills what the app shell leaves: the 4rem top bar and, below `md`, the
-    // 5rem (+ safe area) main padding that clears the bottom tab bar. `dvh` so
-    // mobile browser chrome collapsing doesn't leave a stray scroll on an
-    // otherwise short form.
-    <div className="grid grid-cols-1 min-h-[calc(100dvh-9rem-env(safe-area-inset-bottom))] md:min-h-[calc(100dvh-4rem)] lg:grid-cols-2">
+    <div className={cn("grid grid-cols-1 lg:grid-cols-2", PAGE_FILL)}>
       <div className="relative hidden lg:block">
         <Image
           src={src}
