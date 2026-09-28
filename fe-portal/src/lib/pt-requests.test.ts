@@ -79,7 +79,7 @@ test("PT-121 on an older request that proposed an end, a different end is off th
   assert.strictEqual(ptOffProposal(slots, "2031-04-03", "09:00", "11:00"), true);
 });
 
-test("PT-120 a Book in advance window is saved only with a minimum no later than the maximum, in whole days", () => {
+test("PT-123 a Book in advance window is saved only with a minimum no later than the maximum, in whole days", () => {
   assert.strictEqual(ptBookingWindowProblem(3, 7), null);
   assert.strictEqual(ptBookingWindowProblem(7, 7), null);
   assert.match(ptBookingWindowProblem(8, 7) ?? "", /minimum/);
