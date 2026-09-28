@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
-import { offlinePaymentMethodEnum } from '../../../src/db/enums'
+import { instructorPermissionEnum, offlinePaymentMethodEnum, type InstructorPermission } from '../../../src/db/enums'
 import { proposeCatalogue } from './catalogue'
 import type { MindbodyReports } from './mapper'
 import { proposeSchedule } from './schedule-proposal'
@@ -179,6 +179,12 @@ const staffSchema = z.object({
    * `email` is ignored.
    */
   noLogin: z.boolean().default(false),
+  /**
+   * The Instructor Permissions this person starts with, if they differ from the
+   * studio's `instructorPermissions`. Only an instructor's count: an Admin
+   * resolves to every permission whatever the row says.
+   */
+  permissions: z.array(z.enum(instructorPermissionEnum.enumValues)).nullable().default(null),
 })
 
 /**
@@ -214,6 +220,12 @@ const catalogueSchema = z.object({
   /** The List Price. Needed to `sell`; on a `legacy` option it is the price it used to have, or nothing. */
   priceSgd: z.number().min(0).nullable().default(null),
   sessionType: z.enum(['1on1', '2on1']).nullable().default(null),
+  /**
+   * A PT package only: **Instructor-Bound**, so a member buying it chooses one
+   * instructor at checkout. The catalogue's flag, for sales from launch; a
+   * package members already hold is not bound by it.
+   */
+  instructorBound: z.boolean().default(false),
   /**
    * For an Unlimited Plan, its Home Location; for an access pass, the Location
    * it opens. Left null on a plan, the Location named inside the option's name
@@ -314,6 +326,14 @@ export const studioConfigSchema = z.object({
     .default({}),
   staff: z.array(staffSchema),
   /**
+   * The Instructor Permissions every instructor starts with, unless their staff
+   * entry names its own. Left out, all three, as an instructor made in the
+   * portal gets.
+   */
+  instructorPermissions: z
+    .array(z.enum(instructorPermissionEnum.enumValues))
+    .default([...instructorPermissionEnum.enumValues]),
+  /**
    * How the staff coming across as active get in.
    *
    * `invite`: each arrives pending, with an invitation an admin sends (or
@@ -409,10 +429,19 @@ export type StudioConfig = {
         role: 'admin' | 'instructor'
         teaches: boolean
         noLogin?: boolean
+        permissions?: InstructorPermission[] | null
       }
-    | { mindbodyName: string; migrate: 'archived'; email: string | null; role: 'admin' | 'instructor' | null; teaches: boolean }
+    | {
+        mindbodyName: string
+        migrate: 'archived'
+        email: string | null
+        role: 'admin' | 'instructor' | null
+        teaches: boolean
+        permissions?: InstructorPermission[] | null
+      }
     | { mindbodyName: string; migrate: 'skip'; email: string | null; role: 'admin' | 'instructor' | null; teaches: boolean }
   )[]
+  instructorPermissions: InstructorPermission[]
   staffOnboarding: 'invite' | 'active'
   sharedEmailKeepers: Record<string, string>
   catalogue: CatalogueEntry[]
@@ -426,7 +455,7 @@ export type CatalogueEntry =
   | (CatalogueCommon & { migrate: 'skip' })
   | (CatalogueCommon & { migrate: 'sell' | 'legacy' } & (
         | { kind: 'credit_bundle' | 'trial'; credits: number; validityDays: number }
-        | { kind: 'pt'; credits: number; validityDays: number; sessionType: '1on1' | '2on1' }
+        | { kind: 'pt'; credits: number; validityDays: number; sessionType: '1on1' | '2on1'; instructorBound: boolean }
         | { kind: 'unlimited'; durationMonths: number; location: string | null }
         | { kind: 'access_pass'; location: string }
       ))

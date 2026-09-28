@@ -165,6 +165,78 @@ test('the Cancellations report proposes the class cancellation window: the cut-o
   assert.equal(configs.local!.policy.classWindowHours, 2, 'the report\'s cut-off, not the 24-hour default')
 })
 
+/**
+ * The fixture's answers with the studio's own decisions on top: a policy, PT
+ * bound to an instructor but for one package, and instructors who may not
+ * schedule classes — all but one, who may do everything.
+ */
+const DECIDED: StudioAnswers = {
+  ...ANSWERS,
+  catalogue: {
+    ...ANSWERS.catalogue,
+    add: [
+      ...ANSWERS.catalogue.add,
+      { name: 'PT Open 5', mindbodyNames: ['PT Open 5'], migrate: null, kind: 'pt', credits: 5, validityDays: null, durationMonths: null, priceSgd: 400, sessionType: null, location: null },
+    ],
+  },
+  policy: { cancelCapCount: 7, classWindowHours: 24 },
+  ptInstructorBound: { bound: true, except: ['open 5', 'no such package'] },
+  instructorPermissions: {
+    default: ['take_pt_bookings', 'manage_rosters'],
+    byName: { 'IVY INSTRUCTOR': ['schedule_classes', 'take_pt_bookings', 'manage_rosters'], 'Nobody Here': ['manage_rosters'] },
+  },
+}
+
+async function decided(notes?: string[]) {
+  const reports = await readReports(path.join(FIXTURES, 'reports'))
+  const asOf = dateOfIso(AS_OF.slice(0, 10))
+  const facts = reportFacts(reports, asOf, { offSiteVenues: DECIDED.offSiteVenues })
+  return fillConfigs(starterConfig(reports, AS_OF), DECIDED, facts, staffFacts(reports, asOf), notes).local!
+}
+
+test('the policy the answers decide wins over the window the reports suggest and over the defaults', async () => {
+  const c = await decided()
+  assert.equal(c.policy.classWindowHours, 24, 'the answer, not the report\'s 2-hour cut-off')
+  assert.equal(c.policy.cancelCapCount, 7)
+  assert.equal(c.policy.cancelCapCycleDays, 30, 'a figure the answers leave out keeps its default')
+})
+
+test('every PT package is Instructor-Bound but those the answers except; instructors take the default permissions but those named', async () => {
+  const notes: string[] = []
+  const c = await decided(notes)
+  const pt = (c.catalogue as Record<string, any>[]).filter(e => e.kind === 'pt')
+  assert.deepEqual(
+    Object.fromEntries(pt.map(e => [e.name, e.instructorBound])),
+    { 'PT - Bundle of 10': true, 'PT Open 5': false },
+  )
+  assert.deepEqual(c.instructorPermissions, ['take_pt_bookings', 'manage_rosters'])
+  const staff = c.staff as Record<string, any>[]
+  assert.deepEqual(staff.find(s => s.mindbodyName === 'Ivy Instructor')!.permissions, ['schedule_classes', 'take_pt_bookings', 'manage_rosters'], 'matched on the name however it is cased')
+  // Another teacher coming across, whom the answers do not name.
+  const other = staff.find(s => s.migrate !== 'skip' && s.teaches && s.mindbodyName !== 'Ivy Instructor')!
+  assert.ok(other, 'the fixture has a second teacher coming across')
+  assert.equal(other.permissions, null, 'everyone else takes the default')
+  assert.ok(notes.some(n => n.includes('"no such package"')), 'an exception matching no PT package is reported')
+  assert.ok(notes.some(n => n.includes('"Nobody Here"')), 'a name matching no staff member is reported')
+
+  // And the archive carries them: the catalogue's flag, and each instructor's permissions.
+  const config = structuredClone(c)
+  for (const r of config.rooms) r.capacity ??= 20
+  for (const t of config.classTypes) if (t.capacity == null) t.capacity = 20
+  const { archive, ids } = await transformMindbody({ reportsDir: path.join(FIXTURES, 'reports'), config, tenantId: '0b8e4a52-6d0f-4c1e-9a57-3f2d1c0b9e8a', local: true })
+  assert.deepEqual(
+    Object.fromEntries(archive.rows.pt_packages!.map(p => [p.name, p.instructor_bound])),
+    { 'PT - Bundle of 10': true, 'PT Open 5': false },
+  )
+  const permissionsOf = (name: string) =>
+    archive.rows.instructors!.find(i => i.staff_user_id === ids.staff_users![name])?.permissions
+  assert.deepEqual(permissionsOf('Ivy Instructor'), ['schedule_classes', 'take_pt_bookings', 'manage_rosters'])
+  assert.deepEqual(permissionsOf(other.mindbodyName), ['take_pt_bookings', 'manage_rosters'])
+  assert.ok(archive.rows.instructors!.every(i => Array.isArray(i.permissions)), 'every instructor row says its permissions')
+  assert.equal(archive.rows.global_policy![0]!.cancel_cap_count, 7)
+  assert.equal(archive.rows.global_policy![0]!.class_window_hours, 24)
+})
+
 test('the cut-off is the smallest whole hour that parts early from late self-cancels; staff cancels do not count', () => {
   const at = (day: number, hour: number, minute = 0) => ({ year: 2026, month: 7, day, hour, minute, second: 0 })
   const row = (cancelled: ReturnType<typeof at>, method: string, by = 'Jane Doe') => ({

@@ -1,3 +1,4 @@
+import type { InstructorPermission } from '../../../src/db/enums'
 import type { OfflineMethod } from './config'
 import type { ReportFacts, StaffFact } from './facts'
 import { locationNamedIn, type LocationSpelling } from './lookups'
@@ -86,6 +87,31 @@ export type StudioAnswers = {
    * those it sees in the Sales report, with a proposal (`unmappedPaymentMethods`).
    */
   paymentMethods?: Record<string, OfflineMethod>
+  /**
+   * The studio's policy where it has decided a figure (the Cancellation Cap's
+   * count, the class Cancellation Window…). Each one given wins over what the
+   * reports suggest — the class window read off members' own cancels — and
+   * over the config's default.
+   */
+  policy?: Partial<{
+    classWindowHours: number
+    ptWindowHours: number
+    cancelCapCount: number
+    cancelCapCycleDays: number
+    ptBookInAdvanceDays: number
+  }>
+  /**
+   * Which PT packages are Instructor-Bound: `bound` for every PT entry, except
+   * those whose name matches one of the `except` patterns (case-insensitive).
+   * Left out, none is.
+   */
+  ptInstructorBound?: { bound: boolean; except?: string[] }
+  /**
+   * The Instructor Permissions instructors start with: `default` for everyone,
+   * and `byName` (their Mindbody name) for those who differ. Left out, all
+   * three for everyone.
+   */
+  instructorPermissions?: { default: InstructorPermission[]; byName?: Record<string, InstructorPermission[]> }
   /** The configs to write: name → what differs (slug, and the environment's origin patterns). */
   outputs: Record<string, { slug: string; originPatterns?: string }>
 }
@@ -298,6 +324,17 @@ export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportF
       s.role = 'instructor' // a former teacher, kept so history names them
     }
   })
+  // Instructor Permissions: the studio's default, and each named instructor's own.
+  if (answers.instructorPermissions) {
+    const own = new Map(Object.entries(answers.instructorPermissions.byName ?? {}).map(([name, p]) => [norm(name), p]))
+    c.instructorPermissions = [...answers.instructorPermissions.default]
+    for (const s of c.staff) s.permissions = own.has(norm(s.mindbodyName)) ? [...own.get(norm(s.mindbodyName))!] : null
+    for (const name of Object.keys(answers.instructorPermissions.byName ?? {})) {
+      const match = c.staff.find((s: Json) => norm(s.mindbodyName) === norm(name) && s.migrate !== 'skip')
+      if (!match) notes?.push(`instructorPermissions: no staff member named "${name}" comes across; their permissions are not used`)
+      else if (match.role !== 'instructor' && !match.teaches) notes?.push(`instructorPermissions: "${name}" comes across as an Admin, who has every permission whatever is set`)
+    }
+  }
 
   /* 6. Catalogue. `sell` = on sale now, at the commonest price of the 90 days up to the download.
      Everything else members still hold is `legacy`: honoured, archived, not for sale. */
@@ -349,6 +386,15 @@ export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportF
     if (e.kind === 'pt' && e.sessionType == null) e.sessionType = d.ptSessionType
     if (e.kind === 'unlimited' && e.durationMonths == null) e.durationMonths = d.unlimitedMonths
   }
+  // Instructor-Bound PT: every PT package the answers bind, but those they except by name.
+  if (answers.ptInstructorBound) {
+    const { bound, except = [] } = answers.ptInstructorBound
+    const pt = c.catalogue.filter((e: Json) => e.kind === 'pt' && e.migrate !== 'skip')
+    for (const e of pt) e.instructorBound = bound && !except.some(x => pattern(x).test(e.name))
+    for (const x of except) {
+      if (!pt.some((e: Json) => pattern(x).test(e.name))) notes?.push(`ptInstructorBound: no PT package matches "${x}"`)
+    }
+  }
 
   // 15. Workshops: one entry per workshop category, each coming across completed from its reports.
   completeWorkshops(c, answers, facts, notes)
@@ -366,6 +412,8 @@ export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportF
 
   // The class cancellation window: the cut-off the members' own early and late cancels show.
   if (facts.classWindow) c.policy = { ...c.policy, classWindowHours: facts.classWindow.hours }
+  // What the studio has decided wins over what the reports suggest.
+  if (answers.policy) c.policy = { ...c.policy, ...answers.policy }
   return c
 }
 

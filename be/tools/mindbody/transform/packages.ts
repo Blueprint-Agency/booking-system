@@ -291,7 +291,7 @@ export function mapPackages(input: {
         ...common,
         session_type: e.sessionType,
         num_sessions: e.credits,
-        instructor_bound: false,
+        instructor_bound: e.instructorBound,
         validity_days: e.validityDays,
       }
       ptPackages.push(row)

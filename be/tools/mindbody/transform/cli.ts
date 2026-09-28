@@ -142,11 +142,15 @@ async function main() {
     }
     for (const note of fillNotes) console.log(note)
     const w = facts.classWindow
+    const decided = answers.policy?.classWindowHours
     console.log(
-      w
-        ? `Class cancellation window: ${w.hours}h, from ${w.early} early and ${w.late} late cancels members made themselves` +
-            `${w.misfits ? ` (${w.misfits} on the wrong side of it)` : ''}.`
-        : 'Class cancellation window: the Cancellations report shows no cut-off, so the config keeps its own.',
+      decided != null
+        ? `Class cancellation window: ${decided}h, as the answers decide` +
+            (w ? ` (the members' own cancels suggest ${w.hours}h).` : '.')
+        : w
+          ? `Class cancellation window: ${w.hours}h, from ${w.early} early and ${w.late} late cancels members made themselves` +
+              `${w.misfits ? ` (${w.misfits} on the wrong side of it)` : ''}.`
+          : 'Class cancellation window: the Cancellations report shows no cut-off, so the config keeps its own.',
     )
     // Proposed, not written: a method is the studio's to confirm before any sale is imported with it.
     const unmapped = unmappedPaymentMethods(answers, facts)

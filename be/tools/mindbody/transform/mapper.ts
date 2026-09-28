@@ -346,6 +346,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   const instructors: Row[] = []
   const invitations: Row[] = []
   const staffIds = new Map<string, string>()
+  /** Each staff member's Instructor Permissions, for whichever instructor profile they end up with. */
+  const permissionsOf = new Map<string, readonly string[]>()
   let ownerId: string | null = null
   const seatedAdmins = new Set<string>()
 
@@ -392,7 +394,9 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     staffIds.set(key, staffId)
     if (isAdmin && email === owner) ownerId = staffId
 
-    if (s.teaches || role === 'instructor') instructors.push({ staff_user_id: staffId, tenant_id: tenantId })
+    const permissions = s.permissions ?? config.instructorPermissions
+    permissionsOf.set(staffId, permissions)
+    if (s.teaches || role === 'instructor') instructors.push({ staff_user_id: staffId, tenant_id: tenantId, permissions })
 
     if (pending) {
       invitations.push({
@@ -608,7 +612,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   // and the workshops each name whoever was not an instructor already.
   const extraInstructors = new Map<string, Row>()
   for (const i of [...schedule.instructors, ...workshops.instructors, ...history.instructors]) {
-    extraInstructors.set(i.staff_user_id as string, i)
+    const staffId = i.staff_user_id as string
+    extraInstructors.set(staffId, { ...i, permissions: permissionsOf.get(staffId) ?? config.instructorPermissions })
   }
 
   // Parents first, as an export writes them — the importer orders by the
