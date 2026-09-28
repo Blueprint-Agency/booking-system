@@ -7,21 +7,22 @@ import { reportError } from "@/lib/report-error";
 /**
  * Route-segment error boundary. Catches runtime errors thrown while rendering
  * any page under the app and shows a recoverable fallback instead of a blank
- * screen. `reset()` re-renders the segment to retry.
+ * screen. `retry()` re-fetches and re-renders the segment (`reset()` only
+ * re-renders, so a page whose server payload failed would fail again).
  */
 export default function Error({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     reportError(error, { boundary: "route", digest: error.digest });
   }, [error]);
 
   return (
-    <div className="flex min-h-[60vh] items-center justify-center px-6 py-16">
+    <div className="flex min-h-dvh items-center justify-center px-6 py-16">
       <div className="max-w-md text-center">
         <p className="font-mono text-xs uppercase tracking-widest text-muted">Error</p>
         <h1 className="mt-3 text-2xl font-extrabold text-ink">Something went wrong</h1>
@@ -34,7 +35,7 @@ export default function Error({
         <div className="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
           <button
             type="button"
-            onClick={reset}
+            onClick={() => retry()}
             className="inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-6 text-sm font-semibold text-white transition-colors hover:bg-accent-deep dark:hover:bg-accent/85"
           >
             Try again

@@ -1,9 +1,8 @@
 "use client";
 
-import { useSyncExternalStore, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { createPortal } from "react-dom";
-
-const noop = () => () => {};
+import { useHydrated } from "@/lib/use-hydrated";
 
 /**
  * Renders a dialog on `document.body`. A `fixed` overlay left where it is
@@ -11,6 +10,6 @@ const noop = () => () => {};
  * is one — so its z-index loses to the bottom tab bar however high it is set.
  */
 export function Portal({ children }: { children: ReactNode }) {
-  const isClient = useSyncExternalStore(noop, () => true, () => false);
-  return isClient ? createPortal(children, document.body) : null;
+  const hydrated = useHydrated();
+  return hydrated ? createPortal(children, document.body) : null;
 }

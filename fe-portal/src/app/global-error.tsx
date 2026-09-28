@@ -11,10 +11,10 @@ import "./globals.css";
  */
 export default function GlobalError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     reportError(error, { boundary: "global", digest: error.digest });
@@ -34,7 +34,7 @@ export default function GlobalError({
             )}
             <button
               type="button"
-              onClick={reset}
+              onClick={() => retry()}
               className="mt-6 inline-flex h-10 items-center justify-center rounded-lg bg-accent px-5 text-sm font-medium text-white transition-colors hover:bg-accent-deep"
             >
               Try again

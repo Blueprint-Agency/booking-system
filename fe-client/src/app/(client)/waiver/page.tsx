@@ -55,6 +55,7 @@ function WaiverContent() {
   const policy = useCancellationPolicy();
   const [acknowledged, setAcknowledged] = useState(false);
   const [signed, setSigned] = useState(false);
+  const [signedAt, setSignedAt] = useState<Date | null>(null);
 
   const canSign = acknowledged;
 
@@ -67,22 +68,31 @@ function WaiverContent() {
 
   function handleSign() {
     if (!canSign) return;
-    sessionStorage.setItem("waiverSigned", "true");
+    try {
+      sessionStorage.setItem("waiverSigned", "true");
+    } catch {
+      // Storage blocked: the signature still stands for this visit.
+    }
+    setSignedAt(new Date());
     setSigned(true);
   }
 
   const cancellation = cancellationSentence(policy?.class_window_hours ?? null);
 
-  const now = new Date();
-  const signedDateStr = now.toLocaleDateString("en-US", {
+  // The moment they signed, not the clock at render: a render-time `new Date()`
+  // differs between the server's HTML and the hydrating render.
+  const signedDateStr = signedAt?.toLocaleDateString("en-SG", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: "Asia/Singapore",
   });
-  const signedTimeStr = now.toLocaleTimeString("en-US", {
+  const signedTimeStr = signedAt?.toLocaleTimeString("en-SG", {
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Singapore",
   });
 
   return (

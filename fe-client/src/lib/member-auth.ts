@@ -24,6 +24,8 @@ import { getApiBaseUrl } from "@/lib/api-url";
 import { onSessionExpired } from "@/lib/session-expiry";
 import { clearTelemetryUser } from "@/lib/telemetry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
+import { memberSessionView, type MemberSessionView } from "@/lib/member-session-view";
+import { useHydrated } from "@/lib/use-hydrated";
 
 /** Where this hostname keeps its session token. */
 const TOKEN_KEY = "rt.client.session";
@@ -123,34 +125,14 @@ export function handleExpiredSession(sentToken?: string): void {
 
 onSessionExpired(handleExpiredSession);
 
-/** The session as the member app reads it. */
-export interface MemberSession {
-  userId: string;
-  email: string;
-  /** The studio stamped on the session at sign-in, when it carries one. */
-  claimedTenantId: string | null;
-}
+export type { MemberSession } from "@/lib/member-session-view";
 
 /**
- * The signed-in session, from Better Auth's own session store.
- *
- * `isLoaded` is false until the first answer arrives, and stays true across the
- * background re-reads that follow (focus, sign-in, sign-out) so pages are not
- * torn down into a spinner every time the tab regains focus.
+ * The signed-in session, from Better Auth's own session store. Reads as not
+ * loaded until hydration is done, so the hydrating render matches the server's
+ * — see `memberSessionView`.
  */
-export function useMemberSession(): {
-  isLoaded: boolean;
-  isSignedIn: boolean;
-  session: MemberSession | null;
-} {
-  const { data, isPending } = memberAuth.useSession();
-  const session = data
-    ? {
-        userId: data.user.id,
-        email: data.user.email,
-        claimedTenantId:
-          (data.session as { claimedTenantId?: string | null }).claimedTenantId ?? null,
-      }
-    : null;
-  return { isLoaded: !isPending || data !== null, isSignedIn: session !== null, session };
+export function useMemberSession(): MemberSessionView {
+  const store = memberAuth.useSession();
+  return memberSessionView(useHydrated(), store);
 }

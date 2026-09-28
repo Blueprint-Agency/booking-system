@@ -39,8 +39,13 @@ function apiErrorCode(err: unknown): string | null {
 }
 
 // The next hour as `HH:00`, so a new slot starts on a time the picker offers.
+// In studio time, as the slot's date is (`sgDatePlus`): the runtime's own zone
+// is UTC on the server and the member's wherever they are.
 function nextHourTime() {
-  return `${String((new Date().getHours() + 1) % 24).padStart(2, "0")}:00`;
+  const hour = Number(
+    new Date().toLocaleString("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: "Asia/Singapore" }),
+  );
+  return `${String((hour + 1) % 24).padStart(2, "0")}:00`;
 }
 
 function emptySlot(): Slot {
@@ -65,7 +70,7 @@ export default function PrivateSessionsPage() {
   // Null is "Any" — the default; the member may narrow it to one class type.
   const [classTypeId, setClassTypeId] = useState<string | null>(null);
   const [locationId, setLocationId] = useState<string>("");
-  const [slots, setSlots] = useState<Slot[]>([emptySlot()]);
+  const [slots, setSlots] = useState<Slot[]>(() => [emptySlot()]);
   const [message, setMessage] = useState<string>("");
   // The confirm sheet, where the member picks which package pays: it decides
   // the instructor too, so it is theirs to choose and not ours to guess.

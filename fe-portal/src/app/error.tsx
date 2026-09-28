@@ -8,21 +8,23 @@ import { reportError } from "@/lib/report-error";
 /**
  * Route-segment error boundary for the portal. Catches runtime errors thrown
  * while rendering any admin/instructor page and shows a recoverable fallback
- * instead of a blank screen. `reset()` re-renders the segment to retry.
+ * instead of a blank screen. `retry()` re-fetches and re-renders the segment
+ * (`reset()` only re-renders, so a page whose server payload failed would fail
+ * again).
  */
 export default function Error({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     reportError(error, { boundary: "route", digest: error.digest });
   }, [error]);
 
   return (
-    <div className="flex min-h-[60vh] items-center justify-center px-6 py-16">
+    <div className="flex min-h-dvh items-center justify-center px-6 py-16">
       <div className="max-w-md text-center">
         <p className="text-xs uppercase tracking-widest text-muted">Error</p>
         <h1 className="mt-3 text-2xl font-bold text-ink">Something went wrong</h1>
@@ -33,7 +35,7 @@ export default function Error({
           <p className="mt-3 wrap-anywhere text-xs text-muted">Reference: {error.digest}</p>
         )}
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <Button onClick={reset}>Try again</Button>
+          <Button onClick={() => retry()}>Try again</Button>
           <Link
             href="/"
             className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-medium text-ink transition-colors hover:bg-paper"

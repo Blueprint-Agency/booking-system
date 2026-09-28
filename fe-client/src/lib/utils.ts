@@ -23,7 +23,9 @@ export function formatCurrency(amount: number): string {
 export function formatSgd(price: string | number): string {
   const n = typeof price === "string" ? Number(price) : price;
   if (Number.isNaN(n)) return "S$0";
-  return `S$${n.toLocaleString(undefined, {
+  // A fixed locale: the runtime's default is the server's on the server and the
+  // browser's on the client, and "1.234,5" vs "1,234.5" is a hydration mismatch.
+  return `S$${n.toLocaleString("en-SG", {
     minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
     maximumFractionDigits: 2,
   })}`;
