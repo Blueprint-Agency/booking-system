@@ -106,16 +106,21 @@ describe('a Mindbody studio\'s waitlists, transformed and imported', { skip: int
   }
   const publicDetail = async (slug: string, classId: string) =>
     json(await harness.app.request(`/api/v1/public/classes/${classId}`, { headers: { 'X-Tenant-Slug': slug } }))
+  /** The class as the admin sees it: the member catalogue neither counts the line nor sizes it. */
+  const staffDetail = async (studio: Parameters<typeof harness.signInAs>[2], classId: string) =>
+    json(await get(`/api/v1/portal/admin/schedule/classes/${classId}`, await harness.signInAs('staff', 'owner@example.test', studio)))
 
   test('an imported queue promotes on the first cancel: the head of the line gets the freed seat', async () => {
     const studio = await importedStudio(true)
 
     // Imported as Mindbody had it: the class full, two waiting, the switch on.
     const detail = await publicDetail(studio.slug, studio.classId)
+    assert.deepEqual([detail.waitlist.enabled, detail.waitlist.open], [true, true], JSON.stringify(detail.waitlist))
+    const staff = await staffDetail(studio, studio.classId)
     assert.deepEqual(
-      [detail.waitlist.enabled, detail.waitlist.capacity, detail.waitlist.waiting],
+      [staff.waitlist_enabled, staff.capacity_waitlist, staff.waiting],
       [true, 5, 2],
-      JSON.stringify(detail.waitlist),
+      JSON.stringify({ waitlist_enabled: staff.waitlist_enabled, capacity_waitlist: staff.capacity_waitlist, waiting: staff.waiting }),
     )
     const jane = await harness.signInAs('client', 'jane.doe@example.test', studio)
     const rick = await harness.signInAs('client', 'rick.roe@example.test', studio)
@@ -163,6 +168,6 @@ describe('a Mindbody studio\'s waitlists, transformed and imported', { skip: int
     assert.equal(detail.waitlist.enabled, false, JSON.stringify(detail.waitlist))
     assert.equal(detail.waitlist.open, false, 'the member app reads "Full", not "Join waitlist"')
     // Its imported line is still the studio's: nobody is evicted by a setting (spec-waitlist.md §8).
-    assert.equal(detail.waitlist.waiting, 2)
+    assert.equal((await staffDetail(studio, studio.classId)).waiting, 2)
   })
 })
