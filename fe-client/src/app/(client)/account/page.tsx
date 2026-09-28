@@ -13,12 +13,14 @@ import { BTN_BOOK, CARD } from "@/components/ui/styles";
 import { useAppUser } from "@/lib/auth";
 import { useHoldLoader } from "@/lib/loading-store";
 import { usePartPaymentOptions, useOpenPurchases } from "@/lib/open-purchases";
+import { overviewLine } from "@/lib/practice";
+import { usePracticeMonth } from "@/lib/use-practice";
 
 /**
- * The account's landing page: the one booking the member walks into next
- * ("Up next"), then — below `lg`, where there is no sidebar — the account
- * menu. Everything else has its own page: My bookings, My packages, Merch,
- * Profile & security, General settings.
+ * The account's landing page: a line to My practice under the greeting, the
+ * one booking the member walks into next ("Up next"), then — below `lg`, where
+ * there is no sidebar — the account menu. Everything else has its own page: My
+ * bookings, My practice, My packages, Merch, Profile & security, General settings.
  */
 export default function AccountHome() {
   const { user } = useAppUser();
@@ -41,6 +43,7 @@ export default function AccountHome() {
         <div className="min-w-0">
           <p className="text-sm font-semibold text-muted">Welcome back</p>
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-ink truncate">Hi, {firstName}</h1>
+          <PracticeLine />
         </div>
         <Link href="/" className={cn(BTN_BOOK, "hidden sm:inline-flex min-h-[44px]")}>
           <CalendarPlus className="h-4 w-4" aria-hidden />
@@ -58,6 +61,27 @@ export default function AccountHome() {
 
       <AccountMenu />
     </div>
+  );
+}
+
+/**
+ * "164 sessions · 13 this month ›" under the greeting, to My practice. It sits
+ * above everything else, so the page waits for it rather than shift when it
+ * lands; nothing is drawn before the member's first session, or if the read fails.
+ */
+function PracticeLine() {
+  const { summary, loading } = usePracticeMonth();
+  useHoldLoader(loading);
+  const line = summary && overviewLine(summary);
+  if (!line) return null;
+  return (
+    <Link
+      href="/account/practice"
+      className="mt-1 inline-flex min-h-[32px] items-center gap-0.5 text-sm font-semibold text-accent-deep hover:text-accent"
+    >
+      {line}
+      <ChevronRight className="h-4 w-4" aria-hidden />
+    </Link>
   );
 }
 

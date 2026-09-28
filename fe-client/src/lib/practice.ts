@@ -1,24 +1,23 @@
 /**
- * The words and layout of the member's "Your practice" card (#317), from
+ * The words and layout of "My practice" (`/account/practice`, #340), from
  * `GET /me/bookings/attendance`. The backend decides the timeframe, its
- * buckets and every count; this only says them.
+ * buckets, what counts as a session and every figure; this only says them and
+ * lays the month out as a calendar.
+ *
+ * A session is a group class or a private session. Workshops are said on a
+ * line of their own and never counted in.
  *
  * Pure, so `practice.test.ts` runs it under `node --test`.
  */
 
 export type PracticePeriod = "month" | "quarter" | "year" | "all";
 
-export const PRACTICE_PERIODS: { value: PracticePeriod; label: string }[] = [
-  { value: "month", label: "This month" },
-  { value: "quarter", label: "3 months" },
-  { value: "year", label: "This year" },
-  { value: "all", label: "All time" },
-];
-
 export interface PracticeBucket {
   /** The bucket's first day, `YYYY-MM-DD`, on the studio's calendar. */
   starts_on: string;
   attended: number;
+  /** Sessions held in the bucket that have not started yet. */
+  booked: number;
 }
 
 export interface PracticeData {
@@ -26,46 +25,22 @@ export interface PracticeData {
   from: string;
   to: string;
   attended: number;
+  attended_classes: number;
+  attended_pt: number;
+  attended_workshops: number;
   previous_attended: number | null;
   buckets: PracticeBucket[];
+  minutes: number;
+  streak_weeks: number;
+  /** ISO weekday (Monday 1) and start hour, 0–23; null under three sessions. */
+  usual_slot: { weekday: number; hour: number } | null;
   top_class_types: { name: string; attended: number }[];
+  lifetime: { attended: number; since: string | null };
   last_attended_at: string | null;
 }
 
-/** Holes a column shows before it says "+n". */
-export const HOLES_PER_COLUMN = 8;
-
-const BEFORE: Record<Exclude<PracticePeriod, "all">, string> = {
-  month: "last month",
-  quarter: "the 3 months before",
-  year: "last year",
-};
-
-/** "3 more than last month", "Same as last month", "2 fewer than last month". */
-export function comparisonLine(period: PracticePeriod, attended: number, previous: number | null): string | null {
-  if (period === "all" || previous === null) return null;
-  const before = BEFORE[period];
-  const diff = attended - previous;
-  if (diff === 0) return `Same as ${before}`;
-  return `${Math.abs(diff)} ${diff > 0 ? "more" : "fewer"} than ${before}`;
-}
-
-export function classNoun(n: number): string {
-  return n === 1 ? "class" : "classes";
-}
-
-export function classesCount(n: number): string {
-  return `${n} ${classNoun(n)}`;
-}
-
-/** How a column of `attended` is punched. */
-export function punches(attended: number): { holes: number; more: number } {
-  const holes = Math.min(attended, HOLES_PER_COLUMN);
-  return { holes, more: attended - holes };
-}
-
 // Written out rather than asked of `Intl`: runtimes disagree on "Sep" and
-// "Sept", and a column label has no room for the difference.
+// "Sept", and a plain date must never be shifted by the viewer's zone.
 const MONTHS = [
   "January",
   "February",
@@ -80,59 +55,131 @@ const MONTHS = [
   "November",
   "December",
 ];
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/** A plain date's month, read off the string — never shifted by the viewer's zone. */
-const month = (d: string) => MONTHS[Number(d.slice(5, 7)) - 1]!;
-const shortMonth = (d: string) => month(d).slice(0, 3);
-const dayMonth = (d: string) => `${Number(d.slice(8, 10))} ${shortMonth(d)}`;
+/** A plain date's month, read off the string. */
+const monthOf = (d: string) => MONTHS[Number(d.slice(5, 7)) - 1]!;
+const previousMonthOf = (d: string) => MONTHS[(Number(d.slice(5, 7)) + 10) % 12]!;
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** The big number and the words after it: "13" "sessions in September". */
+export function headline(s: PracticeData): { count: number; label: string } {
+  return { count: s.attended, label: `${s.attended === 1 ? "session" : "sessions"} in ${monthOf(s.from)}` };
+}
+
+/** "11 classes · 2 private sessions", leaving out a part that is zero. */
+export function breakdownLine(classes: number, pt: number): string | null {
+  const parts = [
+    classes > 0 ? plural(classes, "class", "classes") : null,
+    pt > 0 ? plural(pt, "private session", "private sessions") : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+/** "3 more than August", "Same as August", "2 fewer than August". */
+export function comparisonLine(s: PracticeData): string | null {
+  if (s.previous_attended === null) return null;
+  const before = previousMonthOf(s.from);
+  const diff = s.attended - s.previous_attended;
+  if (diff === 0) return `Same as ${before}`;
+  return `${Math.abs(diff)} ${diff > 0 ? "more" : "fewer"} than ${before}`;
+}
+
+/** "Also 1 workshop in September"; none when there were none. */
+export function workshopLine(s: PracticeData): string | null {
+  if (s.attended_workshops === 0) return null;
+  return `Also ${plural(s.attended_workshops, "workshop", "workshops")} in ${monthOf(s.from)}`;
+}
+
+/** "13 h 45 m", "2 h", "45 m". */
+export function durationLabel(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} m`;
+  return m === 0 ? `${h} h` : `${h} h ${m} m`;
+}
+
+/** "Tue · 7am"; a dash when there is no habit yet. */
+export function usualSlotLabel(slot: PracticeData["usual_slot"]): string {
+  if (!slot) return "—";
+  const h = slot.hour % 12 === 0 ? 12 : slot.hour % 12;
+  return `${WEEKDAYS[slot.weekday - 1]} · ${h}${slot.hour < 12 ? "am" : "pm"}`;
+}
+
+export function streakLabel(current: boolean): string {
+  return current ? "Weeks in a row" : "Longest run of weeks";
+}
+
+export const rangeLabel = (s: PracticeData) => `${monthOf(s.from)} ${s.from.slice(0, 4)}`;
+
+export const emptyLine = (s: PracticeData) => `No sessions in ${monthOf(s.from)} yet.`;
+
+/** The calendar's text equivalent: the count and the period. */
+export function rhythmSummary(s: PracticeData): string {
+  const booked = s.buckets.reduce((n, b) => n + b.booked, 0);
+  const attended = `${plural(s.attended, "session", "sessions")} attended in ${rangeLabel(s)}`;
+  return booked > 0 ? `${attended}, and ${booked} booked.` : `${attended}.`;
+}
+
+export interface MonthDay {
+  date: string;
+  day: number;
+  attended: number;
+  booked: number;
+  today: boolean;
+  /** After today: a day with nothing booked is drawn blank, not as an empty mat. */
+  future: boolean;
+}
+
+/** ISO weekday of a plain date, Monday 1. */
+function isoWeekday(d: string): number {
+  const js = new Date(`${d}T00:00:00Z`).getUTCDay();
+  return js === 0 ? 7 : js;
+}
 
 /**
- * The small label under each column. Three months of weeks is thirteen or so
- * columns, too narrow for "7 Sep" under each, so it names each month once, at
- * its first week, and leaves the rest blank.
+ * The month as a calendar, Monday first: the blanks before the 1st, then a
+ * cell per day with what was attended and booked on it.
  */
-export function bucketLabels(period: PracticePeriod, buckets: PracticeBucket[]): (string | null)[] {
-  switch (period) {
-    case "month":
-      return buckets.map((b) => dayMonth(b.starts_on));
-    case "quarter":
-      return buckets.map((b, i) =>
-        i === 0 || b.starts_on.slice(0, 7) !== buckets[i - 1]!.starts_on.slice(0, 7)
-          ? shortMonth(b.starts_on)
-          : null,
-      );
-    case "year":
-      return buckets.map((b) => shortMonth(b.starts_on));
-    case "all":
-      return buckets.map((b) => b.starts_on.slice(0, 4));
-  }
+export function monthGrid(s: PracticeData, today: string): { leading: number; days: MonthDay[] } {
+  return {
+    leading: isoWeekday(s.from) - 1,
+    days: s.buckets.map((b) => ({
+      date: b.starts_on,
+      day: Number(b.starts_on.slice(8, 10)),
+      attended: b.attended,
+      booked: b.booked,
+      today: b.starts_on === today,
+      future: b.starts_on > today,
+    })),
+  };
 }
 
-/** The band for a screen reader: one line per bucket, with its count. */
-export function bandSummary(period: PracticePeriod, buckets: PracticeBucket[]): string[] {
-  const name = (d: string) =>
-    period === "month" || period === "quarter"
-      ? `Week of ${dayMonth(d)}`
-      : period === "year"
-        ? month(d)
-        : d.slice(0, 4);
-  return buckets.map((b) => `${name(b.starts_on)}: ${b.attended === 0 ? "no classes" : classesCount(b.attended)}`);
+/**
+ * "What you practised": the class types, then private sessions as one bar
+ * when there are any, each as a share of the largest.
+ */
+export function practiceBars(s: PracticeData): { name: string; attended: number; share: number }[] {
+  const rows = [...s.top_class_types];
+  if (s.attended_pt > 0) rows.push({ name: s.attended_pt === 1 ? "Private session" : "Private sessions", attended: s.attended_pt });
+  const max = Math.max(1, ...rows.map((r) => r.attended));
+  return rows.map((r) => ({ ...r, share: r.attended / max }));
 }
 
-const EMPTY: Record<PracticePeriod, string> = {
-  month: "this month",
-  quarter: "in the last 3 months",
-  year: "this year",
-  all: "yet",
-};
-
-export function emptyLine(period: PracticePeriod): string {
-  return `No classes attended ${EMPTY[period]}.`;
+/** "164 sessions since March 2025", or the promise of the first. */
+export function lifetimeLine(lifetime: PracticeData["lifetime"]): string {
+  if (lifetime.attended === 0 || !lifetime.since) return "Your first class will show here";
+  return `${plural(lifetime.attended, "session", "sessions")} since ${monthOf(lifetime.since)} ${lifetime.since.slice(0, 4)}`;
 }
 
-/** "Last class Fri 12 Jun", in studio time like every date the app shows. */
-export function lastClassLine(iso: string): string {
-  const weekday = new Date(iso).toLocaleDateString("en-GB", { weekday: "short", timeZone: "Asia/Singapore" });
-  const day = new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" }); // YYYY-MM-DD
-  return `Last class ${weekday} ${dayMonth(day)}`;
+/** The account overview's line under the greeting; nothing before the first session. */
+export function overviewLine(s: PracticeData): string | null {
+  if (s.lifetime.attended === 0) return null;
+  return `${plural(s.lifetime.attended, "session", "sessions")} · ${s.attended} this month`;
+}
+
+/** Today's date on the studio's calendar, as every date the app shows is. */
+export function studioToday(nowMs: number): string {
+  return new Date(nowMs).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
 }

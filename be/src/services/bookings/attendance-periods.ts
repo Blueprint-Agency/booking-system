@@ -1,16 +1,18 @@
 /**
- * The calendar behind a member's "Your practice" summary (#317): which days a
- * timeframe covers, how it is cut into buckets, and which days it is compared
- * against.
+ * The calendar behind a member's practice summary (#317, "My practice" #340):
+ * which days a timeframe covers, how it is cut into buckets, and which days it
+ * is compared against — and the two figures read off the calendar, the weeks
+ * in a row and the usual slot.
  *
- *   - month:   the current calendar month, in weeks starting Monday.
+ *   - month:   the current calendar month, a bucket per day.
  *   - quarter: the current month and the two before it, in weeks.
  *   - year:    the current calendar year, one bucket per month.
  *   - all:     one bucket per year, from the first attended class.
  *
  * A timeframe that does not start on a bucket boundary clips its first bucket
- * to its own first day — September 2026 starts on a Tuesday, so its first week
- * is 1–6 September — so no bucket ever counts a day outside the timeframe.
+ * to its own first day — July 2026 starts on a Wednesday, so a quarter from it
+ * opens with the week of 1–5 July — so no bucket ever counts a day outside the
+ * timeframe.
  *
  * The comparison is the equal-length period before: last month, the three
  * months before, last year. `all` has nothing before it.
@@ -19,7 +21,7 @@
  * instant is the caller's. Pure: no database, no clock. See
  * attendance-periods.test.ts.
  */
-import { addDays, isoWeekday, type PlainDate } from '../schedule/series-dates'
+import { addDays, isoWeekday, type IsoWeekday, type PlainDate } from '../schedule/series-dates'
 
 export const ATTENDANCE_PERIODS = ['month', 'quarter', 'year', 'all'] as const
 export type AttendancePeriod = (typeof ATTENDANCE_PERIODS)[number]
@@ -42,7 +44,29 @@ export interface AttendancePlan extends DateSpan {
 export interface DayCount {
   day: PlainDate
   attended: number
+  /** Sessions held on the day that have not started yet. */
+  booked?: number
 }
+
+export interface BucketCount {
+  startsOn: PlainDate
+  attended: number
+  booked: number
+}
+
+/** A start on the Tenant's calendar: its day and its hour, 0–23. */
+export interface SessionStart {
+  day: PlainDate
+  hour: number
+}
+
+export interface UsualSlot {
+  weekday: IsoWeekday
+  hour: number
+}
+
+/** Fewer attended sessions than this make no habit. */
+const USUAL_SLOT_MIN = 3
 
 const firstOfMonth = (d: PlainDate): PlainDate => `${d.slice(0, 7)}-01`
 const firstOfYear = (d: PlainDate): PlainDate => `${d.slice(0, 4)}-01-01`
@@ -52,6 +76,16 @@ const lastOfYear = (d: PlainDate): PlainDate => `${d.slice(0, 4)}-12-31`
 function addMonths(first: PlainDate, months: number): PlainDate {
   const index = Number(first.slice(0, 4)) * 12 + Number(first.slice(5, 7)) - 1 + months
   return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}-01`
+}
+
+/** The Monday that opens `d`'s week. */
+const mondayOf = (d: PlainDate): PlainDate => addDays(d, 1 - isoWeekday(d))
+
+/** Every day from `from` to `to`. */
+function days(from: PlainDate, to: PlainDate): PlainDate[] {
+  const out: PlainDate[] = []
+  for (let d = from; d <= to; d = addDays(d, 1)) out.push(d)
+  return out
 }
 
 /** `from`, then every Monday after it up to `to`. */
@@ -95,7 +129,7 @@ export function attendancePlan(
   const monthEnd = addDays(addMonths(month, 1), -1)
   switch (period) {
     case 'month':
-      return { period, from: month, to: monthEnd, buckets: weekStarts(month, monthEnd), previous: monthsBefore(month, 1) }
+      return { period, from: month, to: monthEnd, buckets: days(month, monthEnd), previous: monthsBefore(month, 1) }
     case 'quarter': {
       const from = addMonths(month, -2)
       return { period, from, to: monthEnd, buckets: weekStarts(from, monthEnd), previous: monthsBefore(from, 3) }
@@ -113,17 +147,55 @@ export function attendancePlan(
   }
 }
 
-/** Each of the plan's buckets with the attendance on its days. Days outside
- *  the plan are left out. */
-export function bucketCounts(plan: AttendancePlan, days: readonly DayCount[]): { startsOn: PlainDate; attended: number }[] {
-  const counts = plan.buckets.map(startsOn => ({ startsOn, attended: 0 }))
-  for (const { day, attended } of days) {
+/** Each of the plan's buckets with the sessions attended and booked on its
+ *  days. Days outside the plan are left out. */
+export function bucketCounts(plan: AttendancePlan, dayCounts: readonly DayCount[]): BucketCount[] {
+  const counts = plan.buckets.map(startsOn => ({ startsOn, attended: 0, booked: 0 }))
+  for (const { day, attended, booked = 0 } of dayCounts) {
     if (day < plan.from || day > plan.to) continue
     let i = counts.length - 1
     while (counts[i]!.startsOn > day) i--
     counts[i]!.attended += attended
+    counts[i]!.booked += booked
   }
   return counts
+}
+
+/**
+ * The run of consecutive Monday weeks, each with at least one of `attendedDays`,
+ * that ends with `today`'s week — or with last week, while this week has
+ * nothing in it yet, so a streak does not break on a Monday morning.
+ */
+export function streakWeeks(today: PlainDate, attendedDays: readonly PlainDate[]): number {
+  const weeks = new Set(attendedDays.map(mondayOf))
+  let week = mondayOf(today)
+  if (!weeks.has(week)) week = addDays(week, -7)
+  let run = 0
+  for (; weeks.has(week); week = addDays(week, -7)) run++
+  return run
+}
+
+/**
+ * The weekday and start hour the member most often attends at; null under
+ * three sessions. A tie goes to the earliest weekday, Monday first, then the
+ * earliest hour.
+ */
+export function usualSlot(starts: readonly SessionStart[]): UsualSlot | null {
+  if (starts.length < USUAL_SLOT_MIN) return null
+  const tally = new Map<number, number>()
+  for (const { day, hour } of starts) {
+    const slot = isoWeekday(day) * 24 + hour
+    tally.set(slot, (tally.get(slot) ?? 0) + 1)
+  }
+  let best = -1
+  let bestCount = 0
+  for (const [slot, count] of tally) {
+    if (count > bestCount || (count === bestCount && slot < best)) {
+      best = slot
+      bestCount = count
+    }
+  }
+  return { weekday: Math.floor(best / 24) as IsoWeekday, hour: best % 24 }
 }
 
 /** The attendance on the days of `span`. */

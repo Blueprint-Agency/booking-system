@@ -231,31 +231,28 @@ html[data-theme="dark"] .brand-scope {
   animation: dropIn 0.14s ease-out both;
 }
 
-/* A hole punched in the practice card (`components/account/practice-summary.tsx`).
-   Each hole carries its own delay, so they punch in left to right. */
-@keyframes punchIn {
+/* A mat laid down on My practice's calendar (`components/account/practice-month.tsx`).
+   Each mat carries its own delay, so they unroll through the month. */
+@keyframes matLay {
   from {
     opacity: 0;
-    transform: scale(0.2);
-  }
-  70% {
-    opacity: 1;
-    transform: scale(1.15);
+    transform: scaleY(0.2);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: none;
   }
 }
 
-.punch-hole {
-  animation: punchIn 0.28s ease-out both;
+.mat-lay {
+  transform-origin: bottom;
+  animation: matLay 0.35s ease-out both;
 }
 
 /* The global rule shortens the animation but keeps its delay, which would leave
-   the last holes blank for most of a second. */
+   the last mats blank for most of a second. */
 @media (prefers-reduced-motion: reduce) {
-  .punch-hole {
+  .mat-lay {
     animation: none;
   }
 }

@@ -2,6 +2,7 @@ import {
   CalendarCheck,
   Settings,
   ShoppingBag,
+  Sprout,
   Ticket,
   UserCircle,
   type LucideIcon,
@@ -24,6 +25,7 @@ const prefix = (href: string) => (p: string) => p.startsWith(href);
  */
 export const ACCOUNT_SECTIONS: AccountNavItem[] = [
   { href: "/account/bookings", label: "My bookings", hint: "Classes, PT, workshops and requests", icon: CalendarCheck, isActive: prefix("/account/bookings") },
+  { href: "/account/practice", label: "My practice", hint: "Sessions you've attended", icon: Sprout, isActive: prefix("/account/practice") },
   { href: "/account/packages", label: "My packages", hint: "Active, not started and ended", icon: Ticket, isActive: prefix("/account/packages") },
   { href: "/account/merch", label: "Merch", hint: "Items to collect at the studio", icon: ShoppingBag, isActive: prefix("/account/merch") },
   { href: "/account/profile", label: "Profile & security", hint: "Details, saved cards, password", icon: UserCircle, isActive: prefix("/account/profile") },

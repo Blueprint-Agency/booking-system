@@ -573,11 +573,11 @@ Every purchase succeeds even if the email fails to send — the send is a fire-a
 
 ## 8. Account portal `/account/*`
 
-The account section is a sticky sidebar (desktop, from `lg`) listing **My bookings** (`/account/bookings`), **My packages** (`/account/packages`), **Merch**, **Profile & security**, **General settings**, then a red **Sign out**; the member's card at its top opens `/account`. All sub-pages share an `AccountShell`.
+The account section is a sticky sidebar (desktop, from `lg`) listing **My bookings** (`/account/bookings`), **My practice** (`/account/practice`), **My packages** (`/account/packages`), **Merch**, **Profile & security**, **General settings**, then a red **Sign out**; the member's card at its top opens `/account`. All sub-pages share an `AccountShell`.
 
 ### 8.0 Account home `/account` (as built)
 
-A greeting, unfinished purchases (#93) and the checkout-cancelled banner (#274), then **Up next** only: the one ticket of the old "Coming up" below — the same component the schedule shows above its feed (`ComingUp`), with **Show my QR** and a red **Cancel**. Below `lg` the **My account** menu follows it: the member's card (→ Profile), My bookings, My packages, Merch, Profile & security, General settings, and a red **Sign out**. Every section page heads itself with "‹ Account" back to it below `lg`.
+A greeting with one line under it — "164 sessions · 13 this month ›" to My practice (§8.1c), drawn once the month's summary has loaded (the page waits for it rather than shift) and not at all before the member's first attended session — unfinished purchases (#93) and the checkout-cancelled banner (#274), then **Up next** only: the one ticket of the old "Coming up" below — the same component the schedule shows above its feed (`ComingUp`), with **Show my QR** and a red **Cancel**. Below `lg` the **My account** menu follows it: the member's card (→ Profile), My bookings, My practice, My packages, Merch, Profile & security, General settings, and a red **Sign out**. Every section page heads itself with "‹ Account" back to it below `lg`.
 
 ### 8.1 My bookings `/account/bookings` (as built)
 
@@ -601,7 +601,7 @@ Every package the member has bought, each marked **Active**, **Not started** (Do
   - **Membership** card (per studio): plan name, status badge (Active / Expired), package expiry. **No "Cancel Membership" button** — replaced with **"Contact Sales Team"** → WhatsApp deep link (`wa.me/65...`).
   - **Expiry banner** appears at t-30 / 15 / 7 / 1 days / 12h / 2h before package end. Banner only renders if the chosen milestone is shorter than the package's full duration (avoids absurd "expires in 30 days" on a 1-day pass).
   - **Coming up**: only the one booking the member walks into next — a class, a PT session or a workshop, whichever starts first (a running one first) — as a ticket coloured by kind: class in the studio accent, PT gold, workshop green. It carries **Show my QR** and a red **Cancel** where the member may still cancel (a class until it starts; a PT session they requested, outside the PT window; never a workshop). Nothing after it is listed here; **Your classes** links to My Classes.
-  - **Your packages**: every package the member holds, each marked **Active** or **Not started** (Dormant until its first booking), so a package that has not begun never reads as active. There is no summed balance (no "Class credits" / "PT sessions" tiles) and no "Your practice" attendance card — both were removed as not useful here; `GET /me/bookings/attendance` has no caller in this app.
+  - **Your packages**: every package the member holds, each marked **Active** or **Not started** (Dormant until its first booking), so a package that has not begun never reads as active. There is no summed balance (no "Class credits" / "PT sessions" tiles) and no "Your practice" attendance card — both were removed as not useful here. The attendance figures now have their own page, My practice (§8.1c).
   - Quick links to other account sections (My Classes / Workshops / Private Sessions / Invoices / Referral / Profile).
 - Cards are grouped by studio (header with studio name + logo) so a member of both locations sees their entitlements split cleanly.
 - If user has no active package: empty state with **"Explore Classes"** CTA → `/classes` and **"View packages"** CTA → `/packages`.
@@ -612,6 +612,21 @@ Every package the member has bought, each marked **Active**, **Not started** (Do
 **Where admin comes in**
 - Admin needs to issue / extend / pause / cancel memberships from a user-detail page (already partly built — D.4 commit).
 - Admin sees the same expiry milestones to drive comms (auto reminders).
+
+### 8.1c My practice `/account/practice` (as built, #340 / #341)
+
+What the member attended this month, from `GET /me/bookings/attendance?period=month` (be-client §3). A **session** is a group class or a private session the member was marked attended at — imported history included; workshops are said separately and never counted in; no-shows, cancellations and sessions not yet ticked never show. Words and layout are `lib/practice.ts` (tested in `practice.test.ts`); the read is `lib/use-practice.ts`.
+
+- **Placing**: in the account sidebar and the mobile account menu right after My bookings — "My practice", hint "Sessions you've attended". The page has the "‹ Account" back link below `lg`.
+- **Title and lifetime line**: "164 sessions since March 2025"; a member who has never attended reads "Your first class will show here".
+- **Headline**: the month ("September 2026"), then "13 sessions in September" (the number large, in the studio accent), then the comparison and the split on one line: "3 more than August · 11 classes · 2 private sessions" ("Same as August", "2 fewer than August"; a zero part of the split is left out).
+- **The calendar**: Monday first, a yoga-mat-shaped mark in the studio accent for each attended session on its day (up to three, then "+n"), a dashed mat for each session still booked later this month, today marked, days after today with nothing booked left blank. A legend says Attended (and Booked when there is any). Its text equivalent is the figure caption: "13 sessions attended in September 2026, and 1 booked." Mats are laid down on load; with reduced motion they are simply there.
+- **Three figures**: Time on the mat ("13 h 45 m"), Weeks in a row (current run, surviving a week not yet started), Your usual ("Tue · 7am", a dash under three sessions). Not shown before the first session ever.
+- **What you practised**: the (up to three) most-attended class types as bars, then **Private sessions** as one bar when there are any.
+- **Workshops**: "Also 1 workshop in September", none when there were none.
+- **Empty month**: "No sessions in September yet." with **Book a class**. **Book your next class** closes the page; both go to the schedule.
+- **Loading**: through `useCachedResource`, keyed by member, so a revisit draws at once and re-reads quietly, and a reply that lands after sign-out or for another member is dropped. The page holds under the page loader until its first read. A failed read shows "Couldn't load your practice." with Try again.
+- This slice is the Month view only: no Week / Month / Year switch and no stepping back yet (#340).
 
 ### 8.1b My Merch `/account/merch`
 
