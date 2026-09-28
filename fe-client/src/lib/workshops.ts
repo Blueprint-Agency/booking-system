@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMemberSession } from "./member-auth";
-import { ApiError, publicApi, useApi } from "./api";
+import { ApiError, useApi } from "./api";
 
 // ── Wire types (mirror BE serialization) ─────────────────────────────────────
 
@@ -87,12 +87,14 @@ export interface ApiWorkshopDetail extends ApiWorkshopCard {
 // ── Hooks ────────────────────────────────────────────────────────────────────
 
 /**
- * Loads the workshop catalogue. Falls back to /public/workshops when the user
- * isn't signed in — same data either way for v0.
+ * Loads the workshop catalogue. Workshops are members-only — the API has no
+ * signed-out read — so a visitor without a session gets `signedOut` and no
+ * request is made.
  */
 export function useWorkshops(): {
   data: ApiWorkshopCard[] | null;
   loading: boolean;
+  signedOut: boolean;
   error: ApiError | Error | null;
 } {
   const { isLoaded, isSignedIn } = useMemberSession();
@@ -100,19 +102,21 @@ export function useWorkshops(): {
   const [data, setData] = useState<ApiWorkshopCard[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);
+  const signedOut = isLoaded && !isSignedIn;
 
   useEffect(() => {
     if (!isLoaded) return;
+    if (!isSignedIn) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError(null);
     (async () => {
       try {
-        const res = isSignedIn
-          ? await api.get<{ workshops: ApiWorkshopCard[] }>("/me/workshops")
-          : await publicApi.get<{ workshops: ApiWorkshopCard[] }>(
-              "/public/workshops",
-            );
+        const res = await api.get<{ workshops: ApiWorkshopCard[] }>("/me/workshops");
         if (!cancelled) setData(res.workshops);
       } catch (err) {
         if (!cancelled) setError(err as Error);
@@ -125,12 +129,14 @@ export function useWorkshops(): {
     };
   }, [isLoaded, isSignedIn, api]);
 
-  return { data, loading, error };
+  return { data, loading, signedOut, error };
 }
 
+/** One workshop, for a signed-in member only — see `useWorkshops`. */
 export function useWorkshop(id: string | undefined): {
   data: ApiWorkshopDetail | null;
   loading: boolean;
+  signedOut: boolean;
   error: ApiError | Error | null;
 } {
   const { isLoaded, isSignedIn } = useMemberSession();
@@ -138,17 +144,21 @@ export function useWorkshop(id: string | undefined): {
   const [data, setData] = useState<ApiWorkshopDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);
+  const signedOut = isLoaded && !isSignedIn;
 
   useEffect(() => {
     if (!isLoaded || !id) return;
+    if (!isSignedIn) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError(null);
     (async () => {
       try {
-        const res = isSignedIn
-          ? await api.get<ApiWorkshopDetail>(`/me/workshops/${id}`)
-          : await publicApi.get<ApiWorkshopDetail>(`/public/workshops/${id}`);
+        const res = await api.get<ApiWorkshopDetail>(`/me/workshops/${id}`);
         if (!cancelled) setData(res);
       } catch (err) {
         if (!cancelled) setError(err as Error);
@@ -161,7 +171,7 @@ export function useWorkshop(id: string | undefined): {
     };
   }, [id, isLoaded, isSignedIn, api]);
 
-  return { data, loading, error };
+  return { data, loading, signedOut, error };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

@@ -1185,23 +1185,63 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
 
   // ── workshops (#62) ───────────────────────────────────────────────────────
 
-  test("the public workshop list never carries another tenant's workshop", async () => {
-    const asTwo = await getAs(two.slug, '/api/v1/public/workshops')
+  /**
+   * Studio two's fixture member, signed in on its member app. Workshops are
+   * members-only, so the workshop reads below go through /me.
+   */
+  async function memberOfTwo(): Promise<Record<string, string>> {
+    const email = `member-${two.slug}@isolation.test`
+    const headers = await harness.signInAs('client', email, two)
+    const [user] = await harness.db
+      .select()
+      .from(schema.clientAuthUsers)
+      .where(and(eq(schema.clientAuthUsers.tenantId, two.tenantId), eq(schema.clientAuthUsers.email, email)))
+    await harness.db
+      .update(schema.clients)
+      .set({ authUserId: user!.id })
+      .where(eq(schema.clients.id, two.clientId))
+    return headers
+  }
+
+  async function getAsMember(headers: Record<string, string>, path: string) {
+    const res = await harness.app.request(path, { headers })
+    const text = await res.text()
+    return {
+      status: res.status,
+      text,
+      get body(): Record<string, any> {
+        return JSON.parse(text)
+      },
+    }
+  }
+
+  test('a signed-out visitor is shown no workshop, listed or by id', async () => {
+    const list = await getAs(two.slug, '/api/v1/public/workshops')
+    assert.equal(list.status, 404)
+    const byId = await getAs(two.slug, `/api/v1/public/workshops/${two.workshopId}`)
+    assert.equal(byId.status, 404)
+    assert.ok(!byId.text.includes(two.workshopId))
+  })
+
+  test("the member workshop list never carries another tenant's workshop", async () => {
+    const asTwo = await getAsMember(await memberOfTwo(), '/api/v1/me/workshops')
+    assert.equal(asTwo.status, 200)
     const ids = asTwo.body.workshops.map((w: any) => w.id)
     assert.ok(ids.includes(two.workshopId))
     assert.ok(!ids.includes(one.workshopId), "acme can read northwind's workshops")
   })
 
   test("asking for another tenant's workshop by id is the same 404 as a missing one", async () => {
-    const borrowed = await getAs(two.slug, `/api/v1/public/workshops/${one.workshopId}`)
+    const member = await memberOfTwo()
+    const borrowed = await getAsMember(member, `/api/v1/me/workshops/${one.workshopId}`)
     assert.equal(borrowed.status, 404)
-    const missing = await getAs(
-      two.slug,
-      '/api/v1/public/workshops/00000000-0000-0000-0000-0000000000ff',
+    const missing = await getAsMember(
+      member,
+      '/api/v1/me/workshops/00000000-0000-0000-0000-0000000000ff',
     )
     assert.equal(borrowed.text, missing.text)
 
-    const own = await getAs(two.slug, `/api/v1/public/workshops/${two.workshopId}`)
+    const own = await getAsMember(member, `/api/v1/me/workshops/${two.workshopId}`)
     assert.equal(own.status, 200)
   })
 

@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { BTN_BOOK, BTN_PRIMARY, CARD } from "@/components/ui/styles";
 import { BuyButton } from "@/components/checkout/buy-button";
+import { MembersOnly } from "@/components/auth/members-only";
 import { cn } from "@/lib/utils";
 import {
   type ApiWorkshopTier,
@@ -33,7 +34,7 @@ function formatTimeRange(startsAt: string, endsAt: string): string {
 
 export default function WorkshopDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { data: workshop, loading, error } = useWorkshop(id);
+  const { data: workshop, loading, signedOut, error } = useWorkshop(id);
   const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
 
   const sortedTiers = useMemo(
@@ -50,6 +51,19 @@ export default function WorkshopDetailPage() {
     return (
       <BookingSurface>
         <ContentLoading label="Loading workshop" />
+      </BookingSurface>
+    );
+  }
+
+  if (signedOut) {
+    return (
+      <BookingSurface maxWidth="md">
+        <PageHeader title="Workshop" back={{ href: "/workshops", label: "Workshops" }} />
+        <MembersOnly
+          title="Sign up to see this workshop"
+          description="Workshop details are shown to members only. Create a free account or log in to see it and book."
+          nextHref={`/workshops/${id}`}
+        />
       </BookingSurface>
     );
   }

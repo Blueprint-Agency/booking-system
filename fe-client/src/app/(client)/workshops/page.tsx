@@ -21,11 +21,12 @@ import {
 } from "@/lib/workshops";
 import { groupWorkshops, isEnded } from "@/lib/workshop-groups";
 import { OneOpenAccordion } from "@/components/booking/one-open-accordion";
+import { MembersOnly } from "@/components/auth/members-only";
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function WorkshopsPage() {
-  const { data, loading, error } = useWorkshops();
+  const { data, loading, signedOut, error } = useWorkshops();
   const [selectedLocation, setSelectedLocation] = useState<string>("all");
 
   const nowMs = useMemo(() => Date.now(), []);
@@ -64,6 +65,19 @@ export default function WorkshopsPage() {
     [groups],
   );
   const itemsByKey = useMemo(() => new Map(groups.map((g) => [g.key, g.items])), [groups]);
+
+  if (signedOut) {
+    return (
+      <BookingSurface>
+        <PageHeader title="Workshops" />
+        <MembersOnly
+          title="Sign up to see workshops"
+          description="Workshops are shown to members only. Create a free account or log in to see what's on."
+          nextHref="/workshops"
+        />
+      </BookingSurface>
+    );
+  }
 
   return (
     <BookingSurface>

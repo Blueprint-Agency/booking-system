@@ -8,7 +8,6 @@ import {
   listActivePromotionsFor,
   serializePromotion,
 } from '../../services/packages/promotions'
-import * as workshopsSvc from '../../services/workshops/catalog'
 import * as merchSvc from '../../services/catalog/merch'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
 import { readCancellationPolicy } from '../../services/policy/evaluate-cancellation'
@@ -72,15 +71,9 @@ const app = new Hono()
     const detail = await classCatalog.getClassDetail(tenantId(c), c.req.param('id'))
     return c.json(detail)
   })
-  .get('/workshops', async c => {
-    const cards = await workshopsSvc.listActiveWorkshopCards(tenantId(c))
-    return c.json({ workshops: cards })
-  })
-  .get('/workshops/:id', async c => {
-    const id = c.req.param('id')
-    const detail = await workshopsSvc.getWorkshopDetailPayload(tenantId(c), id)
-    return c.json(detail)
-  })
+  // No workshops here: a studio's workshops — what, when, who teaches, what it
+  // costs — are shown to members only, so they can't be lifted without an
+  // account. Signed-in members read them from /me/workshops.
   // Merch is browse-only and priced the same for everyone — no signed-in variant.
   .get('/merch', async c => {
     const rows = await merchSvc.listMerch(tenantId(c), { includeArchived: false })

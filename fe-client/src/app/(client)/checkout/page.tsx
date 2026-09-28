@@ -119,7 +119,12 @@ function CheckoutContent() {
   useEffect(() => {
     if (mode === "workshop") {
       if (!workshopId) { setLoadingPkg(false); return; }
-      fetchApi(`/public/workshops/${workshopId}`)
+      // Workshops are members-only: a signed-out visitor gets the sign-in
+      // prompt below, and the workshop is read with the session token.
+      if (!isLoaded) return;
+      if (!isSignedIn) { setLoadingPkg(false); return; }
+      getToken()
+        .then(token => fetchApi(`/me/workshops/${workshopId}`, { headers: { Authorization: `Bearer ${token}` } }))
         .then(r => r.json())
         .then((data: ApiWorkshopDetail) => {
           if (!data?.id) { setPkgError("Workshop not found."); return; }
@@ -153,7 +158,7 @@ function CheckoutContent() {
       })
       .catch(() => setPkgError("Could not load package details."))
       .finally(() => setLoadingPkg(false));
-  }, [mode, packageId, packageKind, workshopId, tierId]);
+  }, [mode, packageId, packageKind, workshopId, tierId, isLoaded, isSignedIn, getToken]);
 
   async function applyPromo() {
     const code = promoInput.trim();
@@ -293,7 +298,10 @@ function CheckoutContent() {
       : mode === "workshop"
         ? Boolean(workshop && selectedTier)
         : Boolean(pkg);
-  if (pkgError || !hasItem) {
+  // A signed-out workshop checkout never reads the workshop (members-only),
+  // so it has no item yet: it falls through to the sign-in prompt below.
+  const awaitingSignIn = mode === "workshop" && isLoaded && !isSignedIn;
+  if (!awaitingSignIn && (pkgError || !hasItem)) {
     return (
       <CheckoutFrame>
         <EmptyState

@@ -176,9 +176,11 @@ function WorkshopSuccess({
 
   useEffect(() => {
     let cancelled = false;
-    fetchApi(`/public/workshops/${workshopId}`)
-      .then(r => r.json())
-      .then(data => { if (!cancelled) setWorkshop(data); })
+    // Workshops are members-only, so the read carries the session token.
+    getMemberToken()
+      .then(token => fetchApi(`/me/workshops/${workshopId}`, { headers: { Authorization: `Bearer ${token}` } }))
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (!cancelled && data) setWorkshop(data); })
       .catch(() => { /* non-fatal */ });
     return () => { cancelled = true; };
   }, [workshopId]);

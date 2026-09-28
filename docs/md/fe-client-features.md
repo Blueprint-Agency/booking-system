@@ -323,6 +323,8 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 
 ## 4. Workshops
 
+**Members only.** Signed out, `/workshops` and `/workshops/[id]` show nothing about any workshop — no name, date, price or instructor — only a "Sign up to see workshops" panel with **Sign up** and **Log in**, each returning to the page after (`?next=`). The API has no signed-out workshop read (`be-client.md` §2), so the page makes no request until there is a session: the point is that a studio's programme can't be lifted without an account.
+
 ### 4.1 Browse `/workshops`
 
 **Business logic**
