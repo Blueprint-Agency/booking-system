@@ -4,7 +4,7 @@ import { StudioMark } from "@/components/brand/studio-mark";
 /** The card every sign-in, set-password and refusal screen sits in. */
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-paper px-4 py-8 sm:px-6">
+    <div className="flex min-h-dvh items-center justify-center bg-paper px-4 py-8 sm:px-6">
       <div className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-2.5">
           <StudioMark size="auth" badge="Staff" />
