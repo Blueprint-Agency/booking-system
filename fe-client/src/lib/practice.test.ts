@@ -6,16 +6,21 @@ import {
   durationLabel,
   emptyLine,
   headline,
+  isCurrent,
   lifetimeLine,
   monthGrid,
   overviewLine,
   practiceBars,
   rangeLabel,
   rhythmSummary,
+  stepAnchor,
   streakLabel,
   studioToday,
   usualSlotLabel,
+  weekDays,
+  weekSessions,
   workshopLine,
+  yearColumns,
   type PracticeData,
 } from "./practice.ts";
 
@@ -25,6 +30,8 @@ function september(overrides: Partial<PracticeData> = {}, days: Record<number, [
     period: "month",
     from: "2026-09-01",
     to: "2026-09-30",
+    has_previous: true,
+    has_next: false,
     attended: 13,
     attended_classes: 11,
     attended_pt: 2,
@@ -200,6 +207,149 @@ test("the overview line is the lifetime total and this month's, and nothing befo
   assert.equal(overviewLine(september()), "164 sessions · 13 this month");
   assert.equal(overviewLine(september({ lifetime: { attended: 1, since: "2026-09-02" }, attended: 1 })), "1 session · 1 this month");
   assert.equal(overviewLine(september({ lifetime: { attended: 0, since: null }, attended: 0 })), null);
+});
+
+/** The week of Monday 28 September 2026 as `period=week` answers it. */
+function week(overrides: Partial<PracticeData> = {}, days: Record<number, [number, number]> = {}): PracticeData {
+  const dates = ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"];
+  return september({
+    period: "week",
+    from: dates[0],
+    to: dates[6],
+    attended: 1,
+    attended_classes: 1,
+    attended_pt: 0,
+    attended_workshops: 0,
+    previous_attended: 4,
+    buckets: dates.map((starts_on, i) => {
+      const [attended, booked] = days[i] ?? [0, 0];
+      return { starts_on, attended, booked };
+    }),
+    sessions: [],
+    ...overrides,
+  });
+}
+
+/** 2026 as `period=year` answers it: a bucket per month. */
+function year(overrides: Partial<PracticeData> = {}, months: number[] = []): PracticeData {
+  return september({
+    period: "year",
+    from: "2026-01-01",
+    to: "2026-12-31",
+    attended: 93,
+    previous_attended: 95,
+    buckets: Array.from({ length: 12 }, (_, i) => ({
+      starts_on: `2026-${String(i + 1).padStart(2, "0")}-01`,
+      attended: months[i] ?? 0,
+      booked: 0,
+    })),
+    ...overrides,
+  });
+}
+
+test("the range states the period's dates: a week, a month, a year", () => {
+  assert.equal(rangeLabel(week()), "28 Sep – 4 Oct");
+  assert.equal(rangeLabel(week({ from: "2026-09-21", to: "2026-09-27" })), "21 – 27 Sep");
+  assert.equal(rangeLabel(week({ from: "2025-12-29", to: "2026-01-04" })), "29 Dec 2025 – 4 Jan 2026");
+  assert.equal(rangeLabel(september()), "September 2026");
+  assert.equal(rangeLabel(year()), "2026");
+});
+
+test("each period is compared with the one before it, by name", () => {
+  assert.equal(comparisonLine(week({ attended: 4, previous_attended: 1 })), "3 more than last week");
+  assert.equal(comparisonLine(week({ attended: 4, previous_attended: 4 })), "Same as last week");
+  // A week that has passed looks back to the week before it, not to last week.
+  assert.equal(comparisonLine(week({ has_next: true, attended: 2, previous_attended: 3 })), "1 fewer than the week before");
+  assert.equal(comparisonLine(september()), "3 more than August");
+  assert.equal(comparisonLine(year()), "2 fewer than 2025");
+  assert.equal(comparisonLine(year({ previous_attended: 93 })), "Same as 2025");
+});
+
+test("the headline, the workshop line and the empty state name the period", () => {
+  const h = (s: PracticeData) => `${headline(s).count} ${headline(s).label}`;
+  assert.equal(h(week()), "1 session this week");
+  assert.equal(h(week({ has_next: true, attended: 4 })), "4 sessions that week");
+  assert.equal(h(year()), "93 sessions in 2026");
+  assert.equal(workshopLine(week({ attended_workshops: 1 })), "Also 1 workshop this week");
+  assert.equal(workshopLine(year({ attended_workshops: 4 })), "Also 4 workshops in 2026");
+  assert.equal(emptyLine(week({ attended: 0 })), "No sessions this week yet.");
+  assert.equal(emptyLine(year({ attended: 0 })), "No sessions in 2026 yet.");
+  // A period that has passed is not waiting for anything.
+  assert.equal(emptyLine(september({ attended: 0, from: "2026-08-01", to: "2026-08-31", has_next: true })), "No sessions in August.");
+  assert.equal(emptyLine(week({ attended: 0, has_next: true })), "No sessions that week.");
+});
+
+test("the period is current until a later one can be stepped to, and the streak says which run it is", () => {
+  assert.equal(isCurrent(september()), true);
+  assert.equal(isCurrent(year({ has_next: true })), false);
+  assert.equal(streakLabel(isCurrent(week())), "Weeks in a row");
+  assert.equal(streakLabel(isCurrent(year({ has_next: true }))), "Longest run of weeks");
+});
+
+test("stepping asks for the day before the period opens, or the day after it closes", () => {
+  assert.equal(stepAnchor(week(), -1), "2026-09-27");
+  assert.equal(stepAnchor(week(), 1), "2026-10-05");
+  assert.equal(stepAnchor(september(), -1), "2026-08-31");
+  assert.equal(stepAnchor(year(), -1), "2025-12-31");
+  assert.equal(stepAnchor(year(), 1), "2027-01-01");
+  // 1 March 2028 steps back into a leap February.
+  assert.equal(stepAnchor(september({ from: "2028-03-01", to: "2028-03-31" }), -1), "2028-02-29");
+});
+
+test("the chart's text equivalent names a week by its dates and a year by its number", () => {
+  assert.equal(rhythmSummary(week({}, { 0: [1, 0], 2: [0, 1], 5: [0, 1] })), "1 session attended in the week of 28 Sep – 4 Oct, and 2 booked.");
+  assert.equal(rhythmSummary(year()), "93 sessions attended in 2026.");
+});
+
+test("the week is Monday to Sunday, today marked, the days after it with nothing booked left blank", () => {
+  const days = weekDays(week({}, { 0: [1, 0], 2: [0, 1] }), "2026-09-28");
+  assert.deepEqual(
+    days.map((d) => d.weekday),
+    ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+  );
+  assert.deepEqual(days[0], { date: "2026-09-28", weekday: "Mon", attended: 1, booked: 0, today: true, future: false });
+  assert.deepEqual(days[2], { date: "2026-09-30", weekday: "Wed", attended: 0, booked: 1, today: false, future: true });
+  assert.equal(days.filter((d) => d.future).length, 6);
+  // A past week has no today and no future.
+  const lastWeek = week({ from: "2026-09-21", to: "2026-09-27", has_next: true });
+  lastWeek.buckets = Array.from({ length: 7 }, (_, i) => ({ starts_on: `2026-09-${21 + i}`, attended: 0, booked: 0 }));
+  const past = weekDays(lastWeek, "2026-09-28");
+  assert.equal(past[6]!.date, "2026-09-27");
+  assert.ok(past.every((d) => !d.today && !d.future));
+});
+
+test("the week's sessions list each one's day, name and start on the studio's clock, booked ones marked", () => {
+  const s = week({
+    sessions: [
+      { kind: "class", name: "Vinyasa Flow", starts_at: "2026-09-27T23:00:00Z", status: "attended" },
+      { kind: "class", name: "Hatha", starts_at: "2026-09-30T11:30:00Z", status: "booked" },
+      { kind: "pt", name: "Private session", starts_at: "2026-10-03T02:30:00Z", status: "booked" },
+    ],
+  });
+  assert.deepEqual(weekSessions(s), [
+    // 07:00 on Monday 28 September in Singapore: still Sunday in UTC.
+    { key: "2026-09-27T23:00:00Z-0", day: "Mon", name: "Vinyasa Flow", time: "7:00am", booked: false },
+    { key: "2026-09-30T11:30:00Z-1", day: "Wed", name: "Hatha", time: "7:30pm", booked: true },
+    { key: "2026-10-03T02:30:00Z-2", day: "Sat", name: "Private session", time: "10:30am", booked: true },
+  ]);
+  assert.deepEqual(weekSessions(september()), []);
+});
+
+test("the year is a column per month, the months after this one marked future", () => {
+  const cols = yearColumns(year({}, [9, 11, 8, 12, 10, 7, 13, 10, 13]), "2026-09-28");
+  assert.equal(cols.length, 12);
+  assert.deepEqual(cols[0], { month: "2026-01-01", initial: "J", name: "January", attended: 9, booked: 0, current: false, future: false });
+  assert.deepEqual(cols[8], { month: "2026-09-01", initial: "S", name: "September", attended: 13, booked: 0, current: true, future: false });
+  assert.deepEqual(
+    cols.map((c) => c.future),
+    [false, false, false, false, false, false, false, false, false, true, true, true],
+  );
+  // A past year has no current month and nothing to come.
+  const lastYear = year({ from: "2025-01-01", to: "2025-12-31", has_next: true });
+  lastYear.buckets = lastYear.buckets.map((b) => ({ ...b, starts_on: b.starts_on.replace("2026", "2025") }));
+  const past = yearColumns(lastYear, "2026-09-28");
+  assert.equal(past[0]!.month, "2025-01-01");
+  assert.ok(past.every((c) => !c.current && !c.future));
 });
 
 test("today is the studio's calendar day", () => {

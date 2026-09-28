@@ -613,20 +613,25 @@ Every package the member has bought, each marked **Active**, **Not started** (Do
 - Admin needs to issue / extend / pause / cancel memberships from a user-detail page (already partly built — D.4 commit).
 - Admin sees the same expiry milestones to drive comms (auto reminders).
 
-### 8.1c My practice `/account/practice` (as built, #340 / #341)
+### 8.1c My practice `/account/practice` (as built, #340 / #341 / #342)
 
-What the member attended this month, from `GET /me/bookings/attendance?period=month` (be-client §3). A **session** is a group class or a private session the member was marked attended at — imported history included; workshops are said separately and never counted in; no-shows, cancellations and sessions not yet ticked never show. Words and layout are `lib/practice.ts` (tested in `practice.test.ts`); the read is `lib/use-practice.ts`.
+What the member attended in a week, month or year, from `GET /me/bookings/attendance?period=week|month|year[&on=YYYY-MM-DD]` (be-client §3). A **session** is a group class or a private session the member was marked attended at — imported history included; workshops are said separately and never counted in; no-shows, cancellations and sessions not yet ticked never show. Words and layout are `lib/practice.ts` (tested in `practice.test.ts`); the read is `lib/use-practice.ts`. A period is **current** while there is no later one to step to (`has_next`).
 
 - **Placing**: in the account sidebar and the mobile account menu right after My bookings — "My practice", hint "Sessions you've attended". The page has the "‹ Account" back link below `lg`.
 - **Title and lifetime line**: "164 sessions since March 2025"; a member who has never attended reads "Your first class will show here".
-- **Headline**: the month ("September 2026"), then "13 sessions in September" (the number large, in the studio accent), then the comparison and the split on one line: "3 more than August · 11 classes · 2 private sessions" ("Same as August", "2 fewer than August"; a zero part of the split is left out).
-- **The calendar**: Monday first, a yoga-mat-shaped mark in the studio accent for each attended session on its day (up to three, then "+n"), a dashed mat for each session still booked later this month, today marked, days after today with nothing booked left blank. A legend says Attended (and Booked when there is any). Its text equivalent is the figure caption: "13 sessions attended in September 2026, and 1 booked." Mats are laid down on load; with reduced motion they are simply there.
-- **Three figures**: Time on the mat ("13 h 45 m"), Weeks in a row (current run, surviving a week not yet started), Your usual ("Tue · 7am", a dash under three sessions). Not shown before the first session ever.
+- **Period switch**: **Week / Month / Year** (the account's segmented tabs), opening on Month. Switching period goes to the current one.
+- **Stepper**: ‹ and › either side of the period's dates — "28 Sep – 4 Oct" ("21 – 27 Sep" inside one month, "29 Dec 2025 – 4 Jan 2026" across a year end), "September 2026", "2026". ‹ asks for the day before the period opens, › for the day after it closes; each is disabled where the backend says there is nothing (`has_previous`: never before the year of the first attended session; `has_next`: never past the current period). While the next period loads the last one stays up, dimmed, with both steps disabled.
+- **Headline**: "13 sessions in September" / "4 sessions this week" / "93 sessions in 2026" ("that week" for a past week), the number large in the studio accent, then the comparison and the split on one line: "3 more than August · 11 classes · 2 private sessions" — "than last week" (a past week: "than the week before"), "than August", "than 2025"; "Same as …", "… fewer than …"; a zero part of the split is left out.
+- **The chart**, one yoga-mat-shaped mark in the studio accent per attended session and a dashed one per session still booked in the current period (a legend says Attended, and Booked when there is any):
+  - **Week**: Monday to Sunday, a tall mat per session on its day (up to three, then "+n"), today marked with a dot, days after today with nothing booked left blank; under it the week's sessions, oldest first: "Mon · Vinyasa Flow" and "7:00am", "· Booked" on one still to come ("Private session" for a PT).
+  - **Month**: a calendar, Monday first, the same mats on each day, today marked, days after today with nothing booked left blank.
+  - **Year**: a column per month, a small mat per session stacked with the count on top, one scale across the columns (a busy year thins its mats); months not yet reached are left empty with their initial faded, never drawn as zero.
+  - Its text equivalent is the figure caption: "13 sessions attended in September 2026, and 1 booked.", "… in the week of 28 Sep – 4 Oct …", "… in 2026." Mats are laid down on load; with reduced motion they are simply there.
+- **Three figures**: Time on the mat ("13 h 45 m"), **Weeks in a row** for the current period (the current run, surviving a week not yet started) or **Longest run of weeks** for a past one, Your usual ("Tue · 7am", a dash under three sessions). Not shown before the first session ever.
 - **What you practised**: the (up to three) most-attended class types as bars, then **Private sessions** as one bar when there are any.
-- **Workshops**: "Also 1 workshop in September", none when there were none.
-- **Empty month**: "No sessions in September yet." with **Book a class**. **Book your next class** closes the page; both go to the schedule.
-- **Loading**: through `useCachedResource`, keyed by member, so a revisit draws at once and re-reads quietly, and a reply that lands after sign-out or for another member is dropped. The page holds under the page loader until its first read. A failed read shows "Couldn't load your practice." with Try again.
-- This slice is the Month view only: no Week / Month / Year switch and no stepping back yet (#340).
+- **Workshops**: "Also 1 workshop in September" / "this week" / "in 2026", none when there were none.
+- **Empty period**: "No sessions in September yet." / "No sessions this week yet." / "No sessions in 2026 yet." — without "yet" for a period that has passed ("No sessions in August.") — with **Book a class**. **Book your next class** closes the page; both go to the schedule.
+- **Loading**: through `useCachedResource`, keyed by member, period and day, so a revisit draws at once and re-reads quietly, a slow reply for a period the member has moved off never replaces the one on screen, and a reply that lands after sign-out or for another member is dropped. The page holds under the page loader until its first read. A failed read shows "Couldn't load your practice." with Try again.
 
 ### 8.1b My Merch `/account/merch`
 

@@ -1,11 +1,62 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { attendancePlan, attendedWithin, bucketCounts, streakWeeks, usualSlot } from './attendance-periods'
+import {
+  anchorRefusal,
+  attendancePlan,
+  attendedWithin,
+  bucketCounts,
+  longestRunWeeks,
+  periodSteps,
+  streakWeeks,
+  usualSlot,
+} from './attendance-periods'
 
 // A Saturday.
 const TODAY = '2026-09-26'
 
 describe('attendancePlan', () => {
+  test('week: Monday to Sunday around the day, a bucket per day, against the week before', () => {
+    const plan = attendancePlan('week', TODAY, null)
+    assert.equal(plan.from, '2026-09-21')
+    assert.equal(plan.to, '2026-09-27')
+    assert.deepEqual(plan.buckets, [
+      '2026-09-21',
+      '2026-09-22',
+      '2026-09-23',
+      '2026-09-24',
+      '2026-09-25',
+      '2026-09-26',
+      '2026-09-27',
+    ])
+    assert.deepEqual(plan.previous, { from: '2026-09-14', to: '2026-09-20' })
+  })
+
+  test('week: a Monday opens its own week and a Sunday closes it', () => {
+    const monday = attendancePlan('week', '2026-09-28', null)
+    assert.deepEqual([monday.from, monday.to], ['2026-09-28', '2026-10-04'])
+    assert.equal(attendancePlan('week', '2026-10-04', null).from, '2026-09-28')
+  })
+
+  test('week: a week across the year end keeps its seven days', () => {
+    const plan = attendancePlan('week', '2026-01-01', null)
+    assert.deepEqual([plan.from, plan.to], ['2025-12-29', '2026-01-04'])
+    assert.equal(plan.buckets.length, 7)
+    assert.deepEqual(plan.previous, { from: '2025-12-22', to: '2025-12-28' })
+  })
+
+  test('anchored: the month, year and quarter an earlier day falls in, each against the one before it', () => {
+    const august = attendancePlan('month', '2026-08-17', null)
+    assert.deepEqual([august.from, august.to, august.buckets.length], ['2026-08-01', '2026-08-31', 31])
+    assert.deepEqual(august.previous, { from: '2026-07-01', to: '2026-07-31' })
+
+    const lastYear = attendancePlan('year', '2025-03-04', null)
+    assert.deepEqual([lastYear.from, lastYear.to], ['2025-01-01', '2025-12-31'])
+    assert.deepEqual(lastYear.previous, { from: '2024-01-01', to: '2024-12-31' })
+
+    const quarter = attendancePlan('quarter', '2026-05-20', null)
+    assert.deepEqual([quarter.from, quarter.to], ['2026-03-01', '2026-05-31'])
+  })
+
   test('month: the calendar month, a bucket per day, against last month', () => {
     const plan = attendancePlan('month', TODAY, null)
     assert.equal(plan.from, '2026-09-01')
@@ -73,8 +124,95 @@ describe('attendancePlan', () => {
   })
 })
 
+describe('anchorRefusal', () => {
+  const first = '2025-03-04'
+
+  test('any day up to the end of the current period is answered', () => {
+    assert.equal(anchorRefusal('week', TODAY, TODAY, first), null)
+    // Sunday 27 September closes the week today is in.
+    assert.equal(anchorRefusal('week', '2026-09-27', TODAY, first), null)
+    assert.equal(anchorRefusal('month', '2026-09-30', TODAY, first), null)
+    assert.equal(anchorRefusal('year', '2026-12-31', TODAY, first), null)
+  })
+
+  test('a day in a later period is refused', () => {
+    assert.equal(anchorRefusal('week', '2026-09-28', TODAY, first), 'period_in_future')
+    assert.equal(anchorRefusal('month', '2026-10-01', TODAY, first), 'period_in_future')
+    assert.equal(anchorRefusal('year', '2027-01-01', TODAY, first), 'period_in_future')
+  })
+
+  test('a day before the year of the first attended session is refused; that year itself is not', () => {
+    assert.equal(anchorRefusal('month', '2025-01-01', TODAY, first), null)
+    assert.equal(anchorRefusal('month', '2024-12-31', TODAY, first), 'period_before_first_year')
+    assert.equal(anchorRefusal('year', '2024-06-01', TODAY, first), 'period_before_first_year')
+  })
+
+  test('a member who has attended nothing can look back through this year alone', () => {
+    assert.equal(anchorRefusal('month', '2026-01-10', TODAY, null), null)
+    assert.equal(anchorRefusal('month', '2025-12-10', TODAY, null), 'period_before_first_year')
+  })
+})
+
+describe('periodSteps', () => {
+  const first = '2025-03-04'
+
+  test('the current period has an earlier one and no later one', () => {
+    assert.deepEqual(periodSteps(attendancePlan('month', TODAY, first), TODAY, first), { hasPrevious: true, hasNext: false })
+    assert.deepEqual(periodSteps(attendancePlan('week', TODAY, first), TODAY, first), { hasPrevious: true, hasNext: false })
+  })
+
+  test('a past period has a later one', () => {
+    assert.deepEqual(periodSteps(attendancePlan('month', '2026-08-01', first), TODAY, first), {
+      hasPrevious: true,
+      hasNext: true,
+    })
+  })
+
+  test('the first year stops the steps back, whatever the period', () => {
+    assert.deepEqual(periodSteps(attendancePlan('year', '2025-03-04', first), TODAY, first), {
+      hasPrevious: false,
+      hasNext: true,
+    })
+    assert.equal(periodSteps(attendancePlan('month', '2025-01-20', first), TODAY, first).hasPrevious, false)
+    assert.equal(periodSteps(attendancePlan('month', '2025-02-20', first), TODAY, first).hasPrevious, true)
+    // The week of 1 January 2025 opens on 30 December 2024; the one before lies wholly in 2024.
+    assert.equal(periodSteps(attendancePlan('week', '2025-01-01', first), TODAY, first).hasPrevious, false)
+    assert.equal(periodSteps(attendancePlan('week', '2025-01-06', first), TODAY, first).hasPrevious, true)
+  })
+
+  test('a member who has attended nothing has only this year to step through', () => {
+    assert.deepEqual(periodSteps(attendancePlan('year', TODAY, null), TODAY, null), { hasPrevious: false, hasNext: false })
+    assert.equal(periodSteps(attendancePlan('month', TODAY, null), TODAY, null).hasPrevious, true)
+  })
+
+  test('all time has nothing before or after it', () => {
+    assert.deepEqual(periodSteps(attendancePlan('all', TODAY, first), TODAY, first), { hasPrevious: false, hasNext: false })
+  })
+})
+
 describe('bucketCounts', () => {
   const month = attendancePlan('month', TODAY, null)
+
+  test('week: each day is its own bucket, Monday to Sunday', () => {
+    const counts = bucketCounts(attendancePlan('week', TODAY, null), [
+      { day: '2026-09-20', attended: 4 }, // the Sunday before
+      { day: '2026-09-21', attended: 1 },
+      { day: '2026-09-27', attended: 1, booked: 1 },
+      { day: '2026-09-28', attended: 4 }, // the Monday after
+    ])
+    assert.deepEqual(
+      counts.map(c => [c.startsOn, c.attended, c.booked]),
+      [
+        ['2026-09-21', 1, 0],
+        ['2026-09-22', 0, 0],
+        ['2026-09-23', 0, 0],
+        ['2026-09-24', 0, 0],
+        ['2026-09-25', 0, 0],
+        ['2026-09-26', 0, 0],
+        ['2026-09-27', 1, 1],
+      ],
+    )
+  })
 
   test('month: each day is its own bucket, attended and booked side by side', () => {
     const counts = bucketCounts(month, [
@@ -154,6 +292,31 @@ describe('streakWeeks', () => {
   test('a run crosses the year end', () => {
     // Tuesday 6 January 2026: its week began Monday 5 January, the one before on 29 December.
     assert.equal(streakWeeks('2026-01-06', ['2025-12-24', '2025-12-31', '2026-01-05']), 3)
+  })
+})
+
+describe('longestRunWeeks', () => {
+  const year2025 = { from: '2025-01-01', to: '2025-12-31' }
+
+  test('the longest run of Monday weeks with a session inside the period', () => {
+    // The weeks of 3, 10 and 17 March (a run of three), then of 7 and 14 April (two).
+    assert.equal(longestRunWeeks(year2025, ['2025-03-03', '2025-03-12', '2025-03-19', '2025-04-07', '2025-04-15']), 3)
+    assert.equal(longestRunWeeks(year2025, []), 0)
+  })
+
+  test('two sessions in one week count that week once', () => {
+    assert.equal(longestRunWeeks(year2025, ['2025-03-03', '2025-03-04', '2025-03-09']), 1)
+  })
+
+  test('sessions outside the period are left out, though a week split by its edge still counts', () => {
+    // The week of 29 December 2025 runs into 2026; only its 2025 days are 2025's.
+    assert.equal(longestRunWeeks(year2025, ['2025-12-22', '2025-12-30', '2026-01-05', '2026-01-12']), 2)
+    assert.equal(longestRunWeeks(year2025, ['2024-12-30', '2025-01-06']), 1)
+  })
+
+  test('a run crosses the year end inside a period that does', () => {
+    const quarter = { from: '2025-11-01', to: '2026-01-31' }
+    assert.equal(longestRunWeeks(quarter, ['2025-12-22', '2025-12-31', '2026-01-05']), 3)
   })
 })
 

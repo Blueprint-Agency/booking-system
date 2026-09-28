@@ -12,22 +12,12 @@
  */
 import { cn } from "@/lib/utils";
 import { monthGrid, rhythmSummary, type PracticeData } from "@/lib/practice";
+import { Mat, PracticeLegend } from "./practice-mats";
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
 /** Mats a day's cell has room for before it says "+n". */
 const MATS_PER_DAY = 3;
-
-function Mat({ booked, delay }: { booked?: boolean; delay?: number }) {
-  return (
-    <span
-      className={cn(
-        "block h-6 w-2 shrink-0 rounded-[3px]",
-        booked ? "border-[1.5px] border-dashed border-accent" : "mat-lay bg-accent",
-      )}
-      style={delay === undefined ? undefined : { animationDelay: `${delay}ms` }}
-    />
-  );
-}
+const MAT = "h-6 w-2 rounded-[3px]";
 
 export function PracticeMonth({ summary, today }: { summary: PracticeData; today: string }) {
   const { leading, days } = monthGrid(summary, today);
@@ -60,32 +50,19 @@ export function PracticeMonth({ summary, today }: { summary: PracticeData; today
               </span>
               <span className="flex items-end gap-0.5">
                 {Array.from({ length: attended }, (_, k) => (
-                  <Mat key={`a${k}`} delay={d.day * 18 + k * 30} />
+                  <Mat key={`a${k}`} kind="attended" className={MAT} delay={d.day * 18 + k * 30} />
                 ))}
                 {Array.from({ length: booked }, (_, k) => (
-                  <Mat key={`b${k}`} booked />
+                  <Mat key={`b${k}`} kind="booked" className={MAT} />
                 ))}
-                {attended + booked === 0 && !d.future && (
-                  <span className="block h-6 w-2 rounded-[3px] bg-ink/[0.07]" />
-                )}
+                {attended + booked === 0 && !d.future && <Mat kind="empty" className={MAT} />}
               </span>
               {more > 0 && <span className="text-[9px] font-bold leading-none text-muted">+{more}</span>}
             </div>
           );
         })}
       </div>
-      <div aria-hidden className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="block h-4 w-[7px] rounded-[3px] bg-accent" />
-          Attended
-        </span>
-        {anyBooked && (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="block h-4 w-[7px] rounded-[3px] border-[1.5px] border-dashed border-accent" />
-            Booked
-          </span>
-        )}
-      </div>
+      <PracticeLegend booked={anyBooked} />
       <figcaption className="sr-only">{rhythmSummary(summary)}</figcaption>
     </figure>
   );

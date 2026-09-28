@@ -19,13 +19,16 @@
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { now } from '../../lib/clock'
-import { NotFoundError } from '../../shared/errors'
+import { AppError, NotFoundError } from '../../shared/errors'
 import { addDays, localDateOf, zonedInstant, type PlainDate } from '../schedule/series-dates'
 import { loadTenantById } from '../tenants/tenants'
 import {
+  anchorRefusal,
   attendancePlan,
   attendedWithin,
   bucketCounts,
+  longestRunWeeks,
+  periodSteps,
   streakWeeks,
   usualSlot,
   type AttendancePeriod,
@@ -37,10 +40,22 @@ import {
 
 const TOP_CLASS_TYPES = 3
 
+/** A session in a week: attended, or booked and not yet started. */
+export interface PracticeSession {
+  kind: 'class' | 'pt'
+  /** The class type's name; "Private session" for a private session. */
+  name: string
+  startsAt: Date
+  status: 'attended' | 'booked'
+}
+
 export interface MemberAttendance {
   period: AttendancePeriod
   from: PlainDate
   to: PlainDate
+  /** An earlier timeframe the member can step back to, and a later one up to today's. */
+  hasPrevious: boolean
+  hasNext: boolean
   /** Group classes and private sessions attended in the timeframe. */
   attended: number
   attendedClasses: number
@@ -50,9 +65,12 @@ export interface MemberAttendance {
   /** The equal-length timeframe before; null for `all`. */
   previousAttended: number | null
   buckets: BucketCount[]
+  /** `week` alone: every session attended or booked in it, oldest first. */
+  sessions: PracticeSession[] | null
   /** Minutes of the sessions attended in the timeframe. */
   minutes: number
-  /** Consecutive Monday weeks with a session attended, up to this week (or last). */
+  /** Consecutive Monday weeks with a session attended, up to this week (or
+   *  last); for a timeframe that has ended, the longest such run inside it. */
   streakWeeks: number
   usualSlot: UsualSlot | null
   /** The most-attended class types in the timeframe, most first, the name breaking a tie. Classes only. */
@@ -85,25 +103,36 @@ function instants(span: DateSpan, timezone: string) {
 
 /**
  * The member's class and private-session bookings with their session's times,
- * as a subquery with `kind`, `state`, `check_in_state`, `lifecycle`,
- * `starts_at` and `ends_at`.
+ * as a subquery with `kind`, `name` (the class type's, or "Private session"),
+ * `state`, `check_in_state`, `lifecycle`, `starts_at` and `ends_at`.
  */
 const memberSessions = (tenantId: string, clientId: string) => sql`(
-  select b.kind, b.state, b.check_in_state, c.lifecycle, c.starts_at, c.ends_at
+  select b.kind, ct.name, b.state, b.check_in_state, c.lifecycle, c.starts_at, c.ends_at
   from bookings b
   join classes c on c.tenant_id = b.tenant_id and c.id = b.class_id
+  join class_types ct on ct.tenant_id = c.tenant_id and ct.id = c.class_type_id
   where b.tenant_id = ${tenantId}::uuid and b.client_id = ${clientId}::uuid and b.kind = 'class'
   union all
-  select b.kind, b.state, b.check_in_state, p.lifecycle, p.starts_at, p.ends_at
+  select b.kind, 'Private session', b.state, b.check_in_state, p.lifecycle, p.starts_at, p.ends_at
   from bookings b
   join pt_sessions p on p.tenant_id = b.tenant_id and p.id = b.pt_session_id
   where b.tenant_id = ${tenantId}::uuid and b.client_id = ${clientId}::uuid and b.kind = 'pt'
 )`
 
+/** Upcoming: a confirmed booking of an active session that has not started by `at`. */
+const upcoming = (at: Date) =>
+  sql`s.state = 'confirmed' and s.lifecycle = 'active' and s.starts_at > ${at.toISOString()}::timestamptz`
+
+/**
+ * The practice summary for the timeframe `period` containing the day `on`
+ * (today when not given). An `on` past the timeframe containing today, or
+ * before the year of the member's first attended session, is refused `422`.
+ */
 export async function memberAttendance(
   tenantId: string,
   clientId: string,
   period: AttendancePeriod,
+  on?: PlainDate,
 ): Promise<MemberAttendance> {
   const tenant = await loadTenantById(tenantId)
   if (!tenant) throw new NotFoundError('tenant_not_found')
@@ -128,16 +157,19 @@ export async function memberAttendance(
   )
   const firstDay = attended.reduce<PlainDate | null>((min, r) => (min === null || r.day < min ? r.day : min), null)
 
-  const plan = attendancePlan(period, today, firstDay)
-  const shown = instants(plan, timezone)
+  const anchor = on ?? today
+  const refusal = anchorRefusal(period, anchor, today, firstDay)
+  if (refusal) throw new AppError(422, refusal, { period, on: anchor })
 
-  const [booked, types, workshops] = await Promise.all([
+  const plan = attendancePlan(period, anchor, firstDay)
+  const shown = instants(plan, timezone)
+  const current = within(plan, today)
+
+  const [booked, types, workshops, sessions] = await Promise.all([
     db.execute<{ day: PlainDate; booked: number }>(sql`
       select to_char(s.starts_at at time zone ${timezone}, 'YYYY-MM-DD') as day, count(*)::int as booked
       from ${memberSessions(tenantId, clientId)} s
-      where s.state = 'confirmed'
-        and s.lifecycle = 'active'
-        and s.starts_at > ${at.toISOString()}::timestamptz
+      where ${upcoming(at)}
         and s.starts_at >= ${shown.from}::timestamptz
         and s.starts_at < ${shown.until}::timestamptz
       group by 1
@@ -171,6 +203,16 @@ export async function memberAttendance(
         and w.starts_at >= ${shown.from}::timestamptz
         and w.starts_at < ${shown.until}::timestamptz
     `),
+    period === 'week'
+      ? db.execute<{ kind: 'class' | 'pt'; name: string; starts_at: string | Date; attended: boolean }>(sql`
+          select s.kind, s.name, s.starts_at, s.check_in_state = 'attended' as attended
+          from ${memberSessions(tenantId, clientId)} s
+          where (s.check_in_state = 'attended' or (${upcoming(at)}))
+            and s.starts_at >= ${shown.from}::timestamptz
+            and s.starts_at < ${shown.until}::timestamptz
+          order by s.starts_at, s.name
+        `)
+      : null,
   ])
 
   const days = new Map<PlainDate, DayCount>()
@@ -180,6 +222,7 @@ export async function memberAttendance(
   const dayCounts = [...days.values()]
 
   const inPlan = attended.filter(r => within(plan, r.day))
+  const attendedDays = attended.map(r => r.day)
   const count = (rows: AttendedRow[]) => rows.reduce((n, r) => n + r.sessions, 0)
   const lastAt = attended.reduce<Date | null>((max, r) => {
     const t = new Date(r.last_at)
@@ -190,14 +233,23 @@ export async function memberAttendance(
     period,
     from: plan.from,
     to: plan.to,
+    ...periodSteps(plan, today, firstDay),
     attended: attendedWithin(plan, dayCounts),
     attendedClasses: count(inPlan.filter(r => r.kind === 'class')),
     attendedPt: count(inPlan.filter(r => r.kind === 'pt')),
     attendedWorkshops: workshops[0]?.attended ?? 0,
     previousAttended: plan.previous ? attendedWithin(plan.previous, dayCounts) : null,
     buckets: bucketCounts(plan, dayCounts),
+    sessions:
+      sessions &&
+      Array.from(sessions).map(s => ({
+        kind: s.kind,
+        name: s.name,
+        startsAt: new Date(s.starts_at),
+        status: s.attended ? 'attended' : 'booked',
+      })),
     minutes: inPlan.reduce((n, r) => n + r.minutes, 0),
-    streakWeeks: streakWeeks(today, attended.map(r => r.day)),
+    streakWeeks: current ? streakWeeks(today, attendedDays) : longestRunWeeks(plan, attendedDays),
     usualSlot: usualSlot(inPlan.flatMap(r => Array.from({ length: r.sessions }, () => ({ day: r.day, hour: r.hour })))),
     topClassTypes: Array.from(types).map(t => ({ name: t.name, attended: t.attended })),
     lifetime: { attended: count(attended), since: firstDay },

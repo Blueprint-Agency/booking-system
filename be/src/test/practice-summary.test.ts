@@ -40,12 +40,15 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
     period: string
     from: string
     to: string
+    has_previous: boolean
+    has_next: boolean
     attended: number
     attended_classes: number
     attended_pt: number
     attended_workshops: number
     previous_attended: number | null
     buckets: { starts_on: string; attended: number; booked: number }[]
+    sessions?: { kind: 'class' | 'pt'; name: string; starts_at: string; status: 'attended' | 'booked' }[]
     minutes: number
     streak_weeks: number
     usual_slot: { weekday: number; hour: number } | null
@@ -188,16 +191,17 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
     })
   }
 
-  async function summary(who: Member, period?: string): Promise<{ status: number; body: Summary }> {
-    const res = await harness.app.request(`/api/v1/me/bookings/attendance${period ? `?period=${period}` : ''}`, {
+  async function summary(who: Member, period?: string, on?: string): Promise<{ status: number; body: Summary }> {
+    const query = new URLSearchParams({ ...(period && { period }), ...(on && { on }) }).toString()
+    const res = await harness.app.request(`/api/v1/me/bookings/attendance${query ? `?${query}` : ''}`, {
       headers: who.headers,
     })
     const text = await res.text()
     return { status: res.status, body: text ? JSON.parse(text) : null }
   }
 
-  async function summaryOk(who: Member, period?: string): Promise<Summary> {
-    const res = await summary(who, period)
+  async function summaryOk(who: Member, period?: string, on?: string): Promise<Summary> {
+    const res = await summary(who, period, on)
     assert.equal(res.status, 200, JSON.stringify(res.body))
     return res.body
   }
@@ -398,7 +402,7 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
     ])
     assert.equal(all.attended, 8)
 
-    const refused = await summary(di, 'week')
+    const refused = await summary(di, 'decade')
     assert.equal(refused.status, 400)
   })
 
@@ -418,8 +422,9 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
       await privateSession(at, who, '2026-09-21T01:00:00Z', { checkIn: 'pending' })
     }
 
-    for (const period of ['month', 'quarter', 'year', 'all']) {
+    for (const period of ['week', 'month', 'quarter', 'year', 'all']) {
       const s = await summaryOk(ed, period)
+      if (period === 'week') assert.deepEqual(s.sessions, [], period)
       assert.equal(s.attended, 0, period)
       assert.equal(s.attended_pt, 0, period)
       assert.equal(s.attended_workshops, 0, period)
@@ -435,6 +440,8 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
       assert.deepEqual([s.attended, s.attended_classes, s.attended_pt, s.attended_workshops], [2, 1, 1, 1])
       assert.equal(s.buckets.reduce((n, b) => n + b.booked, 0), 2)
       assert.equal(s.lifetime.attended, 2)
+      // This week (14–20 September) holds their class on the 20th; Ed's lists nothing.
+      assert.equal((await summaryOk(who, 'week')).sessions!.length, 1)
     }
 
     // Gus's session, sent to studio one's hostname, reads nothing there.
@@ -544,5 +551,130 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
     for (const period of ['month', 'year', 'all']) {
       assert.deepEqual((await summaryOk(ola, period)).lifetime, { attended: 3, since: '2025-03-01' }, period)
     }
+  })
+
+  test('ACC-26 the week is Monday to Sunday on the studio’s clock, a bucket per day, against the week before, listing each session attended or booked, oldest first', async () => {
+    // Tuesday 15 September, 14:00 in Sydney: this week runs Monday 14 to Sunday 20 September.
+    harness.clock.set(NOW)
+    const pia = await member(two, 'Pia Week')
+    // 23:30 on Sunday 13 and 00:30 on Monday 14 September in Sydney — both Sunday in UTC.
+    await history(two, pia, '2026-09-13T13:30:00Z', { type: 'Alpha' })
+    await history(two, pia, '2026-09-13T14:30:00Z', { type: 'Bravo' })
+    await privateSession(two, pia, '2026-09-14T01:00:00Z')
+    // Still to come this week: a class on Thursday and a private session on Saturday.
+    await history(two, pia, '2026-09-17T08:00:00Z', { type: 'Charlie', checkIn: 'pending' })
+    await privateSession(two, pia, '2026-09-19T00:00:00Z', { checkIn: 'pending' })
+    // Neither attended nor booked: one cancelled, one this morning never ticked, one a no-show.
+    await history(two, pia, '2026-09-18T08:00:00Z', { checkIn: 'pending', state: 'cancelled' })
+    await history(two, pia, '2026-09-14T22:00:00Z', { checkIn: 'pending' })
+    await history(two, pia, '2026-09-15T00:00:00Z', { checkIn: 'no_show', state: 'no_show' })
+    // Next Monday: outside the week.
+    await history(two, pia, '2026-09-20T14:30:00Z', { checkIn: 'pending' })
+
+    const week = await summaryOk(pia, 'week')
+    assert.equal(week.period, 'week')
+    assert.deepEqual([week.from, week.to], ['2026-09-14', '2026-09-20'])
+    assert.deepEqual([week.attended, week.attended_classes, week.attended_pt], [2, 1, 1])
+    assert.equal(week.previous_attended, 1, 'the Sunday class is last week’s')
+    assert.deepEqual(
+      week.buckets.map(b => [b.starts_on, b.attended, b.booked]),
+      [
+        ['2026-09-14', 2, 0],
+        ['2026-09-15', 0, 0],
+        ['2026-09-16', 0, 0],
+        ['2026-09-17', 0, 1],
+        ['2026-09-18', 0, 0],
+        ['2026-09-19', 0, 1],
+        ['2026-09-20', 0, 0],
+      ],
+    )
+    assert.deepEqual(week.sessions, [
+      { kind: 'class', name: TYPE('Bravo'), starts_at: '2026-09-13T14:30:00.000Z', status: 'attended' },
+      { kind: 'pt', name: 'Private session', starts_at: '2026-09-14T01:00:00.000Z', status: 'attended' },
+      { kind: 'class', name: TYPE('Charlie'), starts_at: '2026-09-17T08:00:00.000Z', status: 'booked' },
+      { kind: 'pt', name: 'Private session', starts_at: '2026-09-19T00:00:00.000Z', status: 'booked' },
+    ])
+    assert.deepEqual([week.has_previous, week.has_next], [true, false])
+
+    // Only the week lists its sessions.
+    assert.equal((await summaryOk(pia, 'month')).sessions, undefined)
+  })
+
+  test('ACC-27 an earlier week, month or year is answered for itself against the one before, back to the year of the first session and no later than today’s', async () => {
+    harness.clock.set(NOW)
+    const quo = await member(one, 'Quo Anchor')
+    await history(one, quo, '2025-03-04T01:00:00Z') // the first: 2025 is as far back as it goes
+    await history(one, quo, '2025-06-10T01:00:00Z')
+    await history(one, quo, '2026-07-08T01:00:00Z')
+    await history(one, quo, '2026-08-05T01:00:00Z')
+    await privateSession(one, quo, '2026-08-19T01:00:00Z')
+    await history(one, quo, '2026-09-02T01:00:00Z')
+    await history(one, quo, '2026-09-25T01:00:00Z', { checkIn: 'pending' }) // still to come
+
+    const august = await summaryOk(quo, 'month', '2026-08-10')
+    assert.deepEqual([august.from, august.to], ['2026-08-01', '2026-08-31'])
+    assert.deepEqual([august.attended, august.attended_pt, august.previous_attended], [2, 1, 1])
+    assert.equal(august.buckets.length, 31)
+    assert.deepEqual([august.has_previous, august.has_next], [true, true])
+    assert.ok(august.buckets.every(b => b.booked === 0), 'nothing is booked in a period that has passed')
+    // What follows the period still stands whole.
+    assert.deepEqual(august.lifetime, { attended: 6, since: '2025-03-04' })
+
+    const lastYear = await summaryOk(quo, 'year', '2025-06-01')
+    assert.deepEqual([lastYear.from, lastYear.to], ['2025-01-01', '2025-12-31'])
+    assert.deepEqual([lastYear.attended, lastYear.previous_attended], [2, 0])
+    assert.deepEqual([lastYear.has_previous, lastYear.has_next], [false, true])
+    assert.ok(lastYear.buckets.every(b => b.booked === 0))
+
+    const thisYear = await summaryOk(quo, 'year')
+    assert.deepEqual([thisYear.attended, thisYear.previous_attended], [4, 2])
+    assert.deepEqual([thisYear.has_previous, thisYear.has_next], [true, false])
+
+    // January 2025 is the first year's; nothing before it.
+    const january = await summaryOk(quo, 'month', '2025-01-15')
+    assert.deepEqual([january.attended, january.has_previous, january.has_next], [0, false, true])
+    // The last day of the week today is in is still this week.
+    const sunday = await summaryOk(quo, 'week', '2026-09-20')
+    assert.deepEqual([sunday.from, sunday.has_next], ['2026-09-14', false])
+
+    for (const [period, on, error] of [
+      ['month', '2024-12-31', 'period_before_first_year'],
+      ['year', '2024-06-01', 'period_before_first_year'],
+      ['month', '2026-10-01', 'period_in_future'],
+      ['week', '2026-09-21', 'period_in_future'],
+      ['year', '2027-01-01', 'period_in_future'],
+    ] as const) {
+      const refused = await summary(quo, period, on)
+      assert.equal(refused.status, 422, `${period} ${on}`)
+      assert.equal((refused.body as unknown as { error: string }).error, error, `${period} ${on}`)
+    }
+    assert.equal((await summary(quo, 'month', '2026-02-30')).status, 400)
+    assert.equal((await summary(quo, 'month', 'last')).status, 400)
+
+    // A member who has never attended can step back through this year alone.
+    const rae = await member(one, 'Rae New')
+    assert.equal((await summaryOk(rae, 'month', '2026-01-10')).has_previous, false)
+    assert.equal((await summary(rae, 'month', '2025-12-10')).status, 422)
+  })
+
+  test('ACC-28 a period that has ended shows its longest run of weeks, counting only its own days, a run across the year end included', async () => {
+    harness.clock.set(NOW)
+    const sol = await member(one, 'Sol Runs')
+    // March 2025: four Monday weeks in a row.
+    for (const day of ['03-03', '03-12', '03-19', '03-26']) await history(one, sol, `2025-${day}T01:00:00Z`)
+    await history(one, sol, '2025-04-15T01:00:00Z')
+    // Five weeks in a row across the year end: three of them 2025's.
+    for (const day of ['2025-12-16', '2025-12-23', '2025-12-30', '2026-01-06', '2026-01-13']) {
+      await history(one, sol, `${day}T01:00:00Z`)
+    }
+
+    assert.equal((await summaryOk(sol, 'year', '2025-06-01')).streak_weeks, 4)
+    assert.equal((await summaryOk(sol, 'quarter', '2026-01-15')).streak_weeks, 5)
+    assert.equal((await summaryOk(sol, 'month', '2025-12-01')).streak_weeks, 3)
+    assert.equal((await summaryOk(sol, 'week', '2025-03-12')).streak_weeks, 1)
+    assert.equal((await summaryOk(sol, 'week', '2025-05-05')).streak_weeks, 0)
+    // The periods containing today keep the current run, which has lapsed.
+    assert.equal((await summaryOk(sol, 'month')).streak_weeks, 0)
+    assert.equal((await summaryOk(sol, 'year')).streak_weeks, 0)
   })
 })

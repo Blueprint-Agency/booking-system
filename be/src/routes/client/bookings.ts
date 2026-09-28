@@ -7,6 +7,7 @@ import { previewMemberClassCancel } from '../../services/bookings/cancel-preview
 import { listClassBookings, getClassBookingDetail, type ClassBookingRow } from '../../services/bookings/list'
 import { memberAttendance } from '../../services/bookings/attendance'
 import { ATTENDANCE_PERIODS } from '../../services/bookings/attendance-periods'
+import { isIsoDate } from '../../services/tenants/term-dates'
 import { tenantId } from '../../middleware/tenant'
 
 function bookingRow(b: ClassBookingRow) {
@@ -45,21 +46,37 @@ const app = new Hono()
   })
   .get(
     '/attendance',
-    zValidator('query', z.object({ period: z.enum(ATTENDANCE_PERIODS).default('month') })),
+    zValidator(
+      'query',
+      z.object({
+        period: z.enum(ATTENDANCE_PERIODS).default('month'),
+        on: z.string().refine(isIsoDate, { message: 'a date like 2026-01-31' }).optional(),
+      }),
+    ),
     async c => {
       const clientId = c.get('clientId')
-      const { period } = c.req.valid('query')
-      const summary = await memberAttendance(tenantId(c), clientId, period)
+      const { period, on } = c.req.valid('query')
+      const summary = await memberAttendance(tenantId(c), clientId, period, on)
       return c.json({
         period: summary.period,
         from: summary.from,
         to: summary.to,
+        has_previous: summary.hasPrevious,
+        has_next: summary.hasNext,
         attended: summary.attended,
         attended_classes: summary.attendedClasses,
         attended_pt: summary.attendedPt,
         attended_workshops: summary.attendedWorkshops,
         previous_attended: summary.previousAttended,
         buckets: summary.buckets.map(b => ({ starts_on: b.startsOn, attended: b.attended, booked: b.booked })),
+        ...(summary.sessions && {
+          sessions: summary.sessions.map(s => ({
+            kind: s.kind,
+            name: s.name,
+            starts_at: s.startsAt.toISOString(),
+            status: s.status,
+          })),
+        }),
         minutes: summary.minutes,
         streak_weeks: summary.streakWeeks,
         usual_slot: summary.usualSlot,

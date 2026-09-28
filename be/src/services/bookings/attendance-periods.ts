@@ -4,18 +4,26 @@
  * is compared against — and the two figures read off the calendar, the weeks
  * in a row and the usual slot.
  *
- *   - month:   the current calendar month, a bucket per day.
- *   - quarter: the current month and the two before it, in weeks.
- *   - year:    the current calendar year, one bucket per month.
+ * Each timeframe is the one containing a day — today, or an earlier day the
+ * member stepped back to (#342):
+ *
+ *   - week:    Monday to Sunday, a bucket per day.
+ *   - month:   the calendar month, a bucket per day.
+ *   - quarter: the month and the two before it, in weeks.
+ *   - year:    the calendar year, one bucket per month.
  *   - all:     one bucket per year, from the first attended class.
+ *
+ * A member can step back no further than the year of their first attended
+ * session (this year, when there is none), and forward no further than the
+ * timeframe containing today.
  *
  * A timeframe that does not start on a bucket boundary clips its first bucket
  * to its own first day — July 2026 starts on a Wednesday, so a quarter from it
  * opens with the week of 1–5 July — so no bucket ever counts a day outside the
  * timeframe.
  *
- * The comparison is the equal-length period before: last month, the three
- * months before, last year. `all` has nothing before it.
+ * The comparison is the equal-length period before: the week before, last
+ * month, the three months before, last year. `all` has nothing before it.
  *
  * Everything is a plain date in the Tenant's own zone; turning one into an
  * instant is the caller's. Pure: no database, no clock. See
@@ -23,7 +31,7 @@
  */
 import { addDays, isoWeekday, type IsoWeekday, type PlainDate } from '../schedule/series-dates'
 
-export const ATTENDANCE_PERIODS = ['month', 'quarter', 'year', 'all'] as const
+export const ATTENDANCE_PERIODS = ['week', 'month', 'quarter', 'year', 'all'] as const
 export type AttendancePeriod = (typeof ATTENDANCE_PERIODS)[number]
 
 /** A run of days, both ends included. */
@@ -116,18 +124,23 @@ const monthsBefore = (first: PlainDate, months: number): DateSpan => ({
 })
 
 /**
- * The timeframe `period` names on `today`. `firstAttendedOn` — the day of the
- * member's first attended class, if any — is read only by `all`; a member who
- * has attended nothing gets this year alone.
+ * The timeframe `period` that contains the day `on`. `firstAttendedOn` — the
+ * day of the member's first attended class, if any — is read only by `all`; a
+ * member who has attended nothing gets this year alone.
  */
 export function attendancePlan(
   period: AttendancePeriod,
-  today: PlainDate,
+  on: PlainDate,
   firstAttendedOn: PlainDate | null,
 ): AttendancePlan {
-  const month = firstOfMonth(today)
+  const month = firstOfMonth(on)
   const monthEnd = addDays(addMonths(month, 1), -1)
   switch (period) {
+    case 'week': {
+      const from = mondayOf(on)
+      const to = addDays(from, 6)
+      return { period, from, to, buckets: days(from, to), previous: { from: addDays(from, -7), to: addDays(from, -1) } }
+    }
     case 'month':
       return { period, from: month, to: monthEnd, buckets: days(month, monthEnd), previous: monthsBefore(month, 1) }
     case 'quarter': {
@@ -135,15 +148,55 @@ export function attendancePlan(
       return { period, from, to: monthEnd, buckets: weekStarts(from, monthEnd), previous: monthsBefore(from, 3) }
     }
     case 'year': {
-      const from = firstOfYear(today)
-      const to = lastOfYear(today)
+      const from = firstOfYear(on)
+      const to = lastOfYear(on)
       return { period, from, to, buckets: monthStarts(from, to), previous: monthsBefore(from, 12) }
     }
     case 'all': {
-      const from = firstAttendedOn ?? firstOfYear(today)
-      const to = lastOfYear(today)
+      const from = firstAttendedOn ?? firstOfYear(on)
+      const to = lastOfYear(on)
       return { period, from, to, buckets: yearStarts(from, to), previous: null }
     }
+  }
+}
+
+/** The first day a member may look at: 1 January of the year they first
+ *  attended, or of this year when they never have. */
+const earliestDay = (today: PlainDate, firstAttendedOn: PlainDate | null): PlainDate =>
+  firstOfYear(firstAttendedOn ?? today)
+
+export type AnchorRefusal = 'period_in_future' | 'period_before_first_year'
+
+/**
+ * Why the timeframe `period` containing `on` cannot be shown, or null when it
+ * can: `on` is past the end of the one containing today, or before the year of
+ * the member's first attended session.
+ */
+export function anchorRefusal(
+  period: AttendancePeriod,
+  on: PlainDate,
+  today: PlainDate,
+  firstAttendedOn: PlainDate | null,
+): AnchorRefusal | null {
+  if (on > attendancePlan(period, today, firstAttendedOn).to) return 'period_in_future'
+  if (on < earliestDay(today, firstAttendedOn)) return 'period_before_first_year'
+  return null
+}
+
+/**
+ * Whether there is a timeframe to step back to (the day before this one opens
+ * is not before the member's first year) and one to step forward to (this one
+ * ends before today). `all` has neither.
+ */
+export function periodSteps(
+  plan: AttendancePlan,
+  today: PlainDate,
+  firstAttendedOn: PlainDate | null,
+): { hasPrevious: boolean; hasNext: boolean } {
+  if (plan.previous === null) return { hasPrevious: false, hasNext: false }
+  return {
+    hasPrevious: addDays(plan.from, -1) >= earliestDay(today, firstAttendedOn),
+    hasNext: plan.to < today,
   }
 }
 
@@ -173,6 +226,22 @@ export function streakWeeks(today: PlainDate, attendedDays: readonly PlainDate[]
   let run = 0
   for (; weeks.has(week); week = addDays(week, -7)) run++
   return run
+}
+
+/**
+ * The longest run of consecutive Monday weeks with at least one of
+ * `attendedDays` inside `span` — the streak figure for a timeframe that has
+ * ended. A week the span's edge cuts through counts by its days inside.
+ */
+export function longestRunWeeks(span: DateSpan, attendedDays: readonly PlainDate[]): number {
+  const weeks = [...new Set(attendedDays.filter(d => d >= span.from && d <= span.to).map(mondayOf))].sort()
+  let longest = 0
+  let run = 0
+  weeks.forEach((week, i) => {
+    run = i > 0 && addDays(weeks[i - 1]!, 7) === week ? run + 1 : 1
+    longest = Math.max(longest, run)
+  })
+  return longest
 }
 
 /**
