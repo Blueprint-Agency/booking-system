@@ -31,6 +31,8 @@ export function memberAuthMessage(error: MemberAuthError, fallback: string): str
       return "That code has expired. Ask for a new one.";
     case "too_many_attempts":
       return "Too many wrong codes. Ask for a new code.";
+    case "account_not_found":
+      return "Account not found. Check the email, or create an account.";
     case "already_member":
       return "You already have an account here. Sign in instead.";
     case "tenant_mismatch":

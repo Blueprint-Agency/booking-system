@@ -13,8 +13,8 @@ import {
 /**
  * Members sign in with email and password (#173), through the routes a browser
  * calls. The form asks for the email first: an address with a password is asked
- * for it; any other address is mailed a set-password link if it is a member
- * here, and nothing if it is not — and both answers look the same.
+ * for it; any other member here is mailed a set-password link, and an address
+ * that is no member here is told so.
  */
 describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
@@ -229,14 +229,19 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     await expectStatus(await me(bearerAt(one, token)), 200)
   })
 
-  test('an address that is no member here gets the same answer, and no link', async () => {
+  test('TEN-15 an address that is no member here is told there is no account, and mailed no link', async () => {
     const stranger = at('stranger')
     const elsewhere = at('member-elsewhere')
     await memberWithoutPassword(two, elsewhere)
 
     for (const email of [stranger, elsewhere]) {
       const before = mailsTo(email).length
-      assert.deepEqual(await expectStatus(await signInStep(one, email), 200), { next: 'link_sent' })
+      await expectStatus(await signInStep(one, email), 404, 'account_not_found')
+      await expectStatus(
+        await send('/api/v1/public/members/password-link', { body: { email }, headers: memberHeaders(one) }),
+        404,
+        'account_not_found',
+      )
       assert.equal(mailsTo(email).length, before, `no link was mailed to ${email}`)
     }
   })
@@ -408,6 +413,21 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     const links: number[] = []
     for (let i = 0; i < 8; i++) links.push((await signInStep(one, at(`nobody-link-${i}`), linkAddress)).status)
     assert.ok(links.includes(429), `link requests from one address were never slowed: ${links}`)
+
+    // "Forgot password" answers who is a member too, so it is slowed the same way.
+    const forgotAddress = harnessAddress()
+    const forgot: number[] = []
+    for (let i = 0; i < 8; i++) {
+      forgot.push(
+        (
+          await send('/api/v1/public/members/password-link', {
+            body: { email: at(`nobody-forgot-${i}`) },
+            headers: memberHeaders(one, forgotAddress),
+          })
+        ).status,
+      )
+    }
+    assert.ok(forgot.includes(429), `"forgot password" from one address was never slowed: ${forgot}`)
   })
 
   test('an admin sends a member a set-password link from the member detail', async () => {

@@ -2,12 +2,13 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import type { ErrorCode } from '../../shared/error-codes'
-import { AppError, BadRequestError, ForbiddenError } from '../../shared/errors'
+import { AppError, BadRequestError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { requireTenantUrl } from '../tenants/urls'
 import {
   mailMemberSetPasswordLink,
   memberHasPassword,
   memberLinkOwner,
+  memberLoginId,
   requestAddress,
   setMemberPasswordFromLink,
   type MemberAuthRefusal,
@@ -31,13 +32,13 @@ type FromCaller = { tenantId: string; email: string; from: Headers }
 const tooManyRequests = () => new AppError(429, 'too_many_requests')
 
 /**
- * The email step: an address with a password is asked for it; any other is
- * mailed a set-password link — if it is a member of this studio, which the
- * answer does not say. An imported member, or one who joined by code before
- * passwords, takes the link on their first sign-in.
+ * The email step: an address with a password is asked for it; any other member
+ * of this studio is mailed a set-password link, and an address that is no
+ * member here is told so (404 account_not_found). An imported member, or one
+ * who joined by code before passwords, takes the link on their first sign-in.
  *
- * Budgeted per address and per email before either answer, since `password`
- * alone says an account exists and never reaches the pool's limiter.
+ * Budgeted per address and per email before any answer, since each says
+ * whether an account exists and `password` never reaches the pool's limiter.
  */
 export async function nextSignInStep(input: FromCaller): Promise<SignInStep> {
   const { ip } = await requestAddress(input.from)
@@ -48,12 +49,32 @@ export async function nextSignInStep(input: FromCaller): Promise<SignInStep> {
 
 /**
  * "Forgot password", and the email step's second answer: mail a set-password
- * link to this address if it is a member of this studio, and answer the same
- * whether or not it is.
+ * link to this address, or 404 account_not_found when it is no member of this
+ * studio. A blocked member is answered as any other and mailed nothing
+ * (`mailClientPasswordReset`); their sign-in is where they meet the refusal.
+ *
+ * Members only: the portal's staff step still answers the same for any address.
+ *
+ * The pool is asked first, whoever the address is: its per-address and
+ * per-email link budgets are what keep this answer from being an unlimited
+ * who-is-a-member lookup. It mails nothing to an address that is no member.
  */
 export async function requestMemberPasswordLink(input: FromCaller): Promise<{ next: 'link_sent' }> {
   await mailLinkOrThrow(input.from, input.email, input.tenantId)
+  if (!(await isMemberHere(input.tenantId, input.email))) throw new NotFoundError('account_not_found')
   return { next: 'link_sent' }
+}
+
+/** Has this address a member login at this studio with a member behind it, blocked or not? */
+async function isMemberHere(tenantId: string, email: string): Promise<boolean> {
+  const loginId = await memberLoginId(email)
+  if (!loginId) return false
+  const [member] = await db
+    .select({ id: clients.id })
+    .from(clients)
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.authUserId, loginId)))
+    .limit(1)
+  return Boolean(member)
 }
 
 /** Ask the pool for the link, landing on this studio's member app; 429 when a budget is spent. */

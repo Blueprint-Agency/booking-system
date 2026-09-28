@@ -199,9 +199,10 @@ describe('reset link from the inbox, and per-studio email budgets', { skip: inte
   })
 
   test("AUTH-18 spending an email's member sign-in step at one studio leaves its budget at another", async () => {
-    // With a password, so the step answers `password` and asks the pool for no link.
+    // With a password at each, so the step answers `password` and asks the pool for no link.
     const email = at('stepped')
     await harness.signInAs('client', email, one)
+    await harness.signInAs('client', email, two)
     const step = (tenant: { slug: string }) => post('client', '/api/v1/public/members/sign-in-step', tenant, { email })
 
     for (let i = 0; i < signInStep.max; i++) assert.equal((await step(one)).status, 200, `step ${i + 1} at one`)
@@ -210,8 +211,15 @@ describe('reset link from the inbox, and per-studio email budgets', { skip: inte
   })
 
   test("AUTH-18 spending an email's member link budget at one studio leaves its budget at another", async () => {
-    // No password, so every step asks the pool for a set-password link.
+    // A member at each with no password, so every step asks the pool for a set-password link.
     const email = at('linked-twice')
+    const { ensureAuthUser } = await import('../services/auth/auth-users')
+    for (const tenant of [one, two]) {
+      const authUserId = await ensureAuthUser(harness.db, 'client', { tenantId: tenant.id, email, name: 'Linked Twice' })
+      await harness.db
+        .insert(schema.clients)
+        .values({ tenantId: tenant.id, authUserId, email, name: 'Linked Twice', phone: '+6590000000', status: 'active' })
+    }
     const step = (tenant: { slug: string }) => post('client', '/api/v1/public/members/sign-in-step', tenant, { email })
 
     for (let i = 0; i < linkRequest.max; i++) assert.equal((await step(one)).status, 200, `step ${i + 1} at one`)

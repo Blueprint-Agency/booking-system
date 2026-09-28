@@ -3,7 +3,8 @@
  * Member sign-in (#173): the email first, then the password — or, for an
  * address with no password yet, "check your email" while a set-password link
  * goes out (`POST /public/members/sign-in-step`). The link lands on
- * `/set-password`. "Forgot password?" mails the same link.
+ * `/set-password`. "Forgot password?" mails the same link. An address with no
+ * account at this studio (`account_not_found`) is pointed at registration.
  *
  * A password signs in any member account, but an address is a member only
  * where it has a `clients` row. So once the session exists the page asks for
@@ -17,6 +18,7 @@ import Link from "next/link";
 import { ApiError, publicApi } from "@/lib/api";
 import { safeNextPath, signedInRedirectTarget } from "@/lib/auth-redirect";
 import { memberAuthMessage } from "@/lib/auth-messages";
+import { ERROR_CODES } from "@/lib/error-codes";
 import { fetchApi } from "@/lib/api-url";
 import { memberAuth, readMemberToken, signOutMember, useMemberSession } from "@/lib/member-auth";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
@@ -77,7 +79,11 @@ function LoginContent() {
     try {
       await step();
     } catch (err) {
-      if (err instanceof ApiError) {
+      if (err instanceof ApiError && (err.body as { error?: string } | null)?.error === ERROR_CODES.account_not_found) {
+        // No member here by that address: back to the email, pointed at registration.
+        setView("email");
+        setNoAccount(true);
+      } else if (err instanceof ApiError) {
         setError(memberAuthMessage({ status: err.status, ...(err.body as object | null) }, "Something went wrong. Please try again."));
       } else {
         setError("We couldn't reach the server. Check your connection and try again.");
@@ -159,8 +165,8 @@ function LoginContent() {
           Check your email
         </h1>
         <p className="text-sm text-muted mb-8">
-          If {email.trim()} has an account at this studio, we&apos;ve sent it a link to set your
-          password. The link works once, for 30 minutes.
+          We&apos;ve sent a link to {email.trim()} to set your password. The link works once, for
+          30 minutes.
         </p>
         {errorNote}
         <div className="mt-2 flex flex-wrap gap-x-5 text-sm">

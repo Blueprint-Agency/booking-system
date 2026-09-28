@@ -10,6 +10,7 @@
  * `key: 'key',` per line, sorted — the drift check reads this file as text.
  */
 export const ERROR_CODES = {
+  account_not_found: 'account_not_found',
   actor_not_found: 'actor_not_found',
   admin_email_archived_here: 'admin_email_archived_here',
   admin_email_invalid: 'admin_email_invalid',

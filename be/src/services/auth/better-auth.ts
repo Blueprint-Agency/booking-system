@@ -707,6 +707,16 @@ export async function memberHasPassword(email: string): Promise<boolean> {
 }
 
 /**
+ * The member login for this address **at this studio**, or null when there is
+ * none. Asked in the request's Tenant context, as `memberHasPassword` is.
+ */
+export async function memberLoginId(email: string): Promise<string | null> {
+  const context = await clientAuth.$context
+  const found = await context.internalAdapter.findUserByEmail(email.trim().toLowerCase())
+  return found?.user.id ?? null
+}
+
+/**
  * Does this address have a staff password at this studio? What the portal's
  * email step reveals (`staff-sign-in-step.ts`), as `memberHasPassword` is for
  * the member form.

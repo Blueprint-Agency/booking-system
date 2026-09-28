@@ -28,12 +28,15 @@ import { registerMember } from '../../services/clients/register'
  *
  *   The email step of the sign-in form. `password`: ask for it and sign in at
  *   `/api/v1/auth/client/sign-in/email`. `link_sent`: show "check your email" —
- *   a set-password link went out if the address is a member here, and nothing
- *   did if it is not; the answer is the same.
+ *   a set-password link went out (none to a blocked member).
+ *
+ *   404 account_not_found — the address is no member of this studio
  *
  * POST /api/v1/public/members/password-link { email } → { next: 'link_sent' }
  *
  *   "Forgot password": the same link, whether or not a password exists.
+ *
+ *   404 account_not_found — as above
  *
  * POST /api/v1/public/members/set-password { token, password } → { token }
  *

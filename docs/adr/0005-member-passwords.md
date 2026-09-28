@@ -30,9 +30,16 @@ answers one of two things:
 
 The answer tells a caller whether an address has a password, and so that an account exists at
 this studio (per studio since [ADR 0006](0006-per-studio-logins.md)). That is the accepted cost of
-an email-first form. It never tells them
-whether the address is a member of the studio asking. The step has its own budget per address and
-per email, because a `password` answer never reaches the pool's limiter.
+an email-first form. The step has its own budget per address and per email, because a `password`
+answer never reaches the pool's limiter.
+
+> **Amended 2026-09-29.** An address that is no member of this studio is now told so: the email
+> step and "Forgot password" answer 404 `account_not_found` rather than `link_sent`, and the
+> member form says there is no account and points at registration. A member who mistypes their
+> email, or tries the wrong studio, was left waiting for a mail that would never come. The cost is
+> that the member form now says who is a member here. Both endpoints ask the pool for the link
+> before looking, so the pool's per-address and per-email link budgets bound how often it can be
+> asked. The staff email step is unchanged and still answers the same for any address.
 
 An imported member, a member an admin added, and a member who joined by code before passwords all
 have an account with no password credential, so each of them takes the link on their first
