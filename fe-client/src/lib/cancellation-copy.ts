@@ -146,20 +146,20 @@ export function classPolicyPoints(
   windowHours: number = policy.class_window_hours,
 ): string[] {
   if (capped(policy) && policy.cancel_cap_count === 0) {
-    return ["Cancel any time before class starts.", "Cancelled credits aren't returned."];
+    return ["You can cancel any time before class starts.", "You won't get your credit back."];
   }
   const points = [
     windowHours === 0
-      ? "Cancel any time before class starts to get your credit back."
-      : `Cancel at least ${hoursText(windowHours)} before class to get your credit back.`,
+      ? "Cancel any time before class starts and you get your credit back."
+      : `Cancel at least ${hoursText(windowHours)} before class and you get your credit back.`,
   ];
+  if (windowHours > 0) points.push(`Cancel within ${hoursText(windowHours)} of class and you lose the credit.`);
   if (capped(policy)) {
-    const cycle = policy.cancel_cap_cycle_days === 1 ? "day" : `${policy.cancel_cap_cycle_days} days`;
+    const cycle = policy.cancel_cap_cycle_days === 1 ? "a day" : `every ${policy.cancel_cap_cycle_days} days`;
     points.push(
-      `Limit: ${plural(policy.cancel_cap_count, "cancellation")} per ${cycle}. Go over it and the credit isn't returned, even in time.`,
+      `You get ${plural(policy.cancel_cap_count, "cancellation")} ${cycle}. After that, you lose the credit even if you cancel early.`,
     );
   }
-  if (windowHours > 0) points.push("Cancel later and the credit isn't returned.");
   return points;
 }
 
