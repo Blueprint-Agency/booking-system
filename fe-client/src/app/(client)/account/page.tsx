@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarPlus, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ComingUp } from "@/components/account/coming-up";
 import { AccountHeader } from "@/components/account/account-header";
@@ -9,21 +9,17 @@ import { ACCOUNT_SECTIONS } from "@/components/account/account-nav-items";
 import { SignOutButton } from "@/components/account/sign-out-button";
 import { OpenPurchases } from "@/components/account/open-purchases";
 import { CancelledBanner } from "@/components/checkout/cancelled-banner";
-import { BTN_BOOK, CARD } from "@/components/ui/styles";
-import { useAppUser } from "@/lib/auth";
+import { CARD } from "@/components/ui/styles";
 import { useHoldLoader } from "@/lib/loading-store";
 import { usePartPaymentOptions, useOpenPurchases } from "@/lib/open-purchases";
-import { overviewLine } from "@/lib/practice";
-import { usePracticeMonth } from "@/lib/use-practice";
 
 /**
- * The account's landing page: a line to My practice under the greeting, the
- * one booking the member walks into next ("Up next"), then — below `lg`, where
+ * The account's landing page: the one booking the member walks into next
+ * ("Up next"), then — below `lg`, where
  * there is no sidebar — the account menu. Everything else has its own page: My
- * bookings, My practice, My packages, Merch, Profile & security, General settings.
+ * bookings, My activity, My packages, Merch, Profile & security, General settings.
  */
 export default function AccountHome() {
-  const { user } = useAppUser();
   // A balance the member left outstanding (#93), and the return from a payment
   // page they left (#274): the checkout's cancel URLs land here.
   const {
@@ -35,21 +31,11 @@ export default function AccountHome() {
   // A balance owed sits above Up next: the page waits for it rather than be
   // pushed down when it lands.
   useHoldLoader(openPurchasesLoading || partPayment.loading);
-  const firstName = user?.firstName || "there";
 
   return (
     <div className="max-w-3xl">
-      <header className="mb-5 md:mb-6 flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-muted">Welcome back</p>
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-ink truncate">Hi, {firstName}</h1>
-          <PracticeLine />
-        </div>
-        <Link href="/" className={cn(BTN_BOOK, "hidden sm:inline-flex min-h-[44px]")}>
-          <CalendarPlus className="h-4 w-4" aria-hidden />
-          Book a class
-        </Link>
-      </header>
+      {/* No greeting: the page opens on what the member walks into next. */}
+      <h1 className="sr-only">My account</h1>
 
       <CancelledBanner className="mb-6" />
 
@@ -61,27 +47,6 @@ export default function AccountHome() {
 
       <AccountMenu />
     </div>
-  );
-}
-
-/**
- * "164 sessions · 13 this month ›" under the greeting, to My practice. It sits
- * above everything else, so the page waits for it rather than shift when it
- * lands; nothing is drawn before the member's first session, or if the read fails.
- */
-function PracticeLine() {
-  const { summary, loading } = usePracticeMonth();
-  useHoldLoader(loading);
-  const line = summary && overviewLine(summary);
-  if (!line) return null;
-  return (
-    <Link
-      href="/account/practice"
-      className="mt-1 inline-flex min-h-[32px] items-center gap-0.5 text-sm font-semibold text-accent-deep hover:text-accent"
-    >
-      {line}
-      <ChevronRight className="h-4 w-4" aria-hidden />
-    </Link>
   );
 }
 

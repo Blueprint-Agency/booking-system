@@ -13,6 +13,7 @@ export function SegmentedTabs<T extends string>({
   onChange,
   counts,
   label,
+  centered = false,
 }: {
   tabs: { value: T; label: string }[];
   value: T;
@@ -20,13 +21,15 @@ export function SegmentedTabs<T extends string>({
   counts?: Partial<Record<T, number>>;
   /** What the tabs switch between, for screen readers. */
   label: string;
+  /** Sit in the middle of the page once it no longer fills the width, under a centred header. */
+  centered?: boolean;
 }) {
   return (
     <div className="mb-4 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto no-scrollbar">
       <div
         role="tablist"
         aria-label={label}
-        className="flex w-max min-w-full sm:min-w-0 rounded-full bg-ink/5 p-1"
+        className={cn("flex w-max min-w-full sm:min-w-0 rounded-full bg-ink/5 p-1", centered && "sm:mx-auto")}
       >
         {tabs.map((t) => {
           const selected = t.value === value;

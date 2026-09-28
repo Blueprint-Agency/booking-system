@@ -248,6 +248,7 @@ export default function PackagesPage() {
             <>
               <SegmentedTabs
                 label="Package family"
+                centered
                 tabs={MAIN_TABS.filter((t) => !t.hidden).map((t) => ({ value: t.key, label: t.label }))}
                 value={activeTab}
                 onChange={setActiveTab}
@@ -344,6 +345,7 @@ function ClassCreditsSection({
     <div className="space-y-4">
       <SubTabs
         label="Class package type"
+        centered
         tabs={subTabs.filter((t) => !t.hidden).map((t) => ({ value: t.key, label: t.label }))}
         value={subTab}
         onChange={setSubTab}
@@ -433,14 +435,14 @@ function TrialSection({
   if (trials.length === 0) {
     return <EmptyCatalog kind="trial" />;
   }
-  // Greyed out unless the client owns nothing yet. Distinguish "already used"
-  // from "not a new member" so the reason is clear.
+  // Greyed out unless the client owns nothing yet. A member who has had theirs
+  // is told they are not eligible rather than reminded they used it.
   const disabledReason = trialUsed
-    ? "Trial already used"
+    ? "Not eligible"
     : "New members only";
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted">For first-timers. One per member.</p>
+      <p className="text-center text-sm text-muted">For first-timers. One per member.</p>
 
       {/* The studio's own trial terms, shown before purchase — or nothing. */}
       {terms && (
@@ -506,6 +508,7 @@ function PrivateSection({
     <div className="space-y-4">
       <SubTabs
         label="Private session type"
+        centered
         tabs={subTabs.map((t) => ({ value: t.key, label: t.label }))}
         value={subTab}
         onChange={setSubTab}
@@ -523,7 +526,7 @@ function PtSection({ items, blurb }: { items: ApiPtPackage[]; blurb: string }) {
   }
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted">{blurb}</p>
+      <p className="text-center text-sm text-muted">{blurb}</p>
       <div className={PACKAGE_GRID}>
         {items.map((p) => (
           <PtCard key={p.id} pkg={p} />
@@ -861,7 +864,7 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
         // Only an Instructor-Bound package promises one coach. An open package
         // is open to any instructor, so the old unconditional promise was one
         // the studio had not made.
-        pkg.instructor_bound ? "The same instructor every session" : "Any instructor",
+        pkg.instructor_bound ? "The same instructor every session" : "Any instructor, subject to availability",
       ]}
     >
       <BuyButton
@@ -883,7 +886,7 @@ function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
   const whatsapp = corporateContactWhatsappHref(useBrandCopy(WHATSAPP_COPY_KEY, ""));
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted">
+      <p className="text-center text-sm text-muted">
         Classes at your workplace. Send a request and we&apos;ll arrange dates, venue and
         instructor with you on WhatsApp.
       </p>

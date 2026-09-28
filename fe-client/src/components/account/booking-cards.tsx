@@ -7,8 +7,10 @@
  * the details as chips, and the QR and the actions where they apply.
  */
 import { useState } from "react";
+import Link from "next/link";
 import {
   CheckCircle2,
+  ChevronRight,
   Clock,
   Hourglass,
   MapPin,
@@ -28,7 +30,7 @@ import { useBrandCopy } from "@/components/brand/brand-provider";
 import { BTN_CANCEL } from "@/components/ui/styles";
 import { cn, formatDate } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
-import type { BookingType } from "@/lib/my-bookings";
+import type { BookingItem, BookingType } from "@/lib/my-bookings";
 import {
   formatSlotRange,
   ptCancelFailure,
@@ -58,20 +60,23 @@ export const TYPE_LABEL: Record<BookingType, string> = {
 
 /** Each kind keeps the colour its ticket wears (`next-class-card.tsx`). */
 const TYPE_TONE: Record<BookingType, string> = {
-  class: "bg-accent/10 text-accent-deep",
-  pt: "bg-gold/12 text-gold-deep",
-  workshop: "bg-green/12 text-green-deep",
-  corporate: "bg-cyan/15 text-cyan-deep",
+  class: "text-accent-deep",
+  pt: "text-gold-deep",
+  workshop: "text-green-deep",
+  corporate: "text-cyan-deep",
 };
 
 type Tone = "info" | "ok" | "muted" | "bad" | "live";
 const STATUS_TONE: Record<Tone, string> = {
-  info: "bg-accent/10 text-accent-deep",
-  ok: "bg-sage/15 text-sage",
-  muted: "bg-ink/[0.06] text-muted",
-  bad: "bg-error/12 text-error",
-  live: "bg-sage/15 text-sage",
+  info: "text-accent-deep",
+  ok: "text-sage",
+  muted: "text-muted",
+  bad: "text-error",
+  live: "text-sage",
 };
+
+/** What tapping the card opens: a detail overlay, or a page of its own. */
+type CardOpen = { label: string } & ({ onOpen: () => void; href?: never } | { href: string; onOpen?: never });
 
 interface Status {
   label: string;
@@ -96,6 +101,7 @@ function BookingCard({
   code,
   action,
   highlight,
+  open,
   children,
 }: {
   type: BookingType;
@@ -111,65 +117,72 @@ function BookingCard({
   code?: string | null;
   action?: React.ReactNode;
   highlight?: boolean;
+  /** The whole card opens this; its QR, notes and action keep their own taps. */
+  open?: CardOpen;
   children?: React.ReactNode;
 }) {
   const shown = chips.filter(Boolean) as Chip[];
+  // One target stretched under the card, since a button cannot hold the
+  // card's own (the class row's pattern, `class-row.tsx`).
+  const target =
+    "absolute inset-0 h-full w-full rounded-[inherit] hover:bg-ink/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent transition-colors";
   return (
     <li
       className={cn(
-        "list-none rounded-2xl bg-card border shadow-soft",
+        "relative list-none rounded-2xl bg-card border shadow-soft",
         highlight ? "border-accent/25" : "border-ink/5",
       )}
     >
-      <div className="flex items-start gap-3 p-4 sm:gap-4">
+      {open &&
+        (open.href ? (
+          <Link href={open.href} aria-label={open.label} className={target} />
+        ) : (
+          <button type="button" onClick={open.onOpen} aria-label={open.label} className={target} />
+        ))}
+      <div className={cn("flex items-center gap-3 p-4 sm:gap-4", open && "pointer-events-none relative")}>
         <DateStub iso={stub} tone={stubTone} />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className={cn(
-                "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                TYPE_TONE[type],
-              )}
-            >
-              {TYPE_LABEL[type]}
-            </span>
+          <p className="flex flex-wrap items-center gap-x-1.5 text-[11px] font-bold uppercase leading-none tracking-wider">
+            <span className={TYPE_TONE[type]}>{TYPE_LABEL[type]}</span>
             {status && (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                  STATUS_TONE[status.tone],
-                )}
-              >
-                {status.tone === "live" ? (
-                  <span className="h-1.5 w-1.5 rounded-full bg-sage animate-pulse" aria-hidden />
-                ) : (
-                  status.icon && <status.icon className="h-3 w-3" aria-hidden />
-                )}
-                {status.label}
-              </span>
+              <>
+                <span aria-hidden className="text-ink/20">
+                  ·
+                </span>
+                <span className={cn("inline-flex items-center gap-1", STATUS_TONE[status.tone])}>
+                  {status.tone === "live" ? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-sage animate-pulse" aria-hidden />
+                  ) : (
+                    status.icon && <status.icon className="h-3 w-3" aria-hidden />
+                  )}
+                  {status.label}
+                </span>
+              </>
             )}
-          </div>
+          </p>
           <p className="mt-1.5 font-semibold leading-snug text-ink break-words">{title}</p>
-          {when && <p className="mt-0.5 text-sm font-medium text-ink/80 tabular-nums">{when}</p>}
+          {when && <p className="mt-0.5 text-sm text-ink/80 tabular-nums">{when}</p>}
           {shown.length > 0 && (
-            <ul className="mt-2 flex flex-wrap gap-1.5">
+            <ul className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
               {shown.map((c) => (
-                <li
-                  key={c.label}
-                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-ink/10 bg-ink/[0.03] px-2 py-0.5 text-xs font-medium text-ink"
-                >
-                  <c.icon className="h-3 w-3 shrink-0 text-ink/40" aria-hidden />
+                <li key={c.label} className="inline-flex min-w-0 max-w-full items-center gap-1">
+                  <c.icon className="h-3.5 w-3.5 shrink-0 text-ink/35" aria-hidden />
                   <span className="truncate">{c.label}</span>
                 </li>
               ))}
             </ul>
           )}
-          {children}
+          {children && <div className="pointer-events-auto">{children}</div>}
         </div>
-        {qr && <QrBadge value={qr.value} label={qr.label} subLabel={qr.subLabel} />}
+        {qr && (
+          <div className="pointer-events-auto shrink-0">
+            <QrBadge value={qr.value} label={qr.label} subLabel={qr.subLabel} />
+          </div>
+        )}
+        {open && !qr && <ChevronRight className="h-4 w-4 shrink-0 text-ink/25" aria-hidden />}
       </div>
       {(code || action) && (
-        <div className="flex min-h-[52px] flex-wrap items-center justify-between gap-2 border-t border-ink/5 px-4 py-1.5">
+        <div className="relative flex min-h-[52px] flex-wrap items-center justify-between gap-2 border-t border-ink/5 px-4 py-1.5">
           <span className="font-mono text-xs tracking-wide text-muted">{code}</span>
           {action}
         </div>
@@ -186,10 +199,13 @@ export function ClassBookingCard({
   booking: b,
   ongoing,
   onCancel,
+  onOpen,
 }: {
   booking: ApiBooking;
   ongoing: boolean;
   onCancel: (b: ApiBooking) => void;
+  /** Tapping the card opens the class's detail. */
+  onOpen?: (b: ApiBooking) => void;
 }) {
   const past = !ongoing && !canCancelClass(b.starts_at);
   const cancelled = b.state === "cancelled";
@@ -230,6 +246,12 @@ export function ClassBookingCard({
       }
       code={past || cancelled ? null : b.code}
       highlight={ongoing}
+      open={
+        onOpen && {
+          label: `Details: ${b.name}, ${formatDate(b.starts_at)} ${timeRange(b.starts_at, b.ends_at)}`,
+          onOpen: () => onOpen(b),
+        }
+      }
       action={
         open && (
           <button type="button" onClick={() => onCancel(b)} className={cn(BTN_CANCEL, "-mr-1")}>
@@ -475,6 +497,7 @@ export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorksho
       chips={[b.tier_name && { icon: Tag, label: b.tier_name }, b.location && { icon: MapPin, label: b.location.name }]}
       qr={past ? null : { value: b.qr_token, label: b.workshop_name, subLabel: `${workshopWhen(b)} · ${b.code}` }}
       code={past ? null : b.code}
+      open={{ label: `Workshop: ${b.workshop_name}`, href: `/workshops/${b.workshop_id}` }}
     >
       {/* No self-serve cancel: the studio arranges changes and refunds (#272). */}
       {!past && <p className="mt-2 text-xs text-muted">To change or cancel, contact the studio.</p>}
@@ -483,6 +506,47 @@ export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorksho
       )}
     </BookingCard>
   );
+}
+
+// ── Any booking ──────────────────────────────────────────────────────────────
+
+/**
+ * The card for any booking in "Your bookings" — and for a day opened from My
+ * practice, which lists the same cards. A class card opens its detail; a
+ * workshop card its page.
+ */
+export function BookingRow({
+  item,
+  policy,
+  onCancelClass,
+  onOpenClass,
+  onPtCancelled,
+}: {
+  item: BookingItem;
+  policy: CancellationPolicy | null;
+  onCancelClass: (b: ApiBooking) => void;
+  onOpenClass: (b: ApiBooking, ongoing: boolean) => void;
+  onPtCancelled: (result: CancelPtRequestResult) => Promise<void>;
+}) {
+  switch (item.type) {
+    case "class": {
+      const ongoing = item.phase === "ongoing";
+      return (
+        <ClassBookingCard
+          booking={item.booking}
+          ongoing={ongoing}
+          onCancel={onCancelClass}
+          onOpen={(b) => onOpenClass(b, ongoing)}
+        />
+      );
+    }
+    case "pt":
+      return <PtBookingCard request={item.request} policy={policy} onCancelled={onPtCancelled} />;
+    case "workshop":
+      return <WorkshopBookingCard booking={item.booking} phase={item.phase} />;
+    case "corporate":
+      return <CorporateBookingCard request={item.request} />;
+  }
 }
 
 // ── Corporate ────────────────────────────────────────────────────────────────

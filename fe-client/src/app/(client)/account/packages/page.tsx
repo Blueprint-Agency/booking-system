@@ -90,7 +90,14 @@ export default function YourPackagesPage() {
         <OpenPurchases purchases={openPurchases} partPayment={partPayment} failed={openPurchasesFailed} />
       </div>
 
-      <SegmentedTabs label="Package status" tabs={FILTERS} value={filter} onChange={setFilter} counts={loading ? undefined : counts} />
+      <SegmentedTabs
+        label="Package status"
+        tabs={FILTERS}
+        value={filter}
+        onChange={setFilter}
+        counts={loading ? undefined : counts}
+        centered
+      />
 
       {loading ? (
         <ContentLoading label="Loading your packages" />
@@ -145,10 +152,10 @@ function PackageCard({
   const unitLabel = isPt ? "sessions" : "credits";
   const expired = pkg.ended && pkg.expiresAt != null && new Date(pkg.expiresAt).getTime() <= Date.now();
   const state = pkg.ended
-    ? { label: expired ? "Expired" : "Used up", tone: "bg-ink/[0.06] text-muted" }
+    ? { label: expired ? "Expired" : "Used up", tone: "text-muted" }
     : pkg.dormant
-      ? { label: "Not started", tone: "bg-warning/15 text-ink" }
-      : { label: "Active", tone: "bg-sage/15 text-sage" };
+      ? { label: "Not started", tone: "text-ink" }
+      : { label: "Active", tone: "text-sage" };
   // Held back until the rate has loaded, so the card never offers it at S$0.
   const offerAddOn = !pkg.ended && otherLocationName && Number(rateSgd) > 0;
 
@@ -156,19 +163,16 @@ function PackageCard({
     <div className={cn(CARD, "p-4 sm:p-5", pkg.ended && "bg-card/60 shadow-none")}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className={cn(
-                "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                isPt ? "bg-gold/12 text-gold-deep" : "bg-accent/10 text-accent-deep",
-              )}
-            >
+          {/* Kind and state as one quiet line, as My bookings' cards read. */}
+          <p className="flex flex-wrap items-center gap-x-1.5 text-[11px] font-bold uppercase leading-none tracking-wider">
+            <span className={isPt ? "text-gold-deep" : "text-accent-deep"}>
               {isPt ? "Private" : isUnlimited ? "Unlimited" : "Classes"}
             </span>
-            <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", state.tone)}>
-              {state.label}
+            <span aria-hidden className="text-ink/20">
+              ·
             </span>
-          </div>
+            <span className={state.tone}>{state.label}</span>
+          </p>
           <p className={cn("mt-1.5 font-semibold break-words", pkg.ended ? "text-muted" : "text-ink")}>{pkg.name}</p>
           <p className="mt-1 text-xs text-muted">
             {pkg.ended

@@ -1,54 +1,78 @@
 "use client";
 
 /**
- * The marks My practice (#340) draws its week, month and year with: a yoga mat
- * per session, solid in the studio's accent when attended, dashed when still
- * booked, a faint one for a day that passed with nothing on it. Each view sets
- * the mat's size; the legend under every chart is the same.
+ * The marks My activity (#340) draws its week and year with, and the legend
+ * under every chart. A column is a faint rounded track with the period's
+ * sessions filled up from its foot in the studio's accent — solid for
+ * attended, a dashed cap for what is still booked — so every studio's page
+ * wears its own colour, in either theme. Columns grow in on load; with reduced
+ * motion they are simply there.
  */
-import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 
-export function Mat({
-  kind,
-  className,
+export function Column({
+  attended,
+  booked,
+  scale,
   delay,
-  style,
+  future = false,
+  className,
 }: {
-  kind: "attended" | "booked" | "empty";
-  /** The mat's size and corners. */
+  attended: number;
+  booked: number;
+  /** The count that fills the track; every column in a chart shares it. */
+  scale: number;
+  /** Milliseconds before the column grows in. */
+  delay: number;
+  /** Not reached yet: the track is faded, never read as a zero. */
+  future?: boolean;
+  /** The track's size. */
   className: string;
-  /** Milliseconds before it is laid down; attended mats only. */
-  delay?: number;
-  style?: CSSProperties;
 }) {
+  const share = (n: number) => `${Math.min(1, n / scale) * 100}%`;
   return (
     <span
       className={cn(
-        "block shrink-0",
-        kind === "attended" && "mat-lay bg-accent",
-        kind === "booked" && "border-[1.5px] border-dashed border-accent",
-        kind === "empty" && "bg-ink/[0.07]",
+        "relative flex flex-col-reverse gap-[3px] overflow-hidden rounded-full bg-ink/[0.05]",
+        future && "opacity-50",
         className,
       )}
-      style={kind === "attended" && delay !== undefined ? { ...style, animationDelay: `${delay}ms` } : style}
-    />
+    >
+      {attended > 0 && (
+        <span
+          className="practice-grow block w-full shrink-0 rounded-full bg-accent"
+          style={{ height: share(attended), animationDelay: `${delay}ms` }}
+        />
+      )}
+      {booked > 0 && (
+        <span
+          className="practice-grow block w-full shrink-0 rounded-full border-[1.5px] border-dashed border-accent"
+          style={{ height: share(booked), animationDelay: `${delay + 120}ms` }}
+        />
+      )}
+    </span>
   );
 }
 
-export function PracticeLegend({ booked }: { booked: boolean }) {
+/** A key's swatch and its words. */
+export type LegendItem = { swatch: "solid" | "soft" | "dashed"; label: string };
+
+export function PracticeLegend({ items }: { items: LegendItem[] }) {
   return (
-    <div aria-hidden className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
-      <span className="inline-flex items-center gap-1.5">
-        <span className="block h-4 w-[7px] rounded-[3px] bg-accent" />
-        Attended
-      </span>
-      {booked && (
-        <span className="inline-flex items-center gap-1.5">
-          <span className="block h-4 w-[7px] rounded-[3px] border-[1.5px] border-dashed border-accent" />
-          Booked
+    <div aria-hidden className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+      {items.map((item) => (
+        <span key={item.label} className="inline-flex items-center gap-1.5">
+          <span
+            className={cn(
+              "block h-2.5 w-2.5 rounded-[3px]",
+              item.swatch === "solid" && "bg-accent",
+              item.swatch === "soft" && "bg-accent/30",
+              item.swatch === "dashed" && "border-[1.5px] border-dashed border-accent",
+            )}
+          />
+          {item.label}
         </span>
-      )}
+      ))}
     </div>
   );
 }

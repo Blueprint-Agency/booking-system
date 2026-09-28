@@ -15,6 +15,7 @@ export function SubTabs<T extends string>({
   onChange,
   label,
   className,
+  centered = false,
 }: {
   tabs: { value: T; label: string }[];
   value: T;
@@ -22,10 +23,16 @@ export function SubTabs<T extends string>({
   /** What the tabs switch between, for screen readers. */
   label: string;
   className?: string;
+  /** The words in the middle of the hairline, under centred tabs. */
+  centered?: boolean;
 }) {
   return (
     <div className={cn("-mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto no-scrollbar", className)}>
-      <div role="tablist" aria-label={label} className="flex min-w-full w-max gap-6 border-b border-ink/10">
+      <div
+        role="tablist"
+        aria-label={label}
+        className={cn("flex min-w-full w-max gap-6 border-b border-ink/10", centered && "justify-center")}
+      >
         {tabs.map((t) => {
           const selected = t.value === value;
           return (

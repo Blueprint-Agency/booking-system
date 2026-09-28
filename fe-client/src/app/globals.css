@@ -231,12 +231,22 @@ html[data-theme="dark"] .brand-scope {
   animation: dropIn 0.14s ease-out both;
 }
 
-/* A mat laid down on My practice's calendar (`components/account/practice-month.tsx`).
-   Each mat carries its own delay, so they unroll through the month. */
-@keyframes matLay {
+/* My practice's charts (`components/account/practice-*.tsx`): a week's or
+   year's columns grow up from their foot, a month's day tiles settle in. Each
+   carries its own delay, so they run across the chart. */
+@keyframes practiceGrow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes practicePop {
   from {
     opacity: 0;
-    transform: scaleY(0.2);
+    transform: translateY(4px) scale(0.92);
   }
   to {
     opacity: 1;
@@ -244,15 +254,36 @@ html[data-theme="dark"] .brand-scope {
   }
 }
 
-.mat-lay {
+.practice-grow {
   transform-origin: bottom;
-  animation: matLay 0.35s ease-out both;
+  animation: practiceGrow 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.practice-pop {
+  animation: practicePop 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* What you practised: each bar runs out from the left. */
+@keyframes practiceGrowX {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.practice-grow-x {
+  transform-origin: left;
+  animation: practiceGrowX 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 /* The global rule shortens the animation but keeps its delay, which would leave
-   the last mats blank for most of a second. */
+   the last columns and tiles blank for most of a second. */
 @media (prefers-reduced-motion: reduce) {
-  .mat-lay {
+  .practice-grow,
+  .practice-grow-x,
+  .practice-pop {
     animation: none;
   }
 }

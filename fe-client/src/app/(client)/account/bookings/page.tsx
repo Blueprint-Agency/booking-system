@@ -7,24 +7,18 @@ import { CalendarPlus, CalendarX, X } from "lucide-react";
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { WaitlistCard, type ApiBooking } from "@/components/account/class-bookings";
-import type { ApiWorkshopBooking } from "@/components/account/workshop-bookings";
-import {
-  ClassBookingCard,
-  CorporateBookingCard,
-  PtBookingCard,
-  WorkshopBookingCard,
-} from "@/components/account/booking-cards";
+import { BookingRow } from "@/components/account/booking-cards";
+import { BookedClassOverlay } from "@/components/account/booked-class-overlay";
 import { CancelBookingDialog, type CancelOutcome } from "@/components/account/cancel-booking-dialog";
 import { LeaveWaitlistDialog } from "@/components/booking/leave-waitlist-dialog";
-import { FilterChips } from "@/components/ui/filter-chips";
+import { SubTabs } from "@/components/ui/sub-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { BTN_BOOK, BTN_SECONDARY, CARD } from "@/components/ui/styles";
 import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { reportError } from "@/lib/report-error";
-import { makePtSessionsApi, type RawPtRequest } from "@/lib/pt-sessions";
-import type { ApiCorporateRequest } from "@/lib/corporate";
+import { readBookingSources } from "@/lib/booking-sources";
 import { leaveWaitlist, listWaitlist, waitlistRefusal, type ApiWaitlistEntry } from "@/lib/waitlist";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
 import { ptCancelResult, ptPolicyNote } from "@/lib/cancellation-copy";
@@ -32,7 +26,6 @@ import { useClientPackages } from "@/lib/use-client-packages";
 import {
   bookingItems,
   sortForPhase,
-  type BookingItem,
   type BookingPhase,
   type BookingSources,
   type BookingType,
@@ -100,42 +93,23 @@ function YourBookings() {
   const [loadError, setLoadError] = useState(false);
   const [banner, setBanner] = useState<Banner | null>(null);
   const [cancelTarget, setCancelTarget] = useState<ApiBooking | null>(null);
+  const [opened, setOpened] = useState<{ booking: ApiBooking; ongoing: boolean } | null>(null);
   const [leaveTarget, setLeaveTarget] = useState<ApiWaitlistEntry | null>(null);
   const [leaving, setLeaving] = useState(false);
 
   const reload = useCallback(async () => {
     setLoadError(false);
-    // Only the class lists are essential: a failed PT, workshop, corporate or
-    // waitlist read must not blank the member's classes.
-    const optional = <T,>(p: Promise<T>, fallback: T, scope: string) =>
-      p.catch((err) => {
-        reportError(err, { scope });
-        return fallback;
-      });
     try {
-      const [upcoming, past, pt, workshops, corporate, waitlist] = await Promise.all([
-        api.get<{ bookings: ApiBooking[] }>("/me/bookings/upcoming"),
-        api.get<{ bookings: ApiBooking[] }>("/me/bookings/past"),
-        optional(makePtSessionsApi(api).listRequests(), { pt_requests: [] as RawPtRequest[] }, "bookings-pt"),
-        optional(
-          api.get<{ workshop_bookings: ApiWorkshopBooking[] }>("/me/workshop-bookings"),
-          { workshop_bookings: [] },
-          "bookings-workshops",
-        ),
-        optional(
-          api.get<{ corporate_requests: ApiCorporateRequest[] }>("/me/corporate-requests"),
-          { corporate_requests: [] },
-          "bookings-corporate",
-        ),
-        optional(listWaitlist(api), [] as ApiWaitlistEntry[], "bookings-waitlist"),
+      // A failed waitlist read, like the other optional lists
+      // (`readBookingSources`), must not blank the member's classes.
+      const [sources, waitlist] = await Promise.all([
+        readBookingSources(api),
+        listWaitlist(api).catch((err) => {
+          reportError(err, { scope: "bookings-waitlist" });
+          return [] as ApiWaitlistEntry[];
+        }),
       ]);
-      setSrc({
-        upcoming: upcoming.bookings ?? [],
-        past: past.bookings ?? [],
-        pt: pt.pt_requests ?? [],
-        workshops: workshops.workshop_bookings ?? [],
-        corporate: corporate.corporate_requests ?? [],
-      });
+      setSrc(sources);
       setWaitlisted(waitlist);
     } catch (err) {
       reportError(err, { scope: "bookings" });
@@ -228,8 +202,16 @@ function YourBookings() {
         </div>
       )}
 
-      <FilterChips label="Booking type" options={TYPE_OPTIONS} value={type} onChange={setType} className="mb-3" />
-      <SegmentedTabs label="When" tabs={PHASES} value={phase} onChange={setPhase} counts={src ? counts : undefined} />
+      {/* As the packages page reads: when first, as pills, then which kind, as words on a hairline. */}
+      <SegmentedTabs
+        label="When"
+        tabs={PHASES}
+        value={phase}
+        onChange={setPhase}
+        counts={src ? counts : undefined}
+        centered
+      />
+      <SubTabs label="Booking type" tabs={TYPE_OPTIONS} value={type} onChange={setType} centered className="mb-4" />
 
       {!src && !loadError ? (
         <ContentLoading label="Loading your bookings" />
@@ -269,6 +251,7 @@ function YourBookings() {
                   item={i}
                   policy={policy}
                   onCancelClass={setCancelTarget}
+                  onOpenClass={(booking, ongoing) => setOpened({ booking, ongoing })}
                   onPtCancelled={async (result) => {
                     const r = ptCancelResult(result.refundOutcome, result.refundedSessions);
                     setBanner({ tone: r.tone, text: r.text });
@@ -284,6 +267,18 @@ function YourBookings() {
 
       {(type === "pt" || type === "all") && src && src.pt.length > 0 && (
         <p className="mt-8 text-xs leading-relaxed text-muted">{ptPolicyNote(policy)}</p>
+      )}
+
+      {opened && (
+        <BookedClassOverlay
+          booking={opened.booking}
+          ongoing={opened.ongoing}
+          onCancel={(b) => {
+            setOpened(null);
+            setCancelTarget(b);
+          }}
+          onClose={() => setOpened(null)}
+        />
       )}
 
       {cancelTarget && (
@@ -307,29 +302,6 @@ function YourBookings() {
       )}
     </div>
   );
-}
-
-function BookingRow({
-  item,
-  policy,
-  onCancelClass,
-  onPtCancelled,
-}: {
-  item: BookingItem;
-  policy: ReturnType<typeof useCancellationPolicy>;
-  onCancelClass: (b: ApiBooking) => void;
-  onPtCancelled: Parameters<typeof PtBookingCard>[0]["onCancelled"];
-}) {
-  switch (item.type) {
-    case "class":
-      return <ClassBookingCard booking={item.booking} ongoing={item.phase === "ongoing"} onCancel={onCancelClass} />;
-    case "pt":
-      return <PtBookingCard request={item.request} policy={policy} onCancelled={onPtCancelled} />;
-    case "workshop":
-      return <WorkshopBookingCard booking={item.booking} phase={item.phase} />;
-    case "corporate":
-      return <CorporateBookingCard request={item.request} />;
-  }
 }
 
 /** An empty list is a way in: to the page where that kind is booked. */

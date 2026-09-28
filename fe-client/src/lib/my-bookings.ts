@@ -104,3 +104,34 @@ export function sortForPhase(items: BookingItem[], phase: BookingPhase): Booking
   const dir = phase === "past" ? -1 : 1;
   return [...items].sort((a, b) => dir * a.at.localeCompare(b.at));
 }
+
+/** An instant's date on the studio's calendar, as every date the app shows is. */
+const studioDate = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+
+/**
+ * The bookings My activity counts on one day (`YYYY-MM-DD`), earliest first:
+ * a class or private session attended then, or booked and not yet started.
+ * What a day of the week or month opens to, as the same cards My bookings
+ * draws.
+ */
+export function sessionsOnDay(items: BookingItem[], date: string): BookingItem[] {
+  return sortForPhase(
+    items.filter((i) => {
+      // What the day's tile counted (`GET /me/bookings/attendance`): attended,
+      // or booked and not yet started. A past class never checked in, and a
+      // private session left scheduled after it ran, are in neither.
+      if (i.type === "class") {
+        const counted =
+          i.booking.check_in_state === "attended" || (i.booking.state === "confirmed" && i.phase === "upcoming");
+        return counted && studioDate(i.at) === date;
+      }
+      if (i.type === "pt") {
+        const s = i.request.session;
+        const counted = i.request.status === "attended" || (i.request.status === "scheduled" && i.phase === "upcoming");
+        return counted && !!s && studioDate(s.starts_at) === date;
+      }
+      return false;
+    }),
+    "upcoming",
+  );
+}

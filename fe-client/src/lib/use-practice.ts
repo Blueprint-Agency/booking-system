@@ -65,8 +65,3 @@ export function usePractice(
     retry: read.refresh,
   };
 }
-
-/** This month's summary, for the account overview's line. */
-export function usePracticeMonth() {
-  return usePractice("month", null);
-}

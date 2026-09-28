@@ -61,6 +61,15 @@ export const OVERLAY_PANEL =
   "flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-card shadow-modal outline-none animate-fade-up sm:max-h-[85dvh] sm:max-w-2xl sm:rounded-2xl";
 export const OVERLAY_HEADER =
   "flex items-start gap-3 border-b border-ink/5 px-5 pb-4 pt-5 sm:px-6";
+/**
+ * The same overlay held in the middle of the screen at every width, rather
+ * than rising from the bottom on a phone: for a look at something already
+ * held (a day of My activity, a booked class), not a step towards booking.
+ */
+export const OVERLAY_BACKDROP_CENTRED =
+  "fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm animate-fade-in sm:p-6";
+export const OVERLAY_PANEL_CENTRED =
+  "flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-2xl bg-card shadow-modal outline-none animate-fade-up sm:max-w-2xl";
 /** The scrolling middle; `min-h-0` lets it shrink inside the flex column. */
 export const OVERLAY_BODY = "min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6";
 export const OVERLAY_ACTIONS =

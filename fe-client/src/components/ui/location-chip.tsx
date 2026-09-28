@@ -10,7 +10,7 @@ import { ALL_LOCATIONS } from "@/lib/package-coverage";
  */
 export function CoversRow({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <ul aria-label="Covers" className={cn("flex flex-wrap gap-1.5", className)}>
+    <ul aria-label="Covers" className={cn("flex flex-wrap items-center gap-x-3 gap-y-1", className)}>
       {children}
     </ul>
   );
@@ -39,8 +39,8 @@ export function HomeStudioRow({ className }: { className?: string }) {
 
 export function LocationChip({ name, until }: { name: string; until?: string | null }) {
   return (
-    <li className="inline-flex max-w-full items-center gap-1 rounded-full border border-ink/10 bg-ink/[0.03] px-2 py-0.5 text-xs font-medium text-ink">
-      <MapPin className="h-3 w-3 shrink-0 text-ink/40" aria-hidden />
+    <li className="inline-flex min-w-0 max-w-full items-center gap-1 text-xs text-muted">
+      <MapPin className="h-3.5 w-3.5 shrink-0 text-ink/35" aria-hidden />
       <span className="truncate">{name}</span>
       {until && <span className="shrink-0 text-muted">· until {until}</span>}
     </li>

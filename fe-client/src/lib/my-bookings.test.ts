@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bookingItems, sortForPhase, type BookingSources } from "./my-bookings.ts";
+import { bookingItems, sessionsOnDay, sortForPhase, type BookingSources } from "./my-bookings.ts";
 
 const NOW = Date.parse("2026-09-27T10:00:00+08:00");
 const at = (h: number) => new Date(NOW + h * 3_600_000).toISOString();
@@ -63,6 +63,39 @@ test("a corporate request waiting to be scheduled is upcoming", () => {
     "corporate:p": "upcoming",
     "corporate:d": "past",
   });
+});
+
+test("a day's sessions are the ones its tile counted: attended, or booked and not yet started, earliest first", () => {
+  const checkedIn = (c: unknown, state: string) => ({ ...(c as object), check_in_state: state }) as never;
+  const items = bookingItems(
+    {
+      ...empty,
+      upcoming: [cls("later", 3, 4), cls("tomorrow", 15, 16)],
+      past: [
+        checkedIn(cls("morning", -2, -1), "attended"),
+        // Ran, but never ticked: the tile did not count it.
+        checkedIn(cls("unticked", -3, -2), "pending"),
+        cls("gone", -4, -3, "cancelled"),
+        checkedIn(cls("n", -2, -1), "no_show"),
+      ],
+      pt: [
+        pt("done", "attended", [-6, -5]),
+        // Left scheduled after it ran: not attended, and no longer to come.
+        pt("stale", "scheduled", [-8, -7]),
+        pt("next", "scheduled", [6, 7]),
+        pt("asked", "pending"),
+        pt("dropped", "cancelled_after_scheduled", [5, 6]),
+      ],
+      workshops: [{ id: "w", state: "confirmed", booked_at: at(-100), starts_at: at(1), ends_at: at(2) } as never],
+    },
+    NOW,
+  );
+  assert.deepEqual(
+    sessionsOnDay(items, "2026-09-27").map((i) => i.key),
+    ["pt:done", "class:morning", "class:later", "pt:next"],
+  );
+  // 01:00 on the 28th in Singapore, still the 27th in UTC.
+  assert.deepEqual(sessionsOnDay(items, "2026-09-28").map((i) => i.key), ["class:tomorrow"]);
 });
 
 test("coming items run soonest first, past ones most recent first", () => {

@@ -278,8 +278,8 @@ export function ClassDetailOverlay({
   );
 }
 
-/** One labelled fact about the class, with its icon. */
-function Fact({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
+/** One labelled fact about the class, with its icon. Booked-class detail on My bookings wears the same. */
+export function Fact({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
   return (
     <div className="flex min-w-0 gap-3">
       <span aria-hidden className="mt-0.5 shrink-0 text-ink/30 [&>svg]:h-4 [&>svg]:w-4">

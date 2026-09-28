@@ -1,5 +1,5 @@
 /**
- * The words and layout of "My practice" (`/account/practice`, #340), from
+ * The words and layout of "My activity" (`/account/practice`, #340; once "My practice"), from
  * `GET /me/bookings/attendance`. The backend decides the timeframe, its
  * buckets, what counts as a session, how far back and forward the member can
  * step and every figure; this only says them and lays the week out as seven
@@ -98,18 +98,12 @@ function periodBefore(s: PracticeData): string {
   return previousMonthOf(s.from);
 }
 
-/** The big number and the words after it: "13" "sessions in September". */
+/**
+ * The big number and the word after it: "13" "sessions". The stepper above it
+ * already names the period, so the headline does not say it again.
+ */
 export function headline(s: PracticeData): { count: number; label: string } {
-  return { count: s.attended, label: `${s.attended === 1 ? "session" : "sessions"} ${inPeriod(s)}` };
-}
-
-/** "11 classes · 2 private sessions", leaving out a part that is zero. */
-export function breakdownLine(classes: number, pt: number): string | null {
-  const parts = [
-    classes > 0 ? plural(classes, "class", "classes") : null,
-    pt > 0 ? plural(pt, "private session", "private sessions") : null,
-  ].filter(Boolean);
-  return parts.length ? parts.join(" · ") : null;
+  return { count: s.attended, label: s.attended === 1 ? "session" : "sessions" };
 }
 
 /** "3 more than last week", "Same as August", "2 fewer than 2025". */
@@ -127,23 +121,40 @@ export function workshopLine(s: PracticeData): string | null {
   return `Also ${plural(s.attended_workshops, "workshop", "workshops")} ${inPeriod(s)}`;
 }
 
-/** "13 h 45 m", "2 h", "45 m". */
-export function durationLabel(minutes: number): string {
+/**
+ * A figure as the page sets it: each number large with its unit small after
+ * it, so "13h 45m" reads as two quantities rather than a run of letters.
+ */
+export type FigureParts = { value: string; unit: string }[];
+
+/** 825 → 13h 45m; 120 → 2h; 45 → 45m. */
+export function durationParts(minutes: number): FigureParts {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  if (h === 0) return `${m} m`;
-  return m === 0 ? `${h} h` : `${h} h ${m} m`;
+  if (h === 0) return [{ value: String(m), unit: "m" }];
+  return m === 0
+    ? [{ value: String(h), unit: "h" }]
+    : [
+        { value: String(h), unit: "h" },
+        { value: String(m), unit: "m" },
+      ];
 }
 
-/** "Tue · 7am"; a dash when there is no habit yet. */
-export function usualSlotLabel(slot: PracticeData["usual_slot"]): string {
-  if (!slot) return "—";
+/** Tue 7am; a dash when there is no habit yet. */
+export function usualSlotParts(slot: PracticeData["usual_slot"]): FigureParts {
+  if (!slot) return [{ value: "—", unit: "" }];
   const h = slot.hour % 12 === 0 ? 12 : slot.hour % 12;
-  return `${WEEKDAYS[slot.weekday - 1]} · ${h}${slot.hour < 12 ? "am" : "pm"}`;
+  return [{ value: WEEKDAYS[slot.weekday - 1]!, unit: `${h}${slot.hour < 12 ? "am" : "pm"}` }];
 }
 
+/** 1 week, 3 weeks. */
+export function streakParts(weeks: number): FigureParts {
+  return [{ value: String(weeks), unit: weeks === 1 ? "week" : "weeks" }];
+}
+
+/** What the streak figure is: the run going now, or the longest in a period that has ended. */
 export function streakLabel(current: boolean): string {
-  return current ? "Weeks in a row" : "Longest run of weeks";
+  return current ? "In a row" : "Longest run";
 }
 
 /** "3 Sep", from a plain date. */
@@ -240,33 +251,11 @@ export function weekDays(s: PracticeData, today: string): WeekDay[] {
   }));
 }
 
-// A session's weekday and start on the studio's clock, as every time the app shows is.
-const STUDIO_CLOCK = new Intl.DateTimeFormat("en-US", {
-  timeZone: "Asia/Singapore",
-  weekday: "short",
-  hour: "numeric",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
+const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-/** "Mon" and "7:00am" for an instant, on the studio's clock. */
-function studioStart(iso: string): { day: string; time: string } {
-  const parts = Object.fromEntries(STUDIO_CLOCK.formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
-  const hour = Number(parts.hour) % 24;
-  const h = hour % 12 === 0 ? 12 : hour % 12;
-  return { day: parts.weekday!, time: `${h}:${parts.minute}${hour < 12 ? "am" : "pm"}` };
-}
-
-/** The week's sessions as its list reads them: "Mon · Vinyasa Flow", "7:00am", booked ones marked. */
-export function weekSessions(
-  s: PracticeData,
-): { key: string; day: string; name: string; time: string; booked: boolean }[] {
-  return (s.sessions ?? []).map((session, i) => ({
-    key: `${session.starts_at}-${i}`,
-    ...studioStart(session.starts_at),
-    name: session.name,
-    booked: session.status === "booked",
-  }));
+/** "Wednesday 23 September", from a plain date. */
+export function dayTitle(date: string): string {
+  return `${WEEKDAY_NAMES[isoWeekday(date) - 1]} ${Number(date.slice(8, 10))} ${monthOf(date)}`;
 }
 
 export interface YearColumn {
@@ -315,12 +304,6 @@ export function practiceBars(s: PracticeData): { name: string; attended: number;
 export function lifetimeLine(lifetime: PracticeData["lifetime"]): string {
   if (lifetime.attended === 0 || !lifetime.since) return "Your first class will show here";
   return `${plural(lifetime.attended, "session", "sessions")} since ${monthOf(lifetime.since)} ${lifetime.since.slice(0, 4)}`;
-}
-
-/** The account overview's line under the greeting; nothing before the first session. */
-export function overviewLine(s: PracticeData): string | null {
-  if (s.lifetime.attended === 0) return null;
-  return `${plural(s.lifetime.attended, "session", "sessions")} · ${s.attended} this month`;
 }
 
 /** Today's date on the studio's calendar, as every date the app shows is. */
