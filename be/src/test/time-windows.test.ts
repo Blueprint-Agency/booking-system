@@ -222,10 +222,14 @@ describe('time-window rules over HTTP', { skip: integrationTestsEnabled ? false 
       const t0 = aWeekOut()
       const startsAt = new Date(t0.getTime() + 3 * DAY)
       const cutoff = new Date(startsAt.getTime() - classWindowHours * HOUR)
+      // A member is in one place at a time, so each class has an hour of its own.
+      const lateStartsAt = new Date(startsAt.getTime() + 2 * HOUR)
+      const lateCutoff = new Date(lateStartsAt.getTime() - classWindowHours * HOUR)
+      const startedStartsAt = new Date(startsAt.getTime() + 4 * HOUR)
       const ana = await member(at(), `ana-${which}`)
       const onTime = await addClass(at(), startsAt)
-      const late = await addClass(at(), startsAt)
-      const started = await addClass(at(), startsAt)
+      const late = await addClass(at(), lateStartsAt)
+      const started = await addClass(at(), startedStartsAt)
 
       harness.clock.set(t0)
       const onTimeBooking = await bookOk(ana, onTime)
@@ -247,7 +251,7 @@ describe('time-window rules over HTTP', { skip: integrationTestsEnabled ? false 
 
       // Past the cutoff a member's cancel is a Late cancel (#318): it goes
       // through, recorded late, and the credit is kept.
-      harness.clock.set(new Date(cutoff.getTime() + 1))
+      harness.clock.set(new Date(lateCutoff.getTime() + 1))
       await expectStatus(await cancel(ana, lateBooking), 200)
       const lateRow = await bookingRow(lateBooking)
       assert.equal(lateRow.state, 'cancelled')
@@ -259,7 +263,7 @@ describe('time-window rules over HTTP', { skip: integrationTestsEnabled ? false 
       assert.equal((await packageOf(ana)).creditsOrSessionsRemaining, 8)
 
       // Once the class starts, cancelling is refused outright.
-      harness.clock.set(startsAt)
+      harness.clock.set(startedStartsAt)
       const refused = JSON.parse(await expectStatus(await cancel(ana, startedBooking), 422)) as { error: string }
       assert.equal(refused.error, 'class_started')
       assert.equal((await bookingRow(startedBooking)).state, 'confirmed')
