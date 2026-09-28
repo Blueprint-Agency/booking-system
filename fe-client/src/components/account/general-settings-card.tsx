@@ -1,8 +1,10 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { Moon, Sun } from "lucide-react";
-import type { FontSize, Theme } from "@/lib/display-prefs";
-import { useDisplayPrefs } from "@/lib/use-display-prefs";
+import { useApi } from "@/lib/api";
+import type { DisplayPrefs, FontSize, Theme } from "@/lib/display-prefs";
+import { pickDisplayPrefs, useDisplayPrefs } from "@/lib/use-display-prefs";
 import { cn } from "@/lib/utils";
 
 const cardClass = "rounded-2xl bg-card border border-ink/5 shadow-soft p-5 sm:p-6 space-y-5";
@@ -71,27 +73,40 @@ function SegmentedRadio<T extends string>({
 }
 
 /**
- * How the app looks on this device: light or dark, and the text size. Both
- * apply the moment they are picked and are kept on the device, not the account
- * (`lib/display-prefs.ts`), so there is nothing to save.
+ * How the app looks: light or dark, and the text size. A pick applies at once
+ * on this device and is saved to the member's account, so the next device they
+ * sign in on follows it (`lib/display-prefs.ts`). There is no Save button: a
+ * save that fails leaves the change on this device and says so.
  */
 export function GeneralSettingsCard() {
-  const [prefs, update] = useDisplayPrefs();
+  const api = useApi();
+  const prefs = useDisplayPrefs();
+  const [status, setStatus] = useState<"idle" | "saved" | "failed">("idle");
+  // Only the latest pick's reply may set the status line.
+  const latest = useRef(0);
+
+  async function choose(change: Partial<DisplayPrefs>) {
+    const call = ++latest.current;
+    const saved = await pickDisplayPrefs(api, change);
+    if (call === latest.current) setStatus(saved ? "saved" : "failed");
+  }
 
   return (
-    <section className={cardClass} aria-labelledby="general-settings-heading">
+    <section className={cardClass} aria-labelledby="display-heading">
       <div>
-        <h2 id="general-settings-heading" className="text-base font-bold text-ink">
-          General settings
+        <h2 id="display-heading" className="text-base font-bold text-ink">
+          Display
         </h2>
-        <p className="mt-0.5 text-sm text-muted">Applies on this device only.</p>
+        <p className="mt-0.5 text-sm text-muted">
+          Saved to your account, so every device you sign in on follows it.
+        </p>
       </div>
 
       <SegmentedRadio
         name="theme"
         legend="Theme"
         value={prefs.theme}
-        onChange={(theme) => update({ theme })}
+        onChange={(theme) => choose({ theme })}
         options={THEME_OPTIONS.map(({ value, label, icon: Icon }) => ({
           value,
           content: (
@@ -107,7 +122,7 @@ export function GeneralSettingsCard() {
         name="font-size"
         legend="Text size"
         value={prefs.fontSize}
-        onChange={(fontSize) => update({ fontSize })}
+        onChange={(fontSize) => choose({ fontSize })}
         options={FONT_SIZE_OPTIONS.map(({ value, label, sample }) => ({
           value,
           content: (
@@ -120,6 +135,16 @@ export function GeneralSettingsCard() {
           ),
         }))}
       />
+
+      <p role="status" className="text-sm font-medium empty:hidden">
+        {status === "saved" ? (
+          <span className="text-sage">Saved to your account</span>
+        ) : status === "failed" ? (
+          <span className="text-error">
+            Couldn&apos;t save to your account. It still applies on this device.
+          </span>
+        ) : null}
+      </p>
     </section>
   );
 }

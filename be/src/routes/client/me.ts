@@ -2,8 +2,9 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { clients } from '../../db/schema/identity'
-import { clientGenderEnum } from '../../db/enums'
+import { clientFontSizeEnum, clientGenderEnum, clientThemeEnum } from '../../db/enums'
 import { editOwnProfile } from '../../services/clients/edit-profile'
+import { setDisplayPrefs } from '../../services/clients/display-prefs'
 import {
   getClientEntitlements,
   serializeUnlimitedPlan,
@@ -42,6 +43,9 @@ function serializeProfile(row: typeof clients.$inferSelect) {
     phone: row.phone,
     gender: row.gender,
     joined_at: row.joinedAt,
+    // General settings. A null field is one the member has not chosen: the
+    // app's default stands.
+    display_prefs: { theme: row.theme, font_size: row.fontSize },
   }
 }
 
@@ -88,6 +92,16 @@ const patchSchema = z
     message: 'at least one of name/phone/gender is required',
   })
 
+// General settings: either or both; one left out keeps its stored value.
+const displayPrefsSchema = z
+  .object({
+    theme: z.enum(clientThemeEnum.enumValues).optional(),
+    font_size: z.enum(clientFontSizeEnum.enumValues).optional(),
+  })
+  .refine(b => b.theme !== undefined || b.font_size !== undefined, {
+    message: 'at least one of theme/font_size is required',
+  })
+
 const app = new Hono()
   .get('/', c => {
     // clientRow is attached by clientAuth — middleware already loaded it.
@@ -96,6 +110,11 @@ const app = new Hono()
   .patch('/', zValidator('json', patchSchema), async c => {
     const body = c.req.valid('json')
     const updated = await editOwnProfile(tenantId(c), c.get('clientId'), body)
+    return c.json(serializeProfile(updated))
+  })
+  .patch('/display-prefs', zValidator('json', displayPrefsSchema), async c => {
+    const { theme, font_size } = c.req.valid('json')
+    const updated = await setDisplayPrefs(tenantId(c), c.get('clientId'), { theme, fontSize: font_size })
     return c.json(serializeProfile(updated))
   })
   .get('/dashboard', c => c.json({ todo: 'next-up + balances' }, 501))

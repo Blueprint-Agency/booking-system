@@ -4,6 +4,7 @@ import {
   DEFAULT_DISPLAY_PREFS,
   DISPLAY_PREFS_KEY,
   DISPLAY_PREFS_SCRIPT,
+  fromAccountDisplayPrefs,
   parseDisplayPrefs,
 } from "./display-prefs.ts";
 
@@ -58,4 +59,14 @@ test("the head script leaves the page alone on nothing, junk or an unknown value
   assert.deepEqual(runHeadScript(null), {});
   assert.deepEqual(runHeadScript("{not json"), {});
   assert.deepEqual(runHeadScript(JSON.stringify({ theme: "sepia", fontSize: "huge" })), {});
+});
+
+test("the account's choice is adopted field by field, and what it has not chosen is left to the device", () => {
+  assert.deepEqual(fromAccountDisplayPrefs({ theme: "dark", font_size: "large" }), {
+    theme: "dark",
+    fontSize: "large",
+  });
+  assert.deepEqual(fromAccountDisplayPrefs({ theme: null, font_size: "medium" }), { fontSize: "medium" });
+  assert.deepEqual(fromAccountDisplayPrefs({ theme: "sepia", font_size: null }), {});
+  assert.deepEqual(fromAccountDisplayPrefs(undefined), {});
 });

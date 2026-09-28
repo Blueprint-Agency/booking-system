@@ -3,6 +3,8 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { makeApi } from "@/lib/api";
 import { getMemberToken, readMemberToken, useMemberSession } from "@/lib/member-auth";
+import type { AccountDisplayPrefs } from "@/lib/display-prefs";
+import { adoptAccountDisplayPrefs, displayPrefsPicks } from "@/lib/use-display-prefs";
 
 const api = makeApi(getMemberToken);
 
@@ -24,6 +26,13 @@ export type AppUser = {
  */
 type Profile = { name: string; email: string };
 
+/**
+ * The same read carries the member's General settings, saved to their account
+ * on another device, perhaps: adopting them here applies them on whichever page
+ * the member signs in to, not only on the settings page.
+ */
+type MeResponse = Profile & { display_prefs?: AccountDisplayPrefs };
+
 let profile: Profile | null = null;
 /** Whose profile `profile` is. */
 let profileFor: string | null = null;
@@ -39,8 +48,10 @@ async function loadProfile(userId: string): Promise<void> {
   const token = readMemberToken();
   if (!token) return;
   try {
-    const res = await api.get<Profile>("/me");
+    const picksAtRead = displayPrefsPicks();
+    const res = await api.get<MeResponse>("/me");
     profile = { name: res.name, email: res.email };
+    adoptAccountDisplayPrefs(api, res.display_prefs, picksAtRead);
     profileFor = userId;
     emit();
   } catch {

@@ -206,4 +206,34 @@ describe('member profile edit', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(invalid.status, 400, invalid.text)
     assert.equal((await me('GET')).body.gender, null, 'an invalid value changes nothing')
   })
+
+  test('ACC-20 a member saves their theme and text size to their account, one at a time, and an invalid or empty save is refused', async () => {
+    const member = await newMember()
+    const other = await newMember()
+    const prefs = async (who = member) => {
+      const res = await call('GET', '/me', who.headers)
+      assert.equal(res.status, 200, res.text)
+      return res.body.display_prefs
+    }
+    const save = (body: unknown, headers = member.headers) => call('PATCH', '/me/display-prefs', headers, body)
+
+    assert.deepEqual(await prefs(), { theme: null, font_size: null }, 'nothing chosen yet')
+
+    const dark = await save({ theme: 'dark' })
+    assert.equal(dark.status, 200, dark.text)
+    assert.deepEqual(dark.body.display_prefs, { theme: 'dark', font_size: null })
+
+    const large = await save({ font_size: 'large' })
+    assert.equal(large.status, 200, large.text)
+    assert.deepEqual(await prefs(), { theme: 'dark', font_size: 'large' }, 'the theme is kept when only the size is sent')
+
+    for (const body of [{}, { theme: 'sepia' }, { font_size: 'huge' }, { theme: null }]) {
+      const res = await save(body)
+      assert.equal(res.status, 400, `${JSON.stringify(body)}: ${res.text}`)
+    }
+    assert.deepEqual(await prefs(), { theme: 'dark', font_size: 'large' }, 'a refused save changes nothing')
+
+    assert.equal((await save({ theme: 'light' }, adminOne.headers)).status, 401, 'a staff session is nobody here')
+    assert.deepEqual(await prefs(other), { theme: null, font_size: null }, 'another member keeps their own')
+  })
 })

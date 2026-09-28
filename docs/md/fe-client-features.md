@@ -569,11 +569,11 @@ Every purchase succeeds even if the email fails to send — the send is a fire-a
 
 ## 8. Account portal `/account/*`
 
-The account section is a sticky sidebar (desktop, from `lg`) listing **My bookings** (`/account/bookings`), **My packages** (`/account/packages`), **Merch**, **Profile & security**, then a red **Sign out**; the member's card at its top opens `/account`. All sub-pages share an `AccountShell`.
+The account section is a sticky sidebar (desktop, from `lg`) listing **My bookings** (`/account/bookings`), **My packages** (`/account/packages`), **Merch**, **Profile & security**, **General settings**, then a red **Sign out**; the member's card at its top opens `/account`. All sub-pages share an `AccountShell`.
 
 ### 8.0 Account home `/account` (as built)
 
-A greeting, unfinished purchases (#93) and the checkout-cancelled banner (#274), then **Up next** only: the one ticket of the old "Coming up" below — the same component the schedule shows above its feed (`ComingUp`), with **Show my QR** and a red **Cancel**. Below `lg` the **My account** menu follows it: the member's card (→ Profile), My bookings, My packages, Merch, Profile & security, and a red **Sign out**. Every section page heads itself with "‹ Account" back to it below `lg`.
+A greeting, unfinished purchases (#93) and the checkout-cancelled banner (#274), then **Up next** only: the one ticket of the old "Coming up" below — the same component the schedule shows above its feed (`ComingUp`), with **Show my QR** and a red **Cancel**. Below `lg` the **My account** menu follows it: the member's card (→ Profile), My bookings, My packages, Merch, Profile & security, General settings, and a red **Sign out**. Every section page heads itself with "‹ Account" back to it below `lg`.
 
 ### 8.1 My bookings `/account/bookings` (as built)
 
@@ -633,6 +633,10 @@ Every package the member has bought, each marked **Active**, **Not started** (Do
 
 **Where admin comes in**
 - Admin can edit any of these fields on a user (including email override) for support cases.
+
+### 8.2a General settings `/account/settings` (as built)
+
+How the app looks for the member: **Theme** (Light, Dark) and **Text size** (Small, the size the app was designed at, Medium, Large). A pick applies at once, with no Save button, and is saved to the member's account (`PATCH /me/display-prefs`), so every device they sign in on follows it: the profile read after sign-in adopts the account's choice (`lib/auth.ts`). A copy is kept in this hostname's `localStorage` so a reload paints in the member's choice before any fetch (`lib/display-prefs.ts`). A save that fails says so and leaves the change on this device, owed to the account: the next profile read sends it up rather than overwriting it. Saves go one at a time, each carrying both fields, so the last pick is the last write.
 
 ### 8.3 My Classes `/account/classes`
 

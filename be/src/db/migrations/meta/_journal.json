@@ -708,6 +708,13 @@
       "when": 1790534864217,
       "tag": "0100_pt_min_book_in_advance",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1790535346974,
+      "tag": "0101_client_display_prefs",
+      "breakpoints": true
     }
   ]
 }

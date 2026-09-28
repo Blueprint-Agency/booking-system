@@ -15,6 +15,8 @@ import { tenantIdColumn } from './tenancy'
 import {
   clientStatusEnum,
   clientGenderEnum,
+  clientThemeEnum,
+  clientFontSizeEnum,
   staffRoleEnum,
   staffStatusEnum,
   invitationStatusEnum,
@@ -34,6 +36,10 @@ export const clients = pgTable(
     phone: text('phone').notNull(),
     gender: clientGenderEnum('gender'),
     dob: date('dob'),
+    // The member app's General settings, followed on every device they sign
+    // in on. Null until the member picks one: the app's default stands.
+    theme: clientThemeEnum('theme'),
+    fontSize: clientFontSizeEnum('font_size'),
     status: clientStatusEnum('status').notNull().default('active'),
     suspendedAt: timestamp('suspended_at', { withTimezone: true }),
     // Soft-delete (admin-only). When set, the row is filtered out of every

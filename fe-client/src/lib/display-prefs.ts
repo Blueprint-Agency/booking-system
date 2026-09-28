@@ -1,10 +1,12 @@
 /**
  * The member's display preferences: light or dark, and how large the text is.
  *
- * **Per device, not per account.** A member who wants large text on their phone
- * may not on their laptop, and a preference the page needs before its first
- * paint cannot wait for a fetch. So the choice lives in this hostname's
- * `localStorage`, and nothing about it reaches the backend.
+ * **Saved to the account, applied from the device.** A signed-in member's choice
+ * is kept on their record at the studio (`PATCH /me/display-prefs`), so it follows
+ * them to every device they sign in on: the profile read after sign-in adopts it
+ * (`lib/auth.ts`). But a preference the page needs before its first paint cannot
+ * wait for a fetch, so this hostname's `localStorage` holds a copy, and that copy
+ * is what the page paints from. Signed out, the copy is all there is.
  *
  * **Applied as attributes on `<html>`.** `data-theme` swaps the colour tokens
  * and `data-font-size` sets the root size that every `rem` in the app is
@@ -50,6 +52,25 @@ export function parseDisplayPrefs(raw: string | null): DisplayPrefs {
       ? (fontSize as FontSize)
       : DEFAULT_DISPLAY_PREFS.fontSize,
   };
+}
+
+/** The account's copy, as `GET /me` gives it. A null field was never chosen. */
+export interface AccountDisplayPrefs {
+  theme: string | null;
+  font_size: string | null;
+}
+
+/**
+ * What the account has chosen, and only that: a field it has not (or one this
+ * build does not know) leaves the device's own value standing.
+ */
+export function fromAccountDisplayPrefs(
+  account: AccountDisplayPrefs | null | undefined,
+): Partial<DisplayPrefs> {
+  const out: Partial<DisplayPrefs> = {};
+  if (THEMES.includes(account?.theme as Theme)) out.theme = account!.theme as Theme;
+  if (FONT_SIZES.includes(account?.font_size as FontSize)) out.fontSize = account!.font_size as FontSize;
+  return out;
 }
 
 /** The attributes `globals.css` keys on, for the element that carries them. */

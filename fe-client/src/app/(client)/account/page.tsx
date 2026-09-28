@@ -16,8 +16,8 @@ import { usePartPaymentOptions, useOpenPurchases } from "@/lib/open-purchases";
 /**
  * The account's landing page: the one booking the member walks into next
  * ("Up next"), then — below `lg`, where there is no sidebar — the account
- * menu. Everything else has its own page: Your bookings, Your packages, Merch,
- * Profile & security.
+ * menu. Everything else has its own page: My bookings, My packages, Merch,
+ * Profile & security, General settings.
  */
 export default function AccountHome() {
   const { user } = useAppUser();

@@ -1,5 +1,6 @@
 import {
   CalendarCheck,
+  Settings,
   ShoppingBag,
   Ticket,
   UserCircle,
@@ -26,4 +27,5 @@ export const ACCOUNT_SECTIONS: AccountNavItem[] = [
   { href: "/account/packages", label: "My packages", hint: "Active, not started and ended", icon: Ticket, isActive: prefix("/account/packages") },
   { href: "/account/merch", label: "Merch", hint: "Items to collect at the studio", icon: ShoppingBag, isActive: prefix("/account/merch") },
   { href: "/account/profile", label: "Profile & security", hint: "Details, saved cards, password", icon: UserCircle, isActive: prefix("/account/profile") },
+  { href: "/account/settings", label: "General settings", hint: "Theme and text size", icon: Settings, isActive: prefix("/account/settings") },
 ];

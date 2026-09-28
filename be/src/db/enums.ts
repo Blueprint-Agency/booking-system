@@ -7,6 +7,9 @@ export const tenantStatusEnum = pgEnum('tenant_status', ['active', 'suspended', 
 // Identity
 export const clientStatusEnum = pgEnum('client_status', ['active', 'suspended'])
 export const clientGenderEnum = pgEnum('client_gender', ['female', 'male', 'non_binary', 'prefer_not_to_say'])
+// How the member app looks for this member: their General settings.
+export const clientThemeEnum = pgEnum('client_theme', ['light', 'dark'])
+export const clientFontSizeEnum = pgEnum('client_font_size', ['small', 'medium', 'large'])
 export const staffRoleEnum = pgEnum('staff_role', ['admin', 'instructor'])
 export const staffStatusEnum = pgEnum('staff_status', ['pending', 'active', 'archived'])
 // An **Instructor Permission** (be/CONTEXT.md § Staff, be/docs/adr/0012): one of

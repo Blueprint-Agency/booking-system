@@ -13,7 +13,7 @@ import { readDisplayPrefs, useDisplayPrefs } from "@/lib/use-display-prefs";
  * script's, and a change in another tab arrives here too.
  */
 export function DisplayPrefsSync() {
-  const [prefs] = useDisplayPrefs();
+  const prefs = useDisplayPrefs();
   useLayoutEffect(() => {
     // Read from storage rather than `prefs`: while hydrating, the hook hands
     // back the server's default, and applying that would flash light theme.
