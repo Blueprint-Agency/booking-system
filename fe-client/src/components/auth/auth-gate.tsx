@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useMemberSession } from "@/lib/member-auth";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { cn } from "@/lib/utils";
 import {
   BTN_PRIMARY,
@@ -37,16 +38,12 @@ function LoginRequiredModal({
     setMounted(true);
   }, []);
 
+  useBodyScrollLock(open);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
   if (!open || !mounted) return null;
@@ -96,6 +93,8 @@ export function useAuthGate(context: AuthGateContext = "continue") {
   const { isSignedIn } = useMemberSession();
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
+  // Stable, so the modal's Escape listener isn't torn down on every render.
+  const closeModal = useCallback(() => setModalOpen(false), []);
   const [pendingHref, setPendingHref] = useState<string>("/");
 
   const isAuthed = !!isSignedIn;
@@ -117,7 +116,7 @@ export function useAuthGate(context: AuthGateContext = "continue") {
   const gate = (
     <LoginRequiredModal
       open={modalOpen}
-      onClose={() => setModalOpen(false)}
+      onClose={closeModal}
       context={context}
       nextHref={pendingHref}
     />

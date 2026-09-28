@@ -274,7 +274,12 @@ function RegisterContent() {
       </form>
       <p className="mt-6 text-sm text-muted">
         Already have an account?{" "}
-        <Link href="/login" className="text-accent-deep font-medium">Sign in</Link>
+        <Link
+          href={`/login${next !== "/" ? `?next=${encodeURIComponent(next)}` : ""}`}
+          className="text-accent-deep font-medium"
+        >
+          Sign in
+        </Link>
       </p>
     </AuthSplitShell>
   );

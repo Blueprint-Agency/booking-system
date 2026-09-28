@@ -11,6 +11,7 @@ import { OpenPurchases } from "@/components/account/open-purchases";
 import { CancelledBanner } from "@/components/checkout/cancelled-banner";
 import { BTN_BOOK, CARD } from "@/components/ui/styles";
 import { useAppUser } from "@/lib/auth";
+import { useHoldLoader } from "@/lib/loading-store";
 import { usePartPaymentOptions, useOpenPurchases } from "@/lib/open-purchases";
 
 /**
@@ -23,8 +24,15 @@ export default function AccountHome() {
   const { user } = useAppUser();
   // A balance the member left outstanding (#93), and the return from a payment
   // page they left (#274): the checkout's cancel URLs land here.
-  const { purchases: openPurchases, failed: openPurchasesFailed } = useOpenPurchases();
+  const {
+    purchases: openPurchases,
+    failed: openPurchasesFailed,
+    loading: openPurchasesLoading,
+  } = useOpenPurchases();
   const partPayment = usePartPaymentOptions();
+  // A balance owed sits above Up next: the page waits for it rather than be
+  // pushed down when it lands.
+  useHoldLoader(openPurchasesLoading || partPayment.loading);
   const firstName = user?.firstName || "there";
 
   return (

@@ -9,11 +9,13 @@ import { ClassRow, FilterSelect } from "@/components/booking/class-row";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { OneOpenAccordion } from "@/components/booking/one-open-accordion";
 import { ContentLoading } from "@/components/ui/content-loading";
+import { useHoldLoader } from "@/lib/loading-store";
+import { Select } from "@/components/ui/select";
 import { BTN_SECONDARY, CARD } from "@/components/ui/styles";
 import { ComingUp } from "@/components/account/coming-up";
 import { PolicyNotice } from "@/components/booking/policy-notice";
 import { cn } from "@/lib/utils";
-import { useCancellationPolicy } from "@/lib/cancellation-policy";
+import { useCancellationPolicyRead } from "@/lib/cancellation-policy";
 import { classPolicyPoints } from "@/lib/cancellation-copy";
 
 /** Today and the nine days after it. */
@@ -51,17 +53,25 @@ export function ClassFeed() {
   const to = useMemo(() => windowEndISO(WINDOW_DAYS), []);
   const nowMs = useMemo(() => Date.now(), []);
 
-  const { data: classes, loading, refresh } = useClasses({
-    from,
-    to,
-    location_id: selectedLocation || undefined,
-  });
   // `?? []` and not a default argument: the hook returns null while loading,
   // and a default only fires for undefined.
   const { data: locationData } = useLocations();
   const locations = useMemo(() => locationData ?? [], [locationData]);
-  const { isSignedIn } = useMemberSession();
-  const policy = useCancellationPolicy();
+  // The schedule is one Location's: two studios' classes side by side read as
+  // repeats and get booked at the wrong one. It opens on the first Location,
+  // and the feed waits for the list rather than showing every studio first.
+  const locationId = selectedLocation || locations[0]?.id || "";
+  const { data: classes, loading, refresh } = useClasses(
+    { from, to, location_id: locationId || undefined },
+    { enabled: locationData !== null },
+  );
+  const { isLoaded: sessionLoaded, isSignedIn } = useMemberSession();
+  // A signed-in member's next-booking ticket lands above the rows once the
+  // session is known: the page waits for that rather than be pushed down.
+  useHoldLoader(!sessionLoaded);
+  // The policy notice sits above the rows: the feed waits for it rather than
+  // be pushed down when it lands.
+  const { policy, settled: policySettled } = useCancellationPolicyRead();
   const { canBook, loaded: canBookLoaded, entitlements } = useCanBookClass();
 
   // The feed is read without the instructor filter and narrowed here, so the
@@ -74,7 +84,6 @@ export function ClassFeed() {
     () => (instructor ? unfiltered.filter((c) => c.instructor.id === instructor) : unfiltered),
     [unfiltered, instructor],
   );
-  const showLocationBadge = !selectedLocation;
 
   const instructorOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -108,11 +117,8 @@ export function ClassFeed() {
   );
   const itemsByDate = useMemo(() => new Map(groups.map((g) => [g.date, g.items])), [groups]);
 
-  const filtered = Boolean(selectedLocation || instructor);
-  const clearFilters = () => {
-    setSelectedLocation("");
-    setInstructor("");
-  };
+  const filtered = Boolean(instructor);
+  const clearFilters = () => setInstructor("");
 
   return (
     <BookingSurface>
@@ -123,12 +129,13 @@ export function ClassFeed() {
       <ComingUp variant="schedule" onChanged={refresh} />
 
       <div className="grid grid-cols-2 gap-2 mb-3 sm:flex">
-        <FilterSelect
-          label="Location"
-          value={selectedLocation}
+        <Select
+          ariaLabel="Location"
+          value={locationId}
           onChange={setSelectedLocation}
           options={locations.map((l) => ({ value: l.id, label: l.name }))}
-          placeholder="All locations"
+          className="min-w-0 flex-1 sm:max-w-[240px]"
+          triggerClassName="border-accent/40 font-medium"
         />
         <FilterSelect
           label="Instructor"
@@ -143,16 +150,16 @@ export function ClassFeed() {
           out rather than guessed while the studio's policy is still loading. */}
       {policy && <PolicyNotice title="Cancellation policy" points={classPolicyPoints(policy)} className="mb-6" />}
 
-      {loading ? (
+      {loading || !policySettled ? (
         <ContentLoading label="Loading schedule" />
       ) : groups.length === 0 ? (
         <div className={cn(CARD, "px-6 py-12 text-center")}>
           <p className="font-semibold text-ink">
-            {filtered ? "No classes match these filters" : "No classes scheduled yet"}
+            {filtered ? "No classes match this instructor" : "No classes scheduled yet"}
           </p>
           <p className="mt-1 text-sm text-muted">
             {filtered
-              ? "Try another location or instructor."
+              ? "Try another instructor or location."
               : `Classes for the next ${WINDOW_DAYS} days show up here.`}
           </p>
           {filtered && (
@@ -169,7 +176,7 @@ export function ClassFeed() {
                 <ClassRow
                   key={c.id}
                   cls={c}
-                  showLocation={showLocationBadge}
+                  showLocation={!locationId}
                   canBook={canBook}
                   canBookLoaded={canBookLoaded}
                   isSignedIn={!!isSignedIn}

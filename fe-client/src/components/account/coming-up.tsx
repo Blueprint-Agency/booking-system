@@ -6,7 +6,9 @@
  * and (where the member may still cancel) its Cancel. Shown above the
  * schedule and at the top of "Your bookings".
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useCachedResource } from "@/lib/resource-cache";
+import { useHoldLoader } from "@/lib/loading-store";
 import Link from "next/link";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { useMemberSession } from "@/lib/member-auth";
@@ -153,19 +155,14 @@ function ComingUpTicket({
   onResolved?: (key: string | null) => void;
 }) {
   const api = useApi();
+  const { session } = useMemberSession();
   const policy = useCancellationPolicy();
   const { refetch: refetchPackages } = useClientPackages();
-  const [loading, setLoading] = useState(true);
-  const [next, setNext] = useState<Next | null>(null);
   const [cancelClass, setCancelClass] = useState<ApiBooking | null>(null);
   const [cancelPt, setCancelPt] = useState<RawPtRequest | null>(null);
 
-  const resolvedKey = loading ? undefined : next ? keyOf(next) : null;
-  useEffect(() => {
-    if (resolvedKey !== undefined) onResolved?.(resolvedKey);
-  }, [onResolved, resolvedKey]);
-
-  const reload = useCallback(async () => {
+  // Drawn at once from the last visit and re-read behind it (`resource-cache.ts`).
+  const read = useCachedResource<Next | null>(session ? `me:${session.userId}:coming-up` : null, async () => {
     try {
       // Only the class bookings are essential: a failed PT, workshop or past
       // read must not blank a confirmed class into "Nothing booked yet".
@@ -184,25 +181,35 @@ function ComingUpTicket({
           "coming-up-workshops",
         ),
       ]);
-      setNext(
-        nextUp(
-          { upcoming: upcoming.bookings ?? [], past: past.bookings ?? [] },
-          pt.pt_requests ?? [],
-          workshops.workshop_bookings ?? [],
-          Date.now(),
-        ),
+      return nextUp(
+        { upcoming: upcoming.bookings ?? [], past: past.bookings ?? [] },
+        pt.pt_requests ?? [],
+        workshops.workshop_bookings ?? [],
+        Date.now(),
       );
     } catch (err) {
       reportError(err, { scope: "coming-up" });
-      setNext(null);
-    } finally {
-      setLoading(false);
+      throw err;
     }
-  }, [api]);
+  });
+  const loading = read.loading;
+  const next = read.error && !read.data ? null : read.data;
+  const reload = read.refresh;
 
+  // On the schedule the ticket sits above the class list with no placeholder:
+  // the page waits for it under the spinner rather than be pushed down when it lands.
+  useHoldLoader(variant === "schedule" && loading);
+
+  // The list beside it changed: re-read in place.
+  const firstRefreshKey = useRef(refreshKey);
   useEffect(() => {
-    reload();
-  }, [reload, refreshKey]);
+    if (refreshKey !== firstRefreshKey.current) void reload();
+  }, [refreshKey, reload]);
+
+  const resolvedKey = loading ? undefined : next ? keyOf(next) : null;
+  useEffect(() => {
+    if (resolvedKey !== undefined) onResolved?.(resolvedKey);
+  }, [onResolved, resolvedKey]);
 
   async function onClassCancelled(outcome: CancelOutcome) {
     setCancelClass(null);

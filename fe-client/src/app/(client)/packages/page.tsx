@@ -32,6 +32,7 @@ import {
 import { useApi } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useLocations } from "@/lib/classes";
 import {
   ApiClassPackage,
@@ -793,16 +794,20 @@ function TrialTermsModal({
 }) {
   const [ack, setAck] = useState(false);
   useBodyScrollLock(true);
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
   const isFree = Number(pkg.effective_price_sgd) === 0;
   return (
     <Portal>
     <div className={SHEET_BACKDROP} onClick={onCancel}>
       <div
+        ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="trial-terms-title"
+        tabIndex={-1}
         className={SHEET_PANEL}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.key === "Escape" && onCancel()}
       >
         <span aria-hidden className={SHEET_HANDLE} />
         <h3 id="trial-terms-title" className={SHEET_TITLE}>
@@ -1003,7 +1008,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
           detail={null}
           place={sent.location || null}
           person={null}
-          onClose={() => router.push("/account/corporate")}
+          onClose={() => router.push("/account/bookings?type=corporate")}
         />
       )}
     </div>
@@ -1042,17 +1047,13 @@ function CorporateRequestModal({
   const resolvedWhere = isCustom ? customWhere.trim() : where.trim();
   const canSubmit = resolvedWhere.length > 0 && !pending;
 
+  const trapRef = useFocusTrap<HTMLDivElement>(mounted);
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, []);
+  useBodyScrollLock(true);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1072,9 +1073,11 @@ function CorporateRequestModal({
   return createPortal(
     <div className={SHEET_BACKDROP} onClick={pending ? undefined : onCancel}>
       <div
+        ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="corporate-request-title"
+        tabIndex={-1}
         className={SHEET_PANEL}
         onClick={(e) => e.stopPropagation()}
       >

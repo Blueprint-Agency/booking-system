@@ -55,6 +55,8 @@ test("the shared next sanitiser", () => {
   assert.equal(safeNextPath(new URLSearchParams("next=/account")), "/account");
   assert.equal(safeNextPath(new URLSearchParams("next=https://evil.com")), null);
   assert.equal(safeNextPath(new URLSearchParams("next=//evil.com")), null);
+  // A browser reads a backslash after the leading slash as a second slash.
+  assert.equal(safeNextPath(new URLSearchParams("next=/%5Cevil.com")), null);
   assert.equal(safeNextPath(new URLSearchParams("next=/login")), null);
   assert.equal(safeNextPath(new URLSearchParams("next=/register")), null);
   assert.equal(safeNextPath(new URLSearchParams()), null);

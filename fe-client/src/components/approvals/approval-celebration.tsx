@@ -48,12 +48,17 @@ export function ApprovalWatcher() {
   // nor if it failed (it will be offered again on the next visit).
   const dismissed = useRef(new Set<string>());
   const inFlight = useRef(false);
+  const active = isLoaded && isSignedIn === true;
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const check = useCallback(async () => {
     if (inFlight.current || document.visibilityState !== "visible") return;
     inFlight.current = true;
     try {
       const res = await api.get<{ approvals: ApiApproval[] }>("/me/approvals");
+      // Signed out while the read was out: these were the last member's.
+      if (!activeRef.current) return;
       setQueue(res.approvals.filter((a) => !dismissed.current.has(`${a.kind}:${a.id}`)));
     } catch {
       // A missed look is harmless: the next one finds the same approvals.
@@ -61,8 +66,6 @@ export function ApprovalWatcher() {
       inFlight.current = false;
     }
   }, [api]);
-
-  const active = isLoaded && isSignedIn === true;
 
   // Every page the member opens.
   useEffect(() => {

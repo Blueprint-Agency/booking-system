@@ -18,7 +18,8 @@ const AUTH_PAGE = /^\/(login|register)(\/|$)/;
 /** The `?next=` on an auth page, when it is safe to send someone to it. */
 export function safeNextPath(params: URLSearchParams): string | null {
   const next = params.get("next");
-  return next && next.startsWith("/") && !next.startsWith("//") && !AUTH_PAGE.test(next)
+  // `/\host` is as off-site as `//host`: browsers read the backslash as a slash.
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") && !AUTH_PAGE.test(next)
     ? next
     : null;
 }

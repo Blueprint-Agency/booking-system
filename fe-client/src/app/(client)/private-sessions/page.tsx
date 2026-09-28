@@ -511,7 +511,7 @@ export default function PrivateSessionsPage() {
           detail={slots.length === 1 ? slotLabel(slots[0]!) : `${slots.length} times suggested`}
           place={locationName}
           person={partnerDisplay ? `With ${partnerDisplay}` : null}
-          onClose={() => router.push("/account/private-sessions")}
+          onClose={() => router.push("/account/bookings?type=pt")}
         />
       )}
     </BookingSurface>

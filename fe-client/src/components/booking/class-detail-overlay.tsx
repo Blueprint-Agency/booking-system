@@ -417,7 +417,7 @@ function PrimaryAction({
     // The way through a clash is the other booking, in My bookings.
     case "clash":
       return (
-        <Link href="/account/classes" className={BTN_PRIMARY}>
+        <Link href="/account/bookings?type=class" className={BTN_PRIMARY}>
           My bookings
         </Link>
       );

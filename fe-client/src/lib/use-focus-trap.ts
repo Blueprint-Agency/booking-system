@@ -2,6 +2,9 @@
 
 import { useEffect, useRef } from "react";
 
+/** The active traps, innermost last: only the top one handles Tab. */
+const traps: HTMLElement[] = [];
+
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -29,9 +32,13 @@ export function useFocusTrap<T extends HTMLElement>(active: boolean) {
       );
 
     (focusables()[0] ?? node).focus();
+    traps.push(node);
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
+      // A dialog opened over this one (each is portalled on its own) owns Tab
+      // until it closes; two traps would each pull focus back to themselves.
+      if (traps[traps.length - 1] !== node) return;
       const els = focusables();
       if (els.length === 0) {
         e.preventDefault();
@@ -55,6 +62,8 @@ export function useFocusTrap<T extends HTMLElement>(active: boolean) {
     document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
+      const at = traps.lastIndexOf(node);
+      if (at !== -1) traps.splice(at, 1);
       previouslyFocused?.focus?.();
     };
   }, [active]);

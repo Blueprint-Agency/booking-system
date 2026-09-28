@@ -2,6 +2,8 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { Lock, ShoppingCart, Tag, Check, AlertCircle, MapPin, UserRound } from "lucide-react";
 import { cn, formatCurrency, formatDurationMonths } from "@/lib/utils";
 import { CheckoutFrame, checkoutCardClass } from "@/components/checkout/checkout-frame";
@@ -287,7 +289,7 @@ function CheckoutContent() {
   if (!isLoaded || loadingPkg) {
     return (
       <CheckoutFrame>
-        <div className="py-20 text-center text-muted text-sm" aria-busy="true">Loading…</div>
+        <ContentLoading label="Loading checkout" />
       </CheckoutFrame>
     );
   }
@@ -333,12 +335,12 @@ function CheckoutContent() {
             Log in, or create one in under a minute.
           </p>
           <div className="flex flex-col sm:flex-row gap-2.5 justify-center">
-            <a href={loginHref} className="flex-1 inline-flex min-h-[44px] items-center justify-center px-5 py-2.5 text-sm font-bold text-inverse bg-accent rounded-full hover:bg-accent-deep dark:hover:bg-accent/85 transition-colors">
+            <Link href={loginHref} className="flex-1 inline-flex min-h-[44px] items-center justify-center px-5 py-2.5 text-sm font-bold text-inverse bg-accent rounded-full hover:bg-accent-deep dark:hover:bg-accent/85 transition-colors">
               Log in
-            </a>
-            <a href={registerHref} className="flex-1 inline-flex min-h-[44px] items-center justify-center px-5 py-2.5 text-sm font-bold text-ink border border-ink/15 rounded-full hover:bg-warm transition-colors">
+            </Link>
+            <Link href={registerHref} className="flex-1 inline-flex min-h-[44px] items-center justify-center px-5 py-2.5 text-sm font-bold text-ink border border-ink/15 rounded-full hover:bg-warm transition-colors">
               Sign up
-            </a>
+            </Link>
           </div>
         </div>
       </CheckoutFrame>
@@ -724,7 +726,7 @@ function CheckoutContent() {
 
 export default function CheckoutPage() {
   return (
-    <Suspense fallback={<div className="px-4 py-20 text-center text-muted text-sm">Loading…</div>}>
+    <Suspense fallback={<ContentLoading label="Loading checkout" />}>
       <CheckoutContent />
     </Suspense>
   );

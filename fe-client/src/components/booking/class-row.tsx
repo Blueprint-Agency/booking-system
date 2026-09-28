@@ -555,7 +555,7 @@ export function ClassRow({
       {action === "clash" && clash && (
         <div className="relative mt-2.5 rounded-lg bg-ink/[0.03] px-3 py-2 text-xs text-muted">
           {clashNote(clash)}{" "}
-          <Link href="/account/classes" className="underline underline-offset-2 hover:text-ink transition-colors">
+          <Link href="/account/bookings?type=class" className="underline underline-offset-2 hover:text-ink transition-colors">
             My bookings
           </Link>
         </div>
@@ -627,13 +627,13 @@ export function ClassRow({
       {showNoPackage && (
         <Portal>
         <div className={SHEET_BACKDROP} onClick={() => setShowNoPackage(false)}>
-          <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-labelledby={`no-package-${cls.id}`} tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
+          <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-labelledby={`no-package-${cls.id}`} tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === "Escape" && setShowNoPackage(false)}>
             <span aria-hidden className={SHEET_HANDLE} />
             <h3 id={`no-package-${cls.id}`} className={SHEET_TITLE}>You&apos;re out of credits</h3>
             <p className={SHEET_TEXT}>Buy a package to book this class.</p>
             <div className={SHEET_ACTIONS}>
               <button onClick={() => setShowNoPackage(false)} className={BTN_SECONDARY}>Not now</button>
-              <button onClick={() => router.push("/packages")} className={BTN_PRIMARY}>See packages</button>
+              <Link href="/packages" className={BTN_PRIMARY}>See packages</Link>
             </div>
           </div>
         </div>
@@ -643,7 +643,7 @@ export function ClassRow({
       {bookError && (
         <Portal>
         <div className={SHEET_BACKDROP} onClick={() => setBookError(null)}>
-          <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-labelledby={`book-error-${cls.id}`} tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()}>
+          <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-labelledby={`book-error-${cls.id}`} tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === "Escape" && setBookError(null)}>
             <span aria-hidden className={SHEET_HANDLE} />
             {/* A waitlist refusal names itself; unset reads "Couldn't book". */}
             <h3 id={`book-error-${cls.id}`} className={SHEET_TITLE}>{bookError.title ?? "Couldn't book"}</h3>

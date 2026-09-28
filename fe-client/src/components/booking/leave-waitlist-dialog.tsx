@@ -44,6 +44,7 @@ export function LeaveWaitlistDialog({
         tabIndex={-1}
         className="w-full max-w-sm max-h-[85dvh] overflow-y-auto rounded-2xl bg-paper p-6 sm:p-8 shadow-modal outline-none"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.key === "Escape" && !leaving && onClose()}
       >
         <h3 className="font-serif text-xl text-ink leading-snug">Leave this waitlist?</h3>
         <p className="mt-1 text-sm text-muted">

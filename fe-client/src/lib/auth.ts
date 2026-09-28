@@ -50,6 +50,9 @@ async function loadProfile(userId: string): Promise<void> {
   try {
     const picksAtRead = displayPrefsPicks();
     const res = await api.get<MeResponse>("/me");
+    // Another member has signed in on this tab since the read set off: this
+    // answer is theirs to ignore, name and display settings alike.
+    if (requestedFor !== userId) return;
     profile = { name: res.name, email: res.email };
     adoptAccountDisplayPrefs(api, res.display_prefs, picksAtRead);
     profileFor = userId;

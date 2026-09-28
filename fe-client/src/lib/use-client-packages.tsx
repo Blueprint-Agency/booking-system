@@ -7,6 +7,7 @@ import {
   useEffect,
   useCallback,
   useContext,
+  useMemo,
   useRef,
   type ReactNode,
 } from "react";
@@ -227,14 +228,26 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
   // that branches on what the member owns (the checkout Home studio picker) must
   // not read "no live plan" out of an empty context and offer the wrong control.
   const [loading, setLoading] = useState(true);
+  // Whose packages `data` holds. A re-read for the same member (a route
+  // change, a refetch after checkout) keeps them on screen and updates them in
+  // place: flipping `loading` back on would swap the page just arrived at back
+  // into the spinner and out again.
+  const loadedFor = useRef<string | null>(null);
+  // Only the latest read may land: an older one answering late would put back
+  // what the newer one has already replaced.
+  const latest = useRef(0);
 
   const load = useCallback(async () => {
     if (!isSignedIn || !userId) {
+      // A read still out for the member who just left must not land after this.
+      latest.current++;
+      loadedFor.current = null;
       setData(null);
       setLoading(false);
       return;
     }
-    setLoading(true);
+    const seq = ++latest.current;
+    if (loadedFor.current !== userId) setLoading(true);
     try {
       const token = await getMemberToken();
       if (!token) return;
@@ -253,18 +266,23 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
-      setData(mapPackagesResponse(await res.json()));
+      const mapped = mapPackagesResponse(await res.json());
+      if (seq !== latest.current) return;
+      loadedFor.current = userId;
+      setData(mapped);
     } catch (err) {
       // Non-fatal for the UI (falls back to zero values), but report so it's not silent.
       reportError(err, { scope: "load-packages" });
     } finally {
-      setLoading(false);
+      if (seq === latest.current) setLoading(false);
     }
   }, [isSignedIn, userId]);
 
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn) {
+      latest.current++;
+      loadedFor.current = null;
       setData(null);
       setLoading(false);
       return;
@@ -285,21 +303,33 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
     load();
   }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const value: ClientPackagesValue = {
-    classCredits: data?.classCredits?.total ?? 0,
-    isUnlimited: data?.classCredits?.isUnlimited ?? false,
-    unlimitedExpiresAt: data?.classCredits?.unlimitedExpiresAt ?? null,
-    unlimitedDormant: data?.classCredits?.unlimitedDormant ?? false,
-    unlimitedLocation: data?.classCredits?.unlimitedLocation ?? null,
-    unlimitedPlans: data?.unlimitedPlans ?? [],
-    crossLocation: data?.crossLocation ?? { planId: null, coversBoth: false, rateSgd: "0.00" },
-    pt1on1: data?.ptSessions?.oneOnOne ?? 0,
-    pt2on1: data?.ptSessions?.twoOnOne ?? 0,
-    packages: data?.packages ?? [],
-    endedPackages: data?.ended ?? [],
-    loading,
-    refetch: load,
-  };
+  // `refetch` keeps one identity for the life of the provider, always running
+  // the latest `load`: consumers key effects on it (the payment return syncs,
+  // then refetches), and a new identity when the session resolves would
+  // re-run those effects — a second POST of the same payment sync.
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  const refetch = useCallback(() => loadRef.current(), []);
+
+  // One value per change, not per render: every page under the provider reads it.
+  const value = useMemo<ClientPackagesValue>(
+    () => ({
+      classCredits: data?.classCredits?.total ?? 0,
+      isUnlimited: data?.classCredits?.isUnlimited ?? false,
+      unlimitedExpiresAt: data?.classCredits?.unlimitedExpiresAt ?? null,
+      unlimitedDormant: data?.classCredits?.unlimitedDormant ?? false,
+      unlimitedLocation: data?.classCredits?.unlimitedLocation ?? null,
+      unlimitedPlans: data?.unlimitedPlans ?? [],
+      crossLocation: data?.crossLocation ?? { planId: null, coversBoth: false, rateSgd: "0.00" },
+      pt1on1: data?.ptSessions?.oneOnOne ?? 0,
+      pt2on1: data?.ptSessions?.twoOnOne ?? 0,
+      packages: data?.packages ?? [],
+      endedPackages: data?.ended ?? [],
+      loading,
+      refetch,
+    }),
+    [data, loading, refetch],
+  );
 
   return (
     <ClientPackagesContext.Provider value={value}>

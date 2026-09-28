@@ -7,7 +7,7 @@ import { useBrand } from "@/components/brand/brand-provider";
 
 export function AppTopBar({ impersonating = false }: { impersonating?: boolean }) {
   const brand = useBrand();
-  const { user, isSignedIn: isAuth } = useAppUser();
+  const { user, isLoaded, isSignedIn: isAuth } = useAppUser();
   const firstName = user?.firstName ?? "";
   const lastName = user?.lastName ?? "";
   const userInitials = isAuth
@@ -34,7 +34,11 @@ export function AppTopBar({ impersonating = false }: { impersonating?: boolean }
           )}
         </Link>
 
-        {isAuth ? (
+        {/* Nothing until the session is read: a signed-in member would
+            otherwise see Log in / Sign up on every load, then their avatar. */}
+        {!isLoaded ? (
+          <div className="h-9 w-9" aria-hidden />
+        ) : isAuth ? (
           <div className="flex items-center">
             <Link
               href="/account"

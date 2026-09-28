@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useRef } from "react";
 import { useMemberSession } from "./member-auth";
+import { useCachedResource } from "./resource-cache";
 import { ApiError, publicApi, useApi, type Api } from "./api";
 import type { ApiClassWaitlist } from "./waitlist";
 import type { ApiClash } from "./clash";
@@ -88,82 +89,61 @@ function fetchClasses(api: Api, signedIn: boolean, filters: ClassFilters): Promi
   ).then((res) => res.classes);
 }
 
-export function useClasses(filters: ClassFilters): {
+/** `enabled: false` holds the read (still loading) until the filters are known. */
+export function useClasses(
+  filters: ClassFilters,
+  { enabled = true }: { enabled?: boolean } = {},
+): {
   data: ApiClassCard[] | null;
   loading: boolean;
   error: ApiError | Error | null;
   /** Re-read the feed in place — no loading state, so rows update rather than blink. */
   refresh: () => Promise<void>;
 } {
-  const { isLoaded, isSignedIn } = useMemberSession();
+  const { isLoaded, session } = useMemberSession();
   const api = useApi();
-  const [data, setData] = useState<ApiClassCard[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | Error | null>(null);
 
-  const key = JSON.stringify(filters);
+  const filtersKey = JSON.stringify(filters);
   // Fetch the public feed immediately instead of waiting for the session read —
   // anonymous visitors get classes ~a second sooner. When it resolves a
-  // session this flips false→true and the effect re-fetches /me/classes for
-  // booked-state; for anonymous visitors it stays false, so no double fetch.
-  const signedIn = isLoaded && isSignedIn === true;
+  // session the key moves to the member's and /me/classes is read for
+  // booked-state; for anonymous visitors it stays put, so no double fetch.
+  const who = isLoaded && session ? session.userId : null;
+  const { data, loading, error, refresh } = useCachedResource(
+    enabled ? `classes:${who ?? "public"}:${filtersKey}` : null,
+    () => fetchClasses(api, who !== null, filters),
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    (async () => {
-      try {
-        const classes = await fetchClasses(api, signedIn, filters);
-        if (!cancelled) setData(classes);
-      } catch (err) {
-        if (!cancelled) setError(err as Error);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signedIn, api, key]);
+  // The public feed stays up while the member's own read of the same window
+  // is on its way: only the booked marks change, so the rows update in place
+  // rather than blank into the spinner and back. A new filter does wait.
+  const shownFilters = useRef<string | null>(null);
+  if (!loading) shownFilters.current = filtersKey;
+  const swappingIdentity = loading && data !== null && shownFilters.current === filtersKey;
 
-  const refresh = useCallback(async () => {
-    try {
-      setData(await fetchClasses(api, signedIn, filters));
-    } catch {
-      // The rows keep what they showed; the next action re-checks with the server.
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signedIn, api, key]);
-
-  return { data, loading, error, refresh };
+  return { data, loading: loading && !swappingIdentity, error, refresh };
 }
 
 /**
- * Locations and class types are effectively immutable within a member's visit,
- * so the promise is cached at module level: concurrent mounts share one request
- * and later navigations don't refetch. A failed fetch clears the cache so the
- * next mount retries.
+ * Locations, class types and instructors barely change within a member's
+ * visit: read once, shared by every mount, and drawn at once on the next
+ * page that wants them (`resource-cache.ts`), re-read quietly behind it.
+ * A failed read lands as an empty list, and the next mount retries.
  */
-function cacheOnce<T>(fn: () => Promise<T>): () => Promise<T> {
-  let p: Promise<T> | null = null;
-  return () =>
-    (p ??= fn().catch((err) => {
-      p = null;
-      throw err;
-    }));
+function useCachedList<T>(key: string, fetcher: () => Promise<T[]>): { data: T[] | null; loading: boolean } {
+  const { data, loading, error } = useCachedResource(key, fetcher);
+  return { data: error && !data ? [] : data, loading };
 }
 
-const getLocations = cacheOnce(async () => {
+const getLocations = async () => {
   const res = await publicApi.get<{ locations: ApiLocationFull[] }>("/public/locations");
   return res.locations;
-});
+};
 
-const getClassTypes = cacheOnce(async () => {
+const getClassTypes = async () => {
   const res = await publicApi.get<{ class_types: ApiClassType[] }>("/public/class-types");
   return res.class_types;
-});
+};
 
 /** An active instructor of this studio, as the public roster states them. */
 export interface ApiInstructorLite {
@@ -173,10 +153,10 @@ export interface ApiInstructorLite {
   avatar_url: string | null;
 }
 
-const getInstructors = cacheOnce(async () => {
+const getInstructors = async () => {
   const res = await publicApi.get<{ instructors: ApiInstructorLite[] }>("/public/instructors");
   return res.instructors;
-});
+};
 
 /**
  * The studio's active instructors — the checkout picker for an Instructor-Bound
@@ -191,50 +171,14 @@ export function useInstructors(): {
   data: ApiInstructorLite[] | null;
   loading: boolean;
 } {
-  const [data, setData] = useState<ApiInstructorLite[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const instructors = await getInstructors();
-        if (!cancelled) setData(instructors);
-      } catch {
-        if (!cancelled) setData([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  return { data, loading };
+  return useCachedList("public:instructors", getInstructors);
 }
 
 export function useLocations(): {
   data: ApiLocationFull[] | null;
   loading: boolean;
 } {
-  const [data, setData] = useState<ApiLocationFull[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const locations = await getLocations();
-        if (!cancelled) setData(locations);
-      } catch {
-        if (!cancelled) setData([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  return { data, loading };
+  return useCachedList("public:locations", getLocations);
 }
 
 export interface ApiClassType {
@@ -244,25 +188,7 @@ export interface ApiClassType {
 
 /** Active class types for the PT request form's dropdown. Public (no auth). */
 export function useClassTypes(): { data: ApiClassType[] | null; loading: boolean } {
-  const [data, setData] = useState<ApiClassType[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const classTypes = await getClassTypes();
-        if (!cancelled) setData(classTypes);
-      } catch {
-        if (!cancelled) setData([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  return { data, loading };
+  return useCachedList("public:class-types", getClassTypes);
 }
 
 export interface ClassEntitlements {
@@ -317,36 +243,18 @@ export function useCanBookClass(): {
   loaded: boolean;
   entitlements: ClassEntitlements | null;
 } {
-  const { isLoaded, isSignedIn } = useMemberSession();
+  const { isLoaded, session } = useMemberSession();
   const api = useApi();
-  const [ent, setEnt] = useState<ClassEntitlements | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const { data, loading, error } = useCachedResource(
+    isLoaded && session ? `me:${session.userId}:class-entitlements` : null,
+    () => api.get<{ entitlements: ClassEntitlements }>("/me/class-packages").then((res) => res.entitlements),
+  );
 
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (!isSignedIn) {
-      setEnt(null);
-      setLoaded(true);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await api.get<{ entitlements: ClassEntitlements }>("/me/class-packages");
-        if (!cancelled) setEnt(res.entitlements);
-      } catch {
-        if (!cancelled) setEnt(null);
-      } finally {
-        if (!cancelled) setLoaded(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoaded, isSignedIn, api]);
-
+  if (!isLoaded) return { canBook: false, loaded: false, entitlements: null };
+  if (!session) return { canBook: false, loaded: true, entitlements: null };
+  const ent = error ? null : data;
   const canBook = !!ent && (ent.has_active_unlimited || ent.has_active_bundle_credits);
-  return { canBook, loaded, entitlements: ent };
+  return { canBook, loaded: !loading, entitlements: ent };
 }
 
 export function toLocalDateStr(iso: string): string {

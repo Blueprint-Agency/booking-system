@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useMemberSession } from "./member-auth";
 import { ApiError, publicApi, useApi } from "./api";
+import { useCachedResource } from "./resource-cache";
 
 // ── Wire types (snake_case as returned by BE) ────────────────────────────────
 
@@ -81,18 +81,13 @@ export function usePackagesCatalog(): {
   error: ApiError | Error | null;
   refresh: () => Promise<void>;
 } {
-  const { isSignedIn, isLoaded } = useMemberSession();
+  const { isLoaded, session } = useMemberSession();
   const api = useApi();
-  const [data, setData] = useState<PackagesCatalog | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | Error | null>(null);
 
-  async function load() {
-    if (!isLoaded) return;
-    setLoading(true);
-    setError(null);
-    try {
-      if (isSignedIn) {
+  return useCachedResource<PackagesCatalog>(
+    isLoaded ? `packages:${session?.userId ?? "public"}` : null,
+    async () => {
+      if (session) {
         const [cls, pt] = await Promise.all([
           api.get<{
             class_packages: ApiClassPackage[];
@@ -100,35 +95,23 @@ export function usePackagesCatalog(): {
           }>("/me/class-packages"),
           api.get<{ pt_packages: ApiPtPackage[] }>("/me/pt-packages"),
         ]);
-        setData({
+        return {
           classPackages: cls.class_packages,
           ptPackages: pt.pt_packages,
           entitlements: cls.entitlements,
-        });
-      } else {
-        const res = await publicApi.get<{
-          class_packages: ApiClassPackage[];
-          pt_packages: ApiPtPackage[];
-        }>("/public/packages");
-        setData({
-          classPackages: res.class_packages,
-          ptPackages: res.pt_packages,
-          entitlements: null,
-        });
+        };
       }
-    } catch (err) {
-      setError(err as Error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, isSignedIn]);
-
-  return { data, loading, error, refresh: load };
+      const res = await publicApi.get<{
+        class_packages: ApiClassPackage[];
+        pt_packages: ApiPtPackage[];
+      }>("/public/packages");
+      return {
+        classPackages: res.class_packages,
+        ptPackages: res.pt_packages,
+        entitlements: null,
+      };
+    },
+  );
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

@@ -51,6 +51,8 @@ function LoginContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const next = safeNextPath(searchParams) ?? "/";
+  // Where a member who creates an account instead is taken back to: the same place.
+  const registerHref = `/register${next !== "/" ? `?next=${encodeURIComponent(next)}` : ""}`;
 
   const [view, setView] = useState<"email" | "password" | "link">("email");
   const [email, setEmail] = useState("");
@@ -171,7 +173,7 @@ function LoginContent() {
         </div>
         <p className="mt-6 text-sm text-muted">
           New here?{" "}
-          <Link href="/register" className="text-accent-deep font-medium">Create an account</Link>
+          <Link href={registerHref} className="text-accent-deep font-medium">Create an account</Link>
         </p>
       </AuthSplitShell>
     );
@@ -227,7 +229,7 @@ function LoginContent() {
           <p className="text-sm text-ink rounded-xl border border-ink/10 bg-warm px-3 py-2">
             There&apos;s no account for {email.trim()} at this studio yet.{" "}
             <Link
-              href={`/register${next !== "/" ? `?next=${encodeURIComponent(next)}` : ""}`}
+              href={registerHref}
               className="text-accent-deep font-medium"
             >
               Create one
@@ -241,7 +243,7 @@ function LoginContent() {
       </form>
       <p className="mt-6 text-sm text-muted">
         New here?{" "}
-        <Link href="/register" className="text-accent-deep font-medium">Create an account</Link>
+        <Link href={registerHref} className="text-accent-deep font-medium">Create an account</Link>
       </p>
     </AuthSplitShell>
   );

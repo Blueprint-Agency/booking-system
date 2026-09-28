@@ -82,7 +82,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="min-w-0 animate-fade-in">{children}</div>
+      <div className="min-w-0">{children}</div>
     </div>
     </SigningOutContext.Provider>
   );

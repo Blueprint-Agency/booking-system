@@ -20,6 +20,7 @@
 import { useState } from "react";
 import { AlertCircle, CreditCard, Loader2, Trash2 } from "lucide-react";
 import { useApi } from "@/lib/api";
+import { ContentLoading } from "@/components/ui/content-loading";
 import { reportError } from "@/lib/report-error";
 import { cardBrandLabel, cardExpiry, type SavedCard } from "@/lib/saved-cards";
 import { removeSavedCard, useSavedCards } from "@/lib/use-saved-cards";
@@ -46,10 +47,7 @@ export function SavedCardsCard() {
 
       <div className="mt-5">
         {loading ? (
-          <p className="flex items-center gap-2 text-sm text-muted">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading your cards…
-          </p>
+          <ContentLoading label="Loading your cards" className="min-h-24" />
         ) : failed ? (
           <div className="flex items-start gap-2 rounded-xl border border-ink/10 bg-warm px-4 py-3 text-sm text-ink">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted" />

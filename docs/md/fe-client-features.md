@@ -204,7 +204,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 
 **Business logic**
 - Schedule is generated from **session templates** by location/instructor, materialised as concrete sessions for the selected week.
-- Filters: location pill (All / Harbour / Parkside), level, instructor (optional). Filters are **per-page**, not global nav.
+- Filters: location (one at a time — no "All"), level, instructor (optional). Filters are **per-page**, not global nav.
 - Each session has: category tag, title, instructor, start time + tz, duration, and whether a seat is free (`has_seats`).
 - **Seat counts are the studio's, never the member's.** No page of the member app says how many seats a class has, how many are taken or left, or how many members wait for one — no "N spots left", no "3 left" nudge, no "N waiting". The member catalogue does not send them (`be-client.md` § Waitlist shape); a member sees only Book / Full / the waitlist's state, and their own place in line. Staff see every count in the portal. Hiding them keeps members from comparing classes and Locations by how full they are.
 - **No dollar price shown** — credits only. (A user without a Bundle/Unlimited can still book a single class via the **One-time Pass** under `/packages`, which acts as the drop-in path.)
@@ -216,7 +216,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 - The schedule shows the next **10 days** (today and the nine after it), grouped by day. Past classes and days with no classes are left out.
 - The days are an **accordion, at most one open**. The soonest day with classes opens by default; each collapsed day shows its label ("Today", "Tomorrow", or the weekday, with the date) and its class count. Tapping a collapsed day opens it and closes the one that was open; tapping the open day closes it, leaving none open. Days slide open and shut (no slide with reduced motion). The open day's header stays pinned under the top bar while its classes scroll.
 - After a day opens, the page scrolls so its first class sits a quarter of the way down the screen (or as near as the foot of the page allows). After the open day is closed, if its header is above the screen, the page scrolls it back to just under the top bar.
-- Filter row above the schedule: location select and instructor select. If a filter leaves the open day empty, the soonest remaining day opens. The instructor select lists everyone teaching in the window whichever instructor is picked, so the member can switch straight to another: the schedule is read for the picked location only and narrowed to the picked instructor on the page, and the select lists every main instructor in that read.
+- Filter row above the schedule: location select and instructor select. _As built:_ the schedule is **one Location's at a time**: the location select has no "All locations" option and opens on the first Location, because two studios' classes side by side read as repeats and were booked at the wrong one. If a filter leaves the open day empty, the soonest remaining day opens. The instructor select lists everyone teaching in the window whichever instructor is picked, so the member can switch straight to another: the schedule is read for the picked location only and narrowed to the picked instructor on the page, and the select lists every main instructor in that read.
 
 **Per-row layout (one class)**
 - Thumbnail · category tag (e.g., `YOGA`) · title · instructor · start time + tz · duration.
@@ -290,7 +290,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 **My Bookings** (`/account/classes`) lists the member's places in line in a **Waitlisted** group above Upcoming — class, instructor, location, time, "#N in line" and "Leave waitlist" (confirm dialog, then the banner *"Left the waitlist."*). Read from `GET /me/waitlist` in the same load as the bookings. When a seat opens the member is booked automatically and the class moves to Upcoming (`spec-waitlist.md` §5).
 
 **User journey**
-1. User opens `/classes`, defaults to current week, all locations.
+1. User opens `/classes`, defaults to the next 10 days at the first location.
 2. Scrolls/clicks day on the date strip → list of classes for that day.
 3. Optionally narrows with location/instructor/level filters.
 4. Clicks **Book Now** on a row → routed to `/booking/confirmation?sessionId=...`.

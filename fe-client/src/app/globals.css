@@ -375,6 +375,18 @@ html[data-theme="dark"] .brand-scope {
   animation: pageEnter 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) 0.06s backwards;
 }
 
+/* An account panel arriving inside a page that is already there: a fade, no
+   rise, so on a first visit it doesn't stack a second rise on the page's. */
+.panel-enter {
+  animation: fadeIn 0.22s ease-out backwards;
+}
+
+/* A page still reading what it shows waits unseen under the spinner, holding
+   its space, and arrives whole (`page-transition.tsx`). */
+.page-pending {
+  opacity: 0;
+}
+
 /* The old page leaves quickly, so it never competes with the new one arriving. */
 ::view-transition-old(.page) {
   animation: pageLeave 0.12s ease-in both;

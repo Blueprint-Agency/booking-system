@@ -11,6 +11,7 @@ import { OpenPurchases } from "@/components/account/open-purchases";
 import { usePartPaymentOptions, type OpenPurchase } from "@/lib/open-purchases";
 import { reportError } from "@/lib/report-error";
 import { CheckoutFrame } from "@/components/checkout/checkout-frame";
+import { ContentLoading } from "@/components/ui/content-loading";
 import {
   confirmationEyebrow,
   confirmationOutcome,
@@ -204,17 +205,21 @@ function WorkshopSuccess({
 
         {outcome === "pending" && <PendingNotice />}
 
-        {settled(outcome) && workshop && (
+        {/* The way onward never waits on the workshop's details: a member who
+            has paid is not left on a page with nowhere to go if that read fails. */}
+        {settled(outcome) && (
           <>
-            <ReceiptPanel label="Your workshop" name={workshop.name}>
-              {dateLine && <p className="mt-2 text-base font-medium text-ink">{dateLine}</p>}
-              {workshop.location && (
-                <p className="text-sm text-muted mt-1">
-                  {workshop.location.name}
-                  {workshop.location.address ? ` · ${workshop.location.address}` : ""}
-                </p>
-              )}
-            </ReceiptPanel>
+            {workshop && (
+              <ReceiptPanel label="Your workshop" name={workshop.name}>
+                {dateLine && <p className="mt-2 text-base font-medium text-ink">{dateLine}</p>}
+                {workshop.location && (
+                  <p className="text-sm text-muted mt-1">
+                    {workshop.location.name}
+                    {workshop.location.address ? ` · ${workshop.location.address}` : ""}
+                  </p>
+                )}
+              </ReceiptPanel>
+            )}
             <div className={ctaRow}>
               <Link
                 href="/account/bookings?type=workshop"
@@ -314,7 +319,7 @@ function CrossLocationSuccess({ stripeSessionId }: { stripeSessionId: string | n
             </p>
             <div className={ctaRow}>
               <Link
-                href="/classes"
+                href="/"
                 className={primaryCta}
               >
                 Book a class
@@ -628,13 +633,7 @@ function ConfirmationContent() {
 
 export default function BookingConfirmationPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="px-4 py-20 text-center text-muted text-sm">
-          Loading…
-        </div>
-      }
-    >
+    <Suspense fallback={<ContentLoading label="Loading your confirmation" />}>
       <ConfirmationContent />
     </Suspense>
   );

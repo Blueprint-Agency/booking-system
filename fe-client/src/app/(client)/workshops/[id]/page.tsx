@@ -275,9 +275,10 @@ export default function WorkshopDetailPage() {
                 {priceForSelected?.isEarlyBird && selectedTier?.early_bird_cutoff_at && (
                   <p className="mt-1 text-xs font-semibold text-accent-deep">
                     Early bird until{" "}
-                    {new Date(selectedTier.early_bird_cutoff_at).toLocaleDateString(undefined, {
+                    {new Date(selectedTier.early_bird_cutoff_at).toLocaleDateString("en-SG", {
                       day: "numeric",
                       month: "short",
+                      timeZone: "Asia/Singapore",
                     })}
                   </p>
                 )}

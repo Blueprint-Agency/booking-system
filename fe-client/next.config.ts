@@ -17,6 +17,15 @@ const nextConfig: NextConfig = {
   // treats those as cross-origin and refuses to serve its internal assets to
   // them unless they're allowed here. Dev-only setting; production is unaffected.
   allowedDevOrigins: ["*.localhost"],
+  // Every page is dynamic (the layout reads the host and cookies), so by
+  // default each navigation waits on a server round trip, even back to a tab
+  // just left. The pages are client components that read their data in the
+  // browser (`lib/resource-cache.ts`): their server payload carries no member
+  // data to go stale, so reusing it for a short while is safe and makes moving
+  // between tabs immediate.
+  experimental: {
+    staleTimes: { dynamic: 30 },
+  },
   images: {
     remotePatterns: [
       {

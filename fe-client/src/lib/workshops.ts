@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useMemberSession } from "./member-auth";
 import { ApiError, useApi } from "./api";
+import { useCachedResource } from "./resource-cache";
 
 // ── Wire types (mirror BE serialization) ─────────────────────────────────────
 
@@ -97,38 +97,14 @@ export function useWorkshops(): {
   signedOut: boolean;
   error: ApiError | Error | null;
 } {
-  const { isLoaded, isSignedIn } = useMemberSession();
+  const { isLoaded, session } = useMemberSession();
   const api = useApi();
-  const [data, setData] = useState<ApiWorkshopCard[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | Error | null>(null);
-  const signedOut = isLoaded && !isSignedIn;
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (!isSignedIn) {
-      setData(null);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    (async () => {
-      try {
-        const res = await api.get<{ workshops: ApiWorkshopCard[] }>("/me/workshops");
-        if (!cancelled) setData(res.workshops);
-      } catch (err) {
-        if (!cancelled) setError(err as Error);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoaded, isSignedIn, api]);
-
+  const signedOut = isLoaded && !session;
+  const { data, loading, error } = useCachedResource(
+    isLoaded && session ? `workshops:${session.userId}` : null,
+    async () => (await api.get<{ workshops: ApiWorkshopCard[] }>("/me/workshops")).workshops,
+  );
+  if (signedOut) return { data: null, loading: false, signedOut, error: null };
   return { data, loading, signedOut, error };
 }
 
@@ -139,39 +115,16 @@ export function useWorkshop(id: string | undefined): {
   signedOut: boolean;
   error: ApiError | Error | null;
 } {
-  const { isLoaded, isSignedIn } = useMemberSession();
+  const { isLoaded, session } = useMemberSession();
   const api = useApi();
-  const [data, setData] = useState<ApiWorkshopDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | Error | null>(null);
-  const signedOut = isLoaded && !isSignedIn;
-
-  useEffect(() => {
-    if (!isLoaded || !id) return;
-    if (!isSignedIn) {
-      setData(null);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    (async () => {
-      try {
-        const res = await api.get<ApiWorkshopDetail>(`/me/workshops/${id}`);
-        if (!cancelled) setData(res);
-      } catch (err) {
-        if (!cancelled) setError(err as Error);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, isLoaded, isSignedIn, api]);
-
-  return { data, loading, signedOut, error };
+  const signedOut = isLoaded && !session;
+  const { data, loading, error } = useCachedResource(
+    isLoaded && session && id ? `workshop:${session.userId}:${id}` : null,
+    () => api.get<ApiWorkshopDetail>(`/me/workshops/${id}`),
+  );
+  if (signedOut) return { data: null, loading: false, signedOut, error: null };
+  // Another workshop's page is never drawn under this one's address.
+  return { data: data?.id === id ? data : null, loading, signedOut, error };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
