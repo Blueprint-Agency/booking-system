@@ -58,6 +58,7 @@ import { ApiError, type Api } from "@/lib/api";
 import type { BookingSeat, ClassSeats } from "@/lib/class-seats";
 import type { ClassWaitlist } from "@/lib/class-waitlist";
 import type { StaffCancelPreview } from "@/lib/staff-cancel";
+import { timeClashOf, timeClashRefusal, withClashConfirm } from "@/lib/time-clash";
 import {
   PACKAGE_RULE_ERROR_COPY,
   type NamedPackageRule,
@@ -307,8 +308,11 @@ export async function previewClassRule(api: Api, classId: string, rule: PackageR
   return res.would_cancel;
 }
 
+/** Moved onto a time a member on it is booked elsewhere, staff are asked first. */
 export function patchPtSession(api: Api, sessionId: string, input: PtPatch): Promise<unknown> {
-  return api.patch(`/portal/admin/pt-sessions/sessions/${sessionId}`, input);
+  return withClashConfirm("session", (extra) =>
+    api.patch(`/portal/admin/pt-sessions/sessions/${sessionId}`, { ...input, ...extra }),
+  );
 }
 
 export function patchCorporateSession(
@@ -372,6 +376,9 @@ export function scheduleErrorMessage(err: unknown, fallback = "Save failed"): st
   if (!(err instanceof ApiError)) return "Network error";
   const refused = permissionRefusal(err);
   if (refused) return refused;
+  // A member on it is booked elsewhere then, and staff chose not to go ahead.
+  const clash = timeClashOf(err);
+  if (clash) return timeClashRefusal(clash);
   const body = err.body as { error?: string; message?: string } | null;
   if (typeof body?.message === "string" && body.message) return body.message;
   const known = body?.error ? SCHEDULE_ERROR_COPY[body.error] : undefined;

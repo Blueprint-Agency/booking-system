@@ -18,12 +18,14 @@ import { staffCancelPreviewJson } from '../../services/bookings/staff-cancel-pre
 /**
  * `POST …/schedule/classes/:id/bookings`. `overbook` is honoured for admins
  * only. `client_package_id` is staff's pick of the member's packages (#333);
- * absent, the Default payer pays.
+ * absent, the Default payer pays. `allow_clash` is staff's "Book anyway" after a
+ * `time_clash`: the member holds a booking at an overlapping time.
  */
 export const staffBookingSchema = z.object({
   client_id: z.string().uuid(),
   overbook: z.boolean().optional(),
   client_package_id: z.string().uuid().optional(),
+  allow_clash: z.boolean().optional(),
 })
 
 export function staffBookingJson(res: BookClassResult) {

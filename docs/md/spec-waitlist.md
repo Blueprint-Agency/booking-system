@@ -22,7 +22,7 @@ Resolves #152 ("Class waitlist: no join, no promotion — build it for v1 or kee
 
 **Staff see the queue and can act on it.** The session page gains a Waitlist panel in queue order with each member's payment status, "Add to class" and "Remove". Staff can also book a member directly, which takes a buffer seat, and an admin can overbook past the buffer after an explicit confirmation.
 
-**Numbers say what they mean.** "Booked 8 / 16" is people in seats over attendance capacity; the waitlist is shown beside it as "3 waiting of 5". The member sees `spots_left` against online seats only, as today.
+**Numbers say what they mean.** "Booked 8 / 16" is people in seats over attendance capacity; the waitlist is shown beside it as "3 waiting of 5". Those numbers are staff's. The member sees no number at all: only `has_seats` (an online seat is free), whether the line is open, and their own place in it (§9; `fe-client-features.md` §3.1).
 
 ## User Stories
 
@@ -123,6 +123,7 @@ Order is `joined_at, id`. Position is `1 + count(waiting rows for the class with
 | Member already `waiting` on this class | 409 `already_waitlisted` |
 | `online_used < capacity_online` | 409 `class_not_full` (the app should have shown Book) |
 | `waiting ≥ capacity_waitlist` | 409 `waitlist_full` |
+| Member holds a confirmed booking whose time overlaps the class (a class, private session or workshop day) | 409 `time_clash { clash }` — a place in line promises a seat they could not sit in (`class-booking-lifecycle.md` §3.6). Staff putting a member in line (§7) may pass `allow_clash: true` once shown it |
 | `selectPackage` refuses | 409 with the selection reason (`insufficient_credits`, `location_not_covered`, `plan_expires_before_class`) — same codes and same member copy as booking |
 
 No credit is debited and no package is activated at join. Mindbody records the "pending" pricing option at join; we re-select at promotion instead, because packages change between the two moments.
@@ -136,7 +137,7 @@ The join check that the class starts outside the window is Mindbody's reason and
 1. If `now ≥ starts_at − window`, return. (Mindbody's default: no auto-add inside the window. Its "First to Claim" / "Continue auto-add" modes are SMS features and out of scope.)
 2. While `online_used < capacity_online`:
    - Take the first `waiting` entry in order that has not been tried in this call.
-   - Run `sweepExpired` and `selectPackage` for it, with no package named — so the member's **Default payer** pays (`be/docs/adr/0010-several-packages-run-per-family.md`: running soonest-ending first, then Dormant with Unlimited Plans before credits). The same holds for the join check (§4), staff Add to class (§7) and the panel's "Pending: <package>" (§10). If refused, leave it `waiting` and try the next (Mindbody: "Invalid" clients stay on the list and are re-checked when the next spot opens).
+   - Run `sweepExpired` and `selectPackage` for it, with no package named — so the member's **Default payer** pays (`be/docs/adr/0010-several-packages-run-per-family.md`: running soonest-ending first, then Dormant with Unlimited Plans before credits). The same holds for the join check (§4), staff Add to class (§7) and the panel's "Pending: <package>" (§10). If refused, leave it `waiting` and try the next (Mindbody: "Invalid" clients stay on the list and are re-checked when the next spot opens). A member who has since booked something at an overlapping time is skipped the same way (`time_clash`): nobody is there to say "book anyway", and cancelling the other booking puts them back in contention.
    - Otherwise create the booking through the same code path as `bookClass` (debit, dormant activation, QR token, `seat = 'online'`), set the entry `promoted` with `booking_id`, and enqueue the `class_waitlist_promoted` email.
 3. Stop when the seats are full or the line is exhausted.
 
@@ -169,8 +170,11 @@ Raising `capacity_online` on an existing class does **not** auto-promote (Mindbo
 `GET /public/classes`, `/me/classes` and the detail add:
 
 ```
-waitlist: { enabled, capacity, waiting, open, my_entry: { id, position } | null }
+has_seats: boolean
+waitlist: { enabled, open, my_entry: { id, position } | null }
 ```
+
+No count reaches the member: not the class's seats, not the line's length or cap (`fe-client-features.md` §3.1). A member's `class_full` carries only `waitlist_open`.
 
 `class-row.tsx` button, in precedence order:
 
@@ -178,9 +182,9 @@ waitlist: { enabled, capacity, waiting, open, my_entry: { id, position } | null 
 |---|---|
 | `is_booked` | "Booked" (as today) |
 | `my_entry` | "On waitlist · #N" with a secondary "Leave" |
-| `spots_left > 0` | "Book Now" (as today) |
-| `spots_left = 0` and `waitlist.open` | "Join waitlist" — outlined, warning tone, per `fe-client-features.md` §Booking Rules |
-| `spots_left = 0` otherwise | "Full" (as today) |
+| `has_seats` | "Book Now" (as today) |
+| not `has_seats`, and `waitlist.open` | "Join waitlist" — outlined, warning tone, per `fe-client-features.md` §Booking Rules |
+| not `has_seats` otherwise | "Full" (as today) |
 
 Join toast: *"Class is full — you're #N on the waitlist. We'll book you in and email you if a seat opens."* No email on join (Mindbody sends none for classes). Errors map as booking errors do; `waitlist_closed` → "This class starts within N hours, so the waitlist has closed."; `waitlist_full` → "The waitlist for this class is full."
 

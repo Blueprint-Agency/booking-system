@@ -58,6 +58,8 @@ const scheduleSchema = z
     instructor_pay_sgd: z.number().min(0).nullable().optional(),
     // To the member, when the time is not one they proposed.
     note: z.string().max(500).nullable().optional(),
+    // "Schedule anyway" after `time_clash`: a member holds a booking then.
+    allow_clash: z.boolean().optional(),
   })
   .refine(v => new Date(v.ends_at) > new Date(v.starts_at), {
     message: 'ends_at must be after starts_at',
@@ -78,6 +80,9 @@ const updateSessionSchema = z.object({
   // from this package or else the Default payer, and `override` is "Add anyway".
   co_client_package_id: z.string().uuid().optional(),
   override: z.boolean().optional(),
+  // "Save anyway" after `time_clash`: moved, or joined by the partner, the
+  // session overlaps a booking someone on it already holds.
+  allow_clash: z.boolean().optional(),
   instructor_id: z.string().uuid().optional(),
   instructor_pay_sgd: z.number().min(0).nullable().optional(),
   supporting_instructors: z
@@ -201,9 +206,11 @@ const app = new Hono()
       // The dialog pre-selects the Bound Instructor, but an admin may override
       // it for one session — a bound coach's illness must not block a member.
       actorIsAdmin: true,
+      allowClash: body.allow_clash === true,
     })
     if (!result.ok) return c.json({ error: result.error }, statusForScheduleError(result.error))
     c.set('auditTarget' as any, { table: 'pt_requests', id })
+    if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
     const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
@@ -219,6 +226,7 @@ const app = new Hono()
       actorIsAdmin: true,
     })
     c.set('auditTarget' as any, { table: 'pt_requests', id: ptRequestId })
+    if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
     const row = await getPtRequestForAdmin(tenantId(c), ptRequestId)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
@@ -238,6 +246,7 @@ const app = new Hono()
       ...(body.co_client_id !== undefined ? { partnerClientId: body.co_client_id } : {}),
       ...(body.co_client_package_id !== undefined ? { partnerClientPackageId: body.co_client_package_id } : {}),
       override: body.override === true,
+      allowClash: body.allow_clash === true,
       actorStaffId: c.get('staffUserId') as string,
       ...(body.instructor_pay_sgd !== undefined ? { instructorPaySgd: body.instructor_pay_sgd } : {}),
       // snake_case → the roster module's shape, and nothing else. An OMITTED
@@ -253,6 +262,7 @@ const app = new Hono()
         : {}),
     })
     c.set('auditTarget' as any, { table: 'pt_sessions', id })
+    if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
     const detail = await getPtSessionDetail(tenantId(c), id)
     return c.json(serializeSession(detail))
   })
@@ -272,6 +282,7 @@ const app = new Hono()
         actorIsAdmin: true,
       })
       c.set('auditTarget' as any, { table: 'bookings', id: seat.bookingId })
+      if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
       return c.json(addedMemberJson(body.client_id, seat), 201)
     },
   )

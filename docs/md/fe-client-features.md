@@ -205,7 +205,8 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 **Business logic**
 - Schedule is generated from **session templates** by location/instructor, materialised as concrete sessions for the selected week.
 - Filters: location pill (All / Harbour / Parkside), level, instructor (optional). Filters are **per-page**, not global nav.
-- Each session has: category tag, title, instructor, start time + tz, duration, capacity, seats taken.
+- Each session has: category tag, title, instructor, start time + tz, duration, and whether a seat is free (`has_seats`).
+- **Seat counts are the studio's, never the member's.** No page of the member app says how many seats a class has, how many are taken or left, or how many members wait for one — no "N spots left", no "3 left" nudge, no "N waiting". The member catalogue does not send them (`be-client.md` § Waitlist shape); a member sees only Book / Full / the waitlist's state, and their own place in line. Staff see every count in the portal. Hiding them keeps members from comparing classes and Locations by how full they are.
 - **No dollar price shown** — credits only. (A user without a Bundle/Unlimited can still book a single class via the **One-time Pass** under `/packages`, which acts as the drop-in path.)
 
 **Layout & controls**
@@ -226,11 +227,12 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
   - Logged out: *"Log in to see your credit balance"*
 - Right side: action button (states below).
 
-**Button states (per row)** — first match wins; the waitlist rows are `spec-waitlist.md` §9, read from each class's `waitlist { enabled, capacity, waiting, open, my_entry }`.
+**Button states (per row)** — first match wins; the waitlist rows are `spec-waitlist.md` §9, read from each class's `has_seats` and `waitlist { enabled, open, my_entry }`.
 | User state | Button |
 |---|---|
 | Already booked by user | "Booked" (link → `/account/classes`). A booked class never shows a waitlist control. |
 | In this class's line (`waitlist.my_entry`) | "On waitlist · #N" with a secondary "Leave" → confirm dialog → toast *"Left the waitlist."*; the row then reads "Join waitlist" if the line is still open, else "Full" |
+| Booked into another class, private session or workshop day that overlaps this one (`clash`), and the class would otherwise offer Book or Join waitlist | "Clashes · {its start time}" (muted; the row dims) — a tap opens the class detail. Under the row: *"You're booked into {title} at {time} ({Location}), which overlaps this class. Cancel that booking to book this one."* and a **My bookings** link. One body, one class at a time: no travel time is added, and back-to-back is allowed (`class-booking-lifecycle.md` §3.6). A booking or join refused `time_clash` since the schedule was read shows the same, titled "Time clash"; a booking made from the row re-reads the schedule so the classes it now overlaps show it |
 | Logged out, seat available | "Book Now" → `/login?next=/booking/confirmation?sessionId=...` |
 | Logged in, has credits, seat available | "Book Now" (sage, filled) → the **Book sheet** *"Book {class}?"* (date, time, location, instructor, the package picker below, and the cancellation policy) → "Book class" books it with the picked package, "Not now" closes it; nothing is spent until "Book class" |
 | Logged in, no credits / exhausted | Grey "Book Now" → popup *"You need a package to book this class"* → "Buy a Package" CTA → `/packages` |
@@ -265,7 +267,7 @@ There is no other way to choose: the old "use N credits" shortcut on a blocked r
 - the class type and its description; the date, start, end and length;
 - the instructor and every supporting instructor;
 - the Location with its address and a map link, and the room;
-- the credit cost, and the spots left or the waitlist state;
+- the credit cost, and **Availability**: "Available", or, full, "Full · waitlist open", "Full · waitlist closed" or "Full" (`lib/class-detail.ts` `seatsLine`) — never a count;
 - the effective Cancellation Window;
 - the packages accepted: **"All packages"**, **"Only: …"** or **"All except: …"**, naming each;
 - signed in, the member's own class packages, each ticked or with the reason it cannot pay (the Book sheet's reasons above); signed out, a prompt to sign in to see which of theirs can pay.
@@ -327,7 +329,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 - Workshops are one or multi-day events with finite capacity. Each workshop has:
   - A list of **days** (`WorkshopDay[]`) — each day has its own date, time window, capacity, and base price.
   - A list of **tiers** (`WorkshopTier[]`) — each tier names a name (e.g. "Full Event", "Day 1 only"), an explicit set of `day_ids` it grants access to, a regular price, and optional early-bird price + cutoff.
-- **Tier capacity is derived** as the *minimum capacity across the days it covers* — a tier can never sell more than the smallest constituent day's room. The server is the authority; the card surfaces the resulting "X of N spots left" per tier.
+- **Tier capacity is derived** as the *minimum capacity across the days it covers* — a tier can never sell more than the smallest constituent day's room. The server is the authority. As for classes (§3.1), the member is never told a count: a tier with no room reads as full, and the catalogue sends no day's capacities.
 - Workshops are **paid directly** — credits cannot be used. The card carries a clarification note: *"Direct payment only — credits cannot be used."*
 - Status: upcoming / fully enrolled / ended.
 - Free workshops (price 0) use **"Register"** copy and skip checkout entirely — go directly to a confirmation success page.
@@ -340,7 +342,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 - The groups are an accordion, **at most one open**, behaving exactly as the class schedule's days (§3.1), scrolling included. The first group opens by default, each collapsed group shows its workshop count, and tapping the open group closes it. If a location filter empties the open group, the first remaining group opens.
 
 **User journey**
-1. List rendered as **expandable accordion cards**. Card header shows title, instructor, level badge (colour-coded), date, **"X of N spots left"** counter, *"From S$X"* on the collapsed view.
+1. List rendered as **expandable accordion cards**. Card header shows title, instructor, level badge (colour-coded), date, *"From S$X"* on the collapsed view. No seat count (§3.1).
 2. Tapping the header expands the card inline → bio, full description, all pricing tiers as individual rows.
 3. Each tier row has its own **"Purchase"** button that preselects the tier via `/workshops/[id]?package=N`.
 

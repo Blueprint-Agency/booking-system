@@ -10,6 +10,7 @@ import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError, type Api } from "@/lib/api";
 import { NOT_ACCEPTED_COPY } from "@/lib/package-rule";
 import { formatDate } from "@/lib/formatters";
+import { timeClashOf, timeClashRefusal, withClashConfirm } from "@/lib/time-clash";
 
 export type BookingSeat = "online" | "buffer" | "overbook";
 export type StaffRole = "admin" | "instructor";
@@ -60,6 +61,8 @@ export interface StaffBookingResult {
  * Book a member onto a class from the session page. An admin's `overbook` takes
  * a seat past a full buffer; the instructor route ignores it. `clientPackageId`
  * is staff's pick of the member's packages; null lets the Default payer pay.
+ * A member booked elsewhere at an overlapping time is asked about first, and
+ * booked anyway on yes (`./time-clash`).
  */
 export function staffBookClass(
   api: Api,
@@ -69,11 +72,14 @@ export function staffBookClass(
   overbook = false,
   clientPackageId: string | null = null,
 ): Promise<StaffBookingResult> {
-  return api.post<StaffBookingResult>(`/portal/${role}/schedule/classes/${classId}/bookings`, {
-    client_id: clientId,
-    ...(overbook ? { overbook: true } : {}),
-    ...(clientPackageId ? { client_package_id: clientPackageId } : {}),
-  });
+  return withClashConfirm("class", (extra) =>
+    api.post<StaffBookingResult>(`/portal/${role}/schedule/classes/${classId}/bookings`, {
+      client_id: clientId,
+      ...(overbook ? { overbook: true } : {}),
+      ...(clientPackageId ? { client_package_id: clientPackageId } : {}),
+      ...extra,
+    }),
+  );
 }
 
 /* --------------------------- The member's packages -------------------------- */
@@ -229,6 +235,9 @@ export function staffBookingRefusal(err: unknown, role: StaffRole): StaffBooking
   if (!(err instanceof ApiError)) return { kind: "error", message: "Network error" };
   const refused = permissionRefusal(err);
   if (refused) return { kind: "error", message: refused };
+  // Staff were warned of the clash and chose not to book anyway.
+  const clash = timeClashOf(err);
+  if (clash) return { kind: "error", message: timeClashRefusal(clash) };
   const code = (err.body as { error?: string } | null)?.error;
   if (code === "class_full") {
     return role === "admin"

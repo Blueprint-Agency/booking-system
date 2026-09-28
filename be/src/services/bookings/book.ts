@@ -30,6 +30,7 @@ import { debitCredits } from '../packages/ledger'
 import { activatePackage, sweepExpired } from '../packages/activation'
 import { classifyPackages, selectPackage, type CandidatePackage, type SelectionRefusal } from '../packages/selection'
 import { lineState, settleWaitingOnBooking } from '../waitlist/line'
+import { clashError, lockMemberTime, memberClash, type HeldWindow } from './member-time'
 import { readClassRule } from '../schedule/package-rules'
 import type { PackageRuleMode } from '../../db/enums'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
@@ -77,6 +78,11 @@ export interface StaffBookClassInput {
   /** Admin only: take an overbook seat when the buffer is full. Ignored for instructors. */
   overbook?: boolean
   /**
+   * Staff's "Book anyway": book the member although they already hold a
+   * booking at an overlapping time, having been shown it (`time_clash`).
+   */
+  allowClash?: boolean
+  /**
    * The package staff picked for the member, as the member would on the Book
    * sheet (#333): refused with its own reason unless it is Eligible. Absent,
    * the Default payer pays.
@@ -99,6 +105,7 @@ export async function staffBookClass(
     classId: input.classId,
     role: input.role,
     overbook: input.overbook ?? false,
+    allowClash: input.allowClash ?? false,
     actorStaffId: input.actorStaffId,
     clientPackageId: input.clientPackageId ?? null,
   })
@@ -106,7 +113,7 @@ export async function staffBookClass(
 
 async function bookIntoClass(
   tenantId: string,
-  input: BookClassInput & { role: SeatRole; overbook: boolean; actorStaffId?: string },
+  input: BookClassInput & { role: SeatRole; overbook: boolean; allowClash?: boolean; actorStaffId?: string },
 ): Promise<BookClassResult> {
   const { clientId, classId } = input
 
@@ -133,13 +140,15 @@ async function bookIntoClass(
     const counts = await countSeats(tx, tenantId, classId)
     const decision = seatFor(counts, cls, input.role, input.overbook)
     if (!decision.ok) {
-      // The waitlist fields let the caller offer the queue instead.
+      // The waitlist fields let the caller offer the queue instead. A member
+      // learns only whether it is open; its length and cap are for staff.
       const line = await lineState(tx, tenantId, cls, now)
-      throw new ConflictError('class_full', {
-        waitlist_open: line.open,
-        waiting: line.waiting,
-        capacity_waitlist: cls.capacityWaitlist,
-      })
+      throw new ConflictError(
+        'class_full',
+        input.role === 'member'
+          ? { waitlist_open: line.open }
+          : { waitlist_open: line.open, waiting: line.waiting, capacity_waitlist: cls.capacityWaitlist },
+      )
     }
 
     // 4–5. Pay and book.
@@ -147,9 +156,11 @@ async function bookIntoClass(
       clientId,
       seat: decision.seat,
       clientPackageId: input.clientPackageId ?? null,
+      // A member is never let through a clash; staff only once they were warned.
+      allowClash: input.role !== 'member' && (input.allowClash ?? false),
       now,
     })
-    if (!paid.ok) throw new ConflictError(paid.refusal)
+    if (!paid.ok) throw await refusalError(tx, tenantId, clientId, paid)
 
     // Booked by hand while waiting in the line: the place in it is spent.
     await settleWaitingOnBooking(tx, tenantId, {
@@ -185,6 +196,7 @@ export interface LockedClass {
   id: string
   locationId: string
   startsAt: Date
+  endsAt: Date
   capacityOnline: number
   capacityBuffer: number
   capacityWaitlist: number
@@ -208,6 +220,7 @@ export async function lockClass(tx: Tx, tenantId: string, classId: string): Prom
       id: classes.id,
       locationId: classes.locationId,
       startsAt: classes.startsAt,
+      endsAt: classes.endsAt,
       capacityOnline: classes.capacityOnline,
       capacityBuffer: classes.capacityBuffer,
       capacityWaitlist: classes.capacityWaitlist,
@@ -294,7 +307,20 @@ export function candidatePackages(reader: Tx | typeof db, tenantId: string, clie
     )
 }
 
-export type PayAndBookResult = { ok: true; booking: BookClassResult } | { ok: false; refusal: SelectionRefusal }
+export type PayAndBookResult =
+  | { ok: true; booking: BookClassResult }
+  | { ok: false; refusal: SelectionRefusal }
+  | { ok: false; refusal: 'time_clash'; clash: HeldWindow }
+
+/** The 409 a refused `payAndBook` becomes for a caller booking by hand. */
+export async function refusalError(
+  reader: Tx | typeof db,
+  tenantId: string,
+  clientId: string,
+  paid: Extract<PayAndBookResult, { ok: false }>,
+) {
+  return 'clash' in paid ? clashError(reader, tenantId, clientId, paid.clash) : new ConflictError(paid.refusal)
+}
 
 /**
  * Pay for a seat on a class the caller has locked, and insert the booking:
@@ -302,9 +328,13 @@ export type PayAndBookResult = { ok: true; booking: BookClassResult } | { ok: fa
  * a member, staff and a waitlist promotion all come through here, so a promoted
  * booking is paid for exactly as if the member had booked it by hand.
  *
- * A package that cannot pay is returned, not thrown, so a promotion can skip to
- * the next member in line inside the same transaction. Nothing has been written
- * by then except the expiry sweep, which is the nightly job's own write early.
+ * The member must be free for the class's whole time (./member-time): a
+ * booking at an overlapping time refuses it `time_clash` unless staff allowed it.
+ *
+ * A package that cannot pay, or a clash, is returned, not thrown, so a
+ * promotion can skip to the next member in line inside the same transaction.
+ * Nothing has been written by then except the expiry sweep, which is the
+ * nightly job's own write early.
  */
 export async function payAndBook(
   tx: Tx,
@@ -315,10 +345,26 @@ export async function payAndBook(
     seat: BookingSeat
     /** The member's or staff's pick; null where nobody picked, and the Default payer pays. */
     clientPackageId: string | null
+    /** Staff were shown the member's clash and booked anyway. */
+    allowClash?: boolean
     now: Date
   },
 ): Promise<PayAndBookResult> {
   const { clientId, now } = input
+
+  // One body, one class at a time. Held from here to commit, so a second
+  // booking for this member made at the same moment sees this one.
+  await lockMemberTime(tx, tenantId, [clientId])
+  if (!input.allowClash) {
+    const clash = await memberClash(
+      tx,
+      tenantId,
+      clientId,
+      { startsAt: cls.startsAt, endsAt: cls.endsAt },
+      { kind: 'class', id: cls.id },
+    )
+    if (clash) return { ok: false, refusal: 'time_clash', clash }
+  }
 
   // Pick a package to pay with (lock the client's rows).
   // A package whose expiry has passed since the nightly sweep still says

@@ -1341,6 +1341,74 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(packageId), 9)
   })
 
+  test('PT-124 scheduling a private session over a class the member is booked into is refused until staff say anyway', async () => {
+    const di = await member(one, 'Di Double Booked')
+    await giveClassCredits(one, di)
+    const packageId = await givePt(one, di, '1on1')
+
+    // A class 40 days out, clear of every other slot this file schedules, in
+    // the Location's own room rather than the suite's — so the only thing taken
+    // at that hour is the member.
+    const classStarts = new Date(Date.now() + 40 * DAY)
+    const [classRoom] = await harness.db
+      .select({ id: schema.rooms.id })
+      .from(schema.rooms)
+      .where(and(eq(schema.rooms.locationId, one.places[0]!.locationId), sql`${schema.rooms.name} <> ${ROOM_NAME}`))
+      .limit(1)
+    assert.ok(classRoom, 'expected a seeded room beside the suite’s')
+    const [klass] = await harness.db
+      .insert(schema.classes)
+      .values({
+        tenantId: one.id,
+        classTypeId: one.classTypeId,
+        mainInstructorId: coachB.staffId,
+        locationId: one.places[0]!.locationId,
+        roomId: classRoom!.id,
+        startsAt: classStarts,
+        endsAt: new Date(classStarts.getTime() + HOUR),
+        capacityOnline: 10,
+        creditCost: 1,
+        createdByStaffId: coachB.staffId,
+      })
+      .returning({ id: schema.classes.id })
+    const booking = await expectStatus(
+      await harness.app.request('/api/v1/me/bookings/class', {
+        method: 'POST',
+        headers: { ...di.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ class_id: klass!.id }),
+      }),
+      201,
+    )
+
+    // Half an hour into the class: the room and the coach are free, the member is not.
+    const requestId = await requestOk(one, di, { sessionType: '1on1', clientPackageId: packageId })
+    const at = { startsAt: new Date(classStarts.getTime() + 30 * MINUTE) }
+    const refused = await expectStatus(await adminSchedule(one, adminAtOne, requestId, at), 409)
+    assert.equal(refused.error, 'time_clash')
+    assert.equal(refused.client_id, di.clientId)
+    assert.equal(refused.clash.booking_id, booking.booking_id)
+    assert.equal(refused.clash.kind, 'class')
+    assert.equal(refused.clash.starts_at, classStarts.toISOString())
+    const [still] = await harness.db.select().from(schema.ptRequests).where(eq(schema.ptRequests.id, requestId))
+    assert.equal(still!.status, 'pending', 'nothing was scheduled')
+
+    // Told, the admin schedules it anyway; the override is on the audit record.
+    const anyway = await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/pt-sessions/${requestId}/schedule`, {
+        method: 'POST',
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...scheduleBody(one, at), instructor_id: coachA.staffId, allow_clash: true }),
+      }),
+      201,
+    )
+    assert.equal(anyway.pt_request.status, 'scheduled')
+    const audits = await harness.db
+      .select({ payload: schema.auditLog.payload })
+      .from(schema.auditLog)
+      .where(and(eq(schema.auditLog.targetTable, 'pt_requests'), eq(schema.auditLog.targetId, requestId)))
+    assert.ok(audits.some(a => (a.payload as { detail?: { allow_clash?: boolean } }).detail?.allow_clash === true))
+  })
+
   test('PT-51 a member cannot cancel another member’s request', async () => {
     const cal = await member(one, 'Cal Owner')
     const cat = await member(one, 'Cat Other')

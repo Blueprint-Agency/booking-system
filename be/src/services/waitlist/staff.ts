@@ -17,6 +17,7 @@ import {
   lockClass,
   packageDisplayName,
   payAndBook,
+  refusalError,
   type BookClassResult,
 } from '../bookings/book'
 import { countSeats, staffPromotionSeat } from '../bookings/seats'
@@ -109,6 +110,8 @@ export interface StaffPromoteInput {
   actor: StaffActor
   /** Admin only: take an overbook seat when online and buffer are both full. */
   overbook?: boolean
+  /** Staff were shown the member's booking at an overlapping time, and went ahead. */
+  allowClash?: boolean
 }
 
 /**
@@ -156,9 +159,10 @@ export async function staffPromote(tenantId: string, input: StaffPromoteInput): 
       clientId: entry.clientId,
       seat: decision.seat,
       clientPackageId: null,
+      allowClash: input.allowClash ?? false,
       now,
     })
-    if (!paid.ok) throw new ConflictError(paid.refusal)
+    if (!paid.ok) throw await refusalError(tx, tenantId, entry.clientId, paid)
 
     await tx
       .update(waitlistEntries)

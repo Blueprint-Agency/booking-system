@@ -54,6 +54,8 @@ const scheduleSchema = z
     ends_at: isoDate,
     // To the member, when the time is not one they proposed.
     note: z.string().max(500).nullable().optional(),
+    // "Schedule anyway" after `time_clash`: a member holds a booking then.
+    allow_clash: z.boolean().optional(),
   })
   .refine(v => new Date(v.ends_at) > new Date(v.starts_at), {
     message: 'ends_at must be after starts_at',
@@ -109,13 +111,15 @@ const app = new Hono()
   // caller's calendar.
   .post('/manual', takesPtBookings, zValidator('json', instructorManualSessionSchema), async c => {
     const self = c.get('staffUserId') as string
+    const body = c.req.valid('json')
     const { ptRequestId } = await createManualPtSession(tenantId(c), {
-      ...manualSessionFields(c.req.valid('json')),
+      ...manualSessionFields(body),
       instructorId: self,
       actorStaffId: self,
       actorIsAdmin: false,
     })
     c.set('auditTarget' as any, { table: 'pt_requests', id: ptRequestId })
+    if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
     const row = await getPtRequestForAdmin(tenantId(c), ptRequestId)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
@@ -152,6 +156,7 @@ const app = new Hono()
         requireOwnInstructorId: self,
       })
       c.set('auditTarget' as any, { table: 'bookings', id: seat.bookingId })
+      if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
       return c.json(addedMemberJson(body.client_id, seat), 201)
     },
   )
@@ -186,9 +191,11 @@ const app = new Hono()
       // Never the admin bypass: on this surface the binding rule decides, and
       // a request bound to a different instructor is refused.
       actorIsAdmin: false,
+      allowClash: body.allow_clash === true,
     })
     if (!result.ok) return c.json({ error: result.error }, statusForScheduleError(result.error))
     c.set('auditTarget' as any, { table: 'pt_requests', id })
+    if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
     const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })

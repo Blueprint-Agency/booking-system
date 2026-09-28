@@ -53,7 +53,8 @@ and the build order to complete the lifecycle.
 
 `book.ts` is correct and race-safe:
 1. Locks the `classes` row `FOR UPDATE`; rejects non-active, already-started.
-2. Rejects double-book (one `confirmed` booking per client per class).
+2. Rejects double-book (one `confirmed` booking per client per class), and an overlapping
+   booking — see §Overlapping bookings below.
 3. Capacity check against `capacity_online` only.
 4. Server-side package selection, via `services/packages/selection` (see §1a below):
    candidate Unlimited Plans are filtered to the class's Location, Activated preferred over
@@ -203,6 +204,35 @@ Admin cancel bypasses window/cap entirely (always full refund).
 
 In `book.ts`, after locking the class, reject when the chosen package's `expiresAt` is
 non-null and `< class.startsAt` (both unlimited and credit). Surface `409 package_expires_before_class`.
+
+### 3.6 Overlapping bookings
+
+One body, one session at a time: a member may not hold two bookings whose times overlap — a
+class, a private session, or any day of a workshop tier they hold. Strictly: no travel time
+is added between Locations, and back-to-back is allowed (windows are half-open
+`[starts_at, ends_at)`, occupancy's `overlaps`, the rule rooms and instructors are held to).
+Only `confirmed` bookings on `active` events hold time; a waitlist entry does not.
+
+`services/bookings/member-time.ts` is the rule: `lockMemberTime` takes a transaction-scoped
+advisory lock per member (after the event's own lock — the class row, the PT request, the
+slot), `memberClash` reads the member's held windows and `firstClash` (pure) decides. It
+runs in:
+
+| Path | On a clash |
+|---|---|
+| `payAndBook` — every class booking: member, staff, waitlist promotion, staff Add to class | Member: `409 time_clash`. Staff: `409 time_clash`, or through with `allow_clash: true`. A promotion skips the member (`PromotionOutcome = 'time_clash'`), who stays `waiting` |
+| Waitlist join (`waitlist/entries.ts:join`) | Member: `409 time_clash`. Staff putting a member in line: the same, or `allow_clash` |
+| PT: schedule a request, create a manual session, add a member, retype to 2on1, move a session | `409 time_clash`, or `allow_clash` — admins and instructors alike |
+| Workshop checkout start (`beginWorkshopCheckout`) | `409 time_clash`, before any payment. A paid place arriving by webhook is not refused: its money is taken |
+
+`409 time_clash` carries `{ client_id, client_name, clash: { booking_id, kind, title,
+starts_at, ends_at, location_name } }` — the booking in the way. Staff are shown it and asked
+"Book anyway?"; the retry's `allow_clash` is recorded on the audit row as
+`payload.detail.allow_clash`. The member route takes no `allow_clash`.
+
+An admin moving or lengthening a **class** is not refused for its booked members' other
+bookings. The member app shows each overlapping class as a clash before the tap (`clash` on
+`GET /me/classes`, `fe-client-features.md` §3.1).
 
 ---
 

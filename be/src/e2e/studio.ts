@@ -317,12 +317,15 @@ export async function createE2eStudio({
   const lateCanceller = await register('latecanceller', 'Late Canceller')
   const arriver = await register('arriver', 'Arriver')
   const waiter = await register('waiter', 'Waiter')
-  // Not handed to the journeys: they only need the seat taken, and the line filled.
+  // Not handed to the journeys: they only need the seat taken, and the line
+  // filled. One seated member per waitlist class, since the two run at the same
+  // hour and nobody may be booked into both.
   const seated = await register('seated', 'Seated')
+  const seatedForStaff = await register('seatedstaff', 'Seated Staff')
   const queued = [await register('queued1', 'Queuer One'), await register('queued2', 'Queuer Two')]
 
   const clientIds: Record<string, string> = {}
-  for (const member of [canceller, lateCanceller, arriver, waiter, seated, ...queued]) {
+  for (const member of [canceller, lateCanceller, arriver, waiter, seated, seatedForStaff, ...queued]) {
     const [row] = await db
       .select({ id: schema.clients.id })
       .from(schema.clients)
@@ -353,7 +356,7 @@ export async function createE2eStudio({
   // in the running backend), and a line from before the switch is exactly what
   // staff can still work. A second apart, so the order is certain.
   await withTenant(tenant.id, () =>
-    bookClass(tenant.id, { clientId: clientIds[seated.email]!, classId: classes.staffWaitlist.id }),
+    bookClass(tenant.id, { clientId: clientIds[seatedForStaff.email]!, classId: classes.staffWaitlist.id }),
   )
   const joinedAt = Date.now() - 60_000
   await db.insert(schema.waitlistEntries).values(

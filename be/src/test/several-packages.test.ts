@@ -172,7 +172,11 @@ describe('several packages per Family, the member picks the payer', { skip: inte
     return row!.id
   }
 
-  /** A class `startsIn` after the clock's now (three days by default). */
+  // Classes made without a time of their own each take the next two hours from
+  // three days out: a member is in one class at a time, and a test that books
+  // one member into several classes means several hours.
+  let classSlots = 0
+  /** A class `startsIn` after the clock's now (three days, and a slot of its own, by default). */
   async function addClass(
     at: Studio,
     options: {
@@ -184,7 +188,7 @@ describe('several packages per Family, the member picks the payer', { skip: inte
       capacityBuffer?: number
     } = {},
   ): Promise<string> {
-    const startsAt = new Date(harness.clock.now().getTime() + (options.startsIn ?? 3 * DAY))
+    const startsAt = new Date(harness.clock.now().getTime() + (options.startsIn ?? 3 * DAY + classSlots++ * 2 * HOUR))
     const [row] = await harness.db
       .insert(schema.classes)
       .values({

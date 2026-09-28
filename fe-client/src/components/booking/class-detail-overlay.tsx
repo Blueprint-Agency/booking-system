@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
+  CalendarX,
   Check,
   CircleCheck,
   CircleMinus,
@@ -46,6 +47,7 @@ import { ruleSentence } from "@/lib/package-rule";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { ClassAction, WaitlistPlace } from "@/lib/waitlist";
+import { clashNote, type ApiClash } from "@/lib/clash";
 
 type Load =
   | { state: "loading" }
@@ -73,7 +75,8 @@ export function ClassDetailOverlay({
   cls,
   isSignedIn,
   action,
-  spotsLeft,
+  clash,
+  hasSeats,
   waitlistOpen,
   myEntry,
   joining,
@@ -86,7 +89,10 @@ export function ClassDetailOverlay({
   isSignedIn: boolean;
   /** The row's button, as `classAction` decided it. */
   action: ClassAction;
-  spotsLeft: number;
+  /** The member's own booking this class overlaps, as the row last knew it. */
+  clash: ApiClash | null;
+  /** An online seat is free, as the row last knew it. */
+  hasSeats: boolean;
   waitlistOpen: boolean;
   myEntry: WaitlistPlace | null;
   joining: boolean;
@@ -143,7 +149,7 @@ export function ClassDetailOverlay({
   const gmapsUrl = detail?.location?.gmaps_url ?? null;
   const supporting = detail?.supporting_instructors ?? [];
   const windowHours = detail?.effective_cancel_window_hours ?? cls.effective_cancel_window_hours;
-  const seats = seatsLine(spotsLeft, { enabled: cls.waitlist.enabled, open: waitlistOpen, waiting: cls.waitlist.waiting });
+  const seats = seatsLine(hasSeats, { enabled: cls.waitlist.enabled, open: waitlistOpen });
 
   return (
     <Portal>
@@ -179,7 +185,7 @@ export function ClassDetailOverlay({
           </header>
 
           <div className={OVERLAY_BODY}>
-            <StateBanner action={action} myEntry={myEntry} />
+            <StateBanner action={action} myEntry={myEntry} clash={clash} />
 
             {load.state === "loading" ? (
               <p className="inline-flex items-center gap-2 text-sm text-muted" role="status">
@@ -237,7 +243,7 @@ export function ClassDetailOverlay({
               <Fact icon={<Ticket />} label="Cost">
                 <span className="tabular-nums">{credits(cls.credit_cost)}</span>
               </Fact>
-              <Fact icon={<Users />} label="Spots">
+              <Fact icon={<Users />} label="Availability">
                 {seats}
               </Fact>
               <Fact icon={<Hourglass />} label="Cancellation">
@@ -288,7 +294,23 @@ function Fact({ icon, label, children }: { icon: ReactNode; label: string; child
 }
 
 /** The member's own standing in this class, where they have one. */
-function StateBanner({ action, myEntry }: { action: ClassAction; myEntry: WaitlistPlace | null }) {
+function StateBanner({
+  action,
+  myEntry,
+  clash,
+}: {
+  action: ClassAction;
+  myEntry: WaitlistPlace | null;
+  clash: ApiClash | null;
+}) {
+  if (action === "clash" && clash) {
+    return (
+      <p className="mb-4 flex items-start gap-2 rounded-xl bg-ink/[0.04] px-4 py-3 text-sm text-ink">
+        <CalendarX className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-hidden />
+        <span>{clashNote(clash)}</span>
+      </p>
+    );
+  }
   if (action === "booked") {
     return (
       <p className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-sage/15 px-3 py-1.5 text-sm font-semibold text-sage">
@@ -392,6 +414,8 @@ function PrimaryAction({
       );
     case "booked":
     case "waitlisted":
+    // The way through a clash is the other booking, in My bookings.
+    case "clash":
       return (
         <Link href="/account/classes" className={BTN_PRIMARY}>
           My bookings

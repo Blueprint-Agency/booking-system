@@ -36,8 +36,9 @@ export interface Promotion {
 
 /**
  * Fill the class's free online seats from its line, in order. A member whose
- * package cannot pay now is skipped and stays `waiting` — buying a package puts
- * them back in contention for the next seat. Returns who was booked, for the
+ * package cannot pay now, or who holds a booking at an overlapping time, is
+ * skipped and stays `waiting` — buying a package, or cancelling the other
+ * booking, puts them back in contention for the next seat. Returns who was booked, for the
  * caller to email once the transaction has committed.
  */
 export async function promoteFromWaitlist(
@@ -67,7 +68,9 @@ export async function promoteFromWaitlist(
       continue
     }
 
-    // Nobody is there to pick, so the Default payer pays.
+    // Nobody is there to pick, so the Default payer pays. A member who has
+    // since booked something at an overlapping time is skipped, not moved:
+    // nobody is there to say "book anyway".
     const paid = await payAndBook(tx, tenantId, cls, { clientId: next.clientId, seat: 'online', clientPackageId: null, now })
     if (!paid.ok) {
       outcomes.set(next.id, paid.refusal)

@@ -572,11 +572,13 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
       (err: { cause?: { message?: string } }) => /not[- ]null/i.test(err.cause?.message ?? ''),
     )
 
-    // Nothing landed, so the read beside it still shows only the fixture's own
-    // booking.
-    const seen = await getAs(one.slug, '/api/v1/public/classes')
-    const card = seen.body.classes.find((r: any) => r.id === one.classId)
-    assert.equal(card?.booked_count, 1)
+    // Nothing landed: the class still holds only the fixture's own booking.
+    // Read as the owner, past RLS, so a row under any tenant or none would show.
+    const onClass = await harness.db
+      .select({ id: schema.bookings.id })
+      .from(schema.bookings)
+      .where(and(eq(schema.bookings.classId, one.classId), eq(schema.bookings.state, 'confirmed')))
+    assert.equal(onClass.length, 1)
   })
 
   // ── catalog and schedule writes ───────────────────────────────────────────

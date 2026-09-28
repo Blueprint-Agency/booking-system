@@ -6,6 +6,7 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { workshops, workshopTiers } from '../../db/schema/schedule'
+import { clashError } from '../bookings/member-time'
 import { NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import {
@@ -17,9 +18,20 @@ import { openSettledPurchase } from '../billing/purchases'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { listActivePromotionsFor } from '../packages/promotions'
 import { applyPromoCode, type AppliedPromoCode } from '../packages/promo-redemption'
-import { assertWorkshopBookable, assertWorkshopOnSale, bookWorkshopFree, tierEffectivePrice } from './book'
+import { assertWorkshopBookable, assertWorkshopOnSale, bookWorkshopFree, tierDaysClash, tierEffectivePrice } from './book'
 
 export type WorkshopCheckout = CheckoutQuote<{ bookingId: string }>
+
+/**
+ * 409 `time_clash` when any day of the tier overlaps a booking the member
+ * holds. Asked at checkout start, without a lock, as the workshop's capacity is:
+ * a class booked while the member is paying is not seen here, and the paid
+ * place is granted anyway — the webhook reports it (billing/webhook-handler).
+ */
+async function assertTierDaysFree(tenantId: string, clientId: string, workshopId: string, workshopTierId: string) {
+  const clash = await tierDaysClash(tenantId, clientId, workshopId, workshopTierId)
+  if (clash) throw await clashError(db, tenantId, clientId, clash)
+}
 
 export async function beginWorkshopCheckout(
   tenantId: string,
@@ -52,6 +64,11 @@ export async function beginWorkshopCheckout(
     .limit(1)
   if (!ws) throw new NotFoundError('workshop_not_found')
   await assertWorkshopOnSale(tenantId, ws)
+
+  // One body, one session at a time: every day the tier covers must be free
+  // in the member's own bookings. Asked before any money moves, since there is
+  // no automated refund for a place they could not attend.
+  await assertTierDaysFree(tenantId, clientId, workshopId, workshopTierId)
 
   const promos = await listActivePromotionsFor(tenantId, 'workshop', [workshopId])
   // Early-bird beats promotions while the cutoff is live — same rule the FE uses

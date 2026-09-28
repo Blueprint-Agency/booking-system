@@ -256,9 +256,11 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(row!.state, 'confirmed')
     assert.ok(row!.qrToken)
 
-    const after = await catalogue(one, classId)
-    assert.equal(after.spots_left, before.spots_left)
-    assert.equal(after.spots_left, 2)
+    // Both online seats are still the members': none taken, and the catalogue
+    // still offers one.
+    assert.equal((await detail(one, classId)).online_used, 0)
+    assert.equal(before.has_seats, true)
+    assert.equal((await catalogue(one, classId)).has_seats, true)
 
     // Booking the same member twice is refused, as for a member.
     const again = await adminBooks(one, classId, walkIn)
@@ -273,7 +275,8 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const res = await instructorBooks(one.instructor, classId, walkIn)
     assert.equal(res.status, 201, JSON.stringify(res.body))
     assert.equal(res.body.seat, 'buffer')
-    assert.equal((await catalogue(one, classId)).spots_left, 2)
+    assert.equal((await detail(one, classId)).online_used, 0)
+    assert.equal((await catalogue(one, classId)).has_seats, true)
   })
 
   test('SEAT-02 a full buffer refuses staff with class_full; an admin who overbooks gets in, an instructor never does', async () => {
@@ -304,7 +307,8 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(row.seat, 'overbook')
     assert.equal(d.overbook_used, 1)
     // The online seat is still the members'.
-    assert.equal((await catalogue(one, classId)).spots_left, 1)
+    assert.equal(d.online_used, 0)
+    assert.equal((await catalogue(one, classId)).has_seats, true)
   })
 
   test('a member never takes a buffer seat: online full is full to them', async () => {
@@ -345,10 +349,15 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(t.buffer_used, d.buffer_used)
     assert.equal(t.overbook_used, d.overbook_used)
 
-    const c = await catalogue(one, classId)
-    assert.equal(c.capacity_online, d.capacity_online)
-    assert.equal(c.booked_count, d.online_used)
-    assert.equal(c.spots_left, d.capacity_online - d.online_used)
+    // One online seat of three is free, and the member catalogue says so
+    // without saying how many.
+    assert.equal(d.capacity_online - d.online_used, 1)
+    assert.equal((await catalogue(one, classId)).has_seats, true)
+
+    // The last online seat taken, the catalogue reads full, whatever the
+    // buffer holds.
+    await memberBooks(await member(one), classId)
+    assert.equal((await catalogue(one, classId)).has_seats, false)
   })
 
   test('SEAT-05 another studio’s bookings never count toward this studio’s seats, and staff cannot cross', async () => {
@@ -375,7 +384,7 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const d = await detail(one, mine)
     assert.equal(d.attending, 0)
     assert.equal(d.online_used, 0)
-    assert.equal((await catalogue(one, mine)).spots_left, 2)
+    assert.equal((await catalogue(one, mine)).has_seats, true)
     assert.equal((await timetableEntry(one, mine)).attending, 0)
 
     // An admin cannot book onto the other studio's class, nor book the other

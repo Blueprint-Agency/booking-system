@@ -34,14 +34,12 @@ interface LocationLite {
   address: string | null
 }
 
+/** A day as members read it. Its capacities are for staff, never sent here. */
 interface DayPayload {
   id: string
   ord: number
   starts_at: Date
   ends_at: Date
-  capacity_online: number
-  capacity_waitlist: number
-  capacity_buffer: number
 }
 
 interface TierPayload {
@@ -113,9 +111,6 @@ async function loadCommon(tenantId: string, workshopIds: string[]) {
       ord: d.ord,
       starts_at: d.startsAt,
       ends_at: d.endsAt,
-      capacity_online: d.capacityOnline,
-      capacity_waitlist: d.capacityWaitlist,
-      capacity_buffer: d.capacityBuffer,
     })
     daysByWorkshop.set(d.workshopId, list)
   }

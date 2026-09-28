@@ -14,7 +14,8 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
  *   - Normal client request (no impersonation): no row written.
  *
  * Idempotent reads are not audited. Use `c.set('auditTarget', { table, id })` inside handlers
- * to capture which entity changed; falls back to method+path if not set.
+ * to capture which entity changed; falls back to method+path if not set. `c.set('auditDetail',
+ * { … })` adds what else the row should record, as `payload.detail`.
  */
 export const audit: MiddlewareHandler = async (c, next) => {
   await next()
@@ -52,6 +53,10 @@ export const audit: MiddlewareHandler = async (c, next) => {
   }
   const actingAs = c.get('actingAs')
   if (actingAs) payload.actingAs = actingAs
+  // What the handler wants remembered about how it was done — an override
+  // staff gave after a warning, say (`{ allow_clash: true }`).
+  const detail = c.get('auditDetail' as any) as Record<string, unknown> | undefined
+  if (detail) payload.detail = detail
   if (impersonatedClientId) payload.impersonatedClientId = impersonatedClientId
 
   await db.insert(auditLog).values({

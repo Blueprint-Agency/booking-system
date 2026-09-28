@@ -303,8 +303,8 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     const waiter = await member(one)
 
     const before = await memberCard(waiter, classId)
-    assert.equal(before.spots_left, 0)
-    assert.deepEqual(before.waitlist, { enabled: true, capacity: 3, waiting: 0, open: true, my_entry: null })
+    assert.equal(before.has_seats, false)
+    assert.deepEqual(before.waitlist, { enabled: true, open: true, my_entry: null })
 
     const entry = await joined(waiter, classId)
     assert.equal(entry.position, 1)
@@ -313,16 +313,13 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     const after = await memberCard(waiter, classId)
     assert.deepEqual(after.waitlist, {
       enabled: true,
-      capacity: 3,
-      waiting: 1,
       open: true,
       my_entry: { id: entry.entry_id, position: 1 },
     })
-    // The public catalogue counts the line and names nobody in it.
+    // The public catalogue says the line is open, and neither counts it nor
+    // names anybody in it.
     assert.deepEqual((await publicDetail(one, classId)).waitlist, {
       enabled: true,
-      capacity: 3,
-      waiting: 1,
       open: true,
       my_entry: null,
     })
@@ -416,9 +413,8 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     assert.deepEqual((await myLines(second)).map(e => e.position), [1])
     const card = await memberCard(first, classId)
     assert.equal(card.is_booked, true)
-    assert.equal(card.spots_left, 0)
+    assert.equal(card.has_seats, false)
     assert.equal(card.waitlist.my_entry, null)
-    assert.equal(card.waitlist.waiting, 1)
   })
 
   test('WTL-08 when #1 cannot pay, #2 is booked and #1 stays in line', async () => {
@@ -473,7 +469,7 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     assert.equal((await confirmedOn(waiter, classId)).length, 1)
     assert.equal(await creditsLeft(waiter), 9, 'debited once')
     assert.equal((await promotedMails(waiter)).length, 1)
-    assert.equal((await memberCard(waiter, classId)).spots_left, 1, 'the second freed seat stays free')
+    assert.equal((await memberCard(waiter, classId)).has_seats, true, 'the second freed seat stays free')
   })
 
   test('WTL-16 a promoted member cancels under the normal policy and gets the credit back', async () => {
@@ -528,6 +524,16 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     })
     assert.equal(res.status, 409, JSON.stringify(res.body))
     assert.deepEqual(res.body, { error: 'class_full', waitlist_open: true, waiting: 1, capacity_waitlist: 4 })
+  })
+
+  test('CAT-10 a member booking a full class is told only whether the line is open, not how long it is', async () => {
+    const classId = await addClass(one, { online: 1, buffer: 0, waitlist: 4 })
+    await booked(await member(one), classId)
+    await joined(await member(one), classId)
+
+    const res = await book(await member(one), classId)
+    assert.equal(res.status, 409, JSON.stringify(res.body))
+    assert.deepEqual(res.body, { error: 'class_full', waitlist_open: true })
   })
 
   test('a member who books a freed seat by hand leaves the line', async () => {
@@ -681,8 +687,9 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
       .returning({ id: schema.waitlistEntries.id })
 
     const waiter = await member(one)
-    assert.equal((await memberCard(waiter, classId)).waitlist.waiting, 0)
-    // The stray row does not fill the one place in this class's line.
+    // The stray row does not fill the one place in this class's line: the line
+    // still reads open, and the join takes that place.
+    assert.equal((await memberCard(waiter, classId)).waitlist.open, true)
     const entry = await joined(waiter, classId)
     assert.equal(entry.position, 1)
 

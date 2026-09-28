@@ -10,6 +10,7 @@ import type { PackageOption, StaffRole } from "@/lib/class-seats";
 import { formatDate } from "@/lib/formatters";
 import { payOrNull } from "@/lib/pay";
 import { scheduleErrorMessage } from "@/lib/schedule";
+import { withClashConfirm } from "@/lib/time-clash";
 
 export type PtSessionType = "1on1" | "2on1";
 
@@ -66,8 +67,10 @@ export function fetchSeatCandidates(
       });
 }
 
+/** A member booked elsewhere at the session's time is asked about first (`./time-clash`). */
 export function createManualSession(api: Api, role: StaffRole, body: ManualSessionBody): Promise<unknown> {
-  return api.post(role === "admin" ? "/portal/admin/pt-sessions/manual" : "/portal/instructor/pt-requests/manual", body);
+  const path = role === "admin" ? "/portal/admin/pt-sessions/manual" : "/portal/instructor/pt-requests/manual";
+  return withClashConfirm("session", (extra) => api.post(path, { ...body, ...extra }));
 }
 
 /** How many members a session of this type seats. */
@@ -340,7 +343,7 @@ export function retypeBody(to: PtSessionType, partner: ManualSeat | null): Retyp
 }
 
 export function addSessionMember(api: Api, role: StaffRole, sessionId: string, body: AddMemberBody): Promise<unknown> {
-  return api.post(`${sessionsPath(role)}/${sessionId}/members`, body);
+  return withClashConfirm("session", (extra) => api.post(`${sessionsPath(role)}/${sessionId}/members`, { ...body, ...extra }));
 }
 
 export function removeSessionMember(api: Api, role: StaffRole, sessionId: string, clientId: string): Promise<unknown> {
@@ -348,7 +351,9 @@ export function removeSessionMember(api: Api, role: StaffRole, sessionId: string
 }
 
 export function retypeSession(api: Api, sessionId: string, body: RetypeBody): Promise<unknown> {
-  return api.patch(`/portal/admin/pt-sessions/sessions/${sessionId}`, body);
+  return withClashConfirm("session", (extra) =>
+    api.patch(`/portal/admin/pt-sessions/sessions/${sessionId}`, { ...body, ...extra }),
+  );
 }
 
 /**

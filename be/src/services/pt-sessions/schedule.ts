@@ -25,6 +25,7 @@ import { clientPackages } from '../../db/schema/packages'
 import { debitCredits, refundCredits, type Tx } from '../packages/ledger'
 import { activateOnSchedule } from '../packages/activation'
 import { generateBookingCodes } from '../bookings/qr'
+import { assertMemberFree, lockMemberTime } from '../bookings/member-time'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
 import { assertInstructorsAvailable, plannedInstructorIds } from '../schedule/occupancy'
 import {
@@ -68,6 +69,11 @@ export interface SchedulePtRequestInput {
    * time chosen is not one the member proposed, to say why. Optional.
    */
   note?: string | null
+  /**
+   * Staff were shown that a member on the request holds a booking at an
+   * overlapping time (`time_clash`) and scheduled it anyway.
+   */
+  allowClash?: boolean
 }
 
 export type SchedulePtRequestError =
@@ -158,6 +164,20 @@ export async function schedulePtRequest(
       .for('update')
       .limit(1)
     if (locked?.status !== 'pending') return null
+
+    // One body, one session at a time: neither member may already be booked
+    // for an overlapping time, unless staff were warned and went ahead.
+    const attendeeIds = [req.clientId, ...(req.coClientId ? [req.coClientId] : [])]
+    await lockMemberTime(tx, tenantId, attendeeIds)
+    for (const clientId of attendeeIds) {
+      await assertMemberFree(
+        tx,
+        tenantId,
+        clientId,
+        { startsAt: input.startsAt, endsAt: input.endsAt },
+        { allowClash: input.allowClash ?? false },
+      )
+    }
 
     // The session row's own instructor_id FK points at instructors.staff_user_id,
     // so the profile row has to exist before there is a session to hang it on.
@@ -272,6 +292,11 @@ export interface UpdatePtSessionInput {
   partnerClientPackageId?: string
   /** A manual session only: staff said "Add anyway" to the partner's seat warnings. */
   override?: boolean
+  /**
+   * Staff were shown that someone on the session holds a booking at an
+   * overlapping time (`time_clash`) and moved it, or added the partner, anyway.
+   */
+  allowClash?: boolean
   /** Who is making the change — recorded on a manual session's seat movements. */
   actorStaffId: string
   /** undefined = leave unchanged; null = clear; number = set (SGD). */
@@ -501,6 +526,35 @@ export async function updatePtSession(
   }
 
   return db.transaction(async tx => {
+    // A move, or a partner joining, reads everyone's time below. Their locks
+    // are all taken here, in one order, before any is taken one by one — the
+    // partner's seat takes its own — so two such edits cannot deadlock. The
+    // request and the session first, as every PT path takes them (cancelPtRequest,
+    // a manual seat), then the members: never a member before its session.
+    const movesOrGrows = patch.startsAt !== undefined || patch.endsAt !== undefined || patch.sessionType === '2on1'
+    if (movesOrGrows) {
+      if (existing.ptRequestId) {
+        await tx
+          .select({ id: ptRequests.id })
+          .from(ptRequests)
+          .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, existing.ptRequestId)))
+          .for('update')
+      }
+      await tx
+        .select({ id: ptSessions.id })
+        .from(ptSessions)
+        .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
+        .for('update')
+      const seatedNow = await tx
+        .select({ clientId: bookings.clientId })
+        .from(bookings)
+        .where(and(eq(bookings.tenantId, tenantId), eq(bookings.ptSessionId, id), eq(bookings.state, 'confirmed')))
+      await lockMemberTime(tx, tenantId, [
+        ...seatedNow.map(s => s.clientId),
+        ...(patch.partnerClientId ? [patch.partnerClientId] : []),
+      ])
+    }
+
     // Credits, attendees, bookings and the type flip all commit or roll back
     // together. Re-read under FOR UPDATE so two concurrent retypes can't both
     // see the old type and debit twice.
@@ -552,7 +606,7 @@ export async function updatePtSession(
               id,
               instructorId: patch.instructorId ?? locked.instructorId,
               startsAt: patch.startsAt ?? locked.startsAt,
-              endsAt: locked.endsAt,
+              endsAt: patch.endsAt ?? locked.endsAt,
             },
             req,
             to: patch.sessionType,
@@ -560,6 +614,7 @@ export async function updatePtSession(
             partnerClientPackageId: patch.partnerClientPackageId ?? null,
             actorStaffId: patch.actorStaffId,
             override: patch.override === true,
+            allowClash: patch.allowClash === true,
           })
         } else {
           await reconcileSessionType(tx, tenantId, {
@@ -570,6 +625,26 @@ export async function updatePtSession(
             ...(patch.partnerClientId !== undefined ? { partnerClientId: patch.partnerClientId } : {}),
           })
         }
+      }
+    }
+
+    // Moved, or joined by a partner: everyone on the session must be free for
+    // its time — the same rule as scheduling it, and the same "anyway".
+    if (movesOrGrows) {
+      const seated = await tx
+        .select({ clientId: bookings.clientId })
+        .from(bookings)
+        .where(and(eq(bookings.tenantId, tenantId), eq(bookings.ptSessionId, id), eq(bookings.state, 'confirmed')))
+      const attendeeIds = seated.map(s => s.clientId)
+      await lockMemberTime(tx, tenantId, attendeeIds)
+      for (const clientId of attendeeIds) {
+        await assertMemberFree(
+          tx,
+          tenantId,
+          clientId,
+          { startsAt: newStartsAt, endsAt: newEndsAt },
+          { exclude: { kind: 'pt', id }, allowClash: patch.allowClash === true },
+        )
       }
     }
 

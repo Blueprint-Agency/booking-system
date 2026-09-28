@@ -9,6 +9,7 @@ import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError, type Api } from "@/lib/api";
 import { fetchFeatureFlags, WAITLIST_FLAG } from "@/lib/feature-flags";
 import { NOT_ACCEPTED_REASON } from "@/lib/package-rule";
+import { timeClashOf, timeClashRefusal, withClashConfirm } from "@/lib/time-clash";
 import {
   staffBookingRefusal,
   staffRefusalCopy,
@@ -95,14 +96,20 @@ export function staffBookingPrompt(err: unknown, role: StaffRole): StaffBookingP
     : { kind: "full", message: "No seats left. Add to the waitlist?", canOverbook: false, canWaitlist: true };
 }
 
-/** Staff put a member in a full class's line — the member's own join, made from the portal. */
+/**
+ * Staff put a member in a full class's line — the member's own join, made from
+ * the portal. A member booked elsewhere at an overlapping time is asked about
+ * first (`./time-clash`).
+ */
 export function staffJoinWaitlist(
   api: Api,
   role: StaffRole,
   classId: string,
   clientId: string,
 ): Promise<{ entry_id: string; position: number }> {
-  return api.post(`/portal/${role}/schedule/classes/${classId}/waitlist`, { client_id: clientId });
+  return withClashConfirm("class", (extra) =>
+    api.post(`/portal/${role}/schedule/classes/${classId}/waitlist`, { client_id: clientId, ...extra }),
+  );
 }
 
 const JOIN_REFUSAL_COPY: Record<string, string> = {
@@ -117,6 +124,8 @@ export function staffJoinRefusal(err: unknown): string {
   if (!(err instanceof ApiError)) return "Network error";
   const refused = permissionRefusal(err);
   if (refused) return refused;
+  const clash = timeClashOf(err);
+  if (clash) return timeClashRefusal(clash);
   const body = err.body as { error?: string; window_hours?: number } | null;
   if (body?.error === "waitlist_closed") {
     return `This class starts within ${body.window_hours ?? "a few"} hours, so the waitlist has closed.`;
@@ -131,7 +140,10 @@ export function staffJoinRefusal(err: unknown): string {
 
 /* ---------------------------- Add to class ---------------------------- */
 
-/** Book a waiting member onto the class, whatever the Cancellation Window says. */
+/**
+ * Book a waiting member onto the class, whatever the Cancellation Window says.
+ * A member since booked elsewhere at an overlapping time is asked about first.
+ */
 export function promoteWaitlistEntry(
   api: Api,
   role: StaffRole,
@@ -139,9 +151,11 @@ export function promoteWaitlistEntry(
   entryId: string,
   overbook = false,
 ): Promise<StaffBookingResult> {
-  return api.post<StaffBookingResult>(
-    `/portal/${role}/schedule/classes/${classId}/waitlist/${entryId}/promote`,
-    overbook ? { overbook: true } : {},
+  return withClashConfirm("class", (extra) =>
+    api.post<StaffBookingResult>(`/portal/${role}/schedule/classes/${classId}/waitlist/${entryId}/promote`, {
+      ...(overbook ? { overbook: true } : {}),
+      ...extra,
+    }),
   );
 }
 

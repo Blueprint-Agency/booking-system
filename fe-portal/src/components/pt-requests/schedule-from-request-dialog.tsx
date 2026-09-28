@@ -12,6 +12,7 @@ import {
   type CatalogRoom,
 } from "@/lib/catalog";
 import { scheduleErrorMessage, type Slot } from "@/lib/schedule";
+import { withClashConfirm } from "@/lib/time-clash";
 import { PAY_OPTIONAL_HINT, payOrNull } from "@/lib/pay";
 import {
   InstructorOption,
@@ -190,17 +191,21 @@ export function ScheduleFromRequestDialog({
     setSaving(true);
     setErr(null);
     try {
-      await api.post(`/portal/admin/pt-sessions/${currentRequest.id}/schedule`, {
-        instructor_id: instructorId,
-        location_id: locationId,
-        room_id: roomId,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
-        instructor_pay_sgd: payOrNull(instructorPay),
-        // Only with a time the member did not propose: a note typed and then
-        // left behind by picking one of their slots is not sent.
-        note: offProposal ? ptNoteOrNull(note) : null,
-      });
+      // A member booked elsewhere at this time is asked about first.
+      await withClashConfirm("session", (extra) =>
+        api.post(`/portal/admin/pt-sessions/${currentRequest.id}/schedule`, {
+          instructor_id: instructorId,
+          location_id: locationId,
+          room_id: roomId,
+          starts_at: startsAt.toISOString(),
+          ends_at: endsAt.toISOString(),
+          instructor_pay_sgd: payOrNull(instructorPay),
+          // Only with a time the member did not propose: a note typed and then
+          // left behind by picking one of their slots is not sent.
+          note: offProposal ? ptNoteOrNull(note) : null,
+          ...extra,
+        }),
+      );
       onScheduled();
     } catch (e) {
       const code = apiErrorCode(e);

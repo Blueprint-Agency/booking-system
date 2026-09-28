@@ -28,6 +28,8 @@ const manualFields = {
     )
     .min(1),
   override: z.boolean().optional(),
+  // "Book anyway" after `time_clash`: a member holds a booking at an overlapping time.
+  allow_clash: z.boolean().optional(),
 }
 
 const endsAfterStart = (v: { starts_at: string; ends_at: string }) => new Date(v.ends_at) > new Date(v.starts_at)
@@ -52,6 +54,7 @@ export function manualSessionFields(body: ManualBody) {
     instructorPaySgd: body.instructor_pay_sgd ?? null,
     members: body.members.map(m => ({ clientId: m.client_id, clientPackageId: m.client_package_id ?? null })),
     override: body.override === true,
+    allowClash: body.allow_clash === true,
   }
 }
 
@@ -63,6 +66,7 @@ export const addManualMemberSchema = z.object({
   client_id: z.string().uuid(),
   client_package_id: z.string().uuid().optional(),
   override: z.boolean().optional(),
+  allow_clash: z.boolean().optional(),
 })
 
 type AddMemberBody = z.infer<typeof addManualMemberSchema>
@@ -72,6 +76,7 @@ export function addManualMemberFields(body: AddMemberBody) {
     clientId: body.client_id,
     clientPackageId: body.client_package_id ?? null,
     override: body.override === true,
+    allowClash: body.allow_clash === true,
   }
 }
 

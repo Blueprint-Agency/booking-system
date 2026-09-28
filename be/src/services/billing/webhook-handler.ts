@@ -24,7 +24,7 @@ import { unwindRefund } from './refunds'
 import { openPurchase, purchaseById, recomputeBalance, type PurchaseRow } from './purchases'
 import { purchaseKindFor } from './checkout-session'
 import { toCents } from '../../shared/money'
-import { bookWorkshopPaid } from '../workshops/book'
+import { bookWorkshopPaid, tierDaysClash } from '../workshops/book'
 import { recordMerchOrder } from '../catalog/merch-orders'
 import {
   sendPackagePurchaseEmail,
@@ -730,6 +730,21 @@ async function dispatchStripeEvent(
         appliedPromotionId,
         appliedPromoCodeId: promoCodeId,
       })
+
+      // The clash check ran at checkout start. A class booked while the member
+      // was paying is not refused here — the money is taken, and there is no
+      // automated refund — so it is reported for the studio to sort out.
+      if (booked.created) {
+        const clash = await tierDaysClash(tenantId, clientId, workshopId, workshopTierId)
+        if (clash) {
+          reportError(new Error('workshop place granted over a time clash'), 'workshop time clash after payment', {
+            tenantId,
+            clientId,
+            bookingId: booked.bookingId,
+            clashBookingId: clash.bookingId,
+          })
+        }
+      }
 
       // Written before the email is composed — it is where `receipt_url` comes
       // from (§13). How it was paid comes off the same charge.

@@ -91,8 +91,14 @@ const app = new Hono()
       clientId,
       cards.map(card => card.id),
     )
+    // The member's own booking each class overlaps: one body, one class at a time.
+    const clashes = await classCatalog.myClashes(tenantId(c), clientId, cards)
     return c.json({
-      classes: cards.map(card => ({ ...card, is_booked: bookedIds.has(card.id) })),
+      classes: cards.map(card => ({
+        ...card,
+        is_booked: bookedIds.has(card.id),
+        clash: clashes.get(card.id) ?? null,
+      })),
     })
   })
   // One class, signed in: the public detail plus the member's own class
@@ -105,8 +111,10 @@ const app = new Hono()
     const detail = await classCatalog.getClassDetail(tenantId(c), id)
     const mine = await memberPackagesForClass(tenantId(c), clientId, id)
     if (!mine) throw new NotFoundError('class_not_found')
+    const clashes = await classCatalog.myClashes(tenantId(c), clientId, [detail])
     return c.json({
       ...detail,
+      clash: clashes.get(id) ?? null,
       default_client_package_id: mine.defaultPayerId,
       my_packages: mine.packages.map(serializeMemberPackageForClass),
     })

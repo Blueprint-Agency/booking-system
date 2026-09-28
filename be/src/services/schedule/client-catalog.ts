@@ -12,6 +12,7 @@ import { readRosters, type Tx } from './roster'
 import { countSeats, countSeatsByClass, seatsOf, spotsLeft, type SeatCounts } from '../bookings/seats'
 import { lineupsOf } from './lineup'
 import { waitlistSummaries, type WaitlistSummary } from '../waitlist/line'
+import { clashJson, firstClash, heldWindows } from '../bookings/member-time'
 import { cancelWindowResolver, classCancelWindow } from '../policy/cancel-window'
 import { namedClassRule, namedRuleJson } from './package-rules'
 
@@ -35,9 +36,11 @@ export interface ClassCardPayload {
   starts_at: string
   ends_at: string
   credit_cost: number
-  capacity_online: number
-  booked_count: number
-  spots_left: number
+  /**
+   * An online seat is free. Only whether, never how many: a class's seat
+   * counts are for its studio's staff (spec-waitlist.md §9).
+   */
+  has_seats: boolean
   lifecycle: string
   /** This class's Cancellation Window in hours — its own, else the studio's (policy/cancel-window.ts). */
   effective_cancel_window_hours: number
@@ -104,13 +107,13 @@ export function resolveWindow(from?: Date, to?: Date): { from: Date; to: Date } 
 }
 
 /**
- * What a member is shown of a class's seats: online seats only. `booked_count`
- * is the online seats taken, so it and `spots_left` always add up to
- * `capacity_online`; buffer and overbook seats are staff's and never shown here
- * (spec-waitlist.md §2).
+ * What a member is shown of a class's seats: whether an online seat is free,
+ * and nothing more. How many seats a class has, how many are taken and how many
+ * remain are for staff; buffer and overbook seats never count here
+ * (spec-waitlist.md §2, §9).
  */
 function memberSeats(counts: SeatCounts, capacityOnline: number) {
-  return { booked_count: counts.onlineUsed, spots_left: spotsLeft(counts, { capacityOnline }) }
+  return { has_seats: spotsLeft(counts, { capacityOnline }) > 0 }
 }
 
 /** `clientId` is the signed-in member, whose own place in each line is shown; null on the public route. */
@@ -199,7 +202,6 @@ export async function listClassCards(
       starts_at: r.startsAt.toISOString(),
       ends_at: r.endsAt.toISOString(),
       credit_cost: r.creditCost,
-      capacity_online: r.capacityOnline,
       ...memberSeats(seatsOf(seats, r.id), r.capacityOnline),
       lifecycle: r.lifecycle,
       effective_cancel_window_hours: windowOf(r),
@@ -308,11 +310,10 @@ export async function getClassDetail(
     starts_at: r.startsAt.toISOString(),
     ends_at: r.endsAt.toISOString(),
     credit_cost: r.creditCost,
-    capacity_online: r.capacityOnline,
     ...memberSeats(seats, r.capacityOnline),
     lifecycle: r.lifecycle,
     effective_cancel_window_hours: await classCancelWindow(tenantId, r),
-    // Public route: the line's length, never anyone's place in it.
+    // Public route: whether the line is open, never anyone's place in it.
     waitlist: (await waitlistSummaries(tenantId, [r], null)).get(r.id)!,
     restricted: r.packageRuleMode !== 'all',
     package_rule: namedRuleJson(await namedClassRule(tenantId, r)),
@@ -339,6 +340,31 @@ export async function myBookedClassIds(
     )
   const out = new Set<string>()
   for (const r of rows) if (r.classId) out.add(r.classId)
+  return out
+}
+
+/**
+ * For each class, the member's own booking it overlaps, if any — what the
+ * schedule row shows instead of Book ("Clashes with …"). One read of the
+ * member's held windows across the classes' span; the rule is `firstClash`.
+ */
+export async function myClashes(
+  tenantId: string,
+  clientId: string,
+  classes: readonly { id: string; starts_at: string; ends_at: string }[],
+): Promise<Map<string, ReturnType<typeof clashJson>>> {
+  const out = new Map<string, ReturnType<typeof clashJson>>()
+  if (classes.length === 0) return out
+  const windows = classes.map(c => ({ id: c.id, startsAt: new Date(c.starts_at), endsAt: new Date(c.ends_at) }))
+  const span = {
+    startsAt: new Date(Math.min(...windows.map(w => w.startsAt.getTime()))),
+    endsAt: new Date(Math.max(...windows.map(w => w.endsAt.getTime()))),
+  }
+  const held = await heldWindows(db, tenantId, clientId, span)
+  for (const w of windows) {
+    const clash = firstClash(held, w, { kind: 'class', id: w.id })
+    if (clash) out.set(w.id, clashJson(clash))
+  }
   return out
 }
 

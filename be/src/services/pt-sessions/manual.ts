@@ -42,6 +42,7 @@ import { generateBookingCodes } from '../bookings/qr'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
 import { assertInstructorsAvailable, findClash } from '../schedule/occupancy'
 import { ensureInstructors } from '../schedule/roster'
+import { assertMemberFree, lockMemberTime } from '../bookings/member-time'
 import { ptSessionCost, type PtSessionType } from './cost'
 import {
   mayPayForSeat,
@@ -68,6 +69,11 @@ interface Actor {
   actorIsAdmin: boolean
   /** Staff said "Add anyway": the rule's warnings no longer stop the seat. */
   override: boolean
+  /**
+   * Staff were shown that a member holds a booking at an overlapping time
+   * (`time_clash`) and went ahead.
+   */
+  allowClash?: boolean
 }
 
 export interface CreateManualPtSessionInput extends Actor {
@@ -101,6 +107,8 @@ interface SeatSessionRow {
   sessionType: PtSessionType
   instructorId: string
   capacityOnline: number
+  startsAt: Date
+  endsAt: Date
 }
 
 type LoadedPackage = SeatPackage & { id: string; purchasedAt: Date }
@@ -219,6 +227,16 @@ async function seatMember(
     )
   if (seated.some(b => b.clientId === member.clientId)) throw new ConflictError('already_booked')
   if (seated.length >= session.capacityOnline) throw new ConflictError('session_full')
+
+  // One body, one session at a time — unless staff were warned and went ahead.
+  await lockMemberTime(tx, tenantId, [member.clientId])
+  await assertMemberFree(
+    tx,
+    tenantId,
+    member.clientId,
+    { startsAt: session.startsAt, endsAt: session.endsAt },
+    { exclude: { kind: 'pt', id: session.id }, allowClash: actor.allowClash ?? false },
+  )
 
   // A single-booking cancel frees the seat but leaves its attendee row, so
   // the attendees are brought back to who is booked before this one joins —
@@ -376,7 +394,16 @@ export async function createManualPtSession(
       sessionType: input.sessionType,
       instructorId: input.instructorId,
       capacityOnline: capacity,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
     }
+    // Every member's time at once, in one order: seated one by one, two
+    // sessions naming the same pair the other way round would deadlock.
+    await lockMemberTime(
+      tx,
+      tenantId,
+      input.members.map(m => m.clientId),
+    )
     for (const member of input.members) {
       await seatMember(tx, tenantId, seatSession, member, input)
     }
@@ -792,6 +819,7 @@ export async function retypeManualSessionInTx(
     partnerClientPackageId?: string | null
     actorStaffId: string
     override: boolean
+    allowClash?: boolean
   },
 ): Promise<void> {
   const { session, req } = input
@@ -807,10 +835,22 @@ export async function retypeManualSessionInTx(
     await seatMember(
       tx,
       tenantId,
-      { id: session.id, sessionType: '2on1', instructorId: session.instructorId, capacityOnline: ptSessionCost('2on1') },
+      {
+        id: session.id,
+        sessionType: '2on1',
+        instructorId: session.instructorId,
+        capacityOnline: ptSessionCost('2on1'),
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+      },
       { clientId: input.partnerClientId, clientPackageId: input.partnerClientPackageId ?? null },
       // The type change is an Admin's alone.
-      { actorStaffId: input.actorStaffId, actorIsAdmin: true, override: input.override },
+      {
+        actorStaffId: input.actorStaffId,
+        actorIsAdmin: true,
+        override: input.override,
+        allowClash: input.allowClash ?? false,
+      },
     )
   } else {
     const now = clockNow()

@@ -324,6 +324,7 @@ export const ERROR_CODES = {
   tenant_required: "tenant_required",
   tenant_suspended: "tenant_suspended",
   tenant_term_ended: "tenant_term_ended",
+  time_clash: "time_clash",
   tier_must_cover_at_least_one_day: "tier_must_cover_at_least_one_day",
   too_many_attempts: "too_many_attempts",
   too_many_requests: "too_many_requests",

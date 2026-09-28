@@ -7,11 +7,14 @@ import { now as clockNow } from '../../lib/clock'
 import { tenantId } from '../../middleware/tenant'
 import { staffBookingJson } from './class-seats'
 
-/** Staff put a member in a full class's line. */
-const staffJoinSchema = z.object({ client_id: z.string().uuid() })
+/**
+ * Staff put a member in a full class's line. `allow_clash`: staff were shown
+ * that the member holds a booking at an overlapping time, and went ahead.
+ */
+const staffJoinSchema = z.object({ client_id: z.string().uuid(), allow_clash: z.boolean().optional() })
 
-/** Add to class. `overbook` is honoured for admins only. */
-const staffPromoteSchema = z.object({ overbook: z.boolean().optional() })
+/** Add to class. `overbook` is honoured for admins only; `allow_clash` for any staff. */
+const staffPromoteSchema = z.object({ overbook: z.boolean().optional(), allow_clash: z.boolean().optional() })
 
 const waitlistEntryParams = z.object({ id: z.string().uuid(), entryId: z.string().uuid() })
 
@@ -33,11 +36,17 @@ export function classWaitlistRoutes(role: StaffRole) {
       zValidator('json', staffJoinSchema),
       async c => {
         const { id } = c.req.valid('param')
-        const res = await join(tenantId(c), c.req.valid('json').client_id, id, clockNow(), {
-          role,
-          staffId: c.get('staffUserId'),
-        })
+        const body = c.req.valid('json')
+        const res = await join(
+          tenantId(c),
+          body.client_id,
+          id,
+          clockNow(),
+          { role, staffId: c.get('staffUserId') },
+          { allowClash: body.allow_clash ?? false },
+        )
         c.set('auditTarget' as any, { table: 'waitlist_entries', id: res.entryId })
+        if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
         return c.json({ entry_id: res.entryId, position: res.position }, 201)
       },
     )
@@ -47,14 +56,17 @@ export function classWaitlistRoutes(role: StaffRole) {
       zValidator('json', staffPromoteSchema),
       async c => {
         const { id, entryId } = c.req.valid('param')
+        const body = c.req.valid('json')
         const res = await staffPromote(tenantId(c), {
           classId: id,
           entryId,
           actor: { role, staffId: c.get('staffUserId') },
           // Honoured for admins only; the seat rule refuses an instructor's.
-          overbook: c.req.valid('json').overbook,
+          overbook: body.overbook,
+          allowClash: body.allow_clash ?? false,
         })
         c.set('auditTarget' as any, { table: 'bookings', id: res.bookingId })
+        if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
         return c.json(staffBookingJson(res), 201)
       },
     )

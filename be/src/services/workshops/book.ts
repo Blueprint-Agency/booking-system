@@ -10,11 +10,34 @@ import {
 import { stripePayments } from '../../db/schema/ledger'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { generateBookingCodes } from '../bookings/qr'
+import { memberClash, type HeldWindow } from '../bookings/member-time'
 import { bestPrice, listActivePromotionsFor } from '../packages/promotions'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { sendWorkshopPurchaseEmail } from '../notifications/send-purchase-email'
 
 type WorkshopTierRow = typeof workshopTiers.$inferSelect
+
+/**
+ * The member's first booking that overlaps a day the tier covers, leaving out
+ * the workshop's own — one body, one session at a time (bookings/member-time).
+ */
+export async function tierDaysClash(
+  tenantId: string,
+  clientId: string,
+  workshopId: string,
+  workshopTierId: string,
+): Promise<HeldWindow | null> {
+  const days = await db
+    .select({ startsAt: workshopDays.startsAt, endsAt: workshopDays.endsAt })
+    .from(workshopTierDays)
+    .innerJoin(workshopDays, eq(workshopDays.id, workshopTierDays.workshopDayId))
+    .where(and(eq(workshopTierDays.tenantId, tenantId), eq(workshopTierDays.workshopTierId, workshopTierId)))
+  for (const day of days) {
+    const clash = await memberClash(db, tenantId, clientId, day, { kind: 'workshop', id: workshopId })
+    if (clash) return clash
+  }
+  return null
+}
 
 /**
  * Effective base price for a tier in SGD ("120.00"), mirroring fe-client's

@@ -30,11 +30,12 @@ export function positions(entries: readonly LineEntry[]): Map<string, number> {
 }
 
 /**
- * What happened to an entry tried in one promotion pass: booked, or the reason
- * its package could not pay. A refused entry stays `waiting` (§5) — it is only
- * skipped for the rest of this pass.
+ * What happened to an entry tried in one promotion pass: booked, the reason its
+ * package could not pay, or `time_clash` — the member now holds a booking at an
+ * overlapping time. A refused entry stays `waiting` (§5) — it is only skipped
+ * for the rest of this pass.
  */
-export type PromotionOutcome = 'promoted' | SelectionRefusal | 'already_booked'
+export type PromotionOutcome = 'promoted' | SelectionRefusal | 'already_booked' | 'time_clash'
 
 /**
  * The next entry to try for a freed online seat: the first in queue order not

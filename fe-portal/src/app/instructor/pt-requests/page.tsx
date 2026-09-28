@@ -7,6 +7,7 @@ import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
 import { formatRelative } from "@/lib/formatters";
 import { scheduleErrorMessage } from "@/lib/schedule";
+import { withClashConfirm } from "@/lib/time-clash";
 import { toast } from "sonner";
 import {
   type PtProposedSlot,
@@ -214,13 +215,17 @@ function ScheduleForm({
     setSubmitting(true);
     setErr(null);
     try {
-      await api.post(`/portal/instructor/pt-requests/${request.id}/schedule`, {
-        location_id: request.location.id,
-        room_id: roomId,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
-        note: offProposal ? ptNoteOrNull(note) : null,
-      });
+      // A member booked elsewhere at this time is asked about first.
+      await withClashConfirm("session", (extra) =>
+        api.post(`/portal/instructor/pt-requests/${request.id}/schedule`, {
+          location_id: request.location.id,
+          room_id: roomId,
+          starts_at: startsAt.toISOString(),
+          ends_at: endsAt.toISOString(),
+          note: offProposal ? ptNoteOrNull(note) : null,
+          ...extra,
+        }),
+      );
       toast.success("Session scheduled — assigned to you");
       onScheduled();
     } catch (e2) {

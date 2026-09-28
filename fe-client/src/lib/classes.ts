@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useMemberSession } from "./member-auth";
 import { ApiError, publicApi, useApi, type Api } from "./api";
 import type { ApiClassWaitlist } from "./waitlist";
+import type { ApiClash } from "./clash";
 import type { PickerPayload, UnlimitedPlanCoverage } from "./package-picker";
 import type { ApiPackageRule } from "./package-rule";
 
@@ -29,13 +30,17 @@ export interface ApiClassCard {
   starts_at: string;
   ends_at: string;
   credit_cost: number;
-  capacity_online: number;
-  booked_count: number;
-  spots_left: number;
+  /** An online seat is free. Whether, never how many: seat counts are the studio's. */
+  has_seats: boolean;
   lifecycle: string;
   /** This class's Cancellation Window in hours — its own, else the studio's. */
   effective_cancel_window_hours: number;
   is_booked?: boolean;
+  /**
+   * Signed in only: the member's own booking this class overlaps, which they
+   * must cancel before they can book it (one body, one class at a time).
+   */
+  clash?: ApiClash | null;
   /** The class's line (spec-waitlist.md §9). `my_entry` is null when signed out. */
   waitlist: ApiClassWaitlist;
   /**

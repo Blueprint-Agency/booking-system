@@ -296,7 +296,7 @@ describe('public catalogue over HTTP', { skip: integrationTestsEnabled ? false :
     }
   })
 
-  test('CAT-03 the week\'s classes across all Locations, with title, instructor, start, duration, capacity and seats taken', async () => {
+  test('CAT-03 the week\'s classes across all Locations, with title, instructor, start, duration and whether a seat is free', async () => {
     const listed = await classesAt(one)
     const ids = listed.map(c => c.id)
     assert.deepEqual(
@@ -311,14 +311,23 @@ describe('public catalogue over HTTP', { skip: integrationTestsEnabled ? false :
     assert.equal(harbour.instructor.name, `teacher-${one.slug} ${run}`)
     assert.equal(harbour.starts_at, inWeek(9).toISOString())
     assert.equal(new Date(harbour.ends_at).getTime() - new Date(harbour.starts_at).getTime(), 75 * 60 * 1000)
-    assert.equal(harbour.capacity_online, 12)
-    assert.equal(harbour.booked_count, 1, 'the seat the member booked is taken')
-    assert.equal(harbour.spots_left, 11)
+    assert.equal(harbour.has_seats, true, 'one of its 12 seats is booked, so seats are free')
     assert.equal(harbour.location.id, one.locationA)
 
     const hillside = listed.find(c => c.id === one.classes.atB)!
     assert.equal(hillside.location.id, one.locationB)
-    assert.equal(hillside.booked_count, 0)
+    assert.equal(hillside.has_seats, true)
+  })
+
+  test('CAT-10 a class\'s seat counts and its line\'s length are never sent to the member app, listed or opened', async () => {
+    const counts = ['capacity_online', 'capacity_buffer', 'capacity_waitlist', 'booked_count', 'spots_left']
+    const listed = (await classesAt(one)).find(c => c.id === one.classes.atA)!
+    const opened = await getOk(`/api/v1/public/classes/${one.classes.atA}`, visitor(one))
+    for (const [where, card] of [['listed', listed], ['opened', opened]] as const) {
+      for (const field of counts) assert.ok(!(field in card), `${where}: ${field} is not sent`)
+      assert.equal(card.has_seats, true, `${where}: whether a seat is free is`)
+      assert.deepEqual(Object.keys(card.waitlist).sort(), ['enabled', 'my_entry', 'open'], `${where}: the line's length and cap are not sent`)
+    }
   })
 
   test('CAT-03 the other studio\'s classes never appear, and its class ids are not found here', async () => {

@@ -10,7 +10,7 @@ import {
 const row = (over: Partial<ClassActionInput> = {}): ClassActionInput => ({
   booked: false,
   myEntry: null,
-  spotsLeft: 0,
+  hasSeats: false,
   waitlistOpen: false,
   notCovered: false,
   ...over,
@@ -27,23 +27,34 @@ test("a member in line sees their place before anything else", () => {
 });
 
 test("a free seat is booked, not queued for", () => {
-  assert.equal(classAction(row({ spotsLeft: 3, waitlistOpen: true })), "book");
-  assert.equal(classAction(row({ spotsLeft: 1, notCovered: true })), "not_covered");
+  assert.equal(classAction(row({ hasSeats: true, waitlistOpen: true })), "book");
+  assert.equal(classAction(row({ hasSeats: true, notCovered: true })), "not_covered");
 });
 
 test("a full class with an open line offers the waitlist; otherwise it is Full", () => {
-  assert.equal(classAction(row({ spotsLeft: 0, waitlistOpen: true })), "join_waitlist");
-  assert.equal(classAction(row({ spotsLeft: 0, waitlistOpen: false })), "full");
+  assert.equal(classAction(row({ hasSeats: false, waitlistOpen: true })), "join_waitlist");
+  assert.equal(classAction(row({ hasSeats: false, waitlistOpen: false })), "full");
 });
 
 test("a class that takes none of the member's packages offers neither a seat nor the line", () => {
-  assert.equal(classAction(row({ spotsLeft: 3, notAccepted: true })), "not_accepted");
-  assert.equal(classAction(row({ spotsLeft: 3, notAccepted: true, notCovered: true })), "not_accepted");
-  assert.equal(classAction(row({ spotsLeft: 0, waitlistOpen: true, notAccepted: true })), "not_accepted");
+  assert.equal(classAction(row({ hasSeats: true, notAccepted: true })), "not_accepted");
+  assert.equal(classAction(row({ hasSeats: true, notAccepted: true, notCovered: true })), "not_accepted");
+  assert.equal(classAction(row({ hasSeats: false, waitlistOpen: true, notAccepted: true })), "not_accepted");
   // Full is full, whatever the rule; and the member's own booking or place still shows.
-  assert.equal(classAction(row({ spotsLeft: 0, waitlistOpen: false, notAccepted: true })), "full");
+  assert.equal(classAction(row({ hasSeats: false, waitlistOpen: false, notAccepted: true })), "full");
   assert.equal(classAction(row({ booked: true, notAccepted: true })), "booked");
   assert.equal(classAction(row({ myEntry: { id: "e", position: 1 }, notAccepted: true })), "waitlisted");
+});
+
+test("BKG-42 a class overlapping the member's booking reads as the clash, instead of Book or Join waitlist", () => {
+  assert.equal(classAction(row({ hasSeats: true, clash: true })), "clash");
+  assert.equal(classAction(row({ hasSeats: false, waitlistOpen: true, clash: true })), "clash");
+  // Full with no line is Full; the member's own booking or place still shows first.
+  assert.equal(classAction(row({ hasSeats: false, waitlistOpen: false, clash: true })), "full");
+  assert.equal(classAction(row({ booked: true, clash: true })), "booked");
+  assert.equal(classAction(row({ myEntry: { id: "e", position: 1 }, clash: true })), "waitlisted");
+  // No clash, the row reads as before.
+  assert.equal(classAction(row({ hasSeats: true, clash: false })), "book");
 });
 
 test("the join toast names the member's place", () => {

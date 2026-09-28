@@ -306,8 +306,10 @@ const app = new Hono()
         actorStaffId: c.get('staffUserId'),
         overbook: body.overbook,
         clientPackageId: body.client_package_id ?? null,
+        allowClash: body.allow_clash ?? false,
       })
       c.set('auditTarget' as any, { table: 'bookings', id: res.bookingId })
+      if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
       return c.json(staffBookingJson(res), 201)
     },
   )

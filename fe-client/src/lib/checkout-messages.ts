@@ -1,5 +1,6 @@
 import { ERROR_CODES, type ErrorCode } from "./error-codes.ts";
 import { NO_ONLINE_PAYMENTS } from "./online-payments-rule.ts";
+import { clashFromBody, clashWhat } from "./clash.ts";
 
 /**
  * A refused checkout, in words (#274).
@@ -67,5 +68,12 @@ export function checkoutErrorMessage(body: CheckoutErrorBody, fallback: string):
   const sentence = body.message?.trim();
   if (sentence && !isCode(sentence)) return sentence;
   const code = body.error ?? sentence;
+  // A workshop day overlaps a booking the member holds: name it.
+  if (code === ERROR_CODES.time_clash) {
+    const clash = clashFromBody(body);
+    return clash
+      ? `You're booked into ${clashWhat(clash)}, which overlaps this workshop. You can only be in one place at a time.`
+      : "You're booked into something else during this workshop. You can only be in one place at a time.";
+  }
   return (code && MESSAGES[code as ErrorCode]) || fallback;
 }

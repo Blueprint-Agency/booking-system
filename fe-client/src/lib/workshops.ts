@@ -39,9 +39,6 @@ export interface ApiWorkshopDay {
   ord: number;
   starts_at: string;
   ends_at: string;
-  capacity_online: number;
-  capacity_waitlist: number;
-  capacity_buffer: number;
 }
 
 export interface ApiWorkshopTier {

@@ -366,7 +366,9 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
   async function cancelInTime(at: Studio, who: Member, t0: Date, n: number, body: Record<string, unknown> = {}): Promise<string[]> {
     const ids: string[] = []
     for (let i = 0; i < n; i++) {
-      const bookingId = await bookOk(who, await addClass(at, shifted(t0, (3 + i) * DAY)), body)
+      // The hour before the day: tests hold their own classes on the day, and a
+      // member is in one class at a time; PT sessions take the hours after it.
+      const bookingId = await bookOk(who, await addClass(at, shifted(t0, (3 + i) * DAY - HOUR)), body)
       await expectStatus(await cancel(who, bookingId), 200)
       ids.push(bookingId)
     }

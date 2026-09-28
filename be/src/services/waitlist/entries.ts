@@ -12,6 +12,7 @@ import { classes } from '../../db/schema/schedule'
 import { clients } from '../../db/schema/identity'
 import { candidatePackages, holdsSeat, lockClass } from '../bookings/book'
 import { countSeats } from '../bookings/seats'
+import { assertMemberFree } from '../bookings/member-time'
 import { selectPackage } from '../packages/selection'
 import { readClassRule } from '../schedule/package-rules'
 import { ConflictError, NotFoundError } from '../../shared/errors'
@@ -34,6 +35,11 @@ export interface JoinResult {
  * member prompt (§7). The rules are the member's own; staff must also be allowed
  * to work the class, and the member must be one of this studio's. Who did it is
  * the route's audit record — the entry itself is the member's place in line.
+ *
+ * A member holding a booking at an overlapping time is refused `time_clash`:
+ * a place in line is a promise of a seat they could not sit in. Staff may put
+ * them in line anyway once warned (`allowClash`); a promotion still skips them
+ * while the clash stands (./promote).
  */
 export async function join(
   tenantId: string,
@@ -41,6 +47,7 @@ export async function join(
   classId: string,
   now: Date,
   staff?: StaffActor,
+  opts: { allowClash?: boolean } = {},
 ): Promise<JoinResult> {
   return db.transaction(async tx => {
     const cls = await lockClass(tx, tenantId, classId)
@@ -74,6 +81,14 @@ export async function join(
     if (refusal === 'class_not_found') throw new NotFoundError(refusal)
     if (refusal === 'waitlist_closed') throw new ConflictError(refusal, { window_hours: windowHours })
     if (refusal) throw new ConflictError(refusal)
+
+    await assertMemberFree(
+      tx,
+      tenantId,
+      clientId,
+      { startsAt: cls!.startsAt, endsAt: cls!.endsAt },
+      { exclude: { kind: 'class', id: cls!.id }, allowClash: !!staff && (opts.allowClash ?? false) },
+    )
 
     // Could the member pay if a seat opened now? The Default payer a promotion
     // would use, read without locking or spending anything.

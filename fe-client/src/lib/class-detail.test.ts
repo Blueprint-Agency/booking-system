@@ -11,15 +11,13 @@ test("a class's length reads in minutes up to an hour, then in hours", () => {
   assert.equal(classLength(at("01:00"), at("03:00")), "2 hr");
 });
 
-test("free seats are counted", () => {
-  const line = { enabled: true, open: true, waiting: 0 };
-  assert.equal(seatsLine(5, line), "5 spots left");
-  assert.equal(seatsLine(1, line), "1 spot left");
+test("CAT-11 a class with free seats reads Available, never how many", () => {
+  assert.equal(seatsLine(true, { enabled: true, open: true }), "Available");
+  assert.equal(seatsLine(true, { enabled: false, open: false }), "Available");
 });
 
-test("a full class says where its line stands, where the studio runs one", () => {
-  assert.equal(seatsLine(0, { enabled: true, open: true, waiting: 2 }), "Full · waitlist open, 2 waiting");
-  assert.equal(seatsLine(0, { enabled: true, open: true, waiting: 0 }), "Full · waitlist open");
-  assert.equal(seatsLine(0, { enabled: true, open: false, waiting: 3 }), "Full · waitlist closed");
-  assert.equal(seatsLine(0, { enabled: false, open: false, waiting: 0 }), "Full");
+test("CAT-11 a full class says whether its line is open, never how long it is, where the studio runs one", () => {
+  assert.equal(seatsLine(false, { enabled: true, open: true }), "Full · waitlist open");
+  assert.equal(seatsLine(false, { enabled: true, open: false }), "Full · waitlist closed");
+  assert.equal(seatsLine(false, { enabled: false, open: false }), "Full");
 });

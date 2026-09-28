@@ -141,8 +141,12 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
   type ClassOptions = { startsIn?: number; creditCost?: number; capacityOnline?: number; capacityBuffer?: number; atSecond?: boolean }
 
   /** A class `startsIn` from now (three days by default), taught by the studio's instructor. */
+  // Classes this file makes without a time of their own each take the next two
+  // hours from three days out: a member is in one class at a time, and a test
+  // that books one member into several classes means several hours.
+  let classSlots = 0
   async function addClass(at: Studio, options: ClassOptions = {}): Promise<string> {
-    const startsAt = new Date(Date.now() + (options.startsIn ?? 3 * DAY))
+    const startsAt = new Date(Date.now() + (options.startsIn ?? 3 * DAY + classSlots++ * 2 * HOUR))
     const [row] = await harness.db
       .insert(schema.classes)
       .values({
@@ -460,9 +464,10 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
     assert.ok((await pkg(bundle)).expiresAt, 'the first booking Activates the bundle')
     await assertLedger(bundle)
     // The seat is held.
+    assert.equal(await confirmedOn(classId), 1)
     const card = await classCard(ana, classId)
-    assert.equal(card?.booked_count, 1)
-    assert.equal(card?.spots_left, 9)
+    assert.equal(card?.is_booked, true)
+    assert.equal(card?.has_seats, true, 'nine of ten seats are still free')
   })
 
   test('BKG-02 a trial pays like a Credit Bundle', async () => {
@@ -650,7 +655,7 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
     assert.equal((await bookingsOf(ray, classId)).length, 0)
     assert.equal(await balanceOf(bundle), 3)
     await assertLedger(bundle)
-    assert.equal((await classCard(ray, classId))?.spots_left, 0)
+    assert.equal((await classCard(ray, classId))?.has_seats, false)
   })
 
   test('BKG-18 two members booking the last seat at once: exactly one is confirmed, the other refused as full', async () => {

@@ -92,11 +92,13 @@ export async function lineState(
   }
 }
 
-/** The catalogue's `waitlist` object (§9). `my_entry` is null for a signed-out reader. */
+/**
+ * The catalogue's `waitlist` object (§9). `my_entry` is null for a signed-out
+ * reader. The line's length and cap are for staff: a member learns only
+ * whether it takes joins, and their own place in it.
+ */
 export interface WaitlistSummary {
   enabled: boolean
-  capacity: number
-  waiting: number
   open: boolean
   my_entry: { id: string; position: number } | null
 }
@@ -126,8 +128,6 @@ export async function waitlistSummaries(
     const mine = clientId ? line.find(e => e.clientId === clientId) : undefined
     out.set(r.id, {
       enabled,
-      capacity: r.capacityWaitlist,
-      waiting: line.length,
       open: waitlistOpen({ enabled, windowHours: windowOf(r), waiting: line.length, now, ...r }),
       my_entry: mine ? { id: mine.id, position: positions(line).get(mine.id)! } : null,
     })

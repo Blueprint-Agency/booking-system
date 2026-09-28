@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, UserRound, MapPin, Loader2, Lock, Ticket, X } from "lucide-react";
+import { CalendarX, Check, UserRound, MapPin, Loader2, Lock, Ticket, X } from "lucide-react";
 import { cn, formatDate, formatSgd } from "@/lib/utils";
 import { Select } from "@/components/ui/select";
 import { Portal } from "@/components/ui/portal";
@@ -14,6 +14,7 @@ import { ERROR_CODES } from "@/lib/error-codes";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { formatClassTime, type ApiClassCard, type ClassEntitlements } from "@/lib/classes";
+import { clashButton, clashFromBody, clashNote, clashRefusal, type ApiClash } from "@/lib/clash";
 import { credits, planCoverage } from "@/lib/package-picker";
 import {
   BOOK_FILL,
@@ -76,7 +77,10 @@ export function ClassRow({
   // `title` is set by a waitlist refusal; unset reads "Couldn't book".
   const [bookError, setBookError] = useState<{ msg: string; title?: string } | null>(null);
   const [booked, setBooked] = useState(cls.is_booked ?? false);
-  const [spotsLeft, setSpotsLeft] = useState(cls.spots_left);
+  const [hasSeats, setHasSeats] = useState(cls.has_seats);
+  // The member's own booking this class overlaps: from the card, or learnt
+  // from a refused booking or join.
+  const [clash, setClash] = useState<ApiClash | null>(cls.clash ?? null);
   const [booking, setBooking] = useState(false);
   // The confirmation open: the Book sheet, where the member picks what pays.
   const [confirmBook, setConfirmBook] = useState(false);
@@ -108,15 +112,14 @@ export function ClassRow({
   if (cls !== seenCls) {
     setSeenCls(cls);
     setBooked(cls.is_booked ?? false);
-    setSpotsLeft(cls.spots_left);
+    setHasSeats(cls.has_seats);
+    setClash(cls.clash ?? null);
     setMyEntry(cls.waitlist.my_entry);
     setWaitlistOpen(cls.waitlist.open);
   }
   const noPackageTrapRef = useFocusTrap<HTMLDivElement>(showNoPackage);
   const bookErrorTrapRef = useFocusTrap<HTMLDivElement>(Boolean(bookError));
   useBodyScrollLock(showNoPackage || Boolean(bookError));
-  const isFull = spotsLeft <= 0;
-  const fewLeft = !isFull && !booked && spotsLeft <= 3;
   const locationName = cls.location?.name ?? null;
 
   // The member's Unlimited Plans cover other studios, and none this one (§2).
@@ -169,12 +172,13 @@ export function ClassRow({
       });
       setBookError(null);
       setBooked(true);
-      setSpotsLeft((s) => Math.max(0, s - 1));
       setCelebrate({
         bookingId: res.booking_id,
         // Worth saying only when there was a choice to make.
         paidWith: choices > 1 ? (res.paid_with?.name ?? null) : null,
       });
+      // The classes this one overlaps now clash: the feed says which.
+      onStale?.();
     } catch (err) {
       const code = errCode(err);
       if (code === ERROR_CODES.insufficient_credits) {
@@ -184,7 +188,7 @@ export function ClassRow({
         setBookError(null);
         setBooked(true);
       } else if (code === ERROR_CODES.class_full) {
-        setSpotsLeft(0);
+        setHasSeats(false);
         // The refusal says whether the line is open, so the row can offer it.
         const open =
           err instanceof ApiError && err.body && typeof err.body === "object"
@@ -194,6 +198,11 @@ export function ClassRow({
         setBookError({
           msg: open ? "This class just filled up. You can join the waitlist instead." : "This class just filled up.",
         });
+      } else if (code === ERROR_CODES.time_clash) {
+        // Booked into something else at this time since the schedule was read.
+        const found = clashFromBody(err instanceof ApiError ? err.body : null);
+        if (found) setClash(found);
+        setBookError({ title: "Time clash", msg: clashRefusal(found) });
       } else if (code === ERROR_CODES.class_already_started) {
         setBookError({ msg: "This class has already started." });
       } else if (code === ERROR_CODES.location_not_covered) {
@@ -227,6 +236,12 @@ export function ClassRow({
   /** A refused join or leave, told the way §9 words it; an unknown code gets the generic dialog. */
   const handleWaitlistRefusal = (err: unknown, title: string) => {
     const body = err instanceof ApiError ? err.body : null;
+    if (errCode(err) === ERROR_CODES.time_clash) {
+      const found = clashFromBody(body);
+      if (found) setClash(found);
+      setBookError({ title: "Time clash", msg: clashRefusal(found) });
+      return;
+    }
     const out = waitlistRefusal(errCode(err), body, planLocationName);
     if (!out) {
       setBookError({ title, msg: "Something went wrong. Please try again." });
@@ -317,15 +332,24 @@ export function ClassRow({
     say(outcome.text);
     if (outcome.cancelled) {
       setBooked(false);
-      setSpotsLeft((s) => s + 1);
+      // The seat given up is free again.
+      setHasSeats(true);
     }
     if (outcome.cancelled || outcome.stale) onStale?.();
   };
 
-  const action = classAction({ booked, myEntry, spotsLeft, waitlistOpen, notCovered: lockedOut, notAccepted });
+  const action = classAction({
+    booked,
+    myEntry,
+    hasSeats,
+    waitlistOpen,
+    notCovered: lockedOut,
+    notAccepted,
+    clash: !!clash,
+  });
   // Dimmed only when there is nothing to do here; a full class with a line to
   // join, or the member's own place in it, stays at full strength.
-  const dim = action === "full" || action === "not_covered" || action === "not_accepted";
+  const dim = action === "full" || action === "not_covered" || action === "not_accepted" || action === "clash";
 
   // The time moves into the text block on a phone, so the name, its meta and
   // a compact action all fit on one row at 320px without truncating the name.
@@ -396,6 +420,21 @@ export function ClassRow({
         {joining && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         {joining ? "Joining…" : "Join waitlist"}
       </button>
+    ) : action === "clash" && clash ? (
+      // Not a dead end: it opens the detail, which says what it clashes with.
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowDetail(true);
+        }}
+        aria-label={`Clashes with ${clash.title}, which you're booked into`}
+        className={cn(shape, "bg-ink/5 text-muted hover:bg-ink/10 transition-colors")}
+      >
+        <CalendarX className="h-3.5 w-3.5" aria-hidden />
+        {clashButton(clash)}
+      </button>
     ) : action === "full" ? (
       <span className={cn(shape, "bg-ink/5 text-muted")}>Full</span>
     ) : action === "not_covered" ? (
@@ -463,10 +502,7 @@ export function ClassRow({
                 <span className="truncate">{locationName}</span>
               </span>
             )}
-            <span className="md:hidden tabular-nums">
-              {credits(cls.credit_cost)}
-              {fewLeft && <span className="font-semibold text-accent-deep"> · {spotsLeft} left</span>}
-            </span>
+            <span className="md:hidden tabular-nums">{credits(cls.credit_cost)}</span>
             {/* The class takes only some packages; which ones is in the detail. */}
             {cls.restricted && (
               <span className="inline-flex items-center gap-1 font-medium text-ink/70">
@@ -489,7 +525,6 @@ export function ClassRow({
         )}
         <div className="hidden md:block w-20 shrink-0 text-sm tabular-nums">
           <div className="text-muted">{credits(cls.credit_cost)}</div>
-          {fewLeft && <div className="text-xs font-semibold text-accent-deep">{spotsLeft} left</div>}
         </div>
 
         <div className="pointer-events-auto flex shrink-0 justify-end md:min-w-32">{cta}</div>
@@ -516,12 +551,23 @@ export function ClassRow({
         </div>
       )}
 
+      {/* What the clash is with, and the way through: the other booking. */}
+      {action === "clash" && clash && (
+        <div className="relative mt-2.5 rounded-lg bg-ink/[0.03] px-3 py-2 text-xs text-muted">
+          {clashNote(clash)}{" "}
+          <Link href="/account/classes" className="underline underline-offset-2 hover:text-ink transition-colors">
+            My bookings
+          </Link>
+        </div>
+      )}
+
       {showDetail && (
         <ClassDetailOverlay
           cls={cls}
           isSignedIn={isSignedIn}
           action={action}
-          spotsLeft={spotsLeft}
+          clash={clash}
+          hasSeats={hasSeats}
           waitlistOpen={waitlistOpen}
           myEntry={myEntry}
           joining={joining}

@@ -17,12 +17,12 @@ export function classLength(startsAt: string, endsAt: string): string {
 }
 
 /**
- * Where the seats stand: how many are left, or, full, whether the line is open
- * and how long it is. The line is only mentioned where the studio runs one.
+ * Where the seats stand: free, or, full, whether the line is open. Never a
+ * count — how many seats a class has, or how many wait for one, is the
+ * studio's. The line is only mentioned where the studio runs one.
  */
-export function seatsLine(spotsLeft: number, waitlist: Pick<ApiClassWaitlist, "enabled" | "open" | "waiting">): string {
-  if (spotsLeft > 0) return `${spotsLeft} spot${spotsLeft === 1 ? "" : "s"} left`;
+export function seatsLine(hasSeats: boolean, waitlist: Pick<ApiClassWaitlist, "enabled" | "open">): string {
+  if (hasSeats) return "Available";
   if (!waitlist.enabled) return "Full";
-  if (!waitlist.open) return "Full · waitlist closed";
-  return waitlist.waiting > 0 ? `Full · waitlist open, ${waitlist.waiting} waiting` : "Full · waitlist open";
+  return waitlist.open ? "Full · waitlist open" : "Full · waitlist closed";
 }

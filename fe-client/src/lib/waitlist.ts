@@ -20,12 +20,13 @@ export interface WaitlistPlace {
   position: number;
 }
 
-/** Every class card's line — `waitlist` on `/public/classes` and `/me/classes`. */
+/**
+ * Every class card's line — `waitlist` on `/public/classes` and `/me/classes`.
+ * Its length and cap are the studio's and never sent; the member's own place is.
+ */
 export interface ApiClassWaitlist {
   /** The studio's waitlist switch. */
   enabled: boolean;
-  capacity: number;
-  waiting: number;
   /** Enabled, class active, before the Cancellation Window, and room in the line. */
   open: boolean;
   /** Always null on the public route. */
@@ -61,7 +62,8 @@ export async function listWaitlist(api: Api): Promise<ApiWaitlistEntry[]> {
 export interface ClassActionInput {
   booked: boolean;
   myEntry: WaitlistPlace | null;
-  spotsLeft: number;
+  /** An online seat is free. */
+  hasSeats: boolean;
   waitlistOpen: boolean;
   /**
    * Nothing the member holds can pay here: their plans cover other studios and
@@ -74,11 +76,17 @@ export interface ClassActionInput {
    * list. Optional: a row that has not learnt it offers Book as usual.
    */
   notAccepted?: boolean;
+  /**
+   * The member holds a booking this class overlaps (`clash` on the card, or a
+   * refused `time_clash`): one body, one class at a time.
+   */
+  clash?: boolean;
 }
 
 export type ClassAction =
   | "booked"
   | "waitlisted"
+  | "clash"
   | "book"
   | "not_covered"
   | "not_accepted"
@@ -90,12 +98,15 @@ export type ClassAction =
  * place in line, then a free seat, then the waitlist, then Full. A booked
  * class never shows a waitlist control. A class that takes none of the
  * member's packages offers neither a seat nor a place in line: both would be
- * refused `not_accepted`.
+ * refused `not_accepted`. A class overlapping one the member is booked into
+ * offers neither either — it reads as the clash, which the member resolves by
+ * cancelling the other; a full class with no line still reads Full.
  */
 export function classAction(s: ClassActionInput): ClassAction {
   if (s.booked) return "booked";
   if (s.myEntry) return "waitlisted";
-  if (s.spotsLeft > 0) return s.notAccepted ? "not_accepted" : s.notCovered ? "not_covered" : "book";
+  if (s.clash && (s.hasSeats || s.waitlistOpen)) return "clash";
+  if (s.hasSeats) return s.notAccepted ? "not_accepted" : s.notCovered ? "not_covered" : "book";
   if (!s.waitlistOpen) return "full";
   return s.notAccepted ? "not_accepted" : "join_waitlist";
 }
