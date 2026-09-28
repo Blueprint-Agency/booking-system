@@ -172,6 +172,9 @@ test('the Cancellations report proposes the class cancellation window: the cut-o
  */
 const DECIDED: StudioAnswers = {
   ...ANSWERS,
+  locations: ANSWERS.locations.map((l, i) =>
+    i === 0 ? { ...l, address: '1 Invented Lane', gmapsUrl: 'https://maps.example.test/main-hall', phone: '+6560000000' } : l,
+  ),
   catalogue: {
     ...ANSWERS.catalogue,
     add: [
@@ -233,6 +236,12 @@ test('every PT package is Instructor-Bound but those the answers except; instruc
   assert.deepEqual(permissionsOf('Ivy Instructor'), ['schedule_classes', 'take_pt_bookings', 'manage_rosters'])
   assert.deepEqual(permissionsOf(other.mindbodyName), ['take_pt_bookings', 'manage_rosters'])
   assert.ok(archive.rows.instructors!.every(i => Array.isArray(i.permissions)), 'every instructor row says its permissions')
+  const [mainHall] = archive.rows.locations!
+  assert.deepEqual(
+    { address: mainHall!.address, gmaps_url: mainHall!.gmaps_url, phone: mainHall!.phone },
+    { address: '1 Invented Lane', gmaps_url: 'https://maps.example.test/main-hall', phone: '+6560000000' },
+    'a Location\'s address, map link and phone reach its row',
+  )
   assert.equal(archive.rows.global_policy![0]!.cancel_cap_count, 7)
   assert.equal(archive.rows.global_policy![0]!.class_window_hours, 24)
 })

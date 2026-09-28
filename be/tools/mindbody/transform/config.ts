@@ -29,6 +29,8 @@ const locationSchema = z.object({
   key: z.string().min(1),
   name: open(z.string().min(1)),
   address: open(z.string()),
+  /** The Google Maps link members are given for it. Optional: Mindbody has none to propose. */
+  gmapsUrl: z.string().url().nullable().default(null),
   phone: open(z.string()),
   /** The numeric location ids Mindbody prints for it (Retention Management's "Location"). */
   mindbodyIds: z.array(z.string()).default([]),
@@ -388,6 +390,7 @@ export type StudioConfig = {
     key: string
     name: string
     address: string | null
+    gmapsUrl: string | null
     phone: string | null
     mindbodyIds: string[]
     mindbodyNames: string[]

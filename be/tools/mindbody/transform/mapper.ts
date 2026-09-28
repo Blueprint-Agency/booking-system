@@ -180,7 +180,14 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   /* ── The studio shell ──────────────────────────────────────────────────── */
 
   const locations: Row[] = config.locations.map(l => {
-    const row = { id: id('location', l.key), tenant_id: tenantId, name: l.name, address: l.address, phone: l.phone }
+    const row = {
+      id: id('location', l.key),
+      tenant_id: tenantId,
+      name: l.name,
+      address: l.address,
+      gmaps_url: l.gmapsUrl,
+      phone: l.phone,
+    }
     ids.locations![l.key] = row.id
     return row
   })
