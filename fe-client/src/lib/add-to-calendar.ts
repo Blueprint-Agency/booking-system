@@ -26,6 +26,20 @@ export function calendarStamp(iso: string): string {
   return new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }
 
+/**
+ * The event's place. Google's template takes it as plain text, never a Maps
+ * place, so the text is what Google searches: a bare name ("Outram Park")
+ * finds whatever else bears it, and the street address is what pins the studio.
+ */
+export function calendarLocation(name: string | null, address: string | null): string | null {
+  return name ? [name, address].filter(Boolean).join(", ") : null;
+}
+
+/** The line that carries the Location's own map link into the event, which the place text cannot. */
+export function directionsLine(gmapsUrl: string | null): string | null {
+  return gmapsUrl ? `Directions: ${gmapsUrl}` : null;
+}
+
 /** Google Calendar's prefilled "new event" page for the event. */
 export function googleCalendarUrl(event: CalendarEvent): string {
   const params = new URLSearchParams({

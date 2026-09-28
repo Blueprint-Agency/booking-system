@@ -11,7 +11,7 @@ import {
 } from "@/components/celebration/celebration-sheet";
 import { formatDate } from "@/lib/utils";
 import { formatClassTime, type ApiClassCard } from "@/lib/classes";
-import type { CalendarEvent } from "@/lib/add-to-calendar";
+import { calendarLocation, directionsLine, type CalendarEvent } from "@/lib/add-to-calendar";
 
 /** The nudge to remember; each ends on the calendar, which is the point. */
 const NUDGES = [
@@ -44,10 +44,11 @@ export function BookedCelebration({
       title: `${cls.class_type.name} at ${brand.name}`,
       startsAt: cls.starts_at,
       endsAt: cls.ends_at,
-      location: cls.location ? [cls.location.name, cls.location.address].filter(Boolean).join(", ") : null,
+      location: calendarLocation(cls.location?.name ?? null, cls.location?.address ?? null),
       details: [
         `${cls.class_type.name} with ${cls.instructor.name}.`,
         "Arrive a few minutes early to settle in.",
+        directionsLine(cls.location?.gmaps_url ?? null),
         link ? `My bookings: ${link}` : null,
       ]
         .filter(Boolean)

@@ -21,6 +21,7 @@ const app = new Hono()
         ends_at: r.endsAt.toISOString(),
         location_name: r.locationName,
         location_address: r.locationAddress,
+        location_gmaps_url: r.locationGmapsUrl,
         instructor_name: r.instructorName,
         approved_at: r.approvedAt?.toISOString() ?? null,
       })),

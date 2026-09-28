@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calendarStamp, googleCalendarUrl, type CalendarEvent } from "./add-to-calendar.ts";
+import { calendarLocation, calendarStamp, directionsLine, googleCalendarUrl, type CalendarEvent } from "./add-to-calendar.ts";
 
 const event: CalendarEvent = {
   uid: "booking-b1@example.test",
@@ -29,5 +29,16 @@ test("the Google link prefills title, times, place and details", () => {
 test("a class with no place leaves the Google location out", () => {
   const url = new URL(googleCalendarUrl({ ...event, location: null }));
   assert.equal(url.searchParams.has("location"), false);
+});
+
+test("the place is the Location's name and street address, and nothing without a name", () => {
+  assert.equal(calendarLocation("Harbour Studio", "1 Quay Rd"), "Harbour Studio, 1 Quay Rd");
+  assert.equal(calendarLocation("Harbour Studio", null), "Harbour Studio");
+  assert.equal(calendarLocation(null, "1 Quay Rd"), null);
+});
+
+test("the Location's map link rides in the details, when it has one", () => {
+  assert.equal(directionsLine("https://maps.example.test/harbour"), "Directions: https://maps.example.test/harbour");
+  assert.equal(directionsLine(null), null);
 });
 

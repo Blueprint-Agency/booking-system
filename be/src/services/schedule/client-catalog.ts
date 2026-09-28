@@ -19,6 +19,7 @@ export interface LocationLite {
   id: string
   name: string
   address: string | null
+  gmaps_url: string | null
 }
 
 export interface ClassCardPayload {
@@ -141,6 +142,7 @@ export async function listClassCards(
       locationId: classes.locationId,
       locationName: locations.name,
       locationAddress: locations.address,
+      locationGmapsUrl: locations.gmapsUrl,
       roomId: classes.roomId,
       startsAt: classes.startsAt,
       endsAt: classes.endsAt,
@@ -192,7 +194,7 @@ export async function listClassCards(
       main_instructor_id: r.instructorId,
       supporting_instructor_ids: supporting,
       instructor_ids: [r.instructorId, ...supporting],
-      location: { id: r.locationId, name: r.locationName, address: r.locationAddress },
+      location: { id: r.locationId, name: r.locationName, address: r.locationAddress, gmaps_url: r.locationGmapsUrl },
       room: r.roomId ? roomById.get(r.roomId) ?? null : null,
       starts_at: r.startsAt.toISOString(),
       ends_at: r.endsAt.toISOString(),

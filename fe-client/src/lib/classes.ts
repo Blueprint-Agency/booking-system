@@ -11,6 +11,8 @@ export interface ApiClassLocation {
   id: string;
   name: string;
   address: string | null;
+  /** The Location's Google Maps link, set on the portal's Locations page. */
+  gmaps_url: string | null;
 }
 
 export interface ApiClassCard {
@@ -50,7 +52,7 @@ export interface ApiClassCard {
  */
 export interface ApiClassDetail extends Omit<ApiClassCard, "class_type" | "location"> {
   class_type: { id: string; name: string; difficulty: string; description: string | null };
-  location: (ApiClassLocation & { gmaps_url: string | null }) | null;
+  location: ApiClassLocation | null;
   supporting_instructors: { id: string; name: string }[];
   package_rule: ApiPackageRule;
 }

@@ -11,6 +11,7 @@ const approval = (over: Partial<ApiApproval> = {}): ApiApproval => ({
   ends_at: "2026-10-01T03:00:00.000Z",
   location_name: "Harbour Studio",
   location_address: "1 Quay Rd",
+  location_gmaps_url: "https://maps.example.test/harbour",
   instructor_name: "Sam",
   approved_at: "2026-09-28T01:00:00.000Z",
   ...over,
@@ -34,11 +35,13 @@ test("the calendar event carries the session's time, place and instructor", () =
   assert.equal(event.endsAt, "2026-10-01T03:00:00.000Z");
   assert.equal(event.location, "Harbour Studio, 1 Quay Rd");
   assert.match(event.details, /with Sam\./);
+  assert.match(event.details, /Directions: https:\/\/maps\.example\.test\/harbour/);
   assert.match(event.details, /Manage it: https:\/\/x\.test\/account\/private-sessions/);
-  const offsite = approvalEvent(approval({ location_name: null, location_address: null, instructor_name: null }), "Northwind", {
+  const offsite = approvalEvent(approval({ location_name: null, location_address: null, location_gmaps_url: null, instructor_name: null }), "Northwind", {
     uid: "u",
     accountUrl: null,
   });
   assert.equal(offsite.location, null);
   assert.doesNotMatch(offsite.details, /Manage it/);
+  assert.doesNotMatch(offsite.details, /Directions/);
 });

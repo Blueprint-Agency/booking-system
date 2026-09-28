@@ -32,6 +32,8 @@ export interface UnseenApproval {
   endsAt: Date
   locationName: string | null
   locationAddress: string | null
+  /** The Location's map link; null off-site. */
+  locationGmapsUrl: string | null
   instructorName: string | null
   approvedAt: Date | null
 }
@@ -50,6 +52,7 @@ export async function listUnseenApprovals(tenantId: string, clientId: string): P
       endsAt: ptSessions.endsAt,
       locationName: locations.name,
       locationAddress: locations.address,
+      locationGmapsUrl: locations.gmapsUrl,
       instructorName: staffUsers.name,
       approvedAt: ptRequests.resolvedAt,
     })
@@ -78,6 +81,7 @@ export async function listUnseenApprovals(tenantId: string, clientId: string): P
       endsAt: corporateSessions.endsAt,
       locationName: locations.name,
       locationAddress: locations.address,
+      locationGmapsUrl: locations.gmapsUrl,
       // An off-site session has no studio Location: its venue is free text.
       locationText: corporateSessions.locationText,
       instructorName: staffUsers.name,
@@ -110,6 +114,7 @@ export async function listUnseenApprovals(tenantId: string, clientId: string): P
       endsAt: r.endsAt,
       locationName: r.locationName,
       locationAddress: r.locationAddress,
+      locationGmapsUrl: r.locationGmapsUrl,
       instructorName: r.instructorName,
       approvedAt: r.approvedAt,
     })),
@@ -122,6 +127,7 @@ export async function listUnseenApprovals(tenantId: string, clientId: string): P
       endsAt: r.endsAt,
       locationName: r.locationName ?? r.locationText,
       locationAddress: r.locationName ? r.locationAddress : null,
+      locationGmapsUrl: r.locationName ? r.locationGmapsUrl : null,
       instructorName: r.instructorName,
       approvedAt: r.approvedAt,
     })),

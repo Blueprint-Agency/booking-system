@@ -3,7 +3,7 @@
  * (`GET /me/approvals`, be-client.md § approvals.ts). Each is celebrated once,
  * then marked seen.
  */
-import type { CalendarEvent } from "./add-to-calendar.ts";
+import { calendarLocation, directionsLine, type CalendarEvent } from "./add-to-calendar.ts";
 
 export interface ApiApproval {
   kind: "pt" | "corporate";
@@ -15,6 +15,8 @@ export interface ApiApproval {
   ends_at: string;
   location_name: string | null;
   location_address: string | null;
+  /** The Location's map link; null off-site. */
+  location_gmaps_url: string | null;
   instructor_name: string | null;
   approved_at: string | null;
 }
@@ -43,10 +45,11 @@ export function approvalEvent(
     title: `${name} at ${studioName}`,
     startsAt: a.starts_at,
     endsAt: a.ends_at,
-    location: a.location_name ? [a.location_name, a.location_address].filter(Boolean).join(", ") : null,
+    location: calendarLocation(a.location_name, a.location_address),
     details: [
       a.instructor_name ? `${name} with ${a.instructor_name}.` : `${name}.`,
       "Arrive a few minutes early to settle in.",
+      directionsLine(a.location_gmaps_url),
       ctx.accountUrl ? `Manage it: ${ctx.accountUrl}` : null,
     ]
       .filter(Boolean)
