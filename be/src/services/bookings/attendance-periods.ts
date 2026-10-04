@@ -52,7 +52,7 @@ export interface AttendancePlan extends DateSpan {
 export interface DayCount {
   day: PlainDate
   attended: number
-  /** Sessions held on the day that have not started yet. */
+  /** Sessions booked on the day and not checked in, started or not. */
   booked?: number
 }
 

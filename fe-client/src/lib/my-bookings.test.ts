@@ -65,7 +65,7 @@ test("a corporate request waiting to be scheduled is upcoming", () => {
   });
 });
 
-test("a day's sessions are the ones its tile counted: attended, or booked and not yet started, earliest first", () => {
+test("a day's sessions are the ones its tile counted: attended, or booked and not checked in, earliest first", () => {
   const checkedIn = (c: unknown, state: string) => ({ ...(c as object), check_in_state: state }) as never;
   const items = bookingItems(
     {
@@ -73,18 +73,21 @@ test("a day's sessions are the ones its tile counted: attended, or booked and no
       upcoming: [cls("later", 3, 4), cls("tomorrow", 15, 16)],
       past: [
         checkedIn(cls("morning", -2, -1), "attended"),
-        // Ran, but never ticked: the tile did not count it.
+        // Ran, but never ticked: still booked, so the tile counted it.
         checkedIn(cls("unticked", -3, -2), "pending"),
         cls("gone", -4, -3, "cancelled"),
         checkedIn(cls("n", -2, -1), "no_show"),
       ],
       pt: [
         pt("done", "attended", [-6, -5]),
-        // Left scheduled after it ran: not attended, and no longer to come.
+        // Left scheduled after it ran: never ticked, so still booked.
         pt("stale", "scheduled", [-8, -7]),
         pt("next", "scheduled", [6, 7]),
         pt("asked", "pending"),
         pt("dropped", "cancelled_after_scheduled", [5, 6]),
+        // Marked a no-show: neither, whether the request still reads scheduled or has turned attended.
+        { ...(pt("missed", "scheduled", [-4, -3]) as object), booking: { check_in_state: "no_show" } } as never,
+        { ...(pt("swept", "attended", [-5, -4]) as object), booking: { check_in_state: "no_show" } } as never,
       ],
       workshops: [{ id: "w", state: "confirmed", booked_at: at(-100), starts_at: at(1), ends_at: at(2) } as never],
     },
@@ -92,7 +95,7 @@ test("a day's sessions are the ones its tile counted: attended, or booked and no
   );
   assert.deepEqual(
     sessionsOnDay(items, "2026-09-27").map((i) => i.key),
-    ["pt:done", "class:morning", "class:later", "pt:next"],
+    ["pt:stale", "pt:done", "class:unticked", "class:morning", "class:later", "pt:next"],
   );
   // 01:00 on the 28th in Singapore, still the 27th in UTC.
   assert.deepEqual(sessionsOnDay(items, "2026-09-28").map((i) => i.key), ["class:tomorrow"]);

@@ -2,7 +2,7 @@
  * A member's own practice summary (#317, "My practice" #340): the sessions
  * they attended in a timeframe — group classes and private sessions — laid out
  * by day, week, month or year, against the timeframe before it, with what they
- * are still booked into, time on the mat, weeks in a row, their usual slot and
+ * are booked into and not checked in, time on the mat, weeks in a row, their usual slot and
  * their lifetime total. See be-client.md §3 and `./attendance-periods.ts` for
  * the calendar.
  *
@@ -13,6 +13,11 @@
  * a private session booking its PT session's. Workshops are counted on a line
  * of their own, on their first day, and never in `attended`; corporate sessions
  * are not bookings at all.
+ *
+ * Booked is a confirmed booking of an active session not checked in: one still
+ * to come, and one whose session has started without a tick (no job marks a
+ * no-show; staff do), so the member sees what they held and was never marked.
+ * A no-show is neither attended nor booked.
  *
  * Days and hours are the Tenant's own, and now is the shared clock's.
  */
@@ -40,7 +45,7 @@ import {
 
 const TOP_CLASS_TYPES = 3
 
-/** A session in a week: attended, or booked and not yet started. */
+/** A session in a week: attended, or booked and not checked in. */
 export interface PracticeSession {
   kind: 'class' | 'pt'
   /** The class type's name; "Private session" for a private session. */
@@ -119,9 +124,8 @@ const memberSessions = (tenantId: string, clientId: string) => sql`(
   where b.tenant_id = ${tenantId}::uuid and b.client_id = ${clientId}::uuid and b.kind = 'pt'
 )`
 
-/** Upcoming: a confirmed booking of an active session that has not started by `at`. */
-const upcoming = (at: Date) =>
-  sql`s.state = 'confirmed' and s.lifecycle = 'active' and s.starts_at > ${at.toISOString()}::timestamptz`
+/** Booked: a confirmed booking of an active session not checked in, whether or not it has started. */
+const booked = sql`s.state = 'confirmed' and s.lifecycle = 'active' and s.check_in_state = 'pending'`
 
 /**
  * The practice summary for the timeframe `period` containing the day `on`
@@ -165,11 +169,11 @@ export async function memberAttendance(
   const shown = instants(plan, timezone)
   const current = within(plan, today)
 
-  const [booked, types, workshops, sessions] = await Promise.all([
+  const [bookedDays, types, workshops, sessions] = await Promise.all([
     db.execute<{ day: PlainDate; booked: number }>(sql`
       select to_char(s.starts_at at time zone ${timezone}, 'YYYY-MM-DD') as day, count(*)::int as booked
       from ${memberSessions(tenantId, clientId)} s
-      where ${upcoming(at)}
+      where ${booked}
         and s.starts_at >= ${shown.from}::timestamptz
         and s.starts_at < ${shown.until}::timestamptz
       group by 1
@@ -207,7 +211,7 @@ export async function memberAttendance(
       ? db.execute<{ kind: 'class' | 'pt'; name: string; starts_at: string | Date; attended: boolean }>(sql`
           select s.kind, s.name, s.starts_at, s.check_in_state = 'attended' as attended
           from ${memberSessions(tenantId, clientId)} s
-          where (s.check_in_state = 'attended' or (${upcoming(at)}))
+          where (s.check_in_state = 'attended' or (${booked}))
             and s.starts_at >= ${shown.from}::timestamptz
             and s.starts_at < ${shown.until}::timestamptz
           order by s.starts_at, s.name
@@ -218,7 +222,7 @@ export async function memberAttendance(
   const days = new Map<PlainDate, DayCount>()
   const dayOf = (day: PlainDate) => days.get(day) ?? days.set(day, { day, attended: 0, booked: 0 }).get(day)!
   for (const r of attended) dayOf(r.day).attended += r.sessions
-  for (const r of booked) dayOf(r.day).booked = r.booked
+  for (const r of bookedDays) dayOf(r.day).booked = r.booked
   const dayCounts = [...days.values()]
 
   const inPlan = attended.filter(r => within(plan, r.day))

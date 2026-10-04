@@ -15,7 +15,7 @@
 
 export type PracticePeriod = "week" | "month" | "quarter" | "year" | "all";
 
-/** A session in a week, attended or still to come. */
+/** A session in a week, attended or booked and not checked in. */
 export interface PracticeSession {
   kind: "class" | "pt";
   /** The class type's name, or "Private session". */
@@ -28,7 +28,7 @@ export interface PracticeBucket {
   /** The bucket's first day, `YYYY-MM-DD`, on the studio's calendar. */
   starts_on: string;
   attended: number;
-  /** Sessions held in the bucket that have not started yet. */
+  /** Sessions booked in the bucket and not checked in: still to come, or held and never ticked. */
   booked: number;
 }
 

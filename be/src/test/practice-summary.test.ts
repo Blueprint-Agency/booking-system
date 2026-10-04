@@ -333,7 +333,7 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
     assert.equal(month.last_attended_at, charlieAt.toISOString())
   })
 
-  test('ACC-17 attended group classes and private sessions count, workshops only on their own line; no-shows, cancellations and sessions not yet ticked never', async () => {
+  test('ACC-17 attended group classes and private sessions count, workshops only on their own line; no-shows, cancellations and sessions not yet ticked never — the unticked ones show as booked', async () => {
     harness.clock.set(NOW)
     const cy = await member(one, 'Cy Kinds')
     await history(one, cy, '2026-09-02T01:00:00Z')
@@ -356,6 +356,9 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
     assert.equal(month.attended_workshops, 1)
     const onDay = Object.fromEntries(month.buckets.filter(b => b.attended > 0).map(b => [b.starts_on, b.attended]))
     assert.deepEqual(onDay, { '2026-09-02': 1, '2026-09-06': 1 }, 'the class and the private session, not the workshop')
+    // Held and never ticked: booked, not attended. The no-shows and the cancellation are neither.
+    const bookedOn = Object.fromEntries(month.buckets.filter(b => b.booked > 0).map(b => [b.starts_on, b.booked]))
+    assert.deepEqual(bookedOn, { '2026-09-05': 1, '2026-09-08': 1 })
     // Class types are classes alone: the private session is `attended_pt`.
     assert.deepEqual(month.top_class_types, [{ name: TYPE('Flow'), attended: 1 }])
     assert.equal(month.last_attended_at, '2026-09-06T01:00:00.000Z')
@@ -451,31 +454,34 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
     assert.equal(crossed.status, 401)
   })
 
-  test('ACC-21 sessions the member holds later this month show as booked on their day: a confirmed class and a scheduled private session, not a cancelled one', async () => {
+  test('ACC-21 sessions the member holds this month and has not been checked in to show as booked on their day: a confirmed class and a scheduled private session, still to come or already run, not a cancelled one', async () => {
     harness.clock.set(NOW)
     const hal = await member(one, 'Hal Ahead')
     // Earlier today and still to come, both on the 15th in Singapore (NOW is 12:00 there).
     await history(one, hal, '2026-09-15T01:00:00Z')
     await history(one, hal, '2026-09-15T10:00:00Z', { checkIn: 'pending' })
     await privateSession(one, hal, '2026-09-22T01:00:00Z', { checkIn: 'pending' })
+    // Run this morning and never ticked: still booked.
+    await history(one, hal, '2026-09-15T00:00:00Z', { checkIn: 'pending' })
     // Not booked: a class the member cancelled, a class the studio cancelled, a
-    // private session the studio cancelled, and one this morning never ticked.
+    // private session the studio cancelled, and one marked a no-show.
     await history(one, hal, '2026-09-23T01:00:00Z', { checkIn: 'pending', state: 'cancelled' })
     await history(one, hal, '2026-09-24T01:00:00Z', { checkIn: 'pending', lifecycle: 'cancelled' })
     await privateSession(one, hal, '2026-09-25T01:00:00Z', { checkIn: 'pending', lifecycle: 'cancelled' })
-    await history(one, hal, '2026-09-15T00:00:00Z', { checkIn: 'pending' })
+    await history(one, hal, '2026-09-14T01:00:00Z', { checkIn: 'no_show', state: 'no_show' })
 
     const month = await summaryOk(hal, 'month')
     const day = (d: string) => month.buckets.find(b => b.starts_on === d)!
-    assert.deepEqual(day('2026-09-15'), { starts_on: '2026-09-15', attended: 1, booked: 1 })
+    assert.deepEqual(day('2026-09-14'), { starts_on: '2026-09-14', attended: 0, booked: 0 })
+    assert.deepEqual(day('2026-09-15'), { starts_on: '2026-09-15', attended: 1, booked: 2 })
     assert.deepEqual(day('2026-09-22'), { starts_on: '2026-09-22', attended: 0, booked: 1 })
-    assert.equal(month.buckets.reduce((n, b) => n + b.booked, 0), 2)
-    assert.equal(month.attended, 1, 'a booking still to come is not attended')
+    assert.equal(month.buckets.reduce((n, b) => n + b.booked, 0), 3)
+    assert.equal(month.attended, 1, 'a booking not checked in is not attended')
 
-    // The year's September carries the same two.
+    // The year's September carries the same three.
     const year = await summaryOk(hal, 'year')
-    assert.equal(year.buckets[8]!.booked, 2)
-    assert.equal(year.buckets.reduce((n, b) => n + b.booked, 0), 2)
+    assert.equal(year.buckets[8]!.booked, 3)
+    assert.equal(year.buckets.reduce((n, b) => n + b.booked, 0), 3)
   })
 
   test('ACC-22 time on the mat sums the attended classes and private sessions of the period, nothing else', async () => {
@@ -564,9 +570,10 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
     // Still to come this week: a class on Thursday and a private session on Saturday.
     await history(two, pia, '2026-09-17T08:00:00Z', { type: 'Charlie', checkIn: 'pending' })
     await privateSession(two, pia, '2026-09-19T00:00:00Z', { checkIn: 'pending' })
-    // Neither attended nor booked: one cancelled, one this morning never ticked, one a no-show.
-    await history(two, pia, '2026-09-18T08:00:00Z', { checkIn: 'pending', state: 'cancelled' })
+    // This morning and never ticked: booked.
     await history(two, pia, '2026-09-14T22:00:00Z', { checkIn: 'pending' })
+    // Neither attended nor booked: one cancelled, one a no-show.
+    await history(two, pia, '2026-09-18T08:00:00Z', { checkIn: 'pending', state: 'cancelled' })
     await history(two, pia, '2026-09-15T00:00:00Z', { checkIn: 'no_show', state: 'no_show' })
     // Next Monday: outside the week.
     await history(two, pia, '2026-09-20T14:30:00Z', { checkIn: 'pending' })
@@ -580,7 +587,7 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
       week.buckets.map(b => [b.starts_on, b.attended, b.booked]),
       [
         ['2026-09-14', 2, 0],
-        ['2026-09-15', 0, 0],
+        ['2026-09-15', 0, 1],
         ['2026-09-16', 0, 0],
         ['2026-09-17', 0, 1],
         ['2026-09-18', 0, 0],
@@ -591,6 +598,7 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
     assert.deepEqual(week.sessions, [
       { kind: 'class', name: TYPE('Bravo'), starts_at: '2026-09-13T14:30:00.000Z', status: 'attended' },
       { kind: 'pt', name: 'Private session', starts_at: '2026-09-14T01:00:00.000Z', status: 'attended' },
+      { kind: 'class', name: TYPE('Flow'), starts_at: '2026-09-14T22:00:00.000Z', status: 'booked' },
       { kind: 'class', name: TYPE('Charlie'), starts_at: '2026-09-17T08:00:00.000Z', status: 'booked' },
       { kind: 'pt', name: 'Private session', starts_at: '2026-09-19T00:00:00.000Z', status: 'booked' },
     ])
@@ -616,7 +624,7 @@ describe('member practice summary over HTTP', { skip: integrationTestsEnabled ? 
     assert.deepEqual([august.attended, august.attended_pt, august.previous_attended], [2, 1, 1])
     assert.equal(august.buckets.length, 31)
     assert.deepEqual([august.has_previous, august.has_next], [true, true])
-    assert.ok(august.buckets.every(b => b.booked === 0), 'nothing is booked in a period that has passed')
+    assert.ok(august.buckets.every(b => b.booked === 0), 'everything in August was checked in, so nothing is left booked')
     // What follows the period still stands whole.
     assert.deepEqual(august.lifetime, { attended: 6, since: '2025-03-04' })
 
