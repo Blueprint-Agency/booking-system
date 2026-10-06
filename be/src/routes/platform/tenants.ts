@@ -155,7 +155,7 @@ const firstAdminBody = z.object({
  * enough that the alternative is a validation failure nobody can see the cause
  * of. Not pattern-matched here beyond being non-empty: the provider is the
  * authority on whether a key is real, and it is asked directly a few lines
- * later. The one shape rule — test keys off production, live keys on it — is
+ * later. The one shape rule — only test keys off production, either on it — is
  * the environment's, and lives in the onboarding service.
  */
 const credentialsBody = z.object({

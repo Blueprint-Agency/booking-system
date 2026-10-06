@@ -26,10 +26,10 @@ import {
 const TENANT = '11111111-1111-4111-8111-111111111111'
 
 describe('the kind of key an environment takes', () => {
-  test('production takes only live keys', () => {
+  test('production expects live keys and takes test keys too', () => {
     assert.equal(expectedKeyPrefix('production'), 'sk_live_')
     assert.equal(keyModeMatches('sk_live_abc', 'production'), true)
-    assert.equal(keyModeMatches('sk_test_abc', 'production'), false)
+    assert.equal(keyModeMatches('sk_test_abc', 'production'), true)
   })
 
   test('staging takes only test keys', () => {
@@ -124,24 +124,27 @@ describe('saving a key of the wrong mode', () => {
     })
   }
 
-  for (const [appEnv, wrong, right, prefix] of [
-    ['staging', 'sk_live_abc', 'sk_test_abc', 'sk_test_'],
-    ['production', 'sk_test_abc', 'sk_live_abc', 'sk_live_'],
-  ] as const) {
-    test(`on ${appEnv}, a ${wrong.slice(0, 8)} key is refused before the provider is asked`, async () => {
+  for (const appEnv of ['staging', 'development'] as const) {
+    test(`on ${appEnv}, a sk_live_ key is refused before the provider is asked`, async () => {
       process.env.APP_ENV = appEnv
       refusingProvider()
-      await assert.rejects(attempt(wrong), (err: unknown) => {
+      await assert.rejects(attempt('sk_live_abc'), (err: unknown) => {
         assert.ok(err instanceof onboarding.ProviderOnboardingError)
         assert.equal(err.reason, 'key_wrong_mode')
-        assert.match(err.message, new RegExp(prefix))
+        assert.match(err.message, /sk_test_/)
         return true
       })
       // Refused before the provider and before the store: had it reached the
       // store, this file's undialled database would have failed differently.
       assert.equal(providerAsked, 0)
     })
+  }
 
+  for (const [appEnv, right] of [
+    ['staging', 'sk_test_abc'],
+    ['production', 'sk_live_abc'],
+    ['production', 'sk_test_abc'],
+  ] as const) {
     test(`on ${appEnv}, a ${right.slice(0, 8)} key goes on to the provider`, async () => {
       process.env.APP_ENV = appEnv
       refusingProvider()

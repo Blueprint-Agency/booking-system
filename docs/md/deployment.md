@@ -472,7 +472,7 @@ A studio's charges carry **no statement descriptor suffix**: its own account's s
 
 **Onboarding a studio is one field (#294).** In the super portal, open the studio's payment account and paste its Stripe **secret key** — nothing else. Saving it:
 
-1. checks the key's mode against the environment — production accepts only `sk_live_…` (or a restricted `rk_live_…`), staging and development only `sk_test_…` / `rk_test_…`; a key of the wrong mode is refused before it reaches the provider and nothing is stored;
+1. checks the key's mode against the environment — production accepts `sk_live_…` or `sk_test_…` (or their restricted `rk_live_…` / `rk_test_…` forms — a test key lets a studio be tried end to end with test cards before it takes real money, and the form warns that no real money will be taken), staging and development only `sk_test_…` / `rk_test_…`; a key of the wrong mode is refused before it reaches the provider and nothing is stored;
 2. asks Stripe which account the key opens — that account id is what the super portal shows back;
 3. **creates the webhook endpoint on the studio's own account**, at **`https://api.<root domain>/api/v1/webhooks/stripe/{slug}`**, subscribed to exactly `checkout.session.completed` and `charge.refunded`, pinned to the API version the backend reads;
 4. stores the key and the endpoint's signing secret sealed, with the endpoint's id.

@@ -45,8 +45,8 @@ import {
  *
  * `storage_unavailable` is the operator's environment — nothing was attempted,
  * and nothing is wrong with what they typed. `key_wrong_mode` is a key of the
- * wrong kind for this environment (a live key on staging, a test key on
- * production). `key_rejected` is a key the provider refused.
+ * wrong kind for this environment (a live key on staging or development).
+ * `key_rejected` is a key the provider refused.
  * `key_lacks_webhook_permission` is a restricted key the provider accepted but
  * which may not manage webhook endpoints, so the platform cannot set one up.
  * `webhook_refused` is the provider refusing the endpoint itself — most often
@@ -124,8 +124,8 @@ export async function configureProviderAccount(
 
   // Before the provider is asked and before anything is stored. The provider
   // would accept either kind of key — this is the environment's rule, not the
-  // provider's: a live key on staging takes testers' real money, and a test key
-  // on production takes members' "payments" that never arrive.
+  // provider's: a live key on staging takes testers' real money. Production
+  // takes either, so a studio can be tried out there with test cards first.
   if (!keyModeMatches(input.secretKey, currentEnv('APP_ENV'))) {
     logger.warn({ tenantId, appEnv: currentEnv('APP_ENV') }, 'payment credentials refused — wrong key mode')
     throw new ProviderOnboardingError(

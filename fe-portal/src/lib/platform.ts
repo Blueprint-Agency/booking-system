@@ -41,7 +41,8 @@ export interface PlatformTenant {
     account_id: string | null;
     /**
      * What the form needs before anything is saved: the key prefix this
-     * environment accepts (`sk_test_` off production, `sk_live_` on it). The
+     * environment expects (`sk_test_` off production, `sk_live_` on it, where
+     * a test key is accepted too). The
      * webhook endpoint is set up by the platform when the key is saved.
      */
     setup: {

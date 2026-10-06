@@ -60,12 +60,16 @@ export function PaymentCredentialsDialog({
   const wrongMode = Boolean(
     setup && secretKey.trim() && !keyOfMode(secretKey.trim(), setup.key_prefix),
   );
+  // Allowed on production, but worth saying: members' payments there won't be real.
+  const testKeyOnProduction = Boolean(
+    setup?.key_prefix === "sk_live_" && isTestKey(secretKey.trim()),
+  );
   const busy = submitting || clearing;
   const canSubmit = Boolean(!busy && tenant && secretKey.trim() && !wrongMode);
 
   function wrongModeMessage(prefix: string): string {
     return prefix === "sk_live_"
-      ? "This is production: only live keys (sk_live_…) are accepted. A test key would take no real money."
+      ? "This is production: use a live (sk_live_…) or test (sk_test_…) secret key."
       : "This environment accepts only test keys (sk_test_…). A live key would take real money.";
   }
 
@@ -189,6 +193,11 @@ export function PaymentCredentialsDialog({
             <p id="payment-secret-key-help" className="text-xs text-error" role="alert">
               {keyError ?? wrongModeMessage(setup.key_prefix)}
             </p>
+          ) : testKeyOnProduction ? (
+            <p id="payment-secret-key-help" className="text-xs text-warning">
+              This is a test key on production: checkouts will use Stripe test mode and no real
+              money will be taken until it is replaced with a live key.
+            </p>
           ) : (
             <p id="payment-secret-key-help" className="text-xs text-muted">
               Checked against the provider before it is stored, so a wrong key is caught here
@@ -223,8 +232,16 @@ export function PaymentCredentialsDialog({
   );
 }
 
-/** Whether a key is of the mode `prefix` names — its `sk_` or restricted `rk_` form. */
+/**
+ * Whether a key is of a mode this environment takes — its `sk_` or restricted
+ * `rk_` form. Production (`sk_live_`) takes test keys too; elsewhere only test.
+ */
 function keyOfMode(key: string, prefix: string): boolean {
-  const mode = prefix.slice("sk_".length);
-  return key.startsWith(`sk_${mode}`) || key.startsWith(`rk_${mode}`);
+  const modes = prefix === "sk_live_" ? ["live_", "test_"] : ["test_"];
+  return modes.some(mode => key.startsWith(`sk_${mode}`) || key.startsWith(`rk_${mode}`));
+}
+
+/** A test key, in its `sk_` or restricted `rk_` form. */
+function isTestKey(key: string): boolean {
+  return key.startsWith("sk_test_") || key.startsWith("rk_test_");
 }

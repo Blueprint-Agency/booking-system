@@ -27,25 +27,27 @@ export const PROVIDER_WEBHOOK_EVENTS = [
 ] as const
 
 /**
- * The secret-key prefix this environment accepts.
+ * The secret-key prefix this environment expects — the one the form suggests.
  *
- * Production takes only live keys: a test key there means members "pay" and no
- * money arrives. Everywhere else takes only test keys: a live key on staging
- * means testers take real money. Development counts as "everywhere else" for
- * the same reason.
+ * Production expects live keys but accepts test keys too, so a studio can be
+ * run end to end on production with test cards before it takes real money
+ * (see `keyModeMatches`). Everywhere else takes only test keys: a live key on
+ * staging means testers take real money. Development counts as "everywhere
+ * else" for the same reason.
  */
 export function expectedKeyPrefix(appEnv: AppEnv): 'sk_live_' | 'sk_test_' {
   return appEnv === 'production' ? 'sk_live_' : 'sk_test_'
 }
 
 /**
- * Whether a secret key is of the mode this environment takes. A restricted key
- * (`rk_live_…` / `rk_test_…`) is a secret key too, of the same mode as its
- * `sk_` twin; whether it may do enough is the provider's to say (#294).
+ * Whether a secret key is of a mode this environment takes: live or test on
+ * production, test only elsewhere. A restricted key (`rk_live_…` /
+ * `rk_test_…`) is a secret key too, of the same mode as its `sk_` twin; whether
+ * it may do enough is the provider's to say (#294).
  */
 export function keyModeMatches(secretKey: string, appEnv: AppEnv): boolean {
-  const mode = expectedKeyPrefix(appEnv).slice('sk_'.length)
-  return secretKey.startsWith(`sk_${mode}`) || secretKey.startsWith(`rk_${mode}`)
+  const modes = appEnv === 'production' ? ['live_', 'test_'] : ['test_']
+  return modes.some(mode => secretKey.startsWith(`sk_${mode}`) || secretKey.startsWith(`rk_${mode}`))
 }
 
 /**
