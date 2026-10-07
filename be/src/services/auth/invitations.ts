@@ -423,7 +423,9 @@ export async function acceptInvitationOnPasswordReset(tenantId: string, authUser
       .limit(1)
     if (!staff) return false
 
-    const now = clockNow()
+    // The expiry is a rule and reads the clock; the acceptance stamps are
+    // record stamps and stay on real time.
+    const now = new Date()
     const claimed = await tx
       .update(staffInvitations)
       .set({ status: 'accepted', acceptedAt: now })
@@ -432,7 +434,7 @@ export async function acceptInvitationOnPasswordReset(tenantId: string, authUser
           eq(staffInvitations.tenantId, tenantId),
           eq(staffInvitations.staffUserId, staff.id),
           eq(staffInvitations.status, 'pending'),
-          gt(staffInvitations.expiresAt, now),
+          gt(staffInvitations.expiresAt, clockNow()),
         ),
       )
       .returning({ id: staffInvitations.id })
