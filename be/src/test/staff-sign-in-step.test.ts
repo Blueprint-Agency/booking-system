@@ -241,6 +241,31 @@ describe('staff email-first sign-in', { skip: integrationTestsEnabled ? false : 
     assert.equal(await invitationStatus(staff.id), 'pending')
   })
 
+  test('an invitation past its expiry on the app clock is mailed no link, and a reset does not accept it', async () => {
+    const email = at('expired-by-clock')
+    await staffAt(one, email, await authUserId(email, true), 'active')
+    // Good for a week on the wall clock; the app is standing eight days on.
+    const staff = await staffAt(two, email, await authUserId(email, false, two), 'pending')
+    harness.clock.set(new Date(Date.now() + 8 * 24 * 60 * 60 * 1000))
+    try {
+      assert.deepEqual(await step(two, email), { next: 'link_sent' })
+      assert.equal(mailsTo(email).length, 0)
+
+      await expectStatus(
+        await post('/api/v1/auth/staff/request-password-reset', two, {
+          email,
+          redirectTo: `${frontendOrigin('staff', two)}/login`,
+        }),
+        200,
+      )
+      await resetPassword(two, resetTokenFor(email))
+      assert.equal((await staffRow(two.id, email))?.status, 'pending')
+      assert.equal(await invitationStatus(staff.id), 'pending')
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
   test('a spent link budget answers exactly as an unspent one', async () => {
     const email = at('budget')
     await staffAt(one, email, await authUserId(email, false), 'pending')

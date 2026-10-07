@@ -110,11 +110,31 @@ Locally, `SHARD=2/6 npm run check` runs one slice the way CI does, against the c
 database (a full-run reset first, as any run of no named files). It is for reproducing a red shard;
 the predictor of CI remains the whole serial `npm run check`.
 
+## Authorization matrix
+
+`be/src/test/authorization-matrix.test.ts` reads every `/api/v1/me`, `/api/v1/public` and
+`/api/v1/platform` route from the app's own route table and calls each one as anonymous, a member of
+studio one, a member of studio two on studio one's hostname, an Admin of studio one, a Platform
+administrator, and a caller naming no studio. Its `EXPECTATIONS` table says, per method and path
+pattern, which callers the gate admits and the status and error code it answers each one it refuses.
+A refused call must get exactly that answer and, together, the refused calls must change no row in any
+Tenant-scoped table (`auth_events` and `audit_log` included). An admitted call must merely not be a
+gate's refusal: what the route then does is the other tests' job.
+
+**Adding a route under those prefixes means adding its line to `EXPECTATIONS`**; the test fails on a
+route with none, and on an expectation whose route is gone. On `/platform` the gate answers
+`404 not_found`, the same body as a missing row, so each platform call is shaped (a real studio's id, a
+real import job's, a body the validator refuses) for the Platform administrator never to get
+`not_found`: the refused callers' `not_found` on the same request is then the gate's.
+
 ## Time
 
 A rule that turns on the current instant — a cancellation window, a package's expiry, a daily
-job's hour — reads it from `be/src/lib/clock.ts`, never from `new Date()`. Production never sets
-that clock. A backend test holds it through the harness:
+job's hour — reads it from `be/src/lib/clock.ts`, never from `new Date()` or SQL `now()`. That
+includes a deadline written for a rule to read later (an invitation's expiry, a former Slug's
+redirect window, a Promo Code Hold). What stays on real time: record stamps (`updated_at`,
+`archived_at`), cache and rate-limit timers, and the auth server's own session and verification
+expiries. Production never sets that clock. A backend test holds it through the harness:
 
 ```ts
 harness.clock.set(cutoff)      // the app now thinks it is exactly `cutoff`

@@ -31,6 +31,7 @@ import { auditLog } from '../../db/schema/ledger'
 import { formerSlugs, tenants } from '../../db/schema/tenancy'
 import type { TenantRow } from '../../db/schema/tenancy'
 import { tenantOrigin } from '../../lib/allowed-origins'
+import { now as clockNow } from '../../lib/clock'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { claimSlug, clearExpired, releaseOwn, REDIRECT_WINDOW_DAYS } from './former-slugs'
 import { assertUsableSlug } from './slug'
@@ -103,7 +104,7 @@ export async function renameTenant(input: RenameTenantInput): Promise<RenamedTen
     // is the studio's current address again, not a former one.
     await releaseOwn(tx, tenant.id, [tenant.slug, slug])
 
-    const now = new Date()
+    const now = clockNow()
     const redirectUntil = new Date(now.getTime() + REDIRECT_WINDOW_DAYS * DAY_MS)
 
     const [updated] = await tx

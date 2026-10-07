@@ -682,4 +682,53 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(stripe.callsTo('checkout.sessions.create').length, before)
     assert.equal((await bookingsOf(ana, w)).length, 0)
   })
+
+  test('an early-bird price is charged until its cutoff on the app clock, and the regular price from then', async () => {
+    const cutoff = new Date(Math.floor((Date.now() + 10 * DAY) / 60_000) * 60_000)
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Early bird retreat',
+      days: [{ capacity: 10 }],
+      tiers: [{ name: 'Full', price: '150.00', days: [0], earlyBird: { price: '120.00', cutoff } }],
+    })
+    const charged = async (who: Member) => {
+      const before = stripe.callsTo('checkout.sessions.create').length
+      const res = await checkout(who, w)
+      assert.equal(res.status, 200, res.text)
+      const created = stripe.callsTo('checkout.sessions.create').slice(before)
+      assert.equal(created.length, 1)
+      return (created[0]!.args[0] as { line_items: { price_data: { unit_amount: number } }[] }).line_items[0]!.price_data
+        .unit_amount
+    }
+    try {
+      harness.clock.set(new Date(cutoff.getTime() - 1000))
+      assert.equal(await charged(await member(one, 'Ana Early')), 12000)
+      harness.clock.set(cutoff)
+      assert.equal(await charged(await member(one, 'Ana On Time')), 15000)
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
+  test('a workshop stops being sold when its last day ends on the app clock', async () => {
+    const startsAt = nextStart()
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Ends by the clock',
+      days: [{ capacity: 10, startsAt }],
+      tiers: [{ name: 'Free', price: '0.00', days: [0] }, { name: 'Paid', price: '50.00', days: [0] }],
+    })
+    const ana = await member(one, 'Ana By The Clock')
+    const before = stripe.callsTo('checkout.sessions.create').length
+    try {
+      harness.clock.set(new Date(startsAt.getTime() + 2 * HOUR)) // the day's end
+      for (const tier of [0, 1]) {
+        const res = await checkout(ana, w, tier)
+        assert.equal(res.status, 400, res.text)
+        assert.equal(res.body.error, 'workshop_ended')
+      }
+    } finally {
+      harness.clock.reset()
+    }
+    assert.equal(stripe.callsTo('checkout.sessions.create').length, before)
+    assert.equal((await bookingsOf(ana, w)).length, 0)
+  })
 })

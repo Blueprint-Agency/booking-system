@@ -1,3 +1,5 @@
+import { now as clockNow } from '../../lib/clock'
+
 export type PackageKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
 
 export interface PackageValidity {
@@ -106,7 +108,7 @@ export function isActivated(p: Pick<PackageValidity, 'expiresAt'>, now: Date): b
  * A Dormant package is active: it is bought, paid for and waiting, and its first
  * booking starts its clock. Nothing is expired that has not started.
  */
-export function computeActive(p: PackageValidity, now: Date = new Date()): boolean {
+export function computeActive(p: PackageValidity, now: Date = clockNow()): boolean {
   const notExpired = p.expiresAt === null || p.expiresAt > now
   if (!notExpired) return false
   if (p.kind === 'unlimited') return true
@@ -131,7 +133,7 @@ export type PackageStanding = 'running' | 'dormant' | 'expired' | 'used_up' | 'e
 
 export function packageStanding(
   p: PackageValidity & { active: boolean },
-  now: Date = new Date(),
+  now: Date = clockNow(),
 ): PackageStanding {
   if (p.expiresAt !== null && p.expiresAt <= now) return 'expired'
   if (p.kind !== 'unlimited' && (p.creditsOrSessionsRemaining ?? 0) <= 0) return 'used_up'
@@ -186,7 +188,8 @@ export type MovementResult =
  * function — `./ledger.ts` is the only thing that writes the result to the DB.
  *
  * `delta` is signed: negative debits, positive refunds. Kept free of imports
- * beyond this file so it stays checkable without a DB or a loaded env.
+ * beyond `lib/clock` (which imports nothing) so it stays checkable without a
+ * DB or a loaded env.
  *
  * Refusals are returned rather than thrown so this stays pure; `ledger.ts`
  * maps them to the project's typed errors, which is where callers meet them.
@@ -194,7 +197,7 @@ export type MovementResult =
 export function applyMovement(
   p: PackageValidity,
   delta: number,
-  now: Date = new Date(),
+  now: Date = clockNow(),
 ): MovementResult {
   if (!Number.isInteger(delta)) return { ok: false, refusal: 'invalid_amount' }
   // Unlimited packages have no balance (null remaining). Refuse rather than

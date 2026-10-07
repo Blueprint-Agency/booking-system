@@ -19,6 +19,7 @@ describe('tenant term', { skip: integrationTestsEnabled ? false : SKIP_REASON },
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')
   let term!: typeof import('../services/tenants/term')
+  let jobs!: typeof import('../jobs')
   let operator!: Record<string, string>
 
   const platform = (path: string, method: string, body?: unknown) =>
@@ -43,6 +44,7 @@ describe('tenant term', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     schema = await import('../db/schema')
     provision = await import('../services/tenants/provision')
     term = await import('../services/tenants/term')
+    jobs = await import('../jobs')
     operator = await harness.signInAs('platform', OPERATOR, null)
   })
 
@@ -150,5 +152,68 @@ describe('tenant term', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     const swept = await term.suspendEndedTerms()
     assert.equal(swept.some(t => t.id === tenant.id), false)
     assert.equal((await stored(tenant.id)).status, 'active')
+  })
+
+  describe('on the app clock', () => {
+    after(() => harness?.clock.reset())
+
+    test('a new studio’s Term starts on the date the app clock reads in its zone', async () => {
+      // 23:30 UTC on the 14th is already the 15th in Singapore.
+      harness.clock.set(new Date('2031-03-14T23:30:00.000Z'))
+      const created = await expectStatus(
+        await platform('/tenants', 'POST', { slug: `term-clock-new-${run}`, name: 'Term Clock New', term_months: 6 }),
+        201,
+      )
+      assert.deepEqual(created.tenant.term, { start_date: '2031-03-15', end_date: '2031-09-15', ended: false })
+
+      const open = await provision.provisionTenant({ slug: `term-clock-open-${run}`, name: 'Term Clock Open' })
+      assert.equal(open.tenant.termStartDate, '2031-03-15')
+    })
+
+    test('a Term ends at midnight on its end date by the app clock: suspended at once, and the sweep writes it', async () => {
+      const slug = `term-clock-end-${run}`
+      const { tenant } = await provision.provisionTenant({ slug, name: 'Term Clock End', adminEmail: `owner@${slug}.test` })
+      await expectStatus(
+        await platform(`/tenants/${tenant.id}/term`, 'PUT', { start_date: '2030-01-01', months: 3 }),
+        200,
+      )
+      const call = () => harness.app.request('/api/v1/portal/auth/me', { headers: { 'X-Tenant-Slug': slug } })
+      const listed = async () =>
+        (await expectStatus(await platform('/tenants', 'GET'), 200)).tenants.find((t: { id: string }) => t.id === tenant.id)
+
+      // 23:59:59 on 31 March in Singapore: the last second of the Term.
+      harness.clock.set(new Date('2030-03-31T15:59:59.000Z'))
+      assert.equal((await call()).status, 401)
+      assert.equal((await listed()).term.ended, false)
+      await jobs.scheduledJobs.suspendEndedTerms()
+      assert.equal((await stored(tenant.id)).status, 'active', 'the sweep leaves a running Term alone')
+
+      // Midnight: 1 April, the end date.
+      harness.clock.set(new Date('2030-03-31T16:00:00.000Z'))
+      const refused = await call()
+      assert.equal(refused.status, 403)
+      assert.deepEqual(await refused.json(), { error: 'tenant_suspended', status: 'suspended' })
+      assert.equal((await listed()).term.ended, true)
+      await jobs.scheduledJobs.suspendEndedTerms()
+      assert.equal((await stored(tenant.id)).status, 'suspended')
+    })
+
+    test('a first admin does not open a studio whose Term has ended by the app clock', async () => {
+      const slug = `term-clock-empty-${run}`
+      const { tenant } = await provision.provisionTenant({ slug, name: 'Term Clock Empty' })
+      assert.equal((await stored(tenant.id)).status, 'suspended', 'opened empty, waiting for staff')
+      await expectStatus(
+        await platform(`/tenants/${tenant.id}/term`, 'PUT', { start_date: '2030-01-01', months: 3 }),
+        200,
+      )
+
+      harness.clock.set(new Date('2030-04-02T04:00:00.000Z'))
+      const invited = await expectStatus(
+        await platform(`/tenants/${tenant.id}/admin`, 'POST', { admin_email: `owner@${slug}.test` }),
+        201,
+      )
+      assert.equal(invited.tenant.status, 'suspended')
+      assert.equal((await stored(tenant.id)).status, 'suspended')
+    })
   })
 })

@@ -6,6 +6,7 @@
  */
 import { tenants, type TenantRow } from '../../db/schema/tenancy'
 import type { TenantStatus } from '../../db/enums'
+import { now as clockNow } from '../../lib/clock'
 
 /** The zone a studio created without one is on — the `tenants.timezone` column
  *  default, read from the schema so the two cannot disagree. */
@@ -46,7 +47,7 @@ export function termEndDate(start: string, months: number): string {
 }
 
 /** The calendar date it is at `at` in `timezone`, as `YYYY-MM-DD`. */
-export function localDate(timezone: string, at: Date = new Date()): string {
+export function localDate(timezone: string, at: Date = clockNow()):string {
   // `en-CA` formats as YYYY-MM-DD.
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
@@ -58,7 +59,7 @@ export function localDate(timezone: string, at: Date = new Date()): string {
 
 /** Today on this studio's clock — the default start of a new Term. A zone the
  *  runtime cannot read falls back to UTC rather than refusing to provision. */
-export function todayFor(timezone: string | undefined, at: Date = new Date()): string {
+export function todayFor(timezone: string | undefined, at: Date = clockNow()):string {
   try {
     return localDate(timezone ?? 'UTC', at)
   } catch {
@@ -69,7 +70,7 @@ export function todayFor(timezone: string | undefined, at: Date = new Date()): s
 type TermFields = Pick<TenantRow, 'timezone' | 'termEndDate'>
 
 /** Has this studio's Term ended — is it on or past its end date, on its own clock? */
-export function termEnded(tenant: TermFields, at: Date = new Date()): boolean {
+export function termEnded(tenant: TermFields, at: Date = clockNow()):boolean {
   if (!tenant.termEndDate) return false
   // A zone the runtime cannot read is read as UTC: at worst a few hours out,
   // never a studio left open indefinitely or closed for good.
@@ -84,7 +85,7 @@ export function termEnded(tenant: TermFields, at: Date = new Date()): boolean {
  */
 export function effectiveStatus(
   tenant: TermFields & Pick<TenantRow, 'status'>,
-  at: Date = new Date(),
+  at: Date = clockNow(),
 ): TenantStatus {
   return tenant.status === 'active' && termEnded(tenant, at) ? 'suspended' : tenant.status
 }

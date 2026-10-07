@@ -9,6 +9,7 @@ import {
 } from '../../db/schema/schedule'
 import { stripePayments } from '../../db/schema/ledger'
 import { isUniqueViolation } from '../../db/unique-violation'
+import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
 import { memberClash, type HeldWindow } from '../bookings/member-time'
 import { bestPrice, listActivePromotionsFor } from '../packages/promotions'
@@ -49,7 +50,7 @@ export async function tierDaysClash(
 export function tierEffectivePrice(
   tier: WorkshopTierRow,
   promos: Parameters<typeof bestPrice>[1],
-  now = new Date(),
+  now = clockNow(),
 ): { baseSgd: string; appliedPromotionId: string | null } {
   const earlyBirdActive =
     tier.earlyBirdPriceSgd != null && tier.earlyBirdCutoffAt != null && tier.earlyBirdCutoffAt > now
@@ -69,7 +70,7 @@ export function tierEffectivePrice(
 export async function assertWorkshopOnSale(
   tenantId: string,
   ws: { id: string; lifecycle: string },
-  now = new Date(),
+  now = clockNow(),
 ): Promise<void> {
   if (ws.lifecycle !== 'active') throw new BadRequestError('workshop_not_active')
   const [last] = await db

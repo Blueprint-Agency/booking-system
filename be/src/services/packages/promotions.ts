@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, lte } from 'drizzle-orm'
 import { db } from '../../db'
 import { promotions } from '../../db/schema/packages'
+import { now as clockNow } from '../../lib/clock'
 
 export type PromotionRow = typeof promotions.$inferSelect
 export type PromotionParent = 'class_package' | 'pt_package' | 'workshop'
@@ -14,7 +15,7 @@ export async function listActivePromotionsFor(
   tenantId: string,
   parentType: PromotionParent,
   parentIds: string[],
-  now: Date = new Date(),
+  now: Date = clockNow(),
 ): Promise<Record<string, PromotionRow[]>> {
   if (parentIds.length === 0) return {}
   const rows = await db

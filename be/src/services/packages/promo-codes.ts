@@ -17,6 +17,7 @@ import type {
   promoCodeRedemptions,
 } from '../../db/schema/packages'
 import type { PromoCodeKind, PromoCodeProduct } from '../../db/enums'
+import { now as clockNow } from '../../lib/clock'
 
 export type PromoCodeRow = typeof promoCodes.$inferSelect
 export type PromoCodeProductRow = typeof promoCodeProducts.$inferSelect
@@ -121,7 +122,7 @@ export type PromoCodeEvaluation =
  * lapses because this predicate says so, with no cron job and no sweeper.
  * A refunded row never does: the money went back, so the place is free.
  */
-export function occupiesPlace(r: PromoCodeRedemptionRow, now: Date = new Date()): boolean {
+export function occupiesPlace(r: PromoCodeRedemptionRow, now: Date = clockNow()): boolean {
   if (r.status === 'consumed') return true
   if (r.status === 'held') return r.heldUntil > now
   return false
@@ -130,7 +131,7 @@ export function occupiesPlace(r: PromoCodeRedemptionRow, now: Date = new Date())
 /** How many of the code's places are taken right now. */
 export function usedPlaces(
   redemptions: PromoCodeRedemptionRow[],
-  now: Date = new Date(),
+  now: Date = clockNow(),
 ): number {
   return redemptions.reduce((n, r) => (occupiesPlace(r, now) ? n + 1 : n), 0)
 }
@@ -226,7 +227,7 @@ export interface EvaluateInput {
  * "fully claimed".
  */
 export function evaluatePromoCode(input: EvaluateInput): PromoCodeEvaluation {
-  const now = input.now ?? new Date()
+  const now = input.now ?? clockNow()
   const { code } = input
 
   if (!code || code.status !== 'active') return { ok: false, refusal: 'not_recognised' }
