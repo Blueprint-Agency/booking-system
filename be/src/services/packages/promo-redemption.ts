@@ -24,6 +24,7 @@ import {
   ptPackages,
 } from '../../db/schema/packages'
 import { workshopTiers, workshops } from '../../db/schema/schedule'
+import { now as clockNow } from '../../lib/clock'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import { bestPrice, listActivePromotionsFor } from './promotions'
@@ -230,7 +231,7 @@ export async function applyPromoCode(input: RedemptionInput): Promise<AppliedPro
  */
 export async function holdPromoCode(input: RedemptionInput): Promise<AppliedPromoCode> {
   return db.transaction(async tx => {
-    const now = new Date()
+    const now = clockNow()
     const found = await readCode(tx, input.tenantId, input.codeText, true)
     const evaluated = evaluatePromoCode({
       code: found?.code ?? null,
