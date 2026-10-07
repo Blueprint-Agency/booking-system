@@ -440,6 +440,45 @@ describe('replacing a studio from an archive', { skip: integrationTestsEnabled ?
     assert.deepEqual(await names('locations', other), ['Other Room'])
   })
 
+  test('a pending invitation in an archive built outside the platform is good for a week from the app clock', async () => {
+    const source = await studio('invite-clock-src')
+    const target = await studio('invite-clock')
+    const invitee = email('invitee', target)
+    const { ensureAuthUser } = await import('../services/auth/auth-users')
+    const login = await ensureAuthUser(harness.db, 'staff', { tenantId: source.id, email: invitee, name: 'Invitee' })
+    const [staff] = await harness.db
+      .insert(schema.staffUsers)
+      .values({ tenantId: source.id, authUserId: login, email: invitee, name: 'Invitee', role: 'admin', status: 'pending' })
+      .returning()
+    await harness.db.insert(schema.staffInvitations).values({
+      tenantId: source.id,
+      email: invitee,
+      role: 'admin',
+      token: randomUUID(),
+      expiresAt: new Date('2020-01-01T00:00:00.000Z'),
+      staffUserId: staff!.id,
+    })
+
+    // What the transform writes: the target's Slug, and accounts to be made on arrival.
+    const build: TenantArchive = structuredClone(await exported(source))
+    build.manifest.ensureAccounts = true
+    build.manifest.tenant = { ...build.manifest.tenant, id: randomUUID(), slug: target.slug }
+    build.rows.staff_users = build.rows.staff_users!.map(row => ({ ...row, auth_user_id: null }))
+
+    const arrived = new Date('2031-06-01T04:00:00.000Z')
+    harness.clock.set(arrived)
+    try {
+      await json(await importNow(target.id, await zipOf(build)), 200)
+    } finally {
+      harness.clock.reset()
+    }
+    const [invitation] = await harness.db
+      .select()
+      .from(schema.staffInvitations)
+      .where(eq(schema.staffInvitations.tenantId, target.id))
+    assert.equal(invitation?.expiresAt.toISOString(), '2031-06-08T04:00:00.000Z')
+  })
+
   test('SUP-18 replacing northwind leaves acme untouched, rows and logins alike', async () => {
     const northwind = await studio('northwind')
     const acme = await studio('acme')
