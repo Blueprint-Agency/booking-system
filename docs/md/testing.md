@@ -58,7 +58,8 @@ share everything that can be shared, and `be/scripts/check.mjs` refuses to run w
 What still differs is the OS and the machine's speed. On Windows or macOS a file path's case can
 differ from an import and still resolve, where CI's Linux fails it, and a slower machine shows up as
 timing flakiness; a flaky test gets fixed in the test. And a green local run predicts the `test`
-job only: the deploy also waits on the schema `drift` check and the browser journeys.
+job only: the deploy also waits on the schema `drift` check and the browser journeys on a stack
+inside the runner (`deployment.md` § Browser journeys gate both deploys).
 
 **What a run costs.** The harness (`be/src/test/harness.ts`) migrates, seeds and imports the app
 once per process, and every later `startTestApp()` in that process gets the same app back. It holds

@@ -4,7 +4,7 @@ import { studio } from '../src/studio'
 /**
  * The Playwright agents' seed (#207) — where a planner or generator session
  * starts. It runs, and must pass, wherever the agents work: the local stack,
- * pull requests included. The staging gate leaves it out (playwright.config.ts).
+ * CI included. A run against a deployed stack leaves it out (playwright.config.ts).
  *
  * The studio itself is made by global setup, the one fixture every journey
  * uses: a disposable `e2e-…` studio with its own staff, members, plan and

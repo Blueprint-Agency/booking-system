@@ -6,9 +6,9 @@ import { createStudio, removeStudio, STUDIO_SLUG_FILE } from './studio'
 /**
  * One studio per run, made before the first journey and removed after the last
  * — including when a journey fails, which is when leaving it behind is likeliest.
- * A job cancelled or timed out never gets here; the staging workflow tears the
- * studio down itself from `STUDIO_SLUG_FILE` (e2e.yml), and the backend's own
- * setup sweeps any e2e studio older than two hours besides.
+ * A job cancelled or timed out never gets here; `STUDIO_SLUG_FILE` names the
+ * studio for a cleanup step to remove, and the backend's own setup sweeps any
+ * e2e studio older than two hours besides. (The CI stack dies with its runner.)
  *
  * On the local stack, Stripe is played by this process for the whole run
  * (./stripe-stub.ts).

@@ -28,7 +28,7 @@ test('several apps changed run several suites, each once, in a fixed order', () 
 })
 
 test('docs, ignore files and files outside any suite run nothing', () => {
-  assert.deepEqual(ids(['docs/md/prd.md', 'be/CONTEXT.md', 'CLAUDE.md', 'cdn/api/proxy.ts', '.github/workflows/e2e.yml']), [])
+  assert.deepEqual(ids(['docs/md/prd.md', 'be/CONTEXT.md', 'CLAUDE.md', 'cdn/api/proxy.ts', '.github/workflows/e2e-local.yml']), [])
   assert.deepEqual(ids(['be/.gitignore', 'e2e/.gitignore']), [])
 })
 

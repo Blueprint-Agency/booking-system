@@ -6,15 +6,15 @@ name: BE Deploy
 # They share nothing but Traefik — separate containers, volumes, networks and
 # databases, keyed off ENV_NAME in the compose file.
 #
-# The deploy is gated on the backend test suite and the schema drift check:
-# `deploy` needs `test` and `drift`, so a red one never reaches either stack. A
-# `staging` deploy also needs `journeys-pr` — the browser journeys, green on a
-# stack inside the runner (e2e-local.yml) — and a `main` (production) deploy
-# needs `e2e`, the same journeys green against staging (e2e.yml). The same workflow runs both frontends'
-# `check` scripts when their paths change — but Vercel deploys the frontends on
-# its own and does not wait for GitHub checks, so for them a red check is a
-# signal, not a gate. Pull requests into `staging`/`main` run every check and
-# never deploy.
+# The deploy is gated on the backend test suite, the schema drift check and the
+# browser journeys: `deploy` needs `test`, `drift` and `journeys-pr` — the
+# journeys green on a stack inside the runner (e2e-local.yml) — so a red one
+# never reaches either stack. A `main` (production) deploy also needs
+# `on-staging`: proof that the staging stack is already running this commit's
+# backend. The same workflow runs both frontends' `check` scripts when their
+# paths change — but Vercel deploys the frontends on its own and does not wait
+# for GitHub checks, so for them a red check is a signal, not a gate. Pull
+# requests into `staging`/`main` run every check and never deploy.
 #
 # It is also the one workflow a pull request runs. On top of the checks above,
 # a pull request gets the test guardrails (test-guardrails.yml) and the browser
@@ -32,9 +32,9 @@ name: BE Deploy
 on:
   push:
     branches: [staging, main]
-    # A push touching only `e2e/` or the journeys' workflows still runs: on
-    # `staging` it runs the journeys it changed (`journeys-pr`), and every other
-    # job skips on the `changes` filter below, so nothing deploys.
+    # A push touching only `e2e/` or the journeys' workflow still runs: it runs
+    # the journeys it changed (`journeys-pr`), and every other job skips on the
+    # `changes` filter below, so nothing deploys.
     paths:
       - 'be/**'
       - 'fe-client/**'
@@ -43,7 +43,6 @@ on:
       - 'scripts/check-error-codes*'
       - '.github/workflows/deploy-be.yml'
       - '.github/workflows/e2e-local.yml'
-      - '.github/workflows/e2e.yml'
   pull_request:
     branches: [staging, main]
   merge_group:
@@ -348,51 +347,111 @@ jobs:
     uses: ./.github/workflows/test-guardrails.yml
 
   # The browser journeys on a stack inside the runner (#207): on every pull
-  # request, and before every STAGING deploy — a push straight to `staging`
-  # would otherwise reach `main` without a journey ever having run on it. They
-  # touch nothing outside the runner, so unlike `e2e` they can gate the stack
-  # they do not run against. Not the production gate — that is `e2e` below.
-  # The job keeps its name so branch protection's required check still matches.
+  # request, in the merge queue, and before every deploy, `staging` and `main`
+  # alike — the same job, the same stack, the same journeys. They touch nothing
+  # outside the runner, so they can gate both stacks; running them against the
+  # deployed staging stack instead (the old `e2e` job, e2e.yml) gated production
+  # on staging's network, Vercel builds and DNS, and failed about one `main`
+  # push in five on 120 s timeouts that no commit had caused. No `if:` — every
+  # event this workflow has runs them. The job keeps its name so branch
+  # protection's required check still matches.
   journeys-pr:
-    if: >-
-      github.event_name == 'pull_request' || github.event_name == 'merge_group' ||
-      github.ref_name == 'staging'
     permissions:
       contents: read
     uses: ./.github/workflows/e2e-local.yml
 
-  # The browser journeys against staging (#145), before a PRODUCTION deploy only.
-  # Staging is what they run against, so a staging deploy cannot wait on them —
-  # they would be testing the build it is about to replace. See e2e.yml.
-  e2e:
+  # Before a PRODUCTION deploy only: the staging stack must already be running
+  # this commit's backend. Green journeys in the runner say the commit works;
+  # this says it has also been deployed, migrated and smoke-tested once, on
+  # staging, before production gets it. A commit that skipped `staging`, or
+  # whose staging deploy failed and left the old image serving, is refused here.
+  on-staging:
     needs: changes
     if: >-
-      github.event_name != 'pull_request' &&
       github.ref_name == 'main' &&
       (github.event_name == 'workflow_dispatch' || needs.changes.outputs.be == 'true')
+    runs-on: ubuntu-latest
+    # The wait below can take 30 minutes on its own.
+    timeout-minutes: 40
     permissions:
       contents: read
+      # To see whether a staging deploy is still running.
       actions: read
-    uses: ./.github/workflows/e2e.yml
-    secrets: inherit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, to compare staging's running build with this commit.
+          fetch-depth: 0
+
+      # Merging to `staging` and fast-forwarding `main` fires the staging deploy
+      # and this run within a minute of each other. Read staging's image only
+      # once that deploy has finished, or this would compare against the build
+      # it is about to replace.
+      - name: Wait for any staging deploy to finish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          for _ in $(seq 1 60); do
+            busy=$(gh run list -R "$GITHUB_REPOSITORY" --workflow deploy-be.yml --branch staging \
+              --json status --jq '[.[] | select(.status != "completed")] | length')
+            [ "$busy" = "0" ] && exit 0
+            echo "A staging deploy is still running — waiting…"
+            sleep 30
+          done
+          echo "::error::A staging deploy has been running for 30 minutes; not deploying to production over it."
+          exit 1
+
+      # Staging's running image is named in its stack's .env on bpvps2, reached
+      # the same way the deploy reaches it.
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ vars.BPVPS2_TAILSCALE_HOST }}
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" | tr -d '\r' > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+      # Compared on `be/` rather than by sha: a later frontend-only commit does
+      # not redeploy the backend, and should not have to.
+      - name: Staging runs this commit's backend
+        shell: bash
+        run: |
+          staging=$(ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new "deploy@${{ vars.BPVPS2_TAILSCALE_HOST }}" \
+            "sed -n 's/^IMAGE_TAG=//p' /root/stacks/booking-staging/.env | tail -n1")
+          echo "Staging runs: ${staging:-?}   This run: ${{ github.sha }}"
+          if ! git cat-file -e "${staging}^{commit}" 2>/dev/null; then
+            echo "::error::Staging runs '${staging:-nothing}', which is not a commit in this repository. Deploy this commit to staging first."
+            exit 1
+          fi
+          if ! git diff --quiet "$staging" "${{ github.sha }}" -- be/; then
+            echo "::error::Staging's backend ($staging) is not this commit's. Deploy it to staging first, then re-run."
+            git diff --stat "$staging" "${{ github.sha }}" -- be/ | tail -n 5
+            exit 1
+          fi
 
   deploy:
-    needs: [changes, test, drift, journeys-pr, e2e]
+    needs: [changes, test, drift, journeys-pr, on-staging]
     # Push or manual dispatch only — a pull request runs the tests and stops.
     #
-    # The gate: `test` and `drift` must pass; on `staging` so must the
-    # in-runner journeys (`journeys-pr`), and on `main` the journeys against
-    # staging (`e2e`). The results are spelled out because each journeys job is
-    # *skipped* on the other branch, and a skipped need would otherwise skip
-    # this job too; `!cancelled()` is what lets the condition be read at all
-    # once a need was skipped. A failed or skipped journeys job on its own
-    # branch still skips that branch's deploy.
+    # The gate: `test`, `drift` and the in-runner journeys (`journeys-pr`) must
+    # pass on both branches, and on `main` so must `on-staging`. Its result is
+    # spelled out because it is *skipped* on `staging`, and a skipped need would
+    # otherwise skip this job too; `!cancelled()` is what lets the condition be
+    # read at all once a need was skipped. A failed or skipped `on-staging` on
+    # `main` still skips the production deploy.
     if: >-
       !cancelled() &&
       needs.test.result == 'success' &&
       needs.drift.result == 'success' &&
-      (needs.journeys-pr.result == 'success' || (github.ref_name != 'staging' && needs.journeys-pr.result == 'skipped')) &&
-      (needs.e2e.result == 'success' || (github.ref_name != 'main' && needs.e2e.result == 'skipped')) &&
+      needs.journeys-pr.result == 'success' &&
+      (needs.on-staging.result == 'success' || (github.ref_name != 'main' && needs.on-staging.result == 'skipped')) &&
       github.event_name != 'pull_request' &&
       (github.ref_name == 'staging' || github.ref_name == 'main') &&
       (github.event_name == 'workflow_dispatch' || needs.changes.outputs.be == 'true')

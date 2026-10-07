@@ -12,8 +12,8 @@ import { STRIPE_HOST_RULES, STRIPE_STUB_API_URL } from './stripe-stub'
  * database is whatever the backend's environment names: the CI job's Postgres
  * service, or `be/.env` locally.
  *
- * Unset, nothing here applies, and the run is the staging gate exactly as
- * before: `E2E_STUDIO_CMD` names the deployed stack, and Stripe is Stripe.
+ * Unset, nothing here applies, and the run targets a deployed stack by hand:
+ * `E2E_STUDIO_CMD` names it, and Stripe is Stripe.
  */
 export const isLocalStack = process.env.E2E_STACK === 'local'
 

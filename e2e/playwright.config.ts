@@ -8,14 +8,15 @@ import {
 } from './src/local-stack'
 
 /**
- * The browser journeys, against one of two stacks:
+ * The browser journeys (#145), against one of two stacks:
  *
- *  - Deployed (the default): staging in CI — the production gate (#145) — or
- *    any deployed stack by hand. `E2E_STUDIO_CMD` makes the studio there, and
- *    Stripe is Stripe's own test mode.
- *  - Local (`E2E_STACK=local`): every pull request (#207), the Playwright
- *    agents, and a developer. The backend and both frontends run on this
- *    machine, and Stripe is a stub — see src/local-stack.ts.
+ *  - Local (`E2E_STACK=local`): CI — every pull request and every deploy gate
+ *    (#207) — the Playwright agents, and a developer. The backend and both
+ *    frontends run on this machine, and Stripe is a stub — see src/local-stack.ts.
+ *  - Deployed (the default): any deployed stack, by hand. `E2E_STUDIO_CMD`
+ *    makes the studio there, and Stripe is Stripe's own test mode. CI no
+ *    longer runs this way: as the production gate against staging it failed
+ *    on staging's timeouts, not on the commit.
  *
  * Either way the studio's URLs come back from that backend's own
  * `FRONTEND_URLS`, so nothing here names a host.
@@ -36,13 +37,13 @@ if (isLocalStack) {
 export default defineConfig({
   testDir: './journeys',
   // The agents' seed (journeys/seed.spec.ts) runs where the agents do — the
-  // local stack — and leaves the staging gate the journeys it always had.
+  // local stack — and is noise against a deployed stack.
   //
   // The paid journey (buy-and-book) runs only on the local stack too. A studio
   // takes payments only on its own Stripe account (#293), and a deployed stack
-  // holds no key for the gate's throwaway studio — the only Stripe keys there
-  // are studios' own, and a test must not borrow one. Every pull request still
-  // runs it against the Stripe stub (e2e-local.yml).
+  // holds no key for a throwaway studio — the only Stripe keys there are
+  // studios' own, and a test must not borrow one. CI runs it against the
+  // Stripe stub (e2e-local.yml).
   testIgnore: isLocalStack ? undefined : ['seed.spec.ts', 'buy-and-book.spec.ts'],
   globalSetup: './src/global-setup.ts',
   webServer: isLocalStack ? localStackServers : undefined,

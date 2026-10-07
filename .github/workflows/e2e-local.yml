@@ -9,10 +9,10 @@ name: E2E Journeys (PR)
 # runner: not for Stripe, not for staging, not for mail (the backend runs its
 # null mail transport).
 #
-# On a pull request it is the early warning. On a push to `staging` it gates
-# the staging deploy, so nothing reaches `main` without the journeys having
-# run on it. The run against staging (e2e.yml) still gates the production
-# deploy, unchanged.
+# On a pull request it is the early warning. On a push to `staging` or `main`
+# it gates that deploy: the one journeys run there is, for both stacks. (It
+# replaced a run against the deployed staging stack as the production gate,
+# which failed on staging's own timeouts rather than on the commit.)
 #
 # Every pull request, whatever it touches: a check that only sometimes reports
 # cannot be made required. Called by deploy-be.yml as its `journeys-pr` job, so
