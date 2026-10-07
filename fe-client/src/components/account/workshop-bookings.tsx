@@ -13,6 +13,8 @@ export interface ApiWorkshopBooking {
   check_in_state: "pending" | "attended" | "no_show" | "n_a";
   booked_at: string;
   cancelled_at: string | null;
+  /** On a cancelled place: `stripe_refunded` once the money went back to the card, else `n_a`. */
+  refund_outcome: string;
   code: string;
   qr_token: string;
   location: { id: string; name: string; address: string | null } | null;

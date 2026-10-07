@@ -603,7 +603,7 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
 
   // ── My Corporate ─────────────────────────────────────────────────────────
 
-  test('CORP-04 /account/corporate shows each request’s status, and a scheduled one its date, Location and instructor', async () => {
+  test('CORP-04, ACC-38 /account/corporate shows each request’s status, a scheduled one its date, Location and instructor, and a cancelled one when the studio cancelled it', async () => {
     const ida = await member(one, 'Ida Corporate')
     const [pkg] = await harness.db
       .insert(schema.corporatePackages)
@@ -629,12 +629,23 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
     const done = await request()
     await schedule(done, new Date(Date.now() + 11 * DAY))
     await ok(send(`/portal/admin/corporate-requests/${done}/attended`, adminAtOne.headers, 'POST'))
+    const before = Date.now()
     const calledOff = await request()
     await ok(send(`/portal/admin/corporate-requests/${calledOff}/cancel`, adminAtOne.headers, 'POST'))
+    const calledOffScheduled = await request()
+    await schedule(calledOffScheduled, new Date(Date.now() + 12 * DAY))
+    await ok(send(`/portal/admin/corporate-requests/${calledOffScheduled}/cancel`, adminAtOne.headers, 'POST'))
 
     const rows = (await ok(get('/me/corporate-requests', ida.headers))).corporate_requests as any[]
     const byId = new Map<string, any>(rows.map(r => [r.id, r]))
-    assert.equal(byId.size, 4)
+    assert.equal(byId.size, 5)
+    // #351: a cancelled request says when, pending or scheduled; nothing else carries a cancel time.
+    for (const id of [calledOff, calledOffScheduled]) {
+      assert.equal(byId.get(id).status, 'cancelled')
+      const at = new Date(byId.get(id).cancelled_at).getTime()
+      assert.ok(at >= before - 1000 && at <= Date.now() + 1000, 'cancelled_at is when the studio cancelled')
+    }
+    for (const id of [pending, scheduled, done]) assert.equal(byId.get(id).cancelled_at, null)
     assert.equal(byId.get(pending).status, 'pending')
     assert.equal(byId.get(pending).session, null)
     assert.equal(byId.get(scheduled).status, 'scheduled')

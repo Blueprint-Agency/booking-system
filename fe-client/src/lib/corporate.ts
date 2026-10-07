@@ -33,6 +33,8 @@ export interface ApiCorporateRequest {
   status: ApiCorporateRequestStatus;
   package: { id: string; name: string };
   created_at: string;
+  /** When the studio cancelled it; null unless `status` is `cancelled`. */
+  cancelled_at?: string | null;
   session: ApiCorporateSession | null;
 }
 

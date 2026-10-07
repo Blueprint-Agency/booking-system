@@ -2749,6 +2749,90 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(cancellation!.wasWithinWindow, false)
   })
 
+  // ── The member's Cancelled tab (#351) ────────────────────────────────────
+
+  /** What the Cancelled tab says of one request: when (as a number), who, whether it expired. */
+  const ended = (r: any) => ({ cancelled_by: r.cancelled_by, expired: r.expired, refund_outcome: r.refund_outcome })
+  const at = (r: any) => new Date(r.cancelled_at).getTime()
+  const justNow = (r: any, before: number) =>
+    assert.ok(at(r) >= before - 1000 && at(r) <= Date.now() + 1000, `cancelled_at ${r.cancelled_at} is the cancel`)
+
+  test('ACC-36 /me/pt-sessions says when and by whom each request was cancelled: withdrawn, cancelled by the studio, expired, and a scheduled 2on1 the host or the studio cancelled', async () => {
+    const before = Date.now()
+    const ren = await member(one, 'Ren Ended')
+    const rio = await member(one, 'Rio Pal')
+    const solo = await givePt(one, ren, '1on1')
+    const pair = await givePt(one, ren, '2on1')
+    const withPartner = { sessionType: '2on1' as const, clientPackageId: pair, partner: { kind: 'existing' as const, coClientId: rio.clientId } }
+
+    const live = await requestOk(one, ren, { sessionType: '1on1', clientPackageId: solo })
+    const withdrawn = await requestOk(one, ren, { sessionType: '1on1', clientPackageId: solo })
+    await expectStatus(await memberCancel(ren, withdrawn), 200)
+    const studioPending = await requestOk(one, ren, { sessionType: '1on1', clientPackageId: solo })
+    await expectStatus(await adminCancel(adminAtOne, studioPending), 200)
+    const lapsing = await requestOk(one, ren, withPartner)
+    await harness.db
+      .update(schema.ptRequests)
+      .set({ expiresAt: new Date(Date.now() - MINUTE) })
+      .where(eq(schema.ptRequests.id, lapsing))
+    const { withTenant } = await import('../db')
+    const { expireStaleSessions } = await import('../services/pt-sessions/cancel')
+    await withTenant(one.id, () => expireStaleSessions())
+    const hostCancelled = await requestOk(one, ren, withPartner)
+    await scheduled(hostCancelled)
+    await expectStatus(await memberCancel(ren, hostCancelled), 200)
+    const studioCancelled = await requestOk(one, ren, withPartner)
+    await scheduled(studioCancelled)
+    await expectStatus(await adminCancel(adminAtOne, studioCancelled), 200)
+
+    const mine = new Map((await myRequests(ren)).map(r => [r.id, r]))
+    assert.deepEqual(
+      { cancelled_at: mine.get(live).cancelled_at, cancelled_by: mine.get(live).cancelled_by, expired: mine.get(live).expired },
+      { cancelled_at: null, cancelled_by: null, expired: false },
+      'a live request has no cancellation',
+    )
+    assert.deepEqual(ended(mine.get(withdrawn)), { cancelled_by: 'member', expired: false, refund_outcome: 'session_returned' })
+    assert.deepEqual(ended(mine.get(studioPending)), { cancelled_by: 'studio', expired: false, refund_outcome: 'session_returned' })
+    // Nobody cancelled it: it expired unscheduled.
+    assert.deepEqual(ended(mine.get(lapsing)), { cancelled_by: null, expired: true, refund_outcome: 'session_returned' })
+    assert.deepEqual(ended(mine.get(hostCancelled)), { cancelled_by: 'member', expired: false, refund_outcome: 'session_returned' })
+    assert.deepEqual(ended(mine.get(studioCancelled)), { cancelled_by: 'studio', expired: false, refund_outcome: 'session_returned' })
+    for (const id of [withdrawn, studioPending, lapsing, hostCancelled, studioCancelled]) justNow(mine.get(id), before)
+
+    // The partner reads the same cancels: the host's own is the host's, not theirs.
+    const theirs = new Map((await myRequests(rio)).map(r => [r.id, r]))
+    // The debit was the host's: the partner had nothing to get back.
+    assert.deepEqual(ended(theirs.get(hostCancelled)), { cancelled_by: 'host', expired: false, refund_outcome: 'n_a' })
+    assert.deepEqual(ended(theirs.get(studioCancelled)), { cancelled_by: 'studio', expired: false, refund_outcome: 'n_a' })
+    assert.deepEqual(ended(theirs.get(lapsing)), { cancelled_by: null, expired: true, refund_outcome: 'n_a' })
+    assert.equal(at(theirs.get(hostCancelled)), at(mine.get(hostCancelled)))
+  })
+
+  test('ACC-37 a member who leaves, or is removed from, a manual 2on1 still finds their seat on /me/pt-sessions as cancelled, with when and by whom; the one who stays sees it scheduled', async () => {
+    const before = Date.now()
+    const left = await fullPair('Ola Leaves')
+    await expectStatus(await memberCancel(left.first, left.requestId), 200)
+    const removed = await fullPair('Pia Removed')
+    await expectStatus(await adminRemoveMember(adminAtOne, removed.sessionId, removed.first.clientId), 200)
+
+    for (const [pair, by] of [
+      [left, 'member'],
+      [removed, 'studio'],
+    ] as const) {
+      const gone = (await myRequests(pair.first)).filter(r => r.id === pair.requestId)
+      assert.equal(gone.length, 1, 'the seat they left is still theirs to read, once')
+      assert.equal(gone[0].status, 'cancelled_after_scheduled')
+      assert.deepEqual(ended(gone[0]), { cancelled_by: by, expired: false, refund_outcome: 'session_returned' })
+      justNow(gone[0], before)
+      assert.ok(gone[0].session, 'with the session it was on')
+
+      const stays = (await myRequests(pair.second)).filter(r => r.id === pair.requestId)
+      assert.equal(stays.length, 1)
+      assert.equal(stays[0].status, 'scheduled')
+      assert.equal(stays[0].cancelled_at, null)
+    }
+  })
+
   // ── The session detail page's read (#338) ────────────────────────────────
 
   const adminDetail = (by: Staff, sessionId: string) =>
