@@ -21,9 +21,10 @@ node .claude/hooks/backend-tests.mjs be src/services/bookings/cancel.ts   # list
 cd be && npm run check -- <those files>
 ```
 
-**Before a direct push to `staging` or `main`, run all of it:** `npm run check` in `be/`, about six
-minutes in CI and longer on a laptop (18 on a Windows one). That is the run that predicts CI's (below). CI runs the whole suite on every PR, in the
-merge queue and on every push.
+**Before a direct push to `staging` or `main`, run all of it:** `npm run check` in `be/`, about
+seven minutes of tests on one machine (18 on a Windows laptop; CI slices it across jobs, § Shards in
+CI). That is the run that predicts CI's (below). CI runs the whole suite on every PR, in the merge
+queue and on every push.
 
 **One test database per checkout.** In a new checkout or worktree, run `npm run test:db` in `be/`
 once. It creates `reservetoday-test-<checkout folder>` on the local Postgres named by `be/.env`,
@@ -39,8 +40,10 @@ share everything that can be shared, and `be/scripts/check.mjs` refuses to run w
 - **Node 22**, as `.nvmrc` pins it (`nvm use 22`), `engines` in `be/package.json` states it, and CI
   and `be/Dockerfile` run it. Another major accepts flags and behaves in ways 22 does not, so
   `npm run check` refuses to start on one.
-- **One command.** CI's **Backend tests (serial)** step and the stop hook both run `npm run check`
-  (`be/scripts/check.mjs`), adding only a reporter flag, or the files to run.
+- **One command.** CI's **Backend tests (serial, this shard)** step and the stop hook both run
+  `npm run check` (`be/scripts/check.mjs`), adding only a reporter flag, or the files to run; CI
+  also sets `SHARD=i/n` to run one slice of the file list per job (§ Shards in CI). A bare
+  `npm run check` is the whole suite, as it always was.
 - **One environment.** `be/src/test/environment.ts` sets the whole test environment before any file
   loads. The one value it reads from `be/.env` is `TEST_DATABASE_URL`; nothing else in `.env`
   reaches a test (`src/db/url.ts` loads no `.env` under `NODE_ENV=test`). Stripe, R2, the webhook
@@ -81,6 +84,30 @@ That works because the settings a test varies are read when the app uses them, n
 module loads (`currentEnv` in `be/src/env.ts`): the platform-admin allowlist, the R2 bucket, public
 host and keys, the statement descriptor prefix and the payment-credentials key. Anything else in
 `env` is read once, at boot, and a test cannot change it.
+
+## Shards in CI
+
+The whole suite in one process took about seven and a half minutes in CI, and the advisory lock
+means the files cannot run side by side on one database. So CI's `test-shard` job (`deploy-be.yml`)
+is a matrix: six jobs, each with a Postgres service of its own, each running `npm run check` with
+`SHARD=i/6`. `check.mjs` lists every file the default patterns match, sorts it, and shard `i` runs
+every sixth file from the `i`-th — deterministic, so a file always lands in the same slice, and
+checked: it refuses a shard outside `1..n`, and it asserts that the `n` slices together are the whole
+list with no file in two of them, so a file cannot drop out of CI without a red run. A slice is still
+serial, in one process, on its own empty database: the same run as `npm run check` on fewer files,
+and the same rules for a test file apply. A slice must therefore not depend on a file in another
+slice having run first; nothing in the suite does today, and a shard turning red where the whole run
+is green is how such a dependency would show.
+
+The `test` job needs every slice and is the one check `deploy`, branch protection and the merge queue
+wait on, under the name `test` as before. Each slice fails on its own `# skipped 0` check, so nothing
+skipped across the shards together. The count of shards is the one matrix list in `deploy-be.yml`;
+`strategy.job-total` hands it to `check.mjs` as the denominator, so the list and the denominator
+cannot disagree.
+
+Locally, `SHARD=2/6 npm run check` runs one slice the way CI does, against the checkout's test
+database (a full-run reset first, as any run of no named files). It is for reproducing a red shard;
+the predictor of CI remains the whole serial `npm run check`.
 
 ## Time
 
