@@ -16,7 +16,11 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   pt_session_approved: ['client_name', 'instructor_name', 'starts_at', 'location', 'qr_url'],
   pt_session_declined: ['client_name', 'instructor_name', 'decline_note'],
   pt_request_expired: ['client_name', 'instructor_name', 'starts_at'],
-  workshop_purchase_confirmed: ['client_name', 'workshop_name', 'date', 'qr_url', 'code', 'receipt_url'],
+  // A purchase confirmation is the member's receipt (#370), so it states what
+  // was paid: `amount_paid` is the figure with its currency ("SGD 120.00"),
+  // and the zero amount on a free tier. Same variable on the package and trial
+  // confirmations below.
+  workshop_purchase_confirmed: ['client_name', 'workshop_name', 'date', 'qr_url', 'code', 'amount_paid', 'receipt_url'],
   // The waitlist offer is time-bound (fe-client §4.1): the place goes to the
   // next person if it is not claimed, so the deadline is part of the email.
   workshop_waitlist_promoted: ['client_name', 'workshop_name', 'date', 'claim_url', 'claim_deadline'],
@@ -51,8 +55,8 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // ./purchase-email.ts — the fragment-shaped pair produced a wrong sentence for
   // some kind whatever the template said around them, and leaving them in the
   // allow-list would leave that footgun loaded for the portal template editor.
-  package_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'receipt_url'],
-  trial_pass_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'receipt_url'],
+  package_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'amount_paid', 'receipt_url'],
+  trial_pass_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'amount_paid', 'receipt_url'],
   // §14: same composed-sentence rule. `cancelled_line` names the classes the
   // Refund cancelled and states plainly when there were none — cancelling
   // someone's booked classes silently is not acceptable.
