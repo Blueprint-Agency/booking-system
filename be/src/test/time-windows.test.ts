@@ -343,4 +343,54 @@ describe('time-window rules over HTTP', { skip: integrationTestsEnabled ? false 
       assert.equal((await packageOf(cal)).creditsOrSessionsRemaining, 8)
     })
   }
+
+  test('the class catalogue’s default window opens at the start of today on the app clock', async () => {
+    const at = studios[0]!
+    // Sixty days out, mid-morning: beyond the four weeks the wall clock's window reaches.
+    const today = new Date(Math.floor((Date.now() + 60 * DAY) / DAY) * DAY)
+    const yesterdays = await addClass(at, new Date(today.getTime() - DAY + 10 * HOUR))
+    const tomorrows = await addClass(at, new Date(today.getTime() + DAY + 10 * HOUR))
+    const ids = (body: string) => (JSON.parse(body) as { classes: { id: string }[] }).classes.map(c => c.id)
+    try {
+      harness.clock.set(new Date(today.getTime() + 10 * HOUR))
+      const listed = ids(
+        await expectStatus(await harness.app.request('/api/v1/public/classes', { headers: { 'X-Tenant-Slug': at.slug } }), 200),
+      )
+      assert.ok(listed.includes(tomorrows), 'tomorrow’s class is in the window')
+      assert.ok(!listed.includes(yesterdays), 'yesterday’s is not')
+
+      const signedIn = await member(at, 'catalogue-reader')
+      const mine = ids(await expectStatus(await harness.app.request('/api/v1/me/classes', { headers: signedIn.headers }), 200))
+      assert.ok(mine.includes(tomorrows))
+      assert.ok(!mine.includes(yesterdays))
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
+  test('a booking is upcoming until its class starts on the app clock, and past from then', async () => {
+    const at = studios[0]!
+    const dee = await member(at, 'dee-lists')
+    const startsAt = aWeekOut()
+    const bookingId = await bookOk(dee, await addClass(at, startsAt))
+    const listed = async (scope: 'upcoming' | 'past') =>
+      (
+        JSON.parse(
+          await expectStatus(await harness.app.request(`/api/v1/me/bookings/${scope}`, { headers: dee.headers }), 200),
+        ) as { bookings: { booking_id: string }[] }
+      ).bookings.map(b => b.booking_id)
+    try {
+      harness.clock.set(new Date(startsAt.getTime() - 1))
+      assert.deepEqual(await listed('upcoming'), [bookingId])
+      assert.deepEqual(await listed('past'), [])
+
+      harness.clock.set(startsAt)
+      assert.deepEqual(await listed('upcoming'), [bookingId], 'a class starting this instant is still to come')
+      harness.clock.set(new Date(startsAt.getTime() + 1))
+      assert.deepEqual(await listed('upcoming'), [])
+      assert.deepEqual(await listed('past'), [bookingId])
+    } finally {
+      harness.clock.reset()
+    }
+  })
 })

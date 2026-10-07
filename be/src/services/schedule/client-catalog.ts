@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { and, eq, gte, inArray, isNull, lt } from 'drizzle-orm'
 import { db } from '../../db'
+import { now as clockNow } from '../../lib/clock'
 import { publicObjectUrl } from '../../lib/r2'
 import { bookings } from '../../db/schema/bookings'
 import { classes, classSupportingInstructors } from '../../db/schema/schedule'
@@ -98,7 +99,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 /** Default window: start of today → +28 days. Range hard-capped at 90 days. */
 export function resolveWindow(from?: Date, to?: Date): { from: Date; to: Date } {
-  const start = from ?? new Date(new Date().setHours(0, 0, 0, 0))
+  const start = from ?? new Date(clockNow().setHours(0, 0, 0, 0))
   let end = to ?? new Date(start.getTime() + 28 * DAY_MS)
   if (end.getTime() - start.getTime() > 90 * DAY_MS) {
     end = new Date(start.getTime() + 90 * DAY_MS)

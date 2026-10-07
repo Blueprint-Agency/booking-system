@@ -17,6 +17,7 @@ import { classTypes, locations, rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
 import type { ClientPackageKind } from '../../db/enums'
+import { now as clockNow } from '../../lib/clock'
 import { NotFoundError } from '../../shared/errors'
 import { cancelWindowResolver, type HasCancelWindow } from '../policy/cancel-window'
 import { cancellationRecord, summarizeCancellation, type CancellationSummary } from './cancellation-summary'
@@ -133,7 +134,7 @@ export async function listClassBookings(
   clientId: string,
   scope: 'upcoming' | 'past',
 ): Promise<ClassBookingRow[]> {
-  const now = new Date()
+  const now = clockNow()
   const where =
     scope === 'upcoming'
       ? and(
