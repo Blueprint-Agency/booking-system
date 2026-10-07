@@ -408,7 +408,7 @@ Marking a member `attended` on a class or PT session they booked (`services/book
 _Avoid_: attendance marking, sign-in, arrival
 
 **Check-in Window**:
-How early check-in opens — the Tenant's `check_in_opens_minutes_before` on its policy row, so a member who arrives ten minutes early is ticked at the door. A scan also closes with the session's own day in the Tenant's timezone; a manual tick never closes, because cleaning up a roster afterwards is what it is for. A **no-show** is not moved by the window: nobody is a no-show before the session begins.
+How early check-in opens — the Tenant's `check_in_opens_minutes_before` on its policy row, so a member who arrives ten minutes early is ticked at the door. The Check-in desk lists a session from the moment its window opens, even one that starts after the Tenant's midnight. A scan also closes with the session's own day in the Tenant's timezone; a manual tick never closes, because cleaning up a roster afterwards is what it is for. A **no-show** is not moved by the window: nobody is a no-show before the session begins.
 _Avoid_: grace period, early check-in, arrival window
 
 ### Staff leave

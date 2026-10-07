@@ -324,7 +324,7 @@ Unpriced sessions are therefore ordinary. They are priced through Finance's `?ne
 ### `check-in.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/check-in` | Today's (studio timezone) active classes and PT sessions, each with `check_in_opens_at` and its roster (`booking_id, client_id, name, code, state, check_in_state, method, checked_in_at`; cancelled bookings left out). Optional `?location_id=` |
+| GET | `/check-in` | Today's (studio timezone) active classes and PT sessions, plus tomorrow's first ones once their Check-in Window has opened, each with `check_in_opens_at` and its roster (`booking_id, client_id, name, code, state, check_in_state, method, checked_in_at`; cancelled bookings left out). Optional `?location_id=` |
 | POST | `/check-in/scan` | Exactly one of `{ qr_token }` or `{ code }` (case-insensitive). The code alone names the booking — no `session_id`. Inserts the `check_ins` row with `method` `qr`/`code` and sets `check_in_state='attended'`. Idempotent: an already-attended booking answers `outcome: 'already_checked_in'` and writes nothing. Refusals: 404 `booking_not_found` (unknown, or another studio's), 409 `booking_cancelled` / `session_cancelled`, 422 `check_in_not_open` (before the Check-in Window, or another day) / `check_in_closed` (the session's day has passed), 403 `not_your_session` (instructor) |
 | POST | `/check-in/manual` | `{ booking_id, attended }` — manual tick and undo. Opens with the Check-in Window (`global_policy.check_in_opens_minutes_before`), never closes. A no-show (`/bookings/:id/no-show`) still waits for the start time |
 
