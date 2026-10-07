@@ -318,7 +318,7 @@ tx start
 2. Insert bookings row: kind='workshop', workshop_id, workshop_tier_id, state='confirmed',
    purchase_id=NULL, refund_outcome='n_a', check_in_state='pending'
 3. Generate qr_token + code
-4. enqueueEmail('workshop_purchase_confirmed', { ..., amount_paid='SGD 0.00', receipt_url=NULL })
+4. enqueueEmail('workshop_purchase_confirmed', { ..., amount_paid='S$0.00', receipt_url=NULL })
 tx commit
 ```
 
@@ -545,7 +545,7 @@ The slug is decided by the granted package's **kind**, not by which code path gr
 - `contents_line` — "Unlimited classes" · "10 class credits" · "5 private sessions" · "3 classes" (trial, which counts classes rather than credits — a first-timer has never heard of a credit).
 - `validity_line` — **reads `isDormant`, not the package kind.** A Dormant purchase gets "Valid {Duration or validity} from your first class — your package activates when you make your first booking," reading the frozen `duration_months` or `validity_days`; a row that already has an expiry prints "Expires {date}". Since every purchase lands Dormant (be/docs/adr/0004) — whatever else the member holds, since several may run at once (be/docs/adr/0010) — a purchase email is the Dormant sentence in practice. *(This used to read that only an Unlimited Plan bought behind a live plan was Dormant, and one bought with nothing in front carried a real end date; both halves predate ADR 0004.)* This is a deliberate deviation from an earlier reading of the spec that branched on package kind alone; the shipped code branches on `isDormant` because the promise "activates on your first booking" would otherwise be printed on a plan that had already started.
 
-`amount_paid` is on all three purchase templates (package, trial pass, workshop): the confirmation is the member's receipt (#370). It is the figure with its currency, "SGD 120.00" (`purchase-email.ts:amountPaid`; every studio sells in SGD), read off the sale: the Purchase's `amount_paid_sgd` — the plan plus any Cross-Location Add-On bought with it, after any Promotion or Promo Code — and, on a free purchase that has no Purchase, the package's or workshop place's own `amount_paid_sgd`, so a free one prints "SGD 0.00". Never the catalogue price.
+`amount_paid` is on all three purchase templates (package, trial pass, workshop): the confirmation is the member's receipt (#370). It is the figure with its currency, "S$120.00", the form every member-facing amount takes (`shared/money.ts:sgdText`; every studio sells in SGD), read off the sale: the Purchase's `amount_paid_sgd` — the plan plus any Cross-Location Add-On bought with it, after any Promotion or Promo Code — and, on a free purchase that has no Purchase, the package's or workshop place's own `amount_paid_sgd`, so a free one prints "S$0.00". Never the catalogue price.
 
 `receipt_url` is never empty: a paid purchase gets the Stripe receipt (retrieved with the latest charge expanded, since the webhook's own event carries none), a free one falls back to the account page with neutral anchor text — an escaped empty string in an href is a visible link to nowhere, which is not a safe default here.
 

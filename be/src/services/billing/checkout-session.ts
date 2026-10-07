@@ -11,6 +11,7 @@ import type Stripe from 'stripe'
 import { requireProviderAccount, stripeForTenant } from '../../lib/stripe'
 import { outbound } from '../../lib/outbound'
 import { BadRequestError } from '../../shared/errors'
+import { sgdText } from '../../shared/money'
 import { attachCheckoutSession, openPurchase, type PurchaseKind } from './purchases'
 import { partPaymentEnabled } from '../policy/update'
 import { chargeableCents, refusePartPaymentWhenDisabled } from './part-payment'
@@ -133,7 +134,7 @@ export function partPaymentLine(
     name: `Part payment towards ${item}`,
     description:
       outstandingAfterCents > 0
-        ? `S$${(outstandingAfterCents / 100).toFixed(2)} will still be owed afterwards. Nothing is granted, and no place is held, until the balance reaches zero.`
+        ? `${sgdText(outstandingAfterCents)} will still be owed afterwards. Nothing is granted, and no place is held, until the balance reaches zero.`
         : 'This settles the balance in full.',
     amountCents: chargeCents,
   }

@@ -287,7 +287,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     assert.equal(held?.amountPaidSgd, '120.00')
     assert.equal(held?.listPriceSgd, '150.00')
 
-    const sent = await oneConfirmation(mia, one, 'package_purchase_confirmed', 'SGD 120.00')
+    const sent = await oneConfirmation(mia, one, 'package_purchase_confirmed', 'S$120.00')
     assert.ok(!textOf(sent).includes('150.00'), 'the list price is not what the receipt says was paid')
   })
 
@@ -305,7 +305,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     assert.equal(plan?.amountPaidSgd, '300.00')
     assert.ok(plan?.crossLocationPaidSgd, 'the Add-On was bought with the plan')
 
-    const whole = `SGD ${(chargedCents / 100).toLocaleString('en-SG', { minimumFractionDigits: 2 })}`
+    const whole = `S$${(chargedCents / 100).toFixed(2)}`
     await oneConfirmation(leo, one, 'package_purchase_confirmed', whole)
   })
 
@@ -317,7 +317,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     assert.equal(held?.tenantId, two.id)
     assert.equal(held?.amountPaidSgd, '400.00')
 
-    const sent = await oneConfirmation(ana, two, 'package_purchase_confirmed', 'SGD 400.00')
+    const sent = await oneConfirmation(ana, two, 'package_purchase_confirmed', 'S$400.00')
     assert.ok(textOf(sent).includes('5 private sessions'), 'it confirms what was bought')
   })
 
@@ -334,7 +334,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
       assert.equal(held?.kind, 'trial')
       assert.equal(held?.amountPaidSgd, '0.00')
 
-      await oneConfirmation(ivy, at, 'trial_pass_purchase_confirmed', 'SGD 0.00')
+      await oneConfirmation(ivy, at, 'trial_pass_purchase_confirmed', 'S$0.00')
     }
   })
 
@@ -383,7 +383,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     assert.equal(place?.state, 'confirmed')
     assert.equal(place?.amountPaidSgd, '85.50')
 
-    const sent = await oneConfirmation(zoe, one, 'workshop_purchase_confirmed', 'SGD 85.50')
+    const sent = await oneConfirmation(zoe, one, 'workshop_purchase_confirmed', 'S$85.50')
     assert.ok(textOf(sent).includes(place!.code!), 'it carries the check-in code')
   })
 
@@ -402,7 +402,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     assert.equal(place?.id, granted.booking_id)
     assert.equal(place?.amountPaidSgd, '0.00')
 
-    await oneConfirmation(sam, two, 'workshop_purchase_confirmed', 'SGD 0.00')
+    await oneConfirmation(sam, two, 'workshop_purchase_confirmed', 'S$0.00')
   })
 
   /* ── NTF-04 ─────────────────────────────────────────────────────────── */
@@ -418,7 +418,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     assert.equal(plan?.expiresAt, null, 'Dormant: no end date until the first booking')
     assert.equal(plan?.durationMonths, 3)
 
-    const sent = await oneConfirmation(kai, one, 'package_purchase_confirmed', 'SGD 300.00')
+    const sent = await oneConfirmation(kai, one, 'package_purchase_confirmed', 'S$300.00')
     assert.ok(textOf(sent).includes(DORMANT_PLAN), `it promises Activation at the first booking: ${textOf(sent)}`)
     assert.ok(!/Expires/.test(textOf(sent)), 'and names no end date it does not have')
   })
@@ -446,7 +446,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     const bought = plans.find(p => p.purchaseId !== null)
     assert.equal(bought?.expiresAt, null, 'the new plan waits for its own first booking (be/docs/adr/0004, 0010)')
 
-    const sent = await oneConfirmation(lia, one, 'package_purchase_confirmed', 'SGD 300.00')
+    const sent = await oneConfirmation(lia, one, 'package_purchase_confirmed', 'S$300.00')
     assert.ok(textOf(sent).includes(DORMANT_PLAN), `it promises Activation at the first booking: ${textOf(sent)}`)
   })
 
@@ -470,7 +470,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     const resent = textOf(mail[1]!)
     assert.ok(resent.includes('Expires 14 Feb 2027'), `it prints the end date the package carries: ${resent}`)
     assert.ok(!/activat/i.test(resent), 'and does not promise an Activation that already happened')
-    assert.ok(resent.includes('SGD 150.00'), 'the amount paid is unchanged')
+    assert.ok(resent.includes('S$150.00'), 'the amount paid is unchanged')
   })
 
   /* ── refusals ───────────────────────────────────────────────────────── */

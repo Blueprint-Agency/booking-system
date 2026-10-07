@@ -10,6 +10,8 @@ const CLASS_TYPE_NAME = `PT focus ${run}`
 const CLASS_PACKAGE_NAME = `PT-suite class pass ${run}`
 const PT_PACKAGE_NAME = `PT-suite sessions ${run}`
 const ROOM_NAME = `PT-suite room ${run}`
+/** Archived and deleted Locations and class types this file writes. */
+const RETIRED_NAME = `PT-suite retired ${run}`
 const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
@@ -182,6 +184,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     sessionType: SessionType
     clientPackageId: string
     locationId?: string
+    classTypeId?: string
     partner?: { kind: 'existing'; coClientId: string } | { kind: 'new'; name: string; email: string }
     slots?: { proposedDate: string; startTime: string; endTime: string }[]
   }
@@ -191,7 +194,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       method: 'POST',
       headers: { ...who.headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        classTypeId: at.classTypeId,
+        classTypeId: body.classTypeId ?? at.classTypeId,
         locationId: body.locationId ?? at.places[0]!.locationId,
         sessionType: body.sessionType,
         clientPackageId: body.clientPackageId,
@@ -385,6 +388,8 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     await run(sql`DELETE FROM pt_packages WHERE name LIKE ${`${PT_PACKAGE_NAME}%`}`)
     await run(sql`DELETE FROM class_packages WHERE name = ${CLASS_PACKAGE_NAME}`)
     await run(sql`DELETE FROM class_types WHERE name = ${CLASS_TYPE_NAME}`)
+    await run(sql`DELETE FROM class_types WHERE tenant_id = ${one.id} AND name LIKE ${`${RETIRED_NAME}%`}`)
+    await run(sql`DELETE FROM locations WHERE tenant_id = ${one.id} AND name LIKE ${`${RETIRED_NAME}%`}`)
     await run(sql`DELETE FROM rooms WHERE name = ${ROOM_NAME}`)
     await run(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
     await run(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
@@ -554,6 +559,61 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     await expectStatus(await submit(one, fin, { sessionType: '2on1', clientPackageId: pair }), 400)
     assert.equal((await requestsOf(fin)).length, 0)
     assert.equal(await sessionsLeft(pair), 10)
+  })
+
+  const movementsOn = (clientPackageId: string) =>
+    harness.db.select().from(schema.creditMovements).where(eq(schema.creditMovements.clientPackageId, clientPackageId))
+
+  test('a request naming an archived or deleted Location, or an archived or deleted class type, is refused as a missing one is, and nothing is created or debited', async () => {
+    const gus = await member(one, 'Gus Retired')
+    const solo = await givePt(one, gus, '1on1')
+    const gone = new Date()
+    const [archivedPlace, deletedPlace] = await harness.db
+      .insert(schema.locations)
+      .values([
+        { tenantId: one.id, name: `${RETIRED_NAME} archived place`, archivedAt: gone },
+        { tenantId: one.id, name: `${RETIRED_NAME} deleted place`, archivedAt: gone, deletedAt: gone },
+      ])
+      .returning({ id: schema.locations.id })
+    const [archivedType, deletedType] = await harness.db
+      .insert(schema.classTypes)
+      .values([
+        { tenantId: one.id, name: `${RETIRED_NAME} archived type`, archivedAt: gone },
+        { tenantId: one.id, name: `${RETIRED_NAME} deleted type`, archivedAt: gone, deletedAt: gone },
+      ])
+      .returning({ id: schema.classTypes.id })
+
+    for (const locationId of [archivedPlace!.id, deletedPlace!.id]) {
+      const res = await expectStatus(await submit(one, gus, { sessionType: '1on1', clientPackageId: solo, locationId }), 404)
+      assert.equal(res.error, 'location_not_found')
+    }
+    for (const classTypeId of [archivedType!.id, deletedType!.id]) {
+      const res = await expectStatus(await submit(one, gus, { sessionType: '1on1', clientPackageId: solo, classTypeId }), 404)
+      assert.equal(res.error, 'class_type_not_found')
+    }
+
+    assert.equal((await requestsOf(gus)).length, 0)
+    assert.equal(await sessionsLeft(solo), 10)
+    assert.equal((await movementsOn(solo)).length, 0)
+  })
+
+  test('a 2on1 naming the requester, or a suspended or deleted member, as the existing partner is refused before anything is debited or written', async () => {
+    const hal = await member(one, 'Hal Host')
+    const suspended = await member(one, 'Sue Suspended')
+    const deleted = await member(one, 'Dee Deleted')
+    await harness.db.update(schema.clients).set({ status: 'suspended' }).where(eq(schema.clients.id, suspended.clientId))
+    await harness.db.update(schema.clients).set({ deletedAt: new Date() }).where(eq(schema.clients.id, deleted.clientId))
+    const pair = await givePt(one, hal, '2on1')
+    const withPartner = (coClientId: string) =>
+      submit(one, hal, { sessionType: '2on1', clientPackageId: pair, partner: { kind: 'existing', coClientId } })
+
+    assert.equal((await expectStatus(await withPartner(hal.clientId), 400)).error, 'partner_cannot_be_requester')
+    assert.equal((await expectStatus(await withPartner(suspended.clientId), 409)).error, 'partner_not_active')
+    assert.equal((await expectStatus(await withPartner(deleted.clientId), 409)).error, 'partner_not_active')
+
+    assert.equal((await requestsOf(hal)).length, 0)
+    assert.equal(await sessionsLeft(pair), 10)
+    assert.equal((await movementsOn(pair)).length, 0)
   })
 
   // The studio's Book in advance window, set through the admin's own route.

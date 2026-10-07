@@ -171,7 +171,9 @@ const statusBody = z.object({
   status: z.enum(['active', 'suspended', 'archived']),
 })
 
-const renameBody = z.object({ slug: z.string().min(1) })
+// Any string, as on create: a blank one is `slug_too_short`, the rename's own
+// reason, not a validation error the form has no words for.
+const renameBody = z.object({ slug: z.string() })
 
 const app = new Hono()
   .get('/tenants', async c => {

@@ -11,6 +11,7 @@
  * domain rule and lives on this side of the wire.
  */
 import { sgFormat } from '../../lib/time'
+import { sgdText, toCents } from '../../shared/money'
 
 /** "12 Jun 2026" — the studio's only clock. */
 const SG_DATE = sgFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -62,7 +63,7 @@ export function attendedNotice(attendedCount: number, since: Date | null): strin
  * this is the sentence that says the plan has ended.
  */
 export function voidedLine(packageName: string, amountSgd: string): string {
-  return `${packageName} has been refunded in full (S$${amountSgd}) and no longer covers any bookings.`
+  return `${packageName} has been refunded in full (${sgdText(toCents(amountSgd))}) and no longer covers any bookings.`
 }
 
 export interface CancelledSession {
@@ -127,7 +128,7 @@ export function silenceNotice(lastActivityAt: Date, now: Date): string {
  * that before they start counting.
  */
 export function abandonedReturnLine(paymentCount: number, amountSgd: string): string {
-  return `${plural(paymentCount, 'payment', 'payments')} returned, totalling S$${amountSgd}`
+  return `${plural(paymentCount, 'payment', 'payments')} returned, totalling ${sgdText(toCents(amountSgd))}`
 }
 
 /**
@@ -138,7 +139,7 @@ export function abandonedReturnLine(paymentCount: number, amountSgd: string): st
  * would go looking for a package they never had.
  */
 export function abandonedLine(itemName: string, amountSgd: string): string {
-  return `Your partial payment for ${itemName} has been cancelled and the S$${amountSgd} you had paid returned in full.`
+  return `Your partial payment for ${itemName} has been cancelled and the ${sgdText(toCents(amountSgd))} you had paid returned in full.`
 }
 
 export interface RefundEmailInput {

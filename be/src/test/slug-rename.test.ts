@@ -191,6 +191,16 @@ describe('slug rename', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     assert.equal(row?.slug, tenant.slug)
   })
 
+  test('renaming to a blank slug is refused slug_too_short, as creating a studio on one is', async () => {
+    const tenant = await studio('blank')
+
+    await expectStatus(await rename(tenant.id, ''), 400, 'slug_too_short')
+    await expectStatus(await rename(tenant.id, '   '), 400, 'slug_too_short')
+
+    const [row] = await harness.db.select().from(schema.tenants).where(eq(schema.tenants.id, tenant.id))
+    assert.equal(row?.slug, tenant.slug)
+  })
+
   test('a studio can be renamed straight back to its old slug, and nobody else can take it', async () => {
     const tenant = await studio('back')
     const original = tenant.slug

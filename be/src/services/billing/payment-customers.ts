@@ -34,6 +34,7 @@ import { paymentCustomers } from '../../db/schema/ledger'
 import {
   providerAccountForTenant,
   requireProviderAccount,
+  stripeForAccount,
   stripeForProviderAccount,
   stripeForTenant,
 } from '../../lib/stripe'
@@ -330,7 +331,7 @@ export async function removeSavedCard(input: {
   const customerId = await storedCustomer(tenantId, clientId, account.accountId)
   if (!customerId) throw new NotFoundError('card_not_found')
 
-  const stripe = await stripeForTenant(tenantId)
+  const stripe = stripeForAccount(account)
   // An id the provider has never heard of is **the same 404** as a card that
   // is not this member's. Letting it escape as a 500 would have made the two
   // distinguishable, which is exactly the existence oracle the ownership check
