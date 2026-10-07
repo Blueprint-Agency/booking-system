@@ -3213,4 +3213,81 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal((await requestRow(manualId)).approvalUnseen, false)
     assert.deepEqual(await approvals(lou), [], 'the member asked for nothing, so nothing was approved')
   })
+
+  // ── The admin profile's Cancelled tab (#352) ────────────────────────────
+
+  const profileOf = async (who: Member) =>
+    expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/clients/${who.clientId}`, { headers: adminAtOne.headers }),
+      200,
+    )
+
+  test('CUS-22 a private session request withdrawn, cancelled by staff or expired while pending, and a scheduled session its instructor cancelled, are each on the profile’s cancelled list at once, newest first, with who cancelled and the session returned', async () => {
+    const mo = await member(one, 'Mo Profile')
+    const packageId = await givePt(one, mo, '1on1')
+
+    const withdrawn = await requestOk(one, mo, { sessionType: '1on1', clientPackageId: packageId })
+    await expectStatus(await memberCancel(mo, withdrawn), 200)
+    const byAdmin = await requestOk(one, mo, { sessionType: '1on1', clientPackageId: packageId })
+    await expectStatus(await adminCancel(adminAtOne, byAdmin), 200)
+    const lapsing = await requestOk(one, mo, { sessionType: '1on1', clientPackageId: packageId })
+    await harness.db
+      .update(schema.ptRequests)
+      .set({ expiresAt: new Date(Date.now() - MINUTE) })
+      .where(eq(schema.ptRequests.id, lapsing))
+    const { withTenant } = await import('../db')
+    const { expireStaleSessions } = await import('../services/pt-sessions/cancel')
+    await withTenant(one.id, () => expireStaleSessions())
+    const booked = await requestOk(one, mo, { sessionType: '1on1', clientPackageId: packageId })
+    const [booking] = await bookingsOn(await scheduled(booked))
+    await expectStatus(await instructorCancel(coachA, booked), 200)
+
+    const profile = await profileOf(mo)
+    assert.deepEqual(profile.upcoming_bookings, [])
+    assert.deepEqual(profile.past_bookings, [])
+    assert.deepEqual(
+      profile.cancelled_bookings.map((b: any) => [
+        b.booking_id,
+        b.pt_request_id,
+        b.kind,
+        b.session_type,
+        b.cancelled_by,
+        b.cancelled_by_name,
+        b.late,
+        b.outcome,
+        b.credits_used,
+      ]),
+      [
+        [booking!.id, null, 'pt', '1on1', 'staff', 'coach-a', false, 'credit_returned', 1],
+        [null, lapsing, 'pt', '1on1', 'automatic', null, false, 'credit_returned', 1],
+        [null, byAdmin, 'pt', '1on1', 'staff', 'pt-admin', false, 'credit_returned', 1],
+        [null, withdrawn, 'pt', '1on1', 'member', null, false, 'credit_returned', 1],
+      ],
+    )
+    for (const b of profile.cancelled_bookings) assert.ok(b.cancelled_at, 'each says when')
+    assert.equal(await sessionsLeft(packageId), 10, 'every session came back')
+  })
+
+  test('CUS-23 a private session cancelled with its session kept is on the cancelled list as kept, and is not counted as a Late cancel', async () => {
+    const ned = await member(one, 'Ned Kept')
+    const packageId = await givePt(one, ned, '1on1')
+    const [booking] = await bookingsOn(await scheduled(await requestOk(one, ned, { sessionType: '1on1', clientPackageId: packageId })))
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/bookings/${booking!.id}/cancel`, {
+        method: 'POST',
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credit: 'keep' }),
+      }),
+      200,
+    )
+    const [row] = await harness.db.select().from(schema.bookings).where(eq(schema.bookings.id, booking!.id))
+    assert.equal(row!.refundOutcome, 'forfeited')
+
+    const profile = await profileOf(ned)
+    assert.deepEqual(
+      profile.cancelled_bookings.map((b: any) => [b.booking_id, b.cancelled_by, b.cancelled_by_name, b.outcome]),
+      [[booking!.id, 'staff', 'pt-admin', 'credit_kept']],
+    )
+    assert.equal(profile.attendance.late_cancels, 0)
+  })
 })

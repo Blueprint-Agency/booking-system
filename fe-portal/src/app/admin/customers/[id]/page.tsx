@@ -46,6 +46,7 @@ import { RemovePackageDialog } from "@/components/clients/remove-package-dialog"
 import { CreditHistoryPanel } from "@/components/clients/credit-history-panel";
 import { CancelBookingDialog } from "@/components/bookings/cancel-booking-dialog";
 import type { StaffCancelPreview } from "@/lib/staff-cancel";
+import { cancelledByLabel, cancelledOutcomeLine, creditKept, type StaffCancellation } from "@/lib/cancellations";
 import { ChangeEmailDialog } from "@/components/clients/change-email-dialog";
 import { EditProfileDialog } from "@/components/clients/edit-profile-dialog";
 import { SendSetPasswordButton } from "@/components/access/send-set-password-button";
@@ -168,6 +169,19 @@ interface ApiBooking {
   cancel_preview: StaffCancelPreview | null;
 }
 
+/**
+ * A cancelled booking with who cancelled and where the credit went (#352). A
+ * private-session request withdrawn or expired while pending never had a
+ * booking: `booking_id` and `code` are null and `pt_request_id` names it.
+ */
+interface ApiCancelledBooking
+  extends Omit<ApiBooking, "booking_id" | "code" | "cancelled_at">,
+    StaffCancellation {
+  booking_id: string | null;
+  pt_request_id: string | null;
+  code: string | null;
+}
+
 interface ApiAttendance {
   attended: number;
   no_shows: number;
@@ -261,8 +275,10 @@ interface ApiProfile {
   /** Expired, used up, refunded — newest first. */
   past_packages: ApiPackage[];
   upcoming_bookings: ApiBooking[];
-  /** The most recent 50; `attendance` counts every booking ever. */
+  /** Held only, the most recent 50; `attendance` counts every booking ever. */
   past_bookings: ApiBooking[];
+  /** Every kind, from the moment it is cancelled, newest cancellation first. */
+  cancelled_bookings: ApiCancelledBooking[];
   attendance: ApiAttendance;
   payments: ApiPayment[];
   workshop_purchases: ApiWorkshopPurchase[];
@@ -715,6 +731,7 @@ export default function ClientProfilePage({
               <BookingsSection
                 upcoming={profile.upcoming_bookings}
                 past={profile.past_bookings}
+                cancelled={profile.cancelled_bookings}
                 onCancel={canEdit ? setCancelBookingFor : undefined}
               />
 
@@ -1835,38 +1852,14 @@ const GENDER_LABEL: Record<"female" | "male" | "non_binary" | "prefer_not_to_say
   prefer_not_to_say: "Prefer not to say",
 };
 
-function bookingTitle(b: ApiBooking): string {
+function bookingTitle(b: Pick<ApiBooking, "kind" | "session_type" | "tier_name" | "title">): string {
   if (b.kind === "pt") return b.session_type === "2on1" ? "Private session (2-on-1)" : "Private session";
   if (b.kind === "workshop") return b.tier_name ? `${b.title ?? "Workshop"} · ${b.tier_name}` : (b.title ?? "Workshop");
   return b.title ?? "Class";
 }
 
-/**
- * What a cancellation did with what the member paid, read off the booking's
- * refund outcome (#272). A bare "Cancelled" hid the one thing the front desk is
- * asked about. `n_a` on a workshop is a place cancelled with its Workshop and
- * no money back yet; on a class it is an Unlimited plan's, which spent nothing.
- */
-function cancelledOutcome(b: ApiBooking): { label: string; tone: "warning" | "neutral" } {
-  switch (b.refund_outcome) {
-    case "forfeited":
-      return { label: "Late cancel", tone: "warning" };
-    case "stripe_refunded":
-      return { label: "Cancelled · refunded", tone: "neutral" };
-    case "credit_returned":
-      return { label: "Cancelled · credit back", tone: "neutral" };
-    case "session_returned":
-      return { label: "Cancelled · session back", tone: "neutral" };
-    case "n_a":
-      return b.kind === "workshop"
-        ? { label: "Cancelled · not refunded", tone: "warning" }
-        : { label: "Cancelled · place freed", tone: "neutral" };
-  }
-}
-
-/** How a booking ended, in the words the front desk uses. */
+/** How a booking ended, in the words the front desk uses. Cancellations have a tab of their own. */
 function bookingOutcome(b: ApiBooking, upcoming: boolean): { label: string; tone: "sage" | "warning" | "error" | "neutral" | "accent" } {
-  if (b.state === "cancelled") return cancelledOutcome(b);
   if (b.check_in_state === "attended") return { label: "Attended", tone: "sage" };
   if (b.state === "no_show" || b.check_in_state === "no_show") return { label: "No-show", tone: "error" };
   if (upcoming) return { label: "Booked", tone: "accent" };
@@ -1929,6 +1922,58 @@ function BookingRow({
   );
 }
 
+const atTime = (iso: string, pattern: string) =>
+  formatDate(iso, pattern).replace(/(AM|PM)/, (m) => m.toLowerCase());
+
+/**
+ * A cancellation as the front desk is asked about it (#352): what and when it
+ * was, where the credit went, when it was cancelled and by whom — the member,
+ * the named staff member, or Automatic. Nothing here can be checked in or
+ * cancelled again.
+ */
+function CancelledRow({ b }: { b: ApiCancelledBooking }) {
+  const request = b.booking_id === null;
+  const title = request ? `${bookingTitle(b)} request` : bookingTitle(b);
+  const detail = [b.instructor, b.location, b.package_name ? `on ${b.package_name}` : null]
+    .filter(Boolean)
+    .join(" · ");
+  const cancelled = [
+    b.cancelled_at ? `Cancelled ${atTime(b.cancelled_at, "d MMM, h:mma")}` : "Cancelled",
+    `by ${cancelledByLabel(b)}`,
+  ].join(" ");
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:px-5">
+      <div className="flex min-w-0 flex-1 basis-full items-center gap-3 sm:basis-auto">
+        <div className="w-20 shrink-0 text-xs tabular-nums text-muted sm:w-28">
+          {b.starts_at ? (
+            <>
+              <div className="font-medium text-ink">{formatDate(b.starts_at, "d MMM yyyy")}</div>
+              <div>{atTime(b.starts_at, "EEE h:mma")}</div>
+            </>
+          ) : (
+            // A request withdrawn or expired before it was ever scheduled.
+            "Not scheduled"
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-ink">{title}</div>
+          <div className="truncate text-xs text-muted" title={cancelled}>
+            {cancelled}
+          </div>
+          {detail && (
+            <div className="truncate text-xs text-muted" title={detail}>
+              {detail}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="flex w-full items-center justify-end gap-2 pl-[5.75rem] sm:w-auto sm:shrink-0 sm:pl-0">
+        <Badge tone={creditKept(b) ? "warning" : "neutral"}>{cancelledOutcomeLine(b, b.kind)}</Badge>
+      </div>
+    </li>
+  );
+}
+
 /** "Vinyasa Flow on Tue 6 Oct, 7:00am" — the cancel dialog's line under its title. */
 function bookingWhat(b: ApiBooking): string {
   const when = b.starts_at
@@ -1938,30 +1983,36 @@ function bookingWhat(b: ApiBooking): string {
 }
 
 /**
- * What the member has booked and what they did with it, as two tabs of one
- * card. Upcoming in full; history is the most recent the backend sends (the
- * attendance strip in the header counts every one). Cancelled bookings stay in
- * the history — a late cancel is exactly what the front desk looks here for.
+ * What the member has booked and what became of it, as three tabs of one card,
+ * matching the member's own: Upcoming in full; History, what was held (the
+ * most recent the backend sends — the attendance strip in the header counts
+ * every one); Cancelled, every kind from the moment it is cancelled, newest
+ * first, with who cancelled and where the credit went (#352).
  */
 function BookingsSection({
   upcoming,
   past,
+  cancelled,
   onCancel,
 }: {
   upcoming: ApiBooking[];
   past: ApiBooking[];
+  cancelled: ApiCancelledBooking[];
   /** Absent for a read-only viewer. */
   onCancel?: (b: ApiBooking) => void;
 }) {
-  const [tab, setTab] = useState<"upcoming" | "history">(
+  const [tab, setTab] = useState<"upcoming" | "history" | "cancelled">(
     upcoming.length > 0 || past.length === 0 ? "upcoming" : "history",
   );
-  const list = tab === "upcoming" ? upcoming : past;
+  const list: (ApiBooking | ApiCancelledBooking)[] =
+    tab === "upcoming" ? upcoming : tab === "history" ? past : cancelled;
   const { visible, pagination } = usePaged(list, tab);
   const tabs = [
     { id: "upcoming" as const, label: "Upcoming", count: upcoming.length },
     { id: "history" as const, label: "History", count: past.length },
+    { id: "cancelled" as const, label: "Cancelled", count: cancelled.length },
   ];
+  const empty = { upcoming: "Nothing booked.", history: "No past bookings.", cancelled: "No cancelled bookings." }[tab];
   return (
     <Section title="Bookings">
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
@@ -1986,19 +2037,21 @@ function BookingsSection({
               </span>
             </button>
           ))}
-          {tab === "history" && past.length > 0 && (
-            <span className="ml-auto text-xs text-muted">Latest {past.length}</span>
+          {tab !== "upcoming" && list.length > 0 && (
+            <span className="ml-auto hidden text-xs text-muted sm:inline">Latest {list.length}</span>
           )}
         </div>
         {list.length === 0 ? (
-          <div className="px-5 py-6 text-center text-sm text-muted">
-            {tab === "upcoming" ? "Nothing booked." : "No past bookings."}
-          </div>
+          <div className="px-5 py-6 text-center text-sm text-muted">{empty}</div>
         ) : (
           <ul role="tabpanel" className="divide-y divide-border">
-            {visible.map((b) => (
-              <BookingRow key={b.booking_id} b={b} upcoming={tab === "upcoming"} onCancel={onCancel} />
-            ))}
+            {visible.map((b) =>
+              "outcome" in b ? (
+                <CancelledRow key={b.booking_id ?? b.pt_request_id} b={b} />
+              ) : (
+                <BookingRow key={b.booking_id} b={b} upcoming={tab === "upcoming"} onCancel={onCancel} />
+              ),
+            )}
           </ul>
         )}
         <Pagination {...pagination} noun="bookings" />

@@ -19,11 +19,14 @@ import {
   type ClientPackageWithSource,
 } from '../../../services/packages/entitlements'
 import {
+  listCancelledMemberBookings,
   listMemberBookings,
   memberAttendanceSummary,
   type MemberBookingRow,
+  type MemberCancelledRow,
 } from '../../../services/bookings/member-history'
 import { staffCancelPreviewJson } from '../../../services/bookings/staff-cancel-preview'
+import { staffCancellationJson } from '../../../services/bookings/cancellation-summary'
 import { issuedRefundView } from './refund-view'
 import { listMemberPayments, type MemberPaymentView } from '../../../services/billing/member-payments'
 import {
@@ -275,7 +278,7 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
   }
 }
 
-function memberBookingView(b: MemberBookingRow) {
+function memberBookingView(b: MemberBookingRow | MemberCancelledRow) {
   return {
     booking_id: b.bookingId,
     kind: b.kind,
@@ -297,6 +300,19 @@ function memberBookingView(b: MemberBookingRow) {
     // Null when the portal offers no "Cancel booking" on it; otherwise what the
     // cancel dialog asks the Return / Keep credit choice from (#320).
     cancel_preview: staffCancelPreviewJson(b.cancelPreview),
+  }
+}
+
+/**
+ * A cancelled booking — or a private-session request withdrawn or expired
+ * while pending (`booking_id` null, `pt_request_id` set) — with who cancelled,
+ * when, and where the credit went (#352).
+ */
+function cancelledBookingView(b: MemberCancelledRow) {
+  return {
+    ...memberBookingView(b),
+    pt_request_id: b.ptRequestId,
+    ...staffCancellationJson(b.cancellation),
   }
 }
 
@@ -446,6 +462,7 @@ const app = new Hono()
       openPurchases,
       upcoming,
       past,
+      cancelled,
       attendance,
       payments,
     ] = await Promise.all([
@@ -456,6 +473,7 @@ const app = new Hono()
       listOpenPurchases(tid, id),
       listMemberBookings(tid, id, 'upcoming'),
       listMemberBookings(tid, id, 'past'),
+      listCancelledMemberBookings(tid, id),
       memberAttendanceSummary(tid, id),
       listMemberPayments(tid, id),
     ])
@@ -471,8 +489,12 @@ const app = new Hono()
       // renders one card for both.
       past_packages: pastPackages.map(p => packageView(p, refunds[p.id])),
       upcoming_bookings: upcoming.map(memberBookingView),
-      // Capped at the most recent PAST_BOOKINGS_LIMIT; `attendance` counts all.
+      // Held only (attended, no-show, never ticked), capped at the most recent
+      // PAST_BOOKINGS_LIMIT; `attendance` counts all.
       past_bookings: past.map(memberBookingView),
+      // Every kind, from the moment it is cancelled, newest cancellation first,
+      // capped the same way.
+      cancelled_bookings: cancelled.map(cancelledBookingView),
       attendance: {
         attended: attendance.attended,
         no_shows: attendance.noShows,
