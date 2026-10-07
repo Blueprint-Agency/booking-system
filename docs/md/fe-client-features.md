@@ -331,7 +331,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 - Workshops are one or multi-day events with finite capacity. Each workshop has:
   - A list of **days** (`WorkshopDay[]`) — each day has its own date, time window, capacity, and base price.
   - A list of **tiers** (`WorkshopTier[]`) — each tier names a name (e.g. "Full Event", "Day 1 only"), an explicit set of `day_ids` it grants access to, a regular price, and optional early-bird price + cutoff.
-- **Tier capacity is derived** as the *minimum capacity across the days it covers* — a tier can never sell more than the smallest constituent day's room. The server is the authority. As for classes (§3.1), the member is never told a count: a tier with no room reads as full, and the catalogue sends no day's capacities.
+- **Tier capacity is derived** as the *minimum capacity across the days it covers* — a tier can never sell more than the smallest constituent day's room. The server is the authority. As for classes (§3.1), the member is never told a count: a tier with no room reads as full, and the catalogue sends no day's capacities. _As built (#371):_ each tier in `GET /me/workshops/:id` carries `has_room`, true only while every day it covers has a seat left — the same rule the purchase gate refuses `409 workshop_full` by (`services/workshops/book.ts` `tierHasRoom`).
 - Workshops are **paid directly** — credits cannot be used. The card carries a clarification note: *"Direct payment only — credits cannot be used."*
 - Status: upcoming / fully enrolled / ended.
 - Free workshops (price 0) use **"Register"** copy and skip checkout entirely — go directly to a confirmation success page.

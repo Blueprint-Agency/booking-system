@@ -18,6 +18,7 @@ import {
 import { NotFoundError } from '../../shared/errors'
 import { readRoster, readRosters } from '../schedule/roster'
 import { lineupOf, lineupsOf, type Lineup } from '../schedule/lineup'
+import { confirmedPlacesByDay, tierHasRoom } from './book'
 
 export type WorkshopRow = typeof workshops.$inferSelect
 
@@ -54,6 +55,11 @@ interface TierPayload {
   applied_promotion_id: string | null
   ord: number
   day_ids: string[]
+  /**
+   * Whether a place can still be bought: true only while every day the tier
+   * covers has a seat left. A yes or no, never a count (fe-client-features §4.1).
+   */
+  has_room: boolean
   promotions: ReturnType<typeof serializePromotion>[]
 }
 
@@ -104,6 +110,8 @@ async function loadCommon(tenantId: string, workshopIds: string[]) {
     )
     .orderBy(workshopDays.ord)
   const daysByWorkshop = new Map<string, DayPayload[]>()
+  const capacityByDay = new Map(daysRows.map(d => [d.id, d.capacityOnline]))
+  const bookedByDay = await confirmedPlacesByDay(tenantId, daysRows.map(d => d.id))
   for (const d of daysRows) {
     const list = daysByWorkshop.get(d.workshopId) ?? []
     list.push({
@@ -148,6 +156,8 @@ async function loadCommon(tenantId: string, workshopIds: string[]) {
     const wsPromos = promosByWorkshop[t.workshopId] ?? []
     const eff = bestPrice(t.regularPriceSgd, wsPromos)
     const list = tiersByWorkshop.get(t.workshopId) ?? []
+    const dayIds = dayIdsByTier.get(t.id) ?? []
+    const covered = dayIds.map(dayId => ({ dayId, cap: capacityByDay.get(dayId) ?? 0 }))
     list.push({
       id: t.id,
       name: t.name,
@@ -159,7 +169,8 @@ async function loadCommon(tenantId: string, workshopIds: string[]) {
       effective_price_sgd: eff.effectivePriceSgd,
       applied_promotion_id: eff.appliedPromotionId,
       ord: t.ord,
-      day_ids: dayIdsByTier.get(t.id) ?? [],
+      day_ids: dayIds,
+      has_room: tierHasRoom(covered, bookedByDay),
       promotions: wsPromos.map(serializePromotion),
     })
     tiersByWorkshop.set(t.workshopId, list)
