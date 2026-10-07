@@ -15,7 +15,7 @@
  * "No automatic no-show flip. Forfeits only fire when admin/instructor manually
  * marks the row `no-show`." A member who was simply never ticked stays `pending`.
  */
-import { and, asc, eq, gte, inArray, lt, ne, or } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, lt, lte, ne, or } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings, checkIns, waitlistEntries } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
@@ -398,7 +398,10 @@ export interface CheckInDay {
 
 /**
  * Today's classes and PT sessions, each with its roster and check-in state —
- * what the front desk works from. "Today" is the studio's own day.
+ * what the front desk works from. "Today" is the studio's own day, plus the
+ * sessions after midnight whose Check-in Window is already open: a scan or a
+ * tick checks a member into a 00:05 class at 23:50, so the roster the desk
+ * works from must carry it too.
  *
  * An Admin sees every Location (there are no per-location grants; see
  * CONTEXT.md § Admin), narrowed by `locationId` when the desk stands at one.
@@ -415,6 +418,8 @@ export async function listCheckInDay(
   const dayStart = zonedInstant(date, '00:00', timezone)
   const dayEnd = zonedInstant(addDays(date, 1), '00:00', timezone)
   const minutes = await windowMinutes(db, tenantId)
+  // Tomorrow's first sessions, once their Check-in Window is open.
+  const windowOpenUntil = new Date(now.getTime() + minutes * 60_000)
   const mine = input.source === 'instructor'
 
   const classRows = await db
@@ -440,7 +445,7 @@ export async function listCheckInDay(
         eq(classes.tenantId, tenantId),
         eq(classes.lifecycle, 'active'),
         gte(classes.startsAt, dayStart),
-        lt(classes.startsAt, dayEnd),
+        or(lt(classes.startsAt, dayEnd), lte(classes.startsAt, windowOpenUntil)),
         mine ? eq(classes.mainInstructorId, input.staffId) : undefined,
         input.locationId ? eq(classes.locationId, input.locationId) : undefined,
       ),
@@ -467,7 +472,7 @@ export async function listCheckInDay(
         eq(ptSessions.tenantId, tenantId),
         eq(ptSessions.lifecycle, 'active'),
         gte(ptSessions.startsAt, dayStart),
-        lt(ptSessions.startsAt, dayEnd),
+        or(lt(ptSessions.startsAt, dayEnd), lte(ptSessions.startsAt, windowOpenUntil)),
         mine ? eq(ptSessions.instructorId, input.staffId) : undefined,
         input.locationId ? eq(ptSessions.locationId, input.locationId) : undefined,
       ),

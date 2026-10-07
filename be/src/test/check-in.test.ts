@@ -27,6 +27,8 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
   let classTypesSvc!: typeof import('../services/catalog/class-types')
   let classPackagesSvc!: typeof import('../services/packages/class-packages')
   let purchaseSvc!: typeof import('../services/packages/purchase')
+  let checkInSvc!: typeof import('../services/bookings/check-in')
+  let dates!: typeof import('../services/schedule/series-dates')
 
   type Studio = {
     id: string
@@ -113,8 +115,10 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
   }
 
   /** A class `startsIn` from now, taught by `teacher`. */
-  async function addClass(at: Studio, startsIn: number, teacher: Staff): Promise<string> {
-    const startsAt = new Date(Date.now() + startsIn)
+  const addClass = (at: Studio, startsIn: number, teacher: Staff) =>
+    addClassAt(at, new Date(Date.now() + startsIn), teacher)
+
+  async function addClassAt(at: Studio, startsAt: Date, teacher: Staff): Promise<string> {
     const [row] = await harness.db
       .insert(schema.classes)
       .values({
@@ -222,6 +226,8 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
     classTypesSvc = inTenantContext(await import('../services/catalog/class-types'))
     classPackagesSvc = inTenantContext(await import('../services/packages/class-packages'))
     purchaseSvc = inTenantContext(await import('../services/packages/purchase'))
+    checkInSvc = inTenantContext(await import('../services/bookings/check-in'))
+    dates = await import('../services/schedule/series-dates')
 
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
@@ -522,6 +528,33 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
         assert.notEqual(row.state, 'cancelled')
       }
     }
+  })
+
+  test("CHK-16: just before midnight, today's list carries tomorrow's first class once its window is open", async () => {
+    const minutes = await windowOf(one)
+    assert.ok(minutes > 1, 'the seeded window is wide enough to test inside')
+    const [tenant] = await harness.db
+      .select({ timezone: schema.tenants.timezone })
+      .from(schema.tenants)
+      .where(eq(schema.tenants.id, one.id))
+    const tz = tenant!.timezone
+    // A midnight three days out, so no other test's class shares either day.
+    const midnight = dates.zonedInstant(dates.addDays(dates.localDateOf(new Date(), tz), 3), '00:00', tz)
+    const now = new Date(midnight.getTime() - MINUTE)
+    // Opens two minutes before midnight: a member at the desk now is checked in.
+    const soon = await addClassAt(one, new Date(midnight.getTime() + (minutes - 2) * MINUTE), teacherAtOne)
+    // Opens two minutes after midnight: still tomorrow's.
+    const later = await addClassAt(one, new Date(midnight.getTime() + (minutes + 2) * MINUTE), teacherAtOne)
+    const mia = await member(one, 'Mia Midnight')
+    const { bookingId } = await book(mia, soon)
+
+    const list = await checkInSvc.listCheckInDay(one.id, { staffId: adminAtOne.staffId, source: 'admin', now })
+
+    assert.equal(list.date, dates.localDateOf(now, tz), 'the day is still today')
+    const listed = list.sessions.find(s => s.id === soon)
+    assert.ok(listed, "tomorrow's class inside the window is on today's list")
+    assert.equal(listed.roster.find(r => r.bookingId === bookingId)?.checkInState, 'pending')
+    assert.ok(!list.sessions.some(s => s.id === later), "a class whose window has not opened stays tomorrow's")
   })
 
   test('the window is the studio’s to set', async () => {
