@@ -117,9 +117,9 @@ test('coverage is counted by status, per role and per risk, over every row', () 
     row({ role: 'member', risk: 'UX', status: 'failing' }),
     row({ role: 'admin', risk: 'tenancy', status: 'wont-test' }),
   ]
-  const zero = { covered: 0, failing: 0, uncovered: 0, 'wont-test': 0, total: 0 }
+  const zero = { covered: 0, failing: 0, uncovered: 0, 'not built': 0, 'wont-test': 0, total: 0 }
   assert.deepEqual(countCoverage(rows), {
-    all: { covered: 1, failing: 1, uncovered: 1, 'wont-test': 1, total: 4 },
+    all: { covered: 1, failing: 1, uncovered: 1, 'not built': 0, 'wont-test': 1, total: 4 },
     byRole: {
       member: { ...zero, covered: 1, failing: 1, uncovered: 1, total: 3 },
       instructor: zero,
@@ -167,4 +167,35 @@ test('a row naming a test while not marked covered or failing is a problem', () 
 test('tables that are not the Inventory are ignored', () => {
   const md = ['| role | meaning |', '|---|---|', '| admin | runs the studio |'].join('\n')
   assert.deepEqual(readInventory(md), [])
+})
+
+test('an uncovered row starting "Not built." is counted as not built, apart from the uncovered rows', () => {
+  const notBuilt = '**Not built.** **Given** a **When** b **Then** c'
+  const rows = [
+    row({ role: 'member', risk: 'UX', status: 'uncovered', scenario: notBuilt }),
+    row({ role: 'member', risk: 'UX', status: 'uncovered' }),
+    row({ role: 'super', risk: 'money', status: 'uncovered', scenario: notBuilt }),
+    // Any other status wins: the row says what its test does, or why there is none.
+    row({ role: 'super', risk: 'money', status: 'wont-test', scenario: notBuilt }),
+    // Only a scenario that starts with it is a promise not built yet.
+    row({ role: 'member', risk: 'UX', status: 'uncovered', scenario: '**Given** a **When** b **Then** c, see the Not built. note' }),
+  ]
+  const { all, byRole, byRisk } = countCoverage(rows)
+  assert.deepEqual(all, { covered: 0, failing: 0, uncovered: 2, 'not built': 2, 'wont-test': 1, total: 5 })
+  assert.deepEqual([byRole.member.uncovered, byRole.member['not built']], [2, 1])
+  assert.deepEqual([byRole.super.uncovered, byRole.super['not built']], [0, 1])
+  assert.deepEqual([byRisk.UX.uncovered, byRisk.UX['not built']], [2, 1])
+  assert.deepEqual([byRisk.money.uncovered, byRisk.money['not built']], [0, 1])
+})
+
+test('the coverage report prints the not built count beside covered and uncovered', () => {
+  const report = formatCoverage(countCoverage([
+    row({ role: 'member', risk: 'money', status: 'covered' }),
+    row({ role: 'member', risk: 'money', status: 'uncovered' }),
+    row({ role: 'member', risk: 'UX', status: 'uncovered', scenario: '**Not built.** **Given** a **When** b **Then** c' }),
+  ]))
+  assert.match(report, /^All\s+1 of 3 covered \(33%\)\s+1 uncovered, 1 not built$/m)
+  assert.match(report, /^\s+member\s+1 of 3 covered \(33%\)\s+1 uncovered, 1 not built$/m)
+  assert.match(report, /^\s+money\s+1 of 2 covered \(50%\)\s+1 uncovered$/m)
+  assert.match(report, /^\s+UX\s+0 of 1 covered \(0%\)\s+0 uncovered, 1 not built$/m)
 })

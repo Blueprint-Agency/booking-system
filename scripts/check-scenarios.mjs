@@ -6,7 +6,7 @@
  * name — the title string of a `test(…)`, `it(…)` or `describe(…)` — carries
  * that ID. This reads the Inventory and every test file in be/, fe-client/,
  * fe-portal/ and e2e/, then prints covered/uncovered counts by role and by
- * risk.
+ * risk, with the uncovered rows starting **Not built.** counted apart.
  *
  * It fails when a row marked covered (or failing) names a test file that does
  * not exist, or that no longer has a test carrying the row's ID — so the table
@@ -92,17 +92,26 @@ export function findProblems(rows, testIdsByFile) {
   return problems
 }
 
-/** How many rows are in each status, over all rows and per role and per risk. */
+/** A scenario starting with this is a promise whose route still answers `501`. */
+const NOT_BUILT = '**Not built.**'
+
+/**
+ * How many rows are in each status, over all rows and per role and per risk.
+ * An uncovered row whose scenario starts **Not built.** is counted as
+ * `not built` instead of `uncovered`, so `uncovered` is the work owed on what
+ * exists. Its status is still `uncovered`; only the count tells them apart.
+ */
 export function countCoverage(rows) {
-  const tally = () => ({ ...Object.fromEntries(STATUSES.map(s => [s, 0])), total: 0 })
+  const tally = () => ({ ...Object.fromEntries(STATUSES.map(s => [s, 0])), 'not built': 0, total: 0 })
   const all = tally()
   const byRole = Object.fromEntries(ROLES.map(r => [r, tally()]))
   const byRisk = Object.fromEntries(RISKS.map(r => [r, tally()]))
   for (const r of rows) {
+    if (!STATUSES.includes(r.status)) continue // an unknown status is reported by findProblems
+    const bucket = r.status === 'uncovered' && r.scenario.startsWith(NOT_BUILT) ? 'not built' : r.status
     for (const t of [all, byRole[r.role], byRisk[r.risk]]) {
       if (!t) continue // an unknown role or risk is reported by findProblems
-      if (!(r.status in t)) continue // an unknown status is reported by findProblems
-      t[r.status]++
+      t[bucket]++
       t.total++
     }
   }
@@ -113,6 +122,7 @@ export function formatCoverage({ all, byRole, byRisk }) {
   const line = (label, t) => {
     const pct = t.total ? ` (${Math.round((t.covered / t.total) * 100)}%)` : ''
     const extra = [
+      t['not built'] ? `${t['not built']} not built` : '',
       t.failing ? `${t.failing} failing` : '',
       t['wont-test'] ? `${t['wont-test']} won't test` : '',
     ].filter(Boolean)
