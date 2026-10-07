@@ -37,6 +37,7 @@ import {
 import { planPtTypeChange, ptSessionCost } from './cost'
 import { retypeManualSessionInTx } from './manual'
 import { maySchedulePtRequest } from './binding'
+import { assertPartnerEligible } from './request'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export interface SchedulePtRequestInput {
@@ -364,14 +365,13 @@ async function reconcileSessionType(
   if (plan.partner === 'add') {
     partnerId = args.partnerClientId ?? req.coClientId
     if (!partnerId) throw new BadRequestError('partner_required')
-    if (partnerId === req.clientId) throw new BadRequestError('partner_cannot_be_requester')
     const [partner] = await tx
       .select({ id: clients.id, status: clients.status, deletedAt: clients.deletedAt })
       .from(clients)
       .where(and(eq(clients.tenantId, tenantId), eq(clients.id, partnerId)))
       .limit(1)
     if (!partner) throw new NotFoundError('partner_client_not_found')
-    if (partner.status !== 'active' || partner.deletedAt) throw new ConflictError('partner_not_active')
+    assertPartnerEligible(req.clientId, partner)
   }
 
   // --- from here on, writes -------------------------------------------------
