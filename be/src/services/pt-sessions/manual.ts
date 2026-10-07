@@ -32,7 +32,7 @@ import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
-import { debitCredits, refundCredits, type Tx } from '../packages/ledger'
+import { actorOfSource, debitCredits, recordMovement, refundCredits, type Tx } from '../packages/ledger'
 import { activateOnSchedule, reverseActivationOnCancel, sweepExpired } from '../packages/activation'
 import { activationExpiry } from '../packages/validity'
 import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
@@ -264,15 +264,6 @@ async function seatMember(
     })
   }
 
-  await debitCredits(tx, {
-    tenantId,
-    clientId: member.clientId,
-    clientPackageId: pkg.id,
-    amount: SEAT_COST,
-    reason: 'pt_manual_seat',
-    actedByStaffId: actor.actorStaffId,
-  })
-
   await tx.insert(ptSessionClients).values({ tenantId, ptSessionId: session.id, clientId: member.clientId })
   const { qrToken, code } = generateBookingCodes()
   const [booking] = await tx
@@ -289,6 +280,20 @@ async function seatMember(
       code,
     })
     .returning({ id: bookings.id })
+
+  // Paid once the seat's booking exists, so its Credit movement can name it;
+  // an overdraw refused here rolls the seat back with it.
+  await debitCredits(tx, {
+    tenantId,
+    clientId: member.clientId,
+    clientPackageId: pkg.id,
+    amount: SEAT_COST,
+    reason: 'pt_manual_seat',
+    cause: 'booked',
+    bookingId: booking!.id,
+    actor: 'staff',
+    actedByStaffId: actor.actorStaffId,
+  })
 
   await activateOnSchedule(tx, tenantId, pkg.id, session.id)
   return { bookingId: booking!.id, clientPackageId: pkg.id }
@@ -619,6 +624,19 @@ async function cancelSeat(
       clientPackageId: seat.clientPackageId!,
       amount: refunded,
       reason: input.reason,
+      cause: 'returned',
+      bookingId: seat.id,
+      actor: actorOfSource(input.source),
+      actedByStaffId: input.actorStaffId,
+    })
+  } else if (!input.refund && seat.clientPackageId && used > 0) {
+    await recordMovement(tx, {
+      tenantId,
+      clientId: seat.clientId,
+      clientPackageId: seat.clientPackageId,
+      cause: 'kept',
+      bookingId: seat.id,
+      actor: actorOfSource(input.source),
       actedByStaffId: input.actorStaffId,
     })
   }

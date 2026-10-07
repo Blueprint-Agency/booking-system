@@ -27,7 +27,7 @@ import { db } from '../../db'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { inboxItems } from '../../db/schema/inbox'
-import { refundCredits } from '../packages/ledger'
+import { actorOfSource, recordMovement, refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import {
   settleCancel,
@@ -252,6 +252,21 @@ export async function cancelBookingInTx(
       clientPackageId: bk.clientPackageId!,
       amount: used,
       reason: studioReason ? 'package_rule_cancellation_refund' : `${source}_cancellation_refund`,
+      cause: 'returned',
+      bookingId: bk.id,
+      actor: actorOfSource(source),
+      actedByStaffId: actorStaffId ?? null,
+    })
+  } else if (refundOutcome === 'forfeited' && used > 0 && bk.clientPackageId) {
+    // A Late cancel, an over-cap one or a staff Keep credit: the balance stays
+    // as it is, and the history says where the credit went.
+    await recordMovement(tx, {
+      tenantId,
+      clientId: bk.clientId,
+      clientPackageId: bk.clientPackageId,
+      cause: 'kept',
+      bookingId: bk.id,
+      actor: actorOfSource(source),
       actedByStaffId: actorStaffId ?? null,
     })
   }

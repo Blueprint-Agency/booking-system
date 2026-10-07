@@ -47,6 +47,7 @@ import {
   giveComplimentaryPackage,
   removeComplimentaryPackage,
 } from '../../../services/packages/complimentary'
+import { creditHistory, serializeCreditHistory } from '../../../services/packages/credit-history'
 import { changeClientEmail } from '../../../services/clients/change-email'
 import { editClientProfile } from '../../../services/clients/edit-profile'
 import { BadRequestError } from '../../../shared/errors'
@@ -485,6 +486,12 @@ const app = new Hono()
       // purpose — see `openPurchaseView`.
       open_purchases: openPurchases.map(openPurchaseView),
     })
+  })
+  // One package's Credit history (#353) — the profile's per-package history.
+  .get('/:id/packages/:pid/credit-history', zValidator('param', idPkgParam), async c => {
+    const { id, pid } = c.req.valid('param')
+    const history = await creditHistory(tenantId(c), id, pid)
+    return c.json(serializeCreditHistory(history, 'staff'))
   })
   // ---- package wallet edits (admin) ----
   .post('/:id/packages/:pid/adjust', zValidator('param', idPkgParam), zValidator('json', adjustSchema), async c => {

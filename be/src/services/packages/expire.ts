@@ -7,6 +7,7 @@ import { now } from '../../lib/clock'
 import { reportError } from '../../shared/logger'
 import { contentsLine } from '../notifications/purchase-email'
 import { sendTemplatedEmail } from '../notifications/send'
+import { recordExpired } from './ledger'
 
 const DAY_MS = 86_400_000
 
@@ -19,17 +20,21 @@ export async function expirePackages(): Promise<void> {
   const tenantId = currentTenantId()
   // Invariant: jobs/index.ts only ever runs this per tenant.
   if (!tenantId) throw new Error('expirePackages runs inside a tenant context')
-  await db
-    .update(clientPackages)
-    .set({ active: false })
-    .where(
-      and(
-        eq(clientPackages.tenantId, tenantId),
-        eq(clientPackages.active, true),
-        isNotNull(clientPackages.expiresAt),
-        lte(clientPackages.expiresAt, now()),
-      ),
-    )
+  await db.transaction(async tx => {
+    const ended = await tx
+      .update(clientPackages)
+      .set({ active: false })
+      .where(
+        and(
+          eq(clientPackages.tenantId, tenantId),
+          eq(clientPackages.active, true),
+          isNotNull(clientPackages.expiresAt),
+          lte(clientPackages.expiresAt, now()),
+        ),
+      )
+      .returning({ id: clientPackages.id, clientId: clientPackages.clientId, remaining: clientPackages.creditsOrSessionsRemaining })
+    await recordExpired(tx, tenantId, ended)
+  })
 }
 
 /**

@@ -4,7 +4,7 @@ import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
 import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
-import { refundCredits } from '../packages/ledger'
+import { actorOfSource, recordMovement, refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import { ptSessionCost } from './cost'
 import { cancelManualSessionInTx } from './manual'
@@ -132,7 +132,7 @@ export async function cancelPtRequest(
 
     // Refund `n` sessions to the exact debited package (ledger locks the row,
     // re-derives `active` and writes the audit entry).
-    const refundToPackage = async (n: number, reason: string) => {
+    const refundToPackage = async (n: number, reason: string, bookingId: string | null = null) => {
       if (n <= 0 || !req.debitedClientPackageId) return
       await refundCredits(tx, {
         tenantId,
@@ -140,6 +140,10 @@ export async function cancelPtRequest(
         clientPackageId: req.debitedClientPackageId,
         amount: n,
         reason,
+        // A pending request has no booking: its debit comes back as the request's.
+        cause: bookingId ? 'returned' : 'pt_refunded',
+        bookingId,
+        actor: actorOfSource(source),
         actedByStaffId: resolvedByStaffId,
       })
     }
@@ -252,7 +256,19 @@ export async function cancelPtRequest(
         ? 'session_returned'
         : 'forfeited'
 
-    await refundToPackage(refundSessions, staff ? 'pt_admin_cancel_refund' : 'pt_cancel_refund')
+    const requesterBookingId = sessionBookings.find(b => b.clientId === req.clientId)?.id ?? null
+    await refundToPackage(refundSessions, staff ? 'pt_admin_cancel_refund' : 'pt_cancel_refund', requesterBookingId)
+    if (refundOutcome === 'forfeited' && req.debitedClientPackageId) {
+      await recordMovement(tx, {
+        tenantId,
+        clientId: req.clientId,
+        clientPackageId: req.debitedClientPackageId,
+        cause: 'kept',
+        bookingId: requesterBookingId,
+        actor: actorOfSource(source),
+        actedByStaffId: resolvedByStaffId,
+      })
+    }
 
     // The session that Activated the package, cancelled in time, returns it to
     // Dormant (be/docs/adr/0011). Not when the requester's booking was already

@@ -12,6 +12,7 @@ import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { AppError, BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { recordMovement } from '../packages/ledger'
 
 export interface MarkNoShowInput {
   bookingId: string
@@ -23,6 +24,9 @@ export async function markNoShow(tenantId: string, input: MarkNoShowInput): Prom
     const [bk] = await tx
       .select({
         id: bookings.id,
+        clientId: bookings.clientId,
+        clientPackageId: bookings.clientPackageId,
+        used: bookings.creditsOrSessionsUsed,
         state: bookings.state,
         kind: bookings.kind,
         classId: bookings.classId,
@@ -61,5 +65,18 @@ export async function markNoShow(tenantId: string, input: MarkNoShowInput): Prom
       .update(bookings)
       .set({ state: 'no_show', checkInState: 'no_show', refundOutcome: 'forfeited' })
       .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
+
+    // The credit stays spent; the history says so, against the booking.
+    if (bk.clientPackageId && (bk.used ?? 0) > 0) {
+      await recordMovement(tx, {
+        tenantId,
+        clientId: bk.clientId,
+        clientPackageId: bk.clientPackageId,
+        cause: 'no_show',
+        bookingId: bk.id,
+        actor: 'staff',
+        actedByStaffId: input.actorStaffId,
+      })
+    }
   })
 }

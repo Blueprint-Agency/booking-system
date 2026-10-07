@@ -11,6 +11,7 @@ import { AccountPageHeader } from "@/components/account/account-page-header";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { StickyFilters } from "@/components/ui/sticky-filters";
 import { OpenPurchases } from "@/components/account/open-purchases";
+import { CreditHistoryDisclosure } from "@/components/account/credit-history";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BTN_PRIMARY, CARD } from "@/components/ui/styles";
@@ -229,6 +230,8 @@ function PackageCard({
           <ArrowRight className="h-4 w-4 shrink-0" />
         </Link>
       )}
+      {/* An Unlimited Plan has no balance for credits to move through. */}
+      {!isUnlimited && <CreditHistoryDisclosure packageId={pkg.id} unit={isPt ? "session" : "credit"} />}
     </div>
   );
 }

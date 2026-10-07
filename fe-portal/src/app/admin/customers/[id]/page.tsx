@@ -43,6 +43,7 @@ import { RefundDialog } from "@/components/clients/refund-dialog";
 import { REFUND_REFUSALS } from "@/lib/refund-refusals";
 import { GivePackageDialog, type GivePackagePayload } from "@/components/clients/give-package-dialog";
 import { RemovePackageDialog } from "@/components/clients/remove-package-dialog";
+import { CreditHistoryPanel } from "@/components/clients/credit-history-panel";
 import { CancelBookingDialog } from "@/components/bookings/cancel-booking-dialog";
 import type { StaffCancelPreview } from "@/lib/staff-cancel";
 import { ChangeEmailDialog } from "@/components/clients/change-email-dialog";
@@ -240,15 +241,6 @@ function refundProgressBadge(progress: RefundProgress): ReactNode {
   return tag && <Badge tone={tag.tone}>{tag.label}</Badge>;
 }
 
-interface ApiAdjustment {
-  id: string;
-  client_package_id: string;
-  delta: number;
-  reason: string;
-  acted_by_staff_id: string;
-  created_at: string;
-}
-
 interface ApiProfile {
   id: string;
   name: string;
@@ -274,7 +266,6 @@ interface ApiProfile {
   attendance: ApiAttendance;
   payments: ApiPayment[];
   workshop_purchases: ApiWorkshopPurchase[];
-  adjustments: ApiAdjustment[];
   open_purchases: ApiOpenPurchase[];
 }
 
@@ -739,11 +730,12 @@ export default function ClientProfilePage({
                 </Section>
               )}
 
-              {profile.adjustments.length > 0 && (
-                <Section title="Package adjustments" count={profile.adjustments.length}>
-                  <AdjustmentList
-                    adjustments={profile.adjustments}
+              {profile.packages.length + profile.past_packages.length > 0 && (
+                <Section title="Credit history">
+                  <CreditHistoryPanel
+                    clientId={id}
                     packages={[...profile.packages, ...profile.past_packages]}
+                    refreshKey={profile}
                   />
                 </Section>
               )}
@@ -1605,48 +1597,6 @@ function WorkshopPurchaseList({
       </div>
       <Pagination {...pagination} noun="workshop purchases" className={GRID_PAGER} />
     </>
-  );
-}
-
-function AdjustmentList({
-  adjustments,
-  packages,
-}: {
-  adjustments: ApiAdjustment[];
-  packages: ApiPackage[];
-}) {
-  const { visible, pagination } = usePaged(adjustments);
-  return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
-      <ul className="divide-y divide-border">
-        {visible.map((a) => {
-          const pkg = packages.find((p) => p.id === a.client_package_id);
-          const isExpiry = a.reason.startsWith("Expiry");
-          const isSet = a.reason.startsWith("Set ");
-          const badge = isExpiry ? (
-            <Badge tone="neutral">Expiry</Badge>
-          ) : isSet ? (
-            <Badge tone="accent">Set</Badge>
-          ) : (
-            <Badge tone={a.delta > 0 ? "sage" : "error"}>
-              {a.delta > 0 ? "+" : ""}
-              {a.delta}
-            </Badge>
-          );
-          return (
-            <li key={a.id} className="flex items-start gap-3 px-4 py-3 sm:px-5">
-              <div className="w-14 shrink-0">{badge}</div>
-              <div className="min-w-0 flex-1">
-                <div className="break-words text-sm text-ink">{pkg?.package_name ?? "Package"}</div>
-                <div className="break-words text-xs text-muted">{a.reason}</div>
-              </div>
-              <span className="shrink-0 text-xs text-muted">{formatRelative(a.created_at)}</span>
-            </li>
-          );
-        })}
-      </ul>
-      <Pagination {...pagination} noun="adjustments" />
-    </div>
   );
 }
 

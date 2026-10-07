@@ -170,6 +170,8 @@ export async function submitPtRequest(
       clientPackageId: pkg.id,
       amount: cost,
       reason: 'pt_request_submit',
+      cause: 'pt_requested',
+      actor: 'member',
     })
 
     const [req] = await tx

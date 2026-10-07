@@ -2,16 +2,16 @@
  * Admin edits to a client's package wallet — manual credit/session adjustments,
  * absolute balance sets, expiry changes, the Cross-Location Add-On, Home
  * Location moves and a PT Package's Bound Instructor. Every change writes a
- * manual_adjustments ledger row (delta=0
- * for every edit that moves no credits). See be-portal.md §3d.
+ * manual_adjustments ledger row and its Credit movement (`recordAdjustment`;
+ * delta=0 for every edit that moves no credits). See be-portal.md §3d.
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
-import { manualAdjustments } from '../../db/schema/ledger'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { recordAdjustment } from './ledger'
 import { listActiveInstructors } from '../schedule/client-catalog'
 import { computeActive } from './validity'
 import { boundInstructorChange, homeLocationMove, liveUnlimited } from './purchase'
@@ -95,7 +95,7 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
       .set({ creditsOrSessionsRemaining: next, ...patch })
       .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
 
-    await tx.insert(manualAdjustments).values({
+    await recordAdjustment(tx, {
       tenantId: input.tenantId,
       clientId: input.clientId,
       clientPackageId: pkg.id,
@@ -185,7 +185,7 @@ export async function setCrossLocationAddOn(
       .set({ crossLocationPaidSgd: input.paidSgd })
       .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
 
-    await tx.insert(manualAdjustments).values({
+    await recordAdjustment(tx, {
       tenantId: input.tenantId,
       clientId: input.clientId,
       clientPackageId: pkg.id,
@@ -280,16 +280,16 @@ export async function setHomeLocation(input: SetHomeLocationInput): Promise<Clie
 
     // One ledger row per plan moved — the Dormant renewal moved too, and an
     // audit trail that only names one of them hides half the change.
-    await tx.insert(manualAdjustments).values(
-      move.moveIds.map(id => ({
+    for (const id of move.moveIds) {
+      await recordAdjustment(tx, {
         tenantId: input.tenantId,
         clientId: input.clientId,
         clientPackageId: id,
         delta: 0,
         reason: `Home Location changed from ${names.get(wasAt.get(id) ?? '') ?? 'unknown'} to ${to.name}: ${input.reason.trim()}`,
         actedByStaffId: input.actedByStaffId,
-      })),
-    )
+      })
+    }
 
     return { ...pkg, locationId: input.locationId }
   })
@@ -365,7 +365,7 @@ export async function setBoundInstructor(
       .set({ boundInstructorId: change.instructorId })
       .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
 
-    await tx.insert(manualAdjustments).values({
+    await recordAdjustment(tx, {
       tenantId: input.tenantId,
       clientId: input.clientId,
       clientPackageId: pkg.id,
@@ -429,7 +429,7 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
       .set({ expiresAt: input.expiresAt, active: nextActive, activatedByPtSessionId: null })
       .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
 
-    await tx.insert(manualAdjustments).values({
+    await recordAdjustment(tx, {
       tenantId: input.tenantId,
       clientId: input.clientId,
       clientPackageId: pkg.id,

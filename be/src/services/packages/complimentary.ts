@@ -25,7 +25,7 @@ import { reportError } from '../../shared/logger'
 import { cancelBooking } from '../bookings/cancel'
 import { cancelPtRequest } from '../pt-sessions/cancel'
 import { removalRefusal } from './complimentary-removal'
-import type { Tx } from './ledger'
+import { recordAdjustment, type Tx } from './ledger'
 import { grantPackage } from './purchase'
 
 /** What a comp records as paid — for the plan and for an Add-On given with it. */
@@ -92,7 +92,7 @@ export async function giveComplimentaryPackage(
     complimentary: true,
   })
 
-  await db.insert(manualAdjustments).values({
+  await recordAdjustment(db, {
     tenantId,
     clientId: input.clientId,
     clientPackageId: granted.clientPackageId,

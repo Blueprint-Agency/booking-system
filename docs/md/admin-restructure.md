@@ -842,7 +842,7 @@ The actions on a client's active-package kebab, all written into the same immuta
 **Rules:**
 - Balance cannot go below zero — adjustment / set-balance is blocked if it would result in a negative balance.
 - Every action is recorded with timestamp, acting admin, package, delta, reason — immutable.
-- The audit list (renamed **"Package adjustments"**) discriminates row type by `reason.startsWith(...)` and renders tone-coded badges: `Expiry` / `Set N` / `+N` / `−N`.
+- _As built (#353):_ the old **"Package adjustments"** list is replaced by **Credit history**, one package at a time (a picker of the member's packages, current and past). Each row is a Credit movement (backend-architecture §4i) in words — Booked, Returned, Late cancel · credit kept, Over the cancellation limit · credit kept, Staff cancel · credit kept, No-show · credit kept, Expired, Adjusted by staff, Private session requested, Request cancelled · returned — never a raw code like `client_cancellation_refund`. It shows the signed amount, the class or private session and its time, the staff member's name (or Member / System), an adjustment's reason, and the balance after; an expiry shows what it took and a balance of 0. Newest first, with "History from <date>" at its foot. Read by `GET /portal/admin/clients/:id/packages/:pid/credit-history`; each action above writes its ledger row and its movement together.
 - Adjustments do not affect cancellation cap counter (§4) — they are an admin override, not a client action.
 
 ---

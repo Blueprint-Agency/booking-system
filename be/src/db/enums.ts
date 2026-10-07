@@ -163,6 +163,22 @@ export const cancellationKindEnum = pgEnum('cancellation_kind', ['class', 'pt'])
 export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor', 'system'])
 export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual'])
 
+// Credit movements (#353): why a package's balance moved, or — for kept,
+// no_show and expired — why it did not come back. `opening` is the balance the
+// history starts from, written once by migration 0103 for packages bought before it.
+export const creditMovementCauseEnum = pgEnum('credit_movement_cause', [
+  'opening',
+  'booked',
+  'returned',
+  'kept',
+  'no_show',
+  'expired',
+  'adjusted',
+  'pt_requested',
+  'pt_refunded',
+])
+export const creditMovementActorEnum = pgEnum('credit_movement_actor', ['member', 'staff', 'system'])
+
 // Instructor leave (docs/md/spec-instructor-leave.md)
 export const leaveTypeEnum = pgEnum('leave_type', ['annual', 'medical', 'study'])
 // withdrawn = instructor abandons a pending request; cancelled = instructor gives

@@ -13,7 +13,7 @@
 import { and, eq, isNotNull, lte } from 'drizzle-orm'
 import { clientPackages } from '../../db/schema/packages'
 import { manualAdjustments } from '../../db/schema/ledger'
-import type { Tx } from './ledger'
+import { recordExpired, type Tx } from './ledger'
 import { activationExpiry, isDormant } from './validity'
 import { ConflictError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
@@ -29,7 +29,7 @@ export async function sweepExpired(
   clientId: string,
   now: Date,
 ): Promise<void> {
-  await tx
+  const ended = await tx
     .update(clientPackages)
     .set({ active: false })
     .where(
@@ -41,6 +41,8 @@ export async function sweepExpired(
         lte(clientPackages.expiresAt, now),
       ),
     )
+    .returning({ id: clientPackages.id, clientId: clientPackages.clientId, remaining: clientPackages.creditsOrSessionsRemaining })
+  await recordExpired(tx, tenantId, ended)
 }
 
 /**

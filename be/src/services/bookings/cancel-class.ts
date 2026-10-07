@@ -138,6 +138,9 @@ export async function cancelClass(
             source === 'instructor'
               ? 'instructor_class_cancellation_refund'
               : 'admin_class_cancellation_refund',
+          cause: 'returned',
+          bookingId: bk.id,
+          actor: 'staff',
           actedByStaffId: actorStaffId,
         })
         refundedCount++

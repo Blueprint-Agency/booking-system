@@ -17,6 +17,7 @@ The tables and what deletion does to each are one list, `MEMBER_TABLES` in `be/s
 | The member's profile at this studio | `clients` |
 | Bookings, cancellations, check-ins | `bookings`, `cancellations`, `check_ins` |
 | Manual credit adjustments (credit movements with a staff member's free-text reason — no money, and the reason may name the member) | `manual_adjustments` |
+| Credit history (which of their bookings spent or returned which credits — no money) | `credit_movements` |
 | Waiver signatures | `waiver_signatures` |
 | Their PT requests and proposed slots, and their place on PT sessions | `pt_requests`, `pt_request_slots`, `pt_session_clients` |
 | Corporate enquiries | `corporate_requests` |
