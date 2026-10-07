@@ -156,7 +156,8 @@ row's ID**.
 node scripts/check-scenarios.mjs
 ```
 
-It prints covered/uncovered counts by role and by risk, and exits non-zero when a row marked
+It prints covered/uncovered counts by role and by risk, with uncovered rows whose scenario starts
+**Not built.** counted apart as "not built" (still `uncovered` in the table), and exits non-zero when a row marked
 `covered` or `failing` names a test file that is gone or no longer has a test carrying the ID. It
 also fails on a row it cannot read (bad ID, a value outside its list, an ID used twice, a table
 header that is off), and on a row that names a test but is not marked `covered` or `failing`. The
