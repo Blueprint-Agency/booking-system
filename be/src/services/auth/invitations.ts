@@ -646,7 +646,9 @@ export async function resendInvitation(
   }
 
   const now = new Date()
-  const expiresAt = new Date(now.getTime() + INVITE_TTL_MS)
+  // The clock's: the expiry is a deadline `findInvitation` reads against the
+  // clock. `createdAt` is a record stamp and stays on real time.
+  const expiresAt = new Date(clockNow().getTime() + INVITE_TTL_MS)
 
   // Before the extension, for the reason `inviteAdmin` gives: an invitation
   // whose expiry was pushed out but whose email could not be built is a link
