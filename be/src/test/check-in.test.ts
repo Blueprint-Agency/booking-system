@@ -301,7 +301,7 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.equal((await checkInsOf(bookingId))[0]?.method, 'code')
   })
 
-  test('a second scan of the same code is a friendly no-op, never a second row', async () => {
+  test('CHK-17 a second scan of the same code is a friendly no-op, never a second row', async () => {
     const cal = await member(one, 'Cal Twice')
     const { bookingId, qrToken, code } = await book(cal, await addClass(one, 5 * MINUTE, teacherAtOne))
     assert.equal((await scan(adminAtOne, { qr_token: qrToken })).status, 200)
@@ -316,7 +316,7 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.equal(rows[0]?.method, 'qr', 'the first scan is the one on record')
   })
 
-  test('check-in opens the studio’s window before the start, and not a minute earlier', async () => {
+  test('CHK-18 check-in opens the studio’s window before the start, and not a minute earlier', async () => {
     const minutes = await windowOf(one)
     assert.ok(minutes > 1, 'the seeded window is wide enough to test inside')
     const dee = await member(one, 'Dee Early')
@@ -343,7 +343,7 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.equal((await bookingRow(bookingId)).checkInState, 'pending')
   })
 
-  test('a manual tick works early inside the window, but a no-show still waits for the start', async () => {
+  test('CHK-21 a manual tick works early inside the window, but a no-show still waits for the start', async () => {
     const eve = await member(one, 'Eve Tick')
     const { bookingId } = await book(eve, await addClass(one, 5 * MINUTE, teacherAtOne))
 
@@ -388,7 +388,7 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.equal((await bookingRow(bookingId)).checkInState, 'attended')
   })
 
-  test('a PT session is checked in the same way, and listed with the day', async () => {
+  test('CHK-25 a PT session is checked in the same way, and listed with the day', async () => {
     const pia = await member(one, 'Pia Personal')
     const startsAt = new Date(Date.now() + 5 * MINUTE)
     const [session] = await harness.db
@@ -444,7 +444,7 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.ok(!(await at(two.locationId)).includes(classId))
   })
 
-  test('unknown codes, cancelled bookings and cancelled classes are refused by name', async () => {
+  test('CHK-19 unknown codes, cancelled bookings and cancelled classes are refused by name', async () => {
     const unknown = await scan(adminAtOne, { code: 'RT-ZZZZZZ' })
     assert.equal(unknown.status, 404)
     assert.equal(unknown.body.error, 'booking_not_found')
@@ -472,7 +472,7 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.equal(off.body.error, 'session_cancelled')
   })
 
-  test("another studio's code resolves to nothing, and touches nothing", async () => {
+  test("CHK-20 another studio's code resolves to nothing, and touches nothing", async () => {
     const ivy = await member(one, 'Ivy Elsewhere')
     const { bookingId, qrToken, code } = await book(ivy, await addClass(one, 5 * MINUTE, teacherAtOne))
 
@@ -484,6 +484,70 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
     }
     assert.equal((await bookingRow(bookingId)).checkInState, 'pending')
     assert.equal((await checkInsOf(bookingId)).length, 0)
+  })
+
+  const noShow = (who: Staff, bookingId: string) =>
+    harness.app.request(`/api/v1/portal/admin/bookings/${bookingId}/no-show`, { method: 'POST', headers: who.headers })
+
+  test('CHK-22 a member marked a no-show who is then checked in, by scan or by tick, is attended with the no-show and its forfeit cleared', async () => {
+    for (const way of ['scan', 'tick'] as const) {
+      const lou = await member(one, `Lou Late ${way}`)
+      const classId = await addClass(one, 5 * MINUTE, teacherAtOne)
+      const { bookingId, code } = await book(lou, classId)
+      await moveClass(classId, -10 * MINUTE)
+      assert.equal((await noShow(adminAtOne, bookingId)).status, 200)
+      const missed = await bookingRow(bookingId)
+      assert.equal(missed.state, 'no_show')
+      assert.equal(missed.refundOutcome, 'forfeited')
+
+      const res = way === 'scan' ? await scan(adminAtOne, { code }) : await tick(adminAtOne, bookingId, true)
+      assert.equal(res.status, 200, JSON.stringify(res.body))
+
+      const arrived = await bookingRow(bookingId)
+      assert.equal(arrived.state, 'confirmed', way)
+      assert.equal(arrived.checkInState, 'attended', way)
+      assert.equal(arrived.refundOutcome, 'n_a', `${way}: the forfeit is cleared`)
+      assert.equal((await checkInsOf(bookingId)).length, 1, way)
+    }
+  })
+
+  test('CHK-27 a no-show on an Unlimited-paid booking moves nothing: no Credit movement, no cancellation, the plan’s end date unchanged', async () => {
+    const max = await member(one, 'Max Plan')
+    const ends = new Date(Date.now() + 20 * DAY)
+    const [plan] = await harness.db
+      .insert(schema.clientPackages)
+      .values({
+        tenantId: one.id,
+        clientId: max.clientId,
+        kind: 'unlimited',
+        locationId: one.locationId,
+        durationMonths: 1,
+        expiresAt: ends,
+        active: true,
+        amountPaidSgd: '300.00',
+        listPriceSgd: '300.00',
+      })
+      .returning({ id: schema.clientPackages.id })
+    const classId = await addClass(one, 5 * MINUTE, teacherAtOne)
+    const { bookingId } = await book(max, classId)
+    const booked = await bookingRow(bookingId)
+    assert.equal(booked.clientPackageId, plan!.id, 'the running plan paid')
+    assert.equal(booked.creditsOrSessionsUsed, 0)
+    await moveClass(classId, -10 * MINUTE)
+
+    assert.equal((await noShow(adminAtOne, bookingId)).status, 200)
+
+    assert.equal((await bookingRow(bookingId)).state, 'no_show')
+    const [after] = await harness.db.select().from(schema.clientPackages).where(eq(schema.clientPackages.id, plan!.id))
+    assert.equal(after!.expiresAt?.getTime(), ends.getTime(), 'the plan’s end date is unchanged')
+    assert.equal(after!.active, true)
+    const movements = await harness.db.select().from(schema.creditMovements).where(eq(schema.creditMovements.clientPackageId, plan!.id))
+    assert.deepEqual(
+      movements.filter(m => m.cause === 'no_show'),
+      [],
+      'no Credit movement records the no-show: a plan has nothing to keep',
+    )
+    assert.equal((await harness.db.select().from(schema.cancellations).where(eq(schema.cancellations.bookingId, bookingId))).length, 0)
   })
 
   test('an instructor checks in their own class and is refused anyone else’s', async () => {

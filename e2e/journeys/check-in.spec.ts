@@ -11,7 +11,7 @@ import { signInMember, signInStaff, studio } from '../src/studio'
  * headless browser, and the QR encodes the same booking (the backend suite
  * covers the scan by token).
  */
-test('a member shows their code at the desk and is checked in', async ({ browser }) => {
+test('CHK-23 a member shows their code at the desk and is checked in', async ({ browser }) => {
   const { urls, catalogue, members, staff } = studio()
 
   const member = await browser.newPage({ viewport: { width: 360, height: 740 } })
