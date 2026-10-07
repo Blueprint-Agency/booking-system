@@ -113,8 +113,11 @@ the predictor of CI remains the whole serial `npm run check`.
 ## Time
 
 A rule that turns on the current instant — a cancellation window, a package's expiry, a daily
-job's hour — reads it from `be/src/lib/clock.ts`, never from `new Date()`. Production never sets
-that clock. A backend test holds it through the harness:
+job's hour — reads it from `be/src/lib/clock.ts`, never from `new Date()` or SQL `now()`. That
+includes a deadline written for a rule to read later (an invitation's expiry, a former Slug's
+redirect window, a Promo Code Hold). What stays on real time: record stamps (`updated_at`,
+`archived_at`), cache and rate-limit timers, and the auth server's own session and verification
+expiries. Production never sets that clock. A backend test holds it through the harness:
 
 ```ts
 harness.clock.set(cutoff)      // the app now thinks it is exactly `cutoff`
