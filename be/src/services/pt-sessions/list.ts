@@ -4,9 +4,10 @@ import { db } from '../../db'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { classTypes, locations, rooms } from '../../db/schema/catalog'
 import { ptRequests, ptRequestSlots, ptSessions } from '../../db/schema/schedule'
-import { bookings } from '../../db/schema/bookings'
+import { bookings, cancellations } from '../../db/schema/bookings'
 import { clientPackages } from '../../db/schema/packages'
 import type { PtRequestOrigin } from '../../db/enums'
+import { summarizeCancellation, type CancelledBy } from '../bookings/cancellation-summary'
 
 export interface ClientPtRequestView {
   id: string
@@ -43,6 +44,80 @@ export interface ClientPtRequestView {
   booking: { qrToken: string; code: string; checkInState: string; refundOutcome: string } | null
   /** Cancellation outcome when the request is terminal; null while active/pending. */
   refundOutcome: string | null
+  /** How it ended, on a cancelled or expired request or a seat the member left; null while live (#351). */
+  cancellation: PtCancellation | null
+}
+
+/**
+ * Who ended a PT request or seat, as the member reading it sees it: themselves
+ * (`member`), the studio, or — to a 2on1 partner — the host who cancelled their
+ * own request. Null when it expired unscheduled: nobody cancelled it.
+ */
+export type PtCancelledBy = CancelledBy | 'host'
+
+export interface PtCancellation {
+  cancelledAt: Date | null
+  cancelledBy: PtCancelledBy | null
+  expired: boolean
+}
+
+/** A `cancellations` row on a booking of the session, as the summary reads it. */
+interface SessionRecord {
+  bookingId: string
+  clientId: string
+  source: string
+  wasWithinWindow: boolean
+  wasWithinCap: boolean
+  cancelledAt: Date
+}
+
+/**
+ * How a cancelled request (or seat) ended, from what its cancel recorded and
+ * nothing else (#351), read through the class's `summarizeCancellation`:
+ *
+ *   - Unscheduled: the request's own fields. A staff cancel records its staff
+ *     member; an expiry is the system's, made once `expires_at` had passed;
+ *     anything else the requester withdrew.
+ *   - Scheduled: the `cancellations` row on the member's own booking (a
+ *     manual seat's, or the requester's), else the requester's row (what a
+ *     2on1 partner reads — the host's own cancel is the host's), else the
+ *     request's resolver.
+ */
+function ptCancellation(
+  r: { requesterClientId: string; status: string; resolvedAt: Date | null; resolvedByStaffId: string | null; expiresAt: Date | null },
+  clientId: string,
+  mine: { id: string; cancelledAt: Date | null; refundOutcome: string } | null,
+  records: SessionRecord[],
+): PtCancellation {
+  const theirs = (who: string): PtCancelledBy => (who === clientId ? 'member' : 'host')
+  if (r.status === 'cancelled_before_scheduled') {
+    const expired = !r.resolvedByStaffId && !!r.expiresAt && !!r.resolvedAt && r.resolvedAt >= r.expiresAt
+    return {
+      cancelledAt: r.resolvedAt,
+      cancelledBy: expired ? null : r.resolvedByStaffId ? 'studio' : theirs(r.requesterClientId),
+      expired,
+    }
+  }
+  const record =
+    records.find(c => c.bookingId === mine?.id) ?? records.find(c => c.clientId === r.requesterClientId) ?? null
+  if (!record) {
+    return {
+      cancelledAt: mine?.cancelledAt ?? r.resolvedAt,
+      cancelledBy: r.resolvedByStaffId ? 'studio' : theirs(r.requesterClientId),
+      expired: false,
+    }
+  }
+  const summary = summarizeCancellation({
+    refundOutcome: mine?.refundOutcome ?? null,
+    creditsUsed: 0,
+    bookingCancelledAt: mine?.cancelledAt ?? null,
+    record,
+  })
+  return {
+    cancelledAt: summary.cancelledAt,
+    cancelledBy: summary.cancelledBy === 'member' ? theirs(record.clientId) : 'studio',
+    expired: false,
+  }
 }
 
 export async function listClientPtRequests(
@@ -69,6 +144,9 @@ export async function listClientPtRequests(
       coClientName: ptRequests.coClientName,
       createdAt: ptRequests.createdAt,
       expiresAt: ptRequests.expiresAt,
+      resolvedAt: ptRequests.resolvedAt,
+      resolvedByStaffId: ptRequests.resolvedByStaffId,
+      coClientId: ptRequests.coClientId,
       sessionId: ptSessions.id,
       sessionStartsAt: ptSessions.startsAt,
       sessionEndsAt: ptSessions.endsAt,
@@ -82,11 +160,30 @@ export async function listClientPtRequests(
     .leftJoin(ptSessions, eq(ptSessions.id, ptRequests.scheduledPtSessionId))
     .leftJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
     .leftJoin(rooms, eq(rooms.id, ptSessions.roomId))
-    // Caller is either the requester OR the 2on1 partner (co_client_id).
+    // Caller is the requester, the 2on1 partner (co_client_id), or held a seat
+    // since cancelled: a manual session's request follows who is still booked,
+    // so a member who left keeps their seat only through its booking (#351).
     .where(
       and(
         eq(ptRequests.tenantId, tenantId),
-        or(eq(ptRequests.clientId, clientId), eq(ptRequests.coClientId, clientId)),
+        or(
+          eq(ptRequests.clientId, clientId),
+          eq(ptRequests.coClientId, clientId),
+          inArray(
+            ptRequests.scheduledPtSessionId,
+            db
+              .select({ id: bookings.ptSessionId })
+              .from(bookings)
+              .where(
+                and(
+                  eq(bookings.tenantId, tenantId),
+                  eq(bookings.clientId, clientId),
+                  eq(bookings.kind, 'pt'),
+                  eq(bookings.state, 'cancelled'),
+                ),
+              ),
+          ),
+        ),
       ),
     )
     .orderBy(desc(ptRequests.createdAt))
@@ -111,11 +208,24 @@ export async function listClientPtRequests(
 
   // This member's booking on each scheduled session (QR/code/check-in for the card).
   const sessionIds = reqRows.map(r => r.sessionId).filter((v): v is string => !!v)
-  const bookingBySession = new Map<string, { qrToken: string; code: string; checkInState: string; refundOutcome: string }>()
+  type MyBooking = {
+    id: string
+    state: string
+    cancelledAt: Date | null
+    qrToken: string
+    code: string
+    checkInState: string
+    refundOutcome: string
+  }
+  const bookingBySession = new Map<string, MyBooking>()
+  const recordsBySession = new Map<string, SessionRecord[]>()
   if (sessionIds.length) {
     const bks = await db
       .select({
+        id: bookings.id,
         ptSessionId: bookings.ptSessionId,
+        state: bookings.state,
+        cancelledAt: bookings.cancelledAt,
         qrToken: bookings.qrToken,
         code: bookings.code,
         checkInState: bookings.checkInState,
@@ -129,27 +239,50 @@ export async function listClientPtRequests(
           inArray(bookings.ptSessionId, sessionIds),
         ),
       )
-    for (const b of bks) {
-      if (b.ptSessionId) {
-        bookingBySession.set(b.ptSessionId, {
-          qrToken: b.qrToken,
-          code: b.code,
-          checkInState: b.checkInState,
-          refundOutcome: b.refundOutcome,
-        })
+    for (const { ptSessionId, ...b } of bks) {
+      // A member seated again after leaving holds two: the live one is theirs.
+      if (ptSessionId && bookingBySession.get(ptSessionId)?.state !== 'confirmed') {
+        bookingBySession.set(ptSessionId, b)
       }
+    }
+
+    // Every cancellation recorded on the sessions' bookings: who cancelled.
+    const records = await db
+      .select({
+        ptSessionId: bookings.ptSessionId,
+        bookingId: cancellations.bookingId,
+        clientId: cancellations.clientId,
+        source: cancellations.source,
+        wasWithinWindow: cancellations.wasWithinWindow,
+        wasWithinCap: cancellations.wasWithinCap,
+        cancelledAt: cancellations.cancelledAt,
+      })
+      .from(cancellations)
+      .innerJoin(bookings, eq(bookings.id, cancellations.bookingId))
+      .where(and(eq(cancellations.tenantId, tenantId), inArray(bookings.ptSessionId, sessionIds)))
+    for (const { ptSessionId, ...c } of records) {
+      if (ptSessionId) recordsBySession.set(ptSessionId, [...(recordsBySession.get(ptSessionId) ?? []), c])
     }
   }
 
   return reqRows.map(r => {
-    const role: 'requester' | 'partner' = r.requesterClientId === clientId ? 'requester' : 'partner'
+    // On the request no longer, yet listed: a seat they held, paid for and
+    // left (#351). Theirs, as a requester's is: nobody hosted them.
+    const seatLeft = r.requesterClientId !== clientId && r.coClientId !== clientId
+    const role: 'requester' | 'partner' = r.requesterClientId === clientId || seatLeft ? 'requester' : 'partner'
     const booking = r.sessionId ? bookingBySession.get(r.sessionId) ?? null : null
+    const status = seatLeft ? 'cancelled_after_scheduled' : r.status
     const refundOutcome =
-      r.status === 'cancelled_before_scheduled'
-        ? 'session_returned'
-        : r.status === 'cancelled_after_scheduled'
+      status === 'cancelled_before_scheduled'
+        ? // The debit was the requester's: a partner had nothing to get back.
+          role === 'requester' ? 'session_returned' : 'n_a'
+        : status === 'cancelled_after_scheduled'
           ? (booking?.refundOutcome ?? (role === 'requester' ? 'forfeited' : 'n_a'))
           : null
+    const cancellation =
+      status === 'cancelled_before_scheduled' || status === 'cancelled_after_scheduled'
+        ? ptCancellation({ ...r, status }, clientId, booking, r.sessionId ? (recordsBySession.get(r.sessionId) ?? []) : [])
+        : null
     return {
       id: r.id,
       classTypeId: r.classTypeId,
@@ -157,7 +290,7 @@ export async function listClientPtRequests(
       locationId: r.locationId,
       locationName: r.locationName ?? 'Studio',
       sessionType: r.sessionType as '1on1' | '2on1',
-      status: r.status,
+      status,
       role,
       requesterName: r.requesterName,
       // The requester's private note to the instructor isn't the partner's to read.
@@ -179,6 +312,7 @@ export async function listClientPtRequests(
         : null,
       booking,
       refundOutcome,
+      cancellation,
     }
   })
 }

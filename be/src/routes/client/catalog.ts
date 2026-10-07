@@ -28,6 +28,8 @@ function serializeCorporateRequest(r: HydratedCorporateRequest) {
     status: r.status,
     package: r.package,
     created_at: r.createdAt.toISOString(),
+    // Only the studio cancels one; resolving it to `cancelled` is when (#351).
+    cancelled_at: r.status === 'cancelled' ? (r.resolvedAt?.toISOString() ?? null) : null,
     session: r.session
       ? {
           starts_at: r.session.startsAt.toISOString(),

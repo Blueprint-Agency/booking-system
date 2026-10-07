@@ -280,6 +280,72 @@ export function cancelledWhen(by: CancelledBy, when: string): string {
   return `${by === "studio" ? "Cancelled" : "You cancelled"} · ${when}`;
 }
 
+// ── Private sessions, workshops and corporate on Cancelled (#351) ─────────────
+
+/** Who ended a PT request or seat: to a 2on1 partner, the host's cancel is the host's. */
+export type PtCancelledBy = CancelledBy | "host";
+
+/** What `GET /me/pt-sessions` says of one cancelled or expired request, or a seat the member left. */
+export interface CancelledPt {
+  status: string;
+  /** `n_a` for a 2on1 partner, who paid nothing. */
+  refund_outcome?: "session_returned" | "forfeited" | "n_a" | null;
+  /** Null when it expired unscheduled: nobody cancelled it. */
+  cancelled_by?: PtCancelledBy | null;
+  expired?: boolean;
+}
+
+/** A cancelled card's two lines: when (and by the member), and the outcome. */
+export interface CancelledLines {
+  when: string;
+  outcome: string;
+}
+
+/**
+ * A cancelled or expired private session's lines. Who is said once: "You
+ * cancelled" on the when line, or "Cancelled by …" on the outcome line. A
+ * session comes back or is kept, never refunded; a 2on1 partner paid nothing,
+ * so their line says only who cancelled.
+ */
+export function ptCancelled(r: CancelledPt, when: string): CancelledLines {
+  const what =
+    !r.refund_outcome || r.refund_outcome === "n_a"
+      ? null
+      : r.refund_outcome === "session_returned"
+        ? "session returned"
+        : "session kept";
+  const and = what ? ` · ${what}` : "";
+  if (r.expired) return { when: `Expired · ${when}`, outcome: `Request expired${and}` };
+  if (r.cancelled_by === "member") {
+    const outcome =
+      r.status === "cancelled_before_scheduled"
+        ? `Request cancelled${and}`
+        : what === "session kept"
+          ? "Cancelled over your cap · session kept"
+          : what
+            ? "Session returned"
+            : "Nothing to return";
+    return { when: cancelledWhen("member", when), outcome };
+  }
+  const by = r.cancelled_by === "host" ? "the host" : "the studio";
+  return { when: cancelledWhen("studio", when), outcome: `Cancelled by ${by}${and}` };
+}
+
+/**
+ * A cancelled workshop place's lines. Only the studio cancels one; the money
+ * goes back to the card (`stripe_refunded`) or the studio arranges it.
+ */
+export function workshopCancelled(refundOutcome: string, when: string): CancelledLines {
+  return refundOutcome === "stripe_refunded"
+    ? { when: `Cancelled by the studio · ${when}`, outcome: "Refunded to your card" }
+    : { when: cancelledWhen("studio", when), outcome: "Cancelled by the studio · any refund is arranged by the studio" };
+}
+
+/** A cancelled corporate request's lines: only the studio cancels one. */
+export function corporateCancelled(when: string): CancelledLines {
+  return { when: cancelledWhen("studio", when), outcome: "Cancelled by the studio" };
+}
+
 /** The class overlay's standing line for a cancelled booking. */
 export function cancelledStanding(by: CancelledBy): string {
   return by === "studio" ? "The studio cancelled this booking" : "You cancelled this booking";

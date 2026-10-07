@@ -48,6 +48,9 @@ function serializeRequest(r: Awaited<ReturnType<typeof listClientPtRequests>>[nu
     created_at: r.createdAt,
     expires_at: r.expiresAt,
     refund_outcome: r.refundOutcome,
+    cancelled_at: r.cancellation?.cancelledAt?.toISOString() ?? null,
+    cancelled_by: r.cancellation?.cancelledBy ?? null,
+    expired: r.cancellation?.expired ?? false,
     slots: r.slots.map(s => ({ proposed_date: s.proposedDate, start_time: s.startTime, end_time: s.endTime })),
     session: r.session
       ? {
