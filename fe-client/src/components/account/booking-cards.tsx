@@ -30,7 +30,7 @@ import { useBrandCopy } from "@/components/brand/brand-provider";
 import { BTN_CANCEL } from "@/components/ui/styles";
 import { cn, formatDate } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
-import type { BookingItem, BookingType } from "@/lib/my-bookings";
+import type { BookingItem, BookingPhase, BookingType } from "@/lib/my-bookings";
 import {
   formatSlotRange,
   ptCancelFailure,
@@ -44,6 +44,8 @@ import {
   canCancelClass,
   cancelClosed,
   cancelDeadlineLine,
+  cancelledWhen,
+  classCancelledOutcome,
   canStillCancel,
   isLate,
   ptCancelPrompt,
@@ -210,7 +212,8 @@ export function ClassBookingCard({
   const past = !ongoing && !canCancelClass(b.starts_at);
   const cancelled = b.state === "cancelled";
   const attended = b.check_in_state === "attended";
-  const noShow = b.check_in_state === "no_show" || b.state === "no_show";
+  // Only staff marking the member absent makes a No-show (#349).
+  const noShow = b.check_in_state === "no_show";
   // Cancellable until it starts; inside its window it is a late cancel.
   const open = !cancelled && canCancelClass(b.starts_at);
   const deadline = `${formatDate(b.cancel_deadline)} · ${formatClassTime(b.cancel_deadline)}`;
@@ -263,6 +266,23 @@ export function ClassBookingCard({
     >
       {open && (
         <p className="mt-2 text-xs text-muted">{cancelDeadlineLine(isLate(b.cancel_deadline), deadline)}</p>
+      )}
+      {cancelled && b.cancelled_by && b.outcome && (
+        <div className="mt-2 space-y-0.5 text-xs">
+          {b.cancelled_at && (
+            <p className="text-muted tabular-nums">
+              {cancelledWhen(b.cancelled_by, `${formatDate(b.cancelled_at)} · ${formatClassTime(b.cancelled_at)}`)}
+            </p>
+          )}
+          <p className="font-medium text-ink/80">
+            {classCancelledOutcome({
+              cancelled_by: b.cancelled_by,
+              late: b.late ?? false,
+              outcome: b.outcome,
+              credits_used: b.credits_used,
+            })}
+          </p>
+        </div>
       )}
     </BookingCard>
   );
@@ -472,7 +492,7 @@ function workshopWhen(b: ApiWorkshopBooking): string {
   return b.ends_at ? timeRange(b.starts_at, b.ends_at) : formatClassTime(b.starts_at);
 }
 
-export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorkshopBooking; phase: "upcoming" | "ongoing" | "past" }) {
+export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorkshopBooking; phase: BookingPhase }) {
   const cancelled = b.state === "cancelled";
   const past = phase === "past";
   const status: Status | null = cancelled

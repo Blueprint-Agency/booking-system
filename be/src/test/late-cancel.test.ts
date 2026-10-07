@@ -392,6 +392,84 @@ describe('member late cancellation and the Cancellation Cap', { skip: integratio
     }
   })
 
+  /* ── The Cancelled tab (#349) ────────────────────────────────────── */
+
+  async function list(who: Member, tab: 'upcoming' | 'past' | 'cancelled'): Promise<any[]> {
+    const res = await send('GET', `/me/bookings/${tab}`, who.headers)
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    return res.body.bookings
+  }
+
+  /** What the Cancelled tab says of one booking: who, whether late, and where the credit went. */
+  const summary = (b: any) => ({ cancelled_by: b.cancelled_by, late: b.late, outcome: b.outcome })
+
+  test('ACC-29 a class late-cancelled an hour before it starts is on Cancelled at once, with when, by whom and "credit kept"', async () => {
+    const who = await member()
+    const late = await bookedIn(who, HOUR)
+    const before = Date.now()
+    assert.equal((await cancel(who, late)).status, 200)
+
+    const cancelled = await list(who, 'cancelled')
+    assert.deepEqual(cancelled.map(b => b.booking_id), [late], 'on Cancelled before its class time')
+    assert.deepEqual(summary(cancelled[0]), { cancelled_by: 'member', late: true, outcome: 'credit_kept_late' })
+    const at = new Date(cancelled[0].cancelled_at).getTime()
+    assert.ok(at >= before - 1000 && at <= Date.now() + 1000, 'cancelled_at is when she cancelled')
+    assert.equal(cancelled[0].credits_used, 1)
+    assert.equal(cancelled[0].state, 'cancelled')
+    assert.deepEqual(await list(who, 'upcoming'), [], 'no longer upcoming')
+    assert.deepEqual(await list(who, 'past'), [], 'nor past')
+  })
+
+  test('ACC-30 an in-time, an over-cap and an Unlimited cancel each read their outcome on Cancelled, newest cancellation first', async () => {
+    await setPolicy({ cancel_cap_count: 1 })
+    try {
+      const who = await member()
+      const inTime = await bookedIn(who, IN_TIME)
+      // Earlier in the day but cancelled second: Cancelled orders by the cancel, not the class.
+      const overCap = await bookedIn(who, IN_TIME - 2 * HOUR)
+      assert.equal((await cancel(who, inTime)).body.refund_outcome, 'credit_returned')
+      assert.equal((await cancel(who, overCap)).body.refund_outcome, 'forfeited')
+
+      const cancelled = await list(who, 'cancelled')
+      assert.deepEqual(cancelled.map(b => b.booking_id), [overCap, inTime], 'newest cancellation first')
+      assert.deepEqual(summary(cancelled[1]), { cancelled_by: 'member', late: false, outcome: 'credit_returned' })
+      assert.equal(cancelled[1].credits_used, 1, 'the count the "credit returned" line names')
+      assert.deepEqual(summary(cancelled[0]), { cancelled_by: 'member', late: false, outcome: 'credit_kept_over_cap' })
+
+      // An Unlimited Plan spent nothing: in time or late, there is nothing to return.
+      const unlimited = await member('unlimited')
+      const free = await bookedIn(unlimited, IN_TIME)
+      const freeLate = await bookedIn(unlimited, LATE)
+      await cancel(unlimited, free)
+      await cancel(unlimited, freeLate)
+      const theirs = await list(unlimited, 'cancelled')
+      assert.deepEqual(theirs.map(b => b.booking_id), [freeLate, free])
+      assert.deepEqual(summary(theirs[0]), { cancelled_by: 'member', late: true, outcome: 'nothing_to_return' })
+      // Over her cap of one, yet it spent nothing: nothing to return, not "credit kept".
+      assert.deepEqual(summary(theirs[1]), { cancelled_by: 'member', late: false, outcome: 'nothing_to_return' })
+    } finally {
+      await setPolicy({ cancel_cap_count: 10 })
+    }
+  })
+
+  test('ACC-31 a class the studio cancelled reads "by the studio" on Cancelled, with the credit returned or kept as staff chose', async () => {
+    const who = await member()
+    const whole = await addClass(IN_TIME)
+    const wholeBooking = await booked(who, whole.id)
+    const res = await send('POST', `/portal/admin/schedule/classes/${whole.id}/cancel`, admin.headers, {})
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+
+    const kept = await bookedIn(who, LATE)
+    const staffKeep = await send('POST', `/portal/admin/bookings/${kept}/cancel`, admin.headers, { credit: 'keep' })
+    assert.equal(staffKeep.status, 200, JSON.stringify(staffKeep.body))
+
+    const cancelled = await list(who, 'cancelled')
+    assert.deepEqual(cancelled.map(b => b.booking_id), [kept, wholeBooking])
+    assert.deepEqual(summary(cancelled[1]), { cancelled_by: 'studio', late: false, outcome: 'credit_returned' })
+    // A staff cancel is never the member's Late cancel, whatever its timing.
+    assert.deepEqual(summary(cancelled[0]), { cancelled_by: 'studio', late: false, outcome: 'credit_kept' })
+  })
+
   test('CXL-44 the cap switch round-trips through the Policy page and reaches the member’s policy read', async () => {
     const off = await setPolicy({ cancel_cap_enabled: false })
     try {

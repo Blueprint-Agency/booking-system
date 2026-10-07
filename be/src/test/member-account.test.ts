@@ -335,6 +335,7 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
     '/me/packages',
     '/me/bookings/upcoming',
     '/me/bookings/past',
+    '/me/bookings/cancelled',
     '/me/workshop-bookings',
     '/me/pt-sessions',
     '/me/corporate-requests',
@@ -483,7 +484,9 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
 
   // ── My Classes ───────────────────────────────────────────────────────────
 
-  test('ACC-03 the Past tab gives each finished class its outcome: attended, no-show and cancelled', async () => {
+  // #349: the Past tab holds only what was held. A cancelled class is on the
+  // Cancelled tab, whatever its time (CXL-54..CXL-57 in late-cancel.test.ts).
+  test('ACC-03 the Past tab gives each class she held its outcome, attended or no-show; a cancelled class is on Cancelled instead', async () => {
     const dev = await member(one, 'Dev Classes')
     const eve = await member(one, 'Eve Classes')
     const attended = await classBooking(one, dev, await addClass(one, -3 * DAY), { state: 'confirmed', checkIn: 'attended' })
@@ -496,13 +499,15 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
     const past = (await ok(get('/me/bookings/past', dev.headers))).bookings as any[]
     assert.deepEqual(
       past.map(b => b.booking_id),
-      [cancelled, noShow, attended],
-      'her three finished classes, most recent first, and nobody else’s',
+      [noShow, attended],
+      'her two held classes, most recent first, and neither her cancelled one nor anybody else’s',
     )
     const outcome = (b: any) => ({ state: b.state, check_in_state: b.check_in_state })
-    assert.deepEqual(outcome(past[0]), { state: 'cancelled', check_in_state: 'n_a' })
-    assert.deepEqual(outcome(past[1]), { state: 'no_show', check_in_state: 'no_show' })
-    assert.deepEqual(outcome(past[2]), { state: 'confirmed', check_in_state: 'attended' })
+    assert.deepEqual(outcome(past[0]), { state: 'no_show', check_in_state: 'no_show' })
+    assert.deepEqual(outcome(past[1]), { state: 'confirmed', check_in_state: 'attended' })
+
+    const gone = (await ok(get('/me/bookings/cancelled', dev.headers))).bookings as any[]
+    assert.deepEqual(gone.map(b => b.booking_id), [cancelled], 'her cancelled class is on Cancelled')
 
     const next = (await ok(get('/me/bookings/upcoming', dev.headers))).bookings as any[]
     assert.deepEqual(next.map(b => b.booking_id), [upcoming])
@@ -755,6 +760,7 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
     await hold(one, mia, 'bundle', new Date(Date.now() + 30 * DAY))
     await classBooking(one, mia, await addClass(one, -DAY), { state: 'confirmed', checkIn: 'attended' })
     await classBooking(one, mia, await addClass(one, DAY), { state: 'confirmed', checkIn: 'pending' })
+    await classBooking(one, mia, await addClass(one, 2 * DAY), { state: 'cancelled', checkIn: 'n_a' })
     await workshopBooking(one, mia, await addWorkshop(one, 3 * DAY))
     await ptRequest(one, mia, '1on1', await hold(one, mia, '1on1', null))
     const [pkg] = await harness.db
@@ -787,6 +793,7 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
       '/me/packages': 'client_packages',
       '/me/bookings/upcoming': 'bookings',
       '/me/bookings/past': 'bookings',
+      '/me/bookings/cancelled': 'bookings',
       '/me/workshop-bookings': 'workshop_bookings',
       '/me/pt-sessions': 'pt_requests',
       '/me/corporate-requests': 'corporate_requests',

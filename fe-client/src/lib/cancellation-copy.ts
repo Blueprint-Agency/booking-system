@@ -229,6 +229,62 @@ export function classCancelResult(
   return { tone: "ok", text: "Booking cancelled." };
 }
 
+// ── The Cancelled tab (#349) ────────────────────────────────────────────────
+
+/** Who cancelled, as the backend's cancellation summary says. */
+export type CancelledBy = "member" | "studio";
+
+/** Where the credit went, as the backend's cancellation summary says. */
+export type CancellationOutcome =
+  | "credit_returned"
+  | "credit_kept_late"
+  | "credit_kept_over_cap"
+  | "credit_kept"
+  | "nothing_to_return";
+
+/** What `GET /me/bookings/cancelled` says of one cancelled class. */
+export interface CancelledClass {
+  cancelled_by: CancelledBy;
+  late: boolean;
+  outcome: CancellationOutcome;
+  /** Credits the booking spent: the count a returned line names. */
+  credits_used: number;
+}
+
+/**
+ * A cancelled class's one outcome line: where the credit went, and why when it
+ * was kept. A class the studio cancelled says so here. A credit is returned or
+ * kept, never refunded.
+ */
+export function classCancelledOutcome(c: CancelledClass): string {
+  const n = c.credits_used;
+  const what = {
+    credit_returned: n > 1 ? `${n} credits returned` : "credit returned",
+    credit_kept_late: "credit kept",
+    credit_kept_over_cap: "credit kept",
+    credit_kept: "credit kept",
+    nothing_to_return: "nothing to return",
+  }[c.outcome];
+  if (c.cancelled_by === "studio") return `Cancelled by the studio · ${what}`;
+  if (c.late) return `Late cancel · ${what}`;
+  if (c.outcome === "credit_kept_over_cap") return `Cancelled over your cap · ${what}`;
+  return what.charAt(0).toUpperCase() + what.slice(1);
+}
+
+/**
+ * When it was cancelled — and by the member, since a studio cancel's outcome
+ * line already says "Cancelled by the studio". `when` is the cancel time as the
+ * page formats times.
+ */
+export function cancelledWhen(by: CancelledBy, when: string): string {
+  return `${by === "studio" ? "Cancelled" : "You cancelled"} · ${when}`;
+}
+
+/** The class overlay's standing line for a cancelled booking. */
+export function cancelledStanding(by: CancelledBy): string {
+  return by === "studio" ? "The studio cancelled this booking" : "You cancelled this booking";
+}
+
 /**
  * The line on an upcoming booking: until when a cancel is in time, or that it
  * no longer is. `when` is the deadline as the page formats times.

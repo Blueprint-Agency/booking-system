@@ -1,11 +1,14 @@
 /**
  * "Your bookings": everything a member holds at the studio — classes, PT
  * sessions and requests, workshops, corporate requests — as one list, each
- * placed in Upcoming, Ongoing or Past. Pure, so the placing is tested
- * (`my-bookings.test.ts`) apart from the page that draws it.
+ * placed in Upcoming, Ongoing, Past or Cancelled. Pure, so the placing is
+ * tested (`my-bookings.test.ts`) apart from the page that draws it.
  *
  * A request still waiting on the studio (a pending PT or corporate request)
  * counts as Upcoming: it is something coming, and it can still be cancelled.
+ * Past holds only what was held; a cancelled class is on Cancelled from the
+ * moment it is cancelled, whatever its time (#349). PT, workshop and corporate
+ * cancellations still sit in Past until they follow (#351).
  */
 import type { ApiBooking } from "@/components/account/class-bookings";
 import type { ApiWorkshopBooking } from "@/components/account/workshop-bookings";
@@ -13,7 +16,7 @@ import type { RawPtRequest } from "@/lib/pt-sessions";
 import type { ApiCorporateRequest } from "@/lib/corporate";
 
 export type BookingType = "class" | "pt" | "workshop" | "corporate";
-export type BookingPhase = "upcoming" | "ongoing" | "past";
+export type BookingPhase = "upcoming" | "ongoing" | "past" | "cancelled";
 
 interface Base {
   /** Unique across types: `${type}:${id}`. */
@@ -32,8 +35,10 @@ export type BookingItem =
 export interface BookingSources {
   /** `GET /me/bookings/upcoming` — classes not yet started. */
   upcoming: ApiBooking[];
-  /** `GET /me/bookings/past` — classes started, running or ended. */
+  /** `GET /me/bookings/past` — classes held: started, running or ended, not cancelled. */
   past: ApiBooking[];
+  /** `GET /me/bookings/cancelled` — cancelled classes, any time, with their cancellation. */
+  cancelled: ApiBooking[];
   pt: RawPtRequest[];
   workshops: ApiWorkshopBooking[];
   corporate: ApiCorporateRequest[];
@@ -70,6 +75,15 @@ export function bookingItems(src: BookingSources, now: number): BookingItem[] {
       booking: b,
     });
   }
+  for (const b of src.cancelled) {
+    items.push({
+      type: "class",
+      key: `class:${b.booking_id}`,
+      phase: "cancelled",
+      at: b.cancelled_at ?? b.starts_at,
+      booking: b,
+    });
+  }
 
   for (const r of src.pt) {
     const at = r.session?.starts_at ?? firstSlot(r) ?? r.created_at;
@@ -99,9 +113,12 @@ export function bookingItems(src: BookingSources, now: number): BookingItem[] {
   return items;
 }
 
-/** Soonest first while it is still to come; most recent first once it is over. */
+/**
+ * Soonest first while it is still to come; most recent first once it is over;
+ * newest cancellation first on Cancelled (a cancelled item is `at` its cancel).
+ */
 export function sortForPhase(items: BookingItem[], phase: BookingPhase): BookingItem[] {
-  const dir = phase === "past" ? -1 : 1;
+  const dir = phase === "past" || phase === "cancelled" ? -1 : 1;
   return [...items].sort((a, b) => dir * a.at.localeCompare(b.at));
 }
 

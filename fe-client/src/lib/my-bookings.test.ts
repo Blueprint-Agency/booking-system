@@ -5,7 +5,7 @@ import { bookingItems, sessionsOnDay, sortForPhase, type BookingSources } from "
 const NOW = Date.parse("2026-09-27T10:00:00+08:00");
 const at = (h: number) => new Date(NOW + h * 3_600_000).toISOString();
 
-const empty: BookingSources = { upcoming: [], past: [], pt: [], workshops: [], corporate: [] };
+const empty: BookingSources = { upcoming: [], past: [], cancelled: [], pt: [], workshops: [], corporate: [] };
 
 // Only the fields the placing reads; the rest of each wire shape is irrelevant here.
 const cls = (id: string, start: number, end: number, state = "confirmed") =>
@@ -29,8 +29,22 @@ test("a class is upcoming until it starts, ongoing while it runs, past once it e
   );
 });
 
-test("a cancelled class that would still be running is past, not ongoing", () => {
-  assert.deepEqual(phases({ past: [cls("b", -0.5, 0.5, "cancelled")] }), { "class:b": "past" });
+// #349: a cancelled class is on Cancelled from the moment it is cancelled,
+// whatever its time — never Upcoming, Ongoing or Past.
+test("ACC-32 a cancelled class is on Cancelled whether it is still to come, running or over", () => {
+  const gone = (id: string, start: number, cancelledAt: number) =>
+    ({ ...(cls(id, start, start + 1, "cancelled") as object), cancelled_at: at(cancelledAt) }) as never;
+  assert.deepEqual(
+    phases({ cancelled: [gone("soon", 1, -0.1), gone("now", -0.5, -2), gone("old", -30, -40)] }),
+    { "class:soon": "cancelled", "class:now": "cancelled", "class:old": "cancelled" },
+  );
+});
+
+test("ACC-32 Cancelled lists the newest cancellation first, whatever the class time", () => {
+  const gone = (id: string, start: number, cancelledAt: number) =>
+    ({ ...(cls(id, start, start + 1, "cancelled") as object), cancelled_at: at(cancelledAt) }) as never;
+  const items = bookingItems({ ...empty, cancelled: [gone("later-class", 48, -5), gone("earlier-class", 2, -1)] }, NOW);
+  assert.deepEqual(sortForPhase(items, "cancelled").map((i) => i.key), ["class:earlier-class", "class:later-class"]);
 });
 
 test("a pending PT request is upcoming; a scheduled one follows its session; the rest are past", () => {
@@ -75,8 +89,12 @@ test("a day's sessions are the ones its tile counted: attended, or booked and no
         checkedIn(cls("morning", -2, -1), "attended"),
         // Ran, but never ticked: still booked, so the tile counted it.
         checkedIn(cls("unticked", -3, -2), "pending"),
-        cls("gone", -4, -3, "cancelled"),
         checkedIn(cls("n", -2, -1), "no_show"),
+      ],
+      // Cancelled, today and still to come: neither attended nor booked.
+      cancelled: [
+        { ...(cls("gone", -4, -3, "cancelled") as object), cancelled_at: at(-5) } as never,
+        { ...(cls("dropped-later", 2, 3, "cancelled") as object), cancelled_at: at(-1) } as never,
       ],
       pt: [
         pt("done", "attended", [-6, -5]),

@@ -18,9 +18,10 @@ export async function readBookingSources(api: Api): Promise<BookingSources> {
       reportError(err, { scope });
       return fallback;
     });
-  const [upcoming, past, pt, workshops, corporate] = await Promise.all([
+  const [upcoming, past, cancelled, pt, workshops, corporate] = await Promise.all([
     api.get<{ bookings: ApiBooking[] }>("/me/bookings/upcoming"),
     api.get<{ bookings: ApiBooking[] }>("/me/bookings/past"),
+    api.get<{ bookings: ApiBooking[] }>("/me/bookings/cancelled"),
     optional(makePtSessionsApi(api).listRequests(), { pt_requests: [] as RawPtRequest[] }, "bookings-pt"),
     optional(
       api.get<{ workshop_bookings: ApiWorkshopBooking[] }>("/me/workshop-bookings"),
@@ -36,6 +37,7 @@ export async function readBookingSources(api: Api): Promise<BookingSources> {
   return {
     upcoming: upcoming.bookings ?? [],
     past: past.bookings ?? [],
+    cancelled: cancelled.bookings ?? [],
     pt: pt.pt_requests ?? [],
     workshops: workshops.workshop_bookings ?? [],
     corporate: corporate.corporate_requests ?? [],
