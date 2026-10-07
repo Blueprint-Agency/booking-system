@@ -395,6 +395,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     facts([
       ['Workshop', '{{workshop_name}}'],
       ['Starts', '{{date}}'],
+      ['Amount paid', '{{amount_paid}}'],
     ]),
     'Your check-in code is <strong>{{code}}</strong>.',
     `${link('{{qr_url}}', 'Show your QR code')}<br />${emailLink('{{receipt_url}}', 'View your purchase')}`,
@@ -432,6 +433,11 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
    * serves a Credit Bundle, an Unlimited Plan and a PT package without ever
    * mentioning Activation to the first two.
    *
+   * `amount_paid` is the one figure, and it is safe as one: it reads the same
+   * for every kind, currency included, and a free purchase prints the zero
+   * amount (#370). The confirmation is the member's receipt, so it says what
+   * they paid.
+   *
    * The anchor text is neutral on purpose: `receipt_url` is the provider's
    * receipt on a paid purchase and the account page on a free one.
    */
@@ -441,6 +447,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       ['Package', '{{package_name}}'],
       ['Includes', '{{contents_line}}'],
       ['Validity', '{{validity_line}}'],
+      ['Amount paid', '{{amount_paid}}'],
     ]),
     link('{{receipt_url}}', 'View your purchase'),
   ])
@@ -452,6 +459,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       ['Your pass', '{{package_name}}'],
       ['Includes', '{{contents_line}}'],
       ['Validity', '{{validity_line}}'],
+      ['Amount paid', '{{amount_paid}}'],
     ]),
     'Book your first class whenever you are ready. Arrive ten minutes early and someone will show you around.',
     link('{{receipt_url}}', 'View your account'),

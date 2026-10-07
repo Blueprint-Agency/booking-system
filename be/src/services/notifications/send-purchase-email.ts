@@ -16,13 +16,14 @@ import { db } from '../../db'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
-import { stripePayments } from '../../db/schema/ledger'
+import { purchases, stripePayments } from '../../db/schema/ledger'
+import { toCents, toSgd } from '../../shared/money'
 import { workshops, workshopDays, workshopTierDays } from '../../db/schema/schedule'
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { NotFoundError } from '../../shared/errors'
 import { sgFormat } from '../../lib/time'
-import { composePurchaseEmail } from './purchase-email'
+import { amountPaid, composePurchaseEmail } from './purchase-email'
 import { sendTemplatedEmail } from './send'
 
 /**
@@ -83,6 +84,9 @@ export async function sendPackagePurchaseEmail(
         ptPackageName: ptPackages.name,
         boundInstructorName: staffUsers.name,
         receiptUrl: stripePayments.receiptUrl,
+        purchasePaidSgd: purchases.amountPaidSgd,
+        packagePaidSgd: clientPackages.amountPaidSgd,
+        crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
       })
       .from(clientPackages)
       .innerJoin(clients, eq(clients.id, clientPackages.clientId))
@@ -94,6 +98,7 @@ export async function sendPackagePurchaseEmail(
       // Through the sale, not the intent (#92). One payment per Purchase today,
       // so this picks the same row it always did.
       .leftJoin(stripePayments, eq(stripePayments.purchaseId, clientPackages.purchaseId))
+      .leftJoin(purchases, eq(purchases.id, clientPackages.purchaseId))
       .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
       .limit(1)
     if (!row) throw new NotFoundError('client_package_not_found', { clientPackageId })
@@ -107,6 +112,13 @@ export async function sendPackagePurchaseEmail(
       durationMonths: row.durationMonths,
       validityDays: row.validityDays,
       boundInstructorName: row.boundInstructorName,
+      // The sale's own figure (#370): what the Purchase collected, which is
+      // the plan and any Cross-Location Add-On bought with it. A free purchase
+      // is granted with no Purchase on the package, and the package records
+      // what it cost — zero.
+      amountPaidSgd:
+        row.purchasePaidSgd ??
+        toSgd(toCents(row.packagePaidSgd) + toCents(row.crossLocationPaidSgd ?? 0)),
       receiptUrl: row.receiptUrl,
       accountUrl: await accountUrlFor(tenantId),
     })
@@ -131,9 +143,9 @@ export async function sendPackagePurchaseEmail(
  * in the set — it produces a confirmed booking with a QR code and a date, and
  * used to send nothing at all.
  *
- * The workshop template's declared variables are unchanged, so this fills the
- * six it already has; `receipt_url` falls back to the account page the same way,
- * because an escaped empty value inside an href renders a link that goes nowhere.
+ * Fills the workshop template's seven declared variables; `receipt_url` falls
+ * back to the account page the same way, because an escaped empty value inside
+ * an href renders a link that goes nowhere.
  */
 export async function sendWorkshopPurchaseEmail(
   tenantId: string,
@@ -149,11 +161,14 @@ export async function sendWorkshopPurchaseEmail(
         clientEmail: clients.email,
         clientId: clients.id,
         receiptUrl: stripePayments.receiptUrl,
+        purchasePaidSgd: purchases.amountPaidSgd,
+        bookingPaidSgd: bookings.amountPaidSgd,
       })
       .from(bookings)
       .innerJoin(clients, eq(clients.id, bookings.clientId))
       .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
       .leftJoin(stripePayments, eq(stripePayments.purchaseId, bookings.purchaseId))
+      .leftJoin(purchases, eq(purchases.id, bookings.purchaseId))
       .where(
         and(
           eq(bookings.tenantId, tenantId),
@@ -191,6 +206,9 @@ export async function sendWorkshopPurchaseEmail(
         date: firstDay ? SG_DATETIME.format(firstDay.startsAt) : 'See your account for the date',
         qr_url: await workshopQrUrlFor(tenantId),
         code: row.code,
+        // The sale's figure; a free tier is booked with no Purchase, and the
+        // booking records the zero it cost (required on every workshop place).
+        amount_paid: amountPaid(row.purchasePaidSgd ?? row.bookingPaidSgd ?? '0.00'),
         receipt_url: row.receiptUrl || (await accountUrlFor(tenantId)),
       },
     })
