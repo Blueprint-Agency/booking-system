@@ -76,7 +76,8 @@ export async function listSchedule(
   tenantId: string,
   opts: ListScheduleOptions,
 ): Promise<ScheduleEntryRow[]> {
-  const now = new Date()
+  // Every entry's event state turns on this instant: the app's clock, never the wall's.
+  const now = clockNow()
   const out: ScheduleEntryRow[] = []
   const wantClass = !opts.type || opts.type === 'class'
   // Workshops no longer carry a class type, so a class-type filter excludes them entirely.
