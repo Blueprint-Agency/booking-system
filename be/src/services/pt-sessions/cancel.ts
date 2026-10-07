@@ -38,15 +38,25 @@ import { now as clockNow } from '../../lib/clock'
  * Terminal states are an idempotent no-op. Credit movements write a
  * manual_adjustments ledger row for traceability/parity with the class path.
  */
-export type CancelPtSource = 'client' | 'admin' | 'system'
+/**
+ * Who cancelled (#350): the member, an admin, the session's instructor, or the
+ * studio's machinery — an expiry, a Complimentary Package's Remove. Every
+ * source but the member's settles as a staff cancel.
+ */
+export type CancelPtSource = 'client' | 'admin' | 'instructor' | 'system'
 
 export interface CancelPtRequestInput {
   ptRequestId: string
   source: CancelPtSource
   /** Required for source='client' — asserts the request belongs to this client. */
   clientId?: string
-  /** Staff actor for admin cancels (recorded on the request + ledger). */
+  /**
+   * Staff actor for a staff cancel (recorded on the request + ledger, and on
+   * the cancellation for admin or instructor), or whose act set off a system one.
+   */
   actorStaffId?: string
+  /** The expiry cron: a pending request's debit comes back as an expiry refund. */
+  expired?: boolean
   /**
    * When set (instructor-initiated cancel), restricts the action to a SCHEDULED
    * session the instructor personally runs. Instructors cannot cancel pending
@@ -55,8 +65,8 @@ export interface CancelPtRequestInput {
   requireOwnInstructorId?: string
   /**
    * Why staff cancelled, shown to the member on their booking. Optional, and
-   * recorded only for a staff cancel (source='admin'): a member's own cancel
-   * and an expiry carry none.
+   * recorded only for an admin or instructor cancel: a member's own cancel and
+   * a system one carry none.
    */
   note?: string | null
 }
@@ -106,11 +116,13 @@ export async function cancelPtRequest(
     }
 
     const cost = ptSessionCost(req.sessionType)
-    const resolvedByStaffId = source === 'admin' ? (actorStaffId ?? null) : null
+    const staff = source !== 'client'
+    const byPerson = source === 'admin' || source === 'instructor'
+    const resolvedByStaffId = staff ? (actorStaffId ?? null) : null
 
     // Written first, in this transaction, so every branch below — the manual
     // session's included — carries it, and a refused cancel rolls it back.
-    const cancelNote = source === 'admin' ? input.note?.trim() || null : null
+    const cancelNote = byPerson ? input.note?.trim() || null : null
     if (cancelNote) {
       await tx
         .update(ptRequests)
@@ -136,7 +148,7 @@ export async function cancelPtRequest(
     if (req.status === 'pending') {
       await refundToPackage(
         cost,
-        source === 'system' ? 'pt_request_expiry_refund' : 'pt_request_cancel_refund',
+        input.expired ? 'pt_request_expiry_refund' : 'pt_request_cancel_refund',
       )
       await tx
         .update(ptRequests)
@@ -183,19 +195,19 @@ export async function cancelPtRequest(
       return cancelManualSessionInTx(tx, tenantId, {
         req,
         session,
-        source: source === 'client' ? 'client' : 'admin',
+        source,
         ...(clientId ? { clientId } : {}),
         actorStaffId: resolvedByStaffId,
         now,
       })
     }
 
-    // Refund decision. Admin bypasses window/cap (always full); client is gated
-    // by the PT window + shared cancellation cap.
+    // Refund decision. Staff (and system) bypass window/cap (always full);
+    // client is gated by the PT window + shared cancellation cap.
     let refundSessions = 0
     let wasWithinWindow = true
     let wasWithinCap = true
-    if (source === 'admin') {
+    if (staff) {
       refundSessions = cost
       // The window never decides a staff cancel's refund, but it is recorded
       // truthfully, and a late one keeps the package Activated (below).
@@ -240,7 +252,7 @@ export async function cancelPtRequest(
         ? 'session_returned'
         : 'forfeited'
 
-    await refundToPackage(refundSessions, source === 'admin' ? 'pt_admin_cancel_refund' : 'pt_cancel_refund')
+    await refundToPackage(refundSessions, staff ? 'pt_admin_cancel_refund' : 'pt_cancel_refund')
 
     // The session that Activated the package, cancelled in time, returns it to
     // Dormant (be/docs/adr/0011). Not when the requester's booking was already
@@ -262,7 +274,7 @@ export async function cancelPtRequest(
       .set({
         lifecycle: 'cancelled',
         cancelledAt: now,
-        cancelledByStaffId: source === 'admin' ? (actorStaffId ?? null) : null,
+        cancelledByStaffId: resolvedByStaffId,
       })
       .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, session.id)))
 
@@ -289,7 +301,8 @@ export async function cancelPtRequest(
         bookingId: requesterBooking.id,
         clientId: req.clientId,
         kind: 'pt',
-        source: source === 'admin' ? 'admin' : 'client',
+        source,
+        cancelledByStaffId: byPerson ? (actorStaffId ?? null) : null,
         wasWithinWindow,
         wasWithinCap,
         refundFired: refundSessions > 0,
@@ -304,7 +317,7 @@ export async function cancelPtRequest(
 
     await tx.insert(inboxItems).values({
       tenantId,
-      type: source === 'admin' ? 'admin_cancel_class_pt' : 'client_cancellation',
+      type: staff ? 'admin_cancel_class_pt' : 'client_cancellation',
       payload: {
         ptRequestId,
         ptSessionId: session.id,
@@ -349,6 +362,7 @@ export async function expireStaleSessions(): Promise<void> {
       await cancelPtRequest(row.tenantId, {
         ptRequestId: row.id,
         source: 'system',
+        expired: true,
       })
     } catch (err) {
       // A request that raced into a terminal/scheduled state between the scan and

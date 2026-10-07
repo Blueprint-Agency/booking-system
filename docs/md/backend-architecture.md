@@ -828,7 +828,8 @@ Workshop bookings cover **the tier**, not individual days. Per-day attendance / 
 | booking_id | uuid | FK → bookings.id |
 | client_id | uuid | FK → clients.id (denormalised for query) |
 | kind | enum | `class`, `pt` (workshops not represented; admin-cancel still logged but excluded) |
-| source | enum | `client`, `admin` — `admin` cancellations don't count toward cap |
+| source | enum | `client`, `admin`, `instructor`, `system` (a Void, a Remove, a Package rule change; #350) — only `client` counts toward the cap |
+| cancelled_by_staff_id | uuid | FK → staff_users.id; the staff member behind an `admin` / `instructor` cancel, null for `client`, `system` and rows before #350 |
 | was_within_window, was_within_cap, refund_fired | boolean | not null |
 | cancelled_at | timestamptz | not null |
 

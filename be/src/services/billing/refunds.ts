@@ -1150,7 +1150,7 @@ async function stampRefundRequested(tenantId: string, paymentIntentId: string): 
 
 /**
  * Cancel every future booking the voided purchase paid for, through the existing
- * cancel service with an admin source — so waitlist promotion comes free and
+ * cancel service with a `system` source — so waitlist promotion comes free and
  * there is one cancellation path rather than two.
  *
  * Only `confirmed` and `pending` bookings whose session is still ahead are
@@ -1201,7 +1201,7 @@ async function cancelFutureBookings(
   for (const t of targets) {
     try {
       // A Voided package takes nothing back whichever way `credit` points: `n_a`.
-      await cancelBooking(tenantId, { bookingId: t.id, source: 'admin', credit: 'return', packageVoided: true })
+      await cancelBooking(tenantId, { bookingId: t.id, source: 'system', credit: 'return', packageVoided: true })
       cancelled.push({ name: t.name, startsAt: t.startsAt })
     } catch (err) {
       // One booking that will not cancel — checked in between the read and the
