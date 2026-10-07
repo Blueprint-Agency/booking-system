@@ -101,27 +101,31 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 
 ### Tests gate the backend deploy
 
-`deploy-be.yml` runs a `test` job before `deploy`, and `deploy` declares `needs: test`. A red
-backend suite means no image is built and neither stack is touched.
+`deploy-be.yml` runs the suite as a `test-shard` matrix and a `test` job that needs every slice of
+it before `deploy`, and `deploy` declares `needs: test`. A red backend suite means no image is built
+and neither stack is touched.
 
 - **What runs.** `npm run check` (`be/scripts/check.mjs`), the command a local run uses: the whole
   backend suite (`be/src/**/*.test.ts`, `be/tools/**/*.test.ts` and `be/scripts/**/*.test.mjs`)
-  against a throwaway `postgres:16` service container. The job sets only `TEST_DATABASE_URL`; the
-  rest of the environment comes from `be/src/test/environment.ts`, locally and in CI alike.
+  against a throwaway `postgres:16` service container — as six slices (`SHARD=i/6`) in parallel
+  jobs, each with a container of its own, since the harness locks its database for a whole run
+  (`testing.md` § Shards in CI). The job sets only `TEST_DATABASE_URL` and `SHARD`; the rest of the
+  environment comes from `be/src/test/environment.ts`, locally and in CI alike.
 - **No durability.** That container runs with `fsync`, `synchronous_commit` and `full_page_writes`
   off, safe for a database the job throws away ([Non-Durable Settings](https://www.postgresql.org/docs/16/non-durability.html)).
-- **Serially, in one process** (`--experimental-test-isolation=none`, with
-  `--import ./src/test/environment.ts`). The suite is green serially and flaky in parallel: the RLS
-  coverage test's probe table races the transfer test's table count. Serial is the gate; fixing the
-  flake is separate work. One process means the app is imported and the test database set up once
-  for the whole run instead of once per file. A run in this mode is serial anyway. What that asks
-  of a test file is in `testing.md` § Running the backend tests.
+- **Serially, in one process, within a slice** (`--experimental-test-isolation=none`, with
+  `--import ./src/test/environment.ts`). The suite is green serially and flaky in parallel on one
+  database: the RLS coverage test's probe table races the transfer test's table count. Serial is
+  the gate; the parallelism is between slices on separate databases, never between files on one.
+  One process means the app is imported and the test database set up once per slice instead of
+  once per file. What that asks of a test file is in `testing.md` § Running the backend tests.
 - **Skips fail the job.** `npm run check` refuses to start without `TEST_DATABASE_URL`, so the
-  integration tests cannot skip themselves for want of a database, and the job fails unless the
+  integration tests cannot skip themselves for want of a database, and every slice fails unless its
   TAP summary reads `# skipped 0`, so a `test.skip` cannot pass as a pass either.
 - **Stateless.** The job tests the commit in front of it and nothing else: it records no count and
   reuses no earlier run's result. Every push runs the whole suite, whether or not a pull request
-  already tested the same tree; at ~6 minutes, that costs less than the bookkeeping that skipped it.
+  already tested the same tree; at ~2 minutes wall-clock, that costs less than the bookkeeping
+  that skipped it.
 - **One workflow per pull request.** `deploy-be.yml` is the only workflow a PR triggers, on every
   PR whatever it touches. It calls `test-guardrails.yml` (`guardrails`) and `e2e-local.yml`
   (`journeys-pr`) as jobs; its `changes` job still decides which app checks a PR needs.
@@ -136,9 +140,9 @@ backend suite means no image is built and neither stack is touched.
 - **Pull requests** into `staging` or `main` run the same tests and never deploy. A push that only
   touches a frontend does not run the backend tests or deploy (a `changes` job filters by path).
   A manual `workflow_dispatch` always runs the tests, then deploys.
-- **Same Node as the image.** The `test` job runs on the Node major `be/Dockerfile` ships (22) and
-  fails at once if the two drift apart — bump both together.
-- **Error catalogues match.** Before installing, the `test` job runs `scripts/check-error-codes.mjs`
+- **Same Node as the image.** Each `test-shard` job runs on the Node major `be/Dockerfile` ships (22)
+  and fails at once if the two drift apart — bump both together.
+- **Error catalogues match.** Before installing, each `test-shard` job runs `scripts/check-error-codes.mjs`
   (and its unit test): the backend's `ERROR_CODES` (`be/src/shared/error-codes.ts`) and the copy in
   each frontend (`src/lib/error-codes.ts`) must list the same codes, or it names what is missing or
   extra and fails. The `fe-client` / `fe-portal` jobs run the same check, so a frontend-only change

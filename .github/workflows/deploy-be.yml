@@ -7,7 +7,9 @@ name: BE Deploy
 # databases, keyed off ENV_NAME in the compose file.
 #
 # The deploy is gated on the backend test suite and the schema drift check:
-# `deploy` needs `test` and `drift`, so a red one never reaches either stack. A
+# `deploy` needs `test` and `drift`, so a red one never reaches either stack.
+# The suite runs as `test-shard`, a matrix of slices each on its own Postgres,
+# and `test` is the one check that sums them up (see `test` below). A
 # `staging` deploy also needs `journeys-pr` — the browser journeys, green on a
 # stack inside the runner (e2e-local.yml) — and a `main` (production) deploy
 # needs `e2e`, the same journeys green against staging (e2e.yml). The same workflow runs both frontends'
@@ -92,7 +94,21 @@ jobs:
               - 'fe-portal/**'
               - '.github/workflows/deploy-be.yml'
 
-  test:
+  # The backend suite, in slices. The harness holds a Postgres advisory lock on
+  # its database for a whole run, so the files cannot run side by side on one
+  # database; what runs side by side is N jobs, each with a Postgres of its
+  # own, each running one N-th of the file list (`SHARD=i/N`, be/scripts/
+  # check.mjs: the list sorted, every N-th file). A slice is still serial, in
+  # one process, so a slice is the same run as `npm run check` on fewer files.
+  #
+  # The slices are the one matrix list below; `strategy.job-total` hands
+  # check.mjs the count, so the list cannot disagree with the denominator, and
+  # check.mjs itself refuses a shard outside 1..N and checks that the N slices
+  # are the whole file list, each file once. A whole run was ~7.5 minutes; six
+  # slices should be about 2, most of it the fixed cost of a job (checkout,
+  # npm ci, migrate and seed) rather than tests. To rebalance, edit the list.
+  test-shard:
+    name: test (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: changes
     # A manual dispatch has no diff to filter on; it is a request to deploy, so
     # it gets the tests that gate the deploy.
@@ -100,20 +116,27 @@ jobs:
       github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' ||
       needs.changes.outputs.be == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # One test run per branch at a time, so deploys leave in push order. Without
-    # it two pushes test side by side, the faster one deploys first, and the
-    # slower, older one then deploys over it — an older image against a database
-    # the newer one already migrated. A queued run superseded by a newer push is
-    # cancelled, which skips its deploy; the newer commit deploys instead.
+    timeout-minutes: 15
+    strategy:
+      # Every slice reports, so one red file does not hide what the others found.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    # One test run per branch and slice at a time, so deploys leave in push
+    # order. Without it two pushes test side by side, the faster one deploys
+    # first, and the slower, older one then deploys over it — an older image
+    # against a database the newer one already migrated. A queued run superseded
+    # by a newer push is cancelled, which skips its deploy; the newer commit
+    # deploys instead. Keyed on the slice too, or the slices of one run would
+    # queue behind each other.
     concurrency:
-      group: booking-be-test-${{ github.ref }}
+      group: booking-be-test-${{ github.ref }}-${{ matrix.shard }}
       cancel-in-progress: false
     permissions:
       contents: read
 
-    # Throwaway. The integration harness migrates it, creates the `booking_app`
-    # role and seeds both fixture tenants on every run.
+    # Throwaway, one per slice. The integration harness migrates it, creates the
+    # `booking_app` role and seeds both fixture tenants on every run.
     services:
       postgres:
         image: postgres:16
@@ -142,6 +165,7 @@ jobs:
     # locally).
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/booking_test
+      SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
 
     defaults:
       run:
@@ -198,12 +222,13 @@ jobs:
       - run: npm ci
 
       # `npm run check`, the command a local run uses (be/scripts/check.mjs), so
-      # the two cannot drift apart. It runs serially, in one process, on
-      # purpose. Serially because the suite is flaky in parallel: the RLS
-      # coverage test's probe table races the transfer test's table count. In
-      # one process (--experimental-test-isolation=none, Node 22's spelling)
-      # because a process per file imports the app and sets up the database
-      # once per file, which was most of this step's time. Its --import of
+      # the two cannot drift apart; SHARD (env above) picks this job's slice of
+      # the file list. It runs serially, in one process, on purpose. Serially
+      # because the suite is flaky in parallel: the RLS coverage test's probe
+      # table races the transfer test's table count. In one process
+      # (--experimental-test-isolation=none, Node 22's spelling) because a
+      # process per file imports the app and sets up the database once per
+      # file, which was most of this step's time. Its --import of
       # src/test/environment.ts puts the test environment in place before any
       # file loads (docs/md/testing.md § Running the backend tests), and its
       # --test-force-exit keeps a test file whose `after` hook throws before
@@ -212,10 +237,11 @@ jobs:
       #
       # check.mjs refuses to start without TEST_DATABASE_URL, so the suite
       # cannot skip itself green; a skip that remains is a `test.skip` someone
-      # wrote, and it fails the job. The job is stateless: it records nothing
-      # for a later run and reads nothing from an earlier one. Coverage runs
-      # nightly instead (be-coverage.yml), off the path every push waits on.
-      - name: Backend tests (serial)
+      # wrote, and it fails the job. Every slice makes this check, so across
+      # the shards together nothing skipped. The job is stateless: it records
+      # nothing for a later run and reads nothing from an earlier one. Coverage
+      # runs nightly instead (be-coverage.yml), off the path every push waits on.
+      - name: Backend tests (serial, this shard)
         shell: bash
         run: |
           npm run -s check -- --test-reporter=tap --test-reporter-destination=stdout | tee test-output.tap
@@ -224,6 +250,28 @@ jobs:
             grep -E '^# (tests|pass|fail|skipped)' test-output.tap
             exit 1
           fi
+
+  # The one check for the whole suite: green when every slice of `test-shard`
+  # is. It exists so `deploy` can need `test` and branch protection and the merge
+  # queue can require a check named `test`, as before the suite was sliced —
+  # a matrix job reports one check per slice, and a required check that is
+  # sometimes skipped would be waved through. It runs whenever the slices did
+  # (same condition), fails when any of them failed or was cancelled, and is
+  # skipped with them when the backend did not change, which `deploy` already
+  # reads as no deploy.
+  test:
+    needs: [changes, test-shard]
+    if: >-
+      !cancelled() &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' ||
+      needs.changes.outputs.be == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every shard passed
+        run: |
+          echo "test-shard: ${{ needs.test-shard.result }}"
+          [ "${{ needs.test-shard.result }}" = success ]
 
   # The schema in `be/src/db/schema/` and the migration history must describe the
   # same database. A schema edit committed without its migration passes every

@@ -17,6 +17,15 @@
  *   npm run check
  *   npm run check -- --test-reporter=tap
  *   npm run check -- src/test/refunds.test.ts
+ *   SHARD=2/6 npm run check
+ *
+ * `SHARD=i/n` runs the i-th of n slices of the whole suite: the file list the
+ * default patterns match, sorted, every n-th file from the i-th. CI runs the
+ * suite as n such slices side by side, each on a database of its own, because
+ * the harness holds one advisory lock per database for a whole run (see
+ * docs/md/testing.md § Shards in CI). A slice runs serially, in one process,
+ * exactly as the whole suite does; a bare `npm run check` is still the whole
+ * suite in one run.
  *
  * It refuses to start where a green run would not predict CI's: on a Node
  * major other than `.nvmrc`'s, or with no `TEST_DATABASE_URL` (the integration
@@ -25,7 +34,7 @@
  * first. CI's own database is new with every job, so there it is left alone.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, globSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'dotenv'
@@ -59,6 +68,39 @@ export function nodeArgs(args) {
   return [...BASE_FLAGS, ...flags, ...(files.length ? files : DEFAULT_PATTERNS)]
 }
 
+/** `SHARD=i/n` parsed, or null when unset. Refuses anything but `i/n` with 1 <= i <= n. */
+export function parseShard(value) {
+  if (!value?.trim()) return null
+  const m = /^([1-9]\d*)\/([1-9]\d*)$/.exec(value.trim())
+  if (!m || Number(m[1]) > Number(m[2])) {
+    throw new Error(`SHARD must be i/n with 1 <= i <= n (e.g. 2/6), not ${JSON.stringify(value)}`)
+  }
+  return { index: Number(m[1]), total: Number(m[2]) }
+}
+
+/** Every test file the default patterns match, relative to `beDir` with forward slashes, sorted. */
+export function listTestFiles(beDir) {
+  return globSync(DEFAULT_PATTERNS, { cwd: beDir })
+    .map(f => f.replaceAll('\\', '/'))
+    .sort()
+}
+
+/**
+ * The files shard `index` of `total` runs: `files` sorted, every `total`-th
+ * from the `index`-th. Deterministic, so the same checkout always slices the
+ * same way, and checked: the shards together must be the whole list, no file in
+ * two of them or in none, or a file could drop out of CI without a red run.
+ */
+export function shardFiles(files, { index, total }) {
+  const sorted = [...files].sort()
+  const shards = Array.from({ length: total }, (_, i) => sorted.filter((_, j) => j % total === i))
+  const union = shards.flat().sort()
+  if (union.length !== sorted.length || union.some((f, k) => f !== sorted[k])) {
+    throw new Error(`shards 1..${total} do not cover the ${sorted.length} test files exactly once`)
+  }
+  return shards[index - 1]
+}
+
 /**
  * Why Node `version` must not run the suite, or null when it may. CI and
  * be/Dockerfile run the major `.nvmrc` names, and another major accepts flags
@@ -90,7 +132,17 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const args = process.argv.slice(2)
   let argv
   try {
-    argv = nodeArgs(args)
+    const shard = parseShard(process.env.SHARD)
+    if (shard && args.some(a => !a.startsWith('-'))) {
+      throw new Error('name test files or set SHARD, not both: a shard is a slice of the whole suite')
+    }
+    let files = []
+    if (shard) {
+      const all = listTestFiles(beDir)
+      files = shardFiles(all, shard)
+      console.log(`check: shard ${shard.index}/${shard.total}, ${files.length} of ${all.length} test files:\n  ${files.join('\n  ')}`)
+    }
+    argv = nodeArgs([...args, ...files])
   } catch (err) {
     refuse(err.message)
   }
