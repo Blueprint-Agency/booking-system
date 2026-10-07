@@ -159,6 +159,7 @@ async function bookIntoClass(
       // A member is never let through a clash; staff only once they were warned.
       allowClash: input.role !== 'member' && (input.allowClash ?? false),
       now,
+      by: input.role === 'member' ? 'member' : { staffId: input.actorStaffId! },
     })
     if (!paid.ok) throw await refusalError(tx, tenantId, clientId, paid)
 
@@ -348,6 +349,8 @@ export async function payAndBook(
     /** Staff were shown the member's clash and booked anyway. */
     allowClash?: boolean
     now: Date
+    /** Who booked, for the Credit movement: a staff member's id, or no one (the member, or a waitlist promotion). */
+    by: { staffId: string } | 'member' | 'system'
   },
 ): Promise<PayAndBookResult> {
   const { clientId, now } = input
@@ -392,20 +395,6 @@ export async function payAndBook(
   const { clientPackageId, creditsUsed } = choice
   const payer = pkgs.find(p => p.id === clientPackageId)!
 
-  if (creditsUsed > 0) {
-    // The ledger re-derives `active` — a bundle spent to exactly zero stops
-    // being a booking candidate immediately, not at the nightly sweep.
-    await debitCredits(tx, {
-      tenantId,
-      clientId,
-      clientPackageId,
-      amount: creditsUsed,
-      reason: 'class_booking_debit',
-      // See ledger.ts — booking debits stay out of the admin adjustments panel.
-      audit: false,
-    })
-  }
-
   // Activation (§3): the first confirmed class booking a Dormant package pays
   // for starts its clock, stamped here because this transaction already holds
   // the row locked — one writer, no race. One-way: no cancellation un-stamps it.
@@ -431,6 +420,25 @@ export async function payAndBook(
       code,
     })
     .returning({ id: bookings.id })
+
+  // Paid after the booking exists, so the debit's Credit movement can name it;
+  // an overdraw refused here rolls the booking back with it.
+  if (creditsUsed > 0) {
+    // The ledger re-derives `active` — a bundle spent to exactly zero stops
+    // being a booking candidate immediately, not at the nightly sweep.
+    await debitCredits(tx, {
+      tenantId,
+      clientId,
+      clientPackageId,
+      amount: creditsUsed,
+      reason: 'class_booking_debit',
+      cause: 'booked',
+      bookingId: row!.id,
+      ...(typeof input.by === 'string' ? { actor: input.by } : { actor: 'staff', actedByStaffId: input.by.staffId }),
+      // See ledger.ts — a class debit is on its booking, not in the audit rows.
+      audit: false,
+    })
+  }
 
   return {
     ok: true,

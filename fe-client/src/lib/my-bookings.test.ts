@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bookingItems, sessionsOnDay, sortForPhase, type BookingSources } from "./my-bookings.ts";
+import { bookingItems, ptStanding, sessionsOnDay, sortForPhase, type BookingSources } from "./my-bookings.ts";
 
 const NOW = Date.parse("2026-09-27T10:00:00+08:00");
 const at = (h: number) => new Date(NOW + h * 3_600_000).toISOString();
 
-const empty: BookingSources = { upcoming: [], past: [], pt: [], workshops: [], corporate: [] };
+const empty: BookingSources = { upcoming: [], past: [], cancelled: [], pt: [], workshops: [], corporate: [] };
 
 // Only the fields the placing reads; the rest of each wire shape is irrelevant here.
 const cls = (id: string, start: number, end: number, state = "confirmed") =>
@@ -29,11 +29,28 @@ test("a class is upcoming until it starts, ongoing while it runs, past once it e
   );
 });
 
-test("a cancelled class that would still be running is past, not ongoing", () => {
-  assert.deepEqual(phases({ past: [cls("b", -0.5, 0.5, "cancelled")] }), { "class:b": "past" });
+// #349: a cancelled class is on Cancelled from the moment it is cancelled,
+// whatever its time — never Upcoming, Ongoing or Past.
+test("ACC-32 a cancelled class is on Cancelled whether it is still to come, running or over", () => {
+  const gone = (id: string, start: number, cancelledAt: number) =>
+    ({ ...(cls(id, start, start + 1, "cancelled") as object), cancelled_at: at(cancelledAt) }) as never;
+  assert.deepEqual(
+    phases({ cancelled: [gone("soon", 1, -0.1), gone("now", -0.5, -2), gone("old", -30, -40)] }),
+    { "class:soon": "cancelled", "class:now": "cancelled", "class:old": "cancelled" },
+  );
 });
 
-test("a pending PT request is upcoming; a scheduled one follows its session; the rest are past", () => {
+test("ACC-32 Cancelled lists the newest cancellation first, whatever the class time", () => {
+  const gone = (id: string, start: number, cancelledAt: number) =>
+    ({ ...(cls(id, start, start + 1, "cancelled") as object), cancelled_at: at(cancelledAt) }) as never;
+  const items = bookingItems({ ...empty, cancelled: [gone("later-class", 48, -5), gone("earlier-class", 2, -1)] }, NOW);
+  assert.deepEqual(sortForPhase(items, "cancelled").map((i) => i.key), ["class:earlier-class", "class:later-class"]);
+});
+
+// #351: a cancelled or expired PT request is on Cancelled, no longer Past;
+// what was held — attended, or a no-show staff marked — stays on Past.
+test("ACC-34 a pending PT request is upcoming; a scheduled one follows its session; a held one is past; a cancelled or expired one is on Cancelled", () => {
+  const noShow = { ...(pt("n", "attended", [-50, -49]) as object), booking: { check_in_state: "no_show" } } as never;
   assert.deepEqual(
     phases({
       pt: [
@@ -41,28 +58,81 @@ test("a pending PT request is upcoming; a scheduled one follows its session; the
         pt("s", "scheduled", [24, 25]),
         pt("r", "scheduled", [-0.5, 0.5]),
         pt("x", "cancelled_before_scheduled"),
+        pt("y", "cancelled_after_scheduled", [30, 31]),
         pt("d", "attended", [-30, -29]),
+        noShow,
       ],
     }),
-    { "pt:p": "upcoming", "pt:s": "upcoming", "pt:r": "ongoing", "pt:x": "past", "pt:d": "past" },
+    {
+      "pt:p": "upcoming",
+      "pt:s": "upcoming",
+      "pt:r": "ongoing",
+      "pt:x": "cancelled",
+      "pt:y": "cancelled",
+      "pt:d": "past",
+      "pt:n": "past",
+    },
   );
 });
 
-test("a workshop with no dates yet is upcoming; a cancelled one is past", () => {
+// #351: a held private session reads by the member's own check-in, as a class
+// does — the request turns `attended` when its session ends, ticked or not.
+test("ACC-39 a held private session reads Attended only when ticked, No-show only when staff marked it, and nothing when never ticked", () => {
+  const held = (check_in_state: string) =>
+    ({ ...(pt("h", "attended", [-30, -29]) as object), booking: { check_in_state } }) as never;
+  assert.equal(ptStanding(held("attended")), "attended");
+  assert.equal(ptStanding(held("no_show")), "no_show");
+  assert.equal(ptStanding(held("pending")), null);
+  assert.equal(ptStanding(pt("h", "attended", [-30, -29])), null, "no booking of theirs to read");
+  assert.equal(ptStanding(pt("p", "pending")), "pending");
+  assert.equal(ptStanding(pt("s", "scheduled", [24, 25])), "confirmed");
+  assert.equal(ptStanding(pt("x", "cancelled_before_scheduled")), "cancelled");
+  assert.equal(ptStanding({ ...(pt("e", "cancelled_before_scheduled") as object), expired: true } as never), "expired");
+});
+
+// #351: "a cancelled workshop is past" becomes: a cancelled workshop is on Cancelled.
+test("ACC-34 a workshop with no dates yet is upcoming; a cancelled one is on Cancelled, whatever its dates", () => {
   const w = (id: string, state: string, start: number | null, end: number | null) =>
     ({ id, state, booked_at: at(-100), starts_at: start == null ? null : at(start), ends_at: end == null ? null : at(end) }) as never;
   assert.deepEqual(
-    phases({ workshops: [w("t", "confirmed", null, null), w("c", "cancelled", 5, 6), w("n", "confirmed", -1, 30)] }),
-    { "workshop:t": "upcoming", "workshop:c": "past", "workshop:n": "ongoing" },
+    phases({
+      workshops: [
+        w("t", "confirmed", null, null),
+        w("c", "cancelled", 5, 6),
+        w("o", "cancelled", -30, -29),
+        w("n", "confirmed", -1, 30),
+      ],
+    }),
+    { "workshop:t": "upcoming", "workshop:c": "cancelled", "workshop:o": "cancelled", "workshop:n": "ongoing" },
   );
 });
 
-test("a corporate request waiting to be scheduled is upcoming", () => {
+test("ACC-34 a corporate request waiting to be scheduled is upcoming; a done one past; a cancelled one on Cancelled", () => {
   const r = (id: string, status: string) => ({ id, status, created_at: at(-10), session: null }) as never;
-  assert.deepEqual(phases({ corporate: [r("p", "pending"), r("d", "attended")] }), {
+  assert.deepEqual(phases({ corporate: [r("p", "pending"), r("d", "attended"), r("c", "cancelled")] }), {
     "corporate:p": "upcoming",
     "corporate:d": "past",
+    "corporate:c": "cancelled",
   });
+});
+
+test("ACC-34 every kind's cancellation sorts on Cancelled by when it was cancelled, newest first", () => {
+  const items = bookingItems(
+    {
+      ...empty,
+      cancelled: [{ ...(cls("c", 48, 49, "cancelled") as object), cancelled_at: at(-4) } as never],
+      pt: [{ ...(pt("p", "cancelled_after_scheduled", [72, 73]) as object), cancelled_at: at(-1) } as never],
+      workshops: [
+        { id: "w", state: "cancelled", booked_at: at(-100), starts_at: at(2), ends_at: at(3), cancelled_at: at(-3) } as never,
+      ],
+      corporate: [{ id: "k", status: "cancelled", created_at: at(-200), session: null, cancelled_at: at(-2) } as never],
+    },
+    NOW,
+  );
+  assert.deepEqual(
+    sortForPhase(items, "cancelled").map((i) => i.key),
+    ["pt:p", "corporate:k", "workshop:w", "class:c"],
+  );
 });
 
 test("a day's sessions are the ones its tile counted: attended, or booked and not checked in, earliest first", () => {
@@ -75,8 +145,12 @@ test("a day's sessions are the ones its tile counted: attended, or booked and no
         checkedIn(cls("morning", -2, -1), "attended"),
         // Ran, but never ticked: still booked, so the tile counted it.
         checkedIn(cls("unticked", -3, -2), "pending"),
-        cls("gone", -4, -3, "cancelled"),
         checkedIn(cls("n", -2, -1), "no_show"),
+      ],
+      // Cancelled, today and still to come: neither attended nor booked.
+      cancelled: [
+        { ...(cls("gone", -4, -3, "cancelled") as object), cancelled_at: at(-5) } as never,
+        { ...(cls("dropped-later", 2, 3, "cancelled") as object), cancelled_at: at(-1) } as never,
       ],
       pt: [
         pt("done", "attended", [-6, -5]),

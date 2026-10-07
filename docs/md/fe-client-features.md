@@ -583,16 +583,21 @@ No greeting: the page opens on unfinished purchases (#93) and the checkout-cance
 
 Every booking and request the member holds, in one list (`lib/my-bookings.ts`, tested in `my-bookings.test.ts`):
 
-- **Filters**, as the packages shop reads, centred: **Upcoming / Ongoing / Past** as the pill tabs with counts, then the booking type — **All / Classes / Private / Workshops / Corporate** — as words on a hairline under them (`SubTabs`). `?type=` (`class`, `pt`, `workshop`, `corporate`) and `?when=` open it filtered.
-- **Placing**: a class is Upcoming until it starts, Ongoing while it runs, Past once it ends or is cancelled. A **pending PT or corporate request is Upcoming** (it can still be cancelled); a scheduled one follows its session; attended or cancelled is Past. A workshop with no dates yet is Upcoming; a cancelled one is Past.
+- **Filters**, as the packages shop reads, centred: **Upcoming / Ongoing / Past / Cancelled** as the pill tabs with counts, then the booking type — **All / Classes / Private / Workshops / Corporate** — as words on a hairline under them (`SubTabs`). `?type=` (`class`, `pt`, `workshop`, `corporate`) and `?when=` (`upcoming`, `ongoing`, `past`, `cancelled`) open it filtered. An empty tab reads "No upcoming …", "No … in progress", "No past …" or "No cancelled …" (`No cancelled bookings` on All).
+- **Placing**: a class is Upcoming until it starts, Ongoing while it runs, Past once it ends. **Past holds only what was held** — attended, a No-show, or a class held and never ticked. A **cancelled class is on Cancelled from the moment it is cancelled**, whatever its time, newest cancellation first (`GET /me/bookings/cancelled`, #349) — so a Late cancel is there exactly when the member goes looking for it. A Waitlist leave is not a cancellation and is never on Cancelled. A **pending PT or corporate request is Upcoming** (it can still be cancelled); a scheduled one follows its session; attended (with the No-show label only when staff marked it) is Past. A workshop with no dates yet is Upcoming. **Every kind follows the class (#351):** a cancelled or expired PT request, a seat the member left on a manual 2on1, a cancelled workshop place and a cancelled corporate request are on Cancelled at once, never Past, sorted with the classes by when each was cancelled. The kind filters (Private, Workshops, Corporate) narrow Cancelled and its count as they narrow every tab.
+- **The other kinds' cancelled cards** (#351) say the same three things — when, who, and one outcome line — worded by the backend's cancellation summary and sent as `who_line` / `outcome_line` (the card shows them as sent, so member and staff cannot word one cancel two ways), who said once per card: **Private session** — `Session returned`, `Cancelled over your cap · session kept`, a withdrawn request `Request cancelled · session returned`, one that expired unscheduled `Request expired · session returned` (its when line "Expired · …", its label "Expired"), the studio's `Cancelled by the studio · session returned` with the studio's note under it, and to a 2on1 partner, who paid nothing, `Cancelled by the host` / `Cancelled by the studio` / `Request expired`. **Workshop** — `Refunded to your card` (the money went back, `stripe_refunded`; its when line "Cancelled by the studio · …") or `Cancelled by the studio · any refund is arranged by the studio`. **Corporate request** — `Cancelled by the studio`, with the date.
+- **A cancelled class's card** (#349) carries three facts from the backend's one cancellation summary (`be/src/services/bookings/cancellation-summary.ts`), worded there too and sent as `who_line` / `outcome_line`: **when** it was cancelled ("You cancelled · 3 Oct 2026 · 10:15", or "Cancelled · …" when the studio did), **who** cancelled, and **one outcome line** — `Late cancel · credit kept`, `Credit returned` (`2 credits returned` when it spent more than one), `Cancelled over your cap · credit kept`, `Nothing to return` (an Unlimited Plan, or a Voided package; `Late cancel · nothing to return` when late), and for the studio's — a whole-class cancel, a Staff cancel, a Void, a Package rule change — `Cancelled by the studio · credit returned` / `· credit kept` / `· nothing to return`. A credit is returned or kept, never refunded. A trial booking is a class booking and reads the same.
+- **Status labels**: a held class reads "Checked in" when attended and **"No-show" only when staff marked the member absent** (`check_in_state = no_show`); otherwise a past class carries no label, as before. A held **private session** reads the same way, by the member's own booking's check-in (`ptStanding` in `lib/my-bookings.ts`): "Attended" only when ticked, "No-show" only when staff marked them absent, and no label when never ticked — never "Attended" because the request turned `attended` when its session ended.
 - **One card for every kind** (`booking-cards.tsx`): date stub, one small line with the kind (class accent, PT gold, workshop green, corporate cyan) · its status, the name, the time, then instructor / location / room / partner / tier as plain icon-and-text details, the QR where there is one, and the check-in code with the action in the footer. Every cancel is **red** (`BTN_CANCEL`): Cancel on a class, Cancel request / Cancel on a PT request, Leave waitlist.
-- **Tapping a card**: a class opens its detail (`BookedClassOverlay`), dressed as the schedule's class detail — the class type's description, instructor and any supporting ones, the Location with its address and map link, the room — with the member's own booking in place of seats and packages: where they stand ("You're booked into this class", "You checked in to this class", "You cancelled this booking", "Marked as a no-show"), what paid ("Unlimited" or the credits used), the cancel deadline and a red **Cancel booking** while it can be cancelled, and the check-in code while it is live. The class is read from `GET /public/classes/:id`, which serves one that has already run. A workshop card opens the workshop's page; a PT or corporate card, which already shows everything there is, opens nothing.
+- **Tapping a card**: a class opens its detail (`BookedClassOverlay`), dressed as the schedule's class detail — the class type's description, instructor and any supporting ones, the Location with its address and map link, the room — with the member's own booking in place of seats and packages: where they stand ("You're booked into this class", "You checked in to this class", "You cancelled this booking" — or "The studio cancelled this booking" for a whole-class cancel, a Staff cancel, a Void or a Package rule change — "Marked as a no-show"), a cancelled booking's outcome line and cancel time, what paid ("Unlimited" or the credits used), the cancel deadline and a red **Cancel booking** while it can be cancelled, and the check-in code while it is live. The class is read from `GET /public/classes/:id`, which serves one that has already run. A workshop card opens the workshop's page; a PT or corporate card, which already shows everything there is, opens nothing.
 - **Waitlisted** places sit above the Upcoming list (All or Classes).
 - The old per-kind pages — `/account/classes`, `/account/private-sessions`, `/account/workshops`, `/account/corporate` — redirect here with their filter set (`?submitted=1` from a PT request becomes the "Your request is in" banner).
 
 ### 8.1a My packages `/account/packages` (as built)
 
 Every package the member has bought, each marked **Active**, **Not started** (Dormant until its first booking) or, once run out, **Expired** / **Used up**. Tabs **Current** (the default: Active and Not started) / **Active** / **Not started** / **Ended**, with counts, centred. Each card leads with one small line — the kind (Classes / Unlimited / Private) · its state — as My bookings' cards do. Current ones show their balance and what they Cover (plain icon-and-text, as everywhere a package's Locations are listed) (an Unlimited plan its Home Location and any Add-On; a bundle, trial or PT package "All locations"), and the Add-On offer where it applies. Ended ones come from the same `GET /me/packages` read (the rows `active` is false for, or whose expiry has passed), shown dimmed without a balance.
+
+**Credit history (#353).** Every card but an Unlimited plan's (it has no balance) ends in a **Credit history** disclosure, read when opened (`GET /me/packages/:id/credit-history`): where the package's credits or sessions went, newest first — the date, the class (or "Private session"), what happened ("Booked · -1", "Returned · +1", "Late cancel · credit kept", "Over the cancellation limit · credit kept", "Cancelled by the studio · credit kept", "No-show · credit kept", "Expired · -3", "Adjusted by the studio · +2", "Session requested · -1", "Request cancelled · +1") and how many were left after it (an expired package shows 0 left). A staff member's name and reason are never shown here. Its foot reads "History from <date>": the purchase, or, for a package held when the history began, that day — nothing before it is invented.
 
 ### 8.1-old Dashboard `/account` (superseded by §8.1 / §8.1a above)
 
@@ -668,13 +673,14 @@ How the app looks for the member: **Theme** (Light, Dark) and **Text size** (Sma
 > **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account/bookings?type=class`.
 
 **Business logic**
-- Tabs: **Upcoming** / **Past**.
+- Tabs: **Upcoming** / **Ongoing** / **Past** / **Cancelled** (#349).
 - Upcoming row: class title, instructor, date/time, location, QR action, cancel/reschedule actions (gated by cancellation policy).
-- Past row: status badge (Attended / Late / Cancelled / No-Show).
+- Past row: only classes held — status badge Checked in, or No-show when staff marked the member absent.
+- Cancelled row: every cancelled class from the moment it is cancelled, newest cancellation first, with when, who (`You` / `The studio`) and the outcome line (§8.1).
 
 **User journey**
 - Default tab is Upcoming; user reviews, taps QR for the session, or cancels.
-- Past tab is an audit.
+- A cancel — late, in time, over the cap, or the studio's — is on Cancelled at once with where the credit went.
 
 **Where admin comes in**
 - Admin sees this same data per user, plus can override attendance status (mark attended retroactively, void no-show fee).
@@ -684,22 +690,22 @@ How the app looks for the member: **Theme** (Light, Dark) and **Text size** (Sma
 > **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account/bookings?type=workshop`.
 
 **Business logic**
-- Same upcoming/past split, scoped to workshops.
-- Includes refund status if a past workshop was cancelled.
+- Same Upcoming / Ongoing / Past / Cancelled split, scoped to workshops.
+- A cancelled workshop place is on Cancelled from the moment the studio cancels it (#351), with when and whether the money went back: `Refunded to your card` once refunded (`refund_outcome = stripe_refunded`), else `Cancelled by the studio · any refund is arranged by the studio`. A member does not cancel a workshop place in the app.
 
 **Where admin comes in**
 - Admin manages refunds and roster. Can move attendees between dates.
 
 ### 8.5 My Private Sessions `/account/private-sessions`
 
-> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account/bookings?type=pt`. Pending requests list under Upcoming, cancelled ones under Past.
+> **As built:** a filter of Your bookings (§8.1); the URL redirects to `/account/bookings?type=pt`. Pending requests list under Upcoming, cancelled and expired ones under Cancelled (#351).
 
 **Business logic**
-- Four groupings visible to the user: **Pending** (awaiting studio), **Confirmed** (scheduled upcoming), **Past** (attended), **Cancelled** (rolls up both `cancelled_before_scheduled` and `cancelled_after_scheduled`).
-- **Pending row** — shows class type, session type, all proposed slots, partner (if 2on1, with "pending invite" badge if the partner isn't yet a member), and a **"Cancel request"** button. Cancelling while pending refunds credits.
-- **Confirmed row** — final date/time, location, instructor (assigned by studio), partner, QR + per-booking code, and a **"Cancel"** button. Cancelling here does **not** refund credits (v1 policy); UI shows that warning in the confirm dialog.
-- **Past row** — same fields plus check-in outcome (attended / no-show).
-- **Cancelled row** — read-only, dim. Notes whether credits were refunded.
+- Groupings visible to the user: **Pending** (awaiting studio, on Upcoming), **Confirmed** (scheduled, Upcoming or Ongoing), **Past** (attended), **Cancelled** (both `cancelled_before_scheduled` — withdrawn, cancelled by the studio, or expired — and `cancelled_after_scheduled`, and a seat the member left on a manual 2on1).
+- **Pending row** — shows class type, session type, all proposed slots, partner (if 2on1, with "pending invite" badge if the partner isn't yet a member), and a **"Cancel request"** button. Cancelling while pending returns the sessions.
+- **Confirmed row** — final date/time, location, instructor (assigned by studio), partner, QR + per-booking code, and a **"Cancel"** button until the studio's PT window. A cancel in time returns the session while the member is under the Cancellation Cap; over it the session is kept; inside the window the server refuses (the confirm prompt says which, `ptCancelPrompt`).
+- **Past row** — same fields plus check-in outcome (attended / no-show, the latter only when staff marked it).
+- **Cancelled row** — read-only, dim, with when and who ("You cancelled · …", or "Cancelled · …" / "Expired · …") and one outcome line (§8.1): `Session returned`, `Cancelled over your cap · session kept`, `Request cancelled · session returned`, `Request expired · session returned`, `Cancelled by the studio · session returned` (with the studio's note), and to a 2on1 partner `Cancelled by the host`. A session is returned or kept, never refunded. A member who leaves a manual 2on1 keeps their seat here, though the session goes on for the other attendee.
 
 **Where admin comes in**
 - Admin's `/admin/pt-requests` is the counterpart — see admin-restructure.md §9.
@@ -742,7 +748,7 @@ How the app looks for the member: **Theme** (Light, Dark) and **Text size** (Sma
   - **Pending** — request created on purchase; shows a **WhatsApp contact** button (deep link to the studio's own `tenant_settings.copy->>'contact.whatsapp'`) so the user can start the conversation. No in-app form.
   - **Scheduled** — shows final date/time, location, and assigned instructor.
   - **Attended** — rendered as "done".
-  - **Cancelled** — read-only, dim.
+  - **Cancelled** — read-only, dim, on the Cancelled tab from the moment the studio cancels it (#351): "Cancelled · <date>" and `Cancelled by the studio` (`cancelled_at` on `GET /me/corporate-requests`).
 - No client-side cancel/reschedule in v1 — corporate is handled out-of-app over WhatsApp.
 
 **Where admin comes in**

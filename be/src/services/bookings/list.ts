@@ -1,16 +1,17 @@
 /**
  * Client-facing read of a member's own class bookings. See be-client.md §3.
  *
- *   - upcoming: state='confirmed' AND class.starts_at >= now  (cancel + QR affordances)
- *   - past:     class.starts_at < now, any state  (outcome badge)
+ *   - upcoming:  state='confirmed' AND class.starts_at >= now  (cancel + QR affordances)
+ *   - past:      class.starts_at < now, not cancelled  (attended, no-show, or held unticked)
+ *   - cancelled: state='cancelled', any start time, newest cancellation first
  *
- * The Past tab is an audit, so every outcome is on it — attended, no-show and
- * cancelled (fe-client-features §8.3). A cancelled booking is listed once its
- * class time has passed, not before: until then it is neither upcoming nor past.
+ * Past holds only what was held. A cancelled booking is on Cancelled from the
+ * moment it is cancelled, with the summary of its cancellation
+ * (`cancellation-summary.ts`) — fe-client-features §8.3, #349.
  */
-import { and, asc, desc, eq, gte, lt } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, lt, ne, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { bookings } from '../../db/schema/bookings'
+import { bookings, cancellations } from '../../db/schema/bookings'
 import { classes } from '../../db/schema/schedule'
 import { classTypes, locations, rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
@@ -18,6 +19,7 @@ import { clientPackages } from '../../db/schema/packages'
 import type { ClientPackageKind } from '../../db/enums'
 import { NotFoundError } from '../../shared/errors'
 import { cancelWindowResolver, type HasCancelWindow } from '../policy/cancel-window'
+import { cancellationRecord, summarizeCancellation, type CancellationSummary } from './cancellation-summary'
 
 interface NamedRef {
   id: string
@@ -145,6 +147,7 @@ export async function listClassBookings(
           eq(bookings.tenantId, tenantId),
           eq(bookings.clientId, clientId),
           eq(bookings.kind, 'class'),
+          ne(bookings.state, 'cancelled'),
           lt(classes.startsAt, now),
         )
 
@@ -162,6 +165,65 @@ export async function listClassBookings(
 
   const windowOf = await cancelWindowResolver(tenantId)
   return rows.map(r => toRow(r, windowOf))
+}
+
+export interface CancelledClassBookingRow extends ClassBookingRow {
+  cancellation: CancellationSummary
+}
+
+/** The member's cancelled class bookings, whatever their start time, newest cancellation first. */
+export async function listCancelledClassBookings(
+  tenantId: string,
+  clientId: string,
+): Promise<CancelledClassBookingRow[]> {
+  const cancelledAt = sql<Date | null>`coalesce(${cancellations.cancelledAt}, ${bookings.cancelledAt})`
+  const rows = await db
+    .select({
+      ...baseSelect,
+      refundOutcome: bookings.refundOutcome,
+      bookingCancelledAt: bookings.cancelledAt,
+      recordSource: cancellations.source,
+      recordWithinWindow: cancellations.wasWithinWindow,
+      recordWithinCap: cancellations.wasWithinCap,
+      recordCancelledAt: cancellations.cancelledAt,
+    })
+    .from(bookings)
+    .innerJoin(classes, eq(classes.id, bookings.classId))
+    .leftJoin(classTypes, eq(classTypes.id, classes.classTypeId))
+    .leftJoin(staffUsers, eq(staffUsers.id, classes.mainInstructorId))
+    .leftJoin(locations, eq(locations.id, classes.locationId))
+    .leftJoin(rooms, eq(rooms.id, classes.roomId))
+    .leftJoin(clientPackages, eq(clientPackages.id, bookings.clientPackageId))
+    .leftJoin(cancellations, and(eq(cancellations.tenantId, tenantId), eq(cancellations.bookingId, bookings.id)))
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        eq(bookings.clientId, clientId),
+        eq(bookings.kind, 'class'),
+        eq(bookings.state, 'cancelled'),
+      ),
+    )
+    .orderBy(sql`${cancelledAt} DESC NULLS LAST`, desc(classes.startsAt))
+
+  const windowOf = await cancelWindowResolver(tenantId)
+  return rows.map(r => {
+    const row = toRow(r as Raw, windowOf)
+    return {
+      ...row,
+      cancellation: summarizeCancellation({
+        kind: 'class',
+        refundOutcome: r.refundOutcome,
+        creditsUsed: row.creditsUsed,
+        bookingCancelledAt: r.bookingCancelledAt,
+        record: cancellationRecord({
+          source: r.recordSource,
+          wasWithinWindow: r.recordWithinWindow,
+          wasWithinCap: r.recordWithinCap,
+          cancelledAt: r.recordCancelledAt,
+        }),
+      }),
+    }
+  })
 }
 
 export async function getClassBookingDetail(

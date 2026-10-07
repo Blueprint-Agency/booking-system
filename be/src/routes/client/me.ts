@@ -16,6 +16,7 @@ import {
   type SavedCard,
 } from '../../services/billing/payment-customers'
 import { tenantId } from '../../middleware/tenant'
+import { creditHistory, serializeCreditHistory } from '../../services/packages/credit-history'
 
 /**
  * A payment method id as the provider writes it (`pm_…`). Not a uuid, so it is
@@ -147,6 +148,11 @@ const app = new Hono()
         pt_2on1_remaining: ent.pt2on1Remaining,
       },
     })
+  })
+  // One package's Credit history (#353): the member's own package, or 404.
+  .get('/packages/:id/credit-history', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
+    const history = await creditHistory(tenantId(c), c.get('clientId'), c.req.valid('param').id)
+    return c.json(serializeCreditHistory(history, 'member'))
   })
   // ---- saved cards (#185) ----
   // The member's own cards, and only ever the brand, the last four digits and

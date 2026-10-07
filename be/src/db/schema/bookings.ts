@@ -140,6 +140,9 @@ export const cancellations = pgTable(
       .references(() => clients.id, { onDelete: 'restrict' }),
     kind: cancellationKindEnum('kind').notNull(),
     source: cancellationSourceEnum('source').notNull(),
+    // The staff member who cancelled (source admin or instructor); null for a
+    // member's own cancel, a `system` one, and every row written before #350.
+    cancelledByStaffId: uuid('cancelled_by_staff_id').references(() => staffUsers.id, { onDelete: 'restrict' }),
     wasWithinWindow: boolean('was_within_window').notNull(),
     wasWithinCap: boolean('was_within_cap').notNull(),
     refundFired: boolean('refund_fired').notNull(),
@@ -148,6 +151,7 @@ export const cancellations = pgTable(
   table => ({
     bookingIdFkIdx: index('cancellations_booking_id_fk_idx').on(table.bookingId),
     clientIdFkIdx: index('cancellations_client_id_fk_idx').on(table.clientId),
+    cancelledByStaffIdFkIdx: index('cancellations_cancelled_by_staff_id_fk_idx').on(table.cancelledByStaffId),
     clientCancelledIdx: index('cancellations_client_cancelled_idx').on(table.tenantId, table.clientId, table.cancelledAt),
   }),
 )

@@ -8,6 +8,8 @@ import {
   workshopDays,
 } from '../../db/schema/schedule'
 import { locations } from '../../db/schema/catalog'
+import type { RefundOutcome } from '../../db/enums'
+import { summarizeCancellation } from '../bookings/cancellation-summary'
 
 export interface MyWorkshopBooking {
   id: string
@@ -20,7 +22,10 @@ export interface MyWorkshopBooking {
   booked_at: Date
   cancelled_at: Date | null
   /** Whether a cancelled place's money went back (fe-client-features §8.4). */
-  refund_outcome: string
+  refund_outcome: RefundOutcome
+  /** A cancelled place's lines, from the shared cancellation summary; null otherwise. */
+  who_line: string | null
+  outcome_line: string | null
   code: string
   qr_token: string
   location: { id: string; name: string; address: string | null } | null
@@ -119,6 +124,18 @@ export async function listMyWorkshopBookings(
 
   return rows.map(r => {
     const range = r.tierId ? dayRangeByTier.get(r.tierId) ?? null : null
+    // Only the studio cancels a place: with its Workshop, or by refunding it (#351).
+    const cancellation =
+      r.state === 'cancelled'
+        ? summarizeCancellation({
+            kind: 'workshop',
+            refundOutcome: r.refundOutcome,
+            creditsUsed: 0,
+            bookingCancelledAt: r.cancelledAt,
+            record: null,
+            by: { actor: r.refundOutcome === 'stripe_refunded' ? 'automatic' : 'studio' },
+          }).member
+        : null
     return {
       id: r.bookingId,
       workshop_id: r.workshopId ?? '',
@@ -130,6 +147,8 @@ export async function listMyWorkshopBookings(
       booked_at: r.bookedAt,
       cancelled_at: r.cancelledAt,
       refund_outcome: r.refundOutcome,
+      who_line: cancellation?.who ?? null,
+      outcome_line: cancellation?.outcome ?? null,
       code: r.code,
       qr_token: r.qrToken,
       location: r.workshopLocationId ? locationById.get(r.workshopLocationId) ?? null : null,

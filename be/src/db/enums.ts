@@ -158,8 +158,29 @@ export const refundOutcomeEnum = pgEnum('refund_outcome', [
 ])
 export const checkinStateEnum = pgEnum('checkin_state', ['pending', 'attended', 'no_show', 'n_a'])
 export const cancellationKindEnum = pgEnum('cancellation_kind', ['class', 'pt'])
-export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor'])
+// `system`: the studio's machinery, not a person — a Refund's Void, a
+// Complimentary Package's Remove, a Package rule change (#350).
+export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor', 'system'])
 export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual'])
+export type RefundOutcome = (typeof refundOutcomeEnum.enumValues)[number]
+export type CancellationSource = (typeof cancellationSourceEnum.enumValues)[number]
+
+// Credit movements (#353): why a package's balance moved, or — for kept,
+// no_show and expired — why it did not come back. `opening` is the balance the
+// history starts from, written once by migration 0103 for packages bought before it.
+export const creditMovementCauseEnum = pgEnum('credit_movement_cause', [
+  'opening',
+  'booked',
+  'returned',
+  'kept',
+  'no_show',
+  'expired',
+  'adjusted',
+  'pt_requested',
+  // A pending PT request's sessions coming back — returned, never "refunded" (be/CONTEXT.md § Refund).
+  'pt_returned',
+])
+export const creditMovementActorEnum = pgEnum('credit_movement_actor', ['member', 'staff', 'system'])
 
 // Instructor leave (docs/md/spec-instructor-leave.md)
 export const leaveTypeEnum = pgEnum('leave_type', ['annual', 'medical', 'study'])

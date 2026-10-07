@@ -229,6 +229,24 @@ export function classCancelResult(
   return { tone: "ok", text: "Booking cancelled." };
 }
 
+// ── The Cancelled tab (#349, #351) ──────────────────────────────────────────
+//
+// A cancelled booking's own lines — who and when, where the credit went — are
+// worded once, by the backend's cancellation summary
+// (`be/src/services/bookings/cancellation-summary.ts`), the same sentences
+// staff read, and each read sends them as `who_line` and `outcome_line`.
+
+/** Who cancelled, as the backend's cancellation summary says. */
+export type CancelledBy = "member" | "studio";
+
+/** Who ended a PT request or seat: to a 2on1 partner, the host's cancel is the host's. */
+export type PtCancelledBy = CancelledBy | "host";
+
+/** The class overlay's standing line for a cancelled booking. */
+export function cancelledStanding(by: CancelledBy): string {
+  return by === "studio" ? "The studio cancelled this booking" : "You cancelled this booking";
+}
+
 /**
  * The line on an upcoming booking: until when a cancel is in time, or that it
  * no longer is. `when` is the deadline as the page formats times.

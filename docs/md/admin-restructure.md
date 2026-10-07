@@ -537,6 +537,7 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 - Each roster row shows a read-only **Checked in** tag once the member is attended (or **No-show**). Attendance is not marked here — that is the check-in desk's alone (§11)
 - Cancel-this-instance action (admin) → triggers full credit refund + Inbox notification
 - **Cancel** on each confirmed, not-attended roster row (admin on any class; instructor on a class they lead) → the staff cancel dialog, Return credit or Keep credit (§12)
+- **Cancelled (n)** (#352) — a collapsed section under the roster, on the admin page and the instructor's session page alike: each booking cancelled off the class with the member's name (linked to their profile for an admin), when it was cancelled and by whom (Member / the staff member's name / Automatic / Studio), and where the credit went in the profile's words; a Late cancel reads "Late cancel · credit kept", marked as a warning. These rows carry no check-in and no Cancel. A cancelled class shows who was booked here, open from the start, instead of "No bookings yet."
 - **Packages accepted** — the class's Package rule as a sentence ("All packages" / "Only: …" / "All except: …"), on the admin page and the instructor's session page. The admin editor changes it with the same `PackageRuleField` as §7b. A change that would cancel bookings is previewed first (`PATCH …/classes/:id` with `preview: true` → `{ would_cancel: n }`): above zero, a confirm step says **"This will cancel N bookings"** before anything is saved. Saving cancels exactly the bookings paid by a package the class no longer accepts (never one already checked in) — each refunded in full to the package that paid, its seat offered to the waitlist, not counted against the member's cancellations, and the member emailed `class_rule_cancelled`. A change that cancels nobody saves without the confirm.
 
 **Workshop detail page additions:**
@@ -776,7 +777,7 @@ One read, `GET /portal/admin/clients/:id`, fills the page.
 - Name, email, phone — sourced from registration or import; the email is changeable (#176), the rest is not editable by admin in v1.
 - Join date, gender and date of birth when given, referral source (who referred them, linked to their profile).
 - Waiver signed date, or "Waiver not signed" (see §17).
-- **Attendance strip** under the name: classes attended, no-shows, late cancels and the last visit, counted over every booking the member has ever had (not just the history listed below).
+- **Attendance strip** under the name: sessions attended, no-shows, late cancels and the last visit, counted over every booking the member has ever had (not just the history listed below). Late cancels are class cancels whose credit was kept (`forfeited`) — a member's Late cancel, an over-cap cancel or staff's Keep credit; a private session's kept session is not one (`be/CONTEXT.md` § Late cancel).
 
 **Packages & memberships:**
 - **Current** — what the member can still use: running (clock started, something left) first, then **Not started** (Dormant, waiting for a first booking), soonest-ending first. Each card: package name, kind, credits or sessions remaining of total (or "Unlimited"), valid-until date, Home Location and Add-On for an Unlimited Plan, Bound Instructor for PT, bought date and money.
@@ -785,10 +786,11 @@ One read, `GET /portal/admin/clients/:id`, fills the page.
 - **Money line.** A package paid online reads "List S$x · paid S$y · S$z off". A package with **no online payment and not given free** — every package a migration brings over from another system arrives like this, with `purchase_id` null — reads "paid S$y · no online payment on record" with **no discount derived**: the figure is what the old system recorded, and a list-minus-paid there would invent a discount nobody gave.
 - Multiple packages of the same type are listed separately (e.g. two overlapping credit bundles).
 
-**Bookings:**
-- **Upcoming bookings** — everything still booked from now on, soonest first: classes, private sessions and workshops.
-- **Booking history** — the most recent 50 past bookings, newest first, 10 shown until "Show all". Cancelled bookings stay in the list.
-- Each row: date and time, session name (class type, "Private session", or workshop · tier), instructor, location, the package it was booked on, and one outcome chip — Booked / Attended / No-show / Late cancel (credit forfeited) / Cancelled / Not checked in (in the past, confirmed, never marked).
+**Bookings** — one card, three tabs with counts, matching the member's own (#352):
+- **Upcoming** — everything still booked from now on, soonest first: classes, private sessions and workshops. Each confirmed, not-attended row offers **Cancel…** (the staff cancel dialog, §12).
+- **History** — what was held: the most recent 50 past bookings that were not cancelled (Attended, No-show, or Not checked in — in the past, confirmed, never marked), newest first.
+- **Cancelled** — every cancelled class (trial included), private session and workshop, the moment it is cancelled whatever its start time, newest cancellation first, the most recent 50. A private-session request withdrawn or expired while still pending is listed too, as "Private session request", "Not scheduled". Each row: what it was and when, "Cancelled {time} by {who}" — **Member**, the named staff member, **Automatic** (a Void, a Remove, a Package rule change, a request's expiry) or **Studio** (a cancel recorded before staff were named) — and one outcome chip, the line the server's cancellation summary words — the member's own outcome line but for whose cap and card it is: "Credit returned" / "N credits returned" ("Session returned" for a private session), "Late cancel · credit kept", "Cancelled over their cap · credit kept", "Credit kept", "Cancelled by the studio · …" for the studio's, "Refunded to their card" (a workshop's money), or "Nothing to return"; a kept credit is toned as a warning. Corporate requests stay on the corporate requests page.
+- Each row: date and time, session name (class type, "Private session", or workshop · tier), instructor, location and the package it was booked on; 10 shown per page.
 - Imported history (a migrated studio's past classes, check-ins and late cancels) is ordinary bookings and reads the same.
 
 **Online payments:**
@@ -797,18 +799,13 @@ One read, `GET /portal/admin/clients/:id`, fills the page.
 
 **Notes:** there is no notes field on a member (`clients` has none). Adding one is a schema change, not built.
 
-**Cancellation history:**
-- Running cancellation count vs. the configured cap (§4) for the current cycle.
-- Cycle reset date shown.
-- Only counts cancellations — no-shows excluded per §4.
+**Cancellation history:** the Cancelled tab above. **Not built:** the running cancellation count against the Cancellation Cap (§4) for the current cycle, and its reset date.
 
-**Attendance record:**
-- Aggregate: total sessions attended, total no-shows.
-- Viewable per session type (class / workshop / PT).
+**Attendance record:** the attendance strip's totals. **Not built:** the same split by session type (class / workshop / PT).
 
 **Referrals:**
 - Referred by: name + link to referrer's profile (if applicable).
-- Referred: list of clients this person has referred.
+- **Not built:** the list of clients this person has referred.
 
 ### 15c. Account Status
 
@@ -842,7 +839,7 @@ The actions on a client's active-package kebab, all written into the same immuta
 **Rules:**
 - Balance cannot go below zero — adjustment / set-balance is blocked if it would result in a negative balance.
 - Every action is recorded with timestamp, acting admin, package, delta, reason — immutable.
-- The audit list (renamed **"Package adjustments"**) discriminates row type by `reason.startsWith(...)` and renders tone-coded badges: `Expiry` / `Set N` / `+N` / `−N`.
+- _As built (#353):_ the old **"Package adjustments"** list is replaced by **Credit history**, one package at a time (a picker of the member's packages, current and past). Each row is a Credit movement (backend-architecture §4i) in words — Booked, Returned, Late cancel · credit kept, Over the cancellation limit · credit kept, Staff cancel · credit kept, No-show · credit kept, Expired, Adjusted by staff, Private session requested, Request cancelled · returned — never a raw code like `client_cancellation_refund`. It shows the signed amount, the class or private session and its time, the staff member's name (or Member / System), an adjustment's reason, and the balance after; an expiry shows what it took and a balance of 0. Newest first, with "History from <date>" at its foot. Read by `GET /portal/admin/clients/:id/packages/:pid/credit-history`; each action above writes its ledger row and its movement together.
 - Adjustments do not affect cancellation cap counter (§4) — they are an admin override, not a client action.
 
 ---

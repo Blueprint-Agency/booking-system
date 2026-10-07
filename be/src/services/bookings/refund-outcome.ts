@@ -1,15 +1,16 @@
+import type { CancellationSource } from '../../db/enums'
 import type { EvaluateResult } from '../policy/evaluate-cancellation'
 
-export type RefundOutcome =
-  | 'credit_returned'
-  | 'session_returned'
-  | 'stripe_refunded'
-  | 'forfeited'
-  | 'n_a'
+export type { RefundOutcome } from '../../db/enums'
+import type { RefundOutcome } from '../../db/enums'
 
-/** Who cancelled: the member, or a staff member from the portal (#320). */
-export type StaffCancelSource = 'admin' | 'instructor'
-export type CancelSource = 'client' | StaffCancelSource
+/**
+ * Who cancelled: the member, a staff member from the portal (#320), or the
+ * studio's machinery — a Void, a Remove, a Package rule change (#350). A
+ * `system` cancel settles as a staff one does.
+ */
+export type StaffCancelSource = Exclude<CancellationSource, 'client' | 'system'>
+export type CancelSource = CancellationSource
 
 /**
  * A staff cancel's answer to "Return 1 credit" or "Keep the credit" (#320):

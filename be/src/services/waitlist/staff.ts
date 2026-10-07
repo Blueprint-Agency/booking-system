@@ -161,6 +161,7 @@ export async function staffPromote(tenantId: string, input: StaffPromoteInput): 
       clientPackageId: null,
       allowClash: input.allowClash ?? false,
       now,
+      by: { staffId: input.actor.staffId },
     })
     if (!paid.ok) throw await refusalError(tx, tenantId, entry.clientId, paid)
 

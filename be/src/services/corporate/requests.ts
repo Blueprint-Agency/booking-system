@@ -22,6 +22,7 @@ import {
   type CorporateSessionError,
 } from './sessions'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { summarizeCancellation, type CancellationLines } from '../bookings/cancellation-summary'
 
 export type CorporateRequestRow = typeof corporateRequests.$inferSelect
 export type CorporateRequestStatus = CorporateRequestRow['status']
@@ -41,6 +42,13 @@ export interface HydratedCorporateRequest {
   message: string | null
   createdAt: Date
   resolvedAt: Date | null
+  /**
+   * When it was cancelled; null unless it was. Only the studio cancels one,
+   * and resolving it to `cancelled` is when (#351).
+   */
+  cancelledAt: Date | null
+  /** A cancelled request's lines, as the member reads them; null unless cancelled. */
+  cancellation: CancellationLines | null
   client: { id: string; name: string; email: string }
   package: { id: string; name: string }
   /** Populated once the request has been scheduled (else null). */
@@ -143,6 +151,7 @@ function hydratedSelect() {
 type HydratedRow = Awaited<ReturnType<ReturnType<typeof hydratedSelect>['where']>>[number]
 
 function mapRow(r: HydratedRow): HydratedCorporateRequest {
+  const cancelledAt = r.status === 'cancelled' ? r.resolvedAt : null
   return {
     id: r.id,
     status: r.status,
@@ -150,6 +159,18 @@ function mapRow(r: HydratedRow): HydratedCorporateRequest {
     message: r.message,
     createdAt: r.createdAt,
     resolvedAt: r.resolvedAt,
+    cancelledAt,
+    cancellation:
+      r.status === 'cancelled'
+        ? summarizeCancellation({
+            kind: 'corporate',
+            refundOutcome: null,
+            creditsUsed: 0,
+            bookingCancelledAt: cancelledAt,
+            record: null,
+            by: { actor: 'studio' },
+          }).member
+        : null,
     client: { id: r.clientId, name: r.clientName, email: r.clientEmail },
     package: { id: r.packageId, name: r.packageName },
     session: r.sessionId

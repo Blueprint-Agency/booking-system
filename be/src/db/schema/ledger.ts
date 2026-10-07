@@ -6,6 +6,8 @@ import { clientPackages } from './packages'
 import { bookings } from './bookings'
 import {
   auditActorTypeEnum,
+  creditMovementActorEnum,
+  creditMovementCauseEnum,
   offlinePaymentMethodEnum,
   purchaseKindEnum,
   purchaseStatusEnum,
@@ -153,6 +155,56 @@ export const manualAdjustments = pgTable(
     clientPackageIdFkIdx: index('manual_adjustments_client_package_id_fk_idx').on(table.clientPackageId),
     clientCreatedIdx: index('manual_adjustments_client_created_idx').on(table.tenantId, table.clientId, table.createdAt),
     packageIdx: index('manual_adjustments_package_idx').on(table.tenantId, table.clientPackageId),
+  }),
+)
+
+/**
+ * A Credit movement (#353): one row per change to a package's balance, and per
+ * forfeit that left it unchanged, written by `services/packages/ledger.ts` in
+ * the same transaction as the change. `balance_after` is the stored balance
+ * once the row's `delta` is applied (null on an Unlimited Plan), so a package's
+ * history reads newest-first and reconciles with its balance.
+ *
+ * `manual_adjustments` is still written beside it, as the free-text audit of
+ * who changed what; this is the history a member and staff read.
+ */
+export const creditMovements = pgTable(
+  'credit_movements',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    // The package's own history: it goes with the package (a Remove deletes one).
+    clientPackageId: uuid('client_package_id')
+      .notNull()
+      .references(() => clientPackages.id, { onDelete: 'cascade' }),
+    // The booking the movement was for, when there is one. The balance change
+    // stands even if the booking row is ever deleted.
+    bookingId: uuid('booking_id').references(() => bookings.id, { onDelete: 'set null' }),
+    cause: creditMovementCauseEnum('cause').notNull(),
+    delta: integer('delta').notNull(),
+    balanceAfter: integer('balance_after'),
+    actor: creditMovementActorEnum('actor').notNull(),
+    actedByStaffId: uuid('acted_by_staff_id').references(() => staffUsers.id, { onDelete: 'restrict' }),
+    /** A staff adjustment's own reason. Staff-only: never sent to the member. */
+    note: text('note'),
+    // The statement's time, not the transaction's: one transaction can write
+    // two movements (an expiry swept on the way to a booking), and the
+    // history orders them by this.
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`clock_timestamp()`),
+  },
+  table => ({
+    clientIdFkIdx: index('credit_movements_client_id_fk_idx').on(table.clientId),
+    clientPackageIdFkIdx: index('credit_movements_client_package_id_fk_idx').on(table.clientPackageId),
+    bookingIdFkIdx: index('credit_movements_booking_id_fk_idx').on(table.bookingId),
+    actedByStaffIdFkIdx: index('credit_movements_acted_by_staff_id_fk_idx').on(table.actedByStaffId),
+    packageCreatedIdx: index('credit_movements_package_created_idx').on(
+      table.tenantId,
+      table.clientPackageId,
+      table.createdAt,
+    ),
   }),
 )
 

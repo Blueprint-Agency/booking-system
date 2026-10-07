@@ -32,7 +32,7 @@ import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
-import { debitCredits, refundCredits, type Tx } from '../packages/ledger'
+import { actorOfSource, debitCredits, recordMovement, refundCredits, type Tx } from '../packages/ledger'
 import { activateOnSchedule, reverseActivationOnCancel, sweepExpired } from '../packages/activation'
 import { activationExpiry } from '../packages/validity'
 import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
@@ -264,15 +264,6 @@ async function seatMember(
     })
   }
 
-  await debitCredits(tx, {
-    tenantId,
-    clientId: member.clientId,
-    clientPackageId: pkg.id,
-    amount: SEAT_COST,
-    reason: 'pt_manual_seat',
-    actedByStaffId: actor.actorStaffId,
-  })
-
   await tx.insert(ptSessionClients).values({ tenantId, ptSessionId: session.id, clientId: member.clientId })
   const { qrToken, code } = generateBookingCodes()
   const [booking] = await tx
@@ -289,6 +280,20 @@ async function seatMember(
       code,
     })
     .returning({ id: bookings.id })
+
+  // Paid once the seat's booking exists, so its Credit movement can name it;
+  // an overdraw refused here rolls the seat back with it.
+  await debitCredits(tx, {
+    tenantId,
+    clientId: member.clientId,
+    clientPackageId: pkg.id,
+    amount: SEAT_COST,
+    reason: 'pt_manual_seat',
+    cause: 'booked',
+    bookingId: booking!.id,
+    actor: 'staff',
+    actedByStaffId: actor.actorStaffId,
+  })
 
   await activateOnSchedule(tx, tenantId, pkg.id, session.id)
   return { bookingId: booking!.id, clientPackageId: pkg.id }
@@ -545,6 +550,49 @@ async function followRoster(
 }
 
 /**
+ * A private session's booking was cancelled on its own (bookings/cancel.ts: a
+ * Void, a Remove, a single-booking cancel), already settled on its package.
+ * The request and session follow, as cancelling the request would leave them
+ * (#350): a member's request is paid whole by its requester, so their booking
+ * going takes the session and any partner seat with it (`n_a`), while a
+ * partner's going leaves it on; a manual session goes on for whoever is still
+ * seated, and is cancelled with the last one — unless staff cancelled it, who
+ * free the seat to fill again, as removing a member does (PT-94, PT-101).
+ */
+export async function settleSessionAfterBookingCancel(
+  tx: Tx,
+  tenantId: string,
+  input: { ptSessionId: string; clientId: string; source: CancelSource; cancelledByStaffId: string | null; now: Date },
+): Promise<void> {
+  const { ptSessionId, now } = input
+  const [req] = await tx
+    .select({ id: ptRequests.id, origin: ptRequests.origin, status: ptRequests.status, clientId: ptRequests.clientId, coClientId: ptRequests.coClientId })
+    .from(ptRequests)
+    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.scheduledPtSessionId, ptSessionId)))
+    .for('update')
+    .limit(1)
+  if (req?.status !== 'scheduled') return
+  const left = await seatsOn(tx, tenantId, ptSessionId)
+  const staffFreedSeat = input.source === 'admin' || input.source === 'instructor'
+  if (req.origin === 'portal' && (left.length || staffFreedSeat)) return followRoster(tx, tenantId, ptSessionId, req)
+  if (req.origin !== 'portal' && input.clientId !== req.clientId) return
+  for (const seat of left) {
+    await tx
+      .update(bookings)
+      .set({ state: 'cancelled', refundOutcome: 'n_a', checkInState: 'n_a', cancelledAt: now })
+      .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, seat.id)))
+  }
+  await tx
+    .update(ptSessions)
+    .set({ lifecycle: 'cancelled', cancelledAt: now, cancelledByStaffId: input.cancelledByStaffId })
+    .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, ptSessionId)))
+  await tx
+    .update(ptRequests)
+    .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId: input.cancelledByStaffId })
+    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
+}
+
+/**
  * Cancel one seat and settle it on its own package: the one session it paid
  * comes back when `refund` says so, the package returns to Dormant if this
  * session Activated it and the cancel came in time (be/docs/adr/0011), and
@@ -576,6 +624,19 @@ async function cancelSeat(
       clientPackageId: seat.clientPackageId!,
       amount: refunded,
       reason: input.reason,
+      cause: 'returned',
+      bookingId: seat.id,
+      actor: actorOfSource(input.source),
+      actedByStaffId: input.actorStaffId,
+    })
+  } else if (!input.refund && seat.clientPackageId && used > 0) {
+    await recordMovement(tx, {
+      tenantId,
+      clientId: seat.clientId,
+      clientPackageId: seat.clientPackageId,
+      cause: 'kept',
+      bookingId: seat.id,
+      actor: actorOfSource(input.source),
       actedByStaffId: input.actorStaffId,
     })
   }
@@ -600,6 +661,7 @@ async function cancelSeat(
     clientId: seat.clientId,
     kind: 'pt',
     source: input.source,
+    cancelledByStaffId: input.source === 'admin' || input.source === 'instructor' ? input.actorStaffId : null,
     wasWithinWindow: input.wasWithinWindow,
     wasWithinCap: input.wasWithinCap,
     refundFired: refunded > 0,
@@ -639,7 +701,7 @@ export async function cancelManualSessionInTx(
   input: {
     req: ManualCancelRequest
     session: { id: string; startsAt: Date }
-    source: 'client' | 'admin'
+    source: CancelSource
     clientId?: string
     actorStaffId: string | null
     now: Date
@@ -711,7 +773,7 @@ export async function cancelManualSessionInTx(
     const { refunded } = await cancelSeat(tx, tenantId, {
       seat,
       ptSessionId: session.id,
-      source: 'admin',
+      source: input.source,
       refund: true,
       reason: 'pt_admin_cancel_refund',
       wasWithinWindow,

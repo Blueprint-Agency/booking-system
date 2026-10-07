@@ -94,7 +94,7 @@ export async function applyRuleChange(
   for (const b of await bookingsRefusedBy(tx, tenantId, classId, rule)) {
     const done = await cancelBookingInTx(tx, tenantId, {
       bookingId: b.bookingId,
-      source: 'admin',
+      source: 'system',
       // The studio's change, not the member's: the credit always comes back.
       credit: 'return',
       ...(actorStaffId ? { actorStaffId } : {}),

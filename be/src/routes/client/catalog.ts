@@ -28,6 +28,9 @@ function serializeCorporateRequest(r: HydratedCorporateRequest) {
     status: r.status,
     package: r.package,
     created_at: r.createdAt.toISOString(),
+    cancelled_at: r.cancelledAt?.toISOString() ?? null,
+    who_line: r.cancellation?.who ?? null,
+    outcome_line: r.cancellation?.outcome ?? null,
     session: r.session
       ? {
           starts_at: r.session.startsAt.toISOString(),

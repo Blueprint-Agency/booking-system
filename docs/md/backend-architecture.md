@@ -68,7 +68,7 @@ be/
     │   │   │                          #   pt_requests, pt_sessions, pt_session_clients
     │   │   ├── # availability.ts      # REMOVED in v1 — see §4f (replaced by pt_requests)
     │   │   ├── bookings.ts            # bookings, cancellations, check_ins
-    │   │   ├── ledger.ts              # manual_adjustments, audit_log, stripe_payments
+    │   │   ├── ledger.ts              # manual_adjustments, credit_movements, audit_log, stripe_payments
     │   │   ├── content.ts             # email_templates, email_log, waiver, waiver_signatures, marketing_content
     │   │   ├── inbox.ts               # inbox_items
     │   │   ├── ops.ts                 # feature_flags
@@ -678,6 +678,7 @@ The simplified v1 flow has **no in-app back-and-forth** — all negotiation is o
 | expires_at | timestamptz | not null — `created_at + ttl` from `pt_booking_config` (sweep job, §5) |
 | scheduled_pt_session_id | uuid | FK → pt_sessions.id, nullable — set when status=`scheduled` |
 | resolved_at, resolved_by_staff_id | | nullable — set on scheduled or either cancellation; staff id NULL for client-initiated / system (expiry) |
+| cancel_source | `cancellation_source` | nullable — who cancelled it: `client`, `admin`, `instructor` or `system` (an expiry, a Complimentary Package's Remove). A pending request has no `cancellations` row, so this is how its reads tell a Remove — which names its admin in `resolved_by_staff_id` — from a staff cancel (#352, migration 0103). Null while live and on requests cancelled before it |
 | created_at | timestamptz | not null |
 
 **Indexes:** `(status, created_at desc)` — drives the `/admin/pt-requests` triage queue; `(client_id, status)` for client's own list; `(class_type_id)` for class-type filters; `(expires_at) WHERE status='pending'` for the expiry sweep.
@@ -828,7 +829,8 @@ Workshop bookings cover **the tier**, not individual days. Per-day attendance / 
 | booking_id | uuid | FK → bookings.id |
 | client_id | uuid | FK → clients.id (denormalised for query) |
 | kind | enum | `class`, `pt` (workshops not represented; admin-cancel still logged but excluded) |
-| source | enum | `client`, `admin` — `admin` cancellations don't count toward cap |
+| source | enum | `client`, `admin`, `instructor`, `system` (a Void, a Remove, a Package rule change; #350) — only `client` counts toward the cap |
+| cancelled_by_staff_id | uuid | FK → staff_users.id; the staff member behind an `admin` / `instructor` cancel, null for `client`, `system` and rows before #350 |
 | was_within_window, was_within_cap, refund_fired | boolean | not null |
 | cancelled_at | timestamptz | not null |
 
@@ -847,6 +849,26 @@ id, client_id (FK), client_package_id (FK), delta (int, signed), reason (text, n
 **Indexes:** `(client_id, created_at desc)`, `(client_package_id)`.
 
 **App-level invariant:** rejecting adjustment if it would drive `client_packages.credits_or_sessions_remaining` below zero. Enforced in service layer + DB trigger as defence-in-depth.
+
+#### `credit_movements` (#353, migration 0103)
+
+A package's **Credit history**: one row for every change to its balance, and for every forfeit that left it unchanged, written by the credit ledger (`services/packages/ledger.ts`) in the same transaction as the change. `manual_adjustments` stays the free-text audit beside it.
+
+tenant_id, id, client_id (FK), client_package_id (FK, `ON DELETE cascade` — the package's own history), booking_id (FK nullable, `ON DELETE set null` — the booking it was for), cause enum `credit_movement_cause` (`opening`, `booked`, `returned`, `kept`, `no_show`, `expired`, `adjusted`, `pt_requested`, `pt_returned`), delta (int, signed — what this row did to the stored balance; 0 for `kept`, `no_show`, `expired`, `opening` and a staff edit that moves no credits), balance_after (int, nullable — the stored balance after it; null on an Unlimited Plan), actor enum `credit_movement_actor` (`member`, `staff`, `system`), acted_by_staff_id (FK nullable), note (text — a staff adjustment's reason; staff-only), created_at (`clock_timestamp()`, so two movements in one transaction keep their order).
+**Indexes:** `(tenant_id, client_package_id, created_at)`, and one per FK. Row-Level Security like every Tenant-scoped table.
+
+| Cause | Written by | Booking |
+|---|---|---|
+| `booked` (−n) | a class booking (member, staff, waitlist Promotion), a manual PT seat | yes |
+| `returned` (+n) | a cancel that returns the credit or session — member in time, staff Return credit, a whole-class cancel, a Void / Remove / Package rule change (`system`), a scheduled PT session's cancel | yes |
+| `kept` (0) | a Late cancel, an over-cap cancel, a staff Keep credit | yes |
+| `no_show` (0) | staff marking a No-show | yes |
+| `expired` (0) | the expiry sweep (nightly, or run early for one member on the booking path); `balance_after` is what the package still held | no |
+| `adjusted` (±n or 0) | every staff edit on the profile, and a Complimentary Package's grant (`recordAdjustment`); `note` is its reason | no |
+| `pt_requested` (−n) / `pt_returned` (+n) | a PT request's debit and the sessions a pending request returns (cancel or expiry); a PT type change | no |
+| `opening` (0) | migration 0103, once, for every package a member held then | no |
+
+Movements before migration 0103 are not invented: its `opening` row is where a package's history starts ("History from …"); a package bought later starts at its purchase. A Refund's Void deactivates a package without a movement (its future bookings' returns are recorded). Reads: `GET /me/packages/:id/credit-history` (be-client) and `GET /portal/admin/clients/:id/packages/:pid/credit-history` (be-portal), both through `services/packages/credit-history.ts`.
 
 #### `audit_log`
 

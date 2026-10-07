@@ -324,6 +324,7 @@ async function reconcileSessionType(
     from: '1on1' | '2on1'
     to: '1on1' | '2on1'
     partnerClientId?: string
+    actorStaffId: string
   },
 ): Promise<void> {
   const [req] = await tx
@@ -381,6 +382,9 @@ async function reconcileSessionType(
       clientPackageId: req.debitedClientPackageId,
       amount: -plan.delta,
       reason: 'pt_type_change_debit',
+      cause: 'pt_requested',
+      actor: 'staff',
+      actedByStaffId: args.actorStaffId,
     })
   } else if (plan.delta > 0) {
     await refundCredits(tx, {
@@ -389,6 +393,9 @@ async function reconcileSessionType(
       clientPackageId: req.debitedClientPackageId,
       amount: plan.delta,
       reason: 'pt_type_change_refund',
+      cause: 'pt_returned',
+      actor: 'staff',
+      actedByStaffId: args.actorStaffId,
     })
   }
 
@@ -623,6 +630,7 @@ export async function updatePtSession(
             from: locked.sessionType,
             to: patch.sessionType,
             ...(patch.partnerClientId !== undefined ? { partnerClientId: patch.partnerClientId } : {}),
+            actorStaffId: patch.actorStaffId,
           })
         }
       }

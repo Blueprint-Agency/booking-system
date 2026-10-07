@@ -71,7 +71,7 @@ export async function promoteFromWaitlist(
     // Nobody is there to pick, so the Default payer pays. A member who has
     // since booked something at an overlapping time is skipped, not moved:
     // nobody is there to say "book anyway".
-    const paid = await payAndBook(tx, tenantId, cls, { clientId: next.clientId, seat: 'online', clientPackageId: null, now })
+    const paid = await payAndBook(tx, tenantId, cls, { clientId: next.clientId, seat: 'online', clientPackageId: null, now, by: 'system' })
     if (!paid.ok) {
       outcomes.set(next.id, paid.refusal)
       continue

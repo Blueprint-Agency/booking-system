@@ -4,7 +4,13 @@ import { z } from 'zod'
 import { bookClass, serializePaidWith } from '../../services/bookings/book'
 import { cancelBooking } from '../../services/bookings/cancel'
 import { previewMemberClassCancel } from '../../services/bookings/cancel-preview'
-import { listClassBookings, getClassBookingDetail, type ClassBookingRow } from '../../services/bookings/list'
+import {
+  listClassBookings,
+  listCancelledClassBookings,
+  getClassBookingDetail,
+  type ClassBookingRow,
+} from '../../services/bookings/list'
+import { memberCancellationJson } from '../../services/bookings/cancellation-summary'
 import { memberAttendance } from '../../services/bookings/attendance'
 import { ATTENDANCE_PERIODS } from '../../services/bookings/attendance-periods'
 import { isIsoDate } from '../../services/tenants/term-dates'
@@ -43,6 +49,13 @@ const app = new Hono()
     const clientId = c.get('clientId')
     const rows = await listClassBookings(tenantId(c), clientId, 'past')
     return c.json({ bookings: rows.map(bookingRow) })
+  })
+  .get('/cancelled', async c => {
+    const clientId = c.get('clientId')
+    const rows = await listCancelledClassBookings(tenantId(c), clientId)
+    return c.json({
+      bookings: rows.map(b => ({ ...bookingRow(b), ...memberCancellationJson(b.cancellation) })),
+    })
   })
   .get(
     '/attendance',

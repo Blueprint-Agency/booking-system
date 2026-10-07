@@ -27,7 +27,7 @@ import { db } from '../../db'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { inboxItems } from '../../db/schema/inbox'
-import { refundCredits } from '../packages/ledger'
+import { actorOfSource, recordMovement, refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import {
   settleCancel,
@@ -40,6 +40,7 @@ import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-canc
 import { promoteFromWaitlist, sendPromotionEmails, type Promotion } from '../waitlist/promote'
 import { assertMayWorkClass } from '../waitlist/staff'
 import type { Tx } from '../schedule/roster'
+import { settleSessionAfterBookingCancel } from '../pt-sessions/manual'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
 
@@ -59,7 +60,7 @@ interface CancelBase {
   /**
    * Why the studio cancelled, when it was not a person cancelling this one
    * booking: the class's Package rule changed and no longer accepts the package
-   * that paid (services/schedule/package-rules.ts). Admin source only, with
+   * that paid (services/schedule/package-rules.ts). System source only, with
    * `credit: 'return'`. The booking is refunded and the seat back-filled exactly
    * as an admin cancel does — and, like one, it never counts against the
    * member's cancellations.
@@ -75,7 +76,18 @@ export type CancelInput =
     })
   | (CancelBase & {
       source: 'admin'
-      /** Written to the credit-adjustment ledger; absent for a system cancel (a Refund's). */
+      /** The admin cancelling: on the cancellation and the credit-adjustment ledger. */
+      actorStaffId?: string
+      credit: StaffCredit
+    })
+  | (CancelBase & {
+      /**
+       * The studio's machinery, not a person (#350): a Refund's Void, a
+       * Complimentary Package's Remove, a Package rule change. Settles as a
+       * staff cancel does and records no staff member on the cancellation.
+       */
+      source: 'system'
+      /** Whose act set it off (a rule change's editor), for the credit ledger only. */
       actorStaffId?: string
       credit: StaffCredit
     })
@@ -240,6 +252,21 @@ export async function cancelBookingInTx(
       clientPackageId: bk.clientPackageId!,
       amount: used,
       reason: studioReason ? 'package_rule_cancellation_refund' : `${source}_cancellation_refund`,
+      cause: 'returned',
+      bookingId: bk.id,
+      actor: actorOfSource(source),
+      actedByStaffId: actorStaffId ?? null,
+    })
+  } else if (refundOutcome === 'forfeited' && used > 0 && bk.clientPackageId) {
+    // A Late cancel, an over-cap one or a staff Keep credit: the balance stays
+    // as it is, and the history says where the credit went.
+    await recordMovement(tx, {
+      tenantId,
+      clientId: bk.clientId,
+      clientPackageId: bk.clientPackageId,
+      cause: 'kept',
+      bookingId: bk.id,
+      actor: actorOfSource(source),
       actedByStaffId: actorStaffId ?? null,
     })
   }
@@ -260,12 +287,14 @@ export async function cancelBookingInTx(
 
   // 5. Record the cancellation. Only `source='client'` rows count toward the
   // member's cap, whatever the refund outcome; a staff row never does.
+  const cancelledByStaffId = source === 'admin' || source === 'instructor' ? (actorStaffId ?? null) : null
   await tx.insert(cancellations).values({
     tenantId,
     bookingId: bk.id,
     clientId: bk.clientId,
     kind: cancelKind,
     source,
+    cancelledByStaffId,
     wasWithinWindow,
     wasWithinCap: evaluation?.wasWithinCap ?? true,
     refundFired,
@@ -277,6 +306,19 @@ export async function cancelBookingInTx(
     .update(bookings)
     .set({ state: 'cancelled', refundOutcome, checkInState: 'n_a', cancelledAt: now })
     .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
+
+  // 6b. A private session's request and session follow the booking, as a
+  // cancel of the request leaves them — never scheduled with nobody paying,
+  // nor completed as attended once its time passes (#350).
+  if (bk.kind === 'pt') {
+    await settleSessionAfterBookingCancel(tx, tenantId, {
+      ptSessionId: bk.ptSessionId!,
+      clientId: bk.clientId,
+      source,
+      cancelledByStaffId,
+      now,
+    })
+  }
 
   // 7. A staff single-cancel raises an inbox item (client self-cancel also notifies admins).
   await tx.insert(inboxItems).values({

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   cancelClosed,
+  cancelledStanding,
   canStillCancel,
   classBookingPolicy,
   classCancelNotice,
@@ -98,4 +99,14 @@ test("no sentence calls a returned credit or session a refund", () => {
     ptCancelResult("forfeited", 0).text,
   ];
   for (const s of all) assert.doesNotMatch(s, /refund/i, s);
+});
+
+// ── The Cancelled tab (#349) ────────────────────────────────────────────────
+// A cancelled card's who and outcome lines are the server's
+// (be/src/services/bookings/cancellation-summary.test.ts, ACC-33 and ACC-35);
+// the class overlay's standing line is this app's.
+
+test("ACC-33 a cancelled class's overlay says who cancelled it", () => {
+  assert.equal(cancelledStanding("member"), "You cancelled this booking");
+  assert.equal(cancelledStanding("studio"), "The studio cancelled this booking");
 });

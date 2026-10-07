@@ -30,7 +30,7 @@ import { useBrandCopy } from "@/components/brand/brand-provider";
 import { BTN_CANCEL } from "@/components/ui/styles";
 import { cn, formatDate } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
-import type { BookingItem, BookingType } from "@/lib/my-bookings";
+import { ptStanding, type BookingItem, type BookingPhase, type BookingType } from "@/lib/my-bookings";
 import {
   formatSlotRange,
   ptCancelFailure,
@@ -48,6 +48,32 @@ import {
   isLate,
   ptCancelPrompt,
 } from "@/lib/cancellation-copy";
+
+/** What a cancelled booking's read sends of its cancellation: the server's own lines (#349, #351). */
+interface CancelledLines {
+  cancelled_at?: string | null;
+  who_line?: string | null;
+  outcome_line?: string | null;
+}
+
+/**
+ * A cancelled card's who-and-when line and its outcome line, worded by the
+ * backend's cancellation summary — the same sentences staff read — and shown
+ * as sent.
+ */
+function Cancelled({ c }: { c: CancelledLines }) {
+  if (!c.outcome_line) return null;
+  return (
+    <div className="mt-2 space-y-0.5 text-xs">
+      {c.cancelled_at && (
+        <p className="text-muted tabular-nums">
+          {c.who_line} · {formatDate(c.cancelled_at)} · {formatClassTime(c.cancelled_at)}
+        </p>
+      )}
+      <p className="font-medium text-ink/80">{c.outcome_line}</p>
+    </div>
+  );
+}
 
 // ── The shell ────────────────────────────────────────────────────────────────
 
@@ -210,7 +236,8 @@ export function ClassBookingCard({
   const past = !ongoing && !canCancelClass(b.starts_at);
   const cancelled = b.state === "cancelled";
   const attended = b.check_in_state === "attended";
-  const noShow = b.check_in_state === "no_show" || b.state === "no_show";
+  // Only staff marking the member absent makes a No-show (#349).
+  const noShow = b.check_in_state === "no_show";
   // Cancellable until it starts; inside its window it is a late cancel.
   const open = !cancelled && canCancelClass(b.starts_at);
   const deadline = `${formatDate(b.cancel_deadline)} · ${formatClassTime(b.cancel_deadline)}`;
@@ -264,27 +291,31 @@ export function ClassBookingCard({
       {open && (
         <p className="mt-2 text-xs text-muted">{cancelDeadlineLine(isLate(b.cancel_deadline), deadline)}</p>
       )}
+      {cancelled && <Cancelled c={b} />}
     </BookingCard>
   );
 }
 
 // ── PT ───────────────────────────────────────────────────────────────────────
 
-function ptStatus(r: RawPtRequest): Status {
-  switch (r.status) {
+function ptStatus(r: RawPtRequest): Status | null {
+  switch (ptStanding(r)) {
     case "pending":
       return { label: "Pending", tone: "info", icon: Clock };
-    case "scheduled":
+    case "confirmed":
       return { label: "Confirmed", tone: "ok", icon: CheckCircle2 };
     case "attended":
       return { label: "Attended", tone: "ok", icon: CheckCircle2 };
-    case "cancelled_after_scheduled":
-      if (r.refund_outcome === "forfeited") return { label: "Cancelled · session lost", tone: "bad", icon: XCircle };
-      if (r.refund_outcome === "session_returned")
-        return { label: "Cancelled · session returned", tone: "muted", icon: XCircle };
+    case "no_show":
+      return { label: "No-show", tone: "muted", icon: XCircle };
+    // Where the session went is the outcome line under the card (#351).
+    case "expired":
+      return { label: "Expired", tone: "muted", icon: XCircle };
+    case "cancelled":
       return { label: "Cancelled", tone: "muted", icon: XCircle };
     default:
-      return { label: "Cancelled · session returned", tone: "muted", icon: XCircle };
+      // Held, never ticked: nothing to say, as a past class says nothing.
+      return null;
   }
 }
 
@@ -358,6 +389,7 @@ export function PtBookingCard({
       {r.schedule_note && r.status === "scheduled" && (
         <StudioNote label="A different time from the ones you proposed">{r.schedule_note}</StudioNote>
       )}
+      {r.status.startsWith("cancelled_") && <Cancelled c={r} />}
       {r.cancel_note && (r.status === "cancelled_before_scheduled" || r.status === "cancelled_after_scheduled") && (
         <StudioNote label="Why the studio cancelled">{r.cancel_note}</StudioNote>
       )}
@@ -472,9 +504,10 @@ function workshopWhen(b: ApiWorkshopBooking): string {
   return b.ends_at ? timeRange(b.starts_at, b.ends_at) : formatClassTime(b.starts_at);
 }
 
-export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorkshopBooking; phase: "upcoming" | "ongoing" | "past" }) {
+export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorkshopBooking; phase: BookingPhase }) {
   const cancelled = b.state === "cancelled";
-  const past = phase === "past";
+  // Over, or cancelled: no ticket, nothing left to change.
+  const past = phase === "past" || cancelled;
   const status: Status | null = cancelled
     ? { label: "Cancelled", tone: "muted", icon: XCircle }
     : b.check_in_state === "attended"
@@ -501,9 +534,7 @@ export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorksho
     >
       {/* No self-serve cancel: the studio arranges changes and refunds (#272). */}
       {!past && <p className="mt-2 text-xs text-muted">To change or cancel, contact the studio.</p>}
-      {cancelled && (
-        <p className="mt-2 text-xs text-muted">Any refund is arranged by the studio and shows on your card statement.</p>
-      )}
+      {cancelled && <Cancelled c={b} />}
     </BookingCard>
   );
 }
@@ -599,6 +630,7 @@ export function CorporateBookingCard({ request: r }: { request: ApiCorporateRequ
       {r.status === "pending" && (
         <p className="mt-2 text-xs text-muted">We&apos;ll arrange the date, place and instructor with you on WhatsApp.</p>
       )}
+      {r.status === "cancelled" && <Cancelled c={r} />}
     </BookingCard>
   );
 }

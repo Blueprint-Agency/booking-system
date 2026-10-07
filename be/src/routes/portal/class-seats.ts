@@ -8,6 +8,7 @@ import {
 import type { ClassDetail } from '../../services/schedule/detail'
 import type { ScheduleEntryRow } from '../../services/schedule/timetable'
 import { staffCancelPreviewJson } from '../../services/bookings/staff-cancel-preview'
+import { staffCancellationJson } from '../../services/bookings/cancellation-summary'
 
 /**
  * The seat shapes the admin and instructor portals share (spec-waitlist.md §2,
@@ -82,6 +83,13 @@ export function classSeatsJson(d: ClassDetail) {
       promoted_from_waitlist: a.promotedFromWaitlist,
       // Null on a row "Cancel booking" is not offered on (#320).
       cancel_preview: staffCancelPreviewJson(a.cancelPreview),
+    })),
+    // Apart from the roster, never checked in (#352).
+    cancelled_bookings: d.cancelledBookings.map(b => ({
+      booking_id: b.bookingId,
+      client: b.client,
+      credits_used: b.creditsUsed,
+      ...staffCancellationJson(b.cancellation),
     })),
     waiting: d.waitlist.length,
     waitlist_enabled: d.waitlistEnabled,

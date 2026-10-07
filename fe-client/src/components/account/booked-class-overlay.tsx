@@ -14,7 +14,12 @@ import {
   OVERLAY_HEADER,
   OVERLAY_PANEL_CENTRED,
 } from "@/components/ui/styles";
-import { canCancelClass, cancelDeadlineLine, isLate } from "@/lib/cancellation-copy";
+import {
+  canCancelClass,
+  cancelDeadlineLine,
+  cancelledStanding,
+  isLate,
+} from "@/lib/cancellation-copy";
 import { classLength } from "@/lib/class-detail";
 import { fetchPublicClass, formatClassTime, type ApiClassDetail } from "@/lib/classes";
 import { credits } from "@/lib/package-picker";
@@ -24,9 +29,10 @@ import { cn, formatDate } from "@/lib/utils";
 
 /** Where the member stands in this class, in the words the schedule's overlay uses. */
 function standing(b: ApiBooking, ongoing: boolean): { text: string; tone: "ok" | "muted" } | null {
-  if (b.state === "cancelled") return { text: "You cancelled this booking", tone: "muted" };
+  // A whole-class cancel, a staff cancel, a Void and a Package rule change are the studio's (#349).
+  if (b.state === "cancelled") return { text: cancelledStanding(b.cancelled_by ?? "studio"), tone: "muted" };
   if (b.check_in_state === "attended") return { text: "You checked in to this class", tone: "ok" };
-  if (b.check_in_state === "no_show" || b.state === "no_show") return { text: "Marked as a no-show", tone: "muted" };
+  if (b.check_in_state === "no_show") return { text: "Marked as a no-show", tone: "muted" };
   if (ongoing) return { text: "This class is on now", tone: "ok" };
   if (canCancelClass(b.starts_at)) return { text: "You're booked into this class", tone: "ok" };
   return null;
@@ -192,6 +198,16 @@ export function BookedClassOverlay({
               {open && (
                 <Fact icon={<Hourglass />} label="Cancellation">
                   {cancelDeadlineLine(isLate(b.cancel_deadline), deadline)}
+                </Fact>
+              )}
+              {cancelled && b.outcome_line && (
+                <Fact icon={<Hourglass />} label="Cancellation">
+                  {b.outcome_line}
+                  {b.cancelled_at && (
+                    <span className="block text-muted tabular-nums">
+                      {formatDate(b.cancelled_at)} · {formatClassTime(b.cancelled_at)}
+                    </span>
+                  )}
                 </Fact>
               )}
               {live && (

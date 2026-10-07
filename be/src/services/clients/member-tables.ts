@@ -91,6 +91,9 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
   // Credit movements with a staff member's free-text reason: no money, and the
   // reason may well name the member.
   byClientId('manual_adjustments'),
+  // Their Credit history (#353): which of their bookings spent or returned
+  // what. No money, and it is about them; it goes with them.
+  byClientId('credit_movements'),
   // What was bought, what it cost and how much of it was paid (#91). It is the
   // sale itself, so it is kept for the same reason every other accounts row is —
   // including one still open, whose money the studio is holding and may yet have

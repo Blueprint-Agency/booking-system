@@ -13,6 +13,7 @@ import {
   staffUsers,
   clients,
   bookings,
+  cancellations,
   clientPackages,
   classPackages,
   ptPackages,
@@ -26,6 +27,7 @@ import { attendanceCapacity, countSeats, type SeatCounts } from '../bookings/sea
 import { waitlistEnabled } from '../waitlist/line'
 import { waitlistPanel, type WaitlistPanelRow } from '../waitlist/staff'
 import { staffCancelPreview, type StaffCancelPreview } from '../bookings/staff-cancel-preview'
+import { cancellationRecord, summarizeCancellation, type CancellationSummary } from '../bookings/cancellation-summary'
 import { classCancelWindow } from '../policy/cancel-window'
 import { now as clockNow } from '../../lib/clock'
 import { nameRule, readClassRule, type NamedPackageRule } from './package-rules'
@@ -48,6 +50,14 @@ export interface ClassAttendee {
   promotedFromWaitlist: boolean
   /** What the staff cancel dialog asks from; null on a row it is not offered on (#320). */
   cancelPreview: StaffCancelPreview | null
+}
+
+/** A booking cancelled off the class: listed apart from the roster, never checked in (#352). */
+export interface ClassCancelledBooking {
+  bookingId: string
+  client: NamedRef
+  creditsUsed: number
+  cancellation: CancellationSummary
 }
 
 export interface ClassDetail {
@@ -78,6 +88,8 @@ export interface ClassDetail {
   attendanceCapacity: number
   seats: SeatCounts
   attendees: ClassAttendee[]
+  /** Bookings cancelled off it, newest cancellation first. */
+  cancelledBookings: ClassCancelledBooking[]
   /** The class's line in queue order, with whether each member could pay now. */
   waitlist: WaitlistPanelRow[]
   /** The studio's waitlist switch. Off, the line above still lists and can be worked. */
@@ -193,6 +205,8 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     }
   })
 
+  const cancelledBookings = await classCancelledBookings(tenantId, id)
+
   const rule = await readClassRule(db, tenantId, row)
   const waitlist = await waitlistPanel(tenantId, {
     id: row.id,
@@ -249,6 +263,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     attendanceCapacity: attendanceCapacity(row),
     seats,
     attendees,
+    cancelledBookings,
     waitlist,
     waitlistEnabled: waitlistEnabled(tenantId),
     checkInState: sessionCheckInState(attendees.map(a => a.checkInState)),
@@ -259,6 +274,43 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
         : null,
     seriesId: row.seriesId,
   }
+}
+
+/** The class's cancelled bookings, each with the shared summary of its cancellation. */
+async function classCancelledBookings(tenantId: string, classId: string): Promise<ClassCancelledBooking[]> {
+  const rows = await db
+    .select({
+      bookingId: bookings.id,
+      clientId: bookings.clientId,
+      clientName: clients.name,
+      creditsUsed: bookings.creditsOrSessionsUsed,
+      refundOutcome: bookings.refundOutcome,
+      bookingCancelledAt: bookings.cancelledAt,
+      source: cancellations.source,
+      wasWithinWindow: cancellations.wasWithinWindow,
+      wasWithinCap: cancellations.wasWithinCap,
+      cancelledAt: cancellations.cancelledAt,
+      staffName: staffUsers.name,
+    })
+    .from(bookings)
+    .innerJoin(clients, eq(clients.id, bookings.clientId))
+    .leftJoin(cancellations, and(eq(cancellations.tenantId, bookings.tenantId), eq(cancellations.bookingId, bookings.id)))
+    .leftJoin(staffUsers, and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, cancellations.cancelledByStaffId)))
+    .where(and(eq(bookings.tenantId, tenantId), eq(bookings.classId, classId), eq(bookings.state, 'cancelled')))
+  return rows
+    .map(r => ({
+      bookingId: r.bookingId,
+      client: { id: r.clientId, name: r.clientName ?? 'Member' },
+      creditsUsed: r.creditsUsed ?? 0,
+      cancellation: summarizeCancellation({
+        kind: 'class',
+        refundOutcome: r.refundOutcome,
+        creditsUsed: r.creditsUsed ?? 0,
+        bookingCancelledAt: r.bookingCancelledAt,
+        record: cancellationRecord(r),
+      }),
+    }))
+    .sort((a, b) => (b.cancellation.cancelledAt?.getTime() ?? 0) - (a.cancellation.cancelledAt?.getTime() ?? 0))
 }
 
 /**

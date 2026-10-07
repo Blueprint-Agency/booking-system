@@ -424,9 +424,12 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     await harness.db.execute(sql`DELETE FROM promo_code_redemptions WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM promo_codes WHERE created_by_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
+    const sessions = sql`SELECT id FROM pt_sessions WHERE pt_request_id IN (SELECT id FROM pt_requests WHERE client_id IN (${clients}))`
+    await harness.db.execute(sql`DELETE FROM pt_session_clients WHERE pt_session_id IN (${sessions})`)
+    await harness.db.execute(sql`DELETE FROM pt_sessions WHERE id IN (${sessions})`)
     await harness.db.execute(sql`DELETE FROM pt_request_slots WHERE pt_request_id IN (SELECT id FROM pt_requests WHERE client_id IN (${clients}))`)
     await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
-    await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
@@ -587,7 +590,9 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(cancelled.state, 'cancelled')
     assert.equal(cancelled.refundOutcome, 'n_a', 'no credit goes back to a voided package')
     const [record] = await cancellationsOf(future.body.booking_id)
-    assert.equal(record?.source, 'admin')
+    // The Void cancelled it, not a person (#350).
+    assert.equal(record?.source, 'system')
+    assert.equal(record?.cancelledByStaffId, null)
     assert.equal(record?.refundFired, false)
 
     const kept = await bookingRow(past.body.booking_id)
@@ -681,12 +686,68 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     const cancelled = await bookingRow(future.body.booking_id)
     assert.equal(cancelled.state, 'cancelled')
     assert.equal(cancelled.refundOutcome, 'n_a')
-    assert.equal((await cancellationsOf(future.body.booking_id))[0]?.source, 'admin')
+    assert.equal((await cancellationsOf(future.body.booking_id))[0]?.source, 'system')
 
     // And the button afterwards is the double refund it would be.
     const again = await refundPackage(adminAtOne, ivy, paid)
     assert.equal(again.status, 409)
     assert.equal(refundCalls().length, from)
+  })
+
+  test('RFD-15 a refund whose Void cancels a scheduled private session settles its request and session, which the member no longer sees scheduled and is never completed as attended', async () => {
+    const mo = await member(one, 'Mo Private Void')
+    const paid = await buy(one, mo, 'pt')
+    const proposed = new Date(Date.now() + 5 * DAY).toISOString().slice(0, 10)
+    const requested = await post('/api/v1/me/pt-sessions/request', mo.headers, {
+      classTypeId: one.classTypeId,
+      locationId: one.locationId,
+      sessionType: '1on1',
+      clientPackageId: paid.clientPackageId,
+      slots: [{ proposedDate: proposed, startTime: '09:00', endTime: '10:00' }],
+    })
+    assert.equal(requested.status, 201, JSON.stringify(requested.body))
+    const requestId = requested.body.pt_request_id as string
+    const startsAt = new Date(Date.now() + 6 * DAY)
+    const scheduled = await post(`/api/v1/portal/admin/pt-sessions/${requestId}/schedule`, adminAtOne.headers, {
+      instructor_id: teacherAtOne.staffId,
+      location_id: one.locationId,
+      room_id: one.roomId,
+      starts_at: startsAt.toISOString(),
+      ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+    })
+    assert.equal(scheduled.status, 201, JSON.stringify(scheduled.body))
+    const sessionId = scheduled.body.pt_request.session.id as string
+    const [booking] = await harness.db.select().from(schema.bookings).where(eq(schema.bookings.ptSessionId, sessionId))
+    assert.ok(booking)
+
+    const from = refundCalls().length
+    assert.equal((await refundPackage(adminAtOne, mo, paid)).status, 200)
+    await settle(from)
+    await assertRefunded(paid.purchaseId)
+
+    const cancelled = await bookingRow(booking.id)
+    assert.deepEqual([cancelled.state, cancelled.refundOutcome], ['cancelled', 'n_a'])
+    const [record, ...more] = await cancellationsOf(booking.id)
+    assert.equal(more.length, 0)
+    assert.deepEqual([record?.source, record?.cancelledByStaffId], ['system', null])
+    const [session] = await harness.db.select().from(schema.ptSessions).where(eq(schema.ptSessions.id, sessionId))
+    assert.equal(session?.lifecycle, 'cancelled')
+
+    const mine = async () => {
+      const res = await reply(await harness.app.request('/api/v1/me/pt-sessions', { headers: mo.headers }))
+      assert.equal(res.status, 200, JSON.stringify(res.body))
+      return res.body.pt_requests.find((r: any) => r.id === requestId)
+    }
+    assert.equal((await mine())?.status, 'cancelled_after_scheduled')
+
+    // Its time passes, and the end-of-session job runs: it stays cancelled.
+    await harness.db
+      .update(schema.ptSessions)
+      .set({ startsAt: new Date(Date.now() - 2 * HOUR), endsAt: new Date(Date.now() - HOUR) })
+      .where(eq(schema.ptSessions.id, sessionId))
+    const { completeEndedPtSessions } = await import('../services/pt-sessions/cancel')
+    await completeEndedPtSessions()
+    assert.equal((await mine())?.status, 'cancelled_after_scheduled')
   })
 
   test('RFD-05 a refunded Credit Bundle with credits left pays for no later class', async () => {
