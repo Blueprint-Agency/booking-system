@@ -7,7 +7,7 @@ make it pass.**
 
 | Guardrail | Where | What it stops |
 |---|---|---|
-| No skipped tests | `be/scripts/check.mjs` and the backend `test` job (deploy-be.yml); `e2e/src/no-skips-reporter.ts` | A skip passing as a pass |
+| No skipped tests | `be/scripts/check.mjs` and every slice of the backend `test-shard` job (deploy-be.yml), which the `test` check sums up; `e2e/src/no-skips-reporter.ts` | A skip passing as a pass |
 | Scenario Inventory traces | `scripts/check-scenarios.mjs` in `test-guardrails.yml` | A row still marked covered after its test was renamed or deleted (`testing.md`) |
 | Coverage report | nightly `be-coverage.yml` → run summary | Untested code going unseen (report only, no % gate) |
 
@@ -20,9 +20,9 @@ review.
 ## Before a push
 
 No git hook runs on a push. Before a direct push to `staging` or `main`, run the full backend suite
-yourself: `npm run check` in `be/` (~6 minutes in CI, longer on a laptop) is what predicts CI's
-`test` job (`testing.md` § Matching CI locally). A pull request needs nothing local: CI runs every
-suite on it.
+yourself: `npm run check` in `be/` (~7 minutes of tests; CI runs the same files as six slices in
+parallel, `testing.md` § Shards in CI) is what predicts CI's `test` job (`testing.md` § Matching CI
+locally). A pull request needs nothing local: CI runs every suite on it.
 
 ## Running tests locally
 
@@ -48,8 +48,10 @@ Postgres advisory lock on it for the whole run. See `testing.md` § Running the 
 ## No skipped tests
 
 - **Backend:** `npm run check` refuses to start without `TEST_DATABASE_URL`, so the integration
-  tests cannot skip themselves for want of a database, and the `test` job fails unless the TAP
-  summary reads `# skipped 0`.
+  tests cannot skip themselves for want of a database, and every slice of the `test-shard` job
+  fails unless its TAP summary reads `# skipped 0` — so across the shards together, nothing skipped.
+  The slices are the whole file list, each file once (`check.mjs` asserts it), so no test escapes
+  the check by falling between shards.
 - **Journeys:** the Playwright config adds `no-skips-reporter`, which fails any run with a
   `test.skip` / `test.fixme` / `describe.skip` journey, or one that calls `test.skip()` as it runs.
   `test-guardrails.yml` lists the journeys on every PR (`playwright test --list`, no stack needed),
