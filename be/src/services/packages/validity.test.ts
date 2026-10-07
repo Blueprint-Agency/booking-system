@@ -1,4 +1,5 @@
 import assert from 'node:assert'
+import { setClock } from '../../lib/clock'
 import {
   addDays,
   addMonths,
@@ -317,5 +318,24 @@ assert.strictEqual(
 assert.strictEqual(standing(bundle(3), false), 'ended', 'switched off with time and credits left: refunded or voided')
 assert.strictEqual(isCurrentStanding('running') && isCurrentStanding('dormant'), true)
 assert.strictEqual(['expired', 'used_up', 'ended'].some(s => isCurrentStanding(s as never)), false)
+
+// Given no instant, each rule is judged at the app clock (lib/clock), never the
+// wall clock: the ledger moves credits without passing one.
+{
+  const ENDS = new Date('2090-01-01T00:00:00Z')
+  try {
+    setClock(() => new Date(ENDS.getTime() - 1))
+    assert.strictEqual(computeActive(bundle(1, ENDS)), true, 'the last millisecond of its validity')
+    assert.strictEqual(packageStanding({ ...bundle(1, ENDS), active: true }), 'running')
+
+    setClock(() => ENDS)
+    assert.strictEqual(computeActive(bundle(1, ENDS)), false, 'ended at the clock’s instant')
+    assert.strictEqual(packageStanding({ ...bundle(1, ENDS), active: true }), 'expired')
+    const refund = ok(applyMovement(bundle(0, ENDS), 1))
+    assert.strictEqual(refund.active, false, 'a refund into a package the clock says has expired leaves it off')
+  } finally {
+    setClock(null)
+  }
+}
 
 console.log('packages/validity.test ok')
