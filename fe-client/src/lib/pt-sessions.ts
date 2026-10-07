@@ -76,6 +76,9 @@ export interface RawPtRequest {
   cancelled_at?: string | null;
   cancelled_by?: PtCancelledBy | null;
   expired?: boolean;
+  // Its lines, as the server's cancellation summary words them. Null while live.
+  who_line?: string | null;
+  outcome_line?: string | null;
   // Is the caller the requester (owns the credit, can cancel) or the 2on1 partner (read-only)?
   role?: "requester" | "partner";
   // The requester's name — shown on partner cards ("hosted by …").

@@ -162,6 +162,8 @@ export const cancellationKindEnum = pgEnum('cancellation_kind', ['class', 'pt'])
 // Complimentary Package's Remove, a Package rule change (#350).
 export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor', 'system'])
 export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual'])
+export type RefundOutcome = (typeof refundOutcomeEnum.enumValues)[number]
+export type CancellationSource = (typeof cancellationSourceEnum.enumValues)[number]
 
 // Credit movements (#353): why a package's balance moved, or — for kept,
 // no_show and expired — why it did not come back. `opening` is the balance the
@@ -175,7 +177,8 @@ export const creditMovementCauseEnum = pgEnum('credit_movement_cause', [
   'expired',
   'adjusted',
   'pt_requested',
-  'pt_refunded',
+  // A pending PT request's sessions coming back — returned, never "refunded" (be/CONTEXT.md § Refund).
+  'pt_returned',
 ])
 export const creditMovementActorEnum = pgEnum('credit_movement_actor', ['member', 'staff', 'system'])
 

@@ -1,5 +1,5 @@
 CREATE TYPE "public"."credit_movement_actor" AS ENUM('member', 'staff', 'system');--> statement-breakpoint
-CREATE TYPE "public"."credit_movement_cause" AS ENUM('opening', 'booked', 'returned', 'kept', 'no_show', 'expired', 'adjusted', 'pt_requested', 'pt_refunded');--> statement-breakpoint
+CREATE TYPE "public"."credit_movement_cause" AS ENUM('opening', 'booked', 'returned', 'kept', 'no_show', 'expired', 'adjusted', 'pt_requested', 'pt_returned');--> statement-breakpoint
 CREATE TABLE "credit_movements" (
 	"tenant_id" uuid NOT NULL,
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -15,6 +15,7 @@ CREATE TABLE "credit_movements" (
 	"created_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "pt_requests" ADD COLUMN "cancel_source" "cancellation_source";--> statement-breakpoint
 ALTER TABLE "credit_movements" ADD CONSTRAINT "credit_movements_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "credit_movements" ADD CONSTRAINT "credit_movements_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "credit_movements" ADD CONSTRAINT "credit_movements_client_package_id_client_packages_id_fk" FOREIGN KEY ("client_package_id") REFERENCES "public"."client_packages"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

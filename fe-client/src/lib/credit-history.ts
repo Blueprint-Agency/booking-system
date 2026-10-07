@@ -11,7 +11,7 @@ export type CreditMovementCause =
   | "expired"
   | "adjusted"
   | "pt_requested"
-  | "pt_refunded";
+  | "pt_returned";
 
 export interface CreditMovement {
   id: string;
@@ -63,7 +63,7 @@ export function movementText(m: CreditMovement, unit: "credit" | "session"): { t
         return amount ? join("Adjusted by the studio", amount) : "Updated by the studio";
       case "pt_requested":
         return join("Session requested", amount);
-      case "pt_refunded":
+      case "pt_returned":
         return join("Request cancelled", amount);
     }
   })();

@@ -10,7 +10,7 @@ export type CreditMovementCause =
   | "expired"
   | "adjusted"
   | "pt_requested"
-  | "pt_refunded";
+  | "pt_returned";
 
 export interface CreditMovement {
   id: string;
@@ -70,7 +70,7 @@ export function movementLine(m: CreditMovement, unit: "credit" | "session"): Mov
       return line("Adjusted by staff");
     case "pt_requested":
       return line("Private session requested");
-    case "pt_refunded":
+    case "pt_returned":
       return line("Request cancelled · returned");
   }
 }

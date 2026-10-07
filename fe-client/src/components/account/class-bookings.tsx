@@ -10,7 +10,7 @@ import { formatDate, cn } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { BTN_CANCEL } from "@/components/ui/styles";
 import type { ApiWaitlistEntry } from "@/lib/waitlist";
-import type { CancellationOutcome, CancelledBy } from "@/lib/cancellation-copy";
+import type { CancelledBy } from "@/lib/cancellation-copy";
 
 export interface ApiBooking {
   booking_id: string;
@@ -33,11 +33,14 @@ export interface ApiBooking {
   effective_cancel_window_hours: number;
   /** When that window opens: a cancel after it is a late cancellation. */
   cancel_deadline: string;
-  /** Only on `GET /me/bookings/cancelled`: the cancellation's summary (#349). */
+  /**
+   * Only on `GET /me/bookings/cancelled`: the cancellation's summary (#349) —
+   * when, who, and its two lines as the server words them.
+   */
   cancelled_at?: string | null;
   cancelled_by?: CancelledBy;
-  late?: boolean;
-  outcome?: CancellationOutcome;
+  who_line?: string;
+  outcome_line?: string;
 }
 
 /** A place in line for a full class, with the way out of it. */

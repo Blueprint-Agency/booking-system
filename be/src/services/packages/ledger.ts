@@ -33,7 +33,7 @@ import { and, eq } from 'drizzle-orm'
 import type { db } from '../../db'
 import { clientPackages } from '../../db/schema/packages'
 import { creditMovements, manualAdjustments } from '../../db/schema/ledger'
-import type { creditMovementCauseEnum } from '../../db/enums'
+import type { CancellationSource, creditMovementActorEnum, creditMovementCauseEnum } from '../../db/enums'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { applyMovement } from './validity'
 
@@ -45,10 +45,10 @@ type Handle = Pick<typeof db, 'select' | 'insert'>
 
 export type CreditMovementCause = (typeof creditMovementCauseEnum.enumValues)[number]
 /** Who moved the credits: the member themself, a staff member (named), or the studio's machinery. */
-export type CreditMovementActor = 'member' | 'staff' | 'system'
+export type CreditMovementActor = (typeof creditMovementActorEnum.enumValues)[number]
 
 /** Whose act a cancel was, from its source. */
-export const actorOfSource = (source: 'client' | 'admin' | 'instructor' | 'system'): CreditMovementActor =>
+export const actorOfSource = (source: CancellationSource): CreditMovementActor =>
   source === 'client' ? 'member' : source === 'system' ? 'system' : 'staff'
 
 export interface CreditMovementInput {

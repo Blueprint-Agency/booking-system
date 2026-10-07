@@ -678,6 +678,7 @@ The simplified v1 flow has **no in-app back-and-forth** — all negotiation is o
 | expires_at | timestamptz | not null — `created_at + ttl` from `pt_booking_config` (sweep job, §5) |
 | scheduled_pt_session_id | uuid | FK → pt_sessions.id, nullable — set when status=`scheduled` |
 | resolved_at, resolved_by_staff_id | | nullable — set on scheduled or either cancellation; staff id NULL for client-initiated / system (expiry) |
+| cancel_source | `cancellation_source` | nullable — who cancelled it: `client`, `admin`, `instructor` or `system` (an expiry, a Complimentary Package's Remove). A pending request has no `cancellations` row, so this is how its reads tell a Remove — which names its admin in `resolved_by_staff_id` — from a staff cancel (#352, migration 0103). Null while live and on requests cancelled before it |
 | created_at | timestamptz | not null |
 
 **Indexes:** `(status, created_at desc)` — drives the `/admin/pt-requests` triage queue; `(client_id, status)` for client's own list; `(class_type_id)` for class-type filters; `(expires_at) WHERE status='pending'` for the expiry sweep.
@@ -853,7 +854,7 @@ id, client_id (FK), client_package_id (FK), delta (int, signed), reason (text, n
 
 A package's **Credit history**: one row for every change to its balance, and for every forfeit that left it unchanged, written by the credit ledger (`services/packages/ledger.ts`) in the same transaction as the change. `manual_adjustments` stays the free-text audit beside it.
 
-tenant_id, id, client_id (FK), client_package_id (FK, `ON DELETE cascade` — the package's own history), booking_id (FK nullable, `ON DELETE set null` — the booking it was for), cause enum `credit_movement_cause` (`opening`, `booked`, `returned`, `kept`, `no_show`, `expired`, `adjusted`, `pt_requested`, `pt_refunded`), delta (int, signed — what this row did to the stored balance; 0 for `kept`, `no_show`, `expired`, `opening` and a staff edit that moves no credits), balance_after (int, nullable — the stored balance after it; null on an Unlimited Plan), actor enum `credit_movement_actor` (`member`, `staff`, `system`), acted_by_staff_id (FK nullable), note (text — a staff adjustment's reason; staff-only), created_at (`clock_timestamp()`, so two movements in one transaction keep their order).
+tenant_id, id, client_id (FK), client_package_id (FK, `ON DELETE cascade` — the package's own history), booking_id (FK nullable, `ON DELETE set null` — the booking it was for), cause enum `credit_movement_cause` (`opening`, `booked`, `returned`, `kept`, `no_show`, `expired`, `adjusted`, `pt_requested`, `pt_returned`), delta (int, signed — what this row did to the stored balance; 0 for `kept`, `no_show`, `expired`, `opening` and a staff edit that moves no credits), balance_after (int, nullable — the stored balance after it; null on an Unlimited Plan), actor enum `credit_movement_actor` (`member`, `staff`, `system`), acted_by_staff_id (FK nullable), note (text — a staff adjustment's reason; staff-only), created_at (`clock_timestamp()`, so two movements in one transaction keep their order).
 **Indexes:** `(tenant_id, client_package_id, created_at)`, and one per FK. Row-Level Security like every Tenant-scoped table.
 
 | Cause | Written by | Booking |
@@ -864,7 +865,7 @@ tenant_id, id, client_id (FK), client_package_id (FK, `ON DELETE cascade` — th
 | `no_show` (0) | staff marking a No-show | yes |
 | `expired` (0) | the expiry sweep (nightly, or run early for one member on the booking path); `balance_after` is what the package still held | no |
 | `adjusted` (±n or 0) | every staff edit on the profile, and a Complimentary Package's grant (`recordAdjustment`); `note` is its reason | no |
-| `pt_requested` (−n) / `pt_refunded` (+n) | a PT request's debit and a pending request's refund (cancel or expiry); a PT type change | no |
+| `pt_requested` (−n) / `pt_returned` (+n) | a PT request's debit and the sessions a pending request returns (cancel or expiry); a PT type change | no |
 | `opening` (0) | migration 0103, once, for every package a member held then | no |
 
 Movements before migration 0103 are not invented: its `opening` row is where a package's history starts ("History from …"); a package bought later starts at its purchase. A Refund's Void deactivates a package without a movement (its future bookings' returns are recorded). Reads: `GET /me/packages/:id/credit-history` (be-client) and `GET /portal/admin/clients/:id/packages/:pid/credit-history` (be-portal), both through `services/packages/credit-history.ts`.

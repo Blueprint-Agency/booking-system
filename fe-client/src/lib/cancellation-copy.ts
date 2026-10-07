@@ -229,122 +229,18 @@ export function classCancelResult(
   return { tone: "ok", text: "Booking cancelled." };
 }
 
-// ── The Cancelled tab (#349) ────────────────────────────────────────────────
+// ── The Cancelled tab (#349, #351) ──────────────────────────────────────────
+//
+// A cancelled booking's own lines — who and when, where the credit went — are
+// worded once, by the backend's cancellation summary
+// (`be/src/services/bookings/cancellation-summary.ts`), the same sentences
+// staff read, and each read sends them as `who_line` and `outcome_line`.
 
 /** Who cancelled, as the backend's cancellation summary says. */
 export type CancelledBy = "member" | "studio";
 
-/** Where the credit went, as the backend's cancellation summary says. */
-export type CancellationOutcome =
-  | "credit_returned"
-  | "credit_kept_late"
-  | "credit_kept_over_cap"
-  | "credit_kept"
-  | "nothing_to_return";
-
-/** What `GET /me/bookings/cancelled` says of one cancelled class. */
-export interface CancelledClass {
-  cancelled_by: CancelledBy;
-  late: boolean;
-  outcome: CancellationOutcome;
-  /** Credits the booking spent: the count a returned line names. */
-  credits_used: number;
-}
-
-/**
- * A cancelled class's one outcome line: where the credit went, and why when it
- * was kept. A class the studio cancelled says so here. A credit is returned or
- * kept, never refunded.
- */
-export function classCancelledOutcome(c: CancelledClass): string {
-  const n = c.credits_used;
-  const what = {
-    credit_returned: n > 1 ? `${n} credits returned` : "credit returned",
-    credit_kept_late: "credit kept",
-    credit_kept_over_cap: "credit kept",
-    credit_kept: "credit kept",
-    nothing_to_return: "nothing to return",
-  }[c.outcome];
-  if (c.cancelled_by === "studio") return `Cancelled by the studio · ${what}`;
-  if (c.late) return `Late cancel · ${what}`;
-  if (c.outcome === "credit_kept_over_cap") return `Cancelled over your cap · ${what}`;
-  return what.charAt(0).toUpperCase() + what.slice(1);
-}
-
-/**
- * When it was cancelled — and by the member, since a studio cancel's outcome
- * line already says "Cancelled by the studio". `when` is the cancel time as the
- * page formats times.
- */
-export function cancelledWhen(by: CancelledBy, when: string): string {
-  return `${by === "studio" ? "Cancelled" : "You cancelled"} · ${when}`;
-}
-
-// ── Private sessions, workshops and corporate on Cancelled (#351) ─────────────
-
 /** Who ended a PT request or seat: to a 2on1 partner, the host's cancel is the host's. */
 export type PtCancelledBy = CancelledBy | "host";
-
-/** What `GET /me/pt-sessions` says of one cancelled or expired request, or a seat the member left. */
-export interface CancelledPt {
-  status: string;
-  /** `n_a` for a 2on1 partner, who paid nothing. */
-  refund_outcome?: "session_returned" | "forfeited" | "n_a" | null;
-  /** Null when it expired unscheduled: nobody cancelled it. */
-  cancelled_by?: PtCancelledBy | null;
-  expired?: boolean;
-}
-
-/** A cancelled card's two lines: when (and by the member), and the outcome. */
-export interface CancelledLines {
-  when: string;
-  outcome: string;
-}
-
-/**
- * A cancelled or expired private session's lines. Who is said once: "You
- * cancelled" on the when line, or "Cancelled by …" on the outcome line. A
- * session comes back or is kept, never refunded; a 2on1 partner paid nothing,
- * so their line says only who cancelled.
- */
-export function ptCancelled(r: CancelledPt, when: string): CancelledLines {
-  const what =
-    !r.refund_outcome || r.refund_outcome === "n_a"
-      ? null
-      : r.refund_outcome === "session_returned"
-        ? "session returned"
-        : "session kept";
-  const and = what ? ` · ${what}` : "";
-  if (r.expired) return { when: `Expired · ${when}`, outcome: `Request expired${and}` };
-  if (r.cancelled_by === "member") {
-    const outcome =
-      r.status === "cancelled_before_scheduled"
-        ? `Request cancelled${and}`
-        : what === "session kept"
-          ? "Cancelled over your cap · session kept"
-          : what
-            ? "Session returned"
-            : "Nothing to return";
-    return { when: cancelledWhen("member", when), outcome };
-  }
-  const by = r.cancelled_by === "host" ? "the host" : "the studio";
-  return { when: cancelledWhen("studio", when), outcome: `Cancelled by ${by}${and}` };
-}
-
-/**
- * A cancelled workshop place's lines. Only the studio cancels one; the money
- * goes back to the card (`stripe_refunded`) or the studio arranges it.
- */
-export function workshopCancelled(refundOutcome: string, when: string): CancelledLines {
-  return refundOutcome === "stripe_refunded"
-    ? { when: `Cancelled by the studio · ${when}`, outcome: "Refunded to your card" }
-    : { when: cancelledWhen("studio", when), outcome: "Cancelled by the studio · any refund is arranged by the studio" };
-}
-
-/** A cancelled corporate request's lines: only the studio cancels one. */
-export function corporateCancelled(when: string): CancelledLines {
-  return { when: cancelledWhen("studio", when), outcome: "Cancelled by the studio" };
-}
 
 /** The class overlay's standing line for a cancelled booking. */
 export function cancelledStanding(by: CancelledBy): string {

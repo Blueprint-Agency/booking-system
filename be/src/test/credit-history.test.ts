@@ -348,7 +348,7 @@ describe('credit history over HTTP', { skip: integrationTestsEnabled ? false : S
     await assertReconciles(pkg, history, 3)
   })
 
-  test('CRD-24 a PT request debit and its cancel refund are recorded, by the member', async () => {
+  test('CRD-24 a PT request debit and the sessions its cancel returned are recorded, by the member', async () => {
     const who = await member(one, 'pt')
     const pkg = await give(one, who, 3, 'pt')
     const res = await harness.app.request('/api/v1/me/pt-sessions/request', {
@@ -366,7 +366,7 @@ describe('credit history over HTTP', { skip: integrationTestsEnabled ? false : S
     await expectStatus(await harness.app.request(`/api/v1/me/pt-sessions/${requestId}/cancel`, { method: 'POST', headers: who.headers }), 200)
 
     const history = await historyOf(who, pkg)
-    assert.deepEqual(summary(history), [['pt_refunded', 1], ['pt_requested', -1]])
+    assert.deepEqual(summary(history), [['pt_returned', 1], ['pt_requested', -1]])
     assert.ok(history.movements.every(m => m.actor === 'member'))
     await assertReconciles(pkg, history, 3)
   })

@@ -10,6 +10,7 @@ import {
   getClassBookingDetail,
   type ClassBookingRow,
 } from '../../services/bookings/list'
+import { memberCancellationJson } from '../../services/bookings/cancellation-summary'
 import { memberAttendance } from '../../services/bookings/attendance'
 import { ATTENDANCE_PERIODS } from '../../services/bookings/attendance-periods'
 import { isIsoDate } from '../../services/tenants/term-dates'
@@ -53,13 +54,7 @@ const app = new Hono()
     const clientId = c.get('clientId')
     const rows = await listCancelledClassBookings(tenantId(c), clientId)
     return c.json({
-      bookings: rows.map(b => ({
-        ...bookingRow(b),
-        cancelled_at: b.cancellation.cancelledAt?.toISOString() ?? null,
-        cancelled_by: b.cancellation.cancelledBy,
-        late: b.cancellation.late,
-        outcome: b.cancellation.outcome,
-      })),
+      bookings: rows.map(b => ({ ...bookingRow(b), ...memberCancellationJson(b.cancellation) })),
     })
   })
   .get(

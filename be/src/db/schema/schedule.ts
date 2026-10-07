@@ -21,6 +21,7 @@ import { staffUsers, clients } from './identity'
 import { instructors, classTypes, locations, rooms } from './catalog'
 import { classPackages, clientPackages, corporatePackages } from './packages'
 import {
+  cancellationSourceEnum,
   lifecycleEnum,
   packageRuleModeEnum,
   ptSessionTypeEnum,
@@ -578,6 +579,12 @@ export const ptRequests = pgTable(
     resolvedByStaffId: uuid('resolved_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',
     }),
+    // Who cancelled it (#352): the member, a staff member, or the studio's
+    // machinery — an expiry, a Complimentary Package's Remove. A pending
+    // request has no `cancellations` row, so this is its only record of who:
+    // a Remove names its admin in `resolved_by_staff_id`, yet is no staff
+    // cancel. Null while live, and on a request cancelled before #352.
+    cancelSource: cancellationSourceEnum('cancel_source'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({

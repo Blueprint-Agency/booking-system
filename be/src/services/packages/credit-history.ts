@@ -73,15 +73,19 @@ export async function creditHistory(tenantId: string, clientId: string, clientPa
       wasWithinWindow: cancellations.wasWithinWindow,
     })
     .from(creditMovements)
-    .leftJoin(bookings, eq(bookings.id, creditMovements.bookingId))
-    .leftJoin(classes, eq(classes.id, bookings.classId))
-    .leftJoin(classTypes, eq(classTypes.id, classes.classTypeId))
-    .leftJoin(ptSessions, eq(ptSessions.id, bookings.ptSessionId))
-    .leftJoin(staffUsers, eq(staffUsers.id, creditMovements.actedByStaffId))
+    .leftJoin(bookings, and(eq(bookings.tenantId, tenantId), eq(bookings.id, creditMovements.bookingId)))
+    .leftJoin(classes, and(eq(classes.tenantId, tenantId), eq(classes.id, bookings.classId)))
+    .leftJoin(classTypes, and(eq(classTypes.tenantId, tenantId), eq(classTypes.id, classes.classTypeId)))
+    .leftJoin(ptSessions, and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, bookings.ptSessionId)))
+    .leftJoin(staffUsers, and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, creditMovements.actedByStaffId)))
     // A kept credit's cancel: was it a Late cancel, or over the cap? A booking is cancelled once.
     .leftJoin(
       cancellations,
-      and(eq(cancellations.bookingId, creditMovements.bookingId), eq(creditMovements.cause, 'kept')),
+      and(
+        eq(cancellations.tenantId, tenantId),
+        eq(cancellations.bookingId, creditMovements.bookingId),
+        eq(creditMovements.cause, 'kept'),
+      ),
     )
     .where(and(eq(creditMovements.tenantId, tenantId), eq(creditMovements.clientPackageId, clientPackageId)))
     .orderBy(desc(creditMovements.createdAt), desc(creditMovements.id))

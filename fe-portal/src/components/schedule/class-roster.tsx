@@ -34,7 +34,6 @@ import {
   type StaffBookingPrompt,
 } from "@/lib/class-waitlist";
 import type { ScheduleClassAttendee, ScheduleClassCancelled } from "@/lib/schedule";
-import { cancelledByLabel, cancelledOutcomeLine } from "@/lib/cancellations";
 import { formatDate } from "@/lib/formatters";
 
 export function Stat({
@@ -280,12 +279,12 @@ function CancelledSection({ role, rows, open }: { role: StaffRole; rows: Schedul
                   <span className="min-w-0 truncate text-ink">{b.client.name}</span>
                 )}
                 <div className="text-xs text-muted">
-                  {when ? `Cancelled ${when}` : "Cancelled"} by {cancelledByLabel(b)}
+                  {when ? `Cancelled ${when}` : "Cancelled"} by {b.who_line}
                 </div>
               </div>
               <div className="ml-auto flex shrink-0 items-center gap-2">
                 {/* A Late cancel reads "Late cancel · credit kept", toned as a warning. */}
-                <Badge tone={b.late ? "warning" : "neutral"}>{cancelledOutcomeLine(b)}</Badge>
+                <Badge tone={b.late ? "warning" : "neutral"}>{b.outcome_line}</Badge>
               </div>
             </li>
           );

@@ -2806,6 +2806,18 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.deepEqual(ended(theirs.get(studioCancelled)), { cancelled_by: 'studio', expired: false, refund_outcome: 'n_a' })
     assert.deepEqual(ended(theirs.get(lapsing)), { cancelled_by: null, expired: true, refund_outcome: 'n_a' })
     assert.equal(at(theirs.get(hostCancelled)), at(mine.get(hostCancelled)))
+
+    // Each card's lines come from the shared cancellation summary, as sent.
+    const lines = (r: any) => [r.who_line, r.outcome_line]
+    assert.deepEqual(lines(mine.get(live)), [null, null])
+    assert.deepEqual(lines(mine.get(withdrawn)), ['You cancelled', 'Request cancelled · session returned'])
+    assert.deepEqual(lines(mine.get(studioPending)), ['Cancelled', 'Cancelled by the studio · session returned'])
+    assert.deepEqual(lines(mine.get(lapsing)), ['Expired', 'Request expired · 2 sessions returned'])
+    assert.deepEqual(lines(mine.get(hostCancelled)), ['You cancelled', '2 sessions returned'])
+    assert.deepEqual(lines(mine.get(studioCancelled)), ['Cancelled', 'Cancelled by the studio · 2 sessions returned'])
+    assert.deepEqual(lines(theirs.get(hostCancelled)), ['Cancelled', 'Cancelled by the host'])
+    assert.deepEqual(lines(theirs.get(studioCancelled)), ['Cancelled', 'Cancelled by the studio'])
+    assert.deepEqual(lines(theirs.get(lapsing)), ['Expired', 'Request expired'])
   })
 
   test('ACC-37 a member who leaves, or is removed from, a manual 2on1 still finds their seat on /me/pt-sessions as cancelled, with when and by whom; the one who stays sees it scheduled', async () => {
@@ -3289,5 +3301,37 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       [[booking!.id, 'staff', 'pt-admin', 'credit_kept']],
     )
     assert.equal(profile.attendance.late_cancels, 0)
+  })
+
+  test('CUS-26 a pending private session request cancelled by removing its Complimentary Package reads Automatic on the profile, not as the admin’s cancel', async () => {
+    const pia = await member(one, 'Pia Removed')
+    const comp = (
+      await expectStatus(
+        await harness.app.request(`/api/v1/portal/admin/clients/${pia.clientId}/packages/issue`, {
+          method: 'POST',
+          headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ package_kind: 'pt', package_id: one.pt['1on1'], reason: 'Given by mistake' }),
+        }),
+        201,
+      )
+    ).client_package_id as string
+    const pending = await requestOk(one, pia, { sessionType: '1on1', clientPackageId: comp })
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/clients/${pia.clientId}/packages/${comp}/remove`, {
+        method: 'POST',
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'Given to the wrong member' }),
+      }),
+      200,
+    )
+
+    const profile = await profileOf(pia)
+    assert.deepEqual(
+      profile.cancelled_bookings.map((b: any) => [b.pt_request_id, b.cancelled_by, b.cancelled_by_name, b.who_line]),
+      [[pending, 'automatic', null, 'Automatic']],
+    )
+    // The member reads it as the studio's, not their own withdrawal.
+    const [mine] = (await myRequests(pia)).filter(r => r.id === pending)
+    assert.equal(mine.cancelled_by, 'studio')
   })
 })

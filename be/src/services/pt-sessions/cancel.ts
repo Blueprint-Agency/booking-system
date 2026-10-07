@@ -141,7 +141,7 @@ export async function cancelPtRequest(
         amount: n,
         reason,
         // A pending request has no booking: its debit comes back as the request's.
-        cause: bookingId ? 'returned' : 'pt_refunded',
+        cause: bookingId ? 'returned' : 'pt_returned',
         bookingId,
         actor: actorOfSource(source),
         actedByStaffId: resolvedByStaffId,
@@ -156,7 +156,9 @@ export async function cancelPtRequest(
       )
       await tx
         .update(ptRequests)
-        .set({ status: 'cancelled_before_scheduled', resolvedAt: new Date(), resolvedByStaffId })
+        // The source is the request's only record of who ended it: a Remove
+        // names the admin who took the package back, yet it is no staff cancel.
+        .set({ status: 'cancelled_before_scheduled', resolvedAt: new Date(), resolvedByStaffId, cancelSource: source })
         .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
       return {
         status: 'cancelled_before_scheduled',
@@ -328,7 +330,7 @@ export async function cancelPtRequest(
 
     await tx
       .update(ptRequests)
-      .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId })
+      .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId, cancelSource: source })
       .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
 
     await tx.insert(inboxItems).values({

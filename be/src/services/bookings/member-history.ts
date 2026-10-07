@@ -23,7 +23,14 @@ import { db } from '../../db'
 import { now as clockNow } from '../../lib/clock'
 import { cancelWindowResolver } from '../policy/cancel-window'
 import { staffCancelPreview, type StaffCancelPreview } from './staff-cancel-preview'
-import { summarizeCancellation, type CancellationSummary } from './cancellation-summary'
+import type { CancellationSource } from '../../db/enums'
+import {
+  cancellationRecord,
+  pendingRequestEnd,
+  summarizeCancellation,
+  type CancellationFacts,
+  type CancellationSummary,
+} from './cancellation-summary'
 import { ptSessionCost } from '../pt-sessions/cost'
 
 export type MemberBookingKind = 'class' | 'workshop' | 'pt'
@@ -78,7 +85,7 @@ type Raw = {
   code: string
   booked_at: string | Date
   cancelled_at: string | Date | null
-  record_source: string | null
+  record_source: CancellationSource | null
   record_within_window: boolean | null
   record_within_cap: boolean | null
   record_cancelled_at: string | Date | null
@@ -134,10 +141,18 @@ export async function listCancelledMemberBookings(
       ...row,
       ptRequestId: null,
       cancellation: summarizeCancellation({
+        kind: raw.kind,
         refundOutcome: raw.refund_outcome,
         creditsUsed: raw.credits_used ?? 0,
         bookingCancelledAt: toDate(raw.cancelled_at),
-        record: recordOf(raw),
+        record: cancellationRecord({
+          source: raw.record_source,
+          wasWithinWindow: raw.record_within_window,
+          wasWithinCap: raw.record_within_cap,
+          cancelledAt: raw.record_cancelled_at,
+          staffName: raw.record_staff_name,
+        }),
+        by: workshopCanceller(raw),
       }),
     })),
     ...requests,
@@ -147,39 +162,24 @@ export async function listCancelledMemberBookings(
 }
 
 /**
- * What the cancel recorded. A workshop place is never given a `cancellations`
- * row, so its own facts stand in: a place cancelled with its Workshop is the
- * staff member who cancelled the Workshop; one cancelled by a Refund's unwind
- * is the studio's machinery.
+ * Who cancelled a workshop place. It is never given a `cancellations` row, so
+ * its own facts say: a place cancelled with its Workshop is the staff member
+ * who cancelled the Workshop; one cancelled by a Refund's unwind is the
+ * studio's machinery. Anything else is the studio's, unnamed.
  */
-function recordOf(r: Raw): Parameters<typeof summarizeCancellation>[0]['record'] {
-  if (r.record_source !== null) {
-    return {
-      source: r.record_source,
-      wasWithinWindow: r.record_within_window!,
-      wasWithinCap: r.record_within_cap!,
-      cancelledAt: new Date(r.record_cancelled_at!),
-      staffName: r.record_staff_name,
-    }
+function workshopCanceller(r: Raw): CancellationFacts['by'] {
+  if (r.kind !== 'workshop') return undefined
+  if (r.workshop_cancelled) {
+    return { actor: r.workshop_cancelled_by ? 'staff' : 'studio', staffName: r.workshop_cancelled_by }
   }
-  if (r.kind !== 'workshop' || r.cancelled_at === null) return null
-  const source = r.workshop_cancelled ? 'admin' : r.refund_outcome === 'stripe_refunded' ? 'system' : null
-  if (!source) return null
-  return {
-    source,
-    wasWithinWindow: true,
-    wasWithinCap: true,
-    cancelledAt: new Date(r.cancelled_at),
-    staffName: r.workshop_cancelled_by,
-  }
+  return { actor: r.refund_outcome === 'stripe_refunded' ? 'automatic' : 'studio' }
 }
 
 /**
  * Private-session requests withdrawn or expired while pending: a pending
  * request holds its sessions but has no booking, so it reads as a cancellation
- * of its own. Pending always returns the sessions it held. Who: the staff
- * member who resolved it; else expiry when it was resolved at or past its
- * `expires_at`; else the member.
+ * of its own. Pending always returns the sessions it held. Who, and whether
+ * it expired: `pendingRequestEnd`.
  */
 async function withdrawnPtRequests(tenantId: string, clientId: string, limit: number): Promise<MemberCancelledRow[]> {
   const rows = await db.execute<{
@@ -191,7 +191,9 @@ async function withdrawnPtRequests(tenantId: string, clientId: string, limit: nu
     debited: boolean
     created_at: string | Date
     resolved_at: string | Date | null
-    expired: boolean
+    expires_at: string | Date | null
+    cancel_source: CancellationSource | null
+    resolved_by_staff_id: string | null
     staff_name: string | null
   }>(sql`
     select
@@ -203,15 +205,15 @@ async function withdrawnPtRequests(tenantId: string, clientId: string, limit: nu
       r.debited_client_package_id is not null as debited,
       r.created_at,
       r.resolved_at,
-      -- ponytail: a member's withdrawal in the minutes between expiry and the
-      -- sweep reads as expiry; record the source on the request if that matters.
-      (r.resolved_by_staff_id is null and r.expires_at is not null and r.resolved_at >= r.expires_at) as expired,
+      r.expires_at,
+      r.cancel_source,
+      r.resolved_by_staff_id,
       s.name as staff_name
     from pt_requests r
-    left join locations l on l.id = r.location_id
-    left join client_packages cp on cp.id = r.debited_client_package_id
-    left join pt_packages pk on pk.id = cp.source_pt_package_id
-    left join staff_users s on s.id = r.resolved_by_staff_id
+    left join locations l on l.id = r.location_id and l.tenant_id = r.tenant_id
+    left join client_packages cp on cp.id = r.debited_client_package_id and cp.tenant_id = r.tenant_id
+    left join pt_packages pk on pk.id = cp.source_pt_package_id and pk.tenant_id = r.tenant_id
+    left join staff_users s on s.id = r.resolved_by_staff_id and s.tenant_id = r.tenant_id
     where r.tenant_id = ${tenantId}::uuid
       and r.client_id = ${clientId}::uuid
       and r.status = 'cancelled_before_scheduled'
@@ -244,16 +246,18 @@ async function withdrawnPtRequests(tenantId: string, clientId: string, limit: nu
       bookedAt: new Date(r.created_at),
       cancelledAt: resolvedAt,
       cancellation: summarizeCancellation({
+        kind: 'pt',
         refundOutcome,
         creditsUsed: credits,
         bookingCancelledAt: resolvedAt,
-        record: resolvedAt && {
-          source: r.staff_name ? 'admin' : r.expired ? 'system' : 'client',
-          wasWithinWindow: true,
-          wasWithinCap: true,
-          cancelledAt: resolvedAt,
+        record: null,
+        ...pendingRequestEnd({
+          cancelSource: r.cancel_source,
+          resolvedByStaffId: r.resolved_by_staff_id,
           staffName: r.staff_name,
-        },
+          expiresAt: toDate(r.expires_at),
+          resolvedAt,
+        }),
       }),
     }
   })

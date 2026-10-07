@@ -393,7 +393,7 @@ async function reconcileSessionType(
       clientPackageId: req.debitedClientPackageId,
       amount: plan.delta,
       reason: 'pt_type_change_refund',
-      cause: 'pt_refunded',
+      cause: 'pt_returned',
       actor: 'staff',
       actedByStaffId: args.actorStaffId,
     })

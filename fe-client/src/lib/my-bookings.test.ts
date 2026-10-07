@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bookingItems, sessionsOnDay, sortForPhase, type BookingSources } from "./my-bookings.ts";
+import { bookingItems, ptStanding, sessionsOnDay, sortForPhase, type BookingSources } from "./my-bookings.ts";
 
 const NOW = Date.parse("2026-09-27T10:00:00+08:00");
 const at = (h: number) => new Date(NOW + h * 3_600_000).toISOString();
@@ -73,6 +73,21 @@ test("ACC-34 a pending PT request is upcoming; a scheduled one follows its sessi
       "pt:n": "past",
     },
   );
+});
+
+// #351: a held private session reads by the member's own check-in, as a class
+// does — the request turns `attended` when its session ends, ticked or not.
+test("ACC-39 a held private session reads Attended only when ticked, No-show only when staff marked it, and nothing when never ticked", () => {
+  const held = (check_in_state: string) =>
+    ({ ...(pt("h", "attended", [-30, -29]) as object), booking: { check_in_state } }) as never;
+  assert.equal(ptStanding(held("attended")), "attended");
+  assert.equal(ptStanding(held("no_show")), "no_show");
+  assert.equal(ptStanding(held("pending")), null);
+  assert.equal(ptStanding(pt("h", "attended", [-30, -29])), null, "no booking of theirs to read");
+  assert.equal(ptStanding(pt("p", "pending")), "pending");
+  assert.equal(ptStanding(pt("s", "scheduled", [24, 25])), "confirmed");
+  assert.equal(ptStanding(pt("x", "cancelled_before_scheduled")), "cancelled");
+  assert.equal(ptStanding({ ...(pt("e", "cancelled_before_scheduled") as object), expired: true } as never), "expired");
 });
 
 // #351: "a cancelled workshop is past" becomes: a cancelled workshop is on Cancelled.

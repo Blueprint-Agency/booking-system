@@ -46,7 +46,7 @@ import { RemovePackageDialog } from "@/components/clients/remove-package-dialog"
 import { CreditHistoryPanel } from "@/components/clients/credit-history-panel";
 import { CancelBookingDialog } from "@/components/bookings/cancel-booking-dialog";
 import type { StaffCancelPreview } from "@/lib/staff-cancel";
-import { cancelledByLabel, cancelledOutcomeLine, creditKept, type StaffCancellation } from "@/lib/cancellations";
+import { creditKept, type StaffCancellation } from "@/lib/cancellations";
 import { ChangeEmailDialog } from "@/components/clients/change-email-dialog";
 import { EditProfileDialog } from "@/components/clients/edit-profile-dialog";
 import { SendSetPasswordButton } from "@/components/access/send-set-password-button";
@@ -1939,7 +1939,7 @@ function CancelledRow({ b }: { b: ApiCancelledBooking }) {
     .join(" · ");
   const cancelled = [
     b.cancelled_at ? `Cancelled ${atTime(b.cancelled_at, "d MMM, h:mma")}` : "Cancelled",
-    `by ${cancelledByLabel(b)}`,
+    `by ${b.who_line}`,
   ].join(" ");
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:px-5">
@@ -1968,7 +1968,7 @@ function CancelledRow({ b }: { b: ApiCancelledBooking }) {
         </div>
       </div>
       <div className="flex w-full items-center justify-end gap-2 pl-[5.75rem] sm:w-auto sm:shrink-0 sm:pl-0">
-        <Badge tone={creditKept(b) ? "warning" : "neutral"}>{cancelledOutcomeLine(b, b.kind)}</Badge>
+        <Badge tone={creditKept(b) ? "warning" : "neutral"}>{b.outcome_line}</Badge>
       </div>
     </li>
   );

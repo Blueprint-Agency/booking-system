@@ -19,7 +19,7 @@ import { clientPackages } from '../../db/schema/packages'
 import type { ClientPackageKind } from '../../db/enums'
 import { NotFoundError } from '../../shared/errors'
 import { cancelWindowResolver, type HasCancelWindow } from '../policy/cancel-window'
-import { summarizeCancellation, type CancellationSummary } from './cancellation-summary'
+import { cancellationRecord, summarizeCancellation, type CancellationSummary } from './cancellation-summary'
 
 interface NamedRef {
   id: string
@@ -211,18 +211,16 @@ export async function listCancelledClassBookings(
     return {
       ...row,
       cancellation: summarizeCancellation({
+        kind: 'class',
         refundOutcome: r.refundOutcome,
         creditsUsed: row.creditsUsed,
         bookingCancelledAt: r.bookingCancelledAt,
-        record:
-          r.recordSource === null
-            ? null
-            : {
-                source: r.recordSource,
-                wasWithinWindow: r.recordWithinWindow!,
-                wasWithinCap: r.recordWithinCap!,
-                cancelledAt: r.recordCancelledAt!,
-              },
+        record: cancellationRecord({
+          source: r.recordSource,
+          wasWithinWindow: r.recordWithinWindow,
+          wasWithinCap: r.recordWithinCap,
+          cancelledAt: r.recordCancelledAt,
+        }),
       }),
     }
   })

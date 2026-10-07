@@ -1,5 +1,5 @@
 {
-  "id": "c4b3a53e-476d-4c29-9f98-516da4ca2214",
+  "id": "35d78886-3e3b-4df7-8a92-21709b31bd22",
   "prevId": "3c57d85c-364b-4769-85cd-a92c0034eb95",
   "version": "7",
   "dialect": "postgresql",
@@ -6890,6 +6890,13 @@
         "resolved_by_staff_id": {
           "name": "resolved_by_staff_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancel_source": {
+          "name": "cancel_source",
+          "type": "cancellation_source",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": false
         },
@@ -14686,7 +14693,7 @@
         "expired",
         "adjusted",
         "pt_requested",
-        "pt_refunded"
+        "pt_returned"
       ]
     },
     "public.email_log_status": {

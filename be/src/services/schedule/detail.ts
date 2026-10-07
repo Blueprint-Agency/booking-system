@@ -27,7 +27,7 @@ import { attendanceCapacity, countSeats, type SeatCounts } from '../bookings/sea
 import { waitlistEnabled } from '../waitlist/line'
 import { waitlistPanel, type WaitlistPanelRow } from '../waitlist/staff'
 import { staffCancelPreview, type StaffCancelPreview } from '../bookings/staff-cancel-preview'
-import { summarizeCancellation, type CancellationSummary } from '../bookings/cancellation-summary'
+import { cancellationRecord, summarizeCancellation, type CancellationSummary } from '../bookings/cancellation-summary'
 import { classCancelWindow } from '../policy/cancel-window'
 import { now as clockNow } from '../../lib/clock'
 import { nameRule, readClassRule, type NamedPackageRule } from './package-rules'
@@ -295,7 +295,7 @@ async function classCancelledBookings(tenantId: string, classId: string): Promis
     .from(bookings)
     .innerJoin(clients, eq(clients.id, bookings.clientId))
     .leftJoin(cancellations, and(eq(cancellations.tenantId, bookings.tenantId), eq(cancellations.bookingId, bookings.id)))
-    .leftJoin(staffUsers, eq(staffUsers.id, cancellations.cancelledByStaffId))
+    .leftJoin(staffUsers, and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, cancellations.cancelledByStaffId)))
     .where(and(eq(bookings.tenantId, tenantId), eq(bookings.classId, classId), eq(bookings.state, 'cancelled')))
   return rows
     .map(r => ({
@@ -303,19 +303,11 @@ async function classCancelledBookings(tenantId: string, classId: string): Promis
       client: { id: r.clientId, name: r.clientName ?? 'Member' },
       creditsUsed: r.creditsUsed ?? 0,
       cancellation: summarizeCancellation({
+        kind: 'class',
         refundOutcome: r.refundOutcome,
         creditsUsed: r.creditsUsed ?? 0,
         bookingCancelledAt: r.bookingCancelledAt,
-        record:
-          r.source === null
-            ? null
-            : {
-                source: r.source,
-                wasWithinWindow: r.wasWithinWindow!,
-                wasWithinCap: r.wasWithinCap!,
-                cancelledAt: r.cancelledAt!,
-                staffName: r.staffName,
-              },
+        record: cancellationRecord(r),
       }),
     }))
     .sort((a, b) => (b.cancellation.cancelledAt?.getTime() ?? 0) - (a.cancellation.cancelledAt?.getTime() ?? 0))

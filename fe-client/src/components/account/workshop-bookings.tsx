@@ -15,6 +15,9 @@ export interface ApiWorkshopBooking {
   cancelled_at: string | null;
   /** On a cancelled place: `stripe_refunded` once the money went back to the card, else `n_a`. */
   refund_outcome: string;
+  /** On a cancelled place, its lines as the server's cancellation summary words them (#351). */
+  who_line: string | null;
+  outcome_line: string | null;
   code: string;
   qr_token: string;
   location: { id: string; name: string; address: string | null } | null;

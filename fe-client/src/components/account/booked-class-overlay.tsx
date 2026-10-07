@@ -18,7 +18,6 @@ import {
   canCancelClass,
   cancelDeadlineLine,
   cancelledStanding,
-  classCancelledOutcome,
   isLate,
 } from "@/lib/cancellation-copy";
 import { classLength } from "@/lib/class-detail";
@@ -201,14 +200,9 @@ export function BookedClassOverlay({
                   {cancelDeadlineLine(isLate(b.cancel_deadline), deadline)}
                 </Fact>
               )}
-              {cancelled && b.cancelled_by && b.outcome && (
+              {cancelled && b.outcome_line && (
                 <Fact icon={<Hourglass />} label="Cancellation">
-                  {classCancelledOutcome({
-                    cancelled_by: b.cancelled_by,
-                    late: b.late ?? false,
-                    outcome: b.outcome,
-                    credits_used: b.credits_used,
-                  })}
+                  {b.outcome_line}
                   {b.cancelled_at && (
                     <span className="block text-muted tabular-nums">
                       {formatDate(b.cancelled_at)} · {formatClassTime(b.cancelled_at)}

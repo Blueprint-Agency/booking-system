@@ -749,19 +749,28 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     const res = await get('/api/v1/me/bookings/past', jane)
     assert.equal(res.status, 200, await res.clone().text())
     const past = ((await res.json()) as { bookings: Record<string, any>[] }).bookings
+    const cancelledRes = await get('/api/v1/me/bookings/cancelled', jane)
+    assert.equal(cancelledRes.status, 200, await cancelledRes.clone().text())
+    const gone = ((await cancelledRes.json()) as { bookings: Record<string, any>[] }).bookings
+    const line = (b: Record<string, any>) =>
+      `${new Date(b.starts_at as string).toISOString()} ${b.name} ${b.state}/${b.check_in_state}`
 
+    // Past holds what was held; a cancellation is on Cancelled from the
+    // moment it is cancelled (fe-client-features §8.3, #349).
     assert.deepEqual(
-      past.map(b => `${new Date(b.starts_at as string).toISOString()} ${b.name} ${b.state}/${b.check_in_state}`).sort(),
+      past.map(line).sort(),
       [
-        // The Past tab shows every outcome (fe-client-features §8.3): the late
-        // cancel is on it, as a cancellation — never as a class she went to.
-        '2026-07-06T11:00:00.000Z Hatha cancelled/n_a',
         '2026-08-24T11:00:00.000Z Hatha confirmed/attended',
         '2026-08-31T11:00:00.000Z Hatha no_show/no_show',
         // Only the roster knew this class ran, and her visit to it came across all the same.
         '2026-09-10T11:00:00.000Z Hatha confirmed/attended',
       ],
-      'a late cancel reads back cancelled, not attended, and an early cancel never happened at all',
+      'only what was held is on Past',
+    )
+    assert.deepEqual(
+      gone.map(b => `${line(b)} late=${b.late}`),
+      ['2026-07-06T11:00:00.000Z Hatha cancelled/n_a late=true'],
+      'a late cancel reads back cancelled — never as a class she went to — and an early cancel never happened at all',
     )
 
     // The late cancel is a cancellation of its own, and the studio's rather

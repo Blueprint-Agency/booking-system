@@ -122,6 +122,30 @@ export function bookingItems(src: BookingSources, now: number): BookingItem[] {
   return items;
 }
 
+/** Where a PT request or session stands on its card; null for a held session nobody ticked. */
+export type PtStanding = "pending" | "confirmed" | "attended" | "no_show" | "cancelled" | "expired" | null;
+
+/**
+ * A held private session reads by the member's own booking's check-in, as a
+ * class does (#351): "Attended" only when ticked, "No-show" only when staff
+ * marked them absent, and nothing for one held but never ticked. The request's
+ * `attended` status says only that its session ended.
+ */
+export function ptStanding(r: RawPtRequest): PtStanding {
+  switch (r.status) {
+    case "pending":
+      return "pending";
+    case "scheduled":
+      return "confirmed";
+    case "attended": {
+      const ticked = r.booking?.check_in_state;
+      return ticked === "attended" || ticked === "no_show" ? ticked : null;
+    }
+    default:
+      return r.expired ? "expired" : "cancelled";
+  }
+}
+
 /**
  * Soonest first while it is still to come; most recent first once it is over;
  * newest cancellation first on Cancelled (a cancelled item is `at` its cancel).

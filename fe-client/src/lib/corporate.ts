@@ -35,6 +35,9 @@ export interface ApiCorporateRequest {
   created_at: string;
   /** When the studio cancelled it; null unless `status` is `cancelled`. */
   cancelled_at?: string | null;
+  /** A cancelled request's lines, as the server's cancellation summary words them (#351). */
+  who_line?: string | null;
+  outcome_line?: string | null;
   session: ApiCorporateSession | null;
 }
 
