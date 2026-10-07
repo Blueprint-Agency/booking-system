@@ -736,6 +736,13 @@
       "when": 1791390356076,
       "tag": "0104_platform_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791403444240,
+      "tag": "0105_purchase_confirmation_amount_paid",
+      "breakpoints": true
     }
   ]
 }
