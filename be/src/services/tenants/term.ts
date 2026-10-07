@@ -30,6 +30,7 @@ import { and, eq, isNotNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { tenants } from '../../db/schema/tenancy'
 import type { TenantRow } from '../../db/schema/tenancy'
+import { now as clockNow } from '../../lib/clock'
 import { NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { termEndDate, type TermMonths } from './term-dates'
@@ -80,7 +81,7 @@ export async function suspendEndedTerms(): Promise<Array<{ id: string; slug: str
       and(
         eq(tenants.status, 'active'),
         isNotNull(tenants.termEndDate),
-        sql`(now() AT TIME ZONE ${tenants.timezone})::date >= ${tenants.termEndDate}`,
+        sql`(${clockNow().toISOString()}::timestamptz AT TIME ZONE ${tenants.timezone})::date >= ${tenants.termEndDate}`,
       ),
     )
     .returning({ id: tenants.id, slug: tenants.slug, termEndDate: tenants.termEndDate })
