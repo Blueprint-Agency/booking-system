@@ -28,6 +28,7 @@ describe('slug rename', { skip: integrationTestsEnabled ? false : SKIP_REASON },
   let send!: typeof import('../services/notifications/send')
   let withTenant!: typeof import('../db')['withTenant']
   let discardedMail!: typeof import('../lib/mailer')['discardedMail']
+  let jobs!: typeof import('../jobs')
   let operator!: Record<string, string>
 
   const created: string[] = []
@@ -68,6 +69,7 @@ describe('slug rename', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     send = await import('../services/notifications/send')
     ;({ withTenant } = await import('../db'))
     ;({ discardedMail } = await import('../lib/mailer'))
+    jobs = await import('../jobs')
     operator = await harness.signInAs('platform', OPERATOR, null)
   })
 
@@ -342,5 +344,63 @@ describe('slug rename', { skip: integrationTestsEnabled ? false : SKIP_REASON },
       .from(schema.formerSlugs)
       .where(eq(schema.formerSlugs.slug, tenant.slug))
     assert.equal(record?.renamedTenantId, other.id)
+  })
+
+  test('the redirect window runs on the app clock: set at the rename, honoured to its last second, released after', async () => {
+    const tenant = await studio('clock')
+    const other = await studio('clock-other')
+    const renamedAt = new Date('2031-01-10T04:00:00.000Z')
+    const windowEnds = new Date('2031-04-10T04:00:00.000Z') // ninety days on
+    harness.clock.set(renamedAt)
+    try {
+      await expectStatus(await rename(tenant.id, `ren-clock-next-${run}`), 200)
+      const [record] = await harness.db
+        .select()
+        .from(schema.formerSlugs)
+        .where(eq(schema.formerSlugs.slug, tenant.slug))
+      assert.equal(record?.redirectUntil.toISOString(), windowEnds.toISOString())
+
+      // The last second of the window: still redirecting, still nobody else's.
+      harness.clock.set(new Date(windowEnds.getTime() - 1000))
+      assert.deepEqual(await expectStatus(await lookup(tenant.slug), 200), {
+        moved_to: { slug: `ren-clock-next-${run}` },
+      })
+      await expectStatus(await rename(other.id, tenant.slug), 409, 'slug_held')
+      await jobs.scheduledJobs.releaseExpiredFormerSlugs()
+      assert.equal(
+        (await harness.db.select().from(schema.formerSlugs).where(eq(schema.formerSlugs.slug, tenant.slug))).length,
+        1,
+        'the nightly release leaves a live window alone',
+      )
+
+      // The window has ended: the old address resolves nowhere, and the release takes it.
+      harness.clock.set(windowEnds)
+      await expectStatus(await lookup(tenant.slug), 404, 'not_found')
+      await jobs.scheduledJobs.releaseExpiredFormerSlugs()
+      assert.equal(
+        (await harness.db.select().from(schema.formerSlugs).where(eq(schema.formerSlugs.slug, tenant.slug))).length,
+        0,
+      )
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
+  test('a former slug whose window has ended on the app clock can be taken before the nightly release', async () => {
+    const tenant = await studio('clock-take')
+    const other = await studio('clock-take-other')
+    harness.clock.set(new Date('2031-01-10T04:00:00.000Z'))
+    try {
+      await expectStatus(await rename(tenant.id, `ren-clock-take-next-${run}`), 200)
+      harness.clock.set(new Date('2031-04-10T04:00:00.000Z'))
+      await expectStatus(await rename(other.id, tenant.slug), 200)
+      const [record] = await harness.db
+        .select()
+        .from(schema.formerSlugs)
+        .where(eq(schema.formerSlugs.slug, tenant.slug))
+      assert.equal(record, undefined, 'the dead row was cleared, not left to collide')
+    } finally {
+      harness.clock.reset()
+    }
   })
 })

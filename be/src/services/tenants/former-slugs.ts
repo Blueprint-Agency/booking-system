@@ -26,6 +26,7 @@ import { and, eq, gt, inArray, lte, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { formerSlugs, tenants } from '../../db/schema/tenancy'
 import type { TenantStatus } from '../../db/enums'
+import { now as clockNow } from '../../lib/clock'
 import { ConflictError } from '../../shared/errors'
 import { normaliseSlug } from './slug'
 
@@ -82,7 +83,7 @@ export async function slugConflict(
   const [held] = await reader
     .select({ slug: formerSlugs.slug, renamedTenantId: formerSlugs.renamedTenantId })
     .from(formerSlugs)
-    .where(and(eq(formerSlugs.slug, slug), gt(formerSlugs.redirectUntil, sql`now()`)))
+    .where(and(eq(formerSlugs.slug, slug), gt(formerSlugs.redirectUntil, clockNow())))
     .limit(1)
   if (!held) return null
   return held.renamedTenantId === forTenantId ? null : 'slug_held'
@@ -131,7 +132,7 @@ export async function redirectForFormerSlug(slug: string): Promise<string | null
     .where(
       and(
         eq(formerSlugs.slug, normalised),
-        gt(formerSlugs.redirectUntil, sql`now()`),
+        gt(formerSlugs.redirectUntil, clockNow()),
         inArray(tenants.status, REDIRECTABLE),
       ),
     )
@@ -146,7 +147,7 @@ export async function redirectForFormerSlug(slug: string): Promise<string | null
 export async function clearExpired(tx: Deleter, slugs: string[]): Promise<void> {
   await tx
     .delete(formerSlugs)
-    .where(and(inArray(formerSlugs.slug, slugs), lte(formerSlugs.redirectUntil, sql`now()`)))
+    .where(and(inArray(formerSlugs.slug, slugs), lte(formerSlugs.redirectUntil, clockNow())))
 }
 
 /**
@@ -170,7 +171,7 @@ export async function releaseOwn(tx: Deleter, tenantId: string, slugs: string[])
 export async function releaseExpiredFormerSlugs(): Promise<number> {
   const released = await db
     .delete(formerSlugs)
-    .where(lte(formerSlugs.redirectUntil, sql`now()`))
+    .where(lte(formerSlugs.redirectUntil, clockNow()))
     .returning({ slug: formerSlugs.slug })
   return released.length
 }
