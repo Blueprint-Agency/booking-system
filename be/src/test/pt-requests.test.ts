@@ -3226,6 +3226,23 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.deepEqual(await approvals(lou), [], 'the member asked for nothing, so nothing was approved')
   })
 
+  test('an approval is celebrated until its session starts on the app clock, and not after', async () => {
+    const max = await member(one, 'Max Late Look')
+    const packageId = await givePt(one, max, '1on1')
+    const requestId = await requestOk(one, max, { sessionType: '1on1', clientPackageId: packageId })
+    const startsAt = far()
+    await scheduled(requestId, { startsAt })
+    try {
+      harness.clock.set(new Date(startsAt.getTime() - 1))
+      assert.deepEqual((await approvals(max)).map(a => a.id), [requestId])
+      harness.clock.set(startsAt)
+      assert.deepEqual(await approvals(max), [], 'a session already under way has nothing left to celebrate')
+    } finally {
+      harness.clock.reset()
+    }
+    assert.equal((await requestRow(requestId)).approvalUnseen, true, 'reading it marks nothing seen')
+  })
+
   // ── The admin profile's Cancelled tab (#352) ────────────────────────────
 
   const profileOf = async (who: Member) =>
