@@ -46,6 +46,7 @@ const PHASES: { value: BookingPhase; label: string }[] = [
   { value: "upcoming", label: "Upcoming" },
   { value: "ongoing", label: "Ongoing" },
   { value: "past", label: "Past" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 
 const isType = (v: string | null): v is TypeFilter => TYPE_OPTIONS.some((o) => o.value === v);
@@ -70,7 +71,7 @@ export default function YourBookingsPage() {
 /**
  * "Your bookings": every class, PT session or request, workshop and corporate
  * request the member holds, in one list — filtered by kind, and by Upcoming,
- * Ongoing or Past (`lib/my-bookings.ts`). The next one's ticket is on `/account`.
+ * Ongoing, Past or Cancelled (`lib/my-bookings.ts`). The next one's ticket is on `/account`.
  * `?type=` and `?when=` open it filtered; the old per-kind pages redirect here.
  */
 function YourBookings() {
@@ -128,7 +129,7 @@ function YourBookings() {
     [items, type],
   );
   const counts = useMemo(() => {
-    const c: Record<BookingPhase, number> = { upcoming: 0, ongoing: 0, past: 0 };
+    const c: Record<BookingPhase, number> = { upcoming: 0, ongoing: 0, past: 0, cancelled: 0 };
     for (const i of ofType) c[i.phase] += 1;
     return c;
   }, [ofType]);
@@ -317,8 +318,12 @@ function emptyCopy(type: TypeFilter, phase: BookingPhase) {
     workshop: "workshops",
     corporate: "corporate requests",
   }[type];
-  const title =
-    phase === "upcoming" ? `No upcoming ${noun}` : phase === "ongoing" ? `No ${noun} in progress` : `No past ${noun}`;
+  const title = {
+    upcoming: `No upcoming ${noun}`,
+    ongoing: `No ${noun} in progress`,
+    past: `No past ${noun}`,
+    cancelled: `No cancelled ${noun}`,
+  }[phase];
   const cta =
     type === "pt"
       ? { href: "/private-sessions", label: "Request a session" }

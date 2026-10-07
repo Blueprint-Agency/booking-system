@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * A member's class bookings, as `GET /me/bookings/upcoming` and `/past` return
+ * A member's class bookings, as `GET /me/bookings/upcoming`, `/past` and `/cancelled` return
  * them (be-client.md §3/§4c), and their places in line (`GET /me/waitlist`,
  * spec-waitlist.md §9). The list itself is "Your bookings" (`/account`).
  */
@@ -10,6 +10,7 @@ import { formatDate, cn } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { BTN_CANCEL } from "@/components/ui/styles";
 import type { ApiWaitlistEntry } from "@/lib/waitlist";
+import type { CancellationOutcome, CancelledBy } from "@/lib/cancellation-copy";
 
 export interface ApiBooking {
   booking_id: string;
@@ -32,6 +33,11 @@ export interface ApiBooking {
   effective_cancel_window_hours: number;
   /** When that window opens: a cancel after it is a late cancellation. */
   cancel_deadline: string;
+  /** Only on `GET /me/bookings/cancelled`: the cancellation's summary (#349). */
+  cancelled_at?: string | null;
+  cancelled_by?: CancelledBy;
+  late?: boolean;
+  outcome?: CancellationOutcome;
 }
 
 /** A place in line for a full class, with the way out of it. */

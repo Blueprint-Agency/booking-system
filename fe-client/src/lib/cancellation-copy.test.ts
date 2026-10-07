@@ -2,14 +2,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   cancelClosed,
+  cancelledStanding,
+  cancelledWhen,
   canStillCancel,
   classBookingPolicy,
+  classCancelledOutcome,
   classCancelNotice,
   ptCancelPrompt,
   ptCancelResult,
   ptPolicyNote,
   windowRefusal,
   type CancellationPolicy,
+  type CancelledClass,
 } from "./cancellation-copy.ts";
 
 const policy = (over: Partial<CancellationPolicy> = {}): CancellationPolicy => ({
@@ -98,4 +102,55 @@ test("no sentence calls a returned credit or session a refund", () => {
     ptCancelResult("forfeited", 0).text,
   ];
   for (const s of all) assert.doesNotMatch(s, /refund/i, s);
+});
+
+// ── The Cancelled tab (#349) ────────────────────────────────────────────────
+
+const cancelled = (over: Partial<CancelledClass> = {}): CancelledClass => ({
+  cancelled_by: "member",
+  late: false,
+  outcome: "credit_returned",
+  credits_used: 1,
+  ...over,
+});
+
+test("ACC-33 a cancelled class's outcome line says where the credit went", () => {
+  assert.equal(classCancelledOutcome(cancelled({ late: true, outcome: "credit_kept_late" })), "Late cancel · credit kept");
+  assert.equal(classCancelledOutcome(cancelled()), "Credit returned");
+  assert.equal(classCancelledOutcome(cancelled({ credits_used: 2 })), "2 credits returned");
+  assert.equal(
+    classCancelledOutcome(cancelled({ outcome: "credit_kept_over_cap" })),
+    "Cancelled over your cap · credit kept",
+  );
+  assert.equal(classCancelledOutcome(cancelled({ outcome: "nothing_to_return", credits_used: 0 })), "Nothing to return");
+  assert.equal(
+    classCancelledOutcome(cancelled({ late: true, outcome: "nothing_to_return", credits_used: 0 })),
+    "Late cancel · nothing to return",
+  );
+});
+
+test("ACC-33 a class the studio cancelled says so in its outcome line", () => {
+  const studio = (over: Partial<CancelledClass>) => classCancelledOutcome(cancelled({ cancelled_by: "studio", ...over }));
+  assert.equal(studio({}), "Cancelled by the studio · credit returned");
+  assert.equal(studio({ credits_used: 3 }), "Cancelled by the studio · 3 credits returned");
+  assert.equal(studio({ outcome: "credit_kept" }), "Cancelled by the studio · credit kept");
+  assert.equal(studio({ outcome: "nothing_to_return", credits_used: 0 }), "Cancelled by the studio · nothing to return");
+});
+
+test("ACC-33 a cancelled class says when it was cancelled, and by whom where its outcome line does not", () => {
+  assert.equal(cancelledWhen("member", "3 Oct · 10:15"), "You cancelled · 3 Oct · 10:15");
+  // "Cancelled by the studio" is already its outcome line: said once per card.
+  assert.equal(cancelledWhen("studio", "3 Oct · 10:15"), "Cancelled · 3 Oct · 10:15");
+  assert.equal(cancelledStanding("member"), "You cancelled this booking");
+  assert.equal(cancelledStanding("studio"), "The studio cancelled this booking");
+});
+
+test("ACC-33 no cancelled-class line calls a returned credit a refund", () => {
+  const outcomes = ["credit_returned", "credit_kept_late", "credit_kept_over_cap", "credit_kept", "nothing_to_return"] as const;
+  for (const by of ["member", "studio"] as const) {
+    for (const outcome of outcomes) {
+      const s = classCancelledOutcome(cancelled({ cancelled_by: by, outcome }));
+      assert.doesNotMatch(s, /refund/i, s);
+    }
+  }
 });
