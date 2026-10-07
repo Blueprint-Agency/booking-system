@@ -386,6 +386,10 @@ services/pt-sessions/request.ts:submitPtRequest({
   ↓
 tx start
 1. Validate class_type_id, when given, exists and is active. Validate location_id exists and is not archived.
+   Each must be this studio's own (TEN-12): another studio's id is refused exactly as a missing
+   one is, 404 class_type_not_found / location_not_found, and so is an existing partner's
+   co_client_id that is not a member here, 404 partner_client_not_found. Nothing is written or
+   debited. (A foreign key cannot say this: its reference check skips Row-Level Security.)
 2. Validate slots[]: 1..N rows; end_time, where sent, > start_time; each proposed_date in
    [today + min_book_in_advance_days, today + book_in_advance_days] (Singapore calendar
    days, `pt_booking_config`, read on the app clock). Sooner is refused 400

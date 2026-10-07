@@ -33,6 +33,8 @@ describe('super portal sign-in', { skip: integrationTestsEnabled ? false : SKIP_
   const STUDIO_ADMIN = `studio-admin-${run}@platform.test`
   const STRANGER = `stranger-${run}@platform.test`
   const EMAILS = [OPERATOR, STUDIO_ADMIN, STRANGER, FIRST_TIMER]
+  /** The client addresses this file's failed sign-ins came from, whose audit rows it removes. */
+  const attemptIps: string[] = []
 
   const tenants = (headers: Record<string, string>) =>
     harness.app.request('/api/v1/platform/tenants', { headers: { Authorization: headers.Authorization! } })
@@ -71,6 +73,7 @@ describe('super portal sign-in', { skip: integrationTestsEnabled ? false : SKIP_
     await harness.db.delete(schema.staffUsers).where(inArray(schema.staffUsers.email, EMAILS))
     await harness.db.delete(schema.staffAuthUsers).where(inArray(schema.staffAuthUsers.email, EMAILS))
     await harness.db.delete(schema.platformAuthUsers).where(inArray(schema.platformAuthUsers.email, EMAILS))
+    if (attemptIps.length) await harness.db.delete(schema.authEvents).where(inArray(schema.authEvents.ip, attemptIps))
     await harness.close()
   })
 
@@ -86,27 +89,64 @@ describe('super portal sign-in', { skip: integrationTestsEnabled ? false : SKIP_
     assert.ok((await archive.arrayBuffer()).byteLength > 0, 'the archive has content')
   })
 
-  test("a studio admin's email and password get no platform session", async () => {
+  test("AUTH-20 a studio admin's email and password are refused at the super portal exactly as a wrong password is, and get no platform session", async () => {
     // A real, working studio credential: it signs in at its own studio.
     const atStudio = await staffAtStudioOne(STUDIO_ADMIN, 'admin')
+    await harness.signInAs('platform', OPERATOR, null)
 
-    const attempt = await harness.app.request('/api/v1/auth/platform/sign-in/email', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Origin: frontendOrigin('platform', null),
-        'X-Forwarded-For': harnessAddress(),
-      },
-      body: JSON.stringify({ email: STUDIO_ADMIN, password: HARNESS_PASSWORD }),
-    })
-    assert.equal(attempt.status, 401, await attempt.clone().text())
-    assert.equal(attempt.headers.get('set-auth-token'), null)
+    /** The super portal's password step, from its own page, at an address of its own. */
+    const attempt = async (email: string, password: string) => {
+      const ip = harnessAddress()
+      attemptIps.push(ip)
+      const res = await harness.app.request('/api/v1/auth/platform/sign-in/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: frontendOrigin('platform', null), 'X-Forwarded-For': ip },
+        body: JSON.stringify({ email, password }),
+      })
+      const events = await harness.db
+        .select({ pool: schema.authEvents.pool, kind: schema.authEvents.kind, tenantId: schema.authEvents.tenantId, actor: schema.authEvents.actorUserId })
+        .from(schema.authEvents)
+        .where(eq(schema.authEvents.ip, ip))
+      return { status: res.status, body: await res.text(), token: res.headers.get('set-auth-token'), events }
+    }
+    const platformSessions = async () => (await harness.db.select({ id: schema.platformAuthSessions.id }).from(schema.platformAuthSessions)).length
+    const staffSessionsOf = async (email: string) =>
+      (
+        await harness.db
+          .select({ id: schema.staffAuthSessions.id })
+          .from(schema.staffAuthSessions)
+          .innerJoin(schema.staffAuthUsers, eq(schema.staffAuthUsers.id, schema.staffAuthSessions.userId))
+          .where(eq(schema.staffAuthUsers.email, email))
+      ).length
+
+    const sessionsBefore = await platformSessions()
+    const studioSessionsBefore = await staffSessionsOf(STUDIO_ADMIN)
+
+    const studioAdmin = await attempt(STUDIO_ADMIN, HARNESS_PASSWORD)
+    const wrongPassword = await attempt(OPERATOR, 'not-the-operators-password')
+    const unknownAddress = await attempt(`nobody-${run}@platform.test`, HARNESS_PASSWORD)
+
+    // The super portal says "Incorrect email or password." for a 401 and only a
+    // 401: the studio admin's correct credentials earn the wrong password's
+    // answer, word for word, and nothing that tells an account apart.
+    assert.equal(wrongPassword.status, 401, wrongPassword.body)
+    assert.equal(studioAdmin.status, 401, studioAdmin.body)
+    assert.equal(studioAdmin.body, wrongPassword.body)
+    assert.equal(unknownAddress.body, wrongPassword.body)
+    assert.equal(studioAdmin.token, null)
 
     const inPlatformPool = await harness.db
       .select()
       .from(schema.platformAuthUsers)
       .where(eq(schema.platformAuthUsers.email, STUDIO_ADMIN))
     assert.equal(inPlatformPool.length, 0, 'no platform user, so no platform session')
+    assert.equal(await platformSessions(), sessionsBefore, 'no platform session was opened')
+    assert.equal(await staffSessionsOf(STUDIO_ADMIN), studioSessionsBefore, 'nor a studio session')
+
+    // The one thing on record is the platform's failed sign-in, as for an address
+    // it has never seen: the studio admin is nobody to the super portal.
+    assert.deepEqual(studioAdmin.events, [{ pool: 'platform', kind: 'sign_in_failed', tenantId: null, actor: null }])
+    assert.deepEqual(studioAdmin.events, unknownAddress.events)
 
     // And the studio session it does have is worthless here.
     await expectStatus(await tenants(atStudio), 404, 'not_found')
