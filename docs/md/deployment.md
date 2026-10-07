@@ -128,7 +128,9 @@ and neither stack is touched.
   that skipped it.
 - **One workflow per pull request.** `deploy-be.yml` is the only workflow a PR triggers, on every
   PR whatever it touches. It calls `test-guardrails.yml` (`guardrails`) and `e2e-local.yml`
-  (`journeys-pr`) as jobs; its `changes` job still decides which app checks a PR needs.
+  (`journeys-pr`) as jobs; its `changes` job still decides which app checks a PR needs. The same
+  `journeys-pr` runs on every push too, and both deploys need it (§ Browser journeys gate both
+  deploys).
 - **Two ways in.** A direct push to `staging` or `main` is gated by the push's own run: run the full
   `npm run check` locally first (`testing.md` § Matching CI locally). A pull request runs every
   check and never deploys; with the merge queue on, the queue (`merge_group`) runs every check
@@ -189,49 +191,30 @@ merging.
 > `docker image inspect blueprintagency/booking-be:latest --format '{{.Id}}'`. A healthy container
 > is not evidence of a current one.
 
-### Browser journeys gate the production deploy
+### Browser journeys gate both deploys
 
-Three golden paths run in a real browser (Playwright, `e2e/` — its own `package.json`, sharing
-nothing with the apps) against **staging**:
+The journeys in `e2e/` (Playwright; its own `package.json`, sharing nothing with the apps) run in a
+real browser against a stack that lives and dies inside the CI runner: a Postgres service, the
+backend, the production builds of both frontends, and a Stripe stub played by the test process
+(`e2e-local.yml`, #207; the stack and the stub are described in `docs/md/e2e-journeys.md`). Among
+them, the golden paths (#145): a member buys a plan with a test card on the stubbed Checkout and
+books a class; an admin creates a class and the instructor sees it on their schedule; a member
+cancels inside the window and the credit comes back.
 
-1. A member buys a plan with a Stripe test card (`4242…`, on Stripe's hosted Checkout) and books a class.
-2. An admin creates a class in the portal, and the instructor sees it on their schedule.
-3. A member cancels inside the window, and the credit comes back.
-
-`.github/workflows/e2e.yml` runs them. `deploy-be.yml` calls it as the `e2e` job on a **`main`** push
-(or dispatch), and `deploy` needs it there: **red journeys mean the production backend deploy does not
-start.** On `staging` the job is skipped — staging is what they run against, so a staging deploy
-cannot wait on them. Before starting, the job waits for any staging deploy still in flight, then
-**fails unless staging runs this commit's backend** (its `IMAGE_TAG` sha has the same `be/` as the
-commit being deployed). So a commit that skipped `staging`, or whose staging deploy failed and left the
-old image serving, cannot reach production on journeys that tested something else. Deploy it to
-staging first, then re-run.
+`deploy-be.yml` calls that workflow as its `journeys-pr` job on **every** event — pull request,
+merge queue, and a push to `staging` or `main` — and `deploy` needs it on both branches: **red
+journeys mean neither backend deploy starts.** One job, one stack, the same journeys for a PR, for
+staging and for production.
 
 - **No retries.** The journeys change their studio as they go, so a second attempt meets a different
-  studio. For a network blip, re-run the workflow — it makes a fresh studio.
-- **A failed teardown is a warning, not a red gate.** The next run's setup sweeps what was left.
-- **Manual runs use their own concurrency group**, so starting one by hand can never displace a
-  queued production gate (which would skip that push's deploy, not fail it).
-
-- **Their own studio, every run.** The job SSHes to bpvps2 and runs
-  `docker compose run --rm -T booking-be npm run -s e2e:studio -- setup` in the staging stack
-  (`be/src/e2e/`). That makes a studio with slug `e2e-<run>` — a prefix the super portal refuses for
-  real studios (`services/tenants/slug.ts`) — with an admin, an instructor, two members on Resend's
-  `delivered+…@resend.dev` sink, a plan, class types and classes. Teardown deletes every row carrying
-  that studio's `tenant_id` and the auth users on those addresses, and refuses any other slug. Setup
-  also sweeps e2e studios older than two hours, which a killed run leaves behind. No real studio or
-  member is read or written, and production refuses the command outright.
-- **Members are signed in by token.** The command registers them in-process with the null mail
-  transport (it runs with `NODE_ENV=test`) and hands the journeys their session tokens; signing in by
-  emailed code is not one of the journeys. Staff sign in through the portal's own form.
-- **The staging image must contain `be/src/e2e/`**, since the command runs in it. A `main` deploy
-  follows a staging one, so it does.
-- **Run by hand:** Actions → *E2E Journeys* → *Run workflow*. Deploys nothing. On failure the run
-  uploads `playwright-report` (traces, screenshots, video).
-- **Pull requests run the same journeys earlier**, on a stack inside the runner with Stripe stubbed
-  (`e2e-local.yml`, #207) — no secret, no staging, no real Stripe. That run warns; this one gates.
-  See `docs/md/e2e-journeys.md`.
-- **Run locally** against a local stack (backend + both frontends up):
+  studio. For a blip, re-run the workflow — it makes a fresh stack and studio.
+- **A skipped journey fails the run** (`docs/md/test-guardrails.md`).
+- **The studio is the run's own** — `e2e-<run>`, made by the backend's `e2e:studio` command
+  (`be/src/e2e/`) in the runner's database and gone with it. The command also works on a deployed
+  stack (and production refuses it outright), which is how the journeys are run by hand against
+  one, below.
+- **Run locally** on the local stack: `docs/md/e2e-journeys.md` § The local stack. Against a
+  deployed or `make dev` stack instead, with the backend and both frontends up:
 
   ```bash
   cd e2e && npm ci && npx playwright install chromium
@@ -241,6 +224,24 @@ staging first, then re-run.
   `E2E_KEEP_STUDIO=1` leaves the studio in place to look at afterwards.
 - **Vercel is not gated.** The frontends still deploy on their own (see above); the journeys gate the
   backend image only.
+
+**Production additionally waits for staging.** On a `main` push (or dispatch) `deploy` also needs
+the `on-staging` job: it waits for any staging deploy still in flight, then reads the staging
+stack's `IMAGE_TAG` over SSH and **fails unless staging runs this commit's backend** (that sha has
+the same `be/` as the commit being deployed). Green journeys in the runner say the commit works;
+this says it has already been deployed, migrated and smoke-tested once, on staging. A commit that
+skipped `staging`, or whose staging deploy failed and left the old image serving, is refused:
+deploy it to staging first, then re-run.
+
+> **Why not run the journeys against staging itself?** Until October 2026 the production gate was
+> `e2e.yml`: the same journeys, in a throwaway studio on the deployed staging stack. It failed about
+> one `main` push in five — `Test timeout of 120000ms exceeded`, `waiting for getByLabel('Email')`,
+> `element(s) not found` — on staging's network, Vercel builds and DNS, never on anything the commit
+> had changed, and each failure meant a re-run and a production deploy an hour late. The in-runner
+> run had been green on the same commits. Since the paid journey could no longer run on a deployed
+> stack anyway (a studio pays on its own Stripe account, #293, and the gate's studio had none), the
+> staging run covered *less* than the in-runner one, less reliably. It is gone; `on-staging` keeps
+> the one thing it proved that the runner cannot: that staging is running the commit.
 
 ### Staging matches production — the parity checklist
 
@@ -266,7 +267,7 @@ row either matches or says why it deliberately does not.
 | `APP_ENV` | `staging` | `production` | Deliberate — it is the environment's name. |
 | `FRONTEND_URLS`, `BETTER_AUTH_URL`, API host | `*.dev.` / `*.portal.dev.`, `api.dev.reservetoday.app` | `*.` / `*.portal.`, `api.reservetoday.app` | Deliberate — separate hostnames per environment. |
 | Database contents | real studios and members until cutover, plus the Mindbody dry-run import as realistic data | real | Deliberate. No generated data goes into staging; the journeys' `e2e-` studios are removed after every run. The Mindbody dry run lands with #130. |
-| Backend deploy gates | tests, drift | tests, drift, **browser journeys** | Deliberate — the journeys run against staging, so they can only gate the step after it. |
+| Backend deploy gates | tests, drift, browser journeys (in the runner) | the same, plus **`on-staging`**: staging must already run this commit's backend | Deliberate — production is the second stack to get a commit, never the first. |
 
 ### Every deploy snapshots the database before it migrates
 

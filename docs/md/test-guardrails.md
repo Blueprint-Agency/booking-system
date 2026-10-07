@@ -55,8 +55,8 @@ Postgres advisory lock on it for the whole run. See `testing.md` § Running the 
 - **Journeys:** the Playwright config adds `no-skips-reporter`, which fails any run with a
   `test.skip` / `test.fixme` / `describe.skip` journey, or one that calls `test.skip()` as it runs.
   `test-guardrails.yml` lists the journeys on every PR (`playwright test --list`, no stack needed),
-  so a static skip fails the PR; a runtime skip fails the PR's own run in `e2e-local.yml` and the
-  staging run in `e2e.yml`. In CI,
+  so a static skip fails the PR; a runtime skip fails the run in `e2e-local.yml`, on the PR and
+  before either deploy. In CI,
   `forbidOnly` also fails a stray `test.only`.
 
 A journey that is genuinely broken is a bug to file, not a test to skip.
