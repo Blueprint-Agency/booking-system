@@ -90,6 +90,24 @@ export function validityLine(
   return expiresAt ? `Expires ${SG_DATE.format(expiresAt)}` : 'See your account for the expiry date'
 }
 
+/** Thousands grouped, always two decimals: "1,500.00". */
+const SGD_FIGURE = new Intl.NumberFormat('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/**
+ * What the member paid, as a receipt prints it (#370): the studio's currency
+ * and the figure, "SGD 120.00". A free purchase prints the zero amount rather
+ * than nothing, because a receipt that leaves the line blank reads as an error.
+ *
+ * Every studio sells in Singapore dollars today — the money columns are
+ * `*_sgd` and checkout charges `sgd` — so the currency is SGD for every studio;
+ * the same "SGD x" form the studio's other emails print money in.
+ *
+ * Takes the stored numeric string, never a float, so nothing rounds on the way.
+ */
+export function amountPaid(amountSgd: string): string {
+  return `SGD ${SGD_FIGURE.format(Number(amountSgd))}`
+}
+
 /**
  * A first-timer's welcome and a $150 receipt are not the same email, and with
  * no conditionals in the renderer, different copy has no other home.
@@ -116,6 +134,12 @@ export interface PurchaseEmailInput {
   validityDays: number | null
   /** The Bound Instructor a PT package's sessions are with; null when open. */
   boundInstructorName?: string | null
+  /**
+   * What the member paid for this purchase — the Purchase's figure, or "0.00"
+   * on a free one. Never the catalogue price: a Promotion or Promo Code makes
+   * those two differ, and the receipt states what was charged.
+   */
+  amountPaidSgd: string
   /** The provider's receipt for a paid purchase; null on the free paths. */
   receiptUrl: string | null
   /** Where a free purchase points instead — the page that lists what they own. */
@@ -123,7 +147,7 @@ export interface PurchaseEmailInput {
 }
 
 /**
- * The whole email, as the five allow-listed variables. `receipt_url` is never
+ * The whole email, as the six allow-listed variables. `receipt_url` is never
  * empty: an escaped empty value inside an href renders a visible link that goes
  * nowhere, so a purchase with no receipt links the account page instead (the
  * anchor text is neutral, and correct either way).
@@ -148,6 +172,7 @@ export function composePurchaseEmail(input: PurchaseEmailInput): {
         input.durationMonths,
         input.validityDays,
       ),
+      amount_paid: amountPaid(input.amountPaidSgd),
       receipt_url: input.receiptUrl || input.accountUrl,
     },
   }
