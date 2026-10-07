@@ -368,6 +368,33 @@ describe('time-window rules over HTTP', { skip: integrationTestsEnabled ? false 
     }
   })
 
+  test('the catalogue’s “today” is the studio’s own day: at 03:00 in Singapore, yesterday’s classes are out and today’s early ones in', async () => {
+    const at = studios[0]!
+    const [tenant] = await harness.db
+      .select({ timezone: schema.tenants.timezone })
+      .from(schema.tenants)
+      .where(eq(schema.tenants.id, at.id))
+    assert.equal(tenant?.timezone, 'Asia/Singapore', 'studio one keeps Singapore time, UTC+8')
+    // A Singapore date sixty days out, as the instant its midnight falls on.
+    const utcDay = new Date(Math.floor((Date.now() + 60 * DAY) / DAY) * DAY)
+    const sgMidnight = new Date(utcDay.getTime() - 8 * HOUR)
+    // 10:00 the Singapore day before, and 01:00 on the day itself, already over by 03:00.
+    const yesterdays = await addClass(at, new Date(sgMidnight.getTime() - DAY + 10 * HOUR))
+    const todaysEarly = await addClass(at, new Date(sgMidnight.getTime() + HOUR))
+    const ids = (body: string) => (JSON.parse(body) as { classes: { id: string }[] }).classes.map(c => c.id)
+    try {
+      // 03:00 in Singapore is still the day before in UTC, the server's zone here.
+      harness.clock.set(new Date(sgMidnight.getTime() + 3 * HOUR))
+      const listed = ids(
+        await expectStatus(await harness.app.request('/api/v1/public/classes', { headers: { 'X-Tenant-Slug': at.slug } }), 200),
+      )
+      assert.ok(!listed.includes(yesterdays), 'yesterday’s class is not in the window')
+      assert.ok(listed.includes(todaysEarly), 'today’s 01:00 class is')
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
   test('a booking is upcoming until its class starts on the app clock, and past from then', async () => {
     const at = studios[0]!
     const dee = await member(at, 'dee-lists')
