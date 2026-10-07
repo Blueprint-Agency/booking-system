@@ -47,9 +47,26 @@ import {
   cancelledWhen,
   classCancelledOutcome,
   canStillCancel,
+  corporateCancelled,
   isLate,
+  ptCancelled,
   ptCancelPrompt,
+  workshopCancelled,
+  type CancelledLines,
 } from "@/lib/cancellation-copy";
+
+/** When a booking was cancelled, as the cards format a time. */
+const cancelTime = (iso: string) => `${formatDate(iso)} · ${formatClassTime(iso)}`;
+
+/** A cancelled card's when-and-who line and its outcome line (#351). */
+function Cancelled({ lines }: { lines: CancelledLines }) {
+  return (
+    <div className="mt-2 space-y-0.5 text-xs">
+      <p className="text-muted tabular-nums">{lines.when}</p>
+      <p className="font-medium text-ink/80">{lines.outcome}</p>
+    </div>
+  );
+}
 
 // ── The shell ────────────────────────────────────────────────────────────────
 
@@ -298,13 +315,9 @@ function ptStatus(r: RawPtRequest): Status {
       return { label: "Confirmed", tone: "ok", icon: CheckCircle2 };
     case "attended":
       return { label: "Attended", tone: "ok", icon: CheckCircle2 };
-    case "cancelled_after_scheduled":
-      if (r.refund_outcome === "forfeited") return { label: "Cancelled · session lost", tone: "bad", icon: XCircle };
-      if (r.refund_outcome === "session_returned")
-        return { label: "Cancelled · session returned", tone: "muted", icon: XCircle };
-      return { label: "Cancelled", tone: "muted", icon: XCircle };
     default:
-      return { label: "Cancelled · session returned", tone: "muted", icon: XCircle };
+      // Where the session went is the outcome line under the card (#351).
+      return { label: r.expired ? "Expired" : "Cancelled", tone: "muted", icon: XCircle };
   }
 }
 
@@ -377,6 +390,9 @@ export function PtBookingCard({
     >
       {r.schedule_note && r.status === "scheduled" && (
         <StudioNote label="A different time from the ones you proposed">{r.schedule_note}</StudioNote>
+      )}
+      {r.cancelled_at && r.status.startsWith("cancelled_") && (
+        <Cancelled lines={ptCancelled(r, cancelTime(r.cancelled_at))} />
       )}
       {r.cancel_note && (r.status === "cancelled_before_scheduled" || r.status === "cancelled_after_scheduled") && (
         <StudioNote label="Why the studio cancelled">{r.cancel_note}</StudioNote>
@@ -494,7 +510,8 @@ function workshopWhen(b: ApiWorkshopBooking): string {
 
 export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorkshopBooking; phase: BookingPhase }) {
   const cancelled = b.state === "cancelled";
-  const past = phase === "past";
+  // Over, or cancelled: no ticket, nothing left to change.
+  const past = phase === "past" || cancelled;
   const status: Status | null = cancelled
     ? { label: "Cancelled", tone: "muted", icon: XCircle }
     : b.check_in_state === "attended"
@@ -521,9 +538,7 @@ export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorksho
     >
       {/* No self-serve cancel: the studio arranges changes and refunds (#272). */}
       {!past && <p className="mt-2 text-xs text-muted">To change or cancel, contact the studio.</p>}
-      {cancelled && (
-        <p className="mt-2 text-xs text-muted">Any refund is arranged by the studio and shows on your card statement.</p>
-      )}
+      {cancelled && b.cancelled_at && <Cancelled lines={workshopCancelled(b.refund_outcome, cancelTime(b.cancelled_at))} />}
     </BookingCard>
   );
 }
@@ -619,6 +634,7 @@ export function CorporateBookingCard({ request: r }: { request: ApiCorporateRequ
       {r.status === "pending" && (
         <p className="mt-2 text-xs text-muted">We&apos;ll arrange the date, place and instructor with you on WhatsApp.</p>
       )}
+      {r.status === "cancelled" && r.cancelled_at && <Cancelled lines={corporateCancelled(cancelTime(r.cancelled_at))} />}
     </BookingCard>
   );
 }

@@ -8,12 +8,16 @@ import {
   classBookingPolicy,
   classCancelledOutcome,
   classCancelNotice,
+  corporateCancelled,
+  ptCancelled,
   ptCancelPrompt,
   ptCancelResult,
   ptPolicyNote,
   windowRefusal,
+  workshopCancelled,
   type CancellationPolicy,
   type CancelledClass,
+  type CancelledPt,
 } from "./cancellation-copy.ts";
 
 const policy = (over: Partial<CancellationPolicy> = {}): CancellationPolicy => ({
@@ -151,6 +155,75 @@ test("ACC-33 no cancelled-class line calls a returned credit a refund", () => {
     for (const outcome of outcomes) {
       const s = classCancelledOutcome(cancelled({ cancelled_by: by, outcome }));
       assert.doesNotMatch(s, /refund/i, s);
+    }
+  }
+});
+
+// ── Private sessions, workshops and corporate on Cancelled (#351) ─────────────
+
+const WHEN = "3 Oct · 10:15";
+const ptGone = (over: Partial<CancelledPt> = {}): CancelledPt => ({
+  status: "cancelled_after_scheduled",
+  refund_outcome: "session_returned",
+  cancelled_by: "member",
+  expired: false,
+  ...over,
+});
+
+test("ACC-35 a cancelled private session says when, who, and whether the session came back", () => {
+  assert.deepEqual(ptCancelled(ptGone(), WHEN), { when: `You cancelled · ${WHEN}`, outcome: "Session returned" });
+  assert.deepEqual(ptCancelled(ptGone({ refund_outcome: "forfeited" }), WHEN), {
+    when: `You cancelled · ${WHEN}`,
+    outcome: "Cancelled over your cap · session kept",
+  });
+  assert.deepEqual(ptCancelled(ptGone({ cancelled_by: "studio" }), WHEN), {
+    when: `Cancelled · ${WHEN}`,
+    outcome: "Cancelled by the studio · session returned",
+  });
+  // A 2on1 partner paid nothing (`n_a`): nothing of theirs came back or was kept.
+  assert.deepEqual(ptCancelled(ptGone({ cancelled_by: "host", refund_outcome: "n_a" }), WHEN), {
+    when: `Cancelled · ${WHEN}`,
+    outcome: "Cancelled by the host",
+  });
+  assert.equal(
+    ptCancelled(ptGone({ cancelled_by: "studio", refund_outcome: "n_a" }), WHEN).outcome,
+    "Cancelled by the studio",
+  );
+});
+
+test("ACC-35 a request withdrawn reads cancelled, one that expired unscheduled reads expired, each with the session returned", () => {
+  const pending = (over: Partial<CancelledPt>) =>
+    ptCancelled(ptGone({ status: "cancelled_before_scheduled", ...over }), WHEN);
+  assert.deepEqual(pending({}), { when: `You cancelled · ${WHEN}`, outcome: "Request cancelled · session returned" });
+  assert.deepEqual(pending({ cancelled_by: null, expired: true }), {
+    when: `Expired · ${WHEN}`,
+    outcome: "Request expired · session returned",
+  });
+  assert.equal(pending({ cancelled_by: "studio" }).outcome, "Cancelled by the studio · session returned");
+  // The partner's view of the host's request: the session was the host's.
+  assert.equal(pending({ refund_outcome: "n_a", cancelled_by: null, expired: true }).outcome, "Request expired");
+  assert.equal(pending({ refund_outcome: "n_a", cancelled_by: "host" }).outcome, "Cancelled by the host");
+});
+
+test("ACC-35 a cancelled workshop says whether the money went back to the card; a cancelled corporate request says the studio cancelled it", () => {
+  assert.deepEqual(workshopCancelled("stripe_refunded", WHEN), {
+    when: `Cancelled by the studio · ${WHEN}`,
+    outcome: "Refunded to your card",
+  });
+  assert.deepEqual(workshopCancelled("n_a", WHEN), {
+    when: `Cancelled · ${WHEN}`,
+    outcome: "Cancelled by the studio · any refund is arranged by the studio",
+  });
+  assert.deepEqual(corporateCancelled(WHEN), { when: `Cancelled · ${WHEN}`, outcome: "Cancelled by the studio" });
+});
+
+test("ACC-35 no private-session line calls a returned session a refund", () => {
+  for (const status of ["cancelled_before_scheduled", "cancelled_after_scheduled"]) {
+    for (const by of ["member", "studio", "host", null] as const) {
+      for (const refund_outcome of ["session_returned", "forfeited", "n_a"] as const) {
+        const { when, outcome } = ptCancelled(ptGone({ status, cancelled_by: by, expired: by === null, refund_outcome }), WHEN);
+        assert.doesNotMatch(`${when} ${outcome}`, /refund/i);
+      }
     }
   }
 });

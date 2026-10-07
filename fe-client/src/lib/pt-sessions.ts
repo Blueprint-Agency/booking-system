@@ -8,7 +8,7 @@
  */
 import { ApiError, useApi, type Api } from "./api";
 import { ERROR_CODES } from "./error-codes";
-import { windowRefusal } from "./cancellation-copy";
+import { windowRefusal, type PtCancelledBy } from "./cancellation-copy";
 
 /** What to tell a member whose PT cancel the server refused. */
 export function ptCancelFailure(err: unknown, windowHours: number | null): string {
@@ -70,6 +70,12 @@ export interface RawPtRequest {
   session_type: "1on1" | "2on1";
   status: string;
   refund_outcome?: "session_returned" | "forfeited" | "n_a" | null;
+  // On a cancelled or expired request (or a seat the member left): when, and
+  // who — the member, the studio, or (to a 2on1 partner) the host. Null by
+  // whom when it expired unscheduled. Null while it is live (#351).
+  cancelled_at?: string | null;
+  cancelled_by?: PtCancelledBy | null;
+  expired?: boolean;
   // Is the caller the requester (owns the credit, can cancel) or the 2on1 partner (read-only)?
   role?: "requester" | "partner";
   // The requester's name — shown on partner cards ("hosted by …").

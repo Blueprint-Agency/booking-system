@@ -6,9 +6,10 @@
  *
  * A request still waiting on the studio (a pending PT or corporate request)
  * counts as Upcoming: it is something coming, and it can still be cancelled.
- * Past holds only what was held; a cancelled class is on Cancelled from the
- * moment it is cancelled, whatever its time (#349). PT, workshop and corporate
- * cancellations still sit in Past until they follow (#351).
+ * Past holds only what was held. Whatever its kind, a cancellation is on
+ * Cancelled from the moment it is cancelled, whatever its time, sorted by its
+ * cancel time (#349, #351): a class, a PT request cancelled or expired (or a
+ * seat the member left), a workshop place, a corporate request.
  */
 import type { ApiBooking } from "@/components/account/class-bookings";
 import type { ApiWorkshopBooking } from "@/components/account/workshop-bookings";
@@ -59,6 +60,10 @@ function firstSlot(r: RawPtRequest): string | null {
   return s ? `${s.proposed_date.slice(0, 10)}T12:00:00+08:00` : null;
 }
 
+/** On Cancelled an item sorts by its cancel time; elsewhere, by its own. */
+const cancelledAt = (phase: BookingPhase, cancelled: string | null | undefined, own: string) =>
+  phase === "cancelled" ? (cancelled ?? own) : own;
+
 export function bookingItems(src: BookingSources, now: number): BookingItem[] {
   const items: BookingItem[] = [];
 
@@ -90,24 +95,28 @@ export function bookingItems(src: BookingSources, now: number): BookingItem[] {
     let phase: BookingPhase;
     if (r.status === "pending") phase = "upcoming";
     else if (r.status === "scheduled" && r.session) phase = byTime(r.session.starts_at, r.session.ends_at, now);
+    else if (r.status.startsWith("cancelled_")) phase = "cancelled";
     else phase = "past";
-    items.push({ type: "pt", key: `pt:${r.id}`, phase, at, request: r });
+    items.push({ type: "pt", key: `pt:${r.id}`, phase, at: cancelledAt(phase, r.cancelled_at, at), request: r });
   }
 
   for (const w of src.workshops) {
     let phase: BookingPhase;
-    if (w.state === "cancelled") phase = "past";
+    if (w.state === "cancelled") phase = "cancelled";
     else if (!w.starts_at) phase = "upcoming";
     else phase = byTime(w.starts_at, w.ends_at ?? w.starts_at, now);
-    items.push({ type: "workshop", key: `workshop:${w.id}`, phase, at: w.starts_at ?? w.booked_at, booking: w });
+    const at = cancelledAt(phase, w.cancelled_at, w.starts_at ?? w.booked_at);
+    items.push({ type: "workshop", key: `workshop:${w.id}`, phase, at, booking: w });
   }
 
   for (const r of src.corporate) {
     let phase: BookingPhase;
     if (r.status === "pending") phase = "upcoming";
     else if (r.status === "scheduled") phase = r.session ? byTime(r.session.starts_at, r.session.ends_at, now) : "upcoming";
+    else if (r.status === "cancelled") phase = "cancelled";
     else phase = "past";
-    items.push({ type: "corporate", key: `corporate:${r.id}`, phase, at: r.session?.starts_at ?? r.created_at, request: r });
+    const at = cancelledAt(phase, r.cancelled_at, r.session?.starts_at ?? r.created_at);
+    items.push({ type: "corporate", key: `corporate:${r.id}`, phase, at, request: r });
   }
 
   return items;

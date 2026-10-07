@@ -47,7 +47,10 @@ test("ACC-32 Cancelled lists the newest cancellation first, whatever the class t
   assert.deepEqual(sortForPhase(items, "cancelled").map((i) => i.key), ["class:earlier-class", "class:later-class"]);
 });
 
-test("a pending PT request is upcoming; a scheduled one follows its session; the rest are past", () => {
+// #351: a cancelled or expired PT request is on Cancelled, no longer Past;
+// what was held — attended, or a no-show staff marked — stays on Past.
+test("ACC-34 a pending PT request is upcoming; a scheduled one follows its session; a held one is past; a cancelled or expired one is on Cancelled", () => {
+  const noShow = { ...(pt("n", "attended", [-50, -49]) as object), booking: { check_in_state: "no_show" } } as never;
   assert.deepEqual(
     phases({
       pt: [
@@ -55,28 +58,66 @@ test("a pending PT request is upcoming; a scheduled one follows its session; the
         pt("s", "scheduled", [24, 25]),
         pt("r", "scheduled", [-0.5, 0.5]),
         pt("x", "cancelled_before_scheduled"),
+        pt("y", "cancelled_after_scheduled", [30, 31]),
         pt("d", "attended", [-30, -29]),
+        noShow,
       ],
     }),
-    { "pt:p": "upcoming", "pt:s": "upcoming", "pt:r": "ongoing", "pt:x": "past", "pt:d": "past" },
+    {
+      "pt:p": "upcoming",
+      "pt:s": "upcoming",
+      "pt:r": "ongoing",
+      "pt:x": "cancelled",
+      "pt:y": "cancelled",
+      "pt:d": "past",
+      "pt:n": "past",
+    },
   );
 });
 
-test("a workshop with no dates yet is upcoming; a cancelled one is past", () => {
+// #351: "a cancelled workshop is past" becomes: a cancelled workshop is on Cancelled.
+test("ACC-34 a workshop with no dates yet is upcoming; a cancelled one is on Cancelled, whatever its dates", () => {
   const w = (id: string, state: string, start: number | null, end: number | null) =>
     ({ id, state, booked_at: at(-100), starts_at: start == null ? null : at(start), ends_at: end == null ? null : at(end) }) as never;
   assert.deepEqual(
-    phases({ workshops: [w("t", "confirmed", null, null), w("c", "cancelled", 5, 6), w("n", "confirmed", -1, 30)] }),
-    { "workshop:t": "upcoming", "workshop:c": "past", "workshop:n": "ongoing" },
+    phases({
+      workshops: [
+        w("t", "confirmed", null, null),
+        w("c", "cancelled", 5, 6),
+        w("o", "cancelled", -30, -29),
+        w("n", "confirmed", -1, 30),
+      ],
+    }),
+    { "workshop:t": "upcoming", "workshop:c": "cancelled", "workshop:o": "cancelled", "workshop:n": "ongoing" },
   );
 });
 
-test("a corporate request waiting to be scheduled is upcoming", () => {
+test("ACC-34 a corporate request waiting to be scheduled is upcoming; a done one past; a cancelled one on Cancelled", () => {
   const r = (id: string, status: string) => ({ id, status, created_at: at(-10), session: null }) as never;
-  assert.deepEqual(phases({ corporate: [r("p", "pending"), r("d", "attended")] }), {
+  assert.deepEqual(phases({ corporate: [r("p", "pending"), r("d", "attended"), r("c", "cancelled")] }), {
     "corporate:p": "upcoming",
     "corporate:d": "past",
+    "corporate:c": "cancelled",
   });
+});
+
+test("ACC-34 every kind's cancellation sorts on Cancelled by when it was cancelled, newest first", () => {
+  const items = bookingItems(
+    {
+      ...empty,
+      cancelled: [{ ...(cls("c", 48, 49, "cancelled") as object), cancelled_at: at(-4) } as never],
+      pt: [{ ...(pt("p", "cancelled_after_scheduled", [72, 73]) as object), cancelled_at: at(-1) } as never],
+      workshops: [
+        { id: "w", state: "cancelled", booked_at: at(-100), starts_at: at(2), ends_at: at(3), cancelled_at: at(-3) } as never,
+      ],
+      corporate: [{ id: "k", status: "cancelled", created_at: at(-200), session: null, cancelled_at: at(-2) } as never],
+    },
+    NOW,
+  );
+  assert.deepEqual(
+    sortForPhase(items, "cancelled").map((i) => i.key),
+    ["pt:p", "corporate:k", "workshop:w", "class:c"],
+  );
 });
 
 test("a day's sessions are the ones its tile counted: attended, or booked and not checked in, earliest first", () => {
