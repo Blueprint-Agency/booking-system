@@ -158,7 +158,9 @@ export async function cancelPtRequest(
         .update(ptRequests)
         // The source is the request's only record of who ended it: a Remove
         // names the admin who took the package back, yet it is no staff cancel.
-        .set({ status: 'cancelled_before_scheduled', resolvedAt: new Date(), resolvedByStaffId, cancelSource: source })
+        // On the app clock: the member's history reads an expiry off it
+        // (`resolvedAt >= expiresAt`, bookings/cancellation-summary.ts).
+        .set({ status: 'cancelled_before_scheduled', resolvedAt: clockNow(), resolvedByStaffId, cancelSource: source })
         .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
       return {
         status: 'cancelled_before_scheduled',
