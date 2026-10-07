@@ -60,6 +60,7 @@ const SAMPLE_VALUES: Record<string, string> = {
   contents_line: '10 class credits',
   validity_line: 'Valid 90 days from your first class — your package activates when you make your first booking.',
   remaining_line: '3 class credits',
+  amount_paid: 'SGD 150.00',
   refund_line: 'SGD 150.00 has been refunded to your card.',
   cancelled_line: 'No booked classes were cancelled.',
   expires_at: '14 Oct 2026',
