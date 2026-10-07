@@ -12,13 +12,14 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
+import { classTypes, locations } from '../../db/schema/catalog'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
 import { ptRequests, ptRequestSlots } from '../../db/schema/schedule'
 import { ptBookingConfig } from '../../db/schema/policy'
 import { AppError, BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { DEFAULT_PT_BOOKING_CONFIG } from '../../db/seed/policy'
 import { sweepExpired } from '../packages/activation'
-import { debitCredits } from '../packages/ledger'
+import { debitCredits, type Tx } from '../packages/ledger'
 import { ptSessionCost } from './cost'
 import { daysBetween, sgToday } from '../../lib/time'
 import { now as clockNow } from '../../lib/clock'
@@ -146,6 +147,8 @@ export async function submitPtRequest(
     if (pkg.kind !== 'pt') throw new BadRequestError('not_a_pt_package')
     if (pkg.sessionType !== input.sessionType) throw new BadRequestError('session_type_mismatch')
 
+    await assertOwnReferences(tx, tenantId, input)
+
     const notExpired = pkg.expiresAt === null || pkg.expiresAt > now
     if (!pkg.active || !notExpired) throw new ConflictError('package_not_consumable')
 
@@ -203,6 +206,40 @@ export async function submitPtRequest(
 
     return { ptRequestId: req!.id }
   })
+}
+
+/**
+ * The Location, class type and existing partner a request names are this
+ * studio's own. Their foreign keys cannot say so: a reference check skips
+ * Row-Level Security, so another studio's id would be stored, and the request
+ * would then point across studios. Each is the same 404 a missing id is, so
+ * the answer does not tell a member that the id is real somewhere else.
+ */
+async function assertOwnReferences(tx: Tx, tenantId: string, input: PtRequestInput): Promise<void> {
+  const [location] = await tx
+    .select({ id: locations.id })
+    .from(locations)
+    .where(and(eq(locations.tenantId, tenantId), eq(locations.id, input.locationId)))
+    .limit(1)
+  if (!location) throw new NotFoundError('location_not_found')
+
+  if (input.classTypeId) {
+    const [classType] = await tx
+      .select({ id: classTypes.id })
+      .from(classTypes)
+      .where(and(eq(classTypes.tenantId, tenantId), eq(classTypes.id, input.classTypeId)))
+      .limit(1)
+    if (!classType) throw new NotFoundError('class_type_not_found')
+  }
+
+  if (input.partner?.kind === 'existing') {
+    const [partner] = await tx
+      .select({ id: clients.id })
+      .from(clients)
+      .where(and(eq(clients.tenantId, tenantId), eq(clients.id, input.partner.coClientId)))
+      .limit(1)
+    if (!partner) throw new NotFoundError('partner_client_not_found')
+  }
 }
 
 export async function linkPtRequestPartner(input: {
