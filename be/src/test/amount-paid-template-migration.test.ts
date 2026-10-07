@@ -88,7 +88,7 @@ describe('migration 0105: the amount paid reaches unedited purchase confirmation
   })
 
   test('NTF-03 an unedited confirmation gains the Amount paid row, an edited one is untouched, and a second run changes nothing', async () => {
-    const [unedited, edited] = studios as [{ id: string }, { id: string }]
+    const [unedited, edited] = [studios[0]!, studios[1]!]
     const today = { unedited: await templatesOf(unedited.id), edited: await templatesOf(edited.id) }
     const before370 = (row: Row) => {
       const body = row.bodyHtml.replace(AMOUNT_ROW, '')
