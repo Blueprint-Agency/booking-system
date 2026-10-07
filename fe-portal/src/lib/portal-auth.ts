@@ -28,6 +28,7 @@ import { createAuthClient } from "better-auth/react";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { portalAuthBasePath, portalAuthPool } from "@/lib/auth-pool";
+import { noteMaintenance } from "@/lib/maintenance";
 import { clearTelemetryUser } from "@/lib/telemetry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
@@ -104,6 +105,11 @@ export const portalAuth = createAuthClient({
         // a dead one — and the backend ignores a challenge sent beside a token.
         storePortalToken(null);
       }
+    },
+    // Better Auth spreads the refusal's body into `error`. The super portal's
+    // pool is never closed by maintenance, so this only ever fires on a studio's.
+    onError: ({ response, error }) => {
+      noteMaintenance(response.status, error);
     },
   },
   plugins: [twoFactorClient()],

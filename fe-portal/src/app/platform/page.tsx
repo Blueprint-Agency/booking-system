@@ -28,6 +28,7 @@ import { ReplaceTenantDialog } from "@/components/platform/replace-tenant-dialog
 import { PaymentCredentialsDialog } from "@/components/platform/payment-credentials-dialog";
 import { TenantTermDialog } from "@/components/platform/tenant-term-dialog";
 import { ImportProgress } from "@/components/platform/import-progress";
+import { MaintenanceCard } from "@/components/platform/maintenance-card";
 import { ApiError, makeApi } from "@/lib/api";
 import {
   TENANT_REFUSALS,
@@ -377,6 +378,8 @@ export default function PlatformPage() {
           </Button>
         }
       />
+
+      <MaintenanceCard api={api} />
 
       {tenants.length === 0 ? (
         <EmptyState

@@ -10,6 +10,7 @@ import {
   bigint,
   integer,
   check,
+  boolean,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantStatusEnum } from '../enums'
@@ -285,6 +286,34 @@ export const tenantImports = pgTable(
 )
 
 export type TenantImportRow = typeof tenantImports.$inferSelect
+
+/**
+ * The platform's own settings: one row, belonging to no studio
+ * (docs/adr/0007-platform-settings.md). Today it holds Maintenance mode
+ * (services/platform/maintenance.ts).
+ *
+ * No `tenant_id`, so the Tenant isolation sweep passes it by. Its Row-Level
+ * Security is its own, written in migration 0104: every context may read it —
+ * the gate reads it on tenant-facing requests — and only a connection outside
+ * every Tenant context, which is the super portal, may write it.
+ *
+ * `id` is always `true`, so there can be only one row. No row reads as the
+ * defaults (`readMaintenance`).
+ */
+export const platformSettings = pgTable(
+  'platform_settings',
+  {
+    id: boolean('id').primaryKey().default(true),
+    maintenanceEnabled: boolean('maintenance_enabled').notNull().default(false),
+    maintenanceMessage: text('maintenance_message'),
+    // The super portal operator's email: who last switched it, and when.
+    maintenanceUpdatedBy: text('maintenance_updated_by'),
+    maintenanceUpdatedAt: timestamp('maintenance_updated_at', { withTimezone: true }),
+  },
+  table => ({
+    singleRow: check('platform_settings_single_row', sql`${table.id}`),
+  }),
+)
 
 export type TenantRow = typeof tenants.$inferSelect
 export type TenantSettingsRow = typeof tenantSettings.$inferSelect

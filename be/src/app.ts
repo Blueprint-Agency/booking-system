@@ -9,6 +9,7 @@ import { errorBoundary, onAppError } from './middleware/error'
 import { requestId } from './middleware/request-id'
 import { requestLogger } from './middleware/logger'
 import { resolveTenant } from './middleware/tenant'
+import { maintenanceGate } from './middleware/maintenance'
 
 import { requireActiveTenant } from './middleware/require-active-tenant'
 import { ERROR_CODES } from './shared/error-codes'
@@ -63,6 +64,30 @@ app.use(
     exposeHeaders: ['set-auth-token', 'set-two-factor-challenge'],
   }),
 )
+
+// Maintenance mode (services/platform/maintenance.ts): while the super portal
+// has it on, every tenant-facing request — member, staff, public, a studio
+// sign-in — is answered `503 maintenance` with the platform's message. No
+// bypass for anyone on a studio's hostname. After CORS, so the page that made
+// the call can read the 503 (a preflight never reaches here: CORS answers it).
+// Gated by exemption, so a surface added later is closed with the rest. Open:
+//
+//   - the super portal and its sign-in, which is how maintenance is switched off;
+//   - the health checks (`/health` is outside `/api/v1` altogether);
+//   - the payment and mail webhooks — a payment taken before the switch still
+//     has to land, and the provider retries a 503 only for so long;
+//   - the slug lookup the frontends' proxies make for every page, server-side.
+//     It writes nothing, and without it neither app could render anything —
+//     the maintenance screen included.
+const MAINTENANCE_EXEMPT = (path: string) =>
+  path === '/api/v1/healthz' ||
+  path.startsWith('/api/v1/webhooks/') ||
+  path === '/api/v1/platform' ||
+  path.startsWith('/api/v1/platform/') ||
+  path.startsWith(`${AUTH_BASE_PATH.platform}/`) ||
+  isTenantLookup(path)
+
+app.use('/api/v1/*', (c, next) => (MAINTENANCE_EXEMPT(c.req.path) ? next() : maintenanceGate(c, next)))
 
 const publicLimiter = rateLimiter({
   windowMs: 60_000,
