@@ -819,6 +819,58 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     }
   })
 
+  test('TEN-03 two studios with different class windows each judge their own member’s cancel at the same lead time', async () => {
+    try {
+      // Studio one's window is 6 hours, studio two's 24: a cancel 12 hours out
+      // is in good time at one and late at two.
+      await expectStatus(await patchPolicy(one.admin.headers, { class_window_hours: 6 }), 200)
+      await expectStatus(await patchPolicy(two.admin.headers, { class_window_hours: 24 }), 200)
+      const t0 = aWeekOut()
+      harness.clock.set(t0)
+      const classAt = shifted(t0, 3 * DAY)
+      const nia = await member(one, 'nia')
+      const oli = await member(two, 'oli')
+      const atOne = { who: nia, bundle: await give(one, nia, 'credit_bundle', { credits: 4 }), classId: await addClass(one, classAt) }
+      const atTwo = { who: oli, bundle: await give(two, oli, 'credit_bundle', { credits: 4 }), classId: await addClass(two, classAt) }
+      const bookingAtOne = await bookOk(atOne.who, atOne.classId)
+      const bookingAtTwo = await bookOk(atTwo.who, atTwo.classId)
+
+      harness.clock.set(shifted(classAt, -12 * HOUR))
+
+      const inTime = await expectStatus(await cancel(nia, bookingAtOne), 200)
+      assert.equal(inTime.refund_outcome, 'credit_returned')
+      assert.equal(inTime.refund_fired, true)
+      assert.equal((await bookingRow(bookingAtOne)).state, 'cancelled')
+      assert.equal(await balanceOf(atOne.bundle), 4, 'the credit came back at studio one')
+      const recordOne = await cancellationOf(bookingAtOne)
+      assert.equal(recordOne?.tenantId, one.id)
+      assert.equal(recordOne?.wasWithinWindow, true)
+      assert.equal(recordOne?.refundFired, true)
+      assert.equal((await refundsOn(atOne.bundle)).length, 1)
+      await assertLedger(atOne.bundle)
+
+      const late = await expectStatus(await cancel(oli, bookingAtTwo), 200)
+      assert.equal(late.refund_outcome, 'forfeited')
+      assert.equal(late.refund_fired, false)
+      assert.equal((await bookingRow(bookingAtTwo)).state, 'cancelled')
+      assert.equal(await balanceOf(atTwo.bundle), 3, 'the credit stays spent at studio two')
+      const recordTwo = await cancellationOf(bookingAtTwo)
+      assert.equal(recordTwo?.tenantId, two.id)
+      assert.equal(recordTwo?.wasWithinWindow, false)
+      assert.equal(recordTwo?.refundFired, false)
+      assert.equal((await refundsOn(atTwo.bundle)).length, 0)
+      await assertLedger(atTwo.bundle)
+
+      // Each studio's member app states its own window.
+      const policyAt = async (at: Studio) =>
+        expectStatus(await harness.app.request('/api/v1/public/cancellation-policy', { headers: { 'X-Tenant-Slug': at.slug } }), 200)
+      assert.equal((await policyAt(one)).class_window_hours, 6)
+      assert.equal((await policyAt(two)).class_window_hours, 24)
+    } finally {
+      await restorePolicies()
+    }
+  })
+
   /* ── refusals ───────────────────────────────────────────────────────── */
 
   test('CXL-20 another member’s booking cannot be cancelled, nor can another studio’s: the booking and balance are unchanged', async () => {
