@@ -3,7 +3,10 @@ import { Manrope } from "next/font/google";
 import { Toaster } from "sonner";
 import { getBrand } from "@/lib/brand";
 import { BrandProvider } from "@/components/brand/brand-provider";
+import { headers } from "next/headers";
 import { AppLoader } from "@/components/layout/app-loader";
+import { MaintenanceGate } from "@/components/layout/maintenance-gate";
+import { isSuperPortalHost } from "@/lib/tenant-host";
 import { TelemetryUser } from "@/components/telemetry-user";
 import "./globals.css";
 
@@ -29,12 +32,17 @@ export async function generateMetadata(): Promise<Metadata> {
  */
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const brand = await getBrand();
+  // Maintenance closes studios, never the super portal: it is where it is
+  // switched off, so its hostname gets no maintenance screen.
+  const superPortal = isSuperPortalHost((await headers()).get("host"));
 
   return (
     <html lang="en" className={sans.variable}>
       <body className="font-sans antialiased bg-paper text-ink">
         <AppLoader />
-        <BrandProvider brand={brand}>{children}</BrandProvider>
+        <BrandProvider brand={brand}>
+          {superPortal ? children : <MaintenanceGate>{children}</MaintenanceGate>}
+        </BrandProvider>
         <TelemetryUser />
         <Toaster position="top-right" richColors />
       </body>

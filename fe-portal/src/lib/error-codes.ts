@@ -173,6 +173,7 @@ export const ERROR_CODES = {
   location_only_applies_to_unlimited: "location_only_applies_to_unlimited",
   location_required: "location_required",
   main_instructor_id_required: "main_instructor_id_required",
+  maintenance: "maintenance",
   medical_leave_backdated_too_far: "medical_leave_backdated_too_far",
   merch_not_available: "merch_not_available",
   merch_not_found: "merch_not_found",

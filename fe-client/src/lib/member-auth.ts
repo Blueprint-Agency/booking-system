@@ -22,6 +22,7 @@ import { createAuthClient } from "better-auth/react";
 import { emailOTPClient } from "better-auth/client/plugins";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { onSessionExpired } from "@/lib/session-expiry";
+import { noteMaintenance } from "@/lib/maintenance";
 import { clearTelemetryUser } from "@/lib/telemetry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 import { memberSessionView, type MemberSessionView } from "@/lib/member-session-view";
@@ -76,6 +77,10 @@ export const memberAuth = createAuthClient({
     onResponse: ({ response }) => {
       const token = response.headers.get(TOKEN_HEADER);
       if (token) storeMemberToken(token);
+    },
+    // Better Auth spreads the refusal's body into `error`.
+    onError: ({ response, error }) => {
+      noteMaintenance(response.status, error);
     },
   },
   plugins: [emailOTPClient()],
