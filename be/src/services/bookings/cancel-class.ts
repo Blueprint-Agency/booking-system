@@ -23,6 +23,8 @@ import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
 import { refundCredits } from '../packages/ledger'
 import { computeEventState } from '../policy/event-state'
+import { staffCancelInTime } from '../policy/evaluate-cancellation'
+import { now as clockNow } from '../../lib/clock'
 import { removeLineForCancelledClass } from '../waitlist/line'
 import { emailEveryAdmin } from '../notifications/send'
 import { sgFormat } from '../../lib/time'
@@ -66,6 +68,7 @@ export async function cancelClass(
         startsAt: classes.startsAt,
         endsAt: classes.endsAt,
         classTypeId: classes.classTypeId,
+        cancelWindowHours: classes.cancelWindowHours,
       })
       .from(classes)
       .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
@@ -77,7 +80,7 @@ export async function cancelClass(
     }
     if (cls.lifecycle !== 'active') throw new ConflictError('class_not_active')
 
-    const now = new Date()
+    const now = clockNow()
 
     // A class that has already finished can't be "cancelled" — that would refund
     // every attendee for a class they sat through. Mid-session cancellation (state
@@ -114,6 +117,10 @@ export async function cancelClass(
       )
       .for('update')
 
+    // Whether the cancel came before the class's window, as a staff cancel of
+    // one booking records it (#350): never acted on, every credit comes back.
+    const wasWithinWindow = await staffCancelInTime(tenantId, 'class', cls.startsAt, cls.cancelWindowHours, now)
+
     let refundedCount = 0
     for (const bk of confirmed) {
       const used = bk.used ?? 0
@@ -142,7 +149,8 @@ export async function cancelClass(
         clientId: bk.clientId,
         kind: 'class',
         source,
-        wasWithinWindow: true,
+        cancelledByStaffId: actorStaffId,
+        wasWithinWindow,
         wasWithinCap: true,
         refundFired,
         cancelledAt: now,

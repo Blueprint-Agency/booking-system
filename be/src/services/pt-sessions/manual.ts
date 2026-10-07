@@ -545,6 +545,49 @@ async function followRoster(
 }
 
 /**
+ * A private session's booking was cancelled on its own (bookings/cancel.ts: a
+ * Void, a Remove, a single-booking cancel), already settled on its package.
+ * The request and session follow, as cancelling the request would leave them
+ * (#350): a member's request is paid whole by its requester, so their booking
+ * going takes the session and any partner seat with it (`n_a`), while a
+ * partner's going leaves it on; a manual session goes on for whoever is still
+ * seated, and is cancelled with the last one — unless staff cancelled it, who
+ * free the seat to fill again, as removing a member does (PT-94, PT-101).
+ */
+export async function settleSessionAfterBookingCancel(
+  tx: Tx,
+  tenantId: string,
+  input: { ptSessionId: string; clientId: string; source: CancelSource; cancelledByStaffId: string | null; now: Date },
+): Promise<void> {
+  const { ptSessionId, now } = input
+  const [req] = await tx
+    .select({ id: ptRequests.id, origin: ptRequests.origin, status: ptRequests.status, clientId: ptRequests.clientId, coClientId: ptRequests.coClientId })
+    .from(ptRequests)
+    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.scheduledPtSessionId, ptSessionId)))
+    .for('update')
+    .limit(1)
+  if (req?.status !== 'scheduled') return
+  const left = await seatsOn(tx, tenantId, ptSessionId)
+  const staffFreedSeat = input.source === 'admin' || input.source === 'instructor'
+  if (req.origin === 'portal' && (left.length || staffFreedSeat)) return followRoster(tx, tenantId, ptSessionId, req)
+  if (req.origin !== 'portal' && input.clientId !== req.clientId) return
+  for (const seat of left) {
+    await tx
+      .update(bookings)
+      .set({ state: 'cancelled', refundOutcome: 'n_a', checkInState: 'n_a', cancelledAt: now })
+      .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, seat.id)))
+  }
+  await tx
+    .update(ptSessions)
+    .set({ lifecycle: 'cancelled', cancelledAt: now, cancelledByStaffId: input.cancelledByStaffId })
+    .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, ptSessionId)))
+  await tx
+    .update(ptRequests)
+    .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId: input.cancelledByStaffId })
+    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
+}
+
+/**
  * Cancel one seat and settle it on its own package: the one session it paid
  * comes back when `refund` says so, the package returns to Dormant if this
  * session Activated it and the cancel came in time (be/docs/adr/0011), and
@@ -600,6 +643,7 @@ async function cancelSeat(
     clientId: seat.clientId,
     kind: 'pt',
     source: input.source,
+    cancelledByStaffId: input.source === 'admin' || input.source === 'instructor' ? input.actorStaffId : null,
     wasWithinWindow: input.wasWithinWindow,
     wasWithinCap: input.wasWithinCap,
     refundFired: refunded > 0,
@@ -639,7 +683,7 @@ export async function cancelManualSessionInTx(
   input: {
     req: ManualCancelRequest
     session: { id: string; startsAt: Date }
-    source: 'client' | 'admin'
+    source: CancelSource
     clientId?: string
     actorStaffId: string | null
     now: Date
@@ -711,7 +755,7 @@ export async function cancelManualSessionInTx(
     const { refunded } = await cancelSeat(tx, tenantId, {
       seat,
       ptSessionId: session.id,
-      source: 'admin',
+      source: input.source,
       refund: true,
       reason: 'pt_admin_cancel_refund',
       wasWithinWindow,

@@ -7,9 +7,13 @@ export type RefundOutcome =
   | 'forfeited'
   | 'n_a'
 
-/** Who cancelled: the member, or a staff member from the portal (#320). */
+/**
+ * Who cancelled: the member, a staff member from the portal (#320), or the
+ * studio's machinery — a Void, a Remove, a Package rule change (#350). A
+ * `system` cancel settles as a staff one does.
+ */
 export type StaffCancelSource = 'admin' | 'instructor'
-export type CancelSource = 'client' | StaffCancelSource
+export type CancelSource = 'client' | StaffCancelSource | 'system'
 
 /**
  * A staff cancel's answer to "Return 1 credit" or "Keep the credit" (#320):

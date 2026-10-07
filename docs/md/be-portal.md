@@ -532,8 +532,9 @@ CASE status
                               cancelled_by_staff_id=actor (NULL for client/system)
     3. UPDATE every booking on the session: state='cancelled', refund_outcome='forfeited',
        cancelled_at=now()
-    4. INSERT cancellations rows (kind='pt', source=client|admin, was_within_window=false,
-       was_within_cap=true, refund_fired=false)
+    4. INSERT cancellations rows (kind='pt', source=client|admin|instructor|system,
+       cancelled_by_staff_id=actor for admin|instructor (NULL otherwise),
+       was_within_window, was_within_cap, refund_fired)
     5. INSERT inbox_items row (type='admin_cancel_class_pt') for the admin queue.
     6. enqueueEmail('pt_cancelled_forfeited')
 
@@ -546,7 +547,11 @@ tx commit
 
 A **manual session** (`pt_requests.origin = 'portal'`, #335) has no debit on its request, so its scheduled branch is `services/pt-sessions/manual.ts:cancelManualSessionInTx`, settled per booking: a staff cancel (admin, or the session's instructor) cancels every seat, each refunded to its own package; a member — the request's client or co-client — cancels **only their own seat**, refused inside the PT window (`422 cancellation_window_passed`) and refunded by the shared cap outside it, and the session goes on for whoever is left (`status: 'seat_cancelled'`) or is cancelled with its last attendee (`cancelled_after_scheduled`). Either way, a package the session Activated returns to Dormant unless the cancel was late (be/docs/adr/0011).
 
-Expiry path (`pt-request-expiry` cron): pending requests past `expires_at` go through the same `'pending'` branch above with `actor=NULL`, ending up `cancelled_before_scheduled` + credits refunded. Client receives the `pt_cancelled_session_returned` email (subject mentions auto-expiry).
+**Who cancelled** (#350). The `cancellations` row names its source truthfully: `client` for the member, `admin` from the admin route, `instructor` from the instructor route (`/pt-requests/:id/cancel`, consistent with an instructor removing a member from a manual session), each staff source with `cancelled_by_staff_id`; and `system` for a cancel the studio's machinery makes — a Complimentary Package's Remove (`source='system'`, the admin still named on the request and the ledger) — naming no staff member. Every source but `client` settles as a staff cancel. Rows written before #350 carry no staff id and are read as the studio's.
+
+**A PT booking cancelled on its own** (`services/bookings/cancel.ts`: a Refund's Void, a Remove, a single-booking staff or member cancel) settles its request and session too (`services/pt-sessions/manual.ts:settleSessionAfterBookingCancel`, #350). On a member's request the requester's booking pays for the whole session, so it going ends the request `cancelled_after_scheduled` and cancels the session and any partner seat (`n_a`); a partner's seat going leaves it on. On a manual session the request follows who is still booked, and the last seat going ends both — unless a staff member cancelled it, who frees the seat to fill again, as removing a member does. Either way the session is never left scheduled with nobody paying, nor completed as attended once its time passes.
+
+Expiry path (`pt-request-expiry` cron): pending requests past `expires_at` go through the same `'pending'` branch above with `source='system'` and `actor=NULL`, ending up `cancelled_before_scheduled` + credits refunded. Client receives the `pt_cancelled_session_returned` email (subject mentions auto-expiry).
 
 **Activation reversal** (be/docs/adr/0011). A pending request's cancel or expiry refunds to a package that is still Dormant — nothing was Activated. In the `'scheduled'` branch, and in the single-booking cancel of the requester's paying seat, if the package's `activated_by_pt_session_id` is this session and the cancel is not late (not inside the PT cancellation window — only staff can cancel there), the package's `expires_at` and `activated_by_pt_session_id` are cleared in the same transaction and a zero-delta `manual_adjustments` row with reason `pt_activation_reversed` is written (actor = the staff member, or NULL for a member). The balance the cancel returned or kept is unaffected. A later session's cancel, a late cancel, a Voided package, and a package whose expiry staff have set by hand (which clears the pointer) never reverse.
 

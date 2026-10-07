@@ -490,6 +490,22 @@ describe('package rules on a class and a series', { skip: integrationTestsEnable
     }
   })
 
+  test('CXL-63 a booking a rule change cancels is recorded as a system cancel, naming no staff member', async () => {
+    const classId = await addClass(one)
+    const fin = await member(one)
+    await holds(one, fin, one.promo)
+    const bookingId = (await expectStatus(await book(fin, classId), 201)).booking_id
+
+    await expectStatus(await editClass(one, classId, { package_rule: rule('only', [one.mat]) }), 200)
+
+    assert.equal((await bookingRow(bookingId)).state, 'cancelled')
+    const records = await harness.db.select().from(schema.cancellations).where(eq(schema.cancellations.bookingId, bookingId))
+    assert.deepEqual(
+      records.map(r => [r.source, r.cancelledByStaffId]),
+      [['system', null]],
+    )
+  })
+
   test('PKR-06 a seat a rule change frees goes to the first waiting member the class accepts, skipping one it does not', async () => {
     assert.equal((await setFlag(one, true)).status, 200)
     const classId = await addClass(one, { capacity_online: 1, capacity_waitlist: 3 })

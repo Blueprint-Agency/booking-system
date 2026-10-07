@@ -158,7 +158,9 @@ export const refundOutcomeEnum = pgEnum('refund_outcome', [
 ])
 export const checkinStateEnum = pgEnum('checkin_state', ['pending', 'attended', 'no_show', 'n_a'])
 export const cancellationKindEnum = pgEnum('cancellation_kind', ['class', 'pt'])
-export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor'])
+// `system`: the studio's machinery, not a person — a Refund's Void, a
+// Complimentary Package's Remove, a Package rule change (#350).
+export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor', 'system'])
 export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual'])
 
 // Instructor leave (docs/md/spec-instructor-leave.md)

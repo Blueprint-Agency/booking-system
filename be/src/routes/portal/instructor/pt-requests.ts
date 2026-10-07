@@ -203,11 +203,12 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     const note = await ptCancelNote(c)
     const self = c.get('staffUserId') as string
-    // source:'admin' = staff-initiated (full refund, doesn't count to client cap),
-    // but requireOwnInstructorId restricts it to the instructor's own scheduled session.
+    // A staff cancel (full refund, doesn't count to the client's cap), recorded
+    // as the instructor's; requireOwnInstructorId restricts it to their own
+    // scheduled session.
     const result = await cancelPtRequest(tenantId(c), {
       ptRequestId: id,
-      source: 'admin',
+      source: 'instructor',
       actorStaffId: self,
       requireOwnInstructorId: self,
       note,

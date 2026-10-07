@@ -453,4 +453,87 @@ describe('staff cancel of a member booking over HTTP', { skip: integrationTestsE
     )
     assert.equal(roster.attendees.find((a: any) => a.booking_id === halBooking).cancel_preview, null)
   })
+
+  /* ── who cancelled (#350) ───────────────────────────────────────────── */
+
+  test('CXL-60 a staff cancel records which staff member cancelled; a member’s own cancel records none', async () => {
+    const t0 = aWeekOut()
+    harness.clock.set(t0)
+    const jo = await member(one, 'jo-who')
+    await give(one, jo, 'credit_bundle')
+    for (const role of ['admin', 'instructor'] as const) {
+      const bookingId = await book(jo, await addClass(one, shifted(t0, 3 * DAY)))
+      await expectStatus(await staffCancel(role, staffOf(one, role), bookingId, { credit: 'return' }), 200)
+      const record = await cancellationOf(bookingId)
+      assert.deepEqual([record?.source, record?.cancelledByStaffId], [role, staffOf(one, role).id], role)
+    }
+    const own = await book(jo, await addClass(one, shifted(t0, 4 * DAY)))
+    await expectStatus(await memberCancel(jo, own), 200)
+    const record = await cancellationOf(own)
+    assert.deepEqual([record?.source, record?.cancelledByStaffId], ['client', null])
+  })
+
+  test('CXL-61 a whole-class cancel records, for each booking, whether it came in time, and who cancelled the class', async () => {
+    const { classWindowHours } = await policyOf(one)
+    const kim = await member(one, 'kim-class-cancel')
+    const lou = await member(one, 'lou-class-cancel')
+    await give(one, kim, 'credit_bundle')
+    await give(one, lou, 'credit_bundle')
+    const t0 = aWeekOut()
+    harness.clock.set(t0)
+    const inTime = await addClass(one, shifted(t0, 3 * DAY))
+    const late = await addClass(one, shifted(t0, classWindowHours * HOUR - HOUR))
+    const bookings = {
+      inTime: [await book(kim, inTime), await book(lou, inTime)],
+      late: [await book(kim, late), await book(lou, late)],
+    }
+
+    const cancelWhole = (classId: string, role: Role) =>
+      harness.app.request(`/api/v1/portal/${role}/schedule/classes/${classId}/cancel`, {
+        method: 'POST',
+        headers: { ...staffOf(one, role).headers, ...json },
+        body: JSON.stringify({ reason: 'Studio flooded' }),
+      })
+    await expectStatus(await cancelWhole(inTime, 'admin'), 200)
+    await expectStatus(await cancelWhole(late, 'instructor'), 200)
+
+    for (const id of bookings.inTime) {
+      const record = await cancellationOf(id)
+      assert.deepEqual([record?.source, record?.wasWithinWindow, record?.cancelledByStaffId], ['admin', true, one.admin.id])
+    }
+    for (const id of bookings.late) {
+      const record = await cancellationOf(id)
+      assert.deepEqual(
+        [record?.source, record?.wasWithinWindow, record?.cancelledByStaffId],
+        ['instructor', false, one.instructor.id],
+      )
+    }
+  })
+
+  test('CXL-62 removing a Complimentary Package records the classes it cancels as a system cancel, naming no staff member', async () => {
+    const t0 = aWeekOut()
+    harness.clock.set(t0)
+    const max = await member(one, 'max-comp')
+    const given = await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/clients/${max.clientId}/packages/issue`, {
+        method: 'POST',
+        headers: { ...one.admin.headers, ...json },
+        body: JSON.stringify({ package_kind: 'class', package_id: one.classPackageId, reason: 'Given by mistake' }),
+      }),
+      201,
+    )
+    const bookingId = await book(max, await addClass(one, shifted(t0, 3 * DAY)))
+
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/clients/${max.clientId}/packages/${given.client_package_id}/remove`, {
+        method: 'POST',
+        headers: { ...one.admin.headers, ...json },
+        body: JSON.stringify({ reason: 'Given to the wrong member' }),
+      }),
+      200,
+    )
+    assert.equal((await bookingRow(bookingId)).state, 'cancelled')
+    const record = await cancellationOf(bookingId)
+    assert.deepEqual([record?.source, record?.cancelledByStaffId], ['system', null])
+  })
 })
