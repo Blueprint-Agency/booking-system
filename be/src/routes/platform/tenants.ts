@@ -90,7 +90,10 @@ function serialize(
 
 
 const createBody = z.object({
-  slug: z.string().min(1),
+  // Any string: whether it may be an address — a blank one included, which is
+  // `slug_too_short` — is `checkSlug`'s to say, so the form gets one of its
+  // reasons rather than a validation error it has no words for.
+  slug: z.string(),
   name: z.string().min(1).max(200),
   // IANA zone. Validated against the runtime's own database rather than a list
   // we would have to maintain — a zone this process cannot resolve would make
