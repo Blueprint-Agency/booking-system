@@ -472,6 +472,9 @@ retired.**
       duration → stored end date; suspended automatically when it ends. Migrations
       0071–0072. See below.
 - [x] **Delete** a suspended studio and all its data. See below.
+- [x] **Maintenance mode**: one platform-wide switch with an editable message that closes
+      every studio's member app and portal (`503 maintenance`) while the super portal stays
+      open. Migration 0104. See below.
 - [ ] Billing overview. Deferred — there is no per-tenant billing to overview yet.
 
 **The gate is not a staff role.** A `platform` pool session is required, and
@@ -487,6 +490,18 @@ exists. See `be/src/services/tenants/platform-admin.ts`.
 still succeeds, so the studio's hostnames stay live rather than becoming a 404 —
 a dedicated "paused" page on the frontends is still to do; today they surface the
 `403 tenant_suspended` as a load failure.
+
+**Maintenance mode** (`be/src/services/platform/maintenance.ts`,
+`GET|PUT /api/v1/platform/maintenance`). A card at the top of the super portal's Studios page:
+On/Off, the message (default "Maintenance in progress. We'll be back shortly."), who last changed
+it and when; turning it on asks for confirmation. While on, the backend answers every
+tenant-facing request `503 { error: "maintenance", message }` with `Retry-After` — no bypass for
+any studio's staff — and both frontends show a full-page maintenance screen that re-checks about
+every 30 seconds and returns to the app by itself. Open throughout: the super portal and its
+sign-in, health checks, webhooks, cron. Stored in `platform_settings`, the one row the platform
+owns (`docs/adr/0007-platform-settings.md`). Contract: `be-client.md` § Maintenance,
+`be-portal.md` § Maintenance; use around a deploy: `deployment.md` § Maintenance mode around a
+deploy. Integration test: `be/src/test/maintenance-mode.test.ts`.
 
 **Term** (`be/src/services/tenants/term.ts`, `PUT /api/v1/platform/tenants/:id/term`
 `{ start_date, months: 3|6|12 }`). Two dates on `tenants`, on the studio's own clock;

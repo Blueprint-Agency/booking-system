@@ -284,6 +284,33 @@ restore command and what it does are the infrastructure repo's
 A deploy failing with `Pre-migration snapshot FAILED (backup.sh exit 2)` most often met the
 nightly backup (03:30 KL) mid-run: re-run it.
 
+### Maintenance mode around a deploy
+
+A deploy whose minute of old-build-against-new-schema, or whose frontend and backend landing a few
+minutes apart, would hurt studios mid-booking can close every studio first. **Maintenance mode** is
+one switch in the super portal (`admin.portal.reservetoday.app`, or `admin.portal.dev.…` for
+staging), at the top of the Studios page, with an editable message (be/CONTEXT.md § Maintenance
+mode):
+
+1. **Before merging**, turn it on in that environment's super portal. Within a few seconds every
+   studio's member app and portal show the message and nothing else; every tenant-facing API call
+   answers `503 maintenance`.
+2. Merge. Let the backend deploy (`deploy-be.yml`) and the Vercel builds finish.
+3. **Once the backend deploy has finished** — the smoke test passed and `booking-be` is healthy on
+   the new sha — turn it off. Open member apps and portals re-check about every 30 seconds and come
+   back by themselves.
+
+While it is on, the super portal and its sign-in, `/health` and `/api/v1/healthz`, the Stripe and
+Resend webhooks (payments taken before the switch still land) and the cron jobs keep running. There
+is no bypass for staff or anyone else on a studio's hostname — test on staging, not behind the
+switch.
+
+**It only works once a backend containing it is live.** The switch, the gate and the
+`platform_settings` table (migration 0104) arrive with the backend deploy that ships them, so the
+deploy that introduces maintenance mode cannot be wrapped in it, and neither can a rollback to an
+image older than it. The frontends' maintenance screen likewise appears only once their builds
+contain it.
+
 ### Rolling back the backend
 
 > Rolling back at 2am because something alerted? Start at

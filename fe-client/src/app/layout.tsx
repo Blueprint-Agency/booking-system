@@ -6,6 +6,7 @@ import { BrandProvider } from "@/components/brand/brand-provider";
 import { TelemetryUser } from "@/components/telemetry-user";
 import { ViewTransitionGuard } from "@/components/layout/view-transition-guard";
 import { DisplayPrefsSync } from "@/components/display-prefs-sync";
+import { MaintenanceGate } from "@/components/maintenance-gate";
 import { DISPLAY_PREFS_SCRIPT } from "@/lib/display-prefs";
 import "./globals.css";
 
@@ -64,7 +65,9 @@ export default async function RootLayout({
       <body className="antialiased">
         <DisplayPrefsSync />
         <ViewTransitionGuard />
-        <BrandProvider brand={brand}>{children}</BrandProvider>
+        <BrandProvider brand={brand}>
+          <MaintenanceGate>{children}</MaintenanceGate>
+        </BrandProvider>
         <TelemetryUser />
         <Toaster position="top-center" richColors />
       </body>

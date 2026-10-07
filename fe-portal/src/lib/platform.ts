@@ -117,6 +117,26 @@ export const TENANT_REFUSALS: Record<string, string> = {
   confirmation_mismatch: "The address typed doesn’t match this studio’s.",
 };
 
+/**
+ * Maintenance mode: one switch for the whole platform. On, every studio's
+ * member app and portal show the message instead of themselves; the super
+ * portal stays open. `updated_by` is the operator who last changed it.
+ */
+export interface PlatformMaintenance {
+  enabled: boolean;
+  message: string;
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
+export function getMaintenance(api: Api) {
+  return api.get<PlatformMaintenance>("/platform/maintenance");
+}
+
+export function setMaintenance(api: Api, input: { enabled: boolean; message: string }) {
+  return api.put<PlatformMaintenance>("/platform/maintenance", input);
+}
+
 export function listTenants(api: Api) {
   return api.get<{ tenants: PlatformTenant[] }>("/platform/tenants");
 }

@@ -23,6 +23,18 @@ A studio superadmin impersonates a member from the portal: `POST /api/v1/portal/
 
 The member app adopts the token as its session and sends the grant on every call as `X-Impersonation-Grant`. `client-impersonation.ts` checks it after the session: the two only work together — an impersonation session without a valid grant, or a grant on a session that is not an impersonation, is 401 `impersonation_grant_mismatch`; a grant whose subject is not the session's auth user is 401 `impersonation_subject_mismatch`, one minted at another studio 401 `impersonation_tenant_mismatch`; a match sets `impersonatedBy` (the superadmin's `staff_users.id`) and `impersonatedClientId`, and `audit_log` names both on every write. Stopping signs the session out through the client pool (`/api/v1/auth/client/sign-out`), so a sibling tab is 401 on its next request. Start and end are `auth_events` rows (`impersonation_started`, `impersonation_ended`), filed under the `staff` pool with the superadmin as actor and the member as subject.
 
+### Maintenance
+
+While the platform's **Maintenance mode** is on (be/CONTEXT.md § Maintenance mode), every `/api/v1/me/*` and `/api/v1/public/*` call and the `client` pool's own routes (`/api/v1/auth/client/*` — sign-in, sign-up codes, session reads) answer, before any auth or Tenant resolution:
+
+```
+503 Service Unavailable
+Retry-After: 30
+{ "error": "maintenance", "message": "<the platform's message>" }
+```
+
+No member, impersonation or studio is exempt. The one public route left open is `GET /public/tenants/by-slug/:slug`, which the proxy needs to render any page — the maintenance screen included. fe-client replaces the app with a full-page screen showing `message` and re-checks `GET /api/v1/public/maintenance` — `200 { "maintenance": false }` once it is off, the 503 above while it is on — about every 30 seconds, reloading into the app when it gets through. The switch is the super portal's (`be-portal.md` § Maintenance).
+
 ### Verification gate
 
 `fe-client-features.md` §Auth requires `phone_verified` AND `email_verified` before any booking action. **Not built.** A member signs in only by a code mailed to their address, so every session already proves the email; phone verification has no source yet, and when it gets one it belongs on the `client` pool user, not in `clients`. When built, it applies to `bookings.ts`, `pt-sessions.ts`, `purchases.ts` only — profile reads and waiver sign must not require it (otherwise users couldn't progress past half-verified state).

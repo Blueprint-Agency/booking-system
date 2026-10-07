@@ -45,6 +45,23 @@ Per `admin-restructure.md` Overview, admin surfaces partition into three buckets
 
 **Location grants are retired.** There is no per-staff location allow-list: `granted_location_ids` is not set on invite, edit or invitation accept, and the column is dropped. An admin sees and writes to every active location; the workspace is a view filter, not a permission.
 
+### Maintenance
+
+While the platform's **Maintenance mode** is on (be/CONTEXT.md § Maintenance mode), every `/api/v1/portal/*` call, every `/api/v1/public/*` call the portal makes (the staff sign-in step included) and the `staff` pool's own routes (`/api/v1/auth/staff/*` — sign-in, session reads, password reset) answer, before any auth or Tenant resolution:
+
+```
+503 Service Unavailable
+Retry-After: 30
+{ "error": "maintenance", "message": "<the platform's message>" }
+```
+
+No staff role, impersonation or studio is exempt. fe-portal replaces a studio's portal with a full-page screen showing `message` and re-checks `GET /api/v1/public/maintenance` (`200 { "maintenance": false }` once it is off) about every 30 seconds, reloading into the portal when it gets through. The super portal is never closed: `/api/v1/platform/*` and `/api/v1/auth/platform/*` stay open, and the switch itself is there:
+
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/api/v1/platform/maintenance` | `{ enabled, message, updated_by, updated_at }` — `updated_by` is the operator's email, both null until anyone has switched it. Read fresh, not from the gate's cache. |
+| PUT | `/api/v1/platform/maintenance` | `{ enabled: boolean, message?: string }` (message trimmed, 1–500 characters; omitted keeps the stored one). Records the operator and the time; takes effect in this process at once and in any other within a few seconds. A blank message is `400`. Like every platform route, `404` to anyone not on `PLATFORM_ADMIN_EMAIL`. |
+
 ---
 
 ## 2. Admin endpoints — `routes/portal/admin/*`

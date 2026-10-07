@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { requirePlatformAdmin } from '../../middleware/platform-admin'
+import maintenance from './maintenance'
 import signIn, { SIGN_IN_STEP_PATH } from './sign-in'
 import tenants from './tenants'
 import transfer from './transfer'
@@ -23,5 +24,6 @@ const app = new Hono()
   .route('/', signIn)
   .route('/', tenants)
   .route('/', transfer)
+  .route('/', maintenance)
 
 export default app

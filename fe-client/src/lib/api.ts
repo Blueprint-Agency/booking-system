@@ -19,6 +19,7 @@ import { getApiBaseUrl } from "@/lib/api-url";
 import { getMemberToken } from "@/lib/member-auth";
 import { reportError } from "@/lib/report-error";
 import { noteSessionExpiry } from "@/lib/session-expiry";
+import { noteMaintenance } from "@/lib/maintenance";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 import { currentImpersonationGrant, IMPERSONATION_GRANT_HEADER } from "@/lib/impersonation-handoff";
 
@@ -95,6 +96,7 @@ export async function apiFetch<T = unknown>(
   if (!answer.ok) {
     // Only a call that actually sent `Authorization` (an empty token sends none).
     noteSessionExpiry(answer.status, Boolean(token), token || undefined);
+    noteMaintenance(answer.status, answer.body);
     throw new ApiError(answer.status, answer.body);
   }
   return answer.body as T;

@@ -14,6 +14,7 @@
  */
 import { DEFAULT_API_TIMEOUT_MS, UPLOAD_TIMEOUT_MS, sendApiRequest } from "@/lib/api-request";
 import { getApiBaseUrl } from "@/lib/api-url";
+import { noteMaintenance } from "@/lib/maintenance";
 import { reportError } from "@/lib/report-error";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
@@ -89,7 +90,10 @@ export async function apiFetch<T = unknown>(
       timeoutMs: isFormData ? UPLOAD_TIMEOUT_MS : DEFAULT_API_TIMEOUT_MS,
     },
   );
-  if (!answer.ok) throw new ApiError(answer.status, answer.body);
+  if (!answer.ok) {
+    noteMaintenance(answer.status, answer.body);
+    throw new ApiError(answer.status, answer.body);
+  }
   return answer.body as T;
 }
 
