@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
@@ -8,6 +9,7 @@ const DOMAIN = `${run}.staff-cancel.test`
 // Not ending in "Flow" / "Bundle": isolation.test.ts purges by those suffixes.
 const CLASS_TYPE_NAME = `Staff cancel class type ${run}`
 const PACKAGE_NAME = `Staff cancel pass ${run}`
+const WORKSHOP_NAME = `Staff cancel workshop ${run}`
 const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
@@ -239,6 +241,11 @@ describe('staff cancel of a member booking over HTTP', { skip: integrationTestsE
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM class_packages WHERE name = ${PACKAGE_NAME}`)
     await harness.db.execute(sql`DELETE FROM classes WHERE created_by_staff_id IN (${staff})`)
+    const workshops = sql`SELECT id FROM workshops WHERE name = ${WORKSHOP_NAME}`
+    await harness.db.execute(sql`DELETE FROM workshop_tier_days WHERE workshop_tier_id IN (SELECT id FROM workshop_tiers WHERE workshop_id IN (${workshops}))`)
+    await harness.db.execute(sql`DELETE FROM workshop_days WHERE workshop_id IN (${workshops})`)
+    await harness.db.execute(sql`DELETE FROM workshop_tiers WHERE workshop_id IN (${workshops})`)
+    await harness.db.execute(sql`DELETE FROM workshops WHERE name = ${WORKSHOP_NAME}`)
     await harness.db.execute(sql`DELETE FROM class_types WHERE name = ${CLASS_TYPE_NAME}`)
     await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staff})`)
     await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
@@ -535,5 +542,322 @@ describe('staff cancel of a member booking over HTTP', { skip: integrationTestsE
     assert.equal((await bookingRow(bookingId)).state, 'cancelled')
     const record = await cancellationOf(bookingId)
     assert.deepEqual([record?.source, record?.cancelledByStaffId], ['system', null])
+  })
+
+  /* ── the profile's Cancelled tab and the roster's Cancelled section (#352) ── */
+
+  const profileOf = async (who: Member) =>
+    expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/clients/${who.clientId}`, { headers: one.admin.headers }),
+      200,
+    )
+
+  const issueComp = async (who: Member) =>
+    (
+      await expectStatus(
+        await harness.app.request(`/api/v1/portal/admin/clients/${who.clientId}/packages/issue`, {
+          method: 'POST',
+          headers: { ...one.admin.headers, ...json },
+          body: JSON.stringify({ package_kind: 'class', package_id: one.classPackageId, reason: 'Given by mistake' }),
+        }),
+        201,
+      )
+    ).client_package_id as string
+
+  const cancelWholeClass = (classId: string, role: Role) =>
+    harness.app.request(`/api/v1/portal/${role}/schedule/classes/${classId}/cancel`, {
+      method: 'POST',
+      headers: { ...staffOf(one, role).headers, ...json },
+      body: JSON.stringify({ reason: 'Studio flooded' }),
+    })
+
+  /** A class booking written straight in, already held or not, for history that predates the test. */
+  async function heldBooking(who: Member, classId: string, checkIn: 'attended' | 'no_show'): Promise<string> {
+    const [row] = await harness.db
+      .insert(schema.bookings)
+      .values({
+        tenantId: one.id,
+        clientId: who.clientId,
+        kind: 'class',
+        classId,
+        creditsOrSessionsUsed: 1,
+        state: checkIn === 'no_show' ? 'no_show' : 'confirmed',
+        checkInState: checkIn,
+        qrToken: `staff-cancel-${randomUUID()}`,
+        code: `SC-${randomUUID().slice(0, 6).toUpperCase()}`,
+      })
+      .returning({ id: schema.bookings.id })
+    return row!.id
+  }
+
+  test('CUS-21 a cancelled class is on the profile’s cancelled list the moment it is cancelled, newest cancellation first, with its outcome, when, and who: the member, the named staff member, or automatic; History holds only what was held', async () => {
+    const { classWindowHours } = await policyOf(one)
+    const nia = await member(one, 'nia-profile')
+    await give(one, nia, 'credit_bundle')
+
+    // Held before the test: an attended class two days ago, a no-show yesterday.
+    const realNow = Date.now()
+    const attended = await heldBooking(nia, await addClass(one, new Date(realNow - 2 * DAY)), 'attended')
+    const noShow = await heldBooking(nia, await addClass(one, new Date(realNow - DAY)), 'no_show')
+
+    const t0 = aWeekOut()
+    harness.clock.set(t0)
+    const comp = await issueComp(nia)
+    const inTime = await book(nia, await addClass(one, shifted(t0, 3 * DAY)))
+    const kept = await book(nia, await addClass(one, shifted(t0, 4 * DAY)))
+    const compClass = await addClass(one, shifted(t0, 4 * DAY + 2 * HOUR))
+    const removed = await expectStatus(
+      await harness.app.request('/api/v1/me/bookings/class', {
+        method: 'POST',
+        headers: { ...nia.headers, ...json },
+        body: JSON.stringify({ class_id: compClass, client_package_id: comp }),
+      }),
+      201,
+    )
+    const wholeClass = await addClass(one, shifted(t0, 5 * DAY))
+    const struck = await book(nia, wholeClass)
+    // Its window opens two hours after t0, so a cancel four hours in is late.
+    const late = await book(nia, await addClass(one, shifted(t0, (classWindowHours + 2) * HOUR)))
+
+    await expectStatus(await memberCancel(nia, inTime), 200)
+    harness.clock.set(shifted(t0, HOUR))
+    await expectStatus(await staffCancel('admin', one.admin, kept, { credit: 'keep' }), 200)
+    harness.clock.set(shifted(t0, 2 * HOUR))
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/clients/${nia.clientId}/packages/${comp}/remove`, {
+        method: 'POST',
+        headers: { ...one.admin.headers, ...json },
+        body: JSON.stringify({ reason: 'Given to the wrong member' }),
+      }),
+      200,
+    )
+    harness.clock.set(shifted(t0, 3 * HOUR))
+    await expectStatus(await cancelWholeClass(wholeClass, 'instructor'), 200)
+    harness.clock.set(shifted(t0, 4 * HOUR))
+    await expectStatus(await memberCancel(nia, late), 200)
+
+    const profile = await profileOf(nia)
+    // Every one of them is still to come, and none is on Upcoming.
+    assert.deepEqual(profile.upcoming_bookings.map((b: any) => b.booking_id), [])
+    assert.deepEqual(
+      profile.past_bookings.map((b: any) => [b.booking_id, b.check_in_state]),
+      [
+        [noShow, 'no_show'],
+        [attended, 'attended'],
+      ],
+    )
+    assert.deepEqual(
+      profile.cancelled_bookings.map((b: any) => [b.booking_id, b.kind, b.cancelled_by, b.cancelled_by_name, b.late, b.outcome]),
+      [
+        [late, 'class', 'member', null, true, 'credit_kept_late'],
+        [struck, 'class', 'staff', 'instructor', false, 'credit_returned'],
+        [removed.booking_id, 'class', 'automatic', null, false, 'nothing_to_return'],
+        [kept, 'class', 'staff', 'admin', false, 'credit_kept'],
+        [inTime, 'class', 'member', null, false, 'credit_returned'],
+      ],
+    )
+    const cancelledAt = new Map(profile.cancelled_bookings.map((b: any) => [b.booking_id, b.cancelled_at]))
+    assert.equal(cancelledAt.get(inTime), t0.toISOString())
+    assert.equal(cancelledAt.get(late), shifted(t0, 4 * HOUR).toISOString())
+    // Two class cancels kept the credit: the late one and staff's Keep credit.
+    assert.equal(profile.attendance.late_cancels, 2)
+  })
+
+  test('CUS-08, CUS-11 History lists the 50 most recent held bookings newest first and no cancelled one, while the attendance strip counts every booking ever', async () => {
+    const ola = await member(one, 'ola-history')
+    await give(one, ola, 'credit_bundle')
+    const realNow = Date.now()
+    // 52 attended classes, one a day back from yesterday, and a no-show before them all.
+    const held: string[] = []
+    for (let d = 1; d <= 52; d++) held.push(await heldBooking(ola, await addClass(one, new Date(realNow - d * DAY)), 'attended'))
+    await heldBooking(ola, await addClass(one, new Date(realNow - 60 * DAY)), 'no_show')
+    // A class from twelve hours ago, newer than any of them, cancelled before it ran.
+    const [gone] = await harness.db
+      .insert(schema.bookings)
+      .values({
+        tenantId: one.id,
+        clientId: ola.clientId,
+        kind: 'class',
+        classId: await addClass(one, new Date(realNow - 12 * HOUR)),
+        creditsOrSessionsUsed: 1,
+        state: 'cancelled',
+        checkInState: 'n_a',
+        refundOutcome: 'credit_returned',
+        cancelledAt: new Date(realNow - 2 * DAY),
+        qrToken: `staff-cancel-${randomUUID()}`,
+        code: `SC-${randomUUID().slice(0, 6).toUpperCase()}`,
+      })
+      .returning({ id: schema.bookings.id })
+    // A class cancelled late, still to come, and one cancelled in time.
+    const t0 = aWeekOut()
+    harness.clock.set(t0)
+    const { classWindowHours } = await policyOf(one)
+    const late = await book(ola, await addClass(one, shifted(t0, (classWindowHours - 1) * HOUR)))
+    const inTime = await book(ola, await addClass(one, shifted(t0, 3 * DAY)))
+    await expectStatus(await memberCancel(ola, late), 200)
+    harness.clock.set(shifted(t0, MINUTE))
+    await expectStatus(await memberCancel(ola, inTime), 200)
+
+    const profile = await profileOf(ola)
+    assert.deepEqual(
+      profile.past_bookings.map((b: any) => b.booking_id),
+      held.slice(0, 50),
+    )
+    assert.deepEqual(profile.cancelled_bookings.map((b: any) => b.booking_id), [inTime, late, gone!.id])
+    assert.deepEqual(
+      [profile.attendance.attended, profile.attendance.no_shows, profile.attendance.late_cancels],
+      [52, 1, 1],
+    )
+  })
+
+  test('CUS-24 a workshop place is on the profile’s cancelled list: cancelled with its Workshop, by the admin who cancelled it, nothing returned; refunded, automatic', async () => {
+    // A workshop is cancelled on the wall clock, so this test keeps to it.
+    harness.clock.reset()
+    const t0 = new Date()
+    const uma = await member(one, 'uma-workshop')
+    const workshopPlace = async (state: 'confirmed' | 'cancelled') => {
+      const [workshop] = await harness.db
+        .insert(schema.workshops)
+        .values({ tenantId: one.id, name: WORKSHOP_NAME, locationId: one.locationId, createdByStaffId: one.admin.id })
+        .returning({ id: schema.workshops.id })
+      const [tier] = await harness.db
+        .insert(schema.workshopTiers)
+        .values({ tenantId: one.id, workshopId: workshop!.id, name: 'Full', regularPriceSgd: '120.00', ord: 1 })
+        .returning({ id: schema.workshopTiers.id })
+      const [day] = await harness.db
+        .insert(schema.workshopDays)
+        .values({
+          tenantId: one.id,
+          workshopId: workshop!.id,
+          ord: 1,
+          roomId: one.roomId,
+          startsAt: shifted(t0, 3 * DAY),
+          endsAt: shifted(t0, 3 * DAY + 2 * HOUR),
+          basePriceSgd: '120.00',
+          capacityOnline: 10,
+        })
+        .returning({ id: schema.workshopDays.id })
+      await harness.db
+        .insert(schema.workshopTierDays)
+        .values({ tenantId: one.id, workshopTierId: tier!.id, workshopDayId: day!.id })
+      const [booking] = await harness.db
+        .insert(schema.bookings)
+        .values({
+          tenantId: one.id,
+          clientId: uma.clientId,
+          kind: 'workshop',
+          workshopId: workshop!.id,
+          workshopTierId: tier!.id,
+          creditsOrSessionsUsed: 0,
+          listPriceSgd: '120.00',
+          amountPaidSgd: '120.00',
+          state,
+          // Refunded through its purchase: the unwind cancels the place.
+          ...(state === 'cancelled'
+            ? { cancelledAt: shifted(t0, -HOUR), checkInState: 'n_a' as const, refundOutcome: 'stripe_refunded' as const }
+            : {}),
+          qrToken: `staff-cancel-ws-${randomUUID()}`,
+          code: `SW-${randomUUID().slice(0, 6).toUpperCase()}`,
+        })
+        .returning({ id: schema.bookings.id })
+      return { workshopId: workshop!.id, bookingId: booking!.id }
+    }
+    const refunded = await workshopPlace('cancelled')
+    const struck = await workshopPlace('confirmed')
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/workshops/${struck.workshopId}/cancel`, {
+        method: 'POST',
+        headers: one.admin.headers,
+      }),
+      200,
+    )
+
+    const profile = await profileOf(uma)
+    assert.deepEqual(profile.upcoming_bookings, [])
+    assert.deepEqual(
+      profile.cancelled_bookings.map((b: any) => [b.booking_id, b.kind, b.title, b.cancelled_by, b.cancelled_by_name, b.outcome]),
+      [
+        [struck.bookingId, 'workshop', WORKSHOP_NAME, 'staff', 'admin', 'nothing_to_return'],
+        [refunded.bookingId, 'workshop', WORKSHOP_NAME, 'automatic', null, 'refunded'],
+      ],
+    )
+    assert.equal(profile.cancelled_bookings[1].cancelled_at, shifted(t0, -HOUR).toISOString())
+    assert.ok(new Date(profile.cancelled_bookings[0].cancelled_at).getTime() >= t0.getTime())
+  })
+
+  test('ROS-06 the class detail lists cancelled bookings apart from the roster, with when, outcome and late cancels marked, for the admin and for the instructor who leads it', async () => {
+    const { classWindowHours } = await policyOf(one)
+    const t0 = aWeekOut()
+    harness.clock.set(t0)
+    const pia = await member(one, 'pia-roster')
+    const quin = await member(one, 'quin-roster')
+    const rae = await member(one, 'rae-roster')
+    for (const who of [pia, quin, rae]) await give(one, who, 'credit_bundle')
+    const startsAt = shifted(t0, (classWindowHours + 2) * HOUR)
+    const classId = await addClass(one, startsAt)
+    const inTime = await book(pia, classId)
+    const late = await book(quin, classId)
+    const staying = await book(rae, classId)
+
+    await expectStatus(await memberCancel(pia, inTime), 200)
+    harness.clock.set(shifted(t0, 4 * HOUR))
+    await expectStatus(await memberCancel(quin, late), 200)
+
+    const admin = await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/schedule/classes/${classId}`, { headers: one.admin.headers }),
+      200,
+    )
+    const instructor = await expectStatus(
+      await harness.app.request(`/api/v1/portal/instructor/sessions/class/${classId}/roster`, { headers: one.instructor.headers }),
+      200,
+    )
+    for (const detail of [admin, instructor]) {
+      assert.deepEqual(detail.attendees.map((a: any) => a.booking_id), [staying])
+      assert.deepEqual(
+        detail.cancelled_bookings.map((b: any) => [b.booking_id, b.client.name, b.cancelled_at, b.cancelled_by, b.late, b.outcome]),
+        [
+          [late, 'quin-roster', shifted(t0, 4 * HOUR).toISOString(), 'member', true, 'credit_kept_late'],
+          [inTime, 'pia-roster', t0.toISOString(), 'member', false, 'credit_returned'],
+        ],
+      )
+    }
+    // The other instructor does not lead it, so reads none of it.
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/instructor/sessions/class/${classId}/roster`, { headers: one.otherInstructor.headers }),
+      403,
+    )
+  })
+
+  test('ROS-07 a cancelled class still lists who was booked, each under Cancelled, with no check-in action on them', async () => {
+    const t0 = aWeekOut()
+    harness.clock.set(t0)
+    const sam = await member(one, 'sam-struck')
+    const tia = await member(one, 'tia-struck')
+    for (const who of [sam, tia]) await give(one, who, 'credit_bundle')
+    const classId = await addClass(one, shifted(t0, 3 * DAY))
+    const bookings = [await book(sam, classId), await book(tia, classId)]
+    await expectStatus(await cancelWholeClass(classId, 'admin'), 200)
+
+    const detail = await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/schedule/classes/${classId}`, { headers: one.admin.headers }),
+      200,
+    )
+    assert.equal(detail.lifecycle, 'cancelled')
+    assert.deepEqual(detail.attendees, [])
+    assert.deepEqual(
+      detail.cancelled_bookings.map((b: any) => [b.booking_id, b.cancelled_by, b.cancelled_by_name, b.outcome]).sort(),
+      bookings.map(id => [id, 'staff', 'admin', 'credit_returned']).sort(),
+    )
+    // A cancelled booking cannot be checked in.
+    await expectStatus(
+      await harness.app.request('/api/v1/portal/admin/check-in/manual', {
+        method: 'POST',
+        headers: { ...one.admin.headers, ...json },
+        body: JSON.stringify({ booking_id: bookings[0], attended: true }),
+      }),
+      409,
+      'booking_cancelled',
+    )
+    assert.equal((await bookingRow(bookings[0]!)).checkInState, 'n_a')
   })
 })

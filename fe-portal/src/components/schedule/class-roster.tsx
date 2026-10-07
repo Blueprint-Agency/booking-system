@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, Loader2, Plus, Search, X } from "lucide-react";
+import { Check, ChevronRight, Loader2, Plus, Search, X } from "lucide-react";
 import { Badge, Button, Input } from "@/components/ui";
 import { CancelBookingDialog, type StaffCancelTarget } from "@/components/bookings/cancel-booking-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -33,7 +33,9 @@ import {
   type ClassWaitlist,
   type StaffBookingPrompt,
 } from "@/lib/class-waitlist";
-import type { ScheduleClassAttendee } from "@/lib/schedule";
+import type { ScheduleClassAttendee, ScheduleClassCancelled } from "@/lib/schedule";
+import { cancelledByLabel, cancelledOutcomeLine } from "@/lib/cancellations";
+import { formatDate } from "@/lib/formatters";
 
 export function Stat({
   label,
@@ -127,6 +129,7 @@ export function ClassRoster({
   role,
   classId,
   attendees,
+  cancelledBookings,
   cancelled,
   canAdd,
   canCancel,
@@ -135,6 +138,8 @@ export function ClassRoster({
   role: StaffRole;
   classId: string;
   attendees: ScheduleClassAttendee[];
+  /** Bookings cancelled off the class: listed apart, with no check-in or cancel. */
+  cancelledBookings: ScheduleClassCancelled[];
   cancelled: boolean;
   /** Add member is offered only while the class can still be booked. */
   canAdd: boolean;
@@ -161,7 +166,11 @@ export function ClassRoster({
       </div>
       {canAdd && <AddMember role={role} classId={classId} onBooked={onChanged} />}
       {rows.length === 0 ? (
-        <p className="text-sm text-muted">No bookings yet.</p>
+        <p className="text-sm text-muted">
+          {cancelled && cancelledBookings.length > 0
+            ? "The class was cancelled. Who was booked is under Cancelled below."
+            : "No bookings yet."}
+        </p>
       ) : (
         <ul className="divide-y divide-border">
           {rows.map((a) => {
@@ -223,6 +232,9 @@ export function ClassRoster({
           })}
         </ul>
       )}
+      {cancelledBookings.length > 0 && (
+        <CancelledSection role={role} rows={cancelledBookings} open={cancelled && rows.length === 0} />
+      )}
       <CancelBookingDialog
         role={role}
         target={cancelling}
@@ -233,6 +245,53 @@ export function ClassRoster({
         }}
       />
     </section>
+  );
+}
+
+/**
+ * The bookings cancelled off the class (#352), collapsed under the roster:
+ * who, when it was cancelled and by whom, and where the credit went, a Late
+ * cancel marked. Open from the start on a cancelled class, where it is the
+ * whole of who was booked. Never checked in, never cancelled again.
+ */
+function CancelledSection({ role, rows, open }: { role: StaffRole; rows: ScheduleClassCancelled[]; open: boolean }) {
+  return (
+    <details open={open} className="group mt-4 border-t border-border pt-3">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="h-4 w-4 text-muted transition-transform group-open:rotate-90" aria-hidden />
+        Cancelled ({rows.length})
+      </summary>
+      <ul className="divide-y divide-border">
+        {rows.map((b) => {
+          const when = b.cancelled_at
+            ? formatDate(b.cancelled_at, "d MMM, h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())
+            : null;
+          return (
+            <li
+              key={b.booking_id}
+              className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2.5 text-sm"
+            >
+              <div className="min-w-0 flex-1">
+                {role === "admin" ? (
+                  <Link href={`/admin/customers/${b.client.id}`} className="min-w-0 truncate text-ink hover:text-accent">
+                    {b.client.name}
+                  </Link>
+                ) : (
+                  <span className="min-w-0 truncate text-ink">{b.client.name}</span>
+                )}
+                <div className="text-xs text-muted">
+                  {when ? `Cancelled ${when}` : "Cancelled"} by {cancelledByLabel(b)}
+                </div>
+              </div>
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                {/* A Late cancel reads "Late cancel · credit kept", toned as a warning. */}
+                <Badge tone={b.late ? "warning" : "neutral"}>{cancelledOutcomeLine(b)}</Badge>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
   );
 }
 

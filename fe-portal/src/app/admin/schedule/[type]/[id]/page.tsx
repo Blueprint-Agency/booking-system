@@ -244,6 +244,7 @@ function ClassDetail({ id }: { id: string }) {
         role="admin"
         classId={data.id}
         attendees={data.attendees ?? []}
+        cancelledBookings={data.cancelled_bookings ?? []}
         cancelled={data.lifecycle === "cancelled"}
         canAdd={state === "scheduled"}
         canCancel

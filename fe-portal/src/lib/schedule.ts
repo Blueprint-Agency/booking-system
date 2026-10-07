@@ -58,6 +58,7 @@ import { ApiError, type Api } from "@/lib/api";
 import type { BookingSeat, ClassSeats } from "@/lib/class-seats";
 import type { ClassWaitlist } from "@/lib/class-waitlist";
 import type { StaffCancelPreview } from "@/lib/staff-cancel";
+import type { StaffCancellation } from "@/lib/cancellations";
 import { timeClashOf, timeClashRefusal, withClashConfirm } from "@/lib/time-clash";
 import {
   PACKAGE_RULE_ERROR_COPY,
@@ -84,6 +85,12 @@ export interface ScheduleClassAttendee {
   promoted_from_waitlist: boolean;
   /** What the cancel dialog asks from; null on a row Cancel is not offered on (#320). */
   cancel_preview: StaffCancelPreview | null;
+}
+
+/** A booking cancelled off a class, with who cancelled and where the credit went. */
+export interface ScheduleClassCancelled extends StaffCancellation {
+  booking_id: string;
+  client: NamedRef;
 }
 
 export interface ScheduleClassDetail extends ClassSeats, ClassWaitlist {
@@ -114,6 +121,8 @@ export interface ScheduleClassDetail extends ClassSeats, ClassWaitlist {
   /** Every confirmed booking — the same number as `attending`. */
   booked_count: number;
   attendees: ScheduleClassAttendee[];
+  /** Bookings cancelled off the class, newest first; apart from the roster, never checked in (#352). */
+  cancelled_bookings: ScheduleClassCancelled[];
   created_at: string;
   scheduled_by: NamedRef | null;
   /** The Class Series that created this class, if any. */

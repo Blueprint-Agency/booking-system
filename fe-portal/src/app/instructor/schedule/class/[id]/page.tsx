@@ -122,6 +122,7 @@ function ClassPage({ data, onChanged }: { data: InstructorClassDetail; onChanged
         role="instructor"
         classId={data.id}
         attendees={data.attendees}
+        cancelledBookings={data.cancelled_bookings}
         cancelled={data.lifecycle === "cancelled"}
         canAdd={managesRosters && state === "scheduled"}
         canCancel={managesRosters}
