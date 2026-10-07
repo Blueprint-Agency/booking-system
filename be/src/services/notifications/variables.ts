@@ -17,7 +17,7 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   pt_session_declined: ['client_name', 'instructor_name', 'decline_note'],
   pt_request_expired: ['client_name', 'instructor_name', 'starts_at'],
   // A purchase confirmation is the member's receipt (#370), so it states what
-  // was paid: `amount_paid` is the figure with its currency ("SGD 120.00"),
+  // was paid: `amount_paid` is the figure with its currency ("S$120.00"),
   // and the zero amount on a free tier. Same variable on the package and trial
   // confirmations below.
   workshop_purchase_confirmed: ['client_name', 'workshop_name', 'date', 'qr_url', 'code', 'amount_paid', 'receipt_url'],

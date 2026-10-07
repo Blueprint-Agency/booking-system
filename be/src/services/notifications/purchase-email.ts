@@ -14,6 +14,7 @@
  * server or a payment provider.
  */
 import { sgFormat } from '../../lib/time'
+import { sgdText, toCents } from '../../shared/money'
 import { isDormant } from '../packages/validity'
 
 export type PurchasedKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
@@ -90,22 +91,16 @@ export function validityLine(
   return expiresAt ? `Expires ${SG_DATE.format(expiresAt)}` : 'See your account for the expiry date'
 }
 
-/** Thousands grouped, always two decimals: "1,500.00". */
-const SGD_FIGURE = new Intl.NumberFormat('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
 /**
- * What the member paid, as a receipt prints it (#370): the studio's currency
- * and the figure, "SGD 120.00". A free purchase prints the zero amount rather
- * than nothing, because a receipt that leaves the line blank reads as an error.
+ * What the member paid, as a receipt prints it (#370): "S$120.00", the form
+ * the studio's other member-facing money takes (`sgdText`: refund notices,
+ * part payments). A free purchase prints the zero amount rather than nothing,
+ * because a receipt that leaves the line blank reads as an error.
  *
- * Every studio sells in Singapore dollars today — the money columns are
- * `*_sgd` and checkout charges `sgd` — so the currency is SGD for every studio;
- * the same "SGD x" form the studio's other emails print money in.
- *
- * Takes the stored numeric string, never a float, so nothing rounds on the way.
+ * Takes the stored numeric string and works in cents, so nothing drifts.
  */
 export function amountPaid(amountSgd: string): string {
-  return `SGD ${SGD_FIGURE.format(Number(amountSgd))}`
+  return sgdText(toCents(amountSgd))
 }
 
 /**

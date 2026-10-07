@@ -157,17 +157,18 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
 }
 
 // --- the amount paid, as a receipt prints it (#370) ---------------------------
-// The confirmation is the member's receipt. The figure carries its currency,
-// groups thousands, always shows cents, and a free purchase shows the zero
-// amount rather than a blank line.
+// The confirmation is the member's receipt. The figure is in the form the
+// studio's other member-facing money is ("S$150.00", as a refund notice and a
+// part payment print it), always shows cents, and a free purchase shows the
+// zero amount rather than a blank line.
 {
-  assert.strictEqual(amountPaid('120.00'), 'SGD 120.00', 'a figure with its currency')
-  assert.strictEqual(amountPaid('1500.00'), 'SGD 1,500.00', 'thousands are grouped')
-  assert.strictEqual(amountPaid('0.00'), 'SGD 0.00', 'a free purchase prints the zero amount')
-  assert.strictEqual(amountPaid('19.9'), 'SGD 19.90', 'cents are always shown')
+  assert.strictEqual(amountPaid('120.00'), 'S$120.00', 'a figure with its currency')
+  assert.strictEqual(amountPaid('1500.00'), 'S$1500.00', 'the same form a refund notice prints')
+  assert.strictEqual(amountPaid('0.00'), 'S$0.00', 'a free purchase prints the zero amount')
+  assert.strictEqual(amountPaid('19.9'), 'S$19.90', 'cents are always shown')
   assert.strictEqual(
     composePurchaseEmail(input({ kind: 'trial', creditsOrSessions: 3, amountPaidSgd: '0.00' })).variables.amount_paid,
-    'SGD 0.00',
+    'S$0.00',
     'the whole email carries the amount through, not just the helper',
   )
 }
@@ -214,7 +215,7 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
       contents_line: 'Unlimited classes',
       validity_line:
         'Valid 6 months from your first class — your package activates when you make your first booking.',
-      amount_paid: 'SGD 1,500.00',
+      amount_paid: 'S$1500.00',
       receipt_url: ACCOUNT_URL,
     },
     'the six allow-listed variables, each a whole sentence or the amount with its currency',
