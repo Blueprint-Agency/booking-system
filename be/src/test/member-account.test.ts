@@ -386,6 +386,7 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
     await q(sql`DELETE FROM merch_orders WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM merch WHERE title LIKE ${`${MERCH_TITLE}%`}`)
     await q(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+    await q(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await q(sql`DELETE FROM corporate_packages WHERE name = ${CORPORATE_NAME}`)

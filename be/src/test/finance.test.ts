@@ -630,6 +630,7 @@ describe('Finance over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     await harness.db.execute(sql`DELETE FROM classes WHERE created_by_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM merch_orders WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM promo_codes WHERE code = ${PROMO_CODE}`)

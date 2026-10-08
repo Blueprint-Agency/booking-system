@@ -284,6 +284,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${isolationClients})`)
     // After the payments, the bookings and the plans that point at it, and
     // before the clients it points at — a Purchase sits between the two.
+    await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${isolationClients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${isolationClients})`)
     await harness.db.execute(sql`
       DELETE FROM promo_code_products WHERE promo_code_id IN (

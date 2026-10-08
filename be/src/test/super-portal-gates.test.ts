@@ -173,6 +173,7 @@ describe('super portal gates', { skip: integrationTestsEnabled ? false : SKIP_RE
       await harness.db.execute(sql`DELETE FROM credit_movements WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM class_packages WHERE name = ${BUNDLE_NAME}`)

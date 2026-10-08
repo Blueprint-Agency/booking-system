@@ -725,7 +725,7 @@ The studio's own **Receipt** for each completed purchase (be/CONTEXT.md § Money
 - **Detail** `/account/receipts/[id]`: the number, the day issued, a **Refunded on {date}** badge once refunded, the studio (with its legal name, registration number and address where the studio has set them), who it was issued to, each line (with its List Price and each discount, Promotion or Promo Code by name, where something was taken off), Subtotal, Discount, **Total paid**, and each payment with how it was paid (`Visa •••• 4242`, `Apple Pay · Visa •••• 4242`, `PayNow`), its date and amount; the studio's footer note last. Amounts are always to the cent, `S$150.00`, the form the confirmation emails use. Another member's Receipt, or one at another studio, reads "We couldn't find that receipt on your account".
 - **No tax line, no GST**: the total is exactly what the member was charged. A Receipt is never edited or voided, and nothing on it changes when a package is renamed or the member changes their name.
 - **The confirmation page links to it**: after a paid package, the "Your purchase" panel carries **View receipt R-000123** once the payment is confirmed.
-- Today a Receipt is issued for a paid class package (bundle, Unlimited Plan, paid trial pass). Other purchases, Download PDF and the emailed receipt follow (#385, #386, #387).
+- Every purchase has one once it is paid in full, a free one included (S$0.00, no payments); a part-paid one has none until its last payment. A Complimentary Package has none. Download PDF and the emailed receipt follow (#386, #387).
 
 **User journey**
 - Pay for a package → "View receipt" on the confirmation → the Receipt. Later: Account → Receipts → pick the dates → open one.
