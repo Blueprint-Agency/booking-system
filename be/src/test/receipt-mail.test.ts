@@ -330,7 +330,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     }
   })
 
-  test('INV-35 a paid class package\'s confirmation carries its Receipt, under the studio\'s own copy', async () => {
+  test('INV-47 a paid class package\'s confirmation carries its Receipt, under the studio\'s own copy', async () => {
     const mia = await member(one)
     await pay(mia, PACKAGE, { package_kind: 'class', package_id: one.bundleId })
 
@@ -341,7 +341,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     assert.ok(mail.text!.indexOf('Total paid') > copy, 'the Receipt comes under it')
   })
 
-  test('INV-36 a free Trial Pass\'s confirmation carries its S$0.00 Receipt, linked in the member\'s account', async () => {
+  test('INV-48 a free Trial Pass\'s confirmation carries its S$0.00 Receipt, linked in the member\'s account', async () => {
     for (const at of [one, two]) {
       const ivy = await member(at)
       await take(ivy, PACKAGE, { package_kind: 'class', package_id: at.freeTrialId })
@@ -352,7 +352,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     }
   })
 
-  test('INV-37 a workshop place\'s confirmation carries its Receipt beside the QR code, paid or free', async () => {
+  test('INV-49 a workshop place\'s confirmation carries its Receipt beside the QR code, paid or free', async () => {
     const paid = await workshop(one, '85.50')
     const zoe = await member(one)
     await pay(zoe, WORKSHOP, { workshop_id: paid.id, workshop_tier_id: paid.tierId })
@@ -368,7 +368,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     assert.equal(taken.receipt.total_sgd, '0.00')
   })
 
-  test('INV-38 a corporate package\'s confirmation carries its Receipt, paid or free', async () => {
+  test('INV-50 a corporate package\'s confirmation carries its Receipt, paid or free', async () => {
     const eve = await member(one)
     await pay(eve, PACKAGE, { package_kind: 'corporate', package_id: one.corporateId })
     const { receipt } = await carriesReceipt(eve, one, 'corporate_purchase_confirmed')
@@ -380,7 +380,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     assert.equal(taken.receipt.total_sgd, '0.00')
   })
 
-  test('INV-39 a studio\'s own copy may name the receipt number', async () => {
+  test('INV-51 a studio\'s own copy may name the receipt number', async () => {
     const where = and(eq(schema.emailTemplates.tenantId, two.id), eq(schema.emailTemplates.slug, 'package_purchase_confirmed'))
     const [template] = await harness.db.select().from(schema.emailTemplates).where(where)
     assert.ok(template)
@@ -395,7 +395,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     }
   })
 
-  test('INV-40 when the mail transport fails, the purchase is still granted and its Receipt still issued', async () => {
+  test('INV-52 when the mail transport fails, the purchase is still granted and its Receipt still issued', async () => {
     const restore = mailer.useTransport({
       name: 'null',
       send: async () => {

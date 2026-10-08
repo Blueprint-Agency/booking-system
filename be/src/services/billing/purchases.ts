@@ -15,7 +15,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { purchases, stripePayments } from '../../db/schema/ledger'
 import { toCents, toSgd } from '../../shared/money'
-import { issueReceipt } from '../receipts/issue'
+import { issueReceipt, stampReceiptRefunded } from '../receipts/issue'
 import { amountPaidCents, isSettled, outstandingCents } from './balance'
 import { linesTotalCents, type PurchaseLine } from './purchase-lines'
 
@@ -198,6 +198,9 @@ export async function paymentsForPurchase(
  * currently held and none is — the same reading `balance.ts` computes, where a
  * refunded payment counts for nothing. It is also what takes the Purchase out
  * of the refundable set, since a Refund is the whole purchase back.
+ *
+ * Its Receipt is stamped refunded in the same transaction, by the delivery
+ * that wins the flip, so a redelivery never moves the date (#392).
  */
 export async function markPurchaseRefunded(
   tenantId: string,
@@ -214,7 +217,9 @@ export async function markPurchaseRefunded(
       ),
     )
     .returning({ id: purchases.id })
-  return rows.length > 0
+  if (rows.length === 0) return false
+  await stampReceiptRefunded(db, tenantId, purchaseId)
+  return true
 }
 
 /**

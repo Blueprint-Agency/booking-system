@@ -29,6 +29,7 @@ import marketing from './marketing'
 import featureFlags from './feature-flags'
 import impersonate from './impersonate'
 import purchases from './purchases'
+import settings from './settings'
 
 /**
  * Role gating for the portal /admin subtree: a studio's admins run the whole
@@ -69,5 +70,7 @@ const app = new Hono()
   .route('/waiver', waiver)
   .route('/marketing', marketing)
   .route('/feature-flags', featureFlags)
+  // The studio's own settings: the receipt details (#391).
+  .route('/settings', settings)
 
 export default app

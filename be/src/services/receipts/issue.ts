@@ -15,7 +15,7 @@
  * with `issued: false`, so whoever sends the member's email (#387) sends it
  * from the delivery that issued it and from no other.
  */
-import { and, asc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import { purchases, receiptCounters, receipts, stripePayments } from '../../db/schema/ledger'
@@ -44,7 +44,8 @@ async function existingReceipt(tx: ReceiptTx, tenantId: string, purchaseId: stri
  * Issue the Purchase's Receipt, or hand back the one it already has.
  *
  * Takes the studio's next number under a row lock on its counter, then writes
- * the snapshot: the studio's display name, the member's name and email, the
+ * the snapshot: the studio's display name and receipt details (numbered under
+ * its prefix as it stands now), the member's name and email, the
  * Purchase's lines and totals, and its payments as they stand in `tx`. Nothing
  * on it is ever recomputed.
  *
@@ -86,8 +87,18 @@ export async function issueReceipt(
   const raced = await existingReceipt(tx, tenantId, purchaseId)
   if (raced) return { receipt: raced, issued: false }
 
+  // The studio's receipt details as they stand now (#391): copied on, so a
+  // later edit or prefix change reaches only the Receipts issued after it.
   const [seller] = await tx
-    .select({ name: tenants.name, displayName: tenantSettings.displayName })
+    .select({
+      name: tenants.name,
+      displayName: tenantSettings.displayName,
+      prefix: tenantSettings.receiptPrefix,
+      legalName: tenantSettings.receiptLegalName,
+      registrationNumber: tenantSettings.receiptRegistrationNumber,
+      address: tenantSettings.receiptAddress,
+      footer: tenantSettings.receiptFooter,
+    })
     .from(tenants)
     .leftJoin(tenantSettings, eq(tenantSettings.tenantId, tenants.id))
     .where(eq(tenants.id, tenantId))
@@ -144,9 +155,13 @@ export async function issueReceipt(
       purchaseId,
       clientId: purchase.clientId,
       number,
-      displayNumber: displayNumber(DEFAULT_RECEIPT_PREFIX, number),
+      displayNumber: displayNumber(seller!.prefix || DEFAULT_RECEIPT_PREFIX, number),
       // What the studio calls itself to members, as of now.
       sellerName: seller!.displayName || seller!.name,
+      sellerLegalName: seller!.legalName,
+      sellerRegistrationNumber: seller!.registrationNumber,
+      sellerAddress: seller!.address,
+      sellerFooter: seller!.footer,
       buyerName: buyer?.name ?? null,
       buyerEmail: buyer?.email ?? null,
       kind: purchase.kind,
@@ -156,4 +171,22 @@ export async function issueReceipt(
     })
     .returning()
   return { receipt: receipt!, issued: true }
+}
+
+/**
+ * Stamp the Purchase's Receipt refunded (#392): the one later change a Receipt
+ * undergoes. Called in the transaction that marks the Purchase refunded
+ * (`markPurchaseRefunded`), so the two commit or roll back together, and dated
+ * by it. None of the figures move: a Refund is a fact about the money since,
+ * not a correction of what was sold.
+ *
+ * Once. `refunded_at IS NULL` keeps the first date whatever reaches it again.
+ * A Purchase with no Receipt — a migrated one — has nothing to stamp, and an
+ * Abandoned one never reaches here.
+ */
+export async function stampReceiptRefunded(tx: ReceiptTx, tenantId: string, purchaseId: string): Promise<void> {
+  await tx
+    .update(receipts)
+    .set({ refundedAt: sql`now()` })
+    .where(and(eq(receipts.tenantId, tenantId), eq(receipts.purchaseId, purchaseId), isNull(receipts.refundedAt)))
 }

@@ -9,6 +9,7 @@
 import { ApiError, type Api } from "@/lib/api";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { downloadFile } from "@/lib/download";
+import type { ReceiptDetails } from "@/lib/receipt-details";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
 export type TenantStatus = "active" | "suspended" | "archived";
@@ -73,6 +74,9 @@ export interface CreateTenantInput {
    *  import refuses a studio that already holds any staff rows. */
   admin_email?: string;
   admin_name?: string;
+  /** What the studio's Receipts carry from its first one (#391). Omitted
+   *  leaves the default prefix and no details, for its admin to set. */
+  receipt_details?: ReceiptDetails;
 }
 
 export interface CreatedTenant {

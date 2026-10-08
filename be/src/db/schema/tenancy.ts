@@ -155,6 +155,18 @@ export const tenantSettings = pgTable('tenant_settings', {
   // lands as tenants are provisioned.
   waiverText: text('waiver_text'),
 
+  // Receipt details (#391): what the studio's Receipts carry, copied onto each
+  // one as it is issued (services/receipts/issue.ts), so an edit here reaches
+  // only the Receipts issued after it. The prefix heads every number
+  // (`R-000123`); the rest is printed under the studio's name and at the foot.
+  // Set by the studio's admin or by the super portal at creation, and readable
+  // by the application role like the branding columns (src/db/roles.ts).
+  receiptPrefix: text('receipt_prefix').notNull().default('R'),
+  receiptLegalName: text('receipt_legal_name'),
+  receiptRegistrationNumber: text('receipt_registration_number'),
+  receiptAddress: text('receipt_address'),
+  receiptFooter: text('receipt_footer'),
+
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
