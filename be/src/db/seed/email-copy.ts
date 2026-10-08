@@ -482,6 +482,25 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   ])
 
   /**
+   * A paid corporate package (be-client § Corporate branch, step 5). It grants
+   * no credits and starts no clock: what the member bought is a pending
+   * Corporate Request, and the date, time and venue are settled with the
+   * studio afterwards. So the email says that, and promises nothing about how
+   * the studio gets in touch — the WhatsApp button is only there when the
+   * studio has set a number. Names no studio and no origin, so migration 0109
+   * can write it for studios created before it.
+   */
+  const CORPORATE_PURCHASE_BODY = body('Your corporate package is confirmed', [
+    'Hi {{client_name}},',
+    facts([
+      ['Package', '{{package_name}}'],
+      ['Amount paid', '{{amount_paid}}'],
+    ]),
+    'Your request is with the studio. They will be in touch to arrange the date, time and venue with you.',
+    link('{{receipt_url}}', 'View your purchase'),
+  ])
+
+  /**
    * The Refund (§14). The provider sends the money receipt; this one says the
    * entitlement has ended and names the classes that were cancelled with it —
    * both whole composed sentences, for the same reason the purchase emails are.
@@ -735,6 +754,11 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       slug: 'trial_pass_purchase_confirmed',
       subject: `Welcome to ${STUDIO}`,
       bodyHtml: TRIAL_PASS_PURCHASE_BODY,
+    },
+    {
+      slug: 'corporate_purchase_confirmed',
+      subject: 'Your corporate package is confirmed',
+      bodyHtml: CORPORATE_PURCHASE_BODY,
     },
     { slug: 'sign_in_code', subject: `Your ${STUDIO} sign-in code`, bodyHtml: SIGN_IN_CODE_BODY },
     {

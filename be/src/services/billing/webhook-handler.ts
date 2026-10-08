@@ -28,6 +28,7 @@ import { bookWorkshopPaid, tierDaysClash } from '../workshops/book'
 import { recordMerchOrder } from '../catalog/merch-orders'
 import { createCorporateRequest } from '../corporate/requests'
 import {
+  sendCorporatePurchaseEmail,
   sendPackagePurchaseEmail,
   sendWorkshopPurchaseEmail,
 } from '../notifications/send-purchase-email'
@@ -421,16 +422,30 @@ export async function handleStripeEvent(
   // must land in front of a human, not vanish — see `tenantForClient` below.
   if (!named) throw new NotFoundError('client_not_found', { clientId })
 
+  const afterCommit: AfterCommit[] = []
   await withTenant(named, () =>
-    dispatchStripeEvent(event, expectedTenantId, providerAccountId, retry),
+    dispatchStripeEvent(event, expectedTenantId, providerAccountId, retry, afterCommit),
   )
+  // The delivery's work is committed: only now is it safe to tell the member.
+  // A delivery that failed part-way rolled back, and must not have mailed
+  // anyone about a request that does not exist; its retry sends instead.
+  for (const send of afterCommit) await send()
 }
+
+/**
+ * Work a delivery hands back to run once its transaction has committed — an
+ * email announcing what it made. Each must not throw: the delivery is done,
+ * and failing the request now would only make the provider retry a delivery
+ * that finds nothing left to do.
+ */
+type AfterCommit = () => Promise<void>
 
 async function dispatchStripeEvent(
   event: Stripe.Event,
   expectedTenantId: string,
   providerAccountId: string,
   retry: RetryPolicy | undefined,
+  afterCommit: AfterCommit[] = [],
 ): Promise<void> {
   if (isCheckoutPaidEvent(event)) {
     const session = event.data.object as Stripe.Checkout.Session
@@ -716,12 +731,30 @@ async function dispatchStripeEvent(
 
       if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
 
-      await createCorporateRequest(tenantId, { clientId, corporatePackageId: packageId })
+      const { corporateRequestId } = await createCorporateRequest(tenantId, {
+        clientId,
+        corporatePackageId: packageId,
+      })
 
       await bankPayment(
         tenantId,
         paymentIntentId,
         await chargePatch(tenantId, paymentIntentId, providerAccountId, retry),
+      )
+
+      // Step 5: one confirmation, from the delivery that made the request — a
+      // redelivery stopped at the `succeeded` guard above. Sent after commit,
+      // in a Tenant context of its own; the sender reports and swallows.
+      afterCommit.push(() =>
+        withTenant(tenantId, () =>
+          sendCorporatePurchaseEmail(tenantId, corporateRequestId, paymentIntentId),
+        ).catch(err =>
+          reportError(err, 'corporate purchase confirmation email failed', {
+            scope: 'purchase-email',
+            tenantId,
+            corporateRequestId,
+          }),
+        ),
       )
       return
     }

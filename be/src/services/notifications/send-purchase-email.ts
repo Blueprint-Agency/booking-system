@@ -14,11 +14,11 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients, staffUsers } from '../../db/schema/identity'
-import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
+import { clientPackages, classPackages, corporatePackages, ptPackages } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
 import { purchases, stripePayments } from '../../db/schema/ledger'
 import { toCents, toSgd } from '../../shared/money'
-import { workshops, workshopDays, workshopTierDays } from '../../db/schema/schedule'
+import { corporateRequests, workshops, workshopDays, workshopTierDays } from '../../db/schema/schedule'
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { NotFoundError } from '../../shared/errors'
@@ -46,6 +46,9 @@ const accountUrlFor = (tenantId: string) =>
 /** Where a workshop booking's QR code lives. */
 const workshopQrUrlFor = (tenantId: string) =>
   requireTenantUrl('client', tenantId).then(base => `${base}/account/workshops`)
+/** Where a member's Corporate Requests are listed. */
+const corporateRequestsUrlFor = (tenantId: string) =>
+  requireTenantUrl('client', tenantId).then(base => `${base}/account/bookings?type=corporate`)
 
 const SG_DATETIME = sgFormat('en-GB', {
   day: 'numeric',
@@ -134,6 +137,71 @@ export async function sendPackagePurchaseEmail(
       scope: 'purchase-email',
       tenantId,
       clientPackageId,
+    })
+  }
+}
+
+/**
+ * Confirm a paid corporate package (be-client § Corporate branch, step 5): the
+ * package, what was paid for it, and that the studio now arranges the session.
+ * No credits, so none of the package confirmation's sentences apply.
+ *
+ * Called once the delivery that made the Corporate Request has committed, so
+ * the payment row it reads already carries the receipt, and a delivery that
+ * rolled back never mailed anyone.
+ */
+export async function sendCorporatePurchaseEmail(
+  tenantId: string,
+  corporateRequestId: string,
+  paymentIntentId: string,
+): Promise<void> {
+  try {
+    const [row] = await db
+      .select({
+        clientName: clients.name,
+        clientEmail: clients.email,
+        clientId: clients.id,
+        packageName: corporatePackages.name,
+      })
+      .from(corporateRequests)
+      .innerJoin(clients, eq(clients.id, corporateRequests.clientId))
+      .innerJoin(corporatePackages, eq(corporatePackages.id, corporateRequests.corporatePackageId))
+      .where(and(eq(corporateRequests.tenantId, tenantId), eq(corporateRequests.id, corporateRequestId)))
+      .limit(1)
+    // Not a refusal anyone is shown: reported below, with the ids.
+    if (!row) throw new Error('corporate request not found')
+
+    const [payment] = await db
+      .select({
+        receiptUrl: stripePayments.receiptUrl,
+        paymentSgd: stripePayments.amountSgd,
+        purchasePaidSgd: purchases.amountPaidSgd,
+      })
+      .from(stripePayments)
+      .leftJoin(purchases, eq(purchases.id, stripePayments.purchaseId))
+      .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.paymentIntentId, paymentIntentId)))
+      .limit(1)
+    if (!payment) throw new Error(`no payment ${paymentIntentId} for the corporate request`)
+
+    await sendTemplatedEmail({
+      tenantId,
+      slug: 'corporate_purchase_confirmed',
+      recipient: { email: row.clientEmail, userId: row.clientId, userKind: 'client' },
+      variables: {
+        client_name: row.clientName,
+        package_name: row.packageName,
+        // The sale's figure, as on every other confirmation (#370).
+        amount_paid: amountPaid(payment.purchasePaidSgd ?? payment.paymentSgd),
+        // Where the request is, when the provider gave no receipt: an escaped
+        // empty href is a link to nowhere.
+        receipt_url: payment.receiptUrl || (await corporateRequestsUrlFor(tenantId)),
+      },
+    })
+  } catch (err) {
+    reportError(err, 'corporate purchase confirmation email failed', {
+      scope: 'purchase-email',
+      tenantId,
+      corporateRequestId,
     })
   }
 }
