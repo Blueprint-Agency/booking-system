@@ -549,6 +549,24 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(finance.body.totals.refunds_sgd, 0)
   })
 
+  test('WSP-19 two registrations for one free place at once leave one place and one Purchase', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Free double tap',
+      days: [{ capacity: 10 }],
+      tiers: [{ name: 'Free', price: '0.00', days: [0] }],
+    })
+    const ana = await member(one, 'Ana Double Tap')
+
+    const both = await Promise.all([checkout(ana, w), checkout(ana, w)])
+    assert.deepEqual(both.map(r => r.status).sort(), [201, 409], both.map(r => r.text).join(' / '))
+
+    const places = await bookingsOf(ana, w)
+    const bought = await purchasesOf(ana)
+    assert.equal(places.length, 1, 'one place')
+    assert.equal(bought.length, 1, 'one Purchase')
+    assert.equal(places[0]!.purchaseId, bought[0]!.id)
+  })
+
   test('WSP-10 the lowest of the active promotions sets the price shown and the price charged', async () => {
     const w = await workshop(one, adminAtOne, teacherAtOne, {
       name: 'Promoted retreat',
