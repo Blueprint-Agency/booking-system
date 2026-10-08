@@ -113,6 +113,13 @@ export interface CheckoutSessionInput {
    * the card pays and is forgotten.
    */
   saveCard?: boolean
+  /**
+   * Cards and nothing else, whatever the rest of the session says. A corporate
+   * package is paid by card (fe-client-features §6.2): the payment is what makes
+   * the member's Corporate Request, so it does not wait on a method that
+   * settles minutes later or not at all.
+   */
+  cardsOnly?: boolean
 }
 
 /**
@@ -194,7 +201,7 @@ export function checkoutSessionParams(
    * PayNow on a *full* payment is untouched wherever the box is not ticked,
    * which is the default and every checkout before this existed.
    */
-  const cardsOnly = part != null || keepCard
+  const cardsOnly = part != null || keepCard || Boolean(input.cardsOnly)
   return {
     mode: 'payment',
     // **SGD only.** Adaptive Pricing is on by default for a Stripe account, and
@@ -257,7 +264,8 @@ export function purchaseKindFor(metadata: Record<string, string>): PurchaseKind 
     kind === 'pt_package' ||
     kind === 'workshop' ||
     kind === 'merch' ||
-    kind === 'cross_location_add_on'
+    kind === 'cross_location_add_on' ||
+    kind === 'corporate_package'
   ) {
     return kind
   }

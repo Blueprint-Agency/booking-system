@@ -12,8 +12,9 @@ import { MEMBER_TABLES, eraseSteps } from './member-tables'
  * blocking (`softDeleteClient`), which stays the reversible option.
  *
  * Every row `MEMBER_TABLES` finds for them goes, except the rows each table's
- * `erase` says to keep — the studio's accounts — which stay with the member's
- * identity removed. What is kept, and why, is `docs/md/member-data-retention.md`.
+ * `erase` says to keep — the studio's accounts, and the staff audit trail about
+ * them, which is never deleted — which stay with the member's identity removed.
+ * What is kept, and why, is `docs/md/member-data-retention.md`.
  *
  * **It reaches outside the database too.** Since #185 a member is a Customer at
  * the payment provider, with cards kept against them, and neither is a row this
@@ -41,6 +42,7 @@ export async function deleteMemberPermanently(input: {
   const { tenantId } = input
   const member = await getClientById(tenantId, input.clientId)
   const key = { clientId: member.id, authUserId: member.authUserId, email: member.email }
+  const erased = { ...key, name: member.name, phone: member.phone }
 
   await endClientSessionsAt(db, tenantId, member.authUserId)
 
@@ -70,6 +72,15 @@ export async function deleteMemberPermanently(input: {
     for (const step of eraseSteps(entry)) {
       if ('delete' in step) {
         await db.execute(sql`DELETE FROM ${table} WHERE tenant_id = ${tenantId} AND ${step.delete(key)}`)
+      } else if ('anonymise' in step) {
+        const rows = await db.execute<Record<string, unknown>>(
+          sql`SELECT * FROM ${table} WHERE tenant_id = ${tenantId} AND ${step.where(key)}`,
+        )
+        for (const row of rows) {
+          await db.execute(
+            sql`UPDATE ${table} SET ${step.anonymise(row, erased)} WHERE tenant_id = ${tenantId} AND id = ${row.id}`,
+          )
+        }
       } else {
         await db.execute(sql`UPDATE ${table} SET ${step.set} WHERE tenant_id = ${tenantId} AND ${step.where(key)}`)
       }

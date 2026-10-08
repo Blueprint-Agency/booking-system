@@ -747,15 +747,22 @@
     {
       "idx": 106,
       "version": "7",
-      "when": 1791429007980,
-      "tag": "0106_checkin_nag_sent_at",
+      "when": 1791428122529,
+      "tag": "0106_audit_log_archive",
       "breakpoints": true
     },
     {
       "idx": 107,
       "version": "7",
-      "when": 1791429221244,
-      "tag": "0107_booking_notification_templates",
+      "when": 1791429705644,
+      "tag": "0107_checkin_nag_sent_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1791429715316,
+      "tag": "0108_booking_notification_templates",
       "breakpoints": true
     }
   ]

@@ -6,7 +6,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 
 const run = Date.now().toString(36)
-const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0107_booking_notification_templates.sql')
+const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0108_booking_notification_templates.sql')
 const SLUGS = [
   'class_booking_confirmed',
   'class_cancelled_credit_returned',
@@ -19,7 +19,7 @@ const SLUGS = [
 ]
 
 /**
- * Migration 0107 (#359): studios created before the booking and cancellation
+ * Migration 0108 (#359): studios created before the booking and cancellation
  * emails were sent get their new wording — in a template still exactly the
  * default it was written with, and a new row where they have none — while a
  * studio's own wording is never touched.
@@ -30,7 +30,7 @@ const SLUGS = [
  * origin, as the seeder baked them. The migration's own SQL is run against
  * them, twice.
  */
-describe('migration 0107: the booking emails reach studios created before them', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+describe('migration 0108:the booking emails reach studios created before them', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let layout!: typeof import('../services/mail/layout')

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { withEnv } from './with-env'
 import type { MailTransport, OutboundMessage } from '../lib/mailer'
 
 const run = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
@@ -649,6 +652,59 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     // service's byte rule that refuses it.
     refused(over, 400, 'document_too_large', 'just over the maximum')
     assert.equal((await row(overReq.id)).supportingDocumentR2Key, null)
+  })
+
+  test('LEV-133 an upload sent as JSON, or as multipart with no file part, is refused 400, writes nothing and logs no unhandled error', async () => {
+    const req = await file(ada, 'medical')
+    const was = await row(req.id)
+    const path = `/api/v1/portal/leave/${req.id}/document`
+    const errorsBefore = errorLines().length
+
+    const asJson = await call(ada, 'POST', `/leave/${req.id}/document`, { file: 'note.pdf' })
+    refused(asJson, 400, 'invalid_request', 'a JSON body')
+
+    const noFile = new FormData()
+    noFile.append('note', 'no file here')
+    const res = await harness.app.request(path, { method: 'POST', headers: ada.headers, body: noFile })
+    const text = await res.text()
+    refused({ status: res.status, body: JSON.parse(text), text }, 400, 'document_required', 'multipart with no file part')
+
+    assert.deepEqual(await row(req.id), was, 'the request is unchanged')
+    assert.deepEqual(errorLines().slice(errorsBefore), [], 'no unhandled error is logged')
+  })
+
+  describe('with no storage bucket configured', () => {
+    withEnv({ R2_BUCKET_NAME: '' })
+
+    test('LEV-72 an upload fails as unavailable, nothing is stored, and the app still boots without a bucket', async () => {
+      const req = await file(ada, 'medical')
+      const objects = bucket.size
+
+      const res = await upload(ada, req.id, fileBytes(1024), 'application/pdf', 'note.pdf')
+
+      refused(res, 422, 'document_storage_unavailable', 'no bucket')
+      assert.equal((await row(req.id)).supportingDocumentR2Key, null, 'no key is written')
+      assert.equal(bucket.size, objects, 'nothing reached storage')
+
+      // A fresh process, with no storage setting at all in its environment,
+      // loads the environment check and the app and answers its liveness probe:
+      // a missing bucket is refused at upload, never at boot.
+      const childEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('R2_')))
+      const boot = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          '-e',
+          `require('./src/env'); require('./src/app').default.request('/api/v1/healthz')
+             .then(async r => { console.log('healthz ' + r.status); process.exit(0) })
+             .catch(err => { console.error(err); process.exit(1) })`,
+        ],
+        { cwd: join(__dirname, '..', '..'), env: childEnv, encoding: 'utf8', timeout: 120_000 },
+      )
+      assert.equal(boot.status, 0, `the app boots with no bucket: ${boot.stderr}`)
+      assert.match(boot.stdout, /^healthz 200$/m, boot.stdout)
+    })
   })
 
   test('LEV-73 an admin asks for a Supporting Document and gets a short-lived signed URL that retrieves the file', async () => {

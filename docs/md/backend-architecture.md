@@ -68,7 +68,7 @@ be/
     │   │   │                          #   pt_requests, pt_sessions, pt_session_clients
     │   │   ├── # availability.ts      # REMOVED in v1 — see §4f (replaced by pt_requests)
     │   │   ├── bookings.ts            # bookings, cancellations, check_ins
-    │   │   ├── ledger.ts              # manual_adjustments, credit_movements, audit_log, stripe_payments
+    │   │   ├── ledger.ts              # manual_adjustments, credit_movements, audit_log, audit_log_archive, stripe_payments
     │   │   ├── content.ts             # email_templates, email_log, waiver, waiver_signatures, marketing_content
     │   │   ├── inbox.ts               # inbox_items
     │   │   ├── ops.ts                 # feature_flags
@@ -879,6 +879,13 @@ id, actor_staff_id (FK, nullable for system events), actor_type enum (`staff`, `
 
 UI surfacing is next phase (§19) but the table is populated this phase.
 
+Rows are never deleted (prd §3.9, `docs/adr/0008-audit-rows-are-archived-not-deleted.md`). A member's permanent deletion anonymises the rows that named them (`services/clients/erase-audit-row.ts`); a studio's deletion moves its rows into `audit_log_archive`.
+
+#### `audit_log_archive`
+
+The audit trails of deleted studios: an `audit_log` row as it was, with `tenant_id` replaced by former_tenant_id, former_tenant_slug, former_tenant_name (plain values, no FK) and former_tenant_deleted_at. `actor_staff_id` has no FK. Platform data: no `tenant_id`, so no studio sweep reaches it; its own RLS (migration 0106) lets only a connection outside every Tenant context read it, only the deleted studio's own context insert into it, and nobody update or delete.
+**Indexes:** `(former_tenant_id, created_at)`.
+
 #### `stripe_payments`
 
 id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_package`, `pt_package`, `corporate_package`, `merch`), client_id (FK), booking_id (FK, nullable), client_package_id (FK, nullable), status enum (`pending`, `succeeded`, `refunded`, `failed`), receipt_url (text, nullable — Stripe-hosted receipt; populated by `payment_intent.succeeded` webhook handler from `latest_charge.receipt_url`), method / card_brand / card_last4 / wallet (text, nullable — how it was paid, copied off the same charge's `payment_method_details` when the payment succeeds (#282); `method` is the provider's own type name, kept as text so a newly enabled method needs no code change; best-effort, so null means "not read"), refunded_at (nullable), created_at.
@@ -960,7 +967,7 @@ trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_
 | `pt_session_approved`, `pt_session_declined`, `pt_request_expired` | `services/pt-sessions/schedule.ts` and `cancel.ts:expireStaleSessions`. |
 | `referral_credited` | `services/referrals.ts`. |
 
-**The booking and cancellation emails (#359).** Sent after the action commits, never able to undo or fail it: a send fault is a failed `email_log` row, and a missing template or a failed read is reported (`shared/logger.ts`) and swallowed — the same contract as the purchase confirmations. Composed sentences live in `services/notifications/booking-email.ts` (pure), the reads and sends in `send-booking-email.ts`. Links are variables built per send from the studio's own origin (`classes_url`, `account_url`, `workshops_url`, `checkin_url`), so the default wording names no origin and migration 0107 could write it into studios created before it (it updates a row only while it is still byte-identical to its old default, adds a missing one, and touches nothing else).
+**The booking and cancellation emails (#359).** Sent after the action commits, never able to undo or fail it: a send fault is a failed `email_log` row, and a missing template or a failed read is reported (`shared/logger.ts`) and swallowed — the same contract as the purchase confirmations. Composed sentences live in `services/notifications/booking-email.ts` (pure), the reads and sends in `send-booking-email.ts`. Links are variables built per send from the studio's own origin (`classes_url`, `account_url`, `workshops_url`, `checkin_url`), so the default wording names no origin and migration 0108 could write it into studios created before it (it updates a row only while it is still byte-identical to its old default, adds a missing one, and touches nothing else).
 
 | Slug | Sent by | To | Says |
 |---|---|---|---|

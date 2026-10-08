@@ -1,6 +1,6 @@
 {
-  "id": "5445ae72-a55d-45f5-94c4-41277eb4d7fb",
-  "prevId": "1ebfd459-4b0e-4070-9b3d-672aefc6e09d",
+  "id": "7be2f724-e0f5-465c-84dc-93eb227625bd",
+  "prevId": "58c934b6-5714-48ac-af09-9fe01e0e5806",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5292,6 +5292,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "checkin_nag_sent_at": {
+          "name": "checkin_nag_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "series_id": {
           "name": "series_id",
           "type": "uuid",
@@ -7630,6 +7636,12 @@
         "cancelled_by_staff_id": {
           "name": "cancelled_by_staff_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "checkin_nag_sent_at": {
+          "name": "checkin_nag_sent_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

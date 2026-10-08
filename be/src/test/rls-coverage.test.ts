@@ -173,6 +173,30 @@ describe('row-level security coverage', () => {
     }
   })
 
+  test('the audit archive is the platform’s: no tenant_id, and Row-Level Security of its own', options, async () => {
+    // Deleted studios' audit trails (docs/adr/0008). The studio is named by
+    // `former_tenant_id`, so the sweep above, the studio archive and delete
+    // (`tenantTableOrder`) and member export all pass the table by. Were the
+    // column ever `tenant_id`, the sweep would add `tenant_isolation` beside the
+    // policies below, and the table would become studio data. AUD-09 in
+    // tenant-delete.test.ts proves the policies as the app role.
+    const [archive] = await harness.db.execute<{ forced: boolean; enabled: boolean; scoped: boolean; policies: string[] }>(sql`
+      SELECT c.relrowsecurity AS enabled, c.relforcerowsecurity AS forced,
+             EXISTS (SELECT 1 FROM information_schema.columns col
+                     WHERE col.table_schema = 'public' AND col.table_name = c.relname
+                       AND col.column_name = 'tenant_id') AS scoped,
+             ARRAY(SELECT p.policyname || ':' || p.cmd FROM pg_policies p
+                   WHERE p.schemaname = 'public' AND p.tablename = c.relname ORDER BY p.policyname)::text[] AS policies
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relname = 'audit_log_archive'
+    `)
+    assert.ok(archive, 'audit_log_archive exists')
+    assert.equal(archive.scoped, false, 'the archive grew a tenant_id, which makes it studio data')
+    assert.equal(archive.enabled, true)
+    assert.equal(archive.forced, true)
+    assert.deepEqual(archive.policies, ['platform_read:SELECT', 'studio_archives_its_own:INSERT'])
+  })
+
   test('a Tenant-scoped table added later is policed by the next deploy', options, async () => {
     // The property that actually matters, and the one migration 0033 could not
     // have: a table that did not exist when the policy loop ran. Rather than
