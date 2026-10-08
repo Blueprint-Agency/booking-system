@@ -196,7 +196,7 @@ Studio goods the member pays for online and collects in person. No stock count, 
 | GET | `/merch` | List merch, title-ordered. `?include_archived=true` to include archived rows (the page shows both). |
 | POST | `/merch` | `{ title, description?, price_sgd }`. Returns the row; the photo is a follow-up call. |
 | PATCH | `/merch/:id` | Edit any of the above, plus `{ archived: boolean }` — archiving hides the item from `/public/merch` and refuses new checkouts. |
-| POST | `/merch/:id/image` | Multipart, field name `file`. JPG/PNG/WebP, max 5MB — checked server-side after `bodyLimit` refuses an oversized body (413 `image_too_large`, 400 `image_type_not_allowed`, 400 `image_empty`, 422 `image_storage_unavailable` when R2 is unconfigured). Key is deterministic (`merch/<id>.<ext>`), so re-uploading replaces rather than orphans, and it is written only after the object is in the bucket. |
+| POST | `/merch/:id/image` | Multipart, field name `file`. JPG/PNG/WebP, max 5MB — checked server-side after `bodyLimit` refuses an oversized body (400 `invalid_request` when the body is not `multipart/form-data`, 400 `image_required` when it carries no file, 413 `image_too_large`, 400 `image_type_not_allowed`, 400 `image_empty`, 422 `image_storage_unavailable` when R2 is unconfigured). Key is deterministic (`merch/<id>.<ext>`), so re-uploading replaces rather than orphans, and it is written only after the object is in the bucket. |
 | DELETE | `/merch/:id` | Hard delete — nothing references a merch row (`merch_orders.merch_id` is `ON DELETE SET NULL`, and the order keeps its frozen `title`/`amount_sgd`). |
 
 ### `workshops.ts` (workspace-scoped — `admin-restructure.md` §19, `fe-client-features.md` §4.1)

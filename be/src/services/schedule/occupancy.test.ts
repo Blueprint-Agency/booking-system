@@ -1,4 +1,5 @@
 import assert from 'node:assert'
+import { test } from 'node:test'
 import { overlaps, occupies, conflictMessage, leaveConflicts, leaveDaysPhrase } from './occupancy'
 
 /** `at('09:00-10:00')` → a window on 2026-01-01. */
@@ -105,13 +106,15 @@ assert.deepStrictEqual(leaveConflicts(run, sgClass('2026-08-13', '10:00')), [
 const morning = [{ id: 'lv3', startDate: '2026-08-12', endDate: '2026-08-12', halfDay: 'morning' as const }]
 const afternoon = [{ id: 'lv4', startDate: '2026-08-12', endDate: '2026-08-12', halfDay: 'afternoon' as const }]
 
-// a 09:00 class is in the morning half, and the afternoon is still bookable
-assert.strictEqual(leaveConflicts(morning, sgClass('2026-08-12', '09:00')).length, 1)
-assert.strictEqual(leaveConflicts(afternoon, sgClass('2026-08-12', '09:00')).length, 0)
+test('LEV-34 morning leave does not clash with a 15:00 class that day, nor afternoon leave with a 09:00 one', () => {
+  // a 09:00 class is in the morning half, and the afternoon is still bookable
+  assert.strictEqual(leaveConflicts(morning, sgClass('2026-08-12', '09:00')).length, 1)
+  assert.strictEqual(leaveConflicts(afternoon, sgClass('2026-08-12', '09:00')).length, 0)
 
-// a 15:00 class is the other way round
-assert.strictEqual(leaveConflicts(afternoon, sgClass('2026-08-12', '15:00')).length, 1)
-assert.strictEqual(leaveConflicts(morning, sgClass('2026-08-12', '15:00')).length, 0)
+  // a 15:00 class is the other way round
+  assert.strictEqual(leaveConflicts(afternoon, sgClass('2026-08-12', '15:00')).length, 1)
+  assert.strictEqual(leaveConflicts(morning, sgClass('2026-08-12', '15:00')).length, 0)
+})
 
 // the boundary itself: a class ENDING at 13:00 is morning only...
 assert.strictEqual(leaveConflicts(morning, sgClass('2026-08-12', '12:00')).length, 1)
@@ -120,10 +123,12 @@ assert.strictEqual(leaveConflicts(afternoon, sgClass('2026-08-12', '12:00')).len
 assert.strictEqual(leaveConflicts(morning, sgClass('2026-08-12', '13:00')).length, 0)
 assert.strictEqual(leaveConflicts(afternoon, sgClass('2026-08-12', '13:00')).length, 1)
 
-// but a class STRADDLING 13:00 (12:30–13:30) is in both halves, so it clashes
-// with a morning request and with an afternoon one alike
-assert.strictEqual(leaveConflicts(morning, sgClass('2026-08-12', '12:30')).length, 1, 'straddles into the morning')
-assert.strictEqual(leaveConflicts(afternoon, sgClass('2026-08-12', '12:30')).length, 1, 'and into the afternoon')
+test('LEV-33 a class straddling 13:00 Singapore time clashes with morning leave and with afternoon leave that day', () => {
+  // a class STRADDLING 13:00 (12:30–13:30) is in both halves, so it clashes
+  // with a morning request and with an afternoon one alike
+  assert.strictEqual(leaveConflicts(morning, sgClass('2026-08-12', '12:30')).length, 1, 'straddles into the morning')
+  assert.strictEqual(leaveConflicts(afternoon, sgClass('2026-08-12', '12:30')).length, 1, 'and into the afternoon')
+})
 
 // a half day still cannot reach the days on either side of it
 assert.strictEqual(leaveConflicts(morning, sgClass('2026-08-11', '09:00')).length, 0)
