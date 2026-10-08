@@ -425,7 +425,6 @@ export async function sendWorkshopCancelledEmails(tenantId: string, bookingIds: 
         variables: {
           client_name: row.clientName,
           workshop_name: row.workshopName,
-          amount_paid: amountPaid(paid),
           refund_line: workshopRefundLine(amountPaid(paid), paidCents),
           workshops_url: shared.workshopsUrl,
           refund_sgd: paid,

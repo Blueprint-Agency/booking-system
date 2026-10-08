@@ -110,7 +110,7 @@ export async function cancelBooking(
 ): Promise<CancelResult> {
   const { result, promotions } = await db.transaction(tx => cancelBookingInTx(tx, tenantId, input))
   // Once the request's transaction has committed (`afterCommit`), never inside it.
-  afterCommit(() => sendPromotionEmails(tenantId, promotions))
+  if (promotions.length) afterCommit(() => sendPromotionEmails(tenantId, promotions))
   // NTF-09: a member who cancelled in time is told what came back. Never throws.
   if (input.source === 'client' && result.refundFired) {
     afterCommit(() => sendMemberCancelReturnedEmail(tenantId, input.bookingId))
