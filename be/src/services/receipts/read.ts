@@ -1,11 +1,12 @@
 /**
- * A member's own Receipts, read back exactly as they were issued (#384).
+ * Receipts read back exactly as they were issued: a member's own (#384), and
+ * every one at the studio for its admins (#389).
  *
  * Every figure comes off the Receipt's own snapshot. Nothing is joined from the
  * Purchase, the catalogue or the member, so what this returns is what the
  * Receipt said the day it was issued.
  */
-import { and, count, desc, eq, gte, lt, type SQL } from 'drizzle-orm'
+import { and, count, desc, eq, gte, ilike, isNotNull, isNull, lt, or, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { receipts } from '../../db/schema/ledger'
 import { sgDayWindow, type PlainDate } from '../../lib/time'
@@ -76,6 +77,78 @@ export async function memberReceipt(tenantId: string, clientId: string, receiptI
     .select()
     .from(receipts)
     .where(and(eq(receipts.tenantId, tenantId), eq(receipts.clientId, clientId), eq(receipts.id, receiptId)))
+    .limit(1)
+  if (!row) throw new NotFoundError('receipt_not_found')
+  return row
+}
+
+/** A row of the studio's Receipts list: the member's row, and who it was for. */
+export interface StudioReceiptSummary extends ReceiptSummary {
+  kind: ReceiptRow['kind']
+  /** Null once the member has been permanently deleted. */
+  clientId: string | null
+  /** The buyer as the Receipt names them; emptied by a permanent deletion. */
+  buyerName: string | null
+  buyerEmail: string | null
+}
+
+export interface StudioReceiptQuery extends MemberReceiptQuery {
+  /** Part of a receipt number, or of the buyer's name or email, as the Receipt has them. */
+  q?: string
+  kind?: ReceiptRow['kind']
+  status?: ReceiptStatus
+}
+
+/**
+ * Every Receipt at this studio, newest first, one page of them: the admin's
+ * Receipts page (#389). The search reads the Receipt's own snapshot, the
+ * number and the buyer it names, as everything else on a Receipt does.
+ */
+export async function listStudioReceipts(
+  tenantId: string,
+  query: StudioReceiptQuery,
+): Promise<{ rows: StudioReceiptSummary[]; total: number }> {
+  const where: SQL[] = [eq(receipts.tenantId, tenantId)]
+  if (query.from) where.push(gte(receipts.issuedAt, sgDayWindow(query.from).startsAt))
+  if (query.to) where.push(lt(receipts.issuedAt, sgDayWindow(query.to).endsAt))
+  if (query.kind) where.push(eq(receipts.kind, query.kind))
+  if (query.status === 'refunded') where.push(isNotNull(receipts.refundedAt))
+  if (query.status === 'issued') where.push(isNull(receipts.refundedAt))
+  const term = query.q?.trim()
+  if (term) {
+    const like = `%${term}%`
+    where.push(or(ilike(receipts.displayNumber, like), ilike(receipts.buyerName, like), ilike(receipts.buyerEmail, like))!)
+  }
+
+  const rows = await db
+    .select()
+    .from(receipts)
+    .where(and(...where))
+    .orderBy(desc(receipts.issuedAt), desc(receipts.number))
+    .limit(query.pageSize)
+    .offset((query.page - 1) * query.pageSize)
+  const [totals] = await db.select({ total: count() }).from(receipts).where(and(...where))
+  return {
+    rows: rows.map(r => ({
+      ...summarise(r),
+      kind: r.kind,
+      clientId: r.clientId,
+      buyerName: r.buyerName,
+      buyerEmail: r.buyerEmail,
+    })),
+    total: totals?.total ?? 0,
+  }
+}
+
+/**
+ * One Receipt at this studio, whole, for its admins. Another studio's is the
+ * same 404 as one that does not exist.
+ */
+export async function studioReceipt(tenantId: string, receiptId: string): Promise<ReceiptRow> {
+  const [row] = await db
+    .select()
+    .from(receipts)
+    .where(and(eq(receipts.tenantId, tenantId), eq(receipts.id, receiptId)))
     .limit(1)
   if (!row) throw new NotFoundError('receipt_not_found')
   return row

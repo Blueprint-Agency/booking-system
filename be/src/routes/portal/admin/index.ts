@@ -29,6 +29,7 @@ import marketing from './marketing'
 import featureFlags from './feature-flags'
 import impersonate from './impersonate'
 import purchases from './purchases'
+import receipts from './receipts'
 
 /**
  * Role gating for the portal /admin subtree: a studio's admins run the whole
@@ -42,6 +43,8 @@ const app = new Hono()
   // Unfinished purchases (#95): the money the studio is holding against nothing
   // granted, and the one place it can be given back.
   .route('/purchases', purchases)
+  // Every Receipt in the studio (#389), read exactly as each member reads theirs.
+  .route('/receipts', receipts)
   .route('/locations', locations)
   .route('/rooms', rooms)
   .route('/class-types', classTypes)

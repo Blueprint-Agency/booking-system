@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { inArray, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import type { PurchaseLine } from '../services/billing/purchase-lines'
 import type { ReceiptRow } from '../services/receipts/issue'
 import type { TestApp } from './harness'
@@ -18,11 +18,23 @@ import type { TestApp } from './harness'
 export function receiptFixtures(harness: TestApp) {
   const purchaseIds: string[] = []
 
-  /** A ten pack at S$150.00 less a S$15.00 code, paid by a Visa ending 4242. */
-  const issueFor = async (tenantId: string, clientId: string): Promise<ReceiptRow> => {
+  /**
+   * A ten pack at S$150.00 less a S$15.00 code, paid by a Visa ending 4242;
+   * or, with `kind` and `item`, another kind of sale under another name at the
+   * same price.
+   */
+  const issueFor = async (
+    tenantId: string,
+    clientId: string,
+    sale: { kind?: ReceiptRow['kind']; item?: string } = {},
+  ): Promise<ReceiptRow> => {
+    const kind = sale.kind ?? 'class_package'
+    const item = sale.item ?? 'Ten pack'
+    // What the payment row calls it: a standalone Add-On is paid as a class package (§15).
+    const paymentKind = kind === 'cross_location_add_on' ? 'class_package' : kind
     const lines: PurchaseLine[] = [
       {
-        description: 'Ten pack',
+        description: item,
         quantity: 1,
         listPriceSgd: '150.00',
         discountSgd: '15.00',
@@ -32,19 +44,29 @@ export function receiptFixtures(harness: TestApp) {
     ]
     const [purchase] = await harness.db.execute<{ id: string }>(sql`
       INSERT INTO purchases (tenant_id, client_id, kind, total_sgd, amount_paid_sgd, status, lines, metadata, settled_at)
-      VALUES (${tenantId}, ${clientId}, 'class_package', '135.00', '135.00', 'paid', ${JSON.stringify(lines)}::jsonb,
-              ${JSON.stringify({ item_name: 'Ten pack' })}::jsonb, now())
+      VALUES (${tenantId}, ${clientId}, ${kind}, '135.00', '135.00', 'paid', ${JSON.stringify(lines)}::jsonb,
+              ${JSON.stringify({ item_name: item })}::jsonb, now())
       RETURNING id`)
     purchaseIds.push(purchase!.id)
     await harness.db.execute(sql`
       INSERT INTO stripe_payments (tenant_id, purchase_id, client_id, payment_intent_id, amount_sgd, kind, status, method, card_brand, card_last4)
       VALUES (${tenantId}, ${purchase!.id}, ${clientId}, ${`pi_receipt_fixture_${randomUUID().slice(0, 12)}`}, '135.00',
-              'class_package', 'succeeded', 'card', 'visa', '4242')`)
+              ${paymentKind}, 'succeeded', 'card', 'visa', '4242')`)
 
     const { db, withTenant } = await import('../db')
     const { issueReceipt } = await import('../services/receipts/issue')
     const { receipt } = await withTenant(tenantId, () => issueReceipt(db, tenantId, purchase!.id))
     return receipt
+  }
+
+  /**
+   * The Receipt stamped refunded, as a Refund landing on its Purchase stamps
+   * it: the stamp is the only change a Receipt ever takes. Written here because
+   * the Refund path's own stamping is #385's to build and test.
+   */
+  const stampRefunded = async (receipt: Pick<ReceiptRow, 'id'>, at = new Date()) => {
+    const schema = await import('../db/schema')
+    await harness.db.update(schema.receipts).set({ refundedAt: at }).where(eq(schema.receipts.id, receipt.id))
   }
 
   /** The Receipts, payments and Purchases `issueFor` made, wherever they now are. */
@@ -56,5 +78,5 @@ export function receiptFixtures(harness: TestApp) {
     await harness.db.delete(schema.purchases).where(inArray(schema.purchases.id, purchaseIds))
   }
 
-  return { issueFor, cleanup }
+  return { issueFor, stampRefunded, cleanup }
 }

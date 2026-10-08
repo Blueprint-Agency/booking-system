@@ -1,6 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { purchases, stripePayments } from '../../db/schema/ledger'
+import { purchases, receipts, stripePayments } from '../../db/schema/ledger'
 import { refundInFlight } from './balance'
 
 /**
@@ -21,6 +21,12 @@ export interface MemberPaymentView {
   status: (typeof stripePayments.$inferSelect)['status']
   /** The sale it is part of: open (part-paid), paid, refunded, abandoned. */
   purchaseStatus: (typeof purchases.$inferSelect)['status']
+  /**
+   * The studio's Receipt for the Purchase this paid towards (#389): null until
+   * the Purchase is paid in full, and for a sale made before Receipts existed.
+   */
+  receiptId: string | null
+  /** The provider's own receipt for this one charge. Kept for now; the portal links to `receiptId`. */
   receiptUrl: string | null
   refundedAt: Date | null
   /**
@@ -51,9 +57,11 @@ export async function listMemberPayments(
       createdAt: stripePayments.createdAt,
       metadata: purchases.metadata,
       purchaseStatus: purchases.status,
+      receiptId: receipts.id,
     })
     .from(stripePayments)
     .innerJoin(purchases, eq(purchases.id, stripePayments.purchaseId))
+    .leftJoin(receipts, and(eq(receipts.tenantId, stripePayments.tenantId), eq(receipts.purchaseId, purchases.id)))
     .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.clientId, clientId)))
     .orderBy(desc(stripePayments.createdAt))
     .limit(limit)
@@ -65,6 +73,7 @@ export async function listMemberPayments(
     amountSgd: r.amountSgd,
     status: r.status,
     purchaseStatus: r.purchaseStatus,
+    receiptId: r.receiptId,
     receiptUrl: r.receiptUrl,
     refundedAt: r.refundedAt,
     refundProcessing:
