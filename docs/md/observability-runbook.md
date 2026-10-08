@@ -57,6 +57,22 @@ cd /root/stacks/booking-staging       # or /root/stacks/booking-prod
 The compose file itself lives in the infrastructure repo at
 `vps/bpvps2/stacks/booking/docker-compose.yml` — edit it there, never on the box.
 
+### Reading a studio's data (a support complaint)
+
+The databases are the containers `booking-db-prod` and `booking-db-staging`. Live studios are on
+**prod**; staging holds an older copy of the same studios. Feed the SQL on stdin, inside a
+read-only transaction, so no shell quoting reaches it and nothing can be written:
+
+```bash
+( echo 'BEGIN READ ONLY;'; cat query.sql; echo 'ROLLBACK;' ) | ssh bp-bpvps2 \
+  'docker exec -i booking-db-prod sh -c "psql -U \$POSTGRES_USER -d \$POSTGRES_DB -P pager=off"'
+```
+
+Scope by `tenants.slug`: the owner role this connects as bypasses Row-Level Security. A member's
+credits are `client_packages` (balance, `bound_instructor_id`), with `credit_movements` as their
+history. Data that came from Mindbody (`tenant_imports` lists each import) is checked against the
+download it was built from: `mindbody-import.md` § Looking up one member.
+
 ## 3. Where to look
 
 Grafana stack: **https://blueprintdigital.grafana.net**

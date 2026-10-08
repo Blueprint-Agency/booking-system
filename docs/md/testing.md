@@ -30,7 +30,10 @@ queue and on every push.
 once. It creates `reservetoday-test-<checkout folder>` on the local Postgres named by `be/.env`,
 and fills in `TEST_DATABASE_URL` there if it is blank. The harness migrates and seeds that database
 on first use. `npm run check` refuses to start without `TEST_DATABASE_URL`: the integration tests
-would skip, and a green run would prove nothing. `npm run test:db -- --reset` drops and recreates
+would skip, and a green run would prove nothing. It also refuses one that will not accept a
+connection, naming its host and port: otherwise every integration test is reported *cancelled*
+under a `# fail 0` summary. The usual cause is another project's Postgres on the port `be/.env`
+names (`docker ps` shows each container's). `npm run test:db -- --reset` drops and recreates
 the database by hand. It refuses any database not named `reservetoday-test` or
 `reservetoday-test-*`, and the development one (`POSTGRES_DB`).
 

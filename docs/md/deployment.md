@@ -283,7 +283,7 @@ docker exec backup restic snapshots --tag booking-staging    # the one just befo
 docker exec backup /app/bin/restore-live.sh booking-staging <id> --confirm booking-staging
 ```
 
-Both branches, on purpose: `booking-staging` holds the real member data. The backup job, the
+Both branches, on purpose: both stacks hold real member data. The backup job, the
 restore command and what it does are the infrastructure repo's
 [`docs/backup-restore.md`](https://github.com/Blueprint-Agency/infrastructure/blob/main/docs/backup-restore.md).
 A deploy failing with `Pre-migration snapshot FAILED (backup.sh exit 2)` most often met the
@@ -412,8 +412,10 @@ Notes:
 
 `NODE_ENV` stays `production` on any server/build, incl. Vercel previews (build flag — enables optimizations + JSON logging); the backend's environment NAME lives in `APP_ENV`.
 
-> **`booking-staging` carries the real data.** It predates `booking-prod`, which is a fresh
-> database. Migrating that data is a separate job — don't assume prod is populated.
+> **Live studios are on `booking-prod`.** Each was imported there through the super portal
+> (`tenant_imports`), and its members book on `{slug}.reservetoday.app`. `booking-staging` still
+> holds an older copy of the same studios, so a member complaint is read on prod
+> (`observability-runbook.md` § Reading a studio's data).
 
 > There is no `vercel.json` in either frontend on purpose. Vercel's defaults already give
 > `main` → production and every other branch → preview; a `git.deploymentEnabled` block existed
