@@ -62,6 +62,8 @@ export interface HydratedCorporateRequest {
 export interface CreateCorporateRequestInput {
   clientId: string
   corporatePackageId: string
+  /** The Purchase that paid for it, so a Refund of the Purchase can close it. */
+  purchaseId: string | null
 }
 
 /**
@@ -86,10 +88,50 @@ export async function createCorporateRequest(
       tenantId,
       clientId: input.clientId,
       corporatePackageId: input.corporatePackageId,
+      purchaseId: input.purchaseId,
       status: 'pending',
     })
     .returning({ id: corporateRequests.id })
   return { corporateRequestId: row!.id }
+}
+
+/**
+ * What a full Refund of a corporate Purchase does to the request it paid for
+ * (§14). Called from the refund unwind, so it runs once the money is back.
+ *
+ * A **pending** request is cancelled: nothing was delivered, and the member
+ * reads it as cancelled by the studio. A **scheduled** one is left standing
+ * with its session — cancelling a session is the admin's act, and they may
+ * still be settling it with the member — and handed back for the unwind to
+ * report. Attended and already-cancelled requests are history and untouched,
+ * which also makes a second pass a no-op.
+ */
+export async function closeCorporateRequestsForRefund(
+  tenantId: string,
+  purchaseId: string,
+): Promise<{ cancelled: string[]; scheduled: string[] }> {
+  const cancelled = await db
+    .update(corporateRequests)
+    .set({ status: 'cancelled', resolvedAt: new Date() })
+    .where(
+      and(
+        eq(corporateRequests.tenantId, tenantId),
+        eq(corporateRequests.purchaseId, purchaseId),
+        eq(corporateRequests.status, 'pending'),
+      ),
+    )
+    .returning({ id: corporateRequests.id })
+  const scheduled = await db
+    .select({ id: corporateRequests.id })
+    .from(corporateRequests)
+    .where(
+      and(
+        eq(corporateRequests.tenantId, tenantId),
+        eq(corporateRequests.purchaseId, purchaseId),
+        eq(corporateRequests.status, 'scheduled'),
+      ),
+    )
+  return { cancelled: cancelled.map(r => r.id), scheduled: scheduled.map(r => r.id) }
 }
 
 // ----------------------------------------------------------------------------

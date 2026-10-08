@@ -149,11 +149,15 @@ export async function sendPackagePurchaseEmail(
  * Called once the delivery that made the Corporate Request has committed, so
  * the payment row it reads already carries the receipt, and a delivery that
  * rolled back never mailed anyone.
+ *
+ * A package with nothing to pay (`paymentIntentId` null) is confirmed the same
+ * way, from the zero-total Purchase the request names: no payment, so no
+ * receipt, and the link is to where the request is.
  */
 export async function sendCorporatePurchaseEmail(
   tenantId: string,
   corporateRequestId: string,
-  paymentIntentId: string,
+  paymentIntentId: string | null,
 ): Promise<void> {
   try {
     const [row] = await db
@@ -162,26 +166,34 @@ export async function sendCorporatePurchaseEmail(
         clientEmail: clients.email,
         clientId: clients.id,
         packageName: corporatePackages.name,
+        purchasePaidSgd: purchases.amountPaidSgd,
       })
       .from(corporateRequests)
       .innerJoin(clients, eq(clients.id, corporateRequests.clientId))
       .innerJoin(corporatePackages, eq(corporatePackages.id, corporateRequests.corporatePackageId))
+      .leftJoin(purchases, eq(purchases.id, corporateRequests.purchaseId))
       .where(and(eq(corporateRequests.tenantId, tenantId), eq(corporateRequests.id, corporateRequestId)))
       .limit(1)
     // Not a refusal anyone is shown: reported below, with the ids.
     if (!row) throw new Error('corporate request not found')
 
-    const [payment] = await db
-      .select({
-        receiptUrl: stripePayments.receiptUrl,
-        paymentSgd: stripePayments.amountSgd,
-        purchasePaidSgd: purchases.amountPaidSgd,
-      })
-      .from(stripePayments)
-      .leftJoin(purchases, eq(purchases.id, stripePayments.purchaseId))
-      .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.paymentIntentId, paymentIntentId)))
-      .limit(1)
-    if (!payment) throw new Error(`no payment ${paymentIntentId} for the corporate request`)
+    const payment = paymentIntentId
+      ? (
+          await db
+            .select({
+              receiptUrl: stripePayments.receiptUrl,
+              paymentSgd: stripePayments.amountSgd,
+              purchasePaidSgd: purchases.amountPaidSgd,
+            })
+            .from(stripePayments)
+            .leftJoin(purchases, eq(purchases.id, stripePayments.purchaseId))
+            .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.paymentIntentId, paymentIntentId)))
+            .limit(1)
+        )[0]
+      : row.purchasePaidSgd != null
+        ? { receiptUrl: null, paymentSgd: row.purchasePaidSgd, purchasePaidSgd: row.purchasePaidSgd }
+        : undefined
+    if (!payment) throw new Error(`no payment ${paymentIntentId ?? '(free)'} for the corporate request`)
 
     await sendTemplatedEmail({
       tenantId,

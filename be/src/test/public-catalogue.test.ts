@@ -300,6 +300,31 @@ describe('public catalogue over HTTP', { skip: integrationTestsEnabled ? false :
     }
   })
 
+  test('CAT-12 a studio that never saved marketing copy answers 200 with every field empty, not 404', async () => {
+    const [kept] = await harness.db
+      .select()
+      .from(schema.marketingContent)
+      .where(eq(schema.marketingContent.tenantId, two.id))
+    assert.ok(kept, 'the second studio has seeded copy to set aside')
+    await harness.db.delete(schema.marketingContent).where(eq(schema.marketingContent.tenantId, two.id))
+    try {
+      const res = await get('/api/v1/public/marketing', visitor(two))
+      assert.equal(res.status, 200, res.text)
+      assert.deepEqual(res.body, {
+        hero_heading: null,
+        hero_subheading: null,
+        pricing_blurb: null,
+        testimonials: null,
+        footer_text: null,
+      })
+      // The studio beside it still reads its own.
+      const copy = await getOk('/api/v1/public/marketing', visitor(one))
+      assert.equal(typeof copy.hero_heading, 'string')
+    } finally {
+      await harness.db.insert(schema.marketingContent).values(kept!)
+    }
+  })
+
   test('CAT-01 an unknown studio address is refused, on the home page lookup and on the catalogue', async () => {
     const nobody = { slug: `no-such-studio-${run}` }
     const lookup = await get(`/api/v1/public/tenants/by-slug/${nobody.slug}`, visitor(nobody))

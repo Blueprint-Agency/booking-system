@@ -1,6 +1,6 @@
 import { getTableName, sql, type SQL } from 'drizzle-orm'
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core'
-import { eraseAuditRow } from './erase-audit-row'
+import { AUDIT_ROW_REWRITES, eraseAuditRow } from './erase-audit-row'
 
 /**
  * Where a member lives in the database: every Tenant-scoped table with a row
@@ -63,11 +63,14 @@ export type EraseStep =
   /**
    * The rows stay, each rewritten by `anonymise`: for a table whose rows hold
    * the member's name, email or phone inside text and JSON, which clearing a
-   * column cannot reach. Given one row, read whole, it returns the `SET` clause.
+   * column cannot reach. Given one row, read whole, it returns that row's new
+   * value for each column `rewrites` names; `rewrites` gives each one's
+   * Postgres type, so every row can be written back in one statement.
    */
   | {
       keptBecause: string
-      anonymise: (row: Record<string, unknown>, member: ErasedMember) => SQL
+      anonymise: (row: Record<string, unknown>, member: ErasedMember) => Record<string, unknown>
+      rewrites: Readonly<Record<string, string>>
       where: (member: MemberKey) => SQL
     }
 
@@ -209,6 +212,7 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
         keptBecause:
           'The staff audit trail: who did what to a member’s record, and when. It is never deleted; the member’s name, email, phone and ids in it are replaced with a placeholder.',
         anonymise: eraseAuditRow,
+        rewrites: AUDIT_ROW_REWRITES,
         where: auditRowNaming,
       },
     ],
