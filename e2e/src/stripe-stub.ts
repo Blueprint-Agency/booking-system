@@ -93,10 +93,15 @@ function json(res: http.ServerResponse, status: number, body: unknown) {
 const escape = (s: string) =>
   s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
-function checkoutPage(session: Session, error?: string): string {
+/**
+ * The checkout page. A refused card comes back with what was typed still in
+ * the form, as Stripe's own page keeps it, so a member retries by changing
+ * only what was wrong.
+ */
+function checkoutPage(session: Session, error?: string, typed: Record<string, string> = {}): string {
   const amount = `S$${(session.amount_total / 100).toFixed(2)}`
   const field = (label: string, name: string, autocomplete: string) =>
-    `<label>${label}<input name="${name}" autocomplete="${autocomplete}" required></label>`
+    `<label>${label}<input name="${name}" autocomplete="${autocomplete}" value="${escape(typed[name] ?? '')}" required></label>`
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Checkout (Stripe stub)</title>
 <style>body{font:16px system-ui;max-width:28rem;margin:3rem auto;padding:0 1rem}label{display:block;margin:.75rem 0}input{display:block;width:100%;padding:.5rem;margin-top:.25rem}button{margin-top:1rem;padding:.75rem;width:100%}[role=alert]{color:#b00}</style>
@@ -246,15 +251,16 @@ export async function startStripeStub(): Promise<StripeStub> {
     const match = url.pathname.match(/^\/c\/pay\/([^/]+)$/)
     const session = match && req.headers.host?.startsWith('checkout.stripe.com') ? sessions.get(match[1]!) : undefined
     if (!session) return notFound(req, res)
+    let card: Record<string, string> = {}
     const page = (status: number, error?: string) => {
       res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' })
-      res.end(checkoutPage(session, error))
+      res.end(checkoutPage(session, error, card))
     }
     if (session.status === 'expired') return page(410, 'This checkout session has expired.')
     if (session.status === 'complete') return void res.writeHead(303, { Location: successUrl(session) }).end()
     if (req.method !== 'POST') return page(200)
 
-    const card = Object.fromEntries(new URLSearchParams(await readBody(req)))
+    card = Object.fromEntries(new URLSearchParams(await readBody(req)))
     if (!card.expiry?.trim() || !card.cvc?.trim() || !card.name?.trim()) return page(402, 'Your card details are incomplete.')
     const number = (card.number ?? '').replace(/\D/g, '')
     if (number === '4000000000000002') return page(402, 'Your card was declined.')

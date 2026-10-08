@@ -12,9 +12,18 @@ import { discardedMail, transport } from '../lib/mailer'
 import { ensureAuthUser, setFirstStaffPassword } from '../services/auth/auth-users'
 import { configureProviderAccount } from '../services/billing/provider-onboarding'
 import { createClassType } from '../services/catalog/class-types'
+import { createMerch } from '../services/catalog/merch'
 import { bookClass } from '../services/bookings/book'
 import { createClassPackage } from '../services/packages/class-packages'
+import { createCorporatePackage } from '../services/packages/corporate-packages'
+import { createPtPackage } from '../services/packages/pt-packages'
 import { grantPackage } from '../services/packages/purchase'
+import { readPtBookingWindow, submitPtRequest } from '../services/pt-sessions/request'
+import { schedulePtRequest } from '../services/pt-sessions/schedule'
+import { createDay } from '../services/workshops/days'
+import { bookWorkshopFree } from '../services/workshops/book'
+import { createWorkshop } from '../services/workshops/publish'
+import { createTier } from '../services/workshops/tiers'
 import { E2E_SLUG_PREFIX } from '../services/tenants/slug'
 import { forgetCachedTenants } from '../services/tenants/tenants'
 import { tenantTableOrder } from '../services/tenants/transfer'
@@ -78,6 +87,33 @@ export type E2eStudio = {
      * seat free, and two members already in line.
      */
     staffWaitlistClassType: string
+    /** The my bookings journey's class — days away, the holder booked into it. */
+    myBookingsClassType: string
+    /** A free workshop, one day, the holder holding a place on it. */
+    workshopName: string
+    /** A one-on-one PT package; the holder's session is scheduled from it. */
+    ptPackageName: string
+    /** A corporate package; the holder has a pending request for it. */
+    corporatePackageName: string
+    /** One merch item, priced above zero. */
+    merchName: string
+    merchPriceSgd: string
+  }
+  /**
+   * What the studio has set for its footer (fe-client-features §9.2): its
+   * tagline, its own footer text, its legal and social links, and where its
+   * one Location is.
+   */
+  site: {
+    /** The studio's name, as its pages show it. */
+    name: string
+    tagline: string
+    footerText: string
+    termsUrl: string
+    privacyUrl: string
+    instagramUrl: string
+    locationName: string
+    locationAddress: string
   }
   classes: {
     buy: { id: string; startsAt: string }
@@ -86,6 +122,7 @@ export type E2eStudio = {
     checkIn: { id: string; startsAt: string }
     waitlist: { id: string; startsAt: string }
     staffWaitlist: { id: string; startsAt: string }
+    myBookings: { id: string; startsAt: string }
   }
   /** The staff waitlist class's line, in order, by the names staff see. */
   staffWaitlistLine: string[]
@@ -100,7 +137,23 @@ export type E2eStudio = {
     arriver: { email: string; token: string }
     /** Signed in, registered, holding the plan: joins the waitlist class's line and leaves it. */
     waiter: { email: string; token: string }
+    /** Registered, holding nothing, never booked: signs in through the form. */
+    newcomer: { email: string; token: string }
+    /** Registered, holding nothing: buys the plan through checkout, signing in through the form. */
+    shopper: { email: string; token: string }
+    /** Registered, holding nothing: buys the merch item, signing in through the form. */
+    merchBuyer: { email: string; token: string }
+    /** Registered, holding the plan, booked into nothing: signs in through the form to book. */
+    returner: { email: string; token: string }
+    /**
+     * Registered, holding the plan and a PT package, with one of everything:
+     * the my bookings class booked, a place on the workshop, a scheduled
+     * private session, and a pending corporate request.
+     */
+    holder: { email: string; token: string }
   }
+  /** Every member's password (they choose one at sign-up, #173), made for this run only. */
+  memberPassword: string
 }
 
 const HOUR = 60 * 60 * 1000
@@ -163,7 +216,30 @@ export async function createE2eStudio({
   const [tenant] = await db.insert(schema.tenants).values({ slug, name }).returning()
   if (!tenant) throw new Error('tenant insert returned no row')
   const seeded = { id: tenant.id, slug, name, timezone: tenant.timezone }
-  await db.insert(schema.tenantSettings).values({ tenantId: tenant.id, displayName: name })
+  // What a studio sets for its footer: a tagline, its own words, its legal and
+  // social links (as the super portal writes them), on a sink domain.
+  const site = {
+    name,
+    tagline: `Practice with ${name}`,
+    footerText: `${name} is run by its own teachers.`,
+    termsUrl: `https://example.com/${slug}/terms`,
+    privacyUrl: `https://example.com/${slug}/privacy`,
+    instagramUrl: `https://example.com/${slug}/instagram`,
+    locationName: 'E2E Studio',
+    locationAddress: '1 E2E Street, Singapore 000001',
+  }
+  await db.insert(schema.tenantSettings).values({
+    tenantId: tenant.id,
+    displayName: name,
+    tagline: site.tagline,
+    copy: { 'legal.terms_url': site.termsUrl, 'legal.privacy_url': site.privacyUrl, 'social.instagram': site.instagramUrl },
+  })
+  await db.insert(schema.marketingContent).values({
+    tenantId: tenant.id,
+    heroHeading: 'Find your practice.',
+    heroSubheading: `Classes at ${name}.`,
+    footerText: site.footerText,
+  })
   // Mail templates and a cancellation policy: a created studio has neither
   // until a person writes them, and booking mail and cancelling both need them.
   await seedEmailTemplates(db, seeded)
@@ -172,7 +248,7 @@ export async function createE2eStudio({
 
   const [location] = await db
     .insert(schema.locations)
-    .values({ tenantId: tenant.id, name: 'E2E Studio' })
+    .values({ tenantId: tenant.id, name: site.locationName, address: site.locationAddress })
     .returning()
   const [room] = await db
     .insert(schema.rooms)
@@ -216,6 +292,12 @@ export async function createE2eStudio({
     checkInClassType: 'E2E check-in class',
     waitlistClassType: 'E2E waitlist class',
     staffWaitlistClassType: 'E2E staff waitlist class',
+    myBookingsClassType: 'E2E my bookings class',
+    workshopName: 'E2E workshop',
+    ptPackageName: 'E2E private pack',
+    corporatePackageName: 'E2E team session',
+    merchName: 'E2E water bottle',
+    merchPriceSgd: '7.00',
   }
   const { classPackage, classTypes } = await withTenant(tenant.id, async () => ({
     classPackage: await createClassPackage(tenant.id, {
@@ -233,7 +315,27 @@ export async function createE2eStudio({
       checkIn: await createClassType(tenant.id, { name: catalogue.checkInClassType }),
       waitlist: await createClassType(tenant.id, { name: catalogue.waitlistClassType }),
       staffWaitlist: await createClassType(tenant.id, { name: catalogue.staffWaitlistClassType }),
+      myBookings: await createClassType(tenant.id, { name: catalogue.myBookingsClassType }),
     },
+  }))
+  const { ptPackage, corporatePackage } = await withTenant(tenant.id, async () => ({
+    ptPackage: await createPtPackage(tenant.id, {
+      name: catalogue.ptPackageName,
+      sessionType: '1on1',
+      numSessions: 3,
+      validityDays: 60,
+      priceSgd: '90.00',
+    }),
+    corporatePackage: await createCorporatePackage(tenant.id, {
+      name: catalogue.corporatePackageName,
+      priceSgd: '300.00',
+      createdByStaffId: admin.id,
+    }),
+    merch: await createMerch(tenant.id, {
+      title: catalogue.merchName,
+      description: null,
+      priceSgd: catalogue.merchPriceSgd,
+    }),
   }))
 
   const addClass = async (
@@ -274,6 +376,8 @@ export async function createE2eStudio({
     waitlist: await addClass(classTypes.waitlist.id, hourFromNow(2), { online: 1, waitlist: 3 }),
     // The same, with a buffer seat for staff to add the head of the line into.
     staffWaitlist: await addClass(classTypes.staffWaitlist.id, hourFromNow(2), { online: 1, buffer: 1, waitlist: 3 }),
+    // Days out and well outside the window, so its booking can still be cancelled.
+    myBookings: await addClass(classTypes.myBookings.id, hourFromNow(5)),
   }
 
   const register = async (who: string, lastName: string) => {
@@ -317,6 +421,11 @@ export async function createE2eStudio({
   const lateCanceller = await register('latecanceller', 'Late Canceller')
   const arriver = await register('arriver', 'Arriver')
   const waiter = await register('waiter', 'Waiter')
+  const newcomer = await register('newcomer', 'Newcomer')
+  const shopper = await register('shopper', 'Shopper')
+  const merchBuyer = await register('merchbuyer', 'Merch Buyer')
+  const returner = await register('returner', 'Returner')
+  const holder = await register('holder', 'Holder')
   // Not handed to the journeys: they only need the seat taken, and the line
   // filled. One seated member per waitlist class, since the two run at the same
   // hour and nobody may be booked into both.
@@ -325,7 +434,17 @@ export async function createE2eStudio({
   const queued = [await register('queued1', 'Queuer One'), await register('queued2', 'Queuer Two')]
 
   const clientIds: Record<string, string> = {}
-  for (const member of [canceller, lateCanceller, arriver, waiter, seated, seatedForStaff, ...queued]) {
+  for (const member of [
+    canceller,
+    lateCanceller,
+    arriver,
+    waiter,
+    seated,
+    seatedForStaff,
+    ...queued,
+    returner,
+    holder,
+  ]) {
     const [row] = await db
       .select({ id: schema.clients.id })
       .from(schema.clients)
@@ -374,6 +493,81 @@ export async function createE2eStudio({
     .where(and(eq(schema.clients.tenantId, tenant.id), inArray(schema.clients.email, queued.map(q => q.email))))
   const staffWaitlistLine = queued.map(q => queuedNames.find(n => n.email === q.email)!.name)
 
+  // The holder's one of everything, each through the service a person's
+  // action would take. Days apart, and later in the day than the classes, so
+  // nothing shares the room or the member's own time.
+  const holderId = clientIds[holder.email]!
+  await withTenant(tenant.id, async () => {
+    await bookClass(tenant.id, { clientId: holderId, classId: classes.myBookings.id })
+
+    const workshop = await createWorkshop(tenant.id, {
+      name: catalogue.workshopName,
+      locationId: location!.id,
+      mainInstructorId: instructor.id,
+      mainInstructorPaySgd: null,
+      createdByStaffId: admin.id,
+    })
+    const dayStarts = new Date(hourFromNow(6).getTime() + 2 * HOUR)
+    const day = await createDay(tenant.id, workshop.id, {
+      ord: 1,
+      roomId: room!.id,
+      startsAt: dayStarts,
+      endsAt: new Date(dayStarts.getTime() + 2 * HOUR),
+      basePriceSgd: '0.00',
+      capacityOnline: 10,
+    })
+    const tier = await createTier(tenant.id, workshop.id, {
+      name: 'Free place',
+      regularPriceSgd: '0.00',
+      ord: 1,
+      dayIds: [day.id],
+    })
+    await bookWorkshopFree(tenant.id, { clientId: holderId, workshopId: workshop.id, workshopTierId: tier.id })
+
+    // A private session: requested on a PT package, then scheduled by the admin
+    // a week out — outside the studio's PT window, so it can still be cancelled.
+    const { clientPackageId } = await grantPackage(tenant.id, {
+      clientId: holderId,
+      purchaseId: null,
+      amountSgd: ptPackage.priceSgd,
+      packageKind: 'pt',
+      packageId: ptPackage.id,
+    })
+    const ptStarts = new Date(hourFromNow(7).getTime() + 2 * HOUR)
+    const window = await readPtBookingWindow(tenant.id)
+    const proposedIn = Math.min(Math.max(window.minDays, 7), window.maxDays)
+    const proposedDate = new Intl.DateTimeFormat('en-CA', { timeZone: tenant.timezone }).format(
+      new Date(Date.now() + proposedIn * DAY),
+    )
+    const { ptRequestId } = await submitPtRequest(tenant.id, {
+      clientId: holderId,
+      locationId: location!.id,
+      sessionType: '1on1',
+      clientPackageId,
+      slots: [{ proposedDate, startTime: '10:00' }],
+    })
+    const scheduled = await schedulePtRequest(tenant.id, {
+      ptRequestId,
+      instructorId: instructor.id,
+      locationId: location!.id,
+      roomId: room!.id,
+      startsAt: ptStarts,
+      endsAt: new Date(ptStarts.getTime() + HOUR),
+      actorStaffId: admin.id,
+      actorIsAdmin: true,
+    })
+    if (!scheduled.ok) throw new Error(`scheduling the holder's private session failed: ${scheduled.error}`)
+  })
+  // A pending corporate request, written as the row a purchase leaves: how a
+  // member comes to hold one is changing (#374), and what the journeys check
+  // is only what the member app offers once they do.
+  await db.insert(schema.corporateRequests).values({
+    tenantId: tenant.id,
+    clientId: holderId,
+    corporatePackageId: corporatePackage.id,
+    status: 'pending',
+  })
+
   return {
     slug,
     tenantId: tenant.id,
@@ -384,9 +578,11 @@ export async function createE2eStudio({
       instructor: { email: instructor.email, name: instructor.name, role: 'instructor' },
     },
     catalogue,
+    site,
     classes,
     staffWaitlistLine,
-    members: { buyer, canceller, lateCanceller, arriver, waiter },
+    members: { buyer, canceller, lateCanceller, arriver, waiter, newcomer, shopper, merchBuyer, returner, holder },
+    memberPassword: password,
   }
 }
 
