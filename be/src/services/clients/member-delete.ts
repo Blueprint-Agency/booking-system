@@ -73,14 +73,28 @@ export async function deleteMemberPermanently(input: {
       if ('delete' in step) {
         await db.execute(sql`DELETE FROM ${table} WHERE tenant_id = ${tenantId} AND ${step.delete(key)}`)
       } else if ('anonymise' in step) {
+        // Each row is rewritten from its own contents, so it is read whole and
+        // rewritten here — then every row goes back in one statement, however
+        // many there are, rather than one round trip per row.
         const rows = await db.execute<Record<string, unknown>>(
           sql`SELECT * FROM ${table} WHERE tenant_id = ${tenantId} AND ${step.where(key)}`,
         )
-        for (const row of rows) {
-          await db.execute(
-            sql`UPDATE ${table} SET ${step.anonymise(row, erased)} WHERE tenant_id = ${tenantId} AND id = ${row.id}`,
-          )
-        }
+        if (rows.length === 0) continue
+        const rewritten = rows.map(row => ({ ...step.anonymise(row, erased), id: row.id }))
+        const columns = Object.entries(step.rewrites)
+        const set = sql.join(
+          columns.map(([c]) => sql`${sql.identifier(c)} = v.${sql.identifier(c)}`),
+          sql`, `,
+        )
+        const shape = sql.join(
+          [sql`id uuid`, ...columns.map(([c, type]) => sql`${sql.identifier(c)} ${sql.raw(type)}`)],
+          sql`, `,
+        )
+        await db.execute(
+          sql`UPDATE ${table} AS t SET ${set}
+              FROM jsonb_to_recordset(${JSON.stringify(rewritten)}::jsonb) AS v(${shape})
+              WHERE t.tenant_id = ${tenantId} AND t.id = v.id`,
+        )
       } else {
         await db.execute(sql`UPDATE ${table} SET ${step.set} WHERE tenant_id = ${tenantId} AND ${step.where(key)}`)
       }
