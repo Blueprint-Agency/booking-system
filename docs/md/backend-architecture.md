@@ -1188,7 +1188,7 @@ The member is told with a new `purchase_refunded` slug, composed the same way th
 - A failure is reported (`after-commit work failed`) and goes no further: it never changes the response or undoes the write. The outermost `withTenant` awaits the work before returning, so a request answers once its mail is handed over.
 - Called outside any Tenant context it throws: there is no transaction to wait for, and that is a wiring bug.
 
-Users today: the booking confirmation, every cancellation email (member, admin, instructor, workshop, PT), the waitlist promotion emails a cancel causes, every purchase confirmation — paid ones from the Stripe delivery, free ones (a free Trial Pass, a purchase a discount took to zero, a free workshop tier, a free corporate package) from the request — and the check-in nag — whose claim stamps therefore commit before any nag is sent (`services/bookings/check-in-nag.ts`).
+Users today: the booking confirmation, every cancellation email (member, admin, instructor, workshop, PT), every waitlist promotion email (from a cancel, a class's package-rule change and a staff add from the line) and the rule change's `class_rule_cancelled`, every purchase confirmation — paid ones from the Stripe delivery, free ones (a free Trial Pass, a purchase a discount took to zero, a free workshop tier, a free corporate package) from the request — and the check-in nag — whose claim stamps therefore commit before any nag is sent (`services/bookings/check-in-nag.ts`).
 
 ### Audit middleware
 
