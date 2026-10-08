@@ -408,7 +408,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
 
   /* ── paid, through the webhook ──────────────────────────────────────── */
 
-  test('INV-12 a paid PT package gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
+  test('INV-20 a paid PT package gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
     const pt = await ptPackage('400.00')
     const ana = await member()
     const event = await pay(await buyPackage(ana, { package_kind: 'pt', package_id: pt.id }))
@@ -420,7 +420,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     await redeliverIssuesNothing(ana, event, receipt)
   })
 
-  test('INV-13 a paid Trial Pass gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
+  test('INV-21 a paid Trial Pass gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
     const trial = await classPackage({ kind: 'trial', credits: 1, validityDays: 14, priceSgd: '25.00' })
     const ivy = await member()
     const event = await pay(await buyPackage(ivy, { package_kind: 'class', package_id: trial.id }))
@@ -432,7 +432,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     await redeliverIssuesNothing(ivy, event, receipt)
   })
 
-  test('INV-14 an Unlimited Plan bought with a Cross-Location Add-On and a Promo Code gives one Receipt with two lines, the discount and the total', async () => {
+  test('INV-22 an Unlimited Plan bought with a Cross-Location Add-On and a Promo Code gives one Receipt with two lines, the discount and the total', async () => {
     const plan = await classPackage({ kind: 'unlimited', durationMonths: 3, priceSgd: '300.00', credits: null, validityDays: null })
     const code = await promoCode('50.00')
     const leo = await member()
@@ -459,7 +459,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     await redeliverIssuesNothing(leo, event, receipt)
   })
 
-  test('INV-15 a paid workshop place gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
+  test('INV-23 a paid workshop place gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
     const w = await workshop('85.50')
     const zoe = await member()
     const event = await pay(await post(zoe.headers, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }))
@@ -471,7 +471,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     await redeliverIssuesNothing(zoe, event, receipt)
   })
 
-  test('INV-16 paid Merch gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
+  test('INV-24 paid Merch gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
     const mat = await merchItem('42.00')
     const kai = await member()
     const event = await pay(await post(kai.headers, '/api/v1/me/checkout/merch', { merch_id: mat.id }))
@@ -483,7 +483,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     await redeliverIssuesNothing(kai, event, receipt)
   })
 
-  test('INV-17 a standalone Cross-Location Add-On gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
+  test('INV-25 a standalone Cross-Location Add-On gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
     const eli = await member()
     const held = await holdsUnlimited(eli, 3)
     const event = await pay(await post(eli.headers, '/api/v1/me/checkout/cross-location', { client_package_id: held }))
@@ -495,7 +495,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     await redeliverIssuesNothing(eli, event, receipt)
   })
 
-  test('INV-18 a paid corporate package gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
+  test('INV-26 a paid corporate package gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
     const offsite = await corporatePackage('480.00')
     const eve = await member()
     const event = await pay(await buyPackage(eve, { package_kind: 'corporate', package_id: offsite.id }))
@@ -509,7 +509,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
 
   /* ── free, opened as an already-paid Purchase ───────────────────────── */
 
-  test('INV-19 a free Trial Pass gives the member one S$0.00 Receipt with no payments', async () => {
+  test('INV-27 a free Trial Pass gives the member one S$0.00 Receipt with no payments', async () => {
     const trial = await classPackage({ kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00' })
     const ivy = await member()
     await assertFreeReceipt(ivy, await buyPackage(ivy, { package_kind: 'class', package_id: trial.id }), {
@@ -518,7 +518,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     })
   })
 
-  test('INV-20 a plan a Promo Code took to zero gives one S$0.00 Receipt showing the List Price and the discount, with no payments', async () => {
+  test('INV-28 a plan a Promo Code took to zero gives one S$0.00 Receipt showing the List Price and the discount, with no payments', async () => {
     const ten = await classPackage({ kind: 'credit_bundle', priceSgd: '150.00' })
     const code = await promoCode('150.00')
     const mia = await member()
@@ -529,7 +529,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     })
   })
 
-  test('INV-21 a free workshop place gives the member one S$0.00 Receipt with no payments', async () => {
+  test('INV-29 a free workshop place gives the member one S$0.00 Receipt with no payments', async () => {
     const w = await workshop('0.00')
     const sam = await member()
     await assertFreeReceipt(sam, await post(sam.headers, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }), {
@@ -538,7 +538,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     })
   })
 
-  test('INV-22 free Merch gives the member one S$0.00 Receipt with no payments', async () => {
+  test('INV-30 free Merch gives the member one S$0.00 Receipt with no payments', async () => {
     const sticker = await merchItem('0.00')
     const kai = await member()
     await assertFreeReceipt(kai, await post(kai.headers, '/api/v1/me/checkout/merch', { merch_id: sticker.id }), {
@@ -547,7 +547,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     })
   })
 
-  test('INV-23 a $0 corporate package gives the member one S$0.00 Receipt with no payments', async () => {
+  test('INV-31 a $0 corporate package gives the member one S$0.00 Receipt with no payments', async () => {
     const offsite = await corporatePackage('0.00')
     const eve = await member()
     await assertFreeReceipt(eve, await buyPackage(eve, { package_kind: 'corporate', package_id: offsite.id }), {
@@ -567,7 +567,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     return open[0] as { id: string; paid_sgd: string; outstanding_sgd: string }
   }
 
-  test('INV-24 a Part Payment has no Receipt while Open, and one listing both payments once the last one settles it', async () => {
+  test('INV-32 a Part Payment has no Receipt while Open, and one listing both payments once the last one settles it', async () => {
     const ten = await classPackage({ kind: 'credit_bundle', priceSgd: '200.00' })
     const pia = await member()
     const open = await partPay(pia, await buyPackage(pia, { package_kind: 'class', package_id: ten.id, part_payment_sgd: 80 }), {
@@ -596,7 +596,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
 
   /* ── never a Receipt ────────────────────────────────────────────────── */
 
-  test('INV-25 a Complimentary Package given by an admin issues no Receipt', async () => {
+  test('INV-33 a Complimentary Package given by an admin issues no Receipt', async () => {
     const ten = await classPackage({ kind: 'credit_bundle', priceSgd: '150.00' })
     const gus = await member()
     await expectStatus(
@@ -610,7 +610,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
     assert.deepEqual(await receiptsOf(gus), [])
   })
 
-  test('INV-26 an Open Purchase refunded and Abandoned never gets a Receipt', async () => {
+  test('INV-34 an Open Purchase refunded and Abandoned never gets a Receipt', async () => {
     const ten = await classPackage({ kind: 'credit_bundle', priceSgd: '200.00' })
     const ola = await member()
     const open = await partPay(ola, await buyPackage(ola, { package_kind: 'class', package_id: ten.id, part_payment_sgd: 50 }), {

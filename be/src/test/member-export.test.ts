@@ -5,6 +5,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import JSZip from 'jszip'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { memberFixtures, type Row, type Staff } from './member-fixtures'
+import { receiptFixtures } from './receipt-fixtures'
 import { MEMBER_TABLES, type MemberKey } from '../services/clients/member-tables'
 import { unpackArchive } from '../services/tenants/transfer-archive'
 import { ArchiveError, type MemberManifest } from '../services/tenants/transfer-shape'
@@ -36,11 +37,13 @@ describe('member export', { skip: integrationTestsEnabled ? false : SKIP_REASON 
   let neighbour!: MemberKey
   let elsewhere!: MemberKey
   let memberRows!: Map<string, Row>
+  let receiptsMade!: ReturnType<typeof receiptFixtures>
 
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
     fixtures = memberFixtures(harness, schema, DOMAIN)
+    receiptsMade = receiptFixtures(harness)
     const { at, staffAt, memberAt, fixturesFor } = fixtures
     ;({ one, two } = harness.tenants)
     admin = await staffAt(one, at('admin'), 'admin')
@@ -60,6 +63,7 @@ describe('member export', { skip: integrationTestsEnabled ? false : SKIP_REASON 
 
   after(async () => {
     if (!harness) return
+    await receiptsMade?.cleanup()
     await fixtures?.cleanup()
     await harness.close()
   })
@@ -132,6 +136,28 @@ describe('member export', { skip: integrationTestsEnabled ? false : SKIP_REASON 
         }
       }
     }
+  })
+
+  test('INV-13 the export carries the member’s Receipts as issued, and no other member’s', async () => {
+    const theirs = [await receiptsMade.issueFor(one.id, member.clientId), await receiptsMade.issueFor(one.id, member.clientId)]
+    const neighbours = await receiptsMade.issueFor(one.id, neighbour.clientId)
+    const atTheOtherStudio = await receiptsMade.issueFor(two.id, elsewhere.clientId)
+
+    const exported = (await download(admin.headers)).rows.receipts ?? []
+    const ids = exported.map(r => r.id)
+    for (const receipt of theirs) {
+      const row = exported.find(r => r.id === receipt.id)
+      assert.ok(row, `the member's Receipt ${receipt.displayNumber} is missing`)
+      assert.equal(row.display_number, receipt.displayNumber)
+      assert.equal(row.number, receipt.number)
+      assert.equal(row.buyer_name, 'Ada Lovelace')
+      assert.equal(row.buyer_email, member.email)
+      assert.deepEqual(row.lines, receipt.lines)
+      assert.deepEqual([row.subtotal_sgd, row.discount_sgd, row.total_sgd], ['150.00', '15.00', '135.00'])
+      assert.deepEqual(row.payments, receipt.payments)
+    }
+    assert.ok(!ids.includes(neighbours.id), 'another member’s Receipt is in the export')
+    assert.ok(!ids.includes(atTheOtherStudio.id), 'the same person’s Receipt at another studio is in the export')
   })
 
   test('the export is recorded as a staff act on the member', async () => {

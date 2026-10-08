@@ -3,7 +3,9 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { memberFixtures, type Row, type Staff, type Tenant } from './member-fixtures'
+import { receiptFixtures } from './receipt-fixtures'
 import { MEMBER_TABLES, eraseSteps, type MemberKey } from '../services/clients/member-tables'
+import type { ReceiptRow } from '../services/receipts/issue'
 import type { StripeFake } from './stripe-fake'
 
 /**
@@ -45,6 +47,9 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
   let requestedSession!: Row
   /** Every audit row that named the member before they were deleted. */
   let memberTrail!: Row[]
+  let receiptsMade!: ReturnType<typeof receiptFixtures>
+  /** A Receipt issued to the member for a paid Purchase, as it read before they were deleted. */
+  let memberReceipt!: ReceiptRow
 
   const deletePath = (clientId: string) => `/api/v1/portal/admin/clients/${clientId}/permanently`
   const remove = (clientId: string, headers: Record<string, string>) =>
@@ -156,11 +161,20 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
       sql`SELECT * FROM audit_log WHERE tenant_id = ${one.id} AND ${MEMBER_TABLES.find(e => e.table === 'audit_log')!.where(member)}`,
     )
     assert.ok(memberTrail.length >= 6, `the member has an audit trail to keep: ${JSON.stringify(memberTrail)}`)
+
+    receiptsMade = receiptFixtures(harness)
+    memberReceipt = await receiptsMade.issueFor(one.id, member.clientId)
+    assert.deepEqual(
+      [memberReceipt.clientId, memberReceipt.buyerName, memberReceipt.buyerEmail],
+      [member.clientId, 'Ada Lovelace', member.email],
+      'the Receipt was issued naming the member',
+    )
   })
 
   after(async () => {
     stripe?.restore()
     if (!harness) return
+    await receiptsMade?.cleanup()
     await fixtures?.cleanup()
     await harness.close()
   })
@@ -273,6 +287,17 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
         sql`SELECT receipt_url, booking_id FROM stripe_payments WHERE id = ${memberRows.get('stripe_payments')!.id}`,
       )
       assert.deepEqual(payment, { receipt_url: null, booking_id: null })
+    })
+
+    test('INV-12 their Receipt stays the studio’s, with its number, lines and amounts, and no longer names who it was issued to', async () => {
+      const [kept] = await harness.db.select().from(schema.receipts).where(eq(schema.receipts.id, memberReceipt.id))
+      assert.ok(kept, 'the Receipt was deleted, not kept')
+      const buyer = (r: ReceiptRow) => ({ clientId: r.clientId, buyerName: r.buyerName, buyerEmail: r.buyerEmail })
+      assert.deepEqual(buyer(kept), { clientId: null, buyerName: null, buyerEmail: null })
+      // Everything else reads exactly as it was issued.
+      assert.deepEqual({ ...kept, ...buyer(memberReceipt) }, memberReceipt)
+      assert.equal(kept.lines[0]!.description, 'Ten pack')
+      assert.deepEqual([kept.subtotalSgd, kept.discountSgd, kept.totalSgd], ['150.00', '15.00', '135.00'])
     })
 
     test('what is someone else’s stays theirs: a partner’s request, and a session scheduled from the member’s request', async () => {
