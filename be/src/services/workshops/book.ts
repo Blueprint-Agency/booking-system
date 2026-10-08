@@ -12,6 +12,7 @@ import { isUniqueViolation } from '../../db/unique-violation'
 import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
 import { memberClash, type HeldWindow } from '../bookings/member-time'
+import { openSettledPurchase } from '../billing/purchases'
 import { bestPrice, listActivePromotionsFor } from '../packages/promotions'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { sendWorkshopPurchaseEmail } from '../notifications/send-purchase-email'
@@ -138,9 +139,10 @@ export interface BookWorkshopInput {
   /** stripe payment intent id — null for free workshops. */
   paymentIntentId: string | null
   /**
-   * The Purchase that bought the place — null for a free workshop, which
-   * reaches no payment provider. A workshop's booking IS the purchase, so this
-   * is the pointer a Refund routes on, in place of the payment intent (#92).
+   * The Purchase that bought the place — the settled S$0.00 one for a free
+   * workshop, which reaches no payment provider. A workshop's booking IS the
+   * purchase, so this is the pointer a Refund routes on, in place of the
+   * payment intent (#92).
    */
   purchaseId?: string | null
   /** amount paid in SGD as "120.00". "0.00" for free workshops. */
@@ -303,26 +305,43 @@ export async function bookWorkshopFree(
     throw new BadRequestError('workshop_is_not_free')
   }
 
-  // Free bookings carry no Purchase to be idempotent on, so gate duplicates
-  // (and capacity) explicitly.
+  // A free place has no provider session to be idempotent on: its Purchase is
+  // opened below, by this call, so duplicates (and capacity) are gated
+  // explicitly, before a Purchase exists to be orphaned by the refusal.
   await assertWorkshopBookable(tenantId, args)
+
+  // A free place is still a sale: its Purchase opens and closes here, because a
+  // total of zero leaves nothing outstanding, and the booking points at it as a
+  // paid place points at the Purchase its payment settled.
+  const purchase = await openSettledPurchase({
+    tenantId,
+    clientId: args.clientId,
+    kind: 'workshop',
+    metadata: {
+      kind: 'workshop',
+      workshop_id: args.workshopId,
+      workshop_tier_id: args.workshopTierId,
+      client_id: args.clientId,
+      promo_code_id: args.appliedPromoCodeId ?? '',
+      applied_promotion_id: eff.appliedPromotionId ?? '',
+    },
+  })
 
   const booked = await insertWorkshopBooking(tenantId, {
     clientId: args.clientId,
     workshopId: args.workshopId,
     workshopTierId: args.workshopTierId,
     paymentIntentId: null,
-    purchaseId: null,
+    purchaseId: purchase.id,
     amountSgd: '0.00',
     appliedPromotionId: eff.appliedPromotionId,
     appliedPromoCodeId: args.appliedPromoCodeId ?? null,
   })
 
   // The worst case in the set (§13): a confirmed booking with a QR code and a
-  // date that used to send nothing at all. No Purchase means nothing to
-  // be idempotent on — `assertWorkshopBookable` above is the duplicate gate —
-  // so it sends every time it gets here, once the request's transaction has
-  // committed (`afterCommit`). The helper cannot throw.
+  // date that used to send nothing at all. The Purchase was opened just above,
+  // so this call always inserts the booking and always sends, once the
+  // request's transaction has committed (`afterCommit`). The helper cannot throw.
   afterCommit(() => sendWorkshopPurchaseEmail(tenantId, booked.bookingId))
   return booked
 }
