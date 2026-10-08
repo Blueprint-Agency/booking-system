@@ -1,0 +1,3 @@
+ALTER TABLE "corporate_requests" ADD COLUMN "purchase_id" uuid;--> statement-breakpoint
+ALTER TABLE "corporate_requests" ADD CONSTRAINT "corporate_requests_purchase_id_purchases_id_fk" FOREIGN KEY ("purchase_id") REFERENCES "public"."purchases"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "corporate_requests_purchase_id_fk_idx" ON "corporate_requests" USING btree ("purchase_id");

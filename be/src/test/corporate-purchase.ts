@@ -74,6 +74,24 @@ export function completedEvent(
   }
 }
 
+/** The provider's `charge.refunded` for a payment, returned in full (its dashboard or our own call). */
+export function refundedEvent(intent: string, cents: number): { id: string; type: string; data: { object: Record<string, unknown> } } {
+  return {
+    id: `evt_${randomUUID()}`,
+    type: 'charge.refunded',
+    data: {
+      object: {
+        id: `ch_${randomUUID().slice(0, 12)}`,
+        payment_intent: intent,
+        amount: cents,
+        amount_captured: cents,
+        amount_refunded: cents,
+        metadata: {},
+      },
+    },
+  }
+}
+
 /** Deliver an event to a studio's own webhook endpoint, signed as the provider would. */
 export const deliverTo = (harness: TestApp, slug: string, event: unknown, signature = PROVIDER_SIGNATURE) =>
   Promise.resolve(

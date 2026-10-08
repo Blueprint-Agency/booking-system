@@ -49,10 +49,11 @@ export async function beginCorporateCheckout(
   // the request is made here because there is no webhook coming to make it.
   const cents = toCents(pkg.priceSgd)
   if (grantsWithoutPaying(cents)) {
-    await openSettledPurchase({ tenantId, clientId, kind: 'corporate_package', metadata })
+    const purchase = await openSettledPurchase({ tenantId, clientId, kind: 'corporate_package', metadata })
     const { corporateRequestId } = await createCorporateRequest(tenantId, {
       clientId,
       corporatePackageId: pkg.id,
+      purchaseId: purchase.id,
     })
     return { outcome: 'granted', corporateRequestId }
   }

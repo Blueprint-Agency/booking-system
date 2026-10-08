@@ -2,13 +2,14 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
-import { frontendOrigin, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { frontendOrigin, inTenantContext, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { ownAccountId, type StripeFake } from './stripe-fake'
 import {
   completedEvent,
   deliverTo,
   forgetPurchases,
   lastCheckoutSession,
+  refundedEvent,
   sellingFake,
   sessionTotal,
 } from './corporate-purchase'
@@ -134,10 +135,18 @@ describe('buying a corporate package over HTTP', { skip: integrationTestsEnabled
       const ours = `%@${DOMAIN}`
       const clientIds = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
       const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
+      const sessionIds = sql`SELECT id FROM corporate_sessions WHERE created_by_staff_id IN (${staffIds})`
+      await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
+      // The two tables point at each other; untie them before deleting either.
+      await harness.db.execute(sql`UPDATE corporate_requests SET scheduled_corporate_session_id = NULL WHERE client_id IN (${clientIds})`)
+      await harness.db.execute(sql`UPDATE corporate_sessions SET corporate_request_id = NULL WHERE created_by_staff_id IN (${staffIds})`)
+      await harness.db.execute(sql`DELETE FROM corporate_session_supporting_instructors WHERE corporate_session_id IN (${sessionIds})`)
+      await harness.db.execute(sql`DELETE FROM corporate_sessions WHERE created_by_staff_id IN (${staffIds})`)
       await harness.db.execute(sql`DELETE FROM corporate_requests WHERE client_id IN (${clientIds})`)
       await forgetPurchases(harness, clientIds)
       await harness.db.execute(sql`DELETE FROM corporate_packages WHERE created_by_staff_id IN (${staffIds})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
+      await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
       await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM client_auth_users WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM staff_auth_users WHERE email LIKE ${ours}`)
@@ -310,6 +319,99 @@ describe('buying a corporate package over HTTP', { skip: integrationTestsEnabled
     const requests = await requestsOf(mia)
     assert.deepEqual(requests.map(r => [r.id, r.status, r.corporatePackageId]), [[body.corporate_request_id, 'pending', free]])
     assert.equal((await packagesOf(mia)).length, 0)
+    const [sale] = await purchasesOf(mia)
+    assert.equal(sale!.status, 'paid')
+    assert.equal(requests[0]!.purchaseId, sale!.id, 'the request names the settled Purchase')
+  })
+
+  /** Buy the package and confirm its payment: the member's pending request, the Purchase and its intent. */
+  async function bought(who: Member) {
+    await expectStatus(await buyCorporate(who), 200)
+    const { params } = lastCheckoutSession(fake)
+    const intent = `pi_${randomUUID()}`
+    await expectStatus(await deliverTo(harness, one.slug, completedEvent(params, intent)), 200)
+    const [request] = await requestsOf(who)
+    const [sale] = await purchasesOf(who)
+    assert.ok(request && sale)
+    return { request, sale, intent, cents: sessionTotal(params) }
+  }
+
+  test('CORP-14 a full refund of a corporate Purchase cancels its pending Corporate Request, and the member reads it as cancelled by the studio', async () => {
+    const mia = await member(one)
+    const other = await member(one)
+    const { request, sale, intent, cents } = await bought(mia)
+    const untouched = (await bought(other)).request
+    assert.equal(request.purchaseId, sale.id, 'the request names the Purchase that paid for it')
+
+    await expectStatus(await deliverTo(harness, one.slug, refundedEvent(intent, cents)), 200)
+
+    const [after] = await requestsOf(mia)
+    assert.equal(after!.status, 'cancelled')
+    assert.ok(after!.resolvedAt, 'cancelled at a time')
+    assert.equal(after!.scheduledCorporateSessionId, null)
+    const [refunded] = await purchasesOf(mia)
+    assert.equal(refunded!.status, 'refunded')
+
+    const listed = await expectStatus(await harness.app.request('/api/v1/me/corporate-requests', { headers: mia.headers }), 200)
+    const [row] = listed.corporate_requests
+    assert.equal(row.status, 'cancelled')
+    assert.equal(row.outcome_line, 'Cancelled by the studio')
+    assert.ok(row.cancelled_at)
+
+    // Another member's request on another Purchase stands; and the event again changes nothing.
+    const [theirs] = await requestsOf(other)
+    assert.deepEqual([theirs!.id, theirs!.status], [untouched.id, 'pending'])
+    await expectStatus(await deliverTo(harness, one.slug, refundedEvent(intent, cents)), 200)
+    assert.deepEqual(await requestsOf(mia), [after])
+  })
+
+  test('CORP-15 a corporate Purchase refunded at the provider after its request was scheduled leaves the request and its session standing, and is reported for the admin to cancel', async () => {
+    const mia = await member(one)
+    const { request, sale, intent, cents } = await bought(mia)
+
+    const email = `teacher-${run}@${DOMAIN}`
+    const teacher = await harness.signInAs('staff', email, one).then(async () => {
+      const [user] = await harness.db
+        .select({ id: schema.staffAuthUsers.id })
+        .from(schema.staffAuthUsers)
+        .where(and(eq(schema.staffAuthUsers.email, email), eq(schema.staffAuthUsers.tenantId, one.id)))
+      const [row] = await harness.db
+        .insert(schema.staffUsers)
+        .values({ tenantId: one.id, email, name: 'Tess', role: 'instructor', status: 'active', authUserId: user!.id })
+        .returning({ id: schema.staffUsers.id })
+      await harness.db.insert(schema.instructors).values({ tenantId: one.id, staffUserId: row!.id })
+      return row!.id
+    })
+    const requests = inTenantContext(await import('../services/corporate/requests'))
+    const startsAt = new Date(Date.now() + 7 * 86_400_000)
+    const scheduled = await requests.scheduleCorporateRequest(one.id, {
+      corporateRequestId: request.id,
+      mainInstructorId: teacher,
+      supportingInstructorIds: [],
+      locationText: 'The client’s office',
+      startsAt,
+      endsAt: new Date(startsAt.getTime() + 3_600_000),
+      actorStaffId: adminAtOne.staffId,
+    })
+    assert.ok(scheduled.ok, JSON.stringify(scheduled))
+    harness.logs.clear()
+
+    await expectStatus(await deliverTo(harness, one.slug, refundedEvent(intent, cents)), 200)
+
+    const [after] = await requestsOf(mia)
+    assert.equal(after!.status, 'scheduled', 'a scheduled request is the admin’s to cancel')
+    const [session] = await harness.db
+      .select()
+      .from(schema.corporateSessions)
+      .where(eq(schema.corporateSessions.id, scheduled.corporateSessionId))
+    assert.equal(session!.lifecycle, 'active')
+    // The money is back, so the Purchase says so; what it could not undo is reported.
+    const [refunded] = await purchasesOf(mia)
+    assert.equal(refunded!.id, sale.id)
+    assert.equal(refunded!.status, 'refunded')
+    const reported = harness.logs.lines().filter(l => l.level === 'error' && l.corporateRequestId === request.id)
+    assert.equal(reported.length, 1, JSON.stringify(harness.logs.lines()))
+    assert.equal(reported[0]!.purchaseId, sale.id)
   })
 
   test('CORP-02 there is no free request form: a Corporate Request cannot be made without the payment', async () => {
