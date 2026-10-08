@@ -743,6 +743,13 @@
       "when": 1791403444240,
       "tag": "0105_purchase_confirmation_amount_paid",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791429007980,
+      "tag": "0106_checkin_nag_sent_at",
+      "breakpoints": true
     }
   ]
 }

@@ -531,14 +531,15 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     { cta: { href: `${portalUrl}/admin/schedule`, label: 'Open the schedule' } },
   )
 
+  // NTF-18. The Instructor gets it and each active Admin is copied, so it greets
+  // nobody; the button is the recipient's own check-in desk (`checkin_url`).
   const CHECKIN_NAG_BODY = body(
     'Check-in is still open for {{session_label}}',
     [
-      'Hi {{instructor_name}},',
-      '<strong>{{pending_count}}</strong> member(s) on <strong>{{session_label}}</strong> are still unmarked. Attendance drives credits and payroll, so it needs to be right.',
-      'It takes a moment in the portal — mark who came and who did not.',
+      '<strong>{{session_label}}</strong> on <strong>{{date}}</strong>, taught by <strong>{{instructor_name}}</strong>, ended more than a day ago, and <strong>{{pending_count}}</strong> member(s) on it are still unmarked.',
+      'Attendance drives credits and payroll, so it needs to be right. It takes a moment at the check-in desk — mark who came and who did not.',
     ],
-    { cta: { href: `${portalUrl}/instructor/classes`, label: 'Complete check-in' } },
+    { cta: { href: '{{checkin_url}}', label: 'Open the check-in desk' } },
   )
 
   /** `{{cap_warning}}` is the §17 sentence: this request breaches a declared

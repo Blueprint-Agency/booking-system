@@ -88,7 +88,9 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   instructor_invite: ['name', 'invite_url', 'expires_at'],
   admin_invite: ['name', 'invite_url', 'expires_at'],
   client_invite: ['name', 'invitee_email', 'login_url'],
-  checkin_nag: ['instructor_name', 'session_label', 'pending_count'],
+  // NTF-18: sent to the Instructor and copied to each active Admin, so the copy
+  // greets nobody by name; `checkin_url` is the recipient's own check-in desk.
+  checkin_nag: ['instructor_name', 'session_label', 'date', 'pending_count', 'checkin_url'],
   referral_credited: ['referrer_name', 'referee_name', 'credits_granted'],
   // Sign-in (services/auth/better-auth.ts). `code` and `reset_url` are credentials and
   // are sent as `secretVariables`, so `email_log` keeps them redacted.
