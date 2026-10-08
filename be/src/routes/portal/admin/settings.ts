@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { tenantId } from '../../../middleware/tenant'
 import { readReceiptDetails, saveReceiptDetails } from '../../../services/receipts/details'
-import { receiptDetailsBody, receiptDetailsInput, serializeReceiptDetails } from '../receipt-details'
+import { receiptDetailsBody, receiptDetailsInput, serializeReceiptDetails } from '../../receipt-details'
 
 /**
  * The studio's own settings. Today the receipt details (#391): the prefix its

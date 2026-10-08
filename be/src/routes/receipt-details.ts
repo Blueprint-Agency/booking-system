@@ -1,9 +1,11 @@
 import { z } from 'zod'
-import type { ReceiptDetailsInput, ReceiptDetailsView } from '../../services/receipts/details'
+import type { ReceiptDetailsInput, ReceiptDetailsView } from '../services/receipts/details'
 
 /**
  * A studio's receipt details on the wire (#391), as the portal's studio
- * settings and the super portal's create form both send them. Shape only:
+ * settings and the super portal's create form both send them. Here, beside
+ * `receipt-views.ts`, rather than under either audience's routes, so neither
+ * imports the other's. Shape only:
  * what a prefix may be and how long each detail may run is
  * `cleanReceiptDetails`'s to say, so both surfaces refuse the same things in
  * the same words.

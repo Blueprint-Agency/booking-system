@@ -31,7 +31,7 @@ import {
 import { expectedKeyPrefix } from '../../services/billing/provider-setup'
 import { env } from '../../env'
 import { logger } from '../../shared/logger'
-import { receiptDetailsBody, receiptDetailsInput } from '../portal/receipt-details'
+import { receiptDetailsBody, receiptDetailsInput } from '../receipt-details'
 
 /**
  * The super portal's route surface: create a studio, list them, change one's
