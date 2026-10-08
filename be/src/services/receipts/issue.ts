@@ -51,11 +51,16 @@ async function existingReceipt(tx: ReceiptTx, tenantId: string, purchaseId: stri
  *
  * The Purchase must be settled in `tx` already, and its settling payment
  * banked, so the payment it prints is the one that paid.
+ *
+ * Dated now, the moment of the sale, unless `issuedAt` says otherwise: only
+ * the backfill does (#394), dating a Receipt for a sale made before Receipts
+ * existed on the day that sale was paid.
  */
 export async function issueReceipt(
   tx: ReceiptTx,
   tenantId: string,
   purchaseId: string,
+  options: { issuedAt?: Date } = {},
 ): Promise<{ receipt: ReceiptRow; issued: boolean }> {
   const already = await existingReceipt(tx, tenantId, purchaseId)
   if (already) return { receipt: already, issued: false }
@@ -155,6 +160,7 @@ export async function issueReceipt(
       purchaseId,
       clientId: purchase.clientId,
       number,
+      ...(options.issuedAt ? { issuedAt: options.issuedAt } : {}),
       displayNumber: displayNumber(seller!.prefix || DEFAULT_RECEIPT_PREFIX, number),
       // What the studio calls itself to members, as of now.
       sellerName: seller!.displayName || seller!.name,
@@ -183,10 +189,13 @@ export async function issueReceipt(
  * Once. `refunded_at IS NULL` keeps the first date whatever reaches it again.
  * A Purchase with no Receipt — a migrated one — has nothing to stamp, and an
  * Abandoned one never reaches here.
+ *
+ * Dated now, as the Refund lands, unless `at` says otherwise: only the
+ * backfill does (#394), for a Refund that landed before Receipts existed.
  */
-export async function stampReceiptRefunded(tx: ReceiptTx, tenantId: string, purchaseId: string): Promise<void> {
+export async function stampReceiptRefunded(tx: ReceiptTx, tenantId: string, purchaseId: string, at?: Date): Promise<void> {
   await tx
     .update(receipts)
-    .set({ refundedAt: sql`now()` })
+    .set({ refundedAt: at ?? sql`now()` })
     .where(and(eq(receipts.tenantId, tenantId), eq(receipts.purchaseId, purchaseId), isNull(receipts.refundedAt)))
 }

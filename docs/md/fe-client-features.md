@@ -545,7 +545,7 @@ The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a re
 
 **The blocked class is a nudge, not an ad.** On `/classes`, a class outside a member's plan coverage is shown, not hidden — the row dims, takes a "Not in your plan" lock chip where the Book button was, and carries one line under a hairline: "Your plan covers **Harbour Studio** only. [Add Parkside Studio for $30/month]". The link is weighted below the class itself — a louder treatment was tried and rejected because this state repeats on every wrong-Location class in the week's schedule, and at that density an accent border and a filled button read as an ad break. Coverage is read across **every** plan the member holds (`entitlements.unlimited_plans`), not one; a member who also holds credits, or a second plan homed at that Location, pays with it by picking it on the Book sheet (§3.1). *(The "· or [use 1 credit]" link that used to follow is gone with `use_credits` — `be/docs/adr/0010-several-packages-run-per-family.md`.)* A blocked class never silently spends a credit.
 
-**Five confirmation emails**, one per completed purchase, none for an admin's complimentary grant:
+**One confirmation email per completed purchase**, none for an admin's complimentary grant. Merch and an Add-On bought on its own grant no package, so their email is the Receipt itself (#388):
 
 | Purchase | Slug |
 |---|---|
@@ -554,6 +554,8 @@ The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a re
 | Paid corporate package | `corporate_purchase_confirmed` |
 | Free trial pass | `trial_pass_purchase_confirmed` |
 | Free workshop tier | `workshop_purchase_confirmed` |
+| Merch, paid or free | `purchase_receipt` |
+| Standalone Cross-Location Add-On | `purchase_receipt` |
 
 Every purchase succeeds even if the email fails to send — the send is a fire-and-forget step after the entitlement is already granted. An Unlimited Plan's confirmation reads "Valid 6 months from your first class — your plan activates when you make your first booking" only when the purchase is actually Dormant — which, since every purchase lands Dormant (`be/docs/adr/0004-every-package-activates-on-first-booking.md`), is every purchase, whatever else the member holds; the dated "Expires {date}" line is left for a row that already has an expiry — see `be-client.md` §4e for the exact branch. The receipt link never points nowhere: a paid purchase links to the Stripe receipt, a free one falls back to the account page.
 

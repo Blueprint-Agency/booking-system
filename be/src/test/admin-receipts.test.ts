@@ -246,7 +246,7 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     assert.ok('receipt_url' in byItem['Ten pack'], "the provider's receipt link stays in the payload for now")
   })
 
-  test('INV-76 an Admin exports the filtered Receipts as CSV: one row each, with number, date, member, kind, total and status, and none of another studio\'s', async () => {
+  test('INV-82 an Admin exports the filtered Receipts as CSV: one row each, with number, date, member, kind, total and status, and none of another studio\'s', async () => {
     const tag = `Export ${run}`
     const una = await member(one, `Una ${tag}`)
     const ray = await member(one, `Ray ${tag}`)
@@ -287,7 +287,7 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     await expectStatus(await harness.app.request('/api/v1/portal/admin/receipts/export.csv?kind=gift_card', { headers: adminOfOne }), 400)
   })
 
-  test('INV-77 a member name a spreadsheet would run as a formula is exported as text', async () => {
+  test('INV-83 a member name a spreadsheet would run as a formula is exported as text', async () => {
     const eve = await member(one, `=HYPERLINK("http://x.test","Eve ${run}")`)
     const receipt = await made.issueFor(one.id, eve.clientId)
     const res = await harness.app.request(`/api/v1/portal/admin/receipts/export.csv?q=${encodeURIComponent(receipt.displayNumber)}`, { headers: adminOfOne })

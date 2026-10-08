@@ -40,6 +40,10 @@ export type TemplateSlug =
   // A corporate package grants no credits: what was bought is a Corporate
   // Request the studio arranges with the member, so it says that (#374 step 5).
   | 'corporate_purchase_confirmed'
+  // Merch and a standalone Cross-Location Add-On (#388): neither grants a
+  // package or books a place, so neither has a confirmation of its own to
+  // carry the Receipt. This one is the Receipt, under the studio's copy.
+  | 'purchase_receipt'
   // §14: the provider sends its own money receipt; this is the one that says the
   // plan has ended and names the classes the Refund cancelled.
   | 'purchase_refunded'

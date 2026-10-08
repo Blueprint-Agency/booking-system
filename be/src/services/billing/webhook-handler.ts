@@ -31,6 +31,7 @@ import { issueReceipt } from '../receipts/issue'
 import {
   sendCorporatePurchaseEmail,
   sendPackagePurchaseEmail,
+  sendPurchaseReceiptEmail,
   sendWorkshopPurchaseEmail,
 } from '../notifications/send-purchase-email'
 import { logger, reportError } from '../../shared/logger'
@@ -623,9 +624,11 @@ async function dispatchStripeEvent(
         ...(await chargePatch(tenantId, paymentIntentId, providerAccountId, retry)),
       })
       // The sale's Receipt (#385), once its payment is banked — as for a plan.
-      await issueReceipt(db, tenantId, purchase.id)
-      // No confirmation email: an Add-On grants no package, and §13 names four
-      // sending paths, none of them this one.
+      const { issued } = await issueReceipt(db, tenantId, purchase.id)
+      // An Add-On grants no package, so it has no confirmation of its own: its
+      // email is the Receipt (#388), from the delivery that issued it, once
+      // that delivery has committed. The sender reports and swallows.
+      if (issued) afterCommit(() => sendPurchaseReceiptEmail(tenantId, purchase.id))
       return
     }
 
@@ -681,7 +684,10 @@ async function dispatchStripeEvent(
         await chargePatch(tenantId, paymentIntentId, providerAccountId, retry),
       )
       // The sale's Receipt (#385), once its payment is banked — as for a plan.
-      await issueReceipt(db, tenantId, purchase.id)
+      const { issued } = await issueReceipt(db, tenantId, purchase.id)
+      // Merch has no confirmation of its own: its email is the Receipt (#388),
+      // sent as the Add-On's is.
+      if (issued) afterCommit(() => sendPurchaseReceiptEmail(tenantId, purchase.id))
       return
     }
 

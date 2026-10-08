@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
-import { receiptFixtures } from './receipt-fixtures'
 import { stripeWebhookPath, type StripeFake } from './stripe-fake'
 import type { OutboundMessage } from '../lib/mailer'
 
@@ -53,6 +52,9 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
     bundleId: string
     freeTrialId: string
     corporateId: string
+    merchId: string
+    freeMerchId: string
+    unlimitedId: string
   }
   type Member = { clientId: string; email: string; headers: Record<string, string> }
 
@@ -106,8 +108,22 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
       .insert(schema.corporatePackages)
       .values({ tenantId: tenant.id, name: `${NAME} corporate`, priceSgd: '480.00', status: 'active', createdByStaffId: admin.id })
       .returning({ id: schema.corporatePackages.id })
+    const [mat, sticker] = await harness.db
+      .insert(schema.merch)
+      .values([
+        { tenantId: tenant.id, title: `${NAME} mat`, priceSgd: '42.00' },
+        { tenantId: tenant.id, title: `${NAME} sticker`, priceSgd: '0.00' },
+      ])
+      .returning({ id: schema.merch.id })
+    const [unlimited] = await harness.db
+      .insert(schema.classPackages)
+      .values({ tenantId: tenant.id, name: `${NAME} unlimited`, kind: 'unlimited', durationMonths: 3, credits: null, validityDays: null, priceSgd: '300.00' })
+      .returning({ id: schema.classPackages.id })
     return {
       ...tenant,
+      merchId: mat!.id,
+      freeMerchId: sticker!.id,
+      unlimitedId: unlimited!.id,
       locationId: location!.id,
       roomId: room!.id,
       admin,
@@ -287,12 +303,19 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
 
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
+    // A Cross-Location Add-On rate of the file's own, put back afterwards.
+    const [policy] = await harness.db.select().from(schema.globalPolicy).where(eq(schema.globalPolicy.tenantId, one.id))
+    assert.ok(policy, 'a seeded policy')
+    rateBefore = policy.crossLocationRateSgd
+    await harness.db.update(schema.globalPolicy).set({ crossLocationRateSgd: '20.00' }).where(eq(schema.globalPolicy.tenantId, one.id))
   })
+  let rateBefore: string | undefined
 
   after(async () => {
     if (!harness) return
     fake?.restore()
     try {
+      if (one && rateBefore !== undefined) await harness.db.update(schema.globalPolicy).set({ crossLocationRateSgd: rateBefore }).where(eq(schema.globalPolicy.tenantId, one.id))
       const ours = `%@${DOMAIN}`
       const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
       const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
@@ -306,6 +329,7 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
       await harness.db.execute(sql`DELETE FROM client_packages WHERE purchase_id IN (${orphaned})`)
       await harness.db.execute(sql`DELETE FROM purchases WHERE id IN (${orphaned})`)
       await harness.db.execute(sql`DELETE FROM corporate_requests WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM merch_orders WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM bookings WHERE workshop_id IN (${workshops}) OR client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
@@ -319,6 +343,7 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
       await harness.db.execute(sql`DELETE FROM workshops WHERE id IN (${workshops})`)
       await harness.db.execute(sql`DELETE FROM class_packages WHERE name LIKE ${`${NAME}%`}`)
       await harness.db.execute(sql`DELETE FROM corporate_packages WHERE name LIKE ${`${NAME}%`}`)
+      await harness.db.execute(sql`DELETE FROM merch WHERE title LIKE ${`${NAME}%`}`)
       await harness.db.execute(sql`DELETE FROM rooms WHERE location_id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM locations WHERE id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
@@ -332,7 +357,7 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
     }
   })
 
-  test("INV-70 a resend sends the purchase's own email, with the Receipt and its PDF, to the member's current email", async () => {
+  test("INV-76 a resend sends the purchase's own email, with the Receipt and its PDF, to the member's current email", async () => {
     const mia = await member(one)
     await pay(mia, PACKAGE, { package_kind: 'class', package_id: one.bundleId })
     const receipt = await onlyReceipt(mia)
@@ -356,7 +381,7 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
     await carries(mail!, receipt)
   })
 
-  test('INV-71 each resend files one audit row naming the admin who sent it, the Receipt and the address it went to', async () => {
+  test('INV-77 each resend files one audit row naming the admin who sent it, the Receipt and the address it went to', async () => {
     const leo = await member(one)
     await pay(leo, PACKAGE, { package_kind: 'class', package_id: one.bundleId })
     const receipt = await onlyReceipt(leo)
@@ -381,7 +406,7 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
     assert.equal(mailTo(leo.email).length, 3, 'the confirmation and both resends')
   })
 
-  test('INV-72 a free Trial Pass, a workshop place paid or free, and a corporate package each resend their own confirmation', async () => {
+  test('INV-78 a free Trial Pass, a workshop place paid or free, and a corporate package each resend their own confirmation', async () => {
     const cases: Array<{ slug: string; buy: (who: Member) => Promise<void> }> = [
       { slug: 'trial_pass_purchase_confirmed', buy: who => take(who, PACKAGE, { package_kind: 'class', package_id: one.freeTrialId }) },
       {
@@ -417,7 +442,7 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
     }
   })
 
-  test('INV-73 once the member is permanently deleted a resend is 409 receipt_member_deleted and sends nothing, and the earlier resend no longer says to whom', async () => {
+  test('INV-79 once the member is permanently deleted a resend is 409 receipt_member_deleted and sends nothing, and the earlier resend no longer says to whom', async () => {
     const ada = await member(one)
     await pay(ada, PACKAGE, { package_kind: 'class', package_id: one.bundleId })
     const receipt = await onlyReceipt(ada)
@@ -441,7 +466,7 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
     for (const value of [ada.email, ada.clientId]) assert.ok(!kept.includes(value.toLowerCase()), `the row still holds ${value}: ${kept}`)
   })
 
-  test("INV-74 another studio's Receipt is 404 receipt_not_found to resend, and nothing is sent", async () => {
+  test("INV-80 another studio's Receipt is 404 receipt_not_found to resend, and nothing is sent", async () => {
     const ivy = await member(two)
     await take(ivy, PACKAGE, { package_kind: 'class', package_id: two.freeTrialId })
     const theirs = await onlyReceipt(ivy)
@@ -454,19 +479,45 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
     assert.deepEqual(await resendTrail(two, theirs.id), [])
   })
 
-  test('INV-75 a Merch or standalone Cross-Location Add-On Receipt, whose purchase sent no email, is 409 receipt_email_unavailable to resend', async () => {
-    const made = receiptFixtures(harness)
-    try {
-      for (const kind of ['merch', 'cross_location_add_on'] as const) {
-        const kim = await member(one)
-        const receipt = await made.issueFor(one.id, kim.clientId, { kind, item: `${NAME} ${kind}` })
-        const refused = await expectStatus(await resend(one, receipt.id), 409)
-        assert.equal(refused.error, 'receipt_email_unavailable')
-        assert.equal(mailTo(kim.email).length, 0, 'nothing was sent')
-        assert.deepEqual(await resendTrail(one, receipt.id), [], 'no resend is on record')
-      }
-    } finally {
-      await made.cleanup()
+  test('INV-81 paid Merch, free Merch and a standalone Cross-Location Add-On each resend the purchase_receipt email their purchase sent', async () => {
+    /** An Unlimited Plan the member already holds, live, with no Add-On yet. */
+    const holdsUnlimited = async (who: Member) => {
+      const [row] = await harness.db
+        .insert(schema.clientPackages)
+        .values({
+          tenantId: one.id,
+          clientId: who.clientId,
+          kind: 'unlimited',
+          sourceClassPackageId: one.unlimitedId,
+          locationId: one.locationId,
+          durationMonths: 3,
+          active: true,
+          amountPaidSgd: '300.00',
+          listPriceSgd: '300.00',
+        })
+        .returning({ id: schema.clientPackages.id })
+      return row!.id
+    }
+    const cases: Array<(who: Member) => Promise<void>> = [
+      who => pay(who, '/api/v1/me/checkout/merch', { merch_id: one.merchId }),
+      who => take(who, '/api/v1/me/checkout/merch', { merch_id: one.freeMerchId }),
+      async who => pay(who, '/api/v1/me/checkout/cross-location', { client_package_id: await holdsUnlimited(who) }),
+    ]
+    for (const buy of cases) {
+      const who = await member(one)
+      await buy(who)
+      const receipt = await onlyReceipt(who)
+      const [confirmation] = mailTo(who.email)
+      assert.equal(templateOf(confirmation!), 'purchase_receipt')
+
+      await expectStatus(await resend(one, receipt.id), 200)
+      const sent = mailTo(who.email)
+      assert.equal(sent.length, 2, `the purchase's email and the resend of ${receipt.lines[0].description}`)
+      const mail = sent[1]!
+      assert.equal(templateOf(mail), 'purchase_receipt', 'the email the purchase sent')
+      assert.equal(mail.subject, confirmation!.subject)
+      await carries(mail, receipt)
+      assert.equal((await resendTrail(one, receipt.id)).length, 1, 'on record')
     }
   })
 })

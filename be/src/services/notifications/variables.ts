@@ -88,6 +88,12 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // what was bought is the pending Corporate Request the studio now arranges.
   // `amount_paid` in the shared money form, as on the confirmations above.
   corporate_purchase_confirmed: ['client_name', 'package_name', 'amount_paid', 'receipt_url'],
+  // #388: Merch and a standalone Cross-Location Add-On, sent only with a
+  // Receipt to carry, so `receipt_url` is always the member's Receipt and
+  // `withReceipt` fills `receipt_number` too (not listed, as on the four
+  // above). `item_name` is what was bought, in the Receipt's own phrase:
+  // the item, or the first line "+ N more".
+  purchase_receipt: ['client_name', 'item_name', 'amount_paid', 'receipt_url'],
   // §14: same composed-sentence rule. `cancelled_line` names the classes the
   // Refund cancelled and states plainly when there were none — cancelling
   // someone's booked classes silently is not acceptable.

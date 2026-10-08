@@ -203,7 +203,7 @@ export function resendRefusal(body: unknown): string {
     return "This member has been permanently deleted, so there is no one to send it to.";
   }
   if (code === ERROR_CODES.receipt_email_unavailable) {
-    return "This purchase sent no email to resend. Download the PDF and send it another way.";
+    return "What this purchase granted is no longer there to put its email together. Download the PDF and send it another way.";
   }
   if (code === ERROR_CODES.receipt_not_found) return "There is no such receipt at this studio.";
   return "The receipt could not be sent. Try again in a moment.";
