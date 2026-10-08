@@ -48,6 +48,7 @@ import { reportError } from '../../shared/logger'
 import { toCents } from '../../shared/money'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { cancelBooking } from '../bookings/cancel'
+import { closeCorporateRequestsForRefund } from '../corporate/requests'
 import { refundPromoCodeRedemption } from '../packages/promo-redemption'
 import { sendTemplatedEmail } from '../notifications/send'
 import {
@@ -1004,8 +1005,21 @@ async function unwindPurchase(tenantId: string, purchaseId: string): Promise<voi
     .limit(1)
   // A workshop (whose booking is above and IS the purchase), a corporate package
   // (which creates no client-package row, so there is nothing to void), Merch or
-  // a standalone Add-On payment. The money is recorded and nothing else moves.
+  // a standalone Add-On payment. The money is recorded; a corporate package's
+  // pending request goes with it.
   if (!pkg) {
+    const corporate = await closeCorporateRequestsForRefund(tenantId, purchaseId)
+    // A request already scheduled is not cancelled here: its session is the
+    // admin's to cancel. The money is already back, so it cannot be refused
+    // either — it is reported, loudly, for a human to settle, as a booking that
+    // will not cancel is above.
+    for (const corporateRequestId of corporate.scheduled) {
+      reportError(
+        new Error(`corporate request ${corporateRequestId} is scheduled; its Purchase was refunded`),
+        'refund left a scheduled corporate request standing — cancel its session',
+        { scope: 'refunds', purchaseId, corporateRequestId },
+      )
+    }
     await markPurchaseRefunded(tenantId, purchaseId)
     return
   }

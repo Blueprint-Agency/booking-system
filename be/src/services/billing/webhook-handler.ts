@@ -734,6 +734,7 @@ async function dispatchStripeEvent(
       const { corporateRequestId } = await createCorporateRequest(tenantId, {
         clientId,
         corporatePackageId: packageId,
+        purchaseId: purchase.id,
       })
 
       await bankPayment(

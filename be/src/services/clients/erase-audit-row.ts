@@ -1,4 +1,3 @@
-import { sql, type SQL } from 'drizzle-orm'
 import type { ErasedMember } from './member-tables'
 
 /**
@@ -63,8 +62,14 @@ function erased(value: Json): Json {
   return ERASED_MEMBER
 }
 
-/** The SET clause that anonymises one `audit_log` row naming `member`. */
-export function eraseAuditRow(row: Record<string, unknown>, member: ErasedMember): SQL {
+/** The columns `eraseAuditRow` rewrites, with their Postgres types. */
+export const AUDIT_ROW_REWRITES = { action: 'text', target_id: 'uuid', payload: 'jsonb' } as const
+
+/** The new `action`, `target_id` and `payload` of one `audit_log` row naming `member`. */
+export function eraseAuditRow(
+  row: Record<string, unknown>,
+  member: ErasedMember,
+): { action: string; target_id: string; payload: Json } {
   const ids = scrubber([member.clientId, member.authUserId])
   const everything = scrubber([member.clientId, member.authUserId, member.email, member.name, member.phone])
 
@@ -82,5 +87,5 @@ export function eraseAuditRow(row: Record<string, unknown>, member: ErasedMember
   const action = ids(String(row.action))
   const targetId = aboutTheirRecord ? NIL_ID : String(row.target_id)
 
-  return sql`action = ${action}, target_id = ${targetId}::uuid, payload = ${payload === null ? null : JSON.stringify(payload)}::jsonb`
+  return { action, target_id: targetId, payload }
 }

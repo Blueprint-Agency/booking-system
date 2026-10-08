@@ -343,6 +343,37 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
     assert.deepEqual(Object.entries(await rowsNaming(one, solo)).filter(([, n]) => n > 0), [])
   })
 
+  test('AUD-07 a member named by hundreds of audit rows has every one kept and anonymised', async () => {
+    const busy = { ...(await fixtures.memberAt(one, admin.headers, fixtures.at('busy'))), email: fixtures.at('busy') }
+    const ROWS = 600
+    await harness.db.execute(sql`
+      INSERT INTO audit_log (tenant_id, actor_staff_id, actor_type, action, target_table, target_id, payload)
+      SELECT ${one.id}::uuid, ${admin.row.id}::uuid, 'staff',
+             'POST /api/v1/portal/admin/clients/' || ${busy.clientId}::text || '/notes/' || n,
+             'clients', ${busy.clientId}::uuid,
+             jsonb_build_object('n', n, 'detail', 'wrote to ' || ${busy.email}::text, 'to', ${busy.email}::text)
+      FROM generate_series(1, ${ROWS}::int) AS n`)
+    const trail = await harness.db.execute<Row>(
+      sql`SELECT id FROM audit_log WHERE tenant_id = ${one.id} AND target_id = ${busy.clientId}::uuid AND action LIKE '%/notes/%'`,
+    )
+    assert.equal(trail.length, ROWS)
+    const ids = trail.map(r => String(r.id))
+
+    const res = await remove(busy.clientId, admin.headers)
+    assert.equal(res.status, 200, await res.clone().text())
+
+    const kept = await harness.db.execute<Row>(sql`SELECT * FROM audit_log WHERE id IN ${ids}`)
+    assert.equal(kept.length, ROWS, 'an audit row that named them was deleted')
+    const named = kept.filter(row => {
+      const text = JSON.stringify(row).toLowerCase()
+      return [busy.clientId, busy.email, busy.authUserId].some(v => text.includes(v.toLowerCase()))
+    })
+    assert.deepEqual(named.map(r => r.id), [], 'audit rows still name the member')
+    // Each row was rewritten from its own contents, not all alike.
+    assert.equal(new Set(kept.map(r => r.action)).size, ROWS)
+    assert.ok(kept.every(r => (r.payload as Row).to === '[erased member]' && typeof (r.payload as Row).n === 'number'))
+  })
+
   test('a member of another studio is not found here', async () => {
     assert.equal((await remove(elsewhere.clientId, admin.headers)).status, 404)
   })

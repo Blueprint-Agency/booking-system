@@ -15,6 +15,7 @@ import { toCents } from '../../shared/money'
 import { grantsWithoutPaying, saleDescription, type CheckoutQuote } from '../billing/checkout-session'
 import { openSettledPurchase } from '../billing/purchases'
 import { tenantDisplayName } from '../tenants/mail-identity'
+import { sendCorporatePurchaseEmail } from '../notifications/send-purchase-email'
 import { createCorporateRequest } from './requests'
 
 export type CorporateCheckout = CheckoutQuote<{ corporateRequestId: string }>
@@ -49,11 +50,15 @@ export async function beginCorporateCheckout(
   // the request is made here because there is no webhook coming to make it.
   const cents = toCents(pkg.priceSgd)
   if (grantsWithoutPaying(cents)) {
-    await openSettledPurchase({ tenantId, clientId, kind: 'corporate_package', metadata })
+    const purchase = await openSettledPurchase({ tenantId, clientId, kind: 'corporate_package', metadata })
     const { corporateRequestId } = await createCorporateRequest(tenantId, {
       clientId,
       corporatePackageId: pkg.id,
+      purchaseId: purchase.id,
     })
+    // Confirmed as every free purchase is (NTF-03), at S$0.00. The sender
+    // reports and swallows, so a failed send cannot undo the request.
+    await sendCorporatePurchaseEmail(tenantId, corporateRequestId, null)
     return { outcome: 'granted', corporateRequestId }
   }
 
