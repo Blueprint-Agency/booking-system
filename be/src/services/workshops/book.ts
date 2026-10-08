@@ -11,7 +11,7 @@ import { stripePayments } from '../../db/schema/ledger'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
-import { memberClash, type HeldWindow } from '../bookings/member-time'
+import { lockMemberTime, memberClash, type HeldWindow } from '../bookings/member-time'
 import { openSettledPurchase } from '../billing/purchases'
 import { bestPrice, listActivePromotionsFor } from '../packages/promotions'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -305,37 +305,46 @@ export async function bookWorkshopFree(
     throw new BadRequestError('workshop_is_not_free')
   }
 
-  // A free place has no provider session to be idempotent on: its Purchase is
-  // opened below, by this call, so duplicates (and capacity) are gated
-  // explicitly, before a Purchase exists to be orphaned by the refusal.
-  await assertWorkshopBookable(tenantId, args)
+  const booked = await db.transaction(async tx => {
+    // A free place has no provider session to be idempotent on: its Purchase
+    // is opened below, by this call, so duplicates (and capacity) are gated
+    // explicitly, before a Purchase exists to be orphaned by the refusal.
+    //
+    // The gate is a read followed by a write, so it holds the member's time
+    // first (./bookings/member-time), as every other booking path does: a
+    // second Register from the same member at the same moment (a double tap)
+    // waits here until this one commits, then sees its place and is refused
+    // `already_booked` before it opens a Purchase of its own.
+    await lockMemberTime(tx, tenantId, [args.clientId])
+    await assertWorkshopBookable(tenantId, args)
 
-  // A free place is still a sale: its Purchase opens and closes here, because a
-  // total of zero leaves nothing outstanding, and the booking points at it as a
-  // paid place points at the Purchase its payment settled.
-  const purchase = await openSettledPurchase({
-    tenantId,
-    clientId: args.clientId,
-    kind: 'workshop',
-    metadata: {
+    // A free place is still a sale: its Purchase opens and closes here, because
+    // a total of zero leaves nothing outstanding, and the booking points at it
+    // as a paid place points at the Purchase its payment settled.
+    const purchase = await openSettledPurchase({
+      tenantId,
+      clientId: args.clientId,
       kind: 'workshop',
-      workshop_id: args.workshopId,
-      workshop_tier_id: args.workshopTierId,
-      client_id: args.clientId,
-      promo_code_id: args.appliedPromoCodeId ?? '',
-      applied_promotion_id: eff.appliedPromotionId ?? '',
-    },
-  })
+      metadata: {
+        kind: 'workshop',
+        workshop_id: args.workshopId,
+        workshop_tier_id: args.workshopTierId,
+        client_id: args.clientId,
+        promo_code_id: args.appliedPromoCodeId ?? '',
+        applied_promotion_id: eff.appliedPromotionId ?? '',
+      },
+    })
 
-  const booked = await insertWorkshopBooking(tenantId, {
-    clientId: args.clientId,
-    workshopId: args.workshopId,
-    workshopTierId: args.workshopTierId,
-    paymentIntentId: null,
-    purchaseId: purchase.id,
-    amountSgd: '0.00',
-    appliedPromotionId: eff.appliedPromotionId,
-    appliedPromoCodeId: args.appliedPromoCodeId ?? null,
+    return insertWorkshopBooking(tenantId, {
+      clientId: args.clientId,
+      workshopId: args.workshopId,
+      workshopTierId: args.workshopTierId,
+      paymentIntentId: null,
+      purchaseId: purchase.id,
+      amountSgd: '0.00',
+      appliedPromotionId: eff.appliedPromotionId,
+      appliedPromoCodeId: args.appliedPromoCodeId ?? null,
+    })
   })
 
   // The worst case in the set (§13): a confirmed booking with a QR code and a
