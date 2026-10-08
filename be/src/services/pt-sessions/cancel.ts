@@ -375,11 +375,14 @@ async function cancelPtRequestInTx(
 
     // NTF-11: every member the session booked is told — the requester with the
     // sessions returned to them, a 2-on-1 partner, who paid nothing, without.
+    // Returned only when there was a package to return them to, as on the
+    // pending path: `refundToPackage` moves nothing without one.
     if (source !== 'system') {
+      const returned = req.debitedClientPackageId ? refundSessions : 0
       for (const bk of sessionBookings) {
         mail.request.push({
           clientId: bk.clientId,
-          sessionsReturned: bk.clientId === req.clientId ? refundSessions : 0,
+          sessionsReturned: bk.clientId === req.clientId ? returned : 0,
           ptSessionId: session.id,
         })
       }

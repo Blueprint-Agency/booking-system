@@ -58,6 +58,20 @@ export function sessionsRefundLine(sessionsReturned: number): string {
 }
 
 /**
+ * What a cancelled workshop place cost, and what happens to the money (NTF-10).
+ * Nothing is refunded automatically (#272), so a paid place is told the studio
+ * is arranging it; a place that was free gets the amount alone — no refund is
+ * coming, and the email must not say one is.
+ *
+ * `amountPaid` is already in the member-facing money form ("S$120.00").
+ */
+export function workshopRefundLine(amountPaid: string, paidCents: number): string {
+  return paidCents > 0
+    ? `You paid ${amountPaid} for your place. The studio is arranging your refund and will contact you to settle it.`
+    : `You paid ${amountPaid} for your place.`
+}
+
+/**
  * The private session a cancellation is about, as the subject and the first
  * sentence name it: a scheduled one by its instructor and time, a request that
  * was never scheduled as just that.

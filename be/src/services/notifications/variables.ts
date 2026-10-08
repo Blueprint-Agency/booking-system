@@ -55,8 +55,10 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   admin_cancel_pt: ['client_name', 'instructor_name', 'starts_at', 'refund_line', 'account_url'],
   // `amount_paid` in the shared money form ("S$120.00", `sgdText`). Nothing is
   // refunded automatically when a workshop is cancelled (#272), so it is what
-  // the member paid, not an amount already refunded.
-  admin_cancel_workshop: ['client_name', 'workshop_name', 'amount_paid', 'workshops_url'],
+  // the member paid, not an amount already refunded. `refund_line` is the whole
+  // sentence the default uses: that amount, and that the studio is arranging
+  // the refund — or, for a place that was free, the amount alone.
+  admin_cancel_workshop: ['client_name', 'workshop_name', 'amount_paid', 'refund_line', 'workshops_url'],
   // Goes to admins, not clients — the instructor cancelled their own class.
   instructor_cancel_class: ['class_name', 'date', 'instructor_name', 'reason', 'refunded_count'],
   // Leave: the first goes to every admin, the other three back to the instructor.

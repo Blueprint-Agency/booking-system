@@ -10,7 +10,7 @@
  * before it can fail too; each is reported (shared/logger.ts) rather than
  * thrown, so a swallowed email is never a silent one.
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
 import { classes, ptSessions, workshops } from '../../db/schema/schedule'
@@ -24,7 +24,7 @@ import { loadTenantById } from '../tenants/tenants'
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { NotFoundError } from '../../shared/errors'
-import { bookingCreditsLine, classRefundLine, privateSessionLine, sessionsRefundLine } from './booking-email'
+import { bookingCreditsLine, classRefundLine, privateSessionLine, sessionsRefundLine, workshopRefundLine } from './booking-email'
 import { sendTemplatedEmail } from './send'
 import type { PurchasedKind } from './purchase-email'
 
@@ -123,10 +123,15 @@ export async function sendClassBookingEmail(tenantId: string, bookingId: string)
   }
 }
 
-/** A cancelled booking's class or private session, as its cancellation emails name it. */
-async function readCancelledBooking(tenantId: string, bookingId: string) {
-  const [row] = await db
+/**
+ * Cancelled bookings' classes or private sessions, as their cancellation emails
+ * name them — every booking a cancellation affected, in one read.
+ */
+async function readCancelledBookings(tenantId: string, bookingIds: readonly string[]) {
+  if (!bookingIds.length) return new Map<string, never>()
+  const rows = await db
     .select({
+      id: bookings.id,
       kind: bookings.kind,
       used: bookings.creditsOrSessionsUsed,
       clientId: clients.id,
@@ -143,8 +148,13 @@ async function readCancelledBooking(tenantId: string, bookingId: string) {
     .leftJoin(classTypes, eq(classTypes.id, classes.classTypeId))
     .leftJoin(ptSessions, eq(ptSessions.id, bookings.ptSessionId))
     .leftJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
-    .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bookingId)))
-    .limit(1)
+    .where(and(eq(bookings.tenantId, tenantId), inArray(bookings.id, [...bookingIds])))
+  return new Map(rows.map(r => [r.id, r]))
+}
+
+/** One booking out of a `readCancelledBookings` read; a missing one is reported by the caller's catch. */
+function found<T>(rows: Map<string, T>, bookingId: string): T {
+  const row = rows.get(bookingId)
   if (!row) throw new NotFoundError('booking_not_found', { bookingId })
   return row
 }
@@ -156,7 +166,7 @@ async function readCancelledBooking(tenantId: string, bookingId: string) {
  */
 export async function sendMemberCancelReturnedEmail(tenantId: string, bookingId: string): Promise<void> {
   try {
-    const row = await readCancelledBooking(tenantId, bookingId)
+    const row = found(await readCancelledBookings(tenantId, [bookingId]), bookingId)
     const when = await sessionTimeFormat(tenantId)
     const returned = String(row.used ?? 0)
     const recipient = { email: row.clientEmail, userId: row.clientId, userKind: 'client' as const }
@@ -207,10 +217,12 @@ export interface StudioCancelNotice {
  * member's failure does not stop the rest.
  */
 export async function sendClassCancelledByStudioEmails(tenantId: string, notices: readonly StudioCancelNotice[]): Promise<void> {
+  const batch = await cancelledBatch(tenantId, notices.map(n => n.bookingId))
+  if (!batch) return
+  const classesUrl = `${batch.base}/classes`
   for (const n of notices) {
     try {
-      const row = await readCancelledBooking(tenantId, n.bookingId)
-      const when = await sessionTimeFormat(tenantId)
+      const row = found(batch.rows, n.bookingId)
       await sendTemplatedEmail({
         tenantId,
         slug: 'admin_cancel_class',
@@ -218,9 +230,9 @@ export async function sendClassCancelledByStudioEmails(tenantId: string, notices
         variables: {
           client_name: row.clientName,
           class_name: row.className ?? 'Your class',
-          date: row.classStartsAt ? when.format(row.classStartsAt) : '',
+          date: row.classStartsAt ? batch.when.format(row.classStartsAt) : '',
           refund_line: classRefundLine(n.returned),
-          classes_url: await clientUrl(tenantId, '/classes'),
+          classes_url: classesUrl,
           credits_returned: String(n.returned),
         },
       })
@@ -235,10 +247,12 @@ export async function sendClassCancelledByStudioEmails(tenantId: string, notices
  * with the sessions returned to their own package (`admin_cancel_pt`).
  */
 export async function sendPtCancelledByStudioEmails(tenantId: string, notices: readonly StudioCancelNotice[]): Promise<void> {
+  const batch = await cancelledBatch(tenantId, notices.map(n => n.bookingId))
+  if (!batch) return
+  const accountUrl = `${batch.base}/account/private-sessions`
   for (const n of notices) {
     try {
-      const row = await readCancelledBooking(tenantId, n.bookingId)
-      const when = await sessionTimeFormat(tenantId)
+      const row = found(batch.rows, n.bookingId)
       await sendTemplatedEmail({
         tenantId,
         slug: 'admin_cancel_pt',
@@ -246,14 +260,34 @@ export async function sendPtCancelledByStudioEmails(tenantId: string, notices: r
         variables: {
           client_name: row.clientName,
           instructor_name: row.ptInstructorName || 'your instructor',
-          starts_at: row.ptStartsAt ? when.format(row.ptStartsAt) : '',
+          starts_at: row.ptStartsAt ? batch.when.format(row.ptStartsAt) : '',
           refund_line: sessionsRefundLine(n.returned),
-          account_url: await clientUrl(tenantId, '/account/private-sessions'),
+          account_url: accountUrl,
         },
       })
     } catch (err) {
       reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, bookingId: n.bookingId })
     }
+  }
+}
+
+/**
+ * What every email of one cancellation shares, read once before its loop: the
+ * affected bookings, the studio's time format and its member app's origin.
+ * Null — reported, never thrown — when there is nothing to send or the reads
+ * fail.
+ */
+async function cancelledBatch(tenantId: string, bookingIds: readonly string[]) {
+  if (!bookingIds.length) return null
+  try {
+    return {
+      rows: await readCancelledBookings(tenantId, bookingIds),
+      when: await sessionTimeFormat(tenantId),
+      base: await requireTenantUrl('client', tenantId),
+    }
+  } catch (err) {
+    reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, bookingIds })
+    return null
   }
 }
 
@@ -294,23 +328,38 @@ export async function sendPtCancelMail(tenantId: string, mail: PtCancelMail): Pr
  * back — a 2-on-1 partner, who paid nothing, gets none.
  */
 async function sendPtRequestCancelledEmails(tenantId: string, notices: readonly PtRequestCancelNotice[]): Promise<void> {
+  if (!notices.length) return
+  // Everything the emails share, read once before the loop.
+  let shared
+  try {
+    const clientIds = [...new Set(notices.map(n => n.clientId))]
+    const sessionIds = [...new Set(notices.flatMap(n => (n.ptSessionId ? [n.ptSessionId] : [])))]
+    const clientRows = await db
+      .select({ id: clients.id, name: clients.name, email: clients.email })
+      .from(clients)
+      .where(and(eq(clients.tenantId, tenantId), inArray(clients.id, clientIds)))
+    const sessionRows = sessionIds.length
+      ? await db
+          .select({ id: ptSessions.id, startsAt: ptSessions.startsAt, instructorName: staffUsers.name })
+          .from(ptSessions)
+          .innerJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
+          .where(and(eq(ptSessions.tenantId, tenantId), inArray(ptSessions.id, sessionIds)))
+      : []
+    shared = {
+      clients: new Map(clientRows.map(c => [c.id, c])),
+      sessions: new Map(sessionRows.map(s => [s.id, s])),
+      when: await sessionTimeFormat(tenantId),
+      accountUrl: await clientUrl(tenantId, '/account/private-sessions'),
+    }
+  } catch (err) {
+    reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId })
+    return
+  }
   for (const n of notices) {
     try {
-      const [client] = await db
-        .select({ name: clients.name, email: clients.email })
-        .from(clients)
-        .where(and(eq(clients.tenantId, tenantId), eq(clients.id, n.clientId)))
-        .limit(1)
+      const client = shared.clients.get(n.clientId)
       if (!client) throw new NotFoundError('client_not_found', { clientId: n.clientId })
-      const [session] = n.ptSessionId
-        ? await db
-            .select({ startsAt: ptSessions.startsAt, instructorName: staffUsers.name })
-            .from(ptSessions)
-            .innerJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
-            .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, n.ptSessionId)))
-            .limit(1)
-        : []
-      const when = await sessionTimeFormat(tenantId)
+      const session = n.ptSessionId ? shared.sessions.get(n.ptSessionId) : undefined
       await sendTemplatedEmail({
         tenantId,
         slug: 'pt_request_cancelled',
@@ -318,10 +367,10 @@ async function sendPtRequestCancelledEmails(tenantId: string, notices: readonly 
         variables: {
           client_name: client.name,
           session_line: privateSessionLine(
-            session ? { instructorName: session.instructorName || 'your instructor', startsAt: when.format(session.startsAt) } : null,
+            session ? { instructorName: session.instructorName || 'your instructor', startsAt: shared.when.format(session.startsAt) } : null,
           ),
           refund_line: sessionsRefundLine(n.sessionsReturned),
-          account_url: await clientUrl(tenantId, '/account/private-sessions'),
+          account_url: shared.accountUrl,
         },
       })
     } catch (err) {
@@ -334,29 +383,41 @@ async function sendPtRequestCancelledEmails(tenantId: string, notices: readonly 
  * NTF-10: the studio cancelled a workshop — every attendee is told, with what
  * they paid (`admin_cancel_workshop`). Nobody is refunded automatically (#272):
  * the studio refunds each place by hand, so the email states the amount paid
- * and that the refund is being arranged, not that it has happened.
+ * and that the refund is being arranged, not that it has happened — and a
+ * place that was free, with nothing to refund, is told no refund at all.
  */
 export async function sendWorkshopCancelledEmails(tenantId: string, bookingIds: readonly string[]): Promise<void> {
+  if (!bookingIds.length) return
+  // Every affected place in one read, and what the emails share, before the loop.
+  let shared
+  try {
+    const rows = await db
+      .select({
+        id: bookings.id,
+        clientId: clients.id,
+        clientName: clients.name,
+        clientEmail: clients.email,
+        workshopName: workshops.name,
+        purchasePaidSgd: purchases.amountPaidSgd,
+        bookingPaidSgd: bookings.amountPaidSgd,
+      })
+      .from(bookings)
+      .innerJoin(clients, and(eq(clients.tenantId, bookings.tenantId), eq(clients.id, bookings.clientId)))
+      .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
+      .leftJoin(purchases, eq(purchases.id, bookings.purchaseId))
+      .where(and(eq(bookings.tenantId, tenantId), inArray(bookings.id, [...bookingIds]), eq(bookings.kind, 'workshop')))
+    shared = { rows: new Map(rows.map(r => [r.id, r])), workshopsUrl: await clientUrl(tenantId, '/workshops') }
+  } catch (err) {
+    reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, bookingIds })
+    return
+  }
   for (const bookingId of bookingIds) {
     try {
-      const [row] = await db
-        .select({
-          clientId: clients.id,
-          clientName: clients.name,
-          clientEmail: clients.email,
-          workshopName: workshops.name,
-          purchasePaidSgd: purchases.amountPaidSgd,
-          bookingPaidSgd: bookings.amountPaidSgd,
-        })
-        .from(bookings)
-        .innerJoin(clients, and(eq(clients.tenantId, bookings.tenantId), eq(clients.id, bookings.clientId)))
-        .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
-        .leftJoin(purchases, eq(purchases.id, bookings.purchaseId))
-        .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bookingId), eq(bookings.kind, 'workshop')))
-        .limit(1)
+      const row = shared.rows.get(bookingId)
       if (!row) throw new NotFoundError('workshop_booking_not_found', { bookingId })
       // The sale's figure, as the purchase confirmation states it (#370).
-      const paid = row.purchasePaidSgd ?? row.bookingPaidSgd ?? '0.00'
+      const paidCents = toCents(row.purchasePaidSgd ?? row.bookingPaidSgd ?? '0.00')
+      const paid = toSgd(paidCents)
       await sendTemplatedEmail({
         tenantId,
         slug: 'admin_cancel_workshop',
@@ -365,8 +426,9 @@ export async function sendWorkshopCancelledEmails(tenantId: string, bookingIds: 
           client_name: row.clientName,
           workshop_name: row.workshopName,
           amount_paid: amountPaid(paid),
-          workshops_url: await clientUrl(tenantId, '/workshops'),
-          refund_sgd: toSgd(toCents(paid)),
+          refund_line: workshopRefundLine(amountPaid(paid), paidCents),
+          workshops_url: shared.workshopsUrl,
+          refund_sgd: paid,
         },
       })
     } catch (err) {
