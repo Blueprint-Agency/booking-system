@@ -505,6 +505,23 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   ])
 
   /**
+   * Merch and a standalone Cross-Location Add-On (#388), which grant no
+   * package and book no place, so there is no confirmation above for them to
+   * ride on. One template for both, so nothing here may say which: the item
+   * is `item_name`, and the itemised Receipt the frame draws under this copy
+   * says the rest. Sent only with a Receipt, so the link is always to it.
+   */
+  const PURCHASE_RECEIPT_BODY = body('Thank you for your purchase', [
+    'Hi {{client_name}},',
+    facts([
+      ['Purchase', '{{item_name}}'],
+      ['Amount paid', '{{amount_paid}}'],
+    ]),
+    'Your receipt is below, and attached to this email as a PDF.',
+    link('{{receipt_url}}', 'View your receipt'),
+  ])
+
+  /**
    * The Refund (§14). The provider sends the money receipt; this one says the
    * entitlement has ended and names the classes that were cancelled with it —
    * both whole composed sentences, for the same reason the purchase emails are.
@@ -763,6 +780,11 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       slug: 'corporate_purchase_confirmed',
       subject: 'Your corporate package is confirmed',
       bodyHtml: CORPORATE_PURCHASE_BODY,
+    },
+    {
+      slug: 'purchase_receipt',
+      subject: 'Your receipt for {{item_name}}',
+      bodyHtml: PURCHASE_RECEIPT_BODY,
     },
     { slug: 'sign_in_code', subject: `Your ${STUDIO} sign-in code`, bodyHtml: SIGN_IN_CODE_BODY },
     {

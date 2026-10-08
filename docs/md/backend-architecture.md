@@ -937,7 +937,7 @@ A studio's **own** payment-provider account: its credentials, so every call on t
 
 id, slug (text unique per Tenant — 35 seeded values), subject (text), body_html (text), updated_at, updated_by_staff_id (FK).
 
-**Slug list (32, plus the three sign-in slugs in `services/auth/sign-in-mail.ts`)** — the seed (`db/seed/email-copy.ts`) and the `TemplateSlug` union (`services/notifications/send.ts`) must agree on every entry, and `db/seed/email-copy.test.ts` fails the build if they drift:
+**Slug list (34, plus the three sign-in slugs in `services/auth/sign-in-mail.ts`)** — the seed (`db/seed/email-copy.ts`) and the `TemplateSlug` union (`services/notifications/send.ts`) must agree on every entry, and `db/seed/email-copy.test.ts` fails the build if they drift:
 ```
 welcome
 client_invite
@@ -972,6 +972,7 @@ checkin_nag
 referral_credited
 trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_confirmed; trial copy is friendlier ("welcome to your first 3 classes")
 corporate_purchase_confirmed           # a paid corporate package: no credits, the studio arranges the session (be-client § Corporate branch)
+purchase_receipt                       # Merch (paid or free) and a standalone Cross-Location Add-On: the Receipt is the email (#388, migration 0114 for older studios)
 ```
 
 **The unreachable-slug gap is closed.** `pt_request_expired` and `workshop_waitlist_promoted` are now members of `TemplateSlug`, are declared in `TEMPLATE_VARIABLES`, and `db/seed/email-copy.test.ts` asserts slug-for-slug parity in both directions, so the class of gap that left the purchase templates unsent for months cannot reopen silently.

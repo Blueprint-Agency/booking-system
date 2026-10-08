@@ -25,6 +25,7 @@ import { NotFoundError } from '../../shared/errors'
 import { sgFormat } from '../../lib/time'
 import { receiptPageUrl, withReceipt } from '../receipts/email'
 import { purchaseReceipt } from '../receipts/read'
+import { receiptItem } from '../receipts/snapshot'
 import { amountPaid, composePurchaseEmail } from './purchase-email'
 import { sendTemplatedEmail } from './send'
 
@@ -231,6 +232,56 @@ export async function sendCorporatePurchaseEmail(
       scope: 'purchase-email',
       tenantId,
       corporateRequestId,
+    })
+  }
+}
+
+/**
+ * Send the Receipt of a sale that has no confirmation of its own (#388):
+ * Merch, paid or free, and a standalone Cross-Location Add-On. Neither grants
+ * a package or books a place, so `purchase_receipt` is the whole email: the
+ * studio's copy naming what was bought and what it cost, and under it the
+ * Receipt itself, its PDF and its link (`withReceipt`).
+ *
+ * Called once the delivery that issued the Receipt has committed. A Purchase
+ * with no Receipt sends nothing, and says so in a report: this email exists
+ * only to carry one. It goes to the member's current address, as every
+ * confirmation does.
+ */
+export async function sendPurchaseReceiptEmail(tenantId: string, purchaseId: string): Promise<void> {
+  try {
+    const receipt = await purchaseReceipt(tenantId, purchaseId)
+    if (!receipt) throw new NotFoundError('receipt_not_found', { purchaseId })
+    if (!receipt.clientId) throw new Error('the Receipt names no member')
+
+    const [member] = await db
+      .select({ id: clients.id, name: clients.name, email: clients.email })
+      .from(clients)
+      .where(and(eq(clients.tenantId, tenantId), eq(clients.id, receipt.clientId)))
+      .limit(1)
+    if (!member) throw new NotFoundError('client_not_found', { clientId: receipt.clientId })
+
+    await sendTemplatedEmail(
+      await withReceipt(
+        {
+          tenantId,
+          slug: 'purchase_receipt',
+          recipient: { email: member.email, userId: member.id, userKind: 'client' },
+          variables: {
+            client_name: member.name,
+            // What the Receipt calls it, so the copy and the block agree.
+            item_name: receiptItem(receipt.lines),
+            amount_paid: amountPaid(receipt.totalSgd),
+          },
+        },
+        receipt,
+      ),
+    )
+  } catch (err) {
+    reportError(err, 'purchase receipt email failed', {
+      scope: 'purchase-email',
+      tenantId,
+      purchaseId,
     })
   }
 }

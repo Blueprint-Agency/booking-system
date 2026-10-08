@@ -799,6 +799,13 @@
       "when": 1791490228089,
       "tag": "0113_receipt_details",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1791493358808,
+      "tag": "0114_purchase_receipt_template",
+      "breakpoints": true
     }
   ]
 }

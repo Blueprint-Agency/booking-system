@@ -8,8 +8,9 @@
  * receipt the studio hands the item over against.
  */
 import { and, desc, eq } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { merch, merchOrders } from '../../db/schema/catalog'
+import { sendPurchaseReceiptEmail } from '../notifications/send-purchase-email'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import {
@@ -54,7 +55,7 @@ export async function beginMerchCheckout(input: {
     })
     // A free item is still a sale — the Purchase opens and closes here, because
     // a total of zero leaves nothing outstanding.
-    await openSettledPurchase({
+    const purchase = await openSettledPurchase({
       tenantId: input.tenantId,
       clientId: input.clientId,
       kind: 'merch',
@@ -66,6 +67,11 @@ export async function beginMerchCheckout(input: {
       },
       lines,
     })
+    // Its S$0.00 Receipt, which that Purchase was issued, is the member's
+    // email (#388), once the order's transaction has committed. The sender
+    // reports and swallows, so a failed send cannot undo the order.
+    const tenantId = input.tenantId
+    afterCommit(() => sendPurchaseReceiptEmail(tenantId, purchase.id))
     return { outcome: 'granted', orderId: order.id }
   }
 

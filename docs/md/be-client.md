@@ -546,7 +546,7 @@ tx commit
 
 #### Purchase confirmation emails (§13)
 
-Five paths send, one deliberately does not:
+Every completed purchase sends, an admin's comp grant deliberately does not:
 
 | Path | Slug | Condition |
 |---|---|---|
@@ -556,6 +556,9 @@ Five paths send, one deliberately does not:
 | $0 trial pass | `trial_pass_purchase_confirmed` | always |
 | $0 corporate package | `corporate_purchase_confirmed` | always, from checkout's nothing-to-pay path, at S$0.00 |
 | $0 workshop tier | `workshop_purchase_confirmed` | always — this closed a real gap: a free workshop booking produced a QR and a date and no email at all before this batch |
+| Paid Merch | `purchase_receipt` | the delivery that issued the Receipt, after it commits (#388) |
+| $0 Merch | `purchase_receipt` | always, from checkout's nothing-to-pay path, at S$0.00 (#388) |
+| Standalone Cross-Location Add-On | `purchase_receipt` | the delivery that issued the Receipt, after it commits (#388). An Add-On bought with its plan is a line on the plan's Receipt and sends only `package_purchase_confirmed` |
 | Admin comp grant | — | **never** — a comp grant is not a purchase, and announcing an admin's action to someone who did not ask is the wrong default |
 
 The slug is decided by the granted package's **kind**, not by which code path granted it — a *priced* trial still goes through Stripe and the webhook, so branching on the path would send it the paid-package copy. `services/notifications/purchase-email.ts:composePurchaseEmail()` builds two whole composed sentences per send (the renderer is substitution-only with no conditionals, so a fragment-shaped variable produces a wrong sentence for some kind):
@@ -573,6 +576,8 @@ The slug is decided by the granted package's **kind**, not by which code path gr
 - **The Receipt's PDF is attached**, named after its number (`R-000123.pdf`), rendered by the same `receiptPdf` as the download.
 
 The email is sent only by the delivery that issued the Receipt (`issueReceipt` answers `issued`), after it commits, so a redelivery, or the confirmation page's fallback racing the webhook, sends nothing more. `services/receipts/email.ts:withReceipt(input, receipt)` adds all four to a templated send; the `purchase_receipt` email (#388) and an admin's resend (#390) send through it too.
+
+**`purchase_receipt` (#388)** is the email for the two sales that grant no package and book no place, so have no confirmation to carry their Receipt: Merch, paid or free, and a standalone Cross-Location Add-On. One template serves both, so its copy says only what was bought (`item_name`: the Receipt's own phrase for it, the item or its first line "+ N more") and what it cost (`amount_paid`, read off the Receipt's total), with `receipt_url` linking the Receipt; the block and PDF come under it as on the four above. It is sent only with a Receipt (`notifications/send-purchase-email.ts:sendPurchaseReceiptEmail`), by the same rule: once, from the delivery that issued the Receipt, after it commits; reported and swallowed on failure, the order, the Add-On and the Receipt standing. Studios created before it got the default wording from migration 0114, which adds the row where a studio has none and touches no existing one.
 
 The helper (`services/notifications/send-purchase-email.ts`) wraps its entire body in try/catch: `sendTemplatedEmail` throws on an unknown slug, and thrown from inside a webhook after the grant already committed, the delivery is lost permanently while the purchase looks fine. Swallowing here is what makes the `issued` flag a safe guard against double-sending on a provider retry: a failed send is reported, and the Purchase, the grant and the Receipt stand.
 
