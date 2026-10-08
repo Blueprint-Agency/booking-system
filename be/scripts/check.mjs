@@ -28,7 +28,7 @@
  * suite in one run.
  *
  * It refuses to start where a green run would not predict CI's: on a Node
- * major other than `.nvmrc`'s, with no `TEST_DATABASE_URL` (the integration
+ * major older than `.nvmrc`'s (a newer one runs, with a note), with no `TEST_DATABASE_URL` (the integration
  * tests would skip), or with one that refuses a connection (they would be
  * cancelled). A full run — no test files named — starts from an empty
  * database, as CI's does: it drops and recreates the checkout's test database
@@ -103,16 +103,24 @@ export function shardFiles(files, { index, total }) {
   return shards[index - 1]
 }
 
+const nodeMajor = v => Number(v.trim().replace(/^v/, '').split('.')[0])
+
 /**
  * Why Node `version` must not run the suite, or null when it may. CI and
- * be/Dockerfile run the major `.nvmrc` names, and another major accepts flags
- * and behaves in ways that one does not.
+ * be/Dockerfile run the major `.nvmrc` names. A newer major runs too (see
+ * `nodeNote`); an older one lacks flags the run passes, so it is refused.
  */
 export function nodeRefusal(version, nvmrc) {
-  const major = v => v.trim().replace(/^v/, '').split('.')[0]
-  const wanted = major(nvmrc)
-  if (major(version) === wanted) return null
+  const wanted = nodeMajor(nvmrc)
+  if (nodeMajor(version) >= wanted) return null
   return `this is Node ${version}, and CI runs Node ${wanted} (.nvmrc): switch first (nvm use ${wanted})`
+}
+
+/** What a run on a newer major than `.nvmrc`'s should say first: green here is not yet green in CI. */
+export function nodeNote(version, nvmrc) {
+  const wanted = nodeMajor(nvmrc)
+  if (nodeMajor(version) <= wanted) return null
+  return `Node ${version} here, and CI runs Node ${wanted} (.nvmrc): before a direct push, confirm on ${wanted} (nvm use ${wanted})`
 }
 
 /** The test database a run would use: the shell's, else `be/.env`'s, as `src/test/environment.ts` reads it. */
@@ -133,6 +141,11 @@ export function databaseRefusal(url, reason) {
   )
 }
 
+/** A connection error in words. A refused socket is an AggregateError with an empty message: its code says it. */
+export function connectionReason(err) {
+  return err?.message || err?.code || String(err)
+}
+
 /** Connects to the server `url` names, or says why it cannot. */
 async function connectionProblem(url) {
   const server = new URL(url)
@@ -142,7 +155,7 @@ async function connectionProblem(url) {
     await sql`select 1`
     return null
   } catch (err) {
-    return databaseRefusal(url, err.message)
+    return databaseRefusal(url, connectionReason(err))
   } finally {
     await sql.end({ timeout: 5 })
   }
@@ -177,8 +190,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     refuse(err.message)
   }
 
-  const nodeProblem = nodeRefusal(process.version, readFileSync(join(beDir, '..', '.nvmrc'), 'utf8'))
+  const nvmrc = readFileSync(join(beDir, '..', '.nvmrc'), 'utf8')
+  const nodeProblem = nodeRefusal(process.version, nvmrc)
   if (nodeProblem) refuse(nodeProblem)
+  const note = nodeNote(process.version, nvmrc)
+  if (note) console.log(`check: ${note}`)
 
   const envFile = join(beDir, '.env')
   const dotenvText = existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''

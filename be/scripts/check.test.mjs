@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url'
 import {
   BASE_FLAGS,
   DEFAULT_PATTERNS,
+  connectionReason,
   databaseRefusal,
   listTestFiles,
   nodeArgs,
+  nodeNote,
   nodeRefusal,
   parseShard,
   resetsDatabase,
@@ -32,11 +34,17 @@ test("a flag's value written after a space is refused, not run as a pattern", ()
   assert.throws(() => nodeArgs(['--test-reporter', 'tap']), /not a test file: tap/)
 })
 
-test('only the Node major .nvmrc names runs the suite', () => {
+test('the Node major .nvmrc names runs the suite, and so does a newer one; an older one does not', () => {
   assert.equal(nodeRefusal('v22.11.0', '22\n'), null)
   assert.equal(nodeRefusal('v22.11.0', 'v22.3.0'), null)
-  assert.match(nodeRefusal('v23.11.1', '22\n'), /this is Node v23\.11\.1, and CI runs Node 22/)
+  assert.equal(nodeRefusal('v23.11.1', '22\n'), null)
+  assert.match(nodeRefusal('v20.19.1', '22'), /this is Node v20\.19\.1, and CI runs Node 22/)
   assert.match(nodeRefusal('v20.19.1', '22'), /nvm use 22/)
+})
+
+test('a newer Node runs with a note that CI s verdict is still Node 22 s', () => {
+  assert.equal(nodeNote('v22.11.0', '22\n'), null)
+  assert.match(nodeNote('v23.11.1', '22\n'), /Node v23\.11\.1.*CI runs Node 22/)
 })
 
 test("the test database is the shell's, else be/.env's, else none", () => {
@@ -106,4 +114,9 @@ test('a test database that refuses the connection is named by host and port, nev
   assert.match(said, /password authentication failed/)
   assert.match(said, /docker ps/, 'it says how to find the port this checkout s Postgres is on')
   assert.doesNotMatch(said, /s3cret/)
+})
+
+test('a connection refused with no message is named by its code, never an empty reason', () => {
+  const refused = Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' })
+  assert.match(databaseRefusal('postgres://u:p@localhost:5434/t', connectionReason(refused)), /refused the connection: ECONNREFUSED\./)
 })

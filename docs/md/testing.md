@@ -41,8 +41,9 @@ the database by hand. It refuses any database not named `reservetoday-test` or
 share everything that can be shared, and `be/scripts/check.mjs` refuses to run where they would not:
 
 - **Node 22**, as `.nvmrc` pins it (`nvm use 22`), `engines` in `be/package.json` states it, and CI
-  and `be/Dockerfile` run it. Another major accepts flags and behaves in ways 22 does not, so
-  `npm run check` refuses to start on one.
+  and `be/Dockerfile` run it. `npm run check` refuses an older major, which lacks flags the run
+  passes. A newer one (23) runs, after a line saying CI runs 22: it is fine for the edit loop, but
+  another major can behave in ways 22 does not, so the full run before a direct push is on 22.
 - **One command.** CI's **Backend tests (serial, this shard)** step and the stop hook both run
   `npm run check` (`be/scripts/check.mjs`), adding only a reporter flag, or the files to run; CI
   also sets `SHARD=i/n` to run one slice of the file list per job (§ Shards in CI). A bare
