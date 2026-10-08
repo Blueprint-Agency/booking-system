@@ -438,6 +438,25 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     assert.ok(sent.html.includes(`https://pay.example.test/receipts/${intent}`), 'it links the provider receipt')
   })
 
+  test('NTF-03 a free corporate package is confirmed once with the zero amount, linking to the member\'s corporate requests', async () => {
+    const [free] = await harness.db
+      .insert(schema.corporatePackages)
+      .values({ tenantId: two.id, name: `${NAME} corporate free`, priceSgd: '0.00', status: 'active', createdByStaffId: two.admin.id })
+      .returning({ id: schema.corporatePackages.id })
+    const ana = await member(two)
+    const before = fake.callsTo('checkout.sessions.create').length
+    const granted = await expectStatus(await checkout(ana, { package_kind: 'corporate', package_id: free!.id }), 201)
+    assert.equal(granted.outcome, 'granted')
+    assert.equal(fake.callsTo('checkout.sessions.create').length, before, 'no payment step')
+
+    const requests = await corporateRequestsOf(ana)
+    assert.deepEqual(requests.map(r => [r.id, r.status]), [[granted.corporate_request_id, 'pending']])
+
+    const sent = await oneConfirmation(ana, two, 'corporate_purchase_confirmed', 'S$0.00')
+    assert.ok(textOf(sent).includes(`${NAME} corporate free`), `it names the package: ${textOf(sent)}`)
+    assert.ok(sent.html.includes('/account/bookings?type=corporate'), `it links where the request is: ${sent.html}`)
+  })
+
   test('NTF-03 a corporate delivery that fails to commit mails no one, and the provider\'s retry sends the one confirmation', async () => {
     const kim = await member(one)
     const intent = `pi_${randomUUID()}`
