@@ -201,10 +201,6 @@ export async function cancelClass(
     }
   })
 
-  // NTF-10: every member who was booked is told, whoever cancelled — the
-  // outcome for them is the same. After commit; never throws.
-  await sendClassCancelledByStudioEmails(tenantId, outcome.notices)
-
   if (source === 'instructor') {
     await emailAdmins({
       tenantId,
@@ -215,6 +211,10 @@ export async function cancelClass(
       refundedCount: outcome.refundedCount,
     })
   }
+
+  // NTF-10: every member who was booked is told, whoever cancelled — the
+  // outcome for them is the same. After commit; never throws.
+  await sendClassCancelledByStudioEmails(tenantId, outcome.notices)
 
   return { totalBookings: outcome.totalBookings, refundedCount: outcome.refundedCount }
 }
