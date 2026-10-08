@@ -1,16 +1,16 @@
 /**
  * Corporate request flow (mirrors the PT request flow, simpler).
  *
- * A member buys a corporate package in fe-client → submitCorporateRequest() is
+ * A member pays for a corporate package in fe-client → createCorporateRequest() is
  * called from the Stripe webhook to auto-create ONE pending corporate_requests
- * row. Admin negotiates the details over WhatsApp, then scheduleCorporateRequest()
+ * row (#374). Admin negotiates the details over WhatsApp, then scheduleCorporateRequest()
  * mints a corporate_session (reusing the existing services/corporate/sessions.ts)
  * and flips the request to 'scheduled' — the implicit approval. markAttended /
  * cancel close it out. There is no slot/class-type/partner concept (unlike PT).
  *
  * See docs/md/be-client.md §Corporate and docs/md/be-portal.md §Corporate.
  */
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { corporateRequests, corporateSessions } from '../../db/schema/schedule'
 import { corporatePackages } from '../../db/schema/packages'
@@ -21,7 +21,7 @@ import {
   createCorporateSession,
   type CorporateSessionError,
 } from './sessions'
-import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { BadRequestError } from '../../shared/errors'
 import { summarizeCancellation, type CancellationLines } from '../bookings/cancellation-summary'
 
 export type CorporateRequestRow = typeof corporateRequests.$inferSelect
@@ -59,51 +59,33 @@ export interface HydratedCorporateRequest {
 // Create (auto, on purchase)
 // ----------------------------------------------------------------------------
 
-export interface SubmitCorporateRequestInput {
+export interface CreateCorporateRequestInput {
   clientId: string
   corporatePackageId: string
-  /** Preferred location captured by the fe-client request form (optional). */
-  preferredLocation?: string | null
-  /** Free-text notes captured by the fe-client request form (optional). */
-  message?: string | null
 }
 
 /**
- * Create one pending corporate request from the fe-client request form. Corporate is
- * a free request/quote flow in v1 — NOT a Stripe-paid item — so this is called
- * directly from `POST /me/catalog/corporate-requests`, not from a webhook. No slots,
- * no negotiation captured here — that all happens over WhatsApp. The member's preferred
- * location and free-text notes (from the request form) are stored as separate fields.
+ * Create the one pending corporate request a paid corporate package entitles
+ * the member to (#374; be-client § Corporate branch). Called from the Stripe
+ * webhook once the payment is confirmed — or from checkout for a package with
+ * nothing to pay. There is no client form, so no venue and no note: everything
+ * is settled over WhatsApp and recorded when the studio schedules it.
  *
- * NOTE: the `corporate_package` value in the stripePaymentKind enum is currently unused
- * (corporate is unpaid); it is left in place to avoid a destructive enum migration.
+ * It does not ask whether the package is still on sale. By the time this runs
+ * the member has paid, and refusing the request then would keep their money
+ * and give them nothing; checkout is where a package that is not on sale is
+ * refused.
  */
-export async function submitCorporateRequest(
+export async function createCorporateRequest(
   tenantId: string,
-  input: SubmitCorporateRequestInput,
+  input: CreateCorporateRequestInput,
 ): Promise<{ corporateRequestId: string }> {
-  const [pkg] = await db
-    .select({ id: corporatePackages.id, status: corporatePackages.status })
-    .from(corporatePackages)
-    .where(
-      and(
-        eq(corporatePackages.tenantId, tenantId),
-        eq(corporatePackages.id, input.corporatePackageId),
-        isNull(corporatePackages.deletedAt),
-      ),
-    )
-    .limit(1)
-  if (!pkg) throw new NotFoundError('corporate_package_not_found')
-  if (pkg.status !== 'active') throw new BadRequestError('corporate_package_not_active')
-
   const [row] = await db
     .insert(corporateRequests)
     .values({
       tenantId,
       clientId: input.clientId,
       corporatePackageId: input.corporatePackageId,
-      preferredLocation: input.preferredLocation ?? null,
-      message: input.message ?? null,
       status: 'pending',
     })
     .returning({ id: corporateRequests.id })

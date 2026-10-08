@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMemberSession } from "./member-auth";
-import { Api, ApiError, publicApi, useApi } from "./api";
+import { ApiError, publicApi, useApi } from "./api";
 
 // ── Wire types (snake_case as returned by BE) ────────────────────────────────
 
@@ -133,24 +133,6 @@ export function useCorporateRequests(): {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Submits a corporate request — no payment. Creates one pending corporate request
- * the studio then arranges over WhatsApp. The optional `location` (chosen venue —
- * a studio name or the member's own venue) and `notes` are stored on the request
- * for the admin to review.
- */
-export function submitCorporateRequest(
-  api: Api,
-  packageId: string,
-  details?: { location?: string; notes?: string },
-): Promise<{ corporate_request_id: string }> {
-  return api.post<{ corporate_request_id: string }>("/me/corporate-requests", {
-    package_id: packageId,
-    ...(details?.location ? { preferred_location: details.location } : {}),
-    ...(details?.notes ? { notes: details.notes } : {}),
-  });
-}
 
 /**
  * The studio's own WhatsApp number, from `tenant_settings.copy["contact.whatsapp"]`.

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
 import { frontendOrigin, integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { buyCorporatePackage } from './corporate-purchase'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.account.test`
@@ -609,8 +610,8 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
       .insert(schema.corporatePackages)
       .values({ tenantId: one.id, name: CORPORATE_NAME, priceSgd: '800.00', createdByStaffId: adminAtOne.staffId })
       .returning({ id: schema.corporatePackages.id })
-    const request = async () =>
-      (await ok(send('/me/corporate-requests', ida.headers, 'POST', { package_id: pkg!.id }), 201)).corporate_request_id as string
+    // Each request is a paid purchase of the package (#374).
+    const request = () => buyCorporatePackage(harness, schema, ida, one, pkg!.id)
     const schedule = (id: string, startsAt: Date) =>
       ok(
         send(`/portal/admin/corporate-requests/${id}/schedule`, adminAtOne.headers, 'POST', {
@@ -778,7 +779,7 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
       .insert(schema.corporatePackages)
       .values({ tenantId: one.id, name: CORPORATE_NAME, priceSgd: '800.00', createdByStaffId: adminAtOne.staffId })
       .returning({ id: schema.corporatePackages.id })
-    await ok(send('/me/corporate-requests', mia.headers, 'POST', { package_id: pkg!.id }), 201)
+    await buyCorporatePackage(harness, schema, mia, one, pkg!.id)
     await harness.db
       .insert(schema.merchOrders)
       .values({ tenantId: one.id, clientId: mia.clientId, title: MERCH_TITLE, amountSgd: '25.00' })

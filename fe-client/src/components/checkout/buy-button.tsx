@@ -10,9 +10,10 @@ import { cn } from "@/lib/utils";
 import { reportError } from "@/lib/report-error";
 import { checkoutErrorMessage } from "@/lib/checkout-messages";
 import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
+import { corporateRequestSentHref } from "@/lib/corporate-return";
 
 type BuyTarget =
-  | { kind: "package"; packageKind: "class" | "pt"; packageId: string }
+  | { kind: "package"; packageKind: "class" | "pt" | "corporate"; packageId: string }
   | { kind: "workshop"; workshopId: string; tierId: string | null }
   | { kind: "merch"; merchId: string };
 
@@ -109,6 +110,9 @@ export function BuyButton({
           );
         } else if (target.kind === "merch") {
           router.push("/booking/confirmation?type=merch");
+        } else if (target.kind === "package" && data.corporate_request_id) {
+          // A corporate package grants no package: the request is what was bought.
+          router.push(corporateRequestSentHref(target.packageId));
         } else if (target.kind === "package" && data.client_package_id) {
           router.push(
             `/booking/confirmation?type=package&package_id=${target.packageId}&package_kind=${target.packageKind}`,
