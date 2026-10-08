@@ -208,7 +208,7 @@ be/
     ├── jobs/
     │   ├── cron.ts                    # `node-cron` registrations — daily 03:00 SGT
     │   ├── handlers/
-    │   │   ├── checkin-nag.ts         # Daily — sessions ended 24h ago with `pending` check-in
+    │   │   ├── checkin-nag.ts         # Every 15 min — sessions ended 24h ago with `pending` check-in (built as services/bookings/check-in-nag.ts)
     │   │   ├── credit-expiry.ts       # Daily — client_packages expiring in ~7 days
     │   │   └── send-email.ts          # Render via services/notifications/render → SMTP transport (lib/mailer.ts) → log
     │   └── queue/                     # ADDED WHEN BullMQ lands for refund durability
@@ -551,6 +551,7 @@ lifecycle = 'active' AND now > ends_at         → 'completed'
 | lifecycle | enum `lifecycle` | not null, default `'active'` — `active`, `cancelled` |
 | cancelled_at | timestamptz | nullable |
 | cancelled_by_staff_id | uuid | FK → staff_users.id, nullable |
+| checkin_nag_sent_at | timestamptz | nullable — when the check-in nag went out (§5 `sendCheckInNags`); stamped as it is claimed, so it goes out once |
 | created_at | timestamptz | not null |
 | created_by_staff_id | uuid | FK → staff_users.id |
 
@@ -714,6 +715,7 @@ Each row is one date+time-frame option the client put forward. Admin picks any o
 | capacity_buffer | int | not null, default 0, CHECK ≥ 0 |
 | lifecycle | enum `lifecycle` | not null, default `'active'` — `active`, `cancelled`. PT sessions inherit the time-derived event state pattern (§4e header) since the request/decline/expire states are owned by `pt_requests`. |
 | cancelled_at, cancelled_by_staff_id | | nullable |
+| checkin_nag_sent_at | timestamptz | nullable — as `classes.checkin_nag_sent_at` |
 | scheduled_at, scheduled_by_staff_id | | not null — who converted the request into a session |
 | created_at | timestamptz | not null |
 
@@ -909,9 +911,9 @@ A studio's **own** payment-provider account: its credentials, so every call on t
 
 #### `email_templates` (§17)
 
-id, slug (text unique — 30 seeded values), subject (text), body_html (text), updated_at, updated_by_staff_id (FK).
+id, slug (text unique per Tenant — 35 seeded values), subject (text), body_html (text), updated_at, updated_by_staff_id (FK).
 
-**Slug list (30)** — the seed (`db/seed/email-copy.ts`) and the `TemplateSlug` union (`services/notifications/send.ts`) must agree on every entry, and `db/seed/email-copy.test.ts` fails the build if they drift:
+**Slug list (32, plus the three sign-in slugs in `services/auth/sign-in-mail.ts`)** — the seed (`db/seed/email-copy.ts`) and the `TemplateSlug` union (`services/notifications/send.ts`) must agree on every entry, and `db/seed/email-copy.test.ts` fails the build if they drift:
 ```
 welcome
 client_invite
@@ -922,6 +924,7 @@ pt_request_submitted
 pt_session_approved
 pt_session_declined
 pt_request_expired                     # NEW — sweep job (§5) marks pending requests past expires_at
+pt_request_cancelled                   # a PT Request cancelled before or after scheduling (#359, NTF-11)
 workshop_purchase_confirmed
 workshop_waitlist_promoted             # NEW — fired when cancellation frees a seat and waitlist promotes (deferred behaviour, slug seeded now)
 class_cancelled_credit_returned
@@ -953,13 +956,24 @@ trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_
 | Slug | Where the sender belongs |
 |---|---|
 | `welcome` | Sign-in mail is the auth pools' own (`services/auth/sign-in-mail.ts`); wire this only if the studio wants its own. (`password_reset` is sent: it is the member's set-password link, #173.) |
-| `class_booking_confirmed` | `services/bookings/book.ts`, after commit. |
-| `class_cancelled_*`, `pt_cancelled_*` | `services/bookings/cancel.ts` — the forfeited pair needs `reason_line` from `policy/evaluate-cancellation.ts:forfeitLine`. |
-| `admin_cancel_class`, `admin_cancel_pt`, `admin_cancel_workshop` | the admin cancel services. `admin_cancel_workshop` must not claim an automatic refund — `services/workshops/cancel.ts` marks bookings `refund_outcome='n_a'`. |
+| `class_cancelled_forfeited`, `pt_cancelled_forfeited` | `services/bookings/cancel.ts` — needs `reason_line` from `policy/evaluate-cancellation.ts:forfeitLine`. |
 | `pt_session_approved`, `pt_session_declined`, `pt_request_expired` | `services/pt-sessions/schedule.ts` and `cancel.ts:expireStaleSessions`. |
-| `credit_expiry_reminder` | `services/packages/expire.ts:sendLapsingAlerts`; `remaining_line` is composed with `notifications/purchase-email.ts:contentsLine`. |
-| `checkin_nag` | the `checkin-nag` cron. |
 | `referral_credited` | `services/referrals.ts`. |
+
+**The booking and cancellation emails (#359).** Sent after the action commits, never able to undo or fail it: a send fault is a failed `email_log` row, and a missing template or a failed read is reported (`shared/logger.ts`) and swallowed — the same contract as the purchase confirmations. Composed sentences live in `services/notifications/booking-email.ts` (pure), the reads and sends in `send-booking-email.ts`. Links are variables built per send from the studio's own origin (`classes_url`, `account_url`, `workshops_url`, `checkin_url`), so the default wording names no origin and migration 0107 could write it into studios created before it (it updates a row only while it is still byte-identical to its old default, adds a missing one, and touches nothing else).
+
+| Slug | Sent by | To | Says |
+|---|---|---|---|
+| `class_booking_confirmed` | `services/bookings/book.ts`, member or staff booking (a waitlist promotion sends `class_waitlist_promoted` instead) | the member | `credits_line`: the credits used and what remains, or that an Unlimited Plan covered it |
+| `class_cancelled_credit_returned`, `pt_cancelled_session_returned` | `services/bookings/cancel.ts` (a member's own cancel whose refund fired), and a member leaving a manual session in time (`pt-sessions/manual.ts`) | the member | `refund_line`: what came back |
+| `admin_cancel_class` | `services/bookings/cancel-class.ts`, admin or main-instructor cancel | every member booked | `refund_line`: the credits returned, or that the booking used none |
+| `admin_cancel_pt` | `services/pt-sessions/cancel.ts` → `manual.ts`, staff cancelling a manual session | every member seated | `refund_line`: the session returned |
+| `admin_cancel_workshop` | `services/workshops/cancel.ts` | every attendee | `amount_paid` in `sgdText` form; nothing is refunded automatically (#272), so it says the refund is being arranged |
+| `pt_request_cancelled` | `services/pt-sessions/cancel.ts`, a member's request cancelled before or after scheduling by the member, an admin or the instructor (not an expiry or a Remove) | the requester, and a 2-on-1 partner | `session_line`, and `refund_line` only when sessions came back |
+| `checkin_nag` | the `sendCheckInNags` job (§5) | the Instructor, each active Admin copied | the session, its date and the members still unmarked |
+| `credit_expiry_reminder` | `services/packages/expire.ts:sendLapsingAlerts` | the member | `remaining_line`, composed with `notifications/purchase-email.ts:contentsLine` |
+
+A staff cancel of one booking (`/bookings/:id/cancel`) sends nothing (#320).
 | `workshop_waitlist_promoted` | deferred with waitlist behaviour itself. |
 
 #### `email_log`
@@ -1044,7 +1058,7 @@ The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-
 | Job | Schedule | Handler |
 |---|---|---|
 | `email` send | Triggered (not scheduled) — invoked by any service via `services/notifications/send.ts:enqueueEmail()`, executed inline against the SMTP transport | Render template + variables → `lib/mailer.ts` (Nodemailer) → write `email_log`. In v1 this is synchronous (no queue); failures are logged and surfaced in `email_log.status='failed'` with `error` populated from the Nodemailer rejection |
-| `checkin-nag` | Daily 03:00 SGT (`node-cron`) | Find sessions where `ends_at` between now-25h and now-23h AND any booking has `check_in_state='pending'` → send `checkin_nag` email to assigned instructor (cc admin), one per session |
+| `sendCheckInNags` | Every 15 min, per Tenant (`jobs/index.ts`, `services/bookings/check-in-nag.ts`) | An active class or private session that ended at least 24 hours ago (and no more than 72 — older ones, which predate the job, are never nagged) with a confirmed booking still `check_in_state='pending'`, and no `checkin_nag_sent_at` yet → stamp `checkin_nag_sent_at` (the claim, so each session is nagged once), then send `checkin_nag` to its Instructor (link: `/instructor/check-in`) and to every active Admin of the studio but them (link: `/admin/check-in`). A failed send is a failed `email_log` row, not retried. |
 | `credit-expiry` (`sendLapsingAlerts`) | Daily 08:00 in each Tenant's own `timezone` (`jobs/index.ts`) | Find the Tenant's active Credit Bundles and trials with credits left where `expires_at` between now+6.5d and now+7.5d → send `credit_expiry_reminder` email. The window is one day wide and the job runs once a day, so each package is reminded once. The renderer has no conditionals, so the kind branch happens in code: `remaining_line` is composed with `notifications/purchase-email.ts:contentsLine`, which says "2 classes" for a trial and "2 class credits" for a bundle. |
 | `pt-request-expiry` | Hourly (`node-cron`) | Find `pt_requests WHERE status='pending' AND expires_at < now()` → update `status='expired'`, set `resolved_at=now()`, `resolved_by_staff_id=NULL`, then `enqueueEmail('pt_request_expired', client.email, …)`. Stale requests must not linger in the admin queue. |
 | `promotion-status` | Not a cron — **query-time derivation**. A `promotions` row is "active right now" iff `status='active' AND now() BETWEEN starts_at AND ends_at`. Computed in `services/promotions/resolve.ts:bestPriceFor(parent_type, parent_id)`. No background sweep needed; the windowed predicate is cheap given the `(parent_type, parent_id, status, starts_at, ends_at)` index. | — |
