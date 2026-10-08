@@ -516,7 +516,7 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
     }
   })
 
-  test('a refused caller gets the gate’s own refusal, and the refused calls write nothing', async () => {
+  test('INV-54 a refused caller gets the gate’s own refusal, and the refused calls write nothing', async () => {
     const before = await snapshot()
     const wrong: string[] = []
     for (const key of declaredRoutes()) {
