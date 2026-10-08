@@ -6,7 +6,7 @@ A member can ask a studio for their data (**Download data**, #143) and to be del
 
 ## The rule
 
-**Everything the studio holds that names the member is deleted, except its accounts.** The accounts stay, with the member's identity removed from them.
+**Everything the studio holds that names the member is deleted, except its accounts and its audit trail.** Both stay, with the member's identity removed from them.
 
 The tables and what deletion does to each are one list, `MEMBER_TABLES` in `be/src/services/clients/member-tables.ts` — the same list the export reads, so the two cannot disagree about where a member lives. Each entry's `erase` steps are this document in code; a guard test fails when a schema column names a member and the list does not know it.
 
@@ -22,7 +22,6 @@ The tables and what deletion does to each are one list, `MEMBER_TABLES` in `be/s
 | Their PT requests and proposed slots, and their place on PT sessions | `pt_requests`, `pt_request_slots`, `pt_session_clients` |
 | Corporate enquiries | `corporate_requests` |
 | Mail sent to them — by member id, or by address for mail sent before one existed, such as a sign-in code — and notifications about them | `email_log`, `inbox_items` |
-| The staff audit trail about them: actions on their profile, actions whose path runs through their profile (their packages, bookings, refunds), actions taken while impersonating them | `audit_log` |
 | Their sign-ins and staff acts on their account, at this studio | `auth_events` |
 | Their sessions at this studio | `client_auth_sessions` with this studio's claim |
 | Their login at this studio — a login at another studio is that studio's (ADR 0006) | `client_auth_users`, with its sessions and credentials |
@@ -44,6 +43,16 @@ A provider that cannot be reached does **not** stop the deletion — the member 
 **Why:** these are the studio's financial records. A studio has to be able to account for money it took and gave back, and to reconcile against the payment provider — which is why `payment_intent_id` stays: it matches a row to the provider's own record without naming anyone here. Nothing kept holds a name, email or phone.
 
 **For how long:** as long as the studio's accounting records must be kept. For a Singapore studio that is **five years** from the end of the financial year the transaction falls in (IRAS record-keeping requirements); a studio elsewhere follows its own jurisdiction. There is **no automatic purge** of these rows yet — they carry no identity, so keeping them longer discloses nothing about the member, but a studio that must destroy records after the period has to be given that job separately.
+
+### Kept, anonymised: the audit trail
+
+| What | Table | What is replaced |
+|---|---|---|
+| The staff audit trail about them: actions on their profile, actions whose path runs through their profile (their packages, bookings, refunds), actions taken while impersonating them | `audit_log` | Every trace of the member, by the placeholder `[erased member]`: their ids where a route's path carried them (`action`); `target_id` (the nil id) where it was their profile; in `payload`, every value an edit of their profile or email changed from and to (earlier names, phones and emails too), and their name, email, phone or ids anywhere in its text |
+
+**Why:** audit rows are never deleted (`prd.md` §3.9, `docs/adr/0008-audit-rows-are-archived-not-deleted.md`). The trail still shows which staff member did what kind of thing to a member's record, and when; it no longer shows who the member was. The row's id, actor, action, target table and time are unchanged, and an edit's `from` and `to` keep their keys, so it still says which fields changed. This is the one edit an audit row ever takes. The rule is `erase-audit-row.ts`, beside `member-tables.ts`.
+
+**For how long:** as long as the studio exists; there is no purge. If the studio is deleted, its audit trail, these rows included, moves to the platform's archive (`audit_log_archive`), which only the super portal can read.
 
 ### Someone else's rows that named the member
 
@@ -67,3 +76,4 @@ An `auth_events` row, kind `member_deleted`, filed under `staff` at this studio:
 - **Backups.** A deleted member remains in database backups until those backups age out.
 - **The payment provider and the mail provider** keep their own records under their own retention; deletion here does not reach them.
 - **Other studios' sign-in logs.** A failed sign-in at another studio is that studio's record.
+- **A deleted studio's archived audit trail.** Once a studio is deleted its trail sits in the platform's `audit_log_archive` as it stood, and there is no studio left to ask for an erasure; one would be handled by hand.

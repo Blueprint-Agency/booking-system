@@ -526,8 +526,10 @@ payment credentials). After the commit it deletes the studio's R2 folder `t/<ten
 best-effort. Not removed: objects uploaded before keys were tenant-prefixed, the
 studio's Customers/cards at its payment provider, mail already sent. The slug is free
 immediately. The record is the `platform: tenant deleted` log line (who, which
-studio, row count) — there is no platform audit table, and the studio's own
-`audit_log` is deleted with it. Integration test: `be/src/test/tenant-delete.test.ts`.
+studio, row count). The studio's own `audit_log` is not deleted with it but moved, in
+the same transaction and before anything else goes, into the platform's
+`audit_log_archive` (`docs/adr/0008-audit-rows-are-archived-not-deleted.md`).
+Integration test: `be/src/test/tenant-delete.test.ts`.
 
 **Replace from archive** (#339; `importTenant` in `be/src/services/tenants/transfer.ts`).
 The studio import — `POST /api/v1/platform/tenants/:id/import` (form fields) or the job's
