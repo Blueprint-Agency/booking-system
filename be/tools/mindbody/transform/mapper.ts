@@ -470,6 +470,9 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     members: reports.members,
     sales,
     homes: memberHomes(config, reports),
+    attendance: reports.attendance,
+    roster: reports.roster,
+    staffIds,
   })
   preflight.notMigrated = packages.notMigrated
   preflight.balances = packages.balances

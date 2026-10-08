@@ -264,11 +264,16 @@ export function mapSchedule(input: {
    * refuses exactly those — so a seat nothing can pay for is imported unpaid and
    * listed, rather than pinned to a package the studio could never charge.
    * `locationId` is null for a PT session: only an Unlimited Plan has a Location.
+   *
+   * A PT package bound to another trainer than the session's (`instructorId`)
+   * pays only where nothing else can, as the platform's admin may make it with
+   * a warning: Mindbody spent from whatever the front desk picked.
    */
-  const payingPackage = (clientId: string, family: 'class' | 'pt', startsAt: Date, locationId: unknown = null) => {
+  const payingPackage = (clientId: string, family: 'class' | 'pt', startsAt: Date, locationId: unknown = null, instructorId: string | null = null) => {
     // As `covers` in `src/services/packages/selection.ts`: a plan Covers its Home Location, and every one with the Add-On.
     const covers = (p: Row) =>
       p.kind !== 'unlimited' || locationId == null || p.location_id === locationId || p.cross_location_paid_sgd != null
+    const elsewhere = (p: Row) => instructorId != null && p.bound_instructor_id != null && p.bound_instructor_id !== instructorId
     const mine = input.clientPackages.filter(
       p => p.client_id === ids.clients![clientId] && p.active === true && (p.kind === 'pt') === (family === 'pt') && covers(p),
     )
@@ -278,7 +283,8 @@ export function mapSchedule(input: {
     const dormant = mine
       .filter(p => p.expires_at == null)
       .sort((a, b) => Number(b.kind === 'unlimited') - Number(a.kind === 'unlimited') || String(a.purchased_at).localeCompare(String(b.purchased_at)))
-    return lasting[0] ?? dormant[0]
+    const inOrder = [...lasting, ...dormant]
+    return inOrder.find(p => !elsewhere(p)) ?? inOrder[0]
   }
 
   /**
@@ -312,8 +318,9 @@ export function mapSchedule(input: {
     startsAt: Date,
     on: CalendarDate,
     locationId: unknown = null,
+    instructorId: string | null = null,
   ): void => {
-    const pkg = payingPackage(clientId, family, startsAt, locationId)
+    const pkg = payingPackage(clientId, family, startsAt, locationId, instructorId)
     if (!pkg) {
       const what = family === 'pt' ? 'PT' : 'class'
       const who = `${clientId} ${memberNames.get(clientId)}`
@@ -459,7 +466,7 @@ export function mapSchedule(input: {
     }
     if (rate.flat !== undefined) return money(rate.flat)
     const worth = clients.map(clientId => {
-      const pkg = payingPackage(clientId, 'pt', startsAt)
+      const pkg = payingPackage(clientId, 'pt', startsAt, null, staffIds.get(normaliseStaffName(staff)) ?? null)
       const sessions = pkg ? sessionsBought(pkg) : undefined
       return pkg && sessions ? Number(pkg.amount_paid_sgd) / sessions : null
     })
@@ -510,7 +517,7 @@ export function mapSchedule(input: {
       // Still to come, so it is a session the studio has scheduled and nothing
       // has yet become of.
       status: 'scheduled',
-      debitedClientPackageId: (payingPackage(requester!, 'pt', startsAt)?.id as string | undefined) ?? null,
+      debitedClientPackageId: (payingPackage(requester!, 'pt', startsAt, null, instructorId)?.id as string | undefined) ?? null,
       ownerId: input.ownerId,
       settledAt: asOf.toISOString(),
       instructorPaySgd: pay,
@@ -522,7 +529,7 @@ export function mapSchedule(input: {
     // Each of two members sharing a session was charged from their own package
     // in Mindbody, so each booking gives its own session back if cancelled.
     for (const clientId of ptClients({ requesterId: requester!, partnerId: partner ?? null })) {
-      booking(`${sessionId}/${clientId}`, clientId, { pt_session_id: sessionId }, 'pt', label, startsAt, a.date)
+      booking(`${sessionId}/${clientId}`, clientId, { pt_session_id: sessionId }, 'pt', label, startsAt, a.date, null, instructorId)
     }
   }
   if (unpaid.mindbody + unpaid.unmatched > 0) {
