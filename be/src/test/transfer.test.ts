@@ -467,6 +467,58 @@ describe('moving a studio between deployments', () => {
     assert.equal(nextInCopy.displayNumber, 'R-000003')
   })
 
+  test('INV-25 a studio restored from its archive keeps its receipt details; an archive made before it had any leaves the studio’s own', options, async () => {
+    // The receipt details (#391) are what the studio's next Receipt carries: a
+    // restore that dropped them would number it R- and print none of them.
+    const detailsAt = async (tenantId: string) => {
+      const [row] = await harness.db.execute<Record<string, string | null>>(sql`
+      SELECT receipt_prefix, receipt_legal_name, receipt_registration_number, receipt_address, receipt_footer
+      FROM tenant_settings WHERE tenant_id = ${tenantId}
+    `)
+      return row
+    }
+    const details = {
+      receipt_prefix: 'RS',
+      receipt_legal_name: 'Restored Studio Pte. Ltd.',
+      receipt_registration_number: 'REG-0001',
+      receipt_address: '3 Example Lane, Singapore 000003',
+      receipt_footer: 'Restored with care.',
+    }
+    const source = await studioWithData(`receiptdetails-${Date.now()}`)
+    await harness.db.execute(sql`
+    UPDATE tenant_settings SET receipt_prefix = ${details.receipt_prefix}, receipt_legal_name = ${details.receipt_legal_name},
+      receipt_registration_number = ${details.receipt_registration_number}, receipt_address = ${details.receipt_address},
+      receipt_footer = ${details.receipt_footer}
+    WHERE tenant_id = ${source}
+  `)
+    const archive = await transfer.exportTenant(source)
+
+    const target = await emptyTenant(`receiptdetails-dst-${Date.now()}`)
+    await transfer.importTenant(target, archive)
+    assert.deepEqual({ ...(await detailsAt(target)) }, details, 'the restored studio has the details its archive carried')
+
+    // An archive exported before the details existed has no such columns. The
+    // details the super portal gave the studio it is restored into stand.
+    const older = structuredClone(archive)
+    for (const column of Object.keys(details)) delete older.rows.tenant_settings![0]![column]
+    const given = await emptyTenant(`receiptdetails-old-${Date.now()}`)
+    await harness.db.execute(sql`
+    INSERT INTO tenant_settings (tenant_id, display_name, receipt_prefix, receipt_legal_name)
+    VALUES (${given}, 'Given', 'GV', 'Given Studio Pte. Ltd.')
+  `)
+    await transfer.importTenant(given, older)
+    assert.deepEqual(
+      { ...(await detailsAt(given)) },
+      {
+        receipt_prefix: 'GV',
+        receipt_legal_name: 'Given Studio Pte. Ltd.',
+        receipt_registration_number: null,
+        receipt_address: null,
+        receipt_footer: null,
+      },
+    )
+  })
+
   test('a studio restored from an archive gets its branding too', options, async () => {
     // The settings write is in the same transaction as the rows. Left outside it,
     // a failure there would leave a studio holding all of its data and none of its
