@@ -1,4 +1,5 @@
 import assert from 'node:assert'
+import { test } from 'node:test'
 import {
   COMMITTED_STATUSES,
   HALF_DAY_BOUNDARY_HOUR,
@@ -33,10 +34,12 @@ import {
 } from './rules'
 
 // -- day counting: inclusive of both ends ------------------------------------
-{
+test('LEV-28 a range consumes one day per calendar date, both ends included, a Sunday inside it too', () => {
   assert.strictEqual(countLeaveDays('2026-08-12', '2026-08-12'), 1, 'a single date is one day')
   assert.strictEqual(countLeaveDays('2026-08-12', '2026-08-14'), 3, 'both endpoints count')
-  // a Sunday inside a range still costs a day — there is no working pattern
+  // a Sunday inside a range still costs a day — there is no working pattern:
+  // Friday 14 Aug 2026 to Monday 17 Aug is four days, Saturday and Sunday included
+  assert.strictEqual(new Date('2026-08-16T00:00:00Z').getUTCDay(), 0, '16 Aug 2026 is a Sunday')
   assert.strictEqual(countLeaveDays('2026-08-14', '2026-08-17'), 4)
   // month and year boundaries
   assert.strictEqual(countLeaveDays('2026-01-31', '2026-02-01'), 2)
@@ -45,12 +48,14 @@ import {
   assert.strictEqual(countLeaveDays('2028-02-28', '2028-03-01'), 3)
   // a backwards range is not a range
   assert.ok(countLeaveDays('2026-08-14', '2026-08-12') < 1)
+})
 
+test('LEV-29 a morning or afternoon half day on a single date consumes 0.5', () => {
   // a half day costs half a day, whichever half it is
   assert.strictEqual(countLeaveDays('2026-08-12', '2026-08-12', 'morning'), 0.5)
   assert.strictEqual(countLeaveDays('2026-08-12', '2026-08-12', 'afternoon'), 0.5)
   assert.strictEqual(countLeaveDays('2026-08-12', '2026-08-12', 'none'), 1)
-}
+})
 
 // -- the leave year is the year the request starts in -------------------------
 {
@@ -60,7 +65,7 @@ import {
 }
 
 // -- a full leave day is the whole Singapore day, and no more -----------------
-{
+test('LEV-35 a full leave day covers the whole Singapore day and does not bleed into the next at the UTC boundary', () => {
   const w = leaveWindow('2026-08-12', '2026-08-12')
   assert.strictEqual(w.startsAt.toISOString(), '2026-08-11T16:00:00.000Z', 'starts at SGT midnight')
   assert.strictEqual(w.endsAt.toISOString(), '2026-08-12T16:00:00.000Z', 'ends at the next SGT midnight')
@@ -73,10 +78,10 @@ import {
 
   const range = leaveWindow('2026-08-12', '2026-08-14')
   assert.strictEqual(range.endsAt.toISOString(), '2026-08-14T16:00:00.000Z')
-}
+})
 
 // -- a half day is that half of the Singapore day, split at 13:00 -------------
-{
+test('LEV-32 morning leave runs from the start of the Singapore day to 13:00, afternoon from 13:00 to its end', () => {
   assert.strictEqual(HALF_DAY_BOUNDARY_HOUR, 13)
   const boundary = '2026-08-12T05:00:00.000Z' // 13:00 SGT
 
@@ -103,33 +108,30 @@ import {
     w.startsAt < straddle.endsAt && w.endsAt > straddle.startsAt
   assert.ok(within(am), 'a class over the boundary is partly in the morning')
   assert.ok(within(pm), 'and partly in the afternoon')
-}
+})
 
 // -- the picker's question: is this instructor free to take THIS class? -------
-{
+test('LEV-106 the picker finds a morning-leave instructor unavailable for a 09:00 class and available for a 15:00 one', () => {
   // a morning-leave instructor is unavailable for a 09:00 class...
   assert.strictEqual(leaveCoversStart('morning', '09:00'), true)
   // ...and available for a 15:00 one
   assert.strictEqual(leaveCoversStart('morning', '15:00'), false)
-  // an afternoon-leave instructor is the reverse
+  // the minute before the boundary is still the morning, the boundary is not
+  assert.strictEqual(leaveCoversStart('morning', '12:59'), true)
+  assert.strictEqual(leaveCoversStart('morning', '13:00'), false)
+})
+
+test('LEV-107 the picker finds an afternoon-leave instructor available at 09:00 and unavailable from exactly 13:00', () => {
   assert.strictEqual(leaveCoversStart('afternoon', '09:00'), false)
   assert.strictEqual(leaveCoversStart('afternoon', '15:00'), true)
-
   // the boundary itself belongs to the afternoon, the same half-open split
-  // leaveWindow makes: morning ends AT 13:00, so a class starting then is not
-  // in it
-  assert.strictEqual(leaveCoversStart('morning', '13:00'), false)
+  // leaveWindow makes: morning ends AT 13:00, so a class starting then is in
+  // the afternoon
   assert.strictEqual(leaveCoversStart('afternoon', '13:00'), true)
-  // and the minute before is still the morning
-  assert.strictEqual(leaveCoversStart('morning', '12:59'), true)
   assert.strictEqual(leaveCoversStart('afternoon', '12:59'), false)
+})
 
-  // a whole day off covers every class, whatever time it starts — and even when
-  // no time is known at all
-  for (const t of ['00:00', '09:00', '13:00', '23:30', '', undefined]) {
-    assert.strictEqual(leaveCoversStart('none', t), true)
-  }
-
+test('LEV-108 with only a date and no start time, a half-day instructor is not refused by the picker and stays selectable', () => {
   // with no start time known, a half day is not a refusal: the screen has only a
   // date, so the instructor is labelled and stays pickable
   for (const halfDay of ['morning', 'afternoon'] as const) {
@@ -137,6 +139,15 @@ import {
     assert.strictEqual(leaveCoversStart(halfDay, ''), false)
     assert.strictEqual(leaveCoversStart(halfDay, 'not a time'), false)
   }
+  // a whole day off is the exception: it covers every class, even when no time
+  // is known at all
+  for (const t of ['00:00', '09:00', '13:00', '23:30', '', undefined]) {
+    assert.strictEqual(leaveCoversStart('none', t), true)
+  }
+})
+
+// -- the picker is laxer than the server, never stricter ----------------------
+{
 
   // The straddling class — 12:30 to 13:30 — sits in BOTH halves, so the server
   // refuses it on either half day. This question reads the START only, so it
@@ -220,14 +231,21 @@ const annual2026 = { type: 'annual', leaveYear: 2026 } as const
   assert.strictEqual(leavePoolFigures('annual', 14, afterCancel, 2026).taken, 0)
   // the 2 pending days are all that is still Committed
   assert.strictEqual(leavePoolFigures('annual', 14, afterCancel, 2026).remaining, 12)
-  // half days accumulate exactly — no float drift
-  const halves: LeaveDaysRow[] = [0.5, 0.5, 0.5].map(days => ({
+  // a Pool lowered below what is Committed shows an honest negative rather than
+  // a clamped zero
+  assert.strictEqual(leavePoolFigures('annual', 2, rows, 2026).remaining, -3)
+}
+
+test('LEV-30 three half-day requests sum to exactly 1.5, with no floating-point drift', () => {
+  // three half days, each counted the way a request is
+  const halves: LeaveDaysRow[] = (['morning', 'afternoon', 'morning'] as const).map(halfDay => ({
     type: 'annual',
     leaveYear: 2026,
     status: 'approved',
-    days,
+    days: countLeaveDays('2026-08-12', '2026-08-12', halfDay),
   }))
   assert.strictEqual(sumLeaveDays(halves, { ...annual2026, statuses: TAKEN_STATUSES }), 1.5)
+  assert.strictEqual(sumLeaveDays(halves, { ...annual2026, statuses: COMMITTED_STATUSES }), 1.5)
   // ...mixed with whole days too, and 14 minus that is still exact
   const mixed: LeaveDaysRow[] = [1, 0.5, 0.5, 0.5, 2].map(days => ({
     type: 'annual',
@@ -237,10 +255,7 @@ const annual2026 = { type: 'annual', leaveYear: 2026 } as const
   }))
   assert.strictEqual(sumLeaveDays(mixed, { ...annual2026, statuses: TAKEN_STATUSES }), 4.5)
   assert.strictEqual(leavePoolFigures('annual', 14, mixed, 2026).remaining, 9.5)
-  // a Pool lowered below what is Committed shows an honest negative rather than
-  // a clamped zero
-  assert.strictEqual(leavePoolFigures('annual', 2, rows, 2026).remaining, -3)
-}
+})
 
 // -- the figures an instructor is shown: Remaining is Pool minus COMMITTED -----
 {
