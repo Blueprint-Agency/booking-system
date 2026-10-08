@@ -43,12 +43,15 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   class_cancelled_forfeited: ['client_name', 'class_name', 'date', 'reason_line'],
   pt_cancelled_session_returned: ['client_name', 'instructor_name', 'starts_at', 'refund_line', 'account_url'],
   pt_cancelled_forfeited: ['client_name', 'instructor_name', 'starts_at', 'reason_line'],
-  admin_cancel_class: ['client_name', 'class_name', 'date', 'credits_returned'],
+  admin_cancel_class: ['client_name', 'class_name', 'date', 'refund_line', 'classes_url'],
   // The studio changed which packages a class accepts, and the one that paid for
   // this booking is no longer one of them (services/schedule/package-rules.ts).
   class_rule_cancelled: ['client_name', 'class_name', 'date', 'package_name', 'credits_returned'],
-  admin_cancel_pt: ['client_name', 'instructor_name', 'starts_at'],
-  admin_cancel_workshop: ['client_name', 'workshop_name', 'refund_sgd'],
+  admin_cancel_pt: ['client_name', 'instructor_name', 'starts_at', 'refund_line', 'account_url'],
+  // `amount_paid` in the shared money form ("S$120.00", `sgdText`). Nothing is
+  // refunded automatically when a workshop is cancelled (#272), so it is what
+  // the member paid, not an amount already refunded.
+  admin_cancel_workshop: ['client_name', 'workshop_name', 'amount_paid', 'workshops_url'],
   // Goes to admins, not clients — the instructor cancelled their own class.
   instructor_cancel_class: ['class_name', 'date', 'instructor_name', 'reason', 'refunded_count'],
   // Leave: the first goes to every admin, the other three back to the instructor.

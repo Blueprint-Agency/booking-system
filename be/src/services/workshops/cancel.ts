@@ -4,6 +4,7 @@ import { workshops } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
+import { sendWorkshopCancelledEmails } from '../notifications/send-booking-email'
 
 /**
  * Cancel a workshop and all confirmed workshop bookings. **Nobody is refunded
@@ -28,7 +29,7 @@ export async function cancelWorkshop(
   if (actorRole !== 'admin') {
     throw new ForbiddenError('forbidden_role', { required: ['admin'], actual: actorRole })
   }
-  return db.transaction(async tx => {
+  const { row, affected } = await db.transaction(async tx => {
     const [existing] = await tx
       .select()
       .from(workshops)
@@ -95,6 +96,10 @@ export async function cancelWorkshop(
       },
     })
 
-    return row!
+    return { row: row!, affected }
   })
+
+  // NTF-10: every attendee is told, with what they paid. After commit; never throws.
+  await sendWorkshopCancelledEmails(tenantId, affected.map(b => b.id))
+  return row
 }

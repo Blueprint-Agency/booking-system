@@ -13,7 +13,10 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
-import { classes, ptSessions } from '../../db/schema/schedule'
+import { classes, ptSessions, workshops } from '../../db/schema/schedule'
+import { purchases } from '../../db/schema/ledger'
+import { toCents, toSgd } from '../../shared/money'
+import { amountPaid } from './purchase-email'
 import { classTypes, locations } from '../../db/schema/catalog'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { classPackages, clientPackages } from '../../db/schema/packages'
@@ -184,5 +187,133 @@ export async function sendMemberCancelReturnedEmail(tenantId: string, bookingId:
     }
   } catch (err) {
     reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, bookingId })
+  }
+}
+
+/** One member's booking a studio cancelled, and what came back to their package. */
+export interface StudioCancelNotice {
+  bookingId: string
+  /** Credits (a class) or sessions (a private session) returned; 0 when nothing was. */
+  returned: number
+}
+
+/**
+ * NTF-10: the studio cancelled a class — every member booked on it is told,
+ * with the credits returned (`admin_cancel_class`). One send per booking; one
+ * member's failure does not stop the rest.
+ */
+export async function sendClassCancelledByStudioEmails(tenantId: string, notices: readonly StudioCancelNotice[]): Promise<void> {
+  for (const n of notices) {
+    try {
+      const row = await readCancelledBooking(tenantId, n.bookingId)
+      const when = await sessionTimeFormat(tenantId)
+      await sendTemplatedEmail({
+        tenantId,
+        slug: 'admin_cancel_class',
+        recipient: { email: row.clientEmail, userId: row.clientId, userKind: 'client' },
+        variables: {
+          client_name: row.clientName,
+          class_name: row.className ?? 'Your class',
+          date: row.classStartsAt ? when.format(row.classStartsAt) : '',
+          refund_line: classRefundLine(n.returned),
+          classes_url: await clientUrl(tenantId, '/classes'),
+          credits_returned: String(n.returned),
+        },
+      })
+    } catch (err) {
+      reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, bookingId: n.bookingId })
+    }
+  }
+}
+
+/**
+ * NTF-10: the studio cancelled a private session — every member on it is told,
+ * with the sessions returned to their own package (`admin_cancel_pt`).
+ */
+export async function sendPtCancelledByStudioEmails(tenantId: string, notices: readonly StudioCancelNotice[]): Promise<void> {
+  for (const n of notices) {
+    try {
+      const row = await readCancelledBooking(tenantId, n.bookingId)
+      const when = await sessionTimeFormat(tenantId)
+      await sendTemplatedEmail({
+        tenantId,
+        slug: 'admin_cancel_pt',
+        recipient: { email: row.clientEmail, userId: row.clientId, userKind: 'client' },
+        variables: {
+          client_name: row.clientName,
+          instructor_name: row.ptInstructorName || 'your instructor',
+          starts_at: row.ptStartsAt ? when.format(row.ptStartsAt) : '',
+          refund_line: sessionsRefundLine(n.returned),
+          account_url: await clientUrl(tenantId, '/account/private-sessions'),
+        },
+      })
+    } catch (err) {
+      reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, bookingId: n.bookingId })
+    }
+  }
+}
+
+/**
+ * The emails a private-session cancel owes, gathered inside its transaction
+ * (services/pt-sessions/cancel.ts) and sent by `sendPtCancelMail` once it has
+ * committed — so a rolled-back cancel mails nobody.
+ */
+export interface PtCancelMail {
+  /** NTF-10: staff cancelled a manual session — each seat, and the sessions it got back. */
+  studio: StudioCancelNotice[]
+  /** NTF-09: a member cancelled their own seat in time and got its session back. */
+  memberReturned: string[]
+}
+
+export const emptyPtCancelMail = (): PtCancelMail => ({ studio: [], memberReturned: [] })
+
+/** Send what a private-session cancel gathered. Never throws. */
+export async function sendPtCancelMail(tenantId: string, mail: PtCancelMail): Promise<void> {
+  await sendPtCancelledByStudioEmails(tenantId, mail.studio)
+  for (const bookingId of mail.memberReturned) await sendMemberCancelReturnedEmail(tenantId, bookingId)
+}
+
+/**
+ * NTF-10: the studio cancelled a workshop — every attendee is told, with what
+ * they paid (`admin_cancel_workshop`). Nobody is refunded automatically (#272):
+ * the studio refunds each place by hand, so the email states the amount paid
+ * and that the refund is being arranged, not that it has happened.
+ */
+export async function sendWorkshopCancelledEmails(tenantId: string, bookingIds: readonly string[]): Promise<void> {
+  for (const bookingId of bookingIds) {
+    try {
+      const [row] = await db
+        .select({
+          clientId: clients.id,
+          clientName: clients.name,
+          clientEmail: clients.email,
+          workshopName: workshops.name,
+          purchasePaidSgd: purchases.amountPaidSgd,
+          bookingPaidSgd: bookings.amountPaidSgd,
+        })
+        .from(bookings)
+        .innerJoin(clients, and(eq(clients.tenantId, bookings.tenantId), eq(clients.id, bookings.clientId)))
+        .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
+        .leftJoin(purchases, eq(purchases.id, bookings.purchaseId))
+        .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bookingId), eq(bookings.kind, 'workshop')))
+        .limit(1)
+      if (!row) throw new NotFoundError('workshop_booking_not_found', { bookingId })
+      // The sale's figure, as the purchase confirmation states it (#370).
+      const paid = row.purchasePaidSgd ?? row.bookingPaidSgd ?? '0.00'
+      await sendTemplatedEmail({
+        tenantId,
+        slug: 'admin_cancel_workshop',
+        recipient: { email: row.clientEmail, userId: row.clientId, userKind: 'client' },
+        variables: {
+          client_name: row.clientName,
+          workshop_name: row.workshopName,
+          amount_paid: amountPaid(paid),
+          workshops_url: await clientUrl(tenantId, '/workshops'),
+          refund_sgd: toSgd(toCents(paid)),
+        },
+      })
+    } catch (err) {
+      reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, bookingId })
+    }
   }
 }

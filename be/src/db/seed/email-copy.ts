@@ -313,8 +313,8 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   const ADMIN_CANCEL_CLASS_BODY = body('A class has been cancelled', [
     'Hi {{client_name}},',
     'The studio has cancelled <strong>{{class_name}}</strong> on <strong>{{date}}</strong>. We are sorry for the change of plan.',
-    '<strong>{{credits_returned}}</strong> credit(s) have been returned to your account — nothing was charged for the cancelled class.',
-    link(CLASSES_URL, 'Find another class'),
+    '{{refund_line}}',
+    link('{{classes_url}}', 'Find another class'),
   ])
 
   // Sent once per booking a Package rule change cancelled. Every such booking
@@ -391,7 +391,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   const ADMIN_CANCEL_PT_BODY = body('A private session has been cancelled', [
     'Hi {{client_name}},',
     'The studio has cancelled your private session with <strong>{{instructor_name}}</strong> on <strong>{{starts_at}}</strong>. We are sorry for the change of plan.',
-    `The session is back in your account. ${link(ACCOUNT_URL, 'Book another time')}`,
+    `{{refund_line}} ${link('{{account_url}}', 'Book another time')}`,
   ])
 
   /* ── Workshops ───────────────────────────────────────────────────────── */
@@ -426,8 +426,8 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   const ADMIN_CANCEL_WORKSHOP_BODY = body('A workshop has been cancelled', [
     'Hi {{client_name}},',
     'The studio has cancelled <strong>{{workshop_name}}</strong>. We are sorry — we know a workshop is a date people plan around.',
-    'You paid <strong>SGD {{refund_sgd}}</strong> for your place. The studio is arranging your refund and will contact you to settle it.',
-    link(WORKSHOPS_URL, 'See upcoming workshops'),
+    'You paid <strong>{{amount_paid}}</strong> for your place. The studio is arranging your refund and will contact you to settle it.',
+    link('{{workshops_url}}', 'See upcoming workshops'),
   ])
 
   /* ── Purchases and packages ──────────────────────────────────────────── */

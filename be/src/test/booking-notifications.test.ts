@@ -452,4 +452,129 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
     )
     assert.deepEqual(drain(), [])
   })
+
+  /* ── NTF-10 ─────────────────────────────────────────────────────────── */
+
+  const staffPost = (who: Staff, path: string) =>
+    harness.app.request(`/api/v1/portal/${path}`, { method: 'POST', headers: { ...who.headers, ...json }, body: '{}' })
+
+  /** A workshop with one tier and a confirmed place for each attendee, paid `paid` each. */
+  async function workshopWith(at: Studio, attendees: Array<{ who: Member; paid: string }>): Promise<string> {
+    const [w] = await harness.db
+      .insert(schema.workshops)
+      .values({ tenantId: at.id, name: `${NAME} Retreat weekend`, locationId: at.locationId, createdByStaffId: at.admin.id })
+      .returning({ id: schema.workshops.id })
+    const [tier] = await harness.db
+      .insert(schema.workshopTiers)
+      .values({ tenantId: at.id, workshopId: w!.id, name: 'Full', regularPriceSgd: '120.00', ord: 1 })
+      .returning({ id: schema.workshopTiers.id })
+    for (const { who, paid } of attendees) {
+      await harness.db.insert(schema.bookings).values({
+        tenantId: at.id,
+        clientId: who.clientId,
+        kind: 'workshop',
+        workshopId: w!.id,
+        workshopTierId: tier!.id,
+        listPriceSgd: '120.00',
+        amountPaidSgd: paid,
+        ...codes(),
+      })
+    }
+    return w!.id
+  }
+
+  test('NTF-10 an Admin cancelling a class emails every booked member the admin-cancellation email with the credits returned, and nobody else', async () => {
+    const mia = await member(one)
+    const leo = await member(one, 'Leo')
+    const gone = await member(one, 'Gus')
+    await give(one, mia, 'credit_bundle', 10)
+    await give(one, leo, 'unlimited')
+    await give(one, gone, 'credit_bundle', 10)
+    const classId = await addClass(one, { creditCost: 2 })
+    await expectStatus(await book(mia, classId), 201)
+    await expectStatus(await book(leo, classId), 201)
+    const left = await expectStatus(await book(gone, classId), 201)
+    await expectStatus(await memberCancel(gone, left.booking_id), 200)
+    drain()
+
+    const res = await expectStatus(await staffPost(one.admin, `admin/schedule/classes/${classId}/cancel`), 200)
+    assert.equal(res.total_bookings, 2)
+
+    const mail = drain()
+    assert.deepEqual(
+      mail.map(m => [m.to, m.template]).sort(),
+      [
+        [leo.email, 'admin_cancel_class'],
+        [mia.email, 'admin_cancel_class'],
+      ].sort(),
+    )
+    const to = (email: string) => mail.find(m => m.to === email)!
+    assert.match(to(mia.email).text, /2 credits have been returned to your package\./)
+    assert.match(to(leo.email).text, /did not use any credits, so nothing was taken from your package\./)
+    assert.match(to(mia.email).subject, new RegExp(`${NAME} Vinyasa`))
+  })
+
+  test('NTF-10 an Admin cancelling a workshop emails every attendee what they paid, in the studio\'s money form', async () => {
+    const mia = await member(one)
+    const leo = await member(one, 'Leo')
+    const workshopId = await workshopWith(one, [
+      { who: mia, paid: '120.00' },
+      { who: leo, paid: '0.00' },
+    ])
+    drain()
+
+    await expectStatus(await staffPost(one.admin, `admin/workshops/${workshopId}/cancel`), 200)
+
+    const mail = drain()
+    assert.deepEqual(
+      mail.map(m => [m.to, m.template]).sort(),
+      [
+        [leo.email, 'admin_cancel_workshop'],
+        [mia.email, 'admin_cancel_workshop'],
+      ].sort(),
+    )
+    const to = (email: string) => mail.find(m => m.to === email)!
+    assert.match(to(mia.email).text, /You paid S\$120\.00 for your place\./)
+    assert.match(to(leo.email).text, /You paid S\$0\.00 for your place\./)
+    assert.match(to(mia.email).subject, /Retreat weekend was cancelled/)
+  })
+
+  test('NTF-10 an Admin cancelling a private session emails every member on it the admin-cancellation email with the session returned', async () => {
+    const mia = await member(one)
+    const leo = await member(one, 'Leo')
+    const miaPkg = await givePt(one, mia, 4)
+    const { requestId } = await ptRequest(one, mia, miaPkg, { scheduled: true, partner: leo, origin: 'portal' })
+    drain()
+
+    await expectStatus(await staffPost(one.admin, `admin/pt-sessions/${requestId}/cancel`), 200)
+    assert.equal(await balance(miaPkg), 5)
+
+    const mail = drain()
+    assert.deepEqual(
+      mail.map(m => [m.to, m.template]).sort(),
+      [
+        [leo.email, 'admin_cancel_pt'],
+        [mia.email, 'admin_cancel_pt'],
+      ].sort(),
+    )
+    for (const m of mail) {
+      assert.ok(m.text.includes(one.instructor.name), 'the instructor is named')
+      assert.match(m.text, /1 session has been returned to your package\./)
+    }
+  })
+
+  test('NTF-10 a cancel refused to an instructor on the admin route or to another studio\'s admin sends nothing', async () => {
+    const mia = await member(one)
+    await give(one, mia, 'credit_bundle', 10)
+    const classId = await addClass(one)
+    await expectStatus(await book(mia, classId), 201)
+    const workshopId = await workshopWith(one, [{ who: mia, paid: '120.00' }])
+    drain()
+
+    await expectStatus(await staffPost(one.instructor, `admin/schedule/classes/${classId}/cancel`), 403, 'forbidden_role')
+    await expectStatus(await staffPost(one.instructor, `admin/workshops/${workshopId}/cancel`), 403, 'forbidden_role')
+    const elsewhere = { ...two.admin, headers: { ...two.admin.headers, 'X-Tenant-Slug': one.slug, Origin: `http://${one.slug}.portal.localhost:3001` } }
+    await expectStatus(await staffPost(elsewhere, `admin/schedule/classes/${classId}/cancel`), 401, 'invalid_token')
+    assert.deepEqual(drain(), [])
+  })
 })
