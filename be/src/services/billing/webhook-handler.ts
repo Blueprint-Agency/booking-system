@@ -27,6 +27,7 @@ import { toCents } from '../../shared/money'
 import { bookWorkshopPaid, tierDaysClash } from '../workshops/book'
 import { recordMerchOrder } from '../catalog/merch-orders'
 import { createCorporateRequest } from '../corporate/requests'
+import { issueReceipt } from '../receipts/issue'
 import {
   sendCorporatePurchaseEmail,
   sendPackagePurchaseEmail,
@@ -537,6 +538,12 @@ async function dispatchStripeEvent(
         clientPackageId: granted.clientPackageId,
         ...(await chargePatch(tenantId, paymentIntentId, providerAccountId, retry)),
       })
+
+      // The studio's Receipt for the sale (#384), in this same transaction, so
+      // the sale and its Receipt commit or roll back together. After the
+      // payment is banked: the Receipt prints how it was paid. Idempotent, so
+      // a redelivery or the confirmation page's fallback finds the one issued.
+      if (kind === 'class_package') await issueReceipt(db, tenantId, purchase.id)
 
       // One confirmation per purchase, however many times the provider retries:
       // only the delivery that inserted the row sends, once it has committed

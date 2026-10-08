@@ -172,6 +172,8 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'POST /api/v1/me/pt-sessions/request': { gate: MEMBER_OF_THE_STUDIO },
   'POST /api/v1/me/pt-sessions/:id/cancel': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/purchases/open': { gate: MEMBER_OF_THE_STUDIO },
+  'GET /api/v1/me/receipts': { gate: MEMBER_OF_THE_STUDIO },
+  'GET /api/v1/me/receipts/:id': { gate: MEMBER_OF_THE_STUDIO },
   'POST /api/v1/me/purchases/:id/resume': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/waitlist': { gate: MEMBER_OF_THE_STUDIO },
   'POST /api/v1/me/waitlist/classes/:classId': { gate: MEMBER_OF_THE_STUDIO },
@@ -181,8 +183,6 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'GET /api/v1/me/workshops/:id': { gate: MEMBER_OF_THE_STUDIO },
   // Not built yet (they answer 501), and behind the member gate all the same.
   'GET /api/v1/me/dashboard': { gate: MEMBER_OF_THE_STUDIO },
-  'GET /api/v1/me/invoices': { gate: MEMBER_OF_THE_STUDIO },
-  'GET /api/v1/me/invoices/:id': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/referral': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/waiver': { gate: MEMBER_OF_THE_STUDIO },
   'POST /api/v1/me/waiver/sign': { gate: MEMBER_OF_THE_STUDIO },

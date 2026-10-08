@@ -40,7 +40,7 @@ dropped scenario stays, marked `wont-test`, with the reason in its cell.
   `MRC` merch ·
   `CORP` corporate ·
   `REF` referral ·
-  `INV` member invoices & purchases ·
+  `INV` Receipts ·
   `ACC` member account ·
   `CUS` admin customers ·
   `STF` staff, roles & invitations ·
@@ -54,7 +54,7 @@ dropped scenario stays, marked `wont-test`, with the reason in its cell.
   `SUP` super portal ·
   `TEN` Tenant isolation ·
   `AUD` audit trail
-  An area with no rows yet (`REF`, `INV`, `RPT`: their routes are unbuilt or the specs defer them)
+  An area with no rows yet (`REF`, `RPT`: their routes are unbuilt or the specs defer them)
   has no section.
 - **role** — whose action it is: `member` (including an anonymous visitor), `instructor`, `admin`,
   `super`, or `system` (a scheduled job, a webhook, or a rule with no human actor).
@@ -741,6 +741,23 @@ sum, and the waitlist is not a seat (`spec-waitlist.md` §1–§2).
 | CORP-13 | CORP | member | **Given** a member's Corporate Request **When** an Admin schedules it **Then** `GET /me/approvals` lists it for that member only, with its package name and session, until they mark it seen (another member's mark changes nothing); one scheduled then cancelled is not listed _(fe-client-features §11.2)_ | UX | integration | `be/src/test/corporate.test.ts` | covered |
 | CORP-14 | CORP | system | **Given** a member's pending Corporate Request, made by paying for a corporate package **When** the payment provider confirms the Purchase was refunded in full **Then** the request is cancelled with its time, the member reads it as cancelled by the studio, another member's request stands, and the event delivered again changes nothing _(backend-architecture §14; be-client § Corporate branch)_ | money | integration | `be/src/test/corporate-checkout.test.ts` | covered |
 | CORP-15 | CORP | system | **Given** a Corporate Request already scheduled into a corporate session **When** its Purchase is refunded from the payment provider's dashboard **Then** the money is recorded as returned, the request and its session stay scheduled for an Admin to cancel, and the refund is reported naming the request _(backend-architecture §14)_ | money | integration | `be/src/test/corporate-checkout.test.ts` | covered |
+
+## INV — Receipts
+
+| ID | area | role | scenario | risk | level | covered by | status |
+|---|---|---|---|---|---|---|---|
+| INV-01 | INV | member | **Given** a member who buys a paid class package **When** the payment provider says it was paid **Then** exactly one Receipt is listed at `/me/receipts` and readable at `/me/receipts/:id`, with its number, the studio, the member's name and email, the lines, subtotal, discount and total, and the payment (method, brand, last four, amount) matching the sale; before the money arrives, and while the Purchase is open, there is none _(issue #384; spec #380)_ | money | integration | `be/src/test/receipts.test.ts` | covered |
+| INV-02 | INV | system | **Given** a paid class package **When** the webhook and the confirmation page's fallback deliver it at once and the provider delivers it again **Then** there is one Receipt with one number, and the studio's next Receipt takes the very next number _(issue #384)_ | money | integration | `be/src/test/receipts.test.ts` | covered |
+| INV-03 | INV | system | **Given** two studios selling at once **When** their sales settle in turn **Then** each studio's Receipt numbers run on 1, 2, 3… with no gaps, untouched by the other's _(issue #384; spec #380 numbering)_ | money | integration | `be/src/test/receipts.test.ts` | covered |
+| INV-04 | INV | system | **Given** a delivery that fails after its Receipt was written **When** it rolls back and the provider retries **Then** the failed delivery left no Receipt, and the retry's Receipt takes the number the failure gave back: no gap _(issue #384)_ | money | integration | `be/src/test/receipts.test.ts` | covered |
+| INV-05 | INV | member | **Given** an issued Receipt **When** the studio renames the package and the member changes their name **Then** the Receipt reads exactly as it was issued: the old package name, the member's name as it was _(issue #384; spec #380 snapshot)_ | data-loss | integration | `be/src/test/receipts.test.ts` | covered |
+| INV-06 | INV | member | **Given** a member's Receipt **When** another member of the studio, or a member of another studio, asks for it by id **Then** it is `404 receipt_not_found`, as for an id that names nothing, and it is in neither of their lists _(issue #384)_ | tenancy | integration | `be/src/test/receipts.test.ts` | covered |
+| INV-07 | INV | member | **Given** a member with several Receipts **When** they list them **Then** they come newest first, a page at a time, and `?from` / `?to` keep to the studio days asked for; a date that is not `YYYY-MM-DD` is a 400 _(issue #384; fe-client-features §8.6)_ | UX | integration | `be/src/test/receipts.test.ts` | covered |
+| INV-08 | INV | member | **Given** a paid class package **When** the confirmation page's sync confirms the session **Then** its answer names the Receipt (id and number) the payment was given _(issue #384)_ | UX | integration | `be/src/test/receipts.test.ts` | covered |
+| INV-09 | INV | member | **Given** a Receipt on the member app **When** it is shown **Then** amounts read `S$150.00` to the cent, a card payment reads `Visa •••• 4242` (with its wallet), a status reads Issued or Refunded, and the date filter sends only the days picked and refuses an end before its start _(fe-client-features §8.6)_ | UX | unit | `fe-client/src/lib/receipts.test.ts` | covered |
+| INV-10 | INV | member | **Given** the confirmation page after a payment **When** the sync names a Receipt **Then** the page links to it, and to nothing when the sync named none or failed _(fe-client-features §8.6)_ | UX | unit | `fe-client/src/lib/checkout-return.test.ts` | covered |
+| INV-11 | INV | member | **Given** a member who has just paid for a plan **When** they tap View receipt on the confirmation page **Then** the Receipt opens with its number and the total they paid _(issue #384)_ | money | e2e | `e2e/journeys/buy-and-book.spec.ts` | covered |
+
 ## ACC — Member account
 
 | ID | area | role | scenario | risk | level | covered by | status |
@@ -1211,6 +1228,7 @@ sum, and the waitlist is not a seat (`spec-waitlist.md` §1–§2).
 | TEN-32 | TEN | admin | **Given** a member's package and its Credit movements at studio B **When** studio A's staff or a studio A member asks for that package's Credit history, or studio A's context reads `credit_movements` **Then** 404 to both, and no studio B row is visible _(#353; docs/adr/0002)_ | tenancy | integration | `be/src/test/credit-history.test.ts` | covered |
 | TEN-33 | TEN | system | **Given** the platform's settings row **When** the application role reads it inside a studio's context, tries to update or upsert it there, and updates it outside every context **Then** the read succeeds, the update matches no row and the upsert is refused by row-level security, and the update outside succeeds _(docs/adr/0007)_ | tenancy | integration | `be/src/test/maintenance-mode.test.ts` | covered |
 | TEN-34 | TEN | member | **Given** a class of studio A **When** a member of studio B books it by id on studio B's hostname, naming no package or their own **Then** it is refused `404 class_not_found`, no booking is written at either studio and nothing is debited from the member's package _(docs/adr/0002; #128 client-scenarios draft BK-07)_ | tenancy | integration | `be/src/test/client-launch-scenarios.test.ts` | covered |
+| TEN-35 | TEN | system | **Given** Receipts and Receipt counters at two studios **When** one studio's context reads `receipts` and `receipt_counters` with no `WHERE tenant_id` **Then** Row-Level Security returns that studio's rows only _(docs/adr/0002; issue #384)_ | tenancy | integration | `be/src/test/receipts.test.ts` | covered |
 
 ## AUD — Audit trail
 

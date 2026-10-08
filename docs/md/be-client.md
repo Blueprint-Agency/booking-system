@@ -188,11 +188,15 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 | POST | `/checkout/merch` | `{ merch_id }` — one item, no Promo Code and no review page: creates a Stripe checkout and returns `{ url }`. 404 `merch_not_found`, 400 `merch_not_available` (archived). A merch item priced at 0 bypasses Stripe and returns `{ outcome: 'granted', order_id, free: true }` with the order already written. The intent metadata carries `kind='merch'`, `merch_id`, `merch_title` and `amount_sgd`; the webhook records a `stripe_payments` row (kind `merch`) plus one `merch_orders` row, idempotent on the payment intent. Nothing is granted and nothing is booked — merch is handed over physically at the studio, which is what the fe-client notice says. |
 | GET | `/merch-orders` | This client's merch purchase history, newest first. Shape: `{ orders: [{ id, merch_id, title, amount_sgd, purchased_at }] }`. `title` and `amount_sgd` are frozen at purchase and `merch_id` goes null if the catalogue row is deleted, so history reads as what was actually bought. |
 
-### `invoices.ts`
+### `receipts.ts` (#384)
+The member's own **Receipts**: the studio's record of each completed Purchase, read exactly as it was issued (backend-architecture § `receipts`). Replaces the `invoices` stub, which answered 501.
+
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/invoices` | List `stripe_payments` for this client. Filters: `?kind`, `?year`. Each row exposes `receipt_url` for the fe-client Download button. |
-| GET | `/invoices/:id` | Single payment detail |
+| GET | `/receipts` | This member's Receipts at this studio, newest first. Query: `?from=YYYY-MM-DD&to=YYYY-MM-DD` (studio days, both inclusive, either optional; anything else is a 400), `?page` (default 1), `?page_size` (default 20, max 100). Shape: `{ receipts: [{ id, number, item, issued_at, total_sgd, status }], total, page, page_size }`. `number` is the display number as issued (`R-000123`); `item` is what it was for in one phrase (the first line, `+ n more` for the rest); `status` is `issued` or `refunded`. |
+| GET | `/receipts/:id` | One Receipt, whole: `{ id, number, kind, issued_at, status, refunded_at, seller: { name, legal_name, registration_number, address, footer }, buyer: { name, email }, lines: [{ description, quantity, list_price_sgd, discount_sgd, discounts: [{ source, label, amount_sgd }], amount_sgd }], subtotal_sgd, discount_sgd, total_sgd, payments: [{ method, card_brand, card_last4, wallet, amount_sgd, paid_at }] }`. Every value is the snapshot taken at issue, so a renamed package or a member's new name does not change it. Another member's Receipt, another studio's, and an id that names nothing are all `404 receipt_not_found`. |
+
+Today a Receipt is issued for a paid class package (bundle, Unlimited Plan, paid trial pass) when its payment settles through the webhook or the confirmation fallback; the other kinds and the $0 paths follow (#385). `POST /checkout/sync-session` answers with `receipt: { id, number }` for the session's Purchase once it has one, else `null`, which is how the confirmation page links to it.
 
 ### `waiver.ts`
 | Method | Path | Effect |

@@ -576,11 +576,11 @@ Every purchase succeeds even if the email fails to send — the send is a fire-a
 
 ## 8. Account portal `/account/*`
 
-The account section is a sticky sidebar (desktop, from `lg`) listing **My bookings** (`/account/bookings`), **My activity** (`/account/practice`), **My packages** (`/account/packages`), **Merch**, **Profile & security**, **General settings**, then a red **Sign out**; the member's card at its top opens `/account`. All sub-pages share an `AccountShell`.
+The account section is a sticky sidebar (desktop, from `lg`) listing **My bookings** (`/account/bookings`), **My activity** (`/account/practice`), **My packages** (`/account/packages`), **Merch**, **Receipts** (`/account/receipts`, §8.6), **Profile & security**, **General settings**, then a red **Sign out**; the member's card at its top opens `/account`. All sub-pages share an `AccountShell`.
 
 ### 8.0 Account home `/account` (as built)
 
-No greeting: the page opens on unfinished purchases (#93) and the checkout-cancelled banner (#274), then **Up next** only: the one ticket of the old "Coming up" below — the same component the schedule shows above its feed (`ComingUp`), with **Show my QR** and a red **Cancel**. Below `lg` the **My account** menu follows it: the member's card (→ Profile), My bookings, My practice, My packages, Merch, Profile & security, General settings, and a red **Sign out**. Every section page heads itself with "‹ Account" back to it below `lg`.
+No greeting: the page opens on unfinished purchases (#93) and the checkout-cancelled banner (#274), then **Up next** only: the one ticket of the old "Coming up" below — the same component the schedule shows above its feed (`ComingUp`), with **Show my QR** and a red **Cancel**. Below `lg` the **My account** menu follows it: the member's card (→ Profile), My bookings, My practice, My packages, Merch, Receipts, Profile & security, General settings, and a red **Sign out**. Every section page heads itself with "‹ Account" back to it below `lg`.
 
 ### 8.1 My bookings `/account/bookings` (as built)
 
@@ -611,7 +611,7 @@ Every package the member has bought, each marked **Active**, **Not started** (Do
   - **Expiry banner** appears at t-30 / 15 / 7 / 1 days / 12h / 2h before package end. Banner only renders if the chosen milestone is shorter than the package's full duration (avoids absurd "expires in 30 days" on a 1-day pass).
   - **Coming up**: only the one booking the member walks into next — a class, a PT session or a workshop, whichever starts first (a running one first) — as a ticket coloured by kind: class in the studio accent, PT gold, workshop green. It carries **Show my QR** and a red **Cancel** where the member may still cancel (a class until it starts; a PT session they requested, outside the PT window; never a workshop). Nothing after it is listed here; **Your classes** links to My Classes.
   - **Your packages**: every package the member holds, each marked **Active** or **Not started** (Dormant until its first booking), so a package that has not begun never reads as active. There is no summed balance (no "Class credits" / "PT sessions" tiles) and no "Your practice" attendance card — both were removed as not useful here. The attendance figures now have their own page, My practice (§8.1c).
-  - Quick links to other account sections (My Classes / Workshops / Private Sessions / Invoices / Referral / Profile).
+  - Quick links to other account sections (My Classes / Workshops / Private Sessions / Receipts / Referral / Profile).
 - Cards are grouped by studio (header with studio name + logo) so a member of both locations sees their entitlements split cleanly.
 - If user has no active package: empty state with **"Explore Classes"** CTA → `/classes` and **"View packages"** CTA → `/packages`.
 
@@ -713,18 +713,25 @@ How the app looks for the member: **Theme** (Light, Dark) and **Text size** (Sma
 **Where admin comes in**
 - Admin's `/admin/pt-requests` is the counterpart — see admin-restructure.md §9.
 
-### 8.6 Invoices `/account/invoices`
+### 8.6 Receipts `/account/receipts` (as built, #384)
+
+The studio's own **Receipt** for each completed purchase (be/CONTEXT.md § Money), read from `GET /me/receipts` and `GET /me/receipts/:id` (be-client § `receipts.ts`). Words and money formats are `lib/receipts.ts` (tested in `receipts.test.ts`).
 
 **Business logic**
-- List of invoices: id, item name, issued date, total, GST line.
-- Empty state when none. Filters by date range.
-- Each row has a **Download PDF** action.
+- **Placing**: in the account sidebar and the mobile account menu after Merch — "Receipts", hint "The studio's receipt for each purchase". The page has the "‹ Account" back link below `lg`.
+- **List**, newest first, 20 to a page with Newer / Older: for each, what it was for, its number (`R-000123`), the day it was issued, its total and its status (**Issued**, or **Refunded** in red). Each row opens the Receipt.
+- **Date filter**: From and To dates (studio days, both inclusive, either may be left empty); an end before the start is refused on the page and not sent. "Clear dates" removes both.
+- **Empty state**: "No receipts yet" with a Browse packages link; with dates picked, "No receipts in these dates".
+- **Detail** `/account/receipts/[id]`: the number, the day issued, a **Refunded on {date}** badge once refunded, the studio (with its legal name, registration number and address where the studio has set them), who it was issued to, each line (with its List Price and each discount, Promotion or Promo Code by name, where something was taken off), Subtotal, Discount, **Total paid**, and each payment with how it was paid (`Visa •••• 4242`, `Apple Pay · Visa •••• 4242`, `PayNow`), its date and amount; the studio's footer note last. Amounts are always to the cent, `S$150.00`, the form the confirmation emails use. Another member's Receipt, or one at another studio, reads "We couldn't find that receipt on your account".
+- **No tax line, no GST**: the total is exactly what the member was charged. A Receipt is never edited or voided, and nothing on it changes when a package is renamed or the member changes their name.
+- **The confirmation page links to it**: after a paid package, the "Your purchase" panel carries **View receipt R-000123** once the payment is confirmed.
+- Today a Receipt is issued for a paid class package (bundle, Unlimited Plan, paid trial pass). Other purchases, Download PDF and the emailed receipt follow (#385, #386, #387).
 
 **User journey**
-- Filter → page through results → tap row → download PDF.
+- Pay for a package → "View receipt" on the confirmation → the Receipt. Later: Account → Receipts → pick the dates → open one.
 
 **Where admin comes in**
-- Admin sees invoices across all users; can resend, void, mark refunded, edit item description for support.
+- Admin sees every Receipt in the studio, can open, download and resend one, and exports the list (#389, #390). There is no void and no editing of a Receipt.
 
 ### 8.7 Referral `/account/referral`
 
@@ -797,7 +804,7 @@ For every fe-client feature above, admin must own at least the **write side** of
 | Account dashboard | Membership ops on user profile (extend / pause / cancel / contact) |
 | Account profile | User detail editor (incl. waiver re-request) |
 | My Classes / Workshops / Private Sessions | Per-user booking history; attendance overrides |
-| Invoices | Invoices list; resend, void, refund, branding |
+| Receipts | Every Receipt in the studio; open, download, resend, CSV; receipt details and prefix (no void, no editing) |
 | Referral | Referral graph, attribution audit, reward config |
 | Layout / branding | Studio settings: branding, locations, marketing copy, footer |
 | Notifications & messages | Template library, channel routing, per-event toggles, send audit log |

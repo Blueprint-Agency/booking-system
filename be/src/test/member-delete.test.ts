@@ -245,13 +245,15 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
       // joined it when a Purchase learned to outlive its member (#144 × #91);
       // `payment_customers` deliberately did **not**, because it is deleted, not
       // emptied (#185): the studio's accounts keep money, not the member's
-      // identity at a third party.
+      // identity at a third party. `receipts` joined it with Receipts (#380):
+      // the studio's record of each sale, kept with its buyer emptied.
       const kept = MEMBER_TABLES.filter(
         e => e.columns.join() === 'client_id' && eraseSteps(e).some(s => 'keptBecause' in s),
       ).map(e => e.table)
       assert.deepEqual(kept, [
         'client_packages',
         'purchases',
+        'receipts',
         'stripe_payments',
         'promo_code_redemptions',
         'merch_orders',

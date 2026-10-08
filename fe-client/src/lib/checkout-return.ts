@@ -49,6 +49,19 @@ export function confirmationOutcome(sessionId: string | null, sync: SyncResult):
   return sync.body?.status === "granted" ? "confirmed" : "pending";
 }
 
+/**
+ * The Receipt the sync said this payment was given (#384), for the
+ * confirmation page to link to: null for anything short of a granted payment,
+ * and for a sale that is not issued one.
+ */
+export function syncedReceipt(sync: SyncResult): { id: string; number: string } | null {
+  if (sync === "failed" || !sync.ok || sync.body?.status !== "granted") return null;
+  const receipt = sync.body.receipt as { id?: unknown; number?: unknown } | null | undefined;
+  return receipt && typeof receipt.id === "string" && typeof receipt.number === "string"
+    ? { id: receipt.id, number: receipt.number }
+    : null;
+}
+
 /** The small line above the heading. Never "successful" unless it was. */
 export function confirmationEyebrow(outcome: ConfirmationOutcome): string {
   switch (outcome) {

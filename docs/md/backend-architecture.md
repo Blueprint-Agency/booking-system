@@ -122,7 +122,7 @@ be/
     │   │   ├── bookings.ts            # book + cancel + view own + QR
     │   │   ├── pt-sessions.ts         # submit request + view own + cancel
     │   │   ├── purchases.ts           # initiate Stripe checkout (package or workshop)
-    │   │   ├── invoices.ts            # list, filter, receipt link
+    │   │   ├── receipts.ts            # own Receipts: list (dates, pages) + one (#384)
     │   │   ├── waiver.ts              # read for sign + sign endpoint
     │   │   └── referral.ts            # own referral code + conversion stats
     │   │
@@ -903,7 +903,19 @@ id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_p
 
 **Indexes:** `(payment_intent_id) unique`, `(client_id, created_at desc)`.
 
-The fe-client `/account/invoices` "Download" link points directly to `receipt_url`; no PDF generation needed.
+`receipt_url` is the provider's own receipt for the charge, kept on the row as evidence. The member's receipt is the studio's own **Receipt** below, not this link.
+
+#### `receipts` (#380, migration 0112)
+
+tenant_id (uuid not null, FK → tenants), id (uuid PK), purchase_id (uuid not null, FK → purchases.id restrict), client_id (uuid nullable, FK → clients.id restrict; nullable for permanent deletion only), number (integer not null), display_number (text not null — the prefix and the zero-padded sequence as issued, `R-000123`), issued_at (timestamptz not null, default now()), seller_name (text not null), seller_legal_name, seller_registration_number, seller_address, seller_footer (text, nullable), buyer_name, buyer_email (text, nullable), kind (purchase_kind not null), lines (jsonb not null — the Purchase's lines, in the shape above), subtotal_sgd (numeric(10,2) — the sum of quantity × List Price), discount_sgd (numeric(10,2)), total_sgd (numeric(10,2) — the Purchase's frozen total), payments (jsonb not null, default `[]` — `{ method, cardBrand, cardLast4, wallet, amountSgd, paidAt }` for each succeeded or refunded payment, oldest first; empty for a $0 Purchase), refunded_at (timestamptz, nullable).
+
+The studio's own record of one completed Purchase. **A snapshot, never recomputed**: the studio's display name (`tenant_settings.display_name`, else `tenants.name`), the member's name and email, the lines, totals and payments are copied on at issue, and nothing is joined back when it is read. A Purchase that opened before it had lines gets one line under its item name for the whole total. No tax line and nothing derived from the total. Written only by `issueReceipt(tx, tenantId, purchaseId)` (`services/receipts/issue.ts`), inside the transaction that settles the Purchase; idempotent per Purchase. Wired today to a paid class package settling through the webhook (#384); the other settle paths, the Refund stamp and the backfill follow. The seller's legal name, registration number, address and footer, and a studio's own prefix (default `R`), arrive with the receipt details (#391).
+
+**Indexes:** `(tenant_id, purchase_id) unique` — one Receipt per Purchase, which is what makes a redelivery or the confirmation page's fallback find the one already issued; `(tenant_id, number) unique`, `(tenant_id, display_number) unique`, `(tenant_id, client_id, issued_at)`, and `purchase_id`, `client_id` for their foreign keys. Row-Level Security like every domain table (written in the migration as well as swept). Permanent deletion keeps the row with `client_id`, `buyer_name` and `buyer_email` emptied (`member-tables.ts`).
+
+#### `receipt_counters` (#380, migration 0112)
+
+tenant_id (uuid PK, FK → tenants), next_number (integer not null, default 1). The studio's next Receipt number. `issueReceipt` makes the row on the studio's first Receipt, takes it `FOR UPDATE`, asks once more under the lock whether the Purchase already has a Receipt, and only then takes the number and adds one. So two settlements at once never share a number, a delivery that loses a race spends none, and one that rolls back hands its number back with everything else. Not a Postgres sequence: a sequence is not per Tenant and leaves a gap on every rollback. In the studio archive like every domain table, so a restored studio carries on numbering where it left off. Row-Level Security like every domain table.
 
 #### `tenant_payment_credentials` (#100)
 
@@ -1279,7 +1291,7 @@ Run idempotently on fresh deployment:
 - ~~Typed promo codes at checkout.~~ **Superseded — Promo Codes ship.** See `spec-pre-launch-batch.md` §9–§11 and migration `0016`. The model built is **not** the one sketched here: there is no used-count on the code row (a second source of truth that drifts) and no valid-from window (a code does nothing until someone hands it out; `archived` covers "made, not yet running"). Three tables — `promo_codes`, `promo_code_products` (scope, no FK on `product_id`), `promo_code_redemptions` (the ledger, one row per member per code) — with the rules in `services/packages/promo-codes.ts` and admin CRUD in `services/packages/promo-code-admin.ts`. A Promo Code is typed and crosses products; a **Promotion** (§4d) applies itself to one product inside a window. The two are distinct mechanisms and `be/CONTEXT.md` § Discounts is the glossary. Redeeming a code at checkout is wired separately.
 - ~~**Class waitlist.**~~ **Superseded — the class waitlist ships** (see "This phase" above and `spec-waitlist.md`). Promotion books the member directly rather than offering a time-bound claim, so `waitlist_entries` has no offer columns. Workshop and PT waitlists stay out of v1 (`spec-waitlist.md` §12).
 - **WhatsApp / SMS / push notifications.** Email-only in v1.
-- ~~**Multi-tenant SaaS surface.** This backend serves one studio exclusively; no tenant scoping.~~ **Superseded — multi-tenancy shipped.** `tenant_id` on all 55 domain tables, Row-Level Security as the fail-closed backstop, hostname-resolved Tenants, and no studio named anywhere in the repo. See `multi-tenancy-plan.md`, `spec-tenant-resolution.md` and `docs/adr/0002-shared-schema-row-level-security.md`. What is still out of scope is the **plan/billing** layer for studios.
+- ~~**Multi-tenant SaaS surface.** This backend serves one studio exclusively; no tenant scoping.~~ **Superseded — multi-tenancy shipped.** `tenant_id` on all 63 domain tables, Row-Level Security as the fail-closed backstop, hostname-resolved Tenants, and no studio named anywhere in the repo. See `multi-tenancy-plan.md`, `spec-tenant-resolution.md` and `docs/adr/0002-shared-schema-row-level-security.md`. What is still out of scope is the **plan/billing** layer for studios.
 
 ---
 

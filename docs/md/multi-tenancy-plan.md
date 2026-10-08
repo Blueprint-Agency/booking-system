@@ -355,6 +355,8 @@ retired.**
       `staging`, `app`, `mail`, `clerk`, `assets`).
 - [ ] Add `tenant_id` across **all 53 tables** in `be/src/db/schema/`'s 12 files —
       including child tables that could inherit it via FK, so RLS has a column to key on.
+      (53 when this was written; **63 domain tables** today, the latest `receipts` and
+      `receipt_counters`, migration 0112. Every new one is fenced by the same sweep.)
 - [ ] **Three-step migration, not one:** add nullable column → backfill everything to
       tenant #1 → add `NOT NULL` + composite indexes. One reviewed migration
       touching 53 live tables is the riskiest single moment in this project.

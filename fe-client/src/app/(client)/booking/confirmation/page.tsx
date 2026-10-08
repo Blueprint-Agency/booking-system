@@ -17,9 +17,12 @@ import {
   confirmationOutcome,
   PENDING_BODY,
   PENDING_HEADING,
+  syncedReceipt,
   type ConfirmationOutcome,
   type SyncResult,
 } from "@/lib/checkout-return";
+
+type SyncedReceipt = NonNullable<ReturnType<typeof syncedReceipt>>;
 
 function Spinner() {
   return (
@@ -81,11 +84,16 @@ function ReceiptPanel({
  * `pending` — the webhook still records a real payment, so it is never shown as
  * a failure either — and no session at all is a $0 grant, `free`.
  */
-function useCheckoutSync(stripeSessionId: string | null): ConfirmationOutcome | null {
+function useCheckoutSync(stripeSessionId: string | null): {
+  outcome: ConfirmationOutcome | null;
+  /** The Receipt the payment was given, once the sync says so (#384). */
+  receipt: SyncedReceipt | null;
+} {
   const getToken = getMemberToken;
   const [outcome, setOutcome] = useState<ConfirmationOutcome | null>(
     stripeSessionId ? null : "free",
   );
+  const [receipt, setReceipt] = useState<SyncedReceipt | null>(null);
 
   useEffect(() => {
     if (!stripeSessionId) return;
@@ -107,12 +115,15 @@ function useCheckoutSync(stripeSessionId: string | null): ConfirmationOutcome | 
         reportError(err, { scope: "checkout-sync" });
         sync = "failed";
       }
-      if (!cancelled) setOutcome(confirmationOutcome(stripeSessionId, sync));
+      if (!cancelled) {
+        setOutcome(confirmationOutcome(stripeSessionId, sync));
+        setReceipt(syncedReceipt(sync));
+      }
     })();
     return () => { cancelled = true; };
   }, [stripeSessionId, getToken]);
 
-  return outcome;
+  return { outcome, receipt };
 }
 
 /** The icon, eyebrow and heading every confirmation opens with. */
@@ -168,7 +179,7 @@ function WorkshopSuccess({
   workshopId: string;
   stripeSessionId: string | null;
 }) {
-  const outcome = useCheckoutSync(stripeSessionId);
+  const { outcome } = useCheckoutSync(stripeSessionId);
   const [workshop, setWorkshop] = useState<{
     name: string;
     starts_at: string | null;
@@ -243,7 +254,7 @@ function WorkshopSuccess({
 
 // ── Merch post-payment success ────────────────────────────────────────────────
 function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
-  const outcome = useCheckoutSync(stripeSessionId);
+  const { outcome } = useCheckoutSync(stripeSessionId);
 
   return (
     <div id="summary">
@@ -291,7 +302,7 @@ function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
  * "Nothing to confirm", which reads as the purchase having gone nowhere.
  */
 function CrossLocationSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
-  const outcome = useCheckoutSync(stripeSessionId);
+  const { outcome } = useCheckoutSync(stripeSessionId);
   const { refetch } = useClientPackages();
 
   // The plan card and the class list read the Add-On off the member's packages,
@@ -509,7 +520,7 @@ function PackageSuccess({
   packageKind: PackageKind;
   stripeSessionId: string | null;
 }) {
-  const outcome = useCheckoutSync(stripeSessionId);
+  const { outcome, receipt } = useCheckoutSync(stripeSessionId);
   const { refetch } = useClientPackages();
   const [details, setDetails] = useState<PackageDetails | null>(null);
 
@@ -555,6 +566,14 @@ function PackageSuccess({
           <>
             <ReceiptPanel label="Your purchase" name={view.name}>
               <p className="mt-2 text-base text-muted">{view.subtitle}</p>
+              {receipt && (
+                <Link
+                  href={`/account/receipts/${receipt.id}`}
+                  className="mt-3 inline-flex min-h-[44px] items-center text-sm font-semibold text-accent-deep hover:underline"
+                >
+                  View receipt {receipt.number}
+                </Link>
+              )}
             </ReceiptPanel>
             <div className={ctaRow}>
               <Link

@@ -273,6 +273,7 @@ export const ERROR_CODES = {
   purchase_settled: 'purchase_settled',
   rate_limited: 'rate_limited',
   reason_required: 'reason_required',
+  receipt_not_found: 'receipt_not_found',
   record_not_found: 'record_not_found',
   refund_processing: 'refund_processing',
   remaining_above_pool: 'remaining_above_pool',
