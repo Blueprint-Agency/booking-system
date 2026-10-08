@@ -11,7 +11,7 @@
  *   - the entire unwind, in ./refunds.ts
  */
 import Stripe from 'stripe'
-import { db, withTenant } from '../../db'
+import { afterCommit, db, withTenant } from '../../db'
 import { tenantForClient as routeToTenant, tenantForPaymentIntent } from '../../db/routing'
 import { stripePayments } from '../../db/schema/ledger'
 import { clients } from '../../db/schema/identity'
@@ -422,30 +422,20 @@ export async function handleStripeEvent(
   // must land in front of a human, not vanish — see `tenantForClient` below.
   if (!named) throw new NotFoundError('client_not_found', { clientId })
 
-  const afterCommit: AfterCommit[] = []
-  await withTenant(named, () =>
-    dispatchStripeEvent(event, expectedTenantId, providerAccountId, retry, afterCommit),
-  )
-  // The delivery's work is committed: only now is it safe to tell the member.
-  // A delivery that failed part-way rolled back, and must not have mailed
-  // anyone about a request that does not exist; its retry sends instead.
-  for (const send of afterCommit) await send()
+  // The delivery's own outermost transaction. What it registers with
+  // `afterCommit` — the member's email — runs only once this has committed: a
+  // delivery that failed part-way rolled back, and must not have mailed anyone
+  // about a request that does not exist; its retry sends instead. A failed
+  // send is reported, never thrown: failing the delivery now would only make
+  // the provider retry one that finds nothing left to do.
+  await withTenant(named, () => dispatchStripeEvent(event, expectedTenantId, providerAccountId, retry))
 }
-
-/**
- * Work a delivery hands back to run once its transaction has committed — an
- * email announcing what it made. Each must not throw: the delivery is done,
- * and failing the request now would only make the provider retry a delivery
- * that finds nothing left to do.
- */
-type AfterCommit = () => Promise<void>
 
 async function dispatchStripeEvent(
   event: Stripe.Event,
   expectedTenantId: string,
   providerAccountId: string,
   retry: RetryPolicy | undefined,
-  afterCommit: AfterCommit[] = [],
 ): Promise<void> {
   if (isCheckoutPaidEvent(event)) {
     const session = event.data.object as Stripe.Checkout.Session
@@ -743,19 +733,9 @@ async function dispatchStripeEvent(
       )
 
       // Step 5: one confirmation, from the delivery that made the request — a
-      // redelivery stopped at the `succeeded` guard above. Sent after commit,
-      // in a Tenant context of its own; the sender reports and swallows.
-      afterCommit.push(() =>
-        withTenant(tenantId, () =>
-          sendCorporatePurchaseEmail(tenantId, corporateRequestId, paymentIntentId),
-        ).catch(err =>
-          reportError(err, 'corporate purchase confirmation email failed', {
-            scope: 'purchase-email',
-            tenantId,
-            corporateRequestId,
-          }),
-        ),
-      )
+      // redelivery stopped at the `succeeded` guard above. Sent once the
+      // delivery has committed (`afterCommit`); the sender reports and swallows.
+      afterCommit(() => sendCorporatePurchaseEmail(tenantId, corporateRequestId, paymentIntentId))
       return
     }
 

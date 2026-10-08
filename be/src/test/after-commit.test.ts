@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
@@ -25,7 +26,7 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
   let dbModule!: typeof import('../db')
   let mailer!: typeof import('../lib/mailer')
 
-  type Studio = { id: string; slug: string; locationId: string; roomId: string; classTypeId: string; bundleId: string; staffId: string }
+  type Studio = { id: string; slug: string; locationId: string; roomId: string; classTypeId: string; bundleId: string; staffId: string; staffHeaders: Record<string, string> }
   type Member = { clientId: string; email: string; headers: Record<string, string> }
   let one!: Studio
 
@@ -58,14 +59,17 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
       .values({ tenantId: tenant.id, name: `${NAME} five pack`, kind: 'credit_bundle', credits: 5, validityDays: 90, priceSgd: '100.00', status: 'active' })
       .returning({ id: schema.classPackages.id })
     const email = `admin@${DOMAIN}`
-    const { ensureAuthUser } = await import('../services/auth/auth-users')
-    const authUserId = await ensureAuthUser(harness.db, 'staff', { email, name: 'Ada', tenantId: tenant.id })
+    const staffHeaders = await harness.signInAs('staff', email, tenant)
+    const [user] = await harness.db
+      .select({ id: schema.staffAuthUsers.id })
+      .from(schema.staffAuthUsers)
+      .where(and(eq(schema.staffAuthUsers.email, email), eq(schema.staffAuthUsers.tenantId, tenant.id)))
     const [staff] = await harness.db
       .insert(schema.staffUsers)
-      .values({ tenantId: tenant.id, email, name: 'Ada', role: 'admin', status: 'active', authUserId })
+      .values({ tenantId: tenant.id, email, name: 'Ada', role: 'admin', status: 'active', authUserId: user!.id })
       .returning({ id: schema.staffUsers.id })
     await harness.db.insert(schema.instructors).values({ tenantId: tenant.id, staffUserId: staff!.id })
-    return { ...tenant, locationId: location!.id, roomId: room!.id, classTypeId: classType!.id, bundleId: bundle!.id, staffId: staff!.id }
+    return { ...tenant, locationId: location!.id, roomId: room!.id, classTypeId: classType!.id, bundleId: bundle!.id, staffId: staff!.id, staffHeaders }
   }
 
   let members = 0
@@ -135,10 +139,19 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
     try {
       const ours = `%@${DOMAIN}`
       const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
+      const staff = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
+      await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM clients WHERE email LIKE ${ours})`)
+      await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'cancelledByStaffId' IN (SELECT id::text FROM staff_users WHERE email LIKE ${ours})`)
       await harness.db.execute(sql`DELETE FROM credit_movements WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM classes WHERE class_type_id IN (SELECT id FROM class_types WHERE name LIKE ${`${NAME}%`})`)
+      await harness.db.execute(sql`DELETE FROM workshop_tiers WHERE workshop_id IN (SELECT id FROM workshops WHERE created_by_staff_id IN (${staff}))`)
+      await harness.db.execute(sql`DELETE FROM workshops WHERE created_by_staff_id IN (${staff})`)
+      await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staff})`)
       await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM client_auth_users WHERE email LIKE ${ours}`)
@@ -178,7 +191,7 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
       }),
       /boom/,
     )
-    assert.deepEqual(ran, [])
+    assert.equal(ran.length, 0, 'nothing ran')
 
     await withTenant(one.id, async () => {
       afterCommit(async () => void ran.push('kept'))
@@ -308,5 +321,119 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
     )
     assert.equal(sending, 2)
     assert.equal(timedOut, false, 'neither send waited out its timeout: the second booking was not held behind the first send')
+  })
+
+  /* ── the cancellation emails ────────────────────────────────────────── */
+
+  /** What `read` saw — over a separate connection — each time `template` was sent to `to` during `act`. */
+  async function readAtSend<T>(to: string, template: string, read: () => Promise<T>, act: () => Promise<void>): Promise<T[]> {
+    const seen: T[] = []
+    await withTransport(async m => {
+      if (m.to === to && templateOf(m) === template) seen.push(await read())
+      return ok('after-commit-cancel')
+    }, act)
+    return seen
+  }
+
+  const staffPost = (path: string) =>
+    harness.app.request(`/api/v1/portal/${path}`, { method: 'POST', headers: { ...one.staffHeaders, ...json }, body: '{}' })
+
+  test('NTF-09 a member\'s cancellation email is sent only after the cancellation has committed', async () => {
+    const mia = await member(one)
+    const classId = await addClass(one)
+    const booked = await book(mia, classId)
+    const { booking_id: bookingId } = (await booked.json()) as { booking_id: string }
+    const stateOf = async () =>
+      (await harness.db.select({ state: schema.bookings.state }).from(schema.bookings).where(eq(schema.bookings.id, bookingId)))[0]!.state
+
+    const seen = await readAtSend(mia.email, 'class_cancelled_credit_returned', stateOf, async () => {
+      const res = await harness.app.request(`/api/v1/me/bookings/${bookingId}`, { method: 'DELETE', headers: mia.headers })
+      assert.equal(res.status, 200, await res.text())
+    })
+    assert.deepEqual(seen, ['cancelled'])
+  })
+
+  test('NTF-10 an Admin\'s class cancellation emails each member only after the cancellation has committed', async () => {
+    const mia = await member(one)
+    const classId = await addClass(one)
+    assert.equal((await book(mia, classId)).status, 201)
+    const lifecycleOf = async () =>
+      (await harness.db.select({ lifecycle: schema.classes.lifecycle }).from(schema.classes).where(eq(schema.classes.id, classId)))[0]!.lifecycle
+
+    const seen = await readAtSend(mia.email, 'admin_cancel_class', lifecycleOf, async () => {
+      const res = await staffPost(`admin/schedule/classes/${classId}/cancel`)
+      assert.equal(res.status, 200, await res.text())
+    })
+    assert.deepEqual(seen, ['cancelled'])
+  })
+
+  test('NTF-10 an Admin\'s workshop cancellation emails each attendee only after the cancellation has committed', async () => {
+    const mia = await member(one)
+    const [workshop] = await harness.db
+      .insert(schema.workshops)
+      .values({ tenantId: one.id, name: `${NAME} weekend`, locationId: one.locationId, createdByStaffId: one.staffId })
+      .returning({ id: schema.workshops.id })
+    const [tier] = await harness.db
+      .insert(schema.workshopTiers)
+      .values({ tenantId: one.id, workshopId: workshop!.id, name: 'Full', regularPriceSgd: '80.00', ord: 1 })
+      .returning({ id: schema.workshopTiers.id })
+    await harness.db.insert(schema.bookings).values({
+      tenantId: one.id,
+      clientId: mia.clientId,
+      kind: 'workshop',
+      workshopId: workshop!.id,
+      workshopTierId: tier!.id,
+      listPriceSgd: '80.00',
+      amountPaidSgd: '80.00',
+      qrToken: randomUUID(),
+      code: `RT-${randomUUID().slice(0, 6).toUpperCase()}`,
+    })
+    const lifecycleOf = async () =>
+      (await harness.db.select({ lifecycle: schema.workshops.lifecycle }).from(schema.workshops).where(eq(schema.workshops.id, workshop!.id)))[0]!.lifecycle
+
+    const seen = await readAtSend(mia.email, 'admin_cancel_workshop', lifecycleOf, async () => {
+      const res = await staffPost(`admin/workshops/${workshop!.id}/cancel`)
+      assert.equal(res.status, 200, await res.text())
+    })
+    assert.deepEqual(seen, ['cancelled'])
+  })
+
+  test('NTF-11 a PT Request\'s cancellation email is sent only after the cancellation has committed', async () => {
+    const mia = await member(one)
+    const [pkg] = await harness.db
+      .insert(schema.clientPackages)
+      .values({
+        tenantId: one.id,
+        clientId: mia.clientId,
+        kind: 'pt',
+        validityDays: 90,
+        creditsOrSessionsRemaining: 3,
+        expiresAt: new Date(Date.now() + 60 * DAY),
+        active: true,
+        amountPaidSgd: '300.00',
+        listPriceSgd: '300.00',
+      })
+      .returning({ id: schema.clientPackages.id })
+    const [request] = await harness.db
+      .insert(schema.ptRequests)
+      .values({
+        tenantId: one.id,
+        clientId: mia.clientId,
+        locationId: one.locationId,
+        sessionType: '1on1',
+        status: 'pending',
+        origin: 'member',
+        expiresAt: new Date(Date.now() + 2 * DAY),
+        debitedClientPackageId: pkg!.id,
+      })
+      .returning({ id: schema.ptRequests.id })
+    const statusOf = async () =>
+      (await harness.db.select({ status: schema.ptRequests.status }).from(schema.ptRequests).where(eq(schema.ptRequests.id, request!.id)))[0]!.status
+
+    const seen = await readAtSend(mia.email, 'pt_request_cancelled', statusOf, async () => {
+      const res = await harness.app.request(`/api/v1/me/pt-sessions/${request!.id}/cancel`, { method: 'POST', headers: mia.headers })
+      assert.equal(res.status, 200, await res.text())
+    })
+    assert.deepEqual(seen, ['cancelled_before_scheduled'])
   })
 })

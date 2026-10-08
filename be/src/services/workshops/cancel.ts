@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { workshops } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
@@ -99,7 +99,8 @@ export async function cancelWorkshop(
     return { row: row!, affected }
   })
 
-  // NTF-10: every attendee is told, with what they paid. After commit; never throws.
-  await sendWorkshopCancelledEmails(tenantId, affected.map(b => b.id))
+  // NTF-10: every attendee is told, with what they paid, once the request's
+  // transaction has committed (`afterCommit`). Never throws.
+  afterCommit(() => sendWorkshopCancelledEmails(tenantId, affected.map(b => b.id)))
   return row
 }
