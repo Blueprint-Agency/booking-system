@@ -714,6 +714,7 @@ sum, and the waitlist is not a seat (`spec-waitlist.md` §1–§2).
 | MRC-08 | MRC | admin | **Given** the merch page **When** an Admin adds, edits, archives and restores an item **Then** each change is saved, an archived item leaves the default list, and a negative price or blank title is refused _(admin-restructure §6b)_ | UX | integration | `be/src/test/admin-catalogue.test.ts` | covered |
 | MRC-09 | MRC | admin | **Given** a merch item of studio A **When** an Admin of studio B lists, edits or deletes it **Then** it is not found and unchanged _(admin-restructure §6b)_ | tenancy | integration | `be/src/test/admin-catalogue.test.ts` | covered |
 | MRC-10 | MRC | member | **Given** a merch item of studio A **When** a member of studio B tries to buy it **Then** it is not found and no order is written _(fe-client-features §6b)_ | tenancy | integration | `be/src/test/promo-codes-and-merch.test.ts` | covered |
+| MRC-11 | MRC | admin | **Given** a merch item **When** an Admin uploads its photo as a JSON body, or as a multipart body with no file part **Then** the upload is refused 400 (`invalid_request` for the JSON body, `image_required` for the missing file), the item is unchanged and no unhandled error is logged _(be-portal §merch; #376)_ | UX | integration | `be/src/test/admin-catalogue.test.ts` | covered |
 
 ## CORP — Corporate packages, requests & sessions
 
@@ -1130,6 +1131,7 @@ sum, and the waitlist is not a seat (`spec-waitlist.md` §1–§2).
 | LEV-130 | LEV | admin | **Given** another admin **When** an admin edits their Assigned Days and Remaining on the staff screen and reads the staff list **Then** the figures are saved and the list carries them _(be/docs/adr/0009; #315)_ | UX | integration | `be/src/test/admin-leave.test.ts` | covered |
 | LEV-131 | LEV | instructor | **Given** an admin's medical leave **When** an instructor and an admin read the leave calendar **Then** both see the absence, and only the admin sees its type _(spec-instructor-leave §Access and visibility; #315)_ | data-loss | integration | `be/src/test/admin-leave.test.ts` | covered |
 | LEV-132 | LEV | admin | **Given** the shared self-service mount **When** anyone calls the old `/portal/instructor/leave` **Then** it is not found _(be/docs/adr/0009; #315)_ | UX | integration | `be/src/test/admin-leave.test.ts` | covered |
+| LEV-133 | LEV | instructor | **Given** a medical Leave Request **When** the instructor uploads a Supporting Document as a JSON body, or as a multipart body with no file part **Then** the upload is refused 400 (`invalid_request` for the JSON body, `document_required` for the missing file), the request is unchanged and no unhandled error is logged _(spec-instructor-leave §Supporting Document upload; #376)_ | UX | integration | `be/src/test/leave-decisions.test.ts` | covered |
 
 ## SUP — Super portal
 

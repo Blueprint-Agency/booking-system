@@ -651,6 +651,25 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal((await row(overReq.id)).supportingDocumentR2Key, null)
   })
 
+  test('LEV-133 an upload sent as JSON, or as multipart with no file part, is refused 400, writes nothing and logs no unhandled error', async () => {
+    const req = await file(ada, 'medical')
+    const was = await row(req.id)
+    const path = `/api/v1/portal/leave/${req.id}/document`
+    const errorsBefore = errorLines().length
+
+    const asJson = await call(ada, 'POST', `/leave/${req.id}/document`, { file: 'note.pdf' })
+    refused(asJson, 400, 'invalid_request', 'a JSON body')
+
+    const noFile = new FormData()
+    noFile.append('note', 'no file here')
+    const res = await harness.app.request(path, { method: 'POST', headers: ada.headers, body: noFile })
+    const text = await res.text()
+    refused({ status: res.status, body: JSON.parse(text), text }, 400, 'document_required', 'multipart with no file part')
+
+    assert.deepEqual(await row(req.id), was, 'the request is unchanged')
+    assert.deepEqual(errorLines().slice(errorsBefore), [], 'no unhandled error is logged')
+  })
+
   test('LEV-73 an admin asks for a Supporting Document and gets a short-lived signed URL that retrieves the file', async () => {
     const req = await file(ada, 'medical')
     const bytes = fileBytes(3000, 9)
