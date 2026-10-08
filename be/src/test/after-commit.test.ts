@@ -145,6 +145,7 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
       await harness.db.execute(sql`DELETE FROM credit_movements WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM waitlist_entries WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
@@ -466,5 +467,107 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
       assert.equal(res.status, 200, await res.text())
     })
     assert.deepEqual(seen, ['cancelled_before_scheduled'])
+  })
+
+  /* ── the waitlist promotion emails ──────────────────────────────────── */
+
+  /** A member waiting on the class, as the line holds them. */
+  async function waiting(who: Member, classId: string): Promise<string> {
+    const [entry] = await harness.db
+      .insert(schema.waitlistEntries)
+      .values({ tenantId: one.id, clientId: who.clientId, classId })
+      .returning({ id: schema.waitlistEntries.id })
+    return entry!.id
+  }
+  const entryStatus = (entryId: string) => async () =>
+    (await harness.db.select({ status: schema.waitlistEntries.status }).from(schema.waitlistEntries).where(eq(schema.waitlistEntries.id, entryId)))[0]!.status
+
+  /**
+   * A full one-seat class: Mia holds the seat on the studio's bundle, Leo waits
+   * holding a second package. Saving the rule `only` that second package cancels
+   * Mia's booking and promotes Leo into the seat it frees.
+   */
+  async function ruleChangeThatPromotes() {
+    const mia = await member(one)
+    const leo = await member(one)
+    const classId = await addClass(one)
+    await harness.db.update(schema.classes).set({ capacityOnline: 1 }).where(eq(schema.classes.id, classId))
+    assert.equal((await book(mia, classId)).status, 201)
+    const [other] = await harness.db
+      .insert(schema.classPackages)
+      .values({ tenantId: one.id, name: `${NAME} ten pack ${randomUUID().slice(0, 6)}`, kind: 'credit_bundle', credits: 10, validityDays: 90, priceSgd: '180.00', status: 'active' })
+      .returning({ id: schema.classPackages.id })
+    await harness.db.insert(schema.clientPackages).values({
+      tenantId: one.id,
+      clientId: leo.clientId,
+      kind: 'credit_bundle',
+      sourceClassPackageId: other!.id,
+      validityDays: 90,
+      creditsOrSessionsRemaining: 10,
+      expiresAt: new Date(Date.now() + 60 * DAY),
+      active: true,
+      amountPaidSgd: '180.00',
+      listPriceSgd: '180.00',
+    })
+    const entryId = await waiting(leo, classId)
+    return { leo, classId, entryId, rule: { mode: 'only' as const, packageIds: [other!.id] } }
+  }
+
+  test('a waitlist promotion a class\'s rule change makes is emailed only after the change has committed', async () => {
+    const { leo, classId, entryId, rule } = await ruleChangeThatPromotes()
+    const seen = await readAtSend(leo.email, 'class_waitlist_promoted', entryStatus(entryId), async () => {
+      const res = await harness.app.request(`/api/v1/portal/admin/schedule/classes/${classId}`, {
+        method: 'PATCH',
+        headers: { ...one.staffHeaders, ...json },
+        body: JSON.stringify({ package_rule: { mode: rule.mode, package_ids: rule.packageIds } }),
+      })
+      assert.equal(res.status, 200, await res.text())
+    })
+    assert.deepEqual(seen, ['promoted'], 'one promotion email, sent when the promotion was already visible outside its transaction')
+  })
+
+  test('a rule change whose transaction rolls back emails no waitlist promotion', async () => {
+    const { leo, classId, entryId, rule } = await ruleChangeThatPromotes()
+    const { updateClass } = await import('../services/schedule/classes')
+    const seen = await readAtSend(leo.email, 'class_waitlist_promoted', entryStatus(entryId), async () => {
+      await assert.rejects(
+        dbModule.withTenant(one.id, async () => {
+          await updateClass(one.id, classId, { packageRule: rule }, one.staffId)
+          throw new Error('the request failed after the rule change')
+        }),
+        /failed after the rule change/,
+      )
+    })
+    assert.deepEqual(seen, [], 'no promotion email for a promotion that never committed')
+    assert.equal(await entryStatus(entryId)(), 'waiting')
+  })
+
+  test('a staff add from the waitlist is emailed only after the booking has committed', async () => {
+    const leo = await member(one)
+    const classId = await addClass(one)
+    const entryId = await waiting(leo, classId)
+    const seen = await readAtSend(leo.email, 'class_waitlist_promoted', entryStatus(entryId), async () => {
+      const res = await staffPost(`admin/schedule/classes/${classId}/waitlist/${entryId}/promote`)
+      assert.equal(res.status, 201, await res.text())
+    })
+    assert.deepEqual(seen, ['promoted'], 'one promotion email, sent when the booking was already visible outside its transaction')
+  })
+
+  test('a staff add from the waitlist whose transaction rolls back emails nothing', async () => {
+    const leo = await member(one)
+    const classId = await addClass(one)
+    const entryId = await waiting(leo, classId)
+    const { staffPromote } = await import('../services/waitlist/staff')
+    const seen = await readAtSend(leo.email, 'class_waitlist_promoted', entryStatus(entryId), async () => {
+      await assert.rejects(
+        dbModule.withTenant(one.id, async () => {
+          await staffPromote(one.id, { classId, entryId, actor: { role: 'admin', staffId: one.staffId } })
+          throw new Error('the request failed after the promotion')
+        }),
+        /failed after the promotion/,
+      )
+    })
+    assert.deepEqual(seen, [], 'no promotion email for a booking that never committed')
+    assert.equal(await entryStatus(entryId)(), 'waiting')
   })
 })

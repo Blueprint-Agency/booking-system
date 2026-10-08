@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { classes } from '../../db/schema'
 import { countSeats } from '../bookings/seats'
 import { assertRoomAvailable, assertRoomInLocation } from './room-conflicts'
@@ -298,9 +298,12 @@ export async function updateClass(
     return { row, ruleChange }
   })
 
+  // Once the request's transaction has committed (`afterCommit`), never inside
+  // it: this transaction is only a savepoint of the request's.
   if (ruleChange) {
-    await sendPromotionEmails(tenantId, ruleChange.promotions)
-    await sendRuleCancelledEmails(tenantId, ruleChange.cancellations)
+    const { promotions, cancellations } = ruleChange
+    if (promotions.length) afterCommit(() => sendPromotionEmails(tenantId, promotions))
+    if (cancellations.length) afterCommit(() => sendRuleCancelledEmails(tenantId, cancellations))
   }
   return row
 }
