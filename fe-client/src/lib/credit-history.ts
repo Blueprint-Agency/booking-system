@@ -39,12 +39,12 @@ const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `-${-n}` : null);
 const join = (label: string, amount: string | null) => (amount ? `${label} · ${amount}` : label);
 
 /**
- * One movement in words — "Booked · -1", "Late cancel · credit kept",
+ * One movement in words — "Booked · -1", "Late cancel · credit not returned",
  * "Expired · -3" — and what was left to use after it. `unit` is "credit" for
  * a class package, "session" for a PT package.
  */
 export function movementText(m: CreditMovement, unit: "credit" | "session"): { text: string; balance: number | null } {
-  const kept = `${unit} kept`;
+  const kept = `${unit} not returned`;
   const amount = signed(m.delta);
   const text = (() => {
     switch (m.cause) {

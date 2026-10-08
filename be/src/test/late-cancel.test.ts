@@ -445,7 +445,7 @@ describe('member late cancellation and the Cancellation Cap', { skip: integratio
       const theirs = await list(unlimited, 'cancelled')
       assert.deepEqual(theirs.map(b => b.booking_id), [freeLate, free])
       assert.deepEqual(summary(theirs[0]), { cancelled_by: 'member', late: true, outcome: 'nothing_to_return' })
-      // Over her cap of one, yet it spent nothing: nothing to return, not "credit kept".
+      // Over her cap of one, yet it spent nothing: nothing to return, not "credit not returned".
       assert.deepEqual(summary(theirs[1]), { cancelled_by: 'member', late: false, outcome: 'nothing_to_return' })
     } finally {
       await setPolicy({ cancel_cap_count: 10 })

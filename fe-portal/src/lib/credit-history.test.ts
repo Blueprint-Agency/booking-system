@@ -29,10 +29,10 @@ test("CRD-28 a booking spends, a cancel in time returns, each with its signed am
 test("CRD-28 a kept credit says why it stayed spent", () => {
   const kept = { ...base, cause: "kept" as const, delta: 0 };
   const late = { ...kept, booking: { ...base.booking!, cancelled_late: true } };
-  assert.equal(movementLine(late, "credit").label, "Late cancel · credit kept");
-  assert.equal(movementLine({ ...kept, booking: { ...base.booking!, cancelled_late: false } }, "credit").label, "Over the cancellation limit · credit kept");
-  assert.equal(movementLine({ ...late, actor: "staff" }, "credit").label, "Staff cancel · credit kept");
-  assert.equal(movementLine({ ...kept, cause: "no_show" }, "session").label, "No-show · session kept");
+  assert.equal(movementLine(late, "credit").label, "Late cancel · credit not returned");
+  assert.equal(movementLine({ ...kept, booking: { ...base.booking!, cancelled_late: false } }, "credit").label, "Over the cancellation limit · credit not returned");
+  assert.equal(movementLine({ ...late, actor: "staff" }, "credit").label, "Staff cancel · credit not returned");
+  assert.equal(movementLine({ ...kept, cause: "no_show" }, "session").label, "No-show · session not returned");
   assert.equal(movementLine(late, "credit").amount, null, "nothing moved, so no amount");
 });
 

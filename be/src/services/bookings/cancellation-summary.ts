@@ -22,10 +22,12 @@
  *     member cancelled late, over their Cancellation Cap, or because staff
  *     chose Keep credit.
  *   - Lines: the member's ("You cancelled", "Cancelled over your cap · credit
- *     kept") and staff's ("Member" / the staff member's name / "Automatic" /
- *     "Studio", "Cancelled over their cap · credit kept"). The outcome line is
- *     one sentence for both, but for whose cap and card it is. A credit is
- *     returned or kept, never "refunded": only a workshop's money is.
+ *     not returned") and staff's ("Member" / the staff member's name /
+ *     "Automatic" / "Studio", "Cancelled over their cap · credit not
+ *     returned"). The outcome line is one sentence for both, but for whose cap
+ *     and card it is. A credit is "returned" or "not returned", never
+ *     "refunded" (only a workshop's money is), and never "kept", which a
+ *     member read as theirs to keep when the studio was keeping it.
  */
 import type { CancellationSource, RefundOutcome } from '../../db/enums'
 
@@ -194,7 +196,7 @@ function outcomeLine(s: Said, whose: 'your' | 'their'): string {
         ? s.kind === 'pt'
           ? null
           : 'nothing to return'
-        : `${unit} kept`
+        : `${unit} not returned`
   const and = what ? ` · ${what}` : ''
   if (s.expired) return `Request expired${and}`
   if (s.actor === 'member') {

@@ -34,10 +34,10 @@ const nothing = { refundOutcome: 'n_a', creditsUsed: 0 } as const
 const byStudio = { record: record({ source: 'admin' }) } as const
 
 test('ACC-33 a cancelled class’s outcome line says where the credit went', () => {
-  assert.equal(member(late).outcome, 'Late cancel · credit kept')
+  assert.equal(member(late).outcome, 'Late cancel · credit not returned')
   assert.equal(member().outcome, 'Credit returned')
   assert.equal(member({ creditsUsed: 2 }).outcome, '2 credits returned')
-  assert.equal(member(overCap).outcome, 'Cancelled over your cap · credit kept')
+  assert.equal(member(overCap).outcome, 'Cancelled over your cap · credit not returned')
   assert.equal(member(nothing).outcome, 'Nothing to return')
   assert.equal(member({ ...late, ...nothing }).outcome, 'Late cancel · nothing to return')
 })
@@ -45,7 +45,7 @@ test('ACC-33 a cancelled class’s outcome line says where the credit went', () 
 test('ACC-33 a class the studio cancelled says so in its outcome line', () => {
   assert.equal(member(byStudio).outcome, 'Cancelled by the studio · credit returned')
   assert.equal(member({ ...byStudio, creditsUsed: 3 }).outcome, 'Cancelled by the studio · 3 credits returned')
-  assert.equal(member({ ...byStudio, refundOutcome: 'forfeited' }).outcome, 'Cancelled by the studio · credit kept')
+  assert.equal(member({ ...byStudio, refundOutcome: 'forfeited' }).outcome, 'Cancelled by the studio · credit not returned')
   assert.equal(member({ ...byStudio, ...nothing }).outcome, 'Cancelled by the studio · nothing to return')
   // No `cancellations` row at all (an unknown actor) is the studio's.
   assert.equal(member({ record: null }).outcome, 'Cancelled by the studio · credit returned')
@@ -76,7 +76,7 @@ const partner = { by: { actor: 'host' }, record: null, refundOutcome: 'n_a', cre
 
 test('ACC-35 a cancelled private session says when, who, and whether the session came back', () => {
   assert.deepEqual(pt(), { who: 'You cancelled', outcome: 'Session returned' })
-  assert.deepEqual(pt(overCap), { who: 'You cancelled', outcome: 'Cancelled over your cap · session kept' })
+  assert.deepEqual(pt(overCap), { who: 'You cancelled', outcome: 'Cancelled over your cap · session not returned' })
   assert.deepEqual(pt(byStudio), { who: 'Cancelled', outcome: 'Cancelled by the studio · session returned' })
   // A 2on1 partner paid nothing (`n_a`): nothing of theirs came back or was kept.
   assert.deepEqual(pt(partner), { who: 'Cancelled', outcome: 'Cancelled by the host' })
@@ -133,16 +133,16 @@ test('CUS-25 who cancelled: the member, the named staff member, Automatic, or th
 test('CUS-25 where the credit went: the member’s own line, of their cap and their card, and a session for a private session', () => {
   assert.equal(staff().outcome, 'Credit returned')
   assert.equal(staff({ creditsUsed: 2 }).outcome, '2 credits returned')
-  assert.equal(staff(late).outcome, 'Late cancel · credit kept')
-  assert.equal(staff(overCap).outcome, 'Cancelled over their cap · credit kept')
-  assert.equal(staff({ refundOutcome: 'forfeited' }).outcome, 'Credit kept')
+  assert.equal(staff(late).outcome, 'Late cancel · credit not returned')
+  assert.equal(staff(overCap).outcome, 'Cancelled over their cap · credit not returned')
+  assert.equal(staff({ refundOutcome: 'forfeited' }).outcome, 'Credit not returned')
   assert.equal(staff(nothing).outcome, 'Nothing to return')
   assert.equal(
     staff({ kind: 'workshop', record: null, refundOutcome: 'stripe_refunded', creditsUsed: 0, by: { actor: 'automatic' } }).outcome,
     'Refunded to their card',
   )
   assert.equal(staff({ kind: 'pt', refundOutcome: 'session_returned' }).outcome, 'Session returned')
-  assert.equal(staff({ kind: 'pt', refundOutcome: 'forfeited' }).outcome, 'Session kept')
+  assert.equal(staff({ kind: 'pt', refundOutcome: 'forfeited' }).outcome, 'Session not returned')
 })
 
 test('CUS-25 member and staff word every cancellation alike but for whose cap and card it is', () => {
