@@ -8,6 +8,7 @@ import {
   startTestApp,
   type TestApp,
 } from './harness'
+import { buyCorporatePackage, forgetPurchases } from './corporate-purchase'
 
 /**
  * Leave occupying the schedule, and an instructor cancelling his own class
@@ -291,19 +292,11 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
 
   /**
    * A corporate session comes only from scheduling a member's Corporate Request
-   * (CORP-12), so the fixture is the request, made on the member's own route.
+   * (CORP-12), so the fixture is the request, made the way a member makes one:
+   * by paying for the package (#374).
    */
-  const corporateRequest = async () => {
-    const body = await json(
-      await send('/me/corporate-requests', corporateMember.headers, 'POST', {
-        package_id: corporatePackageId,
-        preferred_location: `${TAG} office`,
-        notes: TAG,
-      }),
-      201,
-    )
-    return body.corporate_request_id as string
-  }
+  const corporateRequest = () =>
+    buyCorporatePackage(harness, schema, corporateMember, harness.tenants.one, corporatePackageId)
 
   const scheduleBody = (who: Staff, date: string, from = '10:00', to = '11:00') => ({
     main_instructor_id: who.id,
@@ -401,6 +394,7 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
       await cleanup(sql`DELETE FROM corporate_session_supporting_instructors WHERE corporate_session_id IN (${ourCorporate})`)
       await cleanup(sql`DELETE FROM corporate_sessions WHERE id IN (${ourCorporate})`)
       await cleanup(sql`DELETE FROM corporate_requests WHERE corporate_package_id = ${corporatePackageId}`)
+      await attempt(() => forgetPurchases(harness, clients))
       await cleanup(sql`DELETE FROM corporate_packages WHERE id = ${corporatePackageId}`)
     }
     await cleanup(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)

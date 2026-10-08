@@ -2,14 +2,14 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { and, eq, sql, type SQL } from 'drizzle-orm'
 import type * as Schema from '../db/schema'
-import type { TestApp } from './harness'
+import { inTenantContext, type TestApp } from './harness'
 import { stripeWebhookPath, type StripeFake } from './stripe-fake'
 
 /**
  * A Corporate Request, made the only way a member can make one (#374): by paying
- * for a corporate package. The checkout over HTTP, then the provider's
- * `checkout.session.completed` delivered to the studio's own webhook endpoint,
- * with the Stripe fake standing in for the provider.
+ * for a corporate package. The provider's `checkout.session.completed` for the
+ * sale, delivered to the studio's own webhook endpoint, with the Stripe fake
+ * standing in for the provider.
  *
  * For any test that needs a pending Corporate Request as its starting point.
  * Tests of the purchase itself are in `corporate-checkout.test.ts`.
@@ -87,13 +87,19 @@ export const deliverTo = (harness: TestApp, slug: string, event: unknown, signat
 /**
  * Buy a corporate package and hand back the Corporate Request the payment made.
  *
+ * The sale is priced and named by the real checkout service, and its payment
+ * delivered over HTTP to the studio's own webhook endpoint — the path that
+ * makes the request. The checkout route itself is skipped: it is rate-limited
+ * per member (#142), and a file that needs a dozen requests for one member
+ * would run out. `corporate-checkout.test.ts` covers the route.
+ *
  * Installs the fake for the purchase and puts the real provider back after,
  * unless a fake is passed in, which is then used and left installed.
  */
 export async function buyCorporatePackage(
   harness: TestApp,
   schema: typeof Schema,
-  who: { clientId: string; headers: Record<string, string> },
+  who: { clientId: string },
   tenant: { id: string; slug: string },
   packageId: string,
   existing?: StripeFake,
@@ -111,15 +117,16 @@ export async function buyCorporatePackage(
       )
     const before = await requestsOf()
 
-    const opened = await harness.app.request('/api/v1/me/checkout/package', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...who.headers },
-      body: JSON.stringify({ package_kind: 'corporate', package_id: packageId }),
-    })
-    const openedText = await opened.text()
-    assert.equal(opened.status, 200, `corporate checkout: ${openedText}`)
+    const checkout = inTenantContext(await import('../services/corporate/checkout'))
+    const quote = await checkout.beginCorporateCheckout(tenant.id, who.clientId, packageId)
+    assert.equal(quote.outcome, 'checkout', 'the corporate package has a price to pay')
+    if (quote.outcome !== 'checkout') throw new Error('unreachable')
+    const params = {
+      metadata: { ...quote.metadata, tenant_id: tenant.id },
+      line_items: quote.lines.map(l => ({ price_data: { unit_amount: l.amountCents }, quantity: 1 })),
+    }
 
-    const delivered = await deliverTo(harness, tenant.slug, completedEvent(lastCheckoutSession(fake).params))
+    const delivered = await deliverTo(harness, tenant.slug, completedEvent(params))
     assert.equal(delivered.status, 200, `corporate payment delivery: ${await delivered.text()}`)
 
     const made = [...(await requestsOf())].filter(id => !before.has(id))

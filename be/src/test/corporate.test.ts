@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { buyCorporatePackage, forgetPurchases } from './corporate-purchase'
 
 const run = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 const DOMAIN = `${run}.corporate.test`
@@ -149,18 +150,9 @@ describe('corporate packages, requests and sessions over HTTP', { skip: integrat
     return res.body.corporatePackage.id as string
   }
 
-  /** A pending Corporate Request, made through the member's own route. */
-  async function request(who: Member = memberAtOne, packageId = packageAtOne): Promise<string> {
-    const res = await json(
-      await send('/api/v1/me/corporate-requests', who.headers, 'POST', {
-        package_id: packageId,
-        preferred_location: `${TAG} office`,
-        notes: 'team of twelve',
-      }),
-    )
-    assert.equal(res.status, 201, JSON.stringify(res.body))
-    return res.body.corporate_request_id as string
-  }
+  /** A pending Corporate Request, made the way a member makes one: by paying for the package. */
+  const request = (who: Member = memberAtOne, packageId = packageAtOne): Promise<string> =>
+    buyCorporatePackage(harness, schema, who, one, packageId)
 
   type ScheduleBody = {
     main_instructor_id: string
@@ -245,6 +237,7 @@ describe('corporate packages, requests and sessions over HTTP', { skip: integrat
     await harness.db.execute(sql`DELETE FROM corporate_session_supporting_instructors WHERE corporate_session_id IN (${sessionIds})`)
     await harness.db.execute(sql`DELETE FROM corporate_sessions WHERE created_by_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM corporate_requests WHERE client_id IN (${clientIds})`)
+    await forgetPurchases(harness, clientIds)
     await harness.db.execute(sql`DELETE FROM corporate_packages WHERE created_by_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
