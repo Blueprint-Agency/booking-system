@@ -28,9 +28,12 @@ export default function ReceiptDetailsPage() {
   const [saved, setSaved] = useState<ReceiptDetailsDraft>(emptyReceiptDetailsDraft);
   const [draft, setDraft] = useState<ReceiptDetailsDraft>(emptyReceiptDetailsDraft);
   const [nextSequence, setNextSequence] = useState(1);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Bumped by Retry; loading until the attempt asked for has an answer.
+  const [attempt, setAttempt] = useState(0);
+  const [answered, setAnswered] = useState<number | null>(null);
+  const loading = answered !== attempt;
 
   const show = useCallback((view: Awaited<ReturnType<typeof getReceiptDetails>>) => {
     const next = receiptDetailsDraft(view.receipt_details);
@@ -39,22 +42,26 @@ export default function ReceiptDetailsPage() {
     setNextSequence(view.next_sequence);
   }, []);
 
-  const load = useCallback(async () => {
-    if (!api) return;
-    setLoading(true);
-    setError(null);
-    try {
-      show(await getReceiptDetails(api));
-    } catch (err) {
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
-    } finally {
-      setLoading(false);
-    }
-  }, [api, show]);
-
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!api) return;
+    let cancelled = false;
+    getReceiptDetails(api).then(
+      (view) => {
+        if (cancelled) return;
+        show(view);
+        setError(null);
+        setAnswered(attempt);
+      },
+      (err) => {
+        if (cancelled) return;
+        setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+        setAnswered(attempt);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [api, show, attempt]);
 
   const prefixError = receiptPrefixProblem(draft.prefix);
   const dirty = (Object.keys(draft) as Array<keyof ReceiptDetailsDraft>).some(
@@ -92,7 +99,7 @@ export default function ReceiptDetailsPage() {
     return (
       <div className="mx-auto max-w-3xl rounded-xl border border-error/30 bg-error/5 p-6 text-center">
         <p className="text-sm text-error">Failed to load: {error}</p>
-        <Button size="sm" variant="ghost" onClick={load} className="mt-2">
+        <Button size="sm" variant="ghost" onClick={() => setAttempt((n) => n + 1)} className="mt-2">
           Retry
         </Button>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Download, Loader2, ReceiptText, Search } from "lucide-react";
 import { toast } from "sonner";
@@ -58,10 +58,13 @@ function ReceiptsList() {
   // What is typed, ahead of the debounced `state.q` the backend is asked for.
   const [query, setQuery] = useState(state.q);
   const [result, setResult] = useState<ReceiptsPage | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Only the newest request may paint.
-  const requestSeq = useRef(0);
+  // Bumped by Retry, to ask for the same list again.
+  const [attempt, setAttempt] = useState(0);
+  // The list as asked for, and the attempt: what the shown result or error answers.
+  const asked = `${JSON.stringify(state)}#${attempt}`;
+  const [answered, setAnswered] = useState<string | null>(null);
+  const loading = answered !== asked;
 
   // Anything but a page move starts again at page one.
   const update = useCallback((patch: Partial<ReceiptsState>) => {
@@ -79,26 +82,27 @@ function ReceiptsList() {
     return () => clearTimeout(t);
   }, [query, state, update]);
 
-  const load = useCallback(async () => {
-    if (!api) return;
-    const seq = ++requestSeq.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.get<ReceiptsPage>("/portal/admin/receipts", receiptsQuery(state));
-      if (seq !== requestSeq.current) return;
-      setResult(res);
-    } catch (err) {
-      if (seq !== requestSeq.current) return;
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
-    } finally {
-      if (seq === requestSeq.current) setLoading(false);
-    }
-  }, [api, state]);
-
+  // Only the newest request may paint: a newer one cancels the one before.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!api) return;
+    let cancelled = false;
+    api.get<ReceiptsPage>("/portal/admin/receipts", receiptsQuery(state)).then(
+      (res) => {
+        if (cancelled) return;
+        setResult(res);
+        setError(null);
+        setAnswered(asked);
+      },
+      (err) => {
+        if (cancelled) return;
+        setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+        setAnswered(asked);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [api, state, asked]);
 
   const rows = result?.receipts ?? [];
   const total = result?.total ?? 0;
@@ -191,10 +195,10 @@ function ReceiptsList() {
           <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading receipts…
           </div>
-        ) : error ? (
+        ) : error && !loading ? (
           <div className="py-12 text-center">
             <p className="text-sm text-error">Failed to load: {error}</p>
-            <Button size="sm" variant="ghost" onClick={load} className="mt-2">
+            <Button size="sm" variant="ghost" onClick={() => setAttempt((n) => n + 1)} className="mt-2">
               Retry
             </Button>
           </div>
