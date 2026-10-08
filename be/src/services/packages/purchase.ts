@@ -606,16 +606,20 @@ async function packageForPurchase(
  * It lives beside `purchaseFreeTrial` so that "a completed purchase confirms
  * itself" stays one rule in one place — a route deciding it for one path is how
  * the client and webhook paths drift apart.
+ *
+ * `salePurchaseId` is the settled Purchase its checkout opened beside it, whose
+ * Receipt the confirmation carries.
  */
 export async function grantFreePurchase(
   tenantId: string,
+  salePurchaseId: string,
   input: GrantPackageInput,
 ): Promise<{ clientPackageId: string; created: boolean }> {
   const granted = await grantPackage(tenantId, input)
   // The slug comes off the granted kind, so a Promo Code that zeroes a trial
   // gets the trial email and one that zeroes a bundle does not.
   // Once the request's transaction has committed (`afterCommit`).
-  if (granted.created) afterCommit(() => sendPackagePurchaseEmail(tenantId, granted.clientPackageId))
+  if (granted.created) afterCommit(() => sendPackagePurchaseEmail(tenantId, granted.clientPackageId, salePurchaseId))
   return granted
 }
 
@@ -648,12 +652,15 @@ export async function assertTrialEligible(tenantId: string, clientId: string): P
 
 /**
  * Free trial pass purchase — no Stripe, no payment intent. Reuses grantPackage
- * so the partial-unique index enforces one-trial-per-client.
+ * so the partial-unique index enforces one-trial-per-client. `salePurchaseId`
+ * is the settled Purchase its checkout opened, whose Receipt the confirmation
+ * carries.
  */
 export async function purchaseFreeTrial(
   tenantId: string,
   clientId: string,
   classPackageId: string,
+  salePurchaseId: string,
 ): Promise<{ clientPackageId: string; created: boolean }> {
   const [pkg] = await db
     .select()
@@ -690,6 +697,6 @@ export async function purchaseFreeTrial(
   // once or not at all — the eligibility gate and the partial unique index see
   // to that. It sends unconditionally, once the request's transaction has
   // committed (`afterCommit`), and the helper cannot throw (§13).
-  afterCommit(() => sendPackagePurchaseEmail(tenantId, granted.clientPackageId))
+  afterCommit(() => sendPackagePurchaseEmail(tenantId, granted.clientPackageId, salePurchaseId))
   return granted
 }

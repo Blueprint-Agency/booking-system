@@ -63,6 +63,9 @@ export const NAV_ITEMS: NavItem[] = [
   // the page exists to be acted on. Both roles see the list; only a superadmin
   // refunds, gated at the backend the same way every other Refund is.
   { group: "Finance", label: "Partial payments", href: "/admin/purchases", icon: HandCoins, scope: "both" },
+  // Every Receipt in the studio (#389). The studio's money, so admins only:
+  // the backend refuses an instructor every receipt route.
+  { group: "Finance", label: "Receipts", href: "/admin/receipts", icon: ReceiptText, scope: "global" },
 
   // --- Config (global building blocks, shared across locations) ---
   { group: "Config", label: "Class Types", href: "/admin/class-types", icon: Tag, scope: "global" },

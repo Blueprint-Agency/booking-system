@@ -373,4 +373,39 @@ describe('a Refund stamps the Receipt refunded, over HTTP', { skip: integrationT
     assert.equal(after.status, 'issued')
     assert.equal(after.refunded_at, null)
   })
+
+  test("INV-55 the admin's Receipts read a Refund's stamp too: status=refunded finds it, status=issued no longer does, and it opens refunded as the member's does", async () => {
+    const ten = await tenPack('150.00')
+    const ada = await member()
+    await buyAndPay(ada, ten.id)
+    const issued = await onlyReceipt(ada)
+    const adminList = async (status: string) =>
+      (
+        await expectStatus(
+          await harness.app.request(`/api/v1/portal/admin/receipts?q=${encodeURIComponent(issued.number)}&status=${status}`, {
+            headers: studio.admin.headers,
+          }),
+          200,
+        )
+      ).receipts.map((r: any) => [r.id, r.status])
+    assert.deepEqual(await adminList('issued'), [[issued.id, 'issued']], 'issued before the Refund')
+    assert.deepEqual(await adminList('refunded'), [])
+
+    for (const confirmed of await refund(ada)) await deliver(confirmed)
+
+    assert.deepEqual(await adminList('refunded'), [[issued.id, 'refunded']], 'the refunded filter finds it')
+    assert.deepEqual(await adminList('issued'), [], 'and the issued filter no longer does')
+    const theirs = await onlyReceipt(ada)
+    const ours = await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/receipts/${issued.id}`, { headers: studio.admin.headers }),
+      200,
+    )
+    assert.equal(ours.status, 'refunded')
+    assert.ok(ours.refunded_at, 'the admin reads the date it was refunded')
+    assert.deepEqual(ours, theirs, "exactly the member's Receipt, stamp and all")
+    const pdf = await harness.app.request(`/api/v1/portal/admin/receipts/${issued.id}/pdf`, { headers: studio.admin.headers })
+    assert.equal(pdf.status, 200)
+    const text = await pdfText(new Uint8Array(await pdf.arrayBuffer()))
+    assert.ok(text.includes(`Refunded on ${studioDay(ours.refunded_at)}`), text)
+  })
 })

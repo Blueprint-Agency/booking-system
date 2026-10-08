@@ -75,6 +75,12 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // ./purchase-email.ts — the fragment-shaped pair produced a wrong sentence for
   // some kind whatever the template said around them, and leaving them in the
   // allow-list would leave that footgun loaded for the portal template editor.
+  //
+  // #387: on these four `receipt_url` is the member's Receipt in the booking
+  // app, and `services/receipts/email.ts:withReceipt` also fills
+  // `receipt_number` and draws the receipt block under the copy. No default
+  // copy shows `receipt_number`, and this list holds what the defaults show
+  // (db/seed/email-copy.test.ts), so it is not listed here.
   package_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'amount_paid', 'receipt_url'],
   trial_pass_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'amount_paid', 'receipt_url'],
   // A paid corporate package (be-client § Corporate branch, step 5). It grants

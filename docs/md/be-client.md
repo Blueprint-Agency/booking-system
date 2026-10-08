@@ -311,8 +311,8 @@ tx start
    client_package_id=NULL, refund_outcome='n_a', check_in_state='pending',
    purchase_id=P            — the sale; a Refund routes on it, not on the intent (#92)
 3. Generate qr_token + code
-4. Update stripe_payments: status='succeeded', receipt_url = paymentIntent.charges.data[0].receipt_url
-5. enqueueEmail('workshop_purchase_confirmed', client.email, { workshop_name, date, qr_url, code, amount_paid, receipt_url })
+4. Update stripe_payments: status='succeeded', receipt_url = paymentIntent.charges.data[0].receipt_url (the provider's, kept as evidence)
+5. issueReceipt; enqueueEmail('workshop_purchase_confirmed', client.email, { workshop_name, date, qr_url, code, amount_paid, receipt_url }) — the member's Receipt, from the delivery that issued it (§13)
 6. If client.referred_by_client_id IS NOT NULL AND client.referral_credit_granted_at IS NULL:
    call services/referrals.ts:onRefereeFirstPayment(client_id) — see spine §6 (referral conversion)
 tx commit
@@ -328,11 +328,11 @@ tx start
 2. Insert bookings row: kind='workshop', workshop_id, workshop_tier_id, state='confirmed',
    purchase_id=NULL, refund_outcome='n_a', check_in_state='pending'
 3. Generate qr_token + code
-4. enqueueEmail('workshop_purchase_confirmed', { ..., amount_paid='S$0.00', receipt_url=NULL })
+4. enqueueEmail('workshop_purchase_confirmed', { ..., amount_paid='S$0.00', receipt_url=<the member's S$0.00 Receipt> })
 tx commit
 ```
 
-The receipt UI on fe-client suppresses the Download link when `receipt_url` is null. Free workshops do not insert a `stripe_payments` row.
+Free workshops do not insert a `stripe_payments` row. Since #383 the place opens a settled Purchase (`openSettledPurchase`), which issues its S$0.00 Receipt; the confirmation carries it (§13, #387).
 
 ### 4c. Self-cancellation flow
 
@@ -550,11 +550,11 @@ Five paths send, one deliberately does not:
 
 | Path | Slug | Condition |
 |---|---|---|
-| Paid class / PT package | branches on granted `kind` → `package_purchase_confirmed` | `created` |
-| Paid workshop | `workshop_purchase_confirmed` | `created` |
-| Paid corporate package | `corporate_purchase_confirmed` | the delivery that made the Corporate Request, after it commits (§ Corporate branch) |
+| Paid class / PT package | branches on granted `kind` → `package_purchase_confirmed` | the delivery that issued the Receipt, after it commits |
+| Paid workshop | `workshop_purchase_confirmed` | the delivery that issued the Receipt, after it commits |
+| Paid corporate package | `corporate_purchase_confirmed` | the delivery that made the Corporate Request and issued its Receipt, after it commits (§ Corporate branch) |
 | $0 trial pass | `trial_pass_purchase_confirmed` | always |
-| $0 corporate package | `corporate_purchase_confirmed` | always, from checkout's nothing-to-pay path, at S$0.00 and linking to the member's corporate bookings |
+| $0 corporate package | `corporate_purchase_confirmed` | always, from checkout's nothing-to-pay path, at S$0.00 |
 | $0 workshop tier | `workshop_purchase_confirmed` | always — this closed a real gap: a free workshop booking produced a QR and a date and no email at all before this batch |
 | Admin comp grant | — | **never** — a comp grant is not a purchase, and announcing an admin's action to someone who did not ask is the wrong default |
 
@@ -565,9 +565,16 @@ The slug is decided by the granted package's **kind**, not by which code path gr
 
 `amount_paid` is on all three purchase templates (package, trial pass, workshop): the confirmation is the member's receipt (#370). It is the figure with its currency, "S$120.00", the form every member-facing amount takes (`shared/money.ts:sgdText`; every studio sells in SGD), read off the sale: the Purchase's `amount_paid_sgd` — the plan plus any Cross-Location Add-On bought with it, after any Promotion or Promo Code — and, on a free purchase that has no Purchase, the package's or workshop place's own `amount_paid_sgd`, so a free one prints "S$0.00". Never the catalogue price.
 
-`receipt_url` is never empty: a paid purchase gets the Stripe receipt (retrieved with the latest charge expanded, since the webhook's own event carries none), a free one falls back to the account page with neutral anchor text — an escaped empty string in an href is a visible link to nowhere, which is not a safe default here.
+**Each of the four confirmations carries the purchase's Receipt (#387)**, so one purchase is still one email:
 
-The helper (`services/notifications/send-purchase-email.ts`) wraps its entire body in try/catch: `sendTemplatedEmail` throws on an unknown slug, and thrown from inside a webhook after the grant already committed, the delivery is lost permanently while the purchase looks fine. Swallowing here is what makes the `created` flag a safe guard against double-sending on a provider retry.
+- `receipt_url` is the member's Receipt in their own studio's booking app (`/account/receipts/{id}`), for a paid purchase and a free one alike. It replaces both the provider's receipt link (still stored on `stripe_payments.receipt_url`, as evidence) and the old account-page fallback. It is never empty: only a grant no Receipt was issued for (none on any live path) links the account page, or for a corporate package the member's corporate bookings, with the same neutral anchor text — an escaped empty string in an href is a visible link to nowhere.
+- `receipt_number` (`R-000123`) is filled on every send that carries a Receipt, for a studio's own wording; the default copy does not show it.
+- An **itemised receipt block** goes in the email frame under the studio's own body, not in a variable, because the renderer escapes every variable: the number and issue date, each line at what was paid for it with any Promotion or Promo Code it took off, the total paid, and how it was paid ("Paid by Visa •••• 4242 on 9 Oct 2026: S$150.00", or "No payment: nothing was due."). The studio's template is unchanged and needs no editing for it to appear. The List Price and subtotal are on the PDF.
+- **The Receipt's PDF is attached**, named after its number (`R-000123.pdf`), rendered by the same `receiptPdf` as the download.
+
+The email is sent only by the delivery that issued the Receipt (`issueReceipt` answers `issued`), after it commits, so a redelivery, or the confirmation page's fallback racing the webhook, sends nothing more. `services/receipts/email.ts:withReceipt(input, receipt)` adds all four to a templated send; the `purchase_receipt` email (#388) and an admin's resend (#390) send through it too.
+
+The helper (`services/notifications/send-purchase-email.ts`) wraps its entire body in try/catch: `sendTemplatedEmail` throws on an unknown slug, and thrown from inside a webhook after the grant already committed, the delivery is lost permanently while the purchase looks fine. Swallowing here is what makes the `issued` flag a safe guard against double-sending on a provider retry: a failed send is reported, and the Purchase, the grant and the Receipt stand.
 
 #### Corporate branch (`package_kind='corporate'`)
 
@@ -584,7 +591,7 @@ tx commit
 5. send the corporate_purchase_confirmed email — once, from the delivery that made the request
 ```
 
-_As built (#374):_ `services/corporate/checkout.ts` (`beginCorporateCheckout`) prices the sale and `services/billing/webhook-handler.ts` has the branch; the request is made by `createCorporateRequest` (`services/corporate/requests.ts`) with no venue and no note. Step 1 is the payment row locked `FOR UPDATE` after its insert, so two deliveries of one intent at once (the webhook and the confirmation fallback `POST /checkout/sync-session`) make one request between them; a redelivery finds the payment `succeeded` and stops. A delivery naming another studio's member is refused (`webhook_tenant_mismatch`), as for every kind. Step 5 (#359, NTF-03) runs after the delivery's transaction commits, so a delivery that rolls back mails no one and its retry sends instead; a redelivery stopped at step 1 sends nothing. `sendCorporatePurchaseEmail` (`services/notifications/send-purchase-email.ts`) fills the studio's `corporate_purchase_confirmed` template with `client_name`, `package_name`, `amount_paid` (the sale's figure in the shared money form, `sgdText`: "S$480.00") and `receipt_url` (the provider receipt, else the member's corporate bookings page), and says the studio will be in touch to arrange the date, time and venue. A failed send is reported and swallowed: the request and the payment stand. A package priced at zero (`201 granted`, no webhook) is confirmed from checkout with the same template, `amount_paid` "S$0.00" read off its zero-total Purchase and `receipt_url` the member's corporate bookings page. Each request names its Purchase (`purchase_id`, migration 0110), so a full Refund of a paid one cancels the request while it is pending (backend-architecture §14). Studios created before the template existed get it from migration 0109.
+_As built (#374):_ `services/corporate/checkout.ts` (`beginCorporateCheckout`) prices the sale and `services/billing/webhook-handler.ts` has the branch; the request is made by `createCorporateRequest` (`services/corporate/requests.ts`) with no venue and no note. Step 1 is the payment row locked `FOR UPDATE` after its insert, so two deliveries of one intent at once (the webhook and the confirmation fallback `POST /checkout/sync-session`) make one request between them; a redelivery finds the payment `succeeded` and stops. A delivery naming another studio's member is refused (`webhook_tenant_mismatch`), as for every kind. Step 5 (#359, NTF-03) runs after the delivery's transaction commits, so a delivery that rolls back mails no one and its retry sends instead; a redelivery stopped at step 1 sends nothing. `sendCorporatePurchaseEmail` (`services/notifications/send-purchase-email.ts`) fills the studio's `corporate_purchase_confirmed` template with `client_name`, `package_name`, `amount_paid` (the sale's figure in the shared money form, `sgdText`: "S$480.00") and `receipt_url` (the member's Receipt, #387), carries the Receipt block and PDF, and says the studio will be in touch to arrange the date, time and venue. A failed send is reported and swallowed: the request and the payment stand. A package priced at zero (`201 granted`, no webhook) is confirmed from checkout with the same template, `amount_paid` "S$0.00" read off its zero-total Purchase and `receipt_url` its S$0.00 Receipt. Each request names its Purchase (`purchase_id`, migration 0110), so a full Refund of a paid one cancels the request while it is pending (backend-architecture §14). Studios created before the template existed get it from migration 0109.
 
 The client then tracks the request on `/account/corporate` (`fe-client-features.md` §8.8); the studio schedules it via `be-portal.md` §3f.
 

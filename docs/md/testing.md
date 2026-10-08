@@ -116,9 +116,11 @@ the predictor of CI remains the whole serial `npm run check`.
 ## Authorization matrix
 
 `be/src/test/authorization-matrix.test.ts` reads every `/api/v1/me`, `/api/v1/public` and
-`/api/v1/platform` route from the app's own route table and calls each one as anonymous, a member of
-studio one, a member of studio two on studio one's hostname, an Admin of studio one, a Platform
-administrator, and a caller naming no studio. Its `EXPECTATIONS` table says, per method and path
+`/api/v1/platform` route from the app's own route table, and the portal's routes surface by surface as
+each is brought under it (so far `/api/v1/portal/admin/receipts`, #389), and calls each one as
+anonymous, a member of studio one, a member of studio two on studio one's hostname, an Admin of studio
+one, an Instructor of studio one, a Platform administrator, and a caller naming no studio. On `/me`
+and `/public` every caller calls from studio one's member app, on `/portal` from studio one's portal. Its `EXPECTATIONS` table says, per method and path
 pattern, which callers the gate admits and the status and error code it answers each one it refuses.
 A refused call must get exactly that answer and, together, the refused calls must change no row in any
 Tenant-scoped table (`auth_events` and `audit_log` included). An admitted call must merely not be a

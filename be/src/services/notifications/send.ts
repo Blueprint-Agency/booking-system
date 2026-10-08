@@ -79,6 +79,12 @@ export interface SendInput {
    * in them. `email_log` keeps the rendered subject and body, not the files.
    */
   attachments?: readonly MailAttachment[]
+  /**
+   * System-built markup the frame draws under the studio's body, untouched by
+   * the template: the Receipt block (`services/receipts/email.ts:withReceipt`).
+   * Trusted HTML.
+   */
+  appendixHtml?: string
 }
 
 const REDACTED = '[redacted]'
@@ -95,7 +101,7 @@ const REDACTED = '[redacted]'
  * failure: sending another studio's wording is worse than sending nothing.
  */
 export async function sendTemplatedEmail(input: SendInput): Promise<void> {
-  const { tenantId, slug, recipient, variables, secretVariables = [], attachments } = input
+  const { tenantId, slug, recipient, variables, secretVariables = [], attachments, appendixHtml } = input
   const [tpl] = await db
     .select()
     .from(emailTemplates)
@@ -120,6 +126,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       studioName: identity.fromName,
       template: tpl,
       variables: vars,
+      appendixHtml,
     })
   await deliver({ tenantId, slug, recipient, identity, email: frame(variables), loggedEmail: frame(logged), attachments })
 }

@@ -160,7 +160,7 @@ describe('the Receipt backfill', { skip: integrationTestsEnabled ? false : SKIP_
     }
   })
 
-  test('INV-47 a studio whose sales predate Receipts gets one each, numbered from R-000001 in the order they were paid, dated when paid, one line for the whole sale', async () => {
+  test('INV-62 a studio whose sales predate Receipts gets one each, numbered from R-000001 in the order they were paid, dated when paid, one line for the whole sale', async () => {
     const studio = await newStudio()
     const mia = await member(studio)
     // Opened in one order, paid in another; the oldest never stamped when it was settled.
@@ -191,7 +191,7 @@ describe('the Receipt backfill', { skip: integrationTestsEnabled ? false : SKIP_
     )
   })
 
-  test('INV-48 run after Receipts went live, the backfill numbers on after the Receipts already issued, leaves them as they were, and a live sale afterwards takes the next number', async () => {
+  test('INV-63 run after Receipts went live, the backfill numbers on after the Receipts already issued, leaves them as they were, and a live sale afterwards takes the next number', async () => {
     const studio = await newStudio()
     const trial = await freeTrial(studio)
     const ana = await member(studio)
@@ -219,7 +219,7 @@ describe('the Receipt backfill', { skip: integrationTestsEnabled ? false : SKIP_
     assert.deepEqual((await receiptsOf(cy)).map(r => r.number), ['R-000004'], 'the live sale continues the sequence')
   })
 
-  test('INV-49 the backfill issues no Receipt for a migrated Purchase, an Open Purchase or an Abandoned Purchase', async () => {
+  test('INV-64 the backfill issues no Receipt for a migrated Purchase, an Open Purchase or an Abandoned Purchase', async () => {
     const studio = await newStudio()
     const dee = await member(studio)
     await earlierSale(studio, dee, {
@@ -257,7 +257,7 @@ describe('the Receipt backfill', { skip: integrationTestsEnabled ? false : SKIP_
     )
   })
 
-  test('INV-50 a refunded sale gets its Receipt, as paid and stamped refunded on the day the last of its money went back', async () => {
+  test('INV-65 a refunded sale gets its Receipt, as paid and stamped refunded on the day the last of its money went back', async () => {
     const studio = await newStudio()
     const eli = await member(studio)
     await earlierSale(studio, eli, {
@@ -290,7 +290,7 @@ describe('the Receipt backfill', { skip: integrationTestsEnabled ? false : SKIP_
     )
   })
 
-  test('INV-51 the backfill sends no email', async () => {
+  test('INV-66 the backfill sends no email', async () => {
     const { discardedMail } = await import('../lib/mailer')
     const studio = await newStudio()
     const fay = await member(studio)
@@ -313,7 +313,7 @@ describe('the Receipt backfill', { skip: integrationTestsEnabled ? false : SKIP_
     assert.deepEqual(logged, [], 'nothing was logged as sent')
   })
 
-  test('INV-52 a second run issues nothing and changes nothing', async () => {
+  test('INV-67 a second run issues nothing and changes nothing', async () => {
     const studio = await newStudio()
     const gus = await member(studio)
     await earlierSale(studio, gus, { itemName: 'Ten pack', totalSgd: '150.00', createdAt: '2025-03-01T02:00:00Z', settledAt: '2025-03-01T02:05:00Z' })
@@ -338,7 +338,7 @@ describe('the Receipt backfill', { skip: integrationTestsEnabled ? false : SKIP_
     assert.deepEqual((await receiptsOf(hal)).map(r => r.number), ['R-000003'], 'the second run took no number')
   })
 
-  test('INV-53 each studio is backfilled in its own Tenant context and its own sequence: a run naming one studio leaves another\'s sales as they were', async () => {
+  test('INV-68 each studio is backfilled in its own Tenant context and its own sequence: a run naming one studio leaves another\'s sales as they were', async () => {
     const north = await newStudio()
     const south = await newStudio()
     const ida = await member(north)
@@ -363,7 +363,7 @@ describe('the Receipt backfill', { skip: integrationTestsEnabled ? false : SKIP_
     assert.deepEqual((await receiptsOf(ida)).map(r => r.number), ['R-000001'])
   })
 
-  test('INV-54 a run naming a studio that does not exist is refused', async () => {
+  test('INV-69 a run naming a studio that does not exist is refused', async () => {
     await assert.rejects(backfillReceipts(`no-such-studio-${run}`), /no studio with slug/)
   })
 })

@@ -196,6 +196,9 @@ interface ApiPayment {
   amount_sgd: string;
   status: "pending" | "succeeded" | "refunded" | "failed";
   purchase_status: "open" | "paid" | "refunded" | "abandoned";
+  /** The studio's Receipt for the sale (#389); null while it is part-paid. */
+  receipt_id: string | null;
+  /** The provider's own receipt for this charge: shown only where there is no Receipt. */
   receipt_url: string | null;
   refunded_at: string | null;
   /** A Refund has been issued and Stripe has not yet confirmed it (#275). */
@@ -2109,15 +2112,26 @@ function PaymentsSection({ payments }: { payments: ApiPayment[] }) {
                   <div className="flex w-full items-center justify-end gap-3 pl-[5.75rem] sm:w-auto sm:shrink-0 sm:pl-0">
                     <span className="text-sm font-medium tabular-nums text-ink">S${p.amount_sgd}</span>
                     <Badge tone={s.tone}>{s.label}</Badge>
-                    {p.receipt_url && (
-                      <a
-                        href={p.receipt_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    {p.receipt_id ? (
+                      <Link
+                        href={`/admin/receipts/${p.receipt_id}`}
                         className="inline-flex min-h-8 items-center text-xs text-muted underline underline-offset-2 hover:text-ink"
                       >
                         Receipt
-                      </a>
+                      </Link>
+                    ) : (
+                      // No Receipt yet (a part-paid sale): the provider's
+                      // record of this one charge is all there is.
+                      p.receipt_url && (
+                        <a
+                          href={p.receipt_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex min-h-8 items-center text-xs text-muted underline underline-offset-2 hover:text-ink"
+                        >
+                          Card receipt
+                        </a>
+                      )
                     )}
                   </div>
                 </li>

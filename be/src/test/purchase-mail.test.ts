@@ -12,9 +12,9 @@ const NAME = `Purchase-mail ${run}`
 
 /**
  * The confirmation email a member is sent for what they buy (#226), read back
- * from the test mail capture: a paid purchase links the payment provider's
- * receipt, a free one the member's own account page, and an email that cannot
- * be sent never costs the member what they bought.
+ * from the test mail capture: a paid purchase and a free one both link the
+ * member's own Receipt in their studio's booking app (#387), and an email that
+ * cannot be sent never costs the member what they bought.
  *
  * Written from the NTF rows of the Scenario Inventory
  * (`docs/md/test-scenarios.md`). The payment provider is the one fake.
@@ -143,7 +143,14 @@ describe('purchase confirmation email over HTTP', { skip: integrationTestsEnable
     await harness.close()
   })
 
-  test('NTF-05, NTF-22 a paid purchase is confirmed once, linking the provider\'s receipt, logged under the buyer\'s studio', async () => {
+  /** The member's one Receipt, as their account lists it. */
+  async function onlyReceiptOf(who: Member): Promise<{ id: string }> {
+    const listed = await expectStatus(await harness.app.request('/api/v1/me/receipts', { headers: who.headers }), 200)
+    assert.equal(listed.receipts.length, 1, 'exactly one Receipt')
+    return listed.receipts[0]
+  }
+
+  test('NTF-05, NTF-22 a paid purchase is confirmed once, linking the member\'s Receipt, logged under the buyer\'s studio', async () => {
     const mia = await member(one)
     const started = await expectStatus(await buy(mia, one.paidPackageId), 200)
     assert.match(started.url, /^https:\/\/pay\.example\.test\//)
@@ -157,7 +164,11 @@ describe('purchase confirmation email over HTTP', { skip: integrationTestsEnable
     const mail = mailTo(mia.email)
     assert.equal(mail.length, 1, 'exactly one confirmation')
     const links = [...mail[0]!.html.matchAll(/href="([^"]+)"/g)].map(m => m[1]!)
-    assert.ok(links.includes(`https://pay.example.test/receipts/${intent}`), `the receipt is linked: ${links.join(', ')}`)
+    const receipt = await onlyReceiptOf(mia)
+    const linked = links.find(l => new URL(l).pathname === `/account/receipts/${receipt.id}`)
+    assert.ok(linked, `the member's Receipt is linked: ${links.join(', ')}`)
+    assert.ok(new URL(linked).hostname.startsWith(`${one.slug}.`), `on the buyer's own studio: ${linked}`)
+    assert.ok(!links.includes(`https://pay.example.test/receipts/${intent}`), 'not the provider\'s receipt')
     assert.ok(!links.some(l => new URL(l).pathname === '/account'), 'not the account page')
 
     const rows = await logged(mia.email)
@@ -165,7 +176,7 @@ describe('purchase confirmation email over HTTP', { skip: integrationTestsEnable
     assert.equal((await packagesOf(mia)).length, 1)
   })
 
-  test('NTF-05 a free purchase is confirmed once, linking the member\'s account page on their own studio', async () => {
+  test('NTF-05 a free purchase is confirmed once, linking the member\'s Receipt on their own studio', async () => {
     for (const at of [one, two]) {
       const leo = await member(at)
       const granted = await expectStatus(await buy(leo, at.freeTrialId), 201)
@@ -174,10 +185,11 @@ describe('purchase confirmation email over HTTP', { skip: integrationTestsEnable
       const mail = mailTo(leo.email)
       assert.equal(mail.length, 1, 'exactly one confirmation')
       const links = [...mail[0]!.html.matchAll(/href="([^"]+)"/g)].map(m => m[1]!)
-      const account = links.find(l => l.endsWith('/account'))
-      assert.ok(account, `the account page is linked: ${links.join(', ')}`)
-      assert.ok(new URL(account).hostname.startsWith(`${at.slug}.`), `on the buyer's own studio: ${account}`)
-      assert.ok(!links.some(l => l.includes('/receipts/')), 'no receipt for a free purchase')
+      const receipt = await onlyReceiptOf(leo)
+      const linked = links.find(l => new URL(l).pathname === `/account/receipts/${receipt.id}`)
+      assert.ok(linked, `the member's Receipt is linked: ${links.join(', ')}`)
+      assert.ok(new URL(linked).hostname.startsWith(`${at.slug}.`), `on the buyer's own studio: ${linked}`)
+      assert.ok(!links.some(l => new URL(l).pathname === '/account'), 'not the account page')
 
       const rows = await logged(leo.email)
       assert.deepEqual(rows.map(r => [r.templateSlug, r.tenantId]), [['trial_pass_purchase_confirmed', at.id]])
