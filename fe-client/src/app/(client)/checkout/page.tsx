@@ -23,11 +23,18 @@ import { usePartPaymentOptions } from "@/lib/open-purchases";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { tierEffectivePrice, type ApiWorkshopDetail, type ApiWorkshopTier } from "@/lib/workshops";
 import type { ApiClassPackage, ApiPtPackage } from "@/lib/packages";
+import type { ApiCorporatePackage } from "@/lib/corporate";
+import { corporateRequestSentHref } from "@/lib/corporate-return";
 
-// Either catalogue entry the checkout can hold; both are snake_case wire shapes.
+// Any catalogue entry the checkout can hold; all are snake_case wire shapes.
 type PackageInfo =
   | ({ _kind: "class" } & ApiClassPackage)
-  | ({ _kind: "pt" } & ApiPtPackage);
+  | ({ _kind: "pt" } & ApiPtPackage)
+  | ({ _kind: "corporate" } & ApiCorporatePackage);
+
+type PackageKind = PackageInfo["_kind"];
+const isPackageKind = (v: string | null): v is PackageKind =>
+  v === "class" || v === "pt" || v === "corporate";
 
 /**
  * "1 day" / "90 days" — the review step states the validity before the member
@@ -36,6 +43,10 @@ type PackageInfo =
 const validityPhrase = (days: number) => (days === 1 ? "1 day" : `${days} days`);
 
 function subtitleForPackage(pkg: PackageInfo): string {
+  if (pkg._kind === "corporate") {
+    // No credits: paying sends the request, and the rest is arranged on WhatsApp (§6.2).
+    return "Paying sends your request. We'll arrange the date, place and instructor with you on WhatsApp.";
+  }
   if (pkg._kind === "pt") {
     return `${pkg.num_sessions} private sessions · valid ${validityPhrase(pkg.validity_days)} from your first scheduled session`;
   }
@@ -53,7 +64,10 @@ function CheckoutContent() {
   const getToken = getMemberToken;
 
   const packageId = searchParams.get("package");
-  const packageKind = (searchParams.get("kind") ?? "class") as "class" | "pt";
+  const kindParam = searchParams.get("kind");
+  const packageKind: PackageKind = isPackageKind(kindParam) ? kindParam : "class";
+  // A corporate package is card only at its price: no Promo Code, no part payment (§6.2).
+  const isCorporate = packageKind === "corporate";
   const workshopId = searchParams.get("workshop");
   const tierId = searchParams.get("tier");
   const cancelled = cancelledNotice(searchParams);
@@ -144,6 +158,18 @@ function CheckoutContent() {
       setLoadingPkg(false);
       return;
     }
+    if (packageKind === "corporate") {
+      fetchApi("/public/corporate-packages")
+        .then(r => r.json())
+        .then((data: { corporate_packages?: ApiCorporatePackage[] }) => {
+          const found = data.corporate_packages?.find((p) => p.id === packageId);
+          if (!found) setPkgError("Package not found.");
+          else setPkg({ _kind: "corporate", ...found });
+        })
+        .catch(() => setPkgError("Could not load package details."))
+        .finally(() => setLoadingPkg(false));
+      return;
+    }
     fetchApi("/public/packages")
       .then(r => r.json())
       .then((data: { class_packages?: ApiClassPackage[]; pt_packages?: ApiPtPackage[] }) => {
@@ -225,7 +251,11 @@ function CheckoutContent() {
             promo_code: promoApplied?.code,
             ...part,
           }
-        : {
+        : isCorporate
+          // The package and nothing else: the server refuses a code or a part
+          // payment on a corporate package rather than ignoring it.
+          ? { package_kind: packageKind, package_id: packageId }
+          : {
             ...part,
             package_kind: packageKind,
             package_id: packageId,
@@ -267,6 +297,8 @@ function CheckoutContent() {
       if (data.outcome === "granted") {
         if (mode === "workshop" && data.booking_id) {
           router.push(`/booking/confirmation?type=workshop&workshop_id=${workshopId}&booking_id=${data.booking_id}`);
+        } else if (mode === "package" && packageId && data.corporate_request_id) {
+          router.push(corporateRequestSentHref(packageId));
         } else if (mode === "package" && data.client_package_id) {
           router.push(`/booking/confirmation?type=package&package_id=${packageId}&package_kind=${packageKind}`);
         } else {
@@ -363,7 +395,11 @@ function CheckoutContent() {
   // (be/src/routes/client/purchases.ts) so the shown total equals the Stripe charge.
   const baseCents = Math.round(
     parseFloat(
-      mode === "workshop" ? tierEffectivePrice(selectedTier!).amount : pkg!.effective_price_sgd,
+      mode === "workshop"
+        ? tierEffectivePrice(selectedTier!).amount
+        : pkg!._kind === "corporate"
+          ? pkg!.price_sgd // no Promotion applies to a corporate package
+          : pkg!.effective_price_sgd,
     ) * 100,
   );
   const discountCents = promoApplied
@@ -548,7 +584,8 @@ function CheckoutContent() {
               />
             )}
 
-            {/* Promo code */}
+            {/* Promo code — never on a corporate package (§6.2). */}
+            {!isCorporate && (
             <div className="mt-4">
               {promoApplied ? (
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl border border-accent-deep/30 bg-accent/10 px-4 py-3 text-sm">
@@ -603,6 +640,7 @@ function CheckoutContent() {
                 </>
               )}
             </div>
+            )}
 
             {/* Price breakdown */}
             <div className="mt-4 space-y-1 tabular-nums">
@@ -638,7 +676,7 @@ function CheckoutContent() {
                 about how to pay a price the member has already read. Nothing
                 renders where the studio has not turned it on, and a free
                 purchase has nothing to split. */}
-            {grandTotal > 0 && (
+            {grandTotal > 0 && !isCorporate && (
               <PartPaymentBlock
                 enabled={partPayment.enabled}
                 checked={partChecked}

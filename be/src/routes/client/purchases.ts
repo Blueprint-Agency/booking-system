@@ -206,7 +206,9 @@ const app = new Hono()
         lines: corporate.lines,
         expiresAt: null,
         metadata: corporate.metadata,
-        successUrl: `${clientUrl}/booking/confirmation?type=corporate&package_id=${body.package_id}&session_id={CHECKOUT_SESSION_ID}`,
+        // Back to the member's corporate bookings, where the new request is
+        // and the studio's WhatsApp button with it (fe-client-features §6.2).
+        successUrl: `${clientUrl}/account/bookings?type=corporate&submitted=corporate&package_id=${body.package_id}&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${clientUrl}/checkout?package=${body.package_id}&kind=corporate&cancelled=1`,
         cardsOnly: true,
         saveCard: body.save_card,

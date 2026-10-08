@@ -160,6 +160,12 @@ describe('buying a corporate package over HTTP', { skip: integrationTestsEnabled
     assert.equal(params.metadata.package_id, packageAtOne)
     assert.equal(params.metadata.client_id, mia.clientId)
     assert.equal(params.metadata.tenant_id, one.id)
+    // Paid, the member lands on their corporate bookings, where the request is.
+    const success = new URL((params as any).success_url)
+    assert.equal(success.pathname, '/account/bookings')
+    assert.equal(success.searchParams.get('type'), 'corporate')
+    assert.equal(success.searchParams.get('submitted'), 'corporate')
+    assert.equal(success.searchParams.get('session_id'), '{CHECKOUT_SESSION_ID}')
 
     const [sale] = await purchasesOf(mia)
     assert.ok(sale, 'a Purchase was opened')
