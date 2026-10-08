@@ -29,13 +29,19 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // The waitlist offer is time-bound (fe-client §4.1): the place goes to the
   // next person if it is not claimed, so the deadline is part of the email.
   workshop_waitlist_promoted: ['client_name', 'workshop_name', 'date', 'claim_url', 'claim_deadline'],
-  class_cancelled_credit_returned: ['client_name', 'class_name', 'date', 'credits_returned'],
+  // NTF-09/10: `refund_line` is a composed sentence (./booking-email.ts), and a
+  // link is a variable (`classes_url`, `account_url`, `workshops_url`,
+  // `checkin_url`) built per send from the studio's own origin, so the default
+  // wording names no origin and a data migration can write it (migration 0106).
+  // The senders still supply the variables these replaced
+  // (`credits_returned`, `refund_sgd`) for a studio's own wording.
+  class_cancelled_credit_returned: ['client_name', 'class_name', 'date', 'refund_line', 'classes_url'],
   // `reason_line` is a whole composed sentence (policy/evaluate-cancellation.ts:
   // `forfeitLine`): a forfeit has four causes and only two are lateness, so a
   // fixed sentence is false for the member who cancelled in good time and
   // merely ran past the cap.
   class_cancelled_forfeited: ['client_name', 'class_name', 'date', 'reason_line'],
-  pt_cancelled_session_returned: ['client_name', 'instructor_name', 'starts_at'],
+  pt_cancelled_session_returned: ['client_name', 'instructor_name', 'starts_at', 'refund_line', 'account_url'],
   pt_cancelled_forfeited: ['client_name', 'instructor_name', 'starts_at', 'reason_line'],
   admin_cancel_class: ['client_name', 'class_name', 'date', 'credits_returned'],
   // The studio changed which packages a class accepts, and the one that paid for

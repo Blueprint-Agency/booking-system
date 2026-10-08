@@ -43,6 +43,7 @@ import type { Tx } from '../schedule/roster'
 import { settleSessionAfterBookingCancel } from '../pt-sessions/manual'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
+import { sendMemberCancelReturnedEmail } from '../notifications/send-booking-email'
 
 export type { CancelSource, StaffCancelSource, StaffCredit }
 
@@ -109,6 +110,9 @@ export async function cancelBooking(
 ): Promise<CancelResult> {
   const { result, promotions } = await db.transaction(tx => cancelBookingInTx(tx, tenantId, input))
   await sendPromotionEmails(tenantId, promotions)
+  // NTF-09: a member who cancelled in time is told what came back. After
+  // commit, and it never throws.
+  if (input.source === 'client' && result.refundFired) await sendMemberCancelReturnedEmail(tenantId, input.bookingId)
   return result
 }
 

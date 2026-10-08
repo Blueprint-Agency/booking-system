@@ -13,7 +13,7 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
-import { classes } from '../../db/schema/schedule'
+import { classes, ptSessions } from '../../db/schema/schedule'
 import { classTypes, locations } from '../../db/schema/catalog'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { classPackages, clientPackages } from '../../db/schema/packages'
@@ -21,7 +21,7 @@ import { loadTenantById } from '../tenants/tenants'
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { NotFoundError } from '../../shared/errors'
-import { bookingCreditsLine } from './booking-email'
+import { bookingCreditsLine, classRefundLine, sessionsRefundLine } from './booking-email'
 import { sendTemplatedEmail } from './send'
 import type { PurchasedKind } from './purchase-email'
 
@@ -113,5 +113,76 @@ export async function sendClassBookingEmail(tenantId: string, bookingId: string)
     })
   } catch (err) {
     reportError(err, 'booking confirmation email failed', { scope: 'booking-email', tenantId, bookingId })
+  }
+}
+
+/** A cancelled booking's class or private session, as its cancellation emails name it. */
+async function readCancelledBooking(tenantId: string, bookingId: string) {
+  const [row] = await db
+    .select({
+      kind: bookings.kind,
+      used: bookings.creditsOrSessionsUsed,
+      clientId: clients.id,
+      clientName: clients.name,
+      clientEmail: clients.email,
+      className: classTypes.name,
+      classStartsAt: classes.startsAt,
+      ptStartsAt: ptSessions.startsAt,
+      ptInstructorName: staffUsers.name,
+    })
+    .from(bookings)
+    .innerJoin(clients, and(eq(clients.tenantId, bookings.tenantId), eq(clients.id, bookings.clientId)))
+    .leftJoin(classes, eq(classes.id, bookings.classId))
+    .leftJoin(classTypes, eq(classTypes.id, classes.classTypeId))
+    .leftJoin(ptSessions, eq(ptSessions.id, bookings.ptSessionId))
+    .leftJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
+    .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bookingId)))
+    .limit(1)
+  if (!row) throw new NotFoundError('booking_not_found', { bookingId })
+  return row
+}
+
+/**
+ * NTF-09: a member cancelled in time, and what the booking used came back —
+ * `class_cancelled_credit_returned` for a class, `pt_cancelled_session_returned`
+ * for a private session. The caller sends it only when the refund fired.
+ */
+export async function sendMemberCancelReturnedEmail(tenantId: string, bookingId: string): Promise<void> {
+  try {
+    const row = await readCancelledBooking(tenantId, bookingId)
+    const when = await sessionTimeFormat(tenantId)
+    const returned = String(row.used ?? 0)
+    const recipient = { email: row.clientEmail, userId: row.clientId, userKind: 'client' as const }
+    if (row.kind === 'class') {
+      await sendTemplatedEmail({
+        tenantId,
+        slug: 'class_cancelled_credit_returned',
+        recipient,
+        variables: {
+          client_name: row.clientName,
+          class_name: row.className ?? 'Your class',
+          date: row.classStartsAt ? when.format(row.classStartsAt) : '',
+          credits_returned: returned,
+          refund_line: classRefundLine(row.used ?? 0),
+          classes_url: await clientUrl(tenantId, '/classes'),
+        },
+      })
+    } else if (row.kind === 'pt') {
+      await sendTemplatedEmail({
+        tenantId,
+        slug: 'pt_cancelled_session_returned',
+        recipient,
+        variables: {
+          client_name: row.clientName,
+          instructor_name: row.ptInstructorName || 'your instructor',
+          starts_at: row.ptStartsAt ? when.format(row.ptStartsAt) : '',
+          sessions_returned: returned,
+          refund_line: sessionsRefundLine(row.used ?? 0),
+          account_url: await clientUrl(tenantId, '/account/private-sessions'),
+        },
+      })
+    }
+  } catch (err) {
+    reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, bookingId })
   }
 }

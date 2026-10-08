@@ -167,6 +167,101 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
     return row!.id
   }
 
+  /** A PT package holding `sessions` (after any debit the fixture records), Activated. */
+  async function givePt(at: Studio, who: Member, sessions: number): Promise<string> {
+    const [row] = await harness.db
+      .insert(schema.clientPackages)
+      .values({
+        tenantId: at.id,
+        clientId: who.clientId,
+        kind: 'pt',
+        validityDays: 90,
+        creditsOrSessionsRemaining: sessions,
+        expiresAt: new Date(Date.now() + 60 * DAY),
+        active: true,
+        amountPaidSgd: '400.00',
+        listPriceSgd: '400.00',
+      })
+      .returning({ id: schema.clientPackages.id })
+    return row!.id
+  }
+
+  const codes = () => ({ qrToken: randomUUID(), code: `RT-${randomUUID().slice(0, 6).toUpperCase()}` })
+
+  let ptSlots = 0
+  /**
+   * A private session as the studio left it: a member's request, debited
+   * `cost` sessions from `pkg` (the fixture's balance is already net of it),
+   * pending — or scheduled with the instructor, a booking for the requester
+   * and, on a 2-on-1, one for the partner.
+   */
+  async function ptRequest(
+    at: Studio,
+    who: Member,
+    pkg: string,
+    opts: { scheduled: boolean; partner?: Member; origin?: 'member' | 'portal' },
+  ): Promise<{ requestId: string; sessionId: string | null; bookingId: string | null; startsAt: Date }> {
+    const sessionType = opts.partner ? '2on1' : '1on1'
+    const cost = opts.partner && opts.origin !== 'portal' ? 2 : 1
+    const startsAt = new Date(Date.now() + 4 * DAY + ptSlots++ * 2 * HOUR)
+    const [req] = await harness.db
+      .insert(schema.ptRequests)
+      .values({
+        tenantId: at.id,
+        clientId: who.clientId,
+        locationId: at.locationId,
+        sessionType,
+        coClientId: opts.partner?.clientId ?? null,
+        status: opts.scheduled ? 'scheduled' : 'pending',
+        origin: opts.origin ?? 'member',
+        createdByStaffId: opts.origin === 'portal' ? at.admin.id : null,
+        expiresAt: new Date(Date.now() + 2 * DAY),
+        debitedClientPackageId: opts.origin === 'portal' ? null : pkg,
+      })
+      .returning({ id: schema.ptRequests.id })
+    if (!opts.scheduled) return { requestId: req!.id, sessionId: null, bookingId: null, startsAt }
+    const [session] = await harness.db
+      .insert(schema.ptSessions)
+      .values({
+        tenantId: at.id,
+        ptRequestId: req!.id,
+        instructorId: at.instructor.id,
+        locationId: at.locationId,
+        roomId: at.roomId,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + HOUR),
+        sessionType,
+        capacityOnline: opts.partner ? 2 : 1,
+        scheduledAt: new Date(),
+        scheduledByStaffId: at.admin.id,
+      })
+      .returning({ id: schema.ptSessions.id })
+    await harness.db.update(schema.ptRequests).set({ scheduledPtSessionId: session!.id }).where(eq(schema.ptRequests.id, req!.id))
+    const [booking] = await harness.db
+      .insert(schema.bookings)
+      .values({ tenantId: at.id, clientId: who.clientId, kind: 'pt', ptSessionId: session!.id, clientPackageId: pkg, creditsOrSessionsUsed: cost, ...codes() })
+      .returning({ id: schema.bookings.id })
+    if (opts.partner) {
+      const partnerPkg = opts.origin === 'portal' ? await givePt(at, opts.partner, 4) : null
+      await harness.db.insert(schema.bookings).values({
+        tenantId: at.id,
+        clientId: opts.partner.clientId,
+        kind: 'pt',
+        ptSessionId: session!.id,
+        clientPackageId: partnerPkg,
+        creditsOrSessionsUsed: partnerPkg ? 1 : 0,
+        ...codes(),
+      })
+    }
+    return { requestId: req!.id, sessionId: session!.id, bookingId: booking!.id, startsAt }
+  }
+
+  const memberCancel = (who: Member, bookingId: string) =>
+    harness.app.request(`/api/v1/me/bookings/${bookingId}`, { method: 'DELETE', headers: who.headers })
+
+  const balance = async (pkg: string) =>
+    (await harness.db.select().from(schema.clientPackages).where(eq(schema.clientPackages.id, pkg)))[0]!.creditsOrSessionsRemaining
+
   const book = (who: Member, classId: string) =>
     harness.app.request('/api/v1/me/bookings/class', {
       method: 'POST',
@@ -196,8 +291,8 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
       await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
-      await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM pt_sessions WHERE instructor_id IN (${staff})`)
+      await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM classes WHERE created_by_staff_id IN (${staff})`)
       await harness.db.execute(sql`DELETE FROM workshop_tiers WHERE workshop_id IN (SELECT id FROM workshops WHERE created_by_staff_id IN (${staff}))`)
@@ -302,6 +397,59 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
       await harness.db.insert(schema.emailTemplates).values(template!)
     }
   })
-})
 
-void randomUUID
+  /* ── NTF-09 ─────────────────────────────────────────────────────────── */
+
+  test('NTF-09 a member cancelling a class outside the window is emailed that the credits came back, and nobody else is mailed', async () => {
+    const mia = await member(one)
+    const pkg = await give(one, mia, 'credit_bundle', 10)
+    const classId = await addClass(one, { creditCost: 2 })
+    const booked = await expectStatus(await book(mia, classId), 201)
+    drain()
+
+    const res = await expectStatus(await memberCancel(mia, booked.booking_id), 200)
+    assert.equal(res.refund_fired, true)
+    assert.equal(await balance(pkg), 10, 'the two credits are back')
+
+    const mail = drain()
+    assert.deepEqual(mail.map(m => [m.to, m.template]), [[mia.email, 'class_cancelled_credit_returned']])
+    assert.match(mail[0]!.text, new RegExp(`${NAME} Vinyasa`))
+    assert.match(mail[0]!.text, /2 credits have been returned to your package\./)
+    assert.match(mail[0]!.html, new RegExp(`href="http://${one.slug}\\.localhost:3000/classes"`), 'the link is the studio\'s own app')
+  })
+
+  test('NTF-09 a member cancelling a private session outside the window is emailed that the session came back', async () => {
+    const leo = await member(one, 'Leo')
+    const pkg = await givePt(one, leo, 4)
+    const { bookingId } = await ptRequest(one, leo, pkg, { scheduled: true })
+    drain()
+
+    await expectStatus(await memberCancel(leo, bookingId!), 200)
+    assert.equal(await balance(pkg), 5)
+
+    const mail = drain()
+    assert.deepEqual(mail.map(m => [m.to, m.template]), [[leo.email, 'pt_cancelled_session_returned']])
+    assert.ok(mail[0]!.text.includes(one.instructor.name), 'the instructor is named')
+    assert.match(mail[0]!.text, /1 session has been returned to your package\./)
+  })
+
+  test('NTF-09 a cancel refused to another studio\'s member or to another member sends nothing', async () => {
+    const mia = await member(one)
+    await give(one, mia, 'credit_bundle', 10)
+    const booked = await expectStatus(await book(mia, await addClass(one)), 201)
+    const sam = await member(one, 'Sam')
+    const outsider = await member(two, 'Oli')
+    drain()
+
+    await expectStatus(await memberCancel(sam, booked.booking_id), 403, 'not_your_booking')
+    await expectStatus(
+      await harness.app.request(`/api/v1/me/bookings/${booked.booking_id}`, {
+        method: 'DELETE',
+        headers: { ...outsider.headers, 'X-Tenant-Slug': one.slug, Origin: `http://${one.slug}.localhost:3000` },
+      }),
+      401,
+      'invalid_token',
+    )
+    assert.deepEqual(drain(), [])
+  })
+})
