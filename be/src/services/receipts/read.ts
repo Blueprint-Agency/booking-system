@@ -154,6 +154,21 @@ export async function studioReceipt(tenantId: string, receiptId: string): Promis
   return row
 }
 
+/**
+ * The Receipt a Purchase was issued, whoever's it is, or null: for the
+ * backend's own sends (the confirmation email, #387), never for a member's
+ * request, which goes through the member-scoped reads above.
+ */
+export async function purchaseReceipt(tenantId: string, purchaseId: string | null): Promise<ReceiptRow | null> {
+  if (!purchaseId) return null
+  const [row] = await db
+    .select()
+    .from(receipts)
+    .where(and(eq(receipts.tenantId, tenantId), eq(receipts.purchaseId, purchaseId)))
+    .limit(1)
+  return row ?? null
+}
+
 /** The Receipt a Purchase has, if any: what the confirmation page links to. */
 export async function receiptForPurchase(
   tenantId: string,

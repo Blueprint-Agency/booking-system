@@ -183,16 +183,18 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
       // A $0 trial is granted immediately (no Stripe). A priced trial falls
       // through to the standard paid-class-package Checkout below.
       if (grantsWithoutPaying(toCents(eff.effectivePriceSgd))) {
-        const result = await purchaseFreeTrial(tenantId, clientId, pkg.id)
         // A sale is a sale whether or not money moved: the Purchase opens and
         // closes here, because a total of zero leaves nothing outstanding.
-        await openSettledPurchase({
+        // Opened before the grant, so the confirmation carries its Receipt; a
+        // grant refused below takes it back with the request's transaction.
+        const sale = await openSettledPurchase({
           tenantId,
           clientId,
           kind: 'class_package',
           metadata: { kind: 'class_package', client_id: clientId, package_id: pkg.id },
           lines: [saleLine({ description: pkg.name, listPriceSgd: pkg.priceSgd, reductions: [promotion] })],
         })
+        const result = await purchaseFreeTrial(tenantId, clientId, pkg.id, sale.id)
         return { outcome: 'granted', clientPackageId: result.clientPackageId }
       }
     }
@@ -272,7 +274,22 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   // Redemption was already written straight to `consumed`, because there is no
   // webhook coming to flip it.
   if (grantsWithoutPaying(charge.totalCents)) {
-    const granted = await grantFreePurchase(tenantId, {
+    // Opened before the grant, so the confirmation carries its Receipt.
+    const sale = await openSettledPurchase({
+      tenantId,
+      clientId,
+      kind: productType,
+      metadata: {
+        kind: productType,
+        package_id: packageId,
+        client_id: clientId,
+        promo_code_id: applied?.promoCodeId ?? '',
+        applied_promotion_id: appliedPromotionId ?? '',
+        location_id: locationId ?? '',
+      },
+      lines,
+    })
+    const granted = await grantFreePurchase(tenantId, sale.id, {
       clientId,
       // A grant no money paid for: the Purchase this opens beside it is closed
       // the moment it exists, so there is nothing on it for a Refund to return.
@@ -288,20 +305,6 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
       // the drift #109 exists to prevent.
       instructorId: instructorId ?? null,
       crossLocationPaidSgd: crossLocationSgd,
-    })
-    await openSettledPurchase({
-      tenantId,
-      clientId,
-      kind: productType,
-      metadata: {
-        kind: productType,
-        package_id: packageId,
-        client_id: clientId,
-        promo_code_id: applied?.promoCodeId ?? '',
-        applied_promotion_id: appliedPromotionId ?? '',
-        location_id: locationId ?? '',
-      },
-      lines,
     })
     return { outcome: 'granted', clientPackageId: granted.clientPackageId }
   }

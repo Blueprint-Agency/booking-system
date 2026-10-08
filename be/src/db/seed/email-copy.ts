@@ -456,8 +456,10 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
    * amount (#370). The confirmation is the member's receipt, so it says what
    * they paid.
    *
-   * The anchor text is neutral on purpose: `receipt_url` is the provider's
-   * receipt on a paid purchase and the account page on a free one.
+   * The anchor text is neutral on purpose: `receipt_url` is the member's
+   * Receipt in the booking app (#387), and the account page only for a grant
+   * no Receipt was issued for. The Receipt itself is drawn under this copy by
+   * the frame (`services/receipts/email.ts`), so no template carries it.
    */
   const PACKAGE_PURCHASE_BODY = body('Your package is confirmed', [
     'Hi {{client_name}},',

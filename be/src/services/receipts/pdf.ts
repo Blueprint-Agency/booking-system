@@ -51,9 +51,9 @@ const money = (sgd: string) => sgdText(toCents(sgd))
 /**
  * How a payment was made, worded as the member's Receipt page words it
  * (fe-client `paymentLabel`): `Visa •••• 4242`, `Apple Pay · Visa •••• 4242`,
- * `PayNow`.
+ * `PayNow`. The email's receipt block (./email.ts) words it the same.
  */
-const paymentLabel = (p: ReceiptPayment): string => {
+export const paymentLabel = (p: ReceiptPayment): string => {
   if (p.method === 'card' || p.cardBrand) {
     const card = [p.cardBrand ? cardBrandName(p.cardBrand) : 'Card', p.cardLast4 ? `•••• ${p.cardLast4}` : null]
       .filter(Boolean)

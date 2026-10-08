@@ -23,6 +23,13 @@ export interface FrameInput {
   /** The stored template, unrendered. */
   template: { subject: string; bodyHtml: string }
   variables: Record<string, string>
+  /**
+   * Markup the backend builds, drawn under the studio's body: the Receipt
+   * block (`services/receipts/email.ts`). Not the studio's to edit, and never
+   * substituted into its template, whose variables are all escaped. Trusted
+   * HTML: whoever builds it escapes every value in it.
+   */
+  appendixHtml?: string
 }
 
 export interface FramedEmail extends RenderedEmail {
@@ -55,7 +62,7 @@ export function frameTemplatedEmail(input: FrameInput): FramedEmail {
   const rendered = renderEmail({
     brandName: input.studioName,
     subject: plainSubject,
-    bodyHtml: renderTemplate(bodyHtml, input.variables),
+    bodyHtml: [renderTemplate(bodyHtml, input.variables), input.appendixHtml].filter(Boolean).join('\n'),
     footerNote,
     reason: reasonLine(input.slug, input.recipientKind, input.studioName),
   })
