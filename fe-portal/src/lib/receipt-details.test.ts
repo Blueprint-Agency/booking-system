@@ -9,7 +9,7 @@ import {
   receiptPrefixProblem,
 } from "./receipt-details";
 
-test("INV-26 the preview is the prefix being typed and the studio's next sequence, zero-padded as the Receipt prints it", () => {
+test("INV-46 the preview is the prefix being typed and the studio's next sequence, zero-padded as the Receipt prints it", () => {
   assert.equal(receiptNumberPreview("R", 1), "R-000001");
   assert.equal(receiptNumberPreview("NW", 124), "NW-000124");
   assert.equal(receiptNumberPreview("  SG-R ", 3), "SG-R-000003", "trimmed, as the backend saves it");
@@ -17,7 +17,7 @@ test("INV-26 the preview is the prefix being typed and the studio's next sequenc
   assert.equal(receiptNumberPreview("R", 1234567), "R-1234567", "past six digits the number just grows");
 });
 
-test("INV-26 a prefix that could not head a number is caught as it is typed, with the backend's rule", () => {
+test("INV-46 a prefix that could not head a number is caught as it is typed, with the backend's rule", () => {
   for (const ok of ["R", "NW", "SG-R", "A1", "ABCDEFGHIJ", "", "  R  "]) {
     assert.equal(receiptPrefixProblem(ok), null, ok);
   }
@@ -26,7 +26,7 @@ test("INV-26 a prefix that could not head a number is caught as it is typed, wit
   }
 });
 
-test("INV-26 the form sends trimmed details with blanks as none, and reads saved ones back as it shows them", () => {
+test("INV-46 the form sends trimmed details with blanks as none, and reads saved ones back as it shows them", () => {
   assert.deepEqual(
     receiptDetailsPayload({
       prefix: " NW ",
@@ -50,7 +50,7 @@ test("INV-26 the form sends trimmed details with blanks as none, and reads saved
   );
 });
 
-test("INV-26 the create form sends receipt details only when the operator filled any in", () => {
+test("INV-46 the create form sends receipt details only when the operator filled any in", () => {
   assert.equal(hasReceiptDetails(emptyReceiptDetailsDraft()), false);
   assert.equal(hasReceiptDetails({ ...emptyReceiptDetailsDraft(), prefix: " " }), false);
   assert.equal(hasReceiptDetails({ ...emptyReceiptDetailsDraft(), prefix: "NW" }), true);

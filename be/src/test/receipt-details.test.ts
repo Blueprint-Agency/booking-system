@@ -111,7 +111,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     await harness.close()
   })
 
-  test('INV-20 an admin saves the studio’s receipt details and reads them back, with the number the next Receipt will take', async () => {
+  test('INV-40 an admin saves the studio’s receipt details and reads them back, with the number the next Receipt will take', async () => {
     const studio = await newStudio()
 
     const fresh = await expectStatus(await readDetails(studio), 200)
@@ -133,7 +133,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     assert.deepEqual(await expectStatus(await readDetails(studio), 200), saved, 'what was saved is what is read')
   })
 
-  test('INV-21 the next Receipt and its PDF carry the details saved; one issued before keeps what it was issued with', async () => {
+  test('INV-41 the next Receipt and its PDF carry the details saved; one issued before keeps what it was issued with', async () => {
     const studio = await newStudio()
     const mia = await member(studio)
     const before = await receipts.issueFor(studio.id, mia.clientId)
@@ -182,7 +182,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     assert.ok(!(await pdf(afterSave.id)).includes('Renamed'), 'the PDF is drawn from what the Receipt was issued with')
   })
 
-  test('INV-22 a new prefix numbers the next Receipt on from the same sequence, leaves earlier numbers as issued, and the preview names it', async () => {
+  test('INV-42 a new prefix numbers the next Receipt on from the same sequence, leaves earlier numbers as issued, and the preview names it', async () => {
     const studio = await newStudio()
     const mia = await member(studio)
     const numbersListed = async () =>
@@ -205,7 +205,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     assert.equal((await expectStatus(await readDetails(studio), 200)).next_number, 'NW-000004')
   })
 
-  test('INV-23 the super portal sets the receipt details when it creates a studio, and the studio’s first Receipt carries them', async () => {
+  test('INV-43 the super portal sets the receipt details when it creates a studio, and the studio’s first Receipt carries them', async () => {
     const details = {
       prefix: 'AC',
       legal_name: `Created ${run} Pte. Ltd.`,
@@ -242,7 +242,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     assert.deepEqual(await harness.db.select().from(schema.tenants).where(eq(schema.tenants.slug, slug)), [])
   })
 
-  test('INV-24 an instructor can neither read nor change the receipt details, and an admin’s unusable prefix or overlong detail is refused', async () => {
+  test('INV-44 an instructor can neither read nor change the receipt details, and an admin’s unusable prefix or overlong detail is refused', async () => {
     const studio = await newStudio()
     const details = { prefix: 'R', legal_name: `Kept ${run} Pte. Ltd.`, registration_number: null, address: null, footer: null }
     await expectStatus(await saveDetails(studio, details), 200)

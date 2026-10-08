@@ -183,6 +183,7 @@ describe('refunding a cancelled Workshop', { skip: integrationTestsEnabled ? fal
           const clients = sql.join(clientIds.map(id => sql`${id}::uuid`), sql`, `)
           await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
           await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
+          await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
           await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
         }
         await harness.db.execute(

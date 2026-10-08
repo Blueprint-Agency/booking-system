@@ -188,6 +188,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
 
     await db.delete(schema.promoCodeRedemptions).where(eq(schema.promoCodeRedemptions.clientId, memberId))
     await db.delete(schema.clientPackages).where(eq(schema.clientPackages.clientId, memberId))
+    await db.delete(schema.receipts).where(eq(schema.receipts.clientId, memberId))
     await db.delete(schema.purchases).where(eq(schema.purchases.clientId, memberId))
     const codes = await db
       .select({ id: schema.promoCodes.id })

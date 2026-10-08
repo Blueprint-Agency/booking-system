@@ -467,7 +467,7 @@ describe('moving a studio between deployments', () => {
     assert.equal(nextInCopy.displayNumber, 'R-000003')
   })
 
-  test('INV-25 a studio restored from its archive keeps its receipt details; an archive made before it had any leaves the studio’s own', options, async () => {
+  test('INV-45 a studio restored from its archive keeps its receipt details; an archive made before it had any leaves the studio’s own', options, async () => {
     // The receipt details (#391) are what the studio's next Receipt carries: a
     // restore that dropped them would number it R- and print none of them.
     const detailsAt = async (tenantId: string) => {

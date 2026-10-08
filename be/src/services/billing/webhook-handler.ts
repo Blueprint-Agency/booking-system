@@ -539,11 +539,12 @@ async function dispatchStripeEvent(
         ...(await chargePatch(tenantId, paymentIntentId, providerAccountId, retry)),
       })
 
-      // The studio's Receipt for the sale (#384), in this same transaction, so
-      // the sale and its Receipt commit or roll back together. After the
-      // payment is banked: the Receipt prints how it was paid. Idempotent, so
+      // The studio's Receipt for the sale (#384, #385), in this same
+      // transaction, so the sale and its Receipt commit or roll back together.
+      // After the payment is banked: the Receipt prints how it was paid —
+      // every payment, when a Part Payment is what settled it. Idempotent, so
       // a redelivery or the confirmation page's fallback finds the one issued.
-      if (kind === 'class_package') await issueReceipt(db, tenantId, purchase.id)
+      await issueReceipt(db, tenantId, purchase.id)
 
       // One confirmation per purchase, however many times the provider retries:
       // only the delivery that inserted the row sends, once it has committed
@@ -620,6 +621,8 @@ async function dispatchStripeEvent(
         clientPackageId,
         ...(await chargePatch(tenantId, paymentIntentId, providerAccountId, retry)),
       })
+      // The sale's Receipt (#385), once its payment is banked — as for a plan.
+      await issueReceipt(db, tenantId, purchase.id)
       // No confirmation email: an Add-On grants no package, and §13 names four
       // sending paths, none of them this one.
       return
@@ -676,6 +679,8 @@ async function dispatchStripeEvent(
         paymentIntentId,
         await chargePatch(tenantId, paymentIntentId, providerAccountId, retry),
       )
+      // The sale's Receipt (#385), once its payment is banked — as for a plan.
+      await issueReceipt(db, tenantId, purchase.id)
       return
     }
 
@@ -743,6 +748,8 @@ async function dispatchStripeEvent(
         paymentIntentId,
         await chargePatch(tenantId, paymentIntentId, providerAccountId, retry),
       )
+      // The sale's Receipt (#385), once its payment is banked — as for a plan.
+      await issueReceipt(db, tenantId, purchase.id)
 
       // Step 5: one confirmation, from the delivery that made the request — a
       // redelivery stopped at the `succeeded` guard above. Sent once the
@@ -849,6 +856,10 @@ async function dispatchStripeEvent(
             ),
           )
       }
+
+      // The sale's Receipt (#385). The booking banked the payment and the
+      // write above recorded how it was paid, so the Receipt prints both.
+      await issueReceipt(db, tenantId, purchase.id)
 
       // Once the delivery has committed (`afterCommit`).
       if (booked.created) afterCommit(() => sendWorkshopPurchaseEmail(tenantId, booked.bookingId))

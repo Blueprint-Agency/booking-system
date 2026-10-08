@@ -138,6 +138,7 @@ describe('the state of a Refund between the button and the webhook', { skip: int
       await harness.db.delete(schema.bookings).where(inArray(schema.bookings.clientId, clientIds))
       await harness.db.delete(schema.stripePayments).where(inArray(schema.stripePayments.clientId, clientIds))
       await harness.db.delete(schema.clientPackages).where(inArray(schema.clientPackages.clientId, clientIds))
+      await harness.db.delete(schema.receipts).where(inArray(schema.receipts.clientId, clientIds))
       await harness.db.delete(schema.purchases).where(inArray(schema.purchases.clientId, clientIds))
     }
     await harness.db.delete(schema.promoCodes).where(like(schema.promoCodes.code, `RFDP${run.toUpperCase()}%`))
