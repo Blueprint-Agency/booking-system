@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { receiptFixtures } from './receipt-fixtures'
 import { packArchive, unpackArchive } from '../services/tenants/transfer-archive'
 import { ARCHIVE_VERSION, ArchiveError } from '../services/tenants/transfer-shape'
 
@@ -419,6 +420,51 @@ describe('moving a studio between deployments', () => {
     assert.equal(a.length, b.length)
     const ids = new Set(a.map(r => r.id))
     for (const row of b) assert.ok(!ids.has(row.id), 'the two copies must not share a row id')
+  })
+
+  test('INV-14 a studio restored from its archive keeps its Receipts and their numbers, and its next Receipt takes the next number', options, async () => {
+    // Receipt numbers run on per studio with no gaps (#380). The counter is a
+    // studio row like any other: emptied with the studio, and only the archive
+    // can bring it back. Without it the next sale would be numbered 1 again.
+    const receipts = receiptFixtures(harness)
+    const buyerAt = async (tenantId: string) => {
+      const [row] = await harness.db.execute<{ id: string }>(
+        sql`SELECT id FROM clients WHERE tenant_id = ${tenantId} AND email = 'member@restored.test'`,
+      )
+      return row!.id
+    }
+    const receiptsAt = async (tenantId: string) => [
+      ...(await harness.db.execute<{ id: string; number: number; display_number: string; total_sgd: string }>(
+        sql`SELECT id, number, display_number, total_sgd FROM receipts WHERE tenant_id = ${tenantId} ORDER BY number`,
+      )),
+    ]
+
+    const source = await studioWithData(`receipts-${Date.now()}`)
+    const buyer = await buyerAt(source)
+    const issued = [await receipts.issueFor(source, buyer), await receipts.issueFor(source, buyer)]
+    assert.deepEqual(issued.map(r => r.displayNumber), ['R-000001', 'R-000002'], 'the studio’s first two Receipts')
+
+    const archive = await transfer.exportTenant(source)
+    await deleteTenantRows(source)
+    assert.deepEqual(await receiptsAt(source), [], 'emptying the studio took its Receipts')
+    await transfer.importTenant(source, archive)
+
+    assert.deepEqual(
+      await receiptsAt(source),
+      issued.map(r => ({ id: r.id, number: r.number, display_number: r.displayNumber, total_sgd: '135.00' })),
+      'the Receipts came back as they were, ids and numbers included',
+    )
+    const next = await receipts.issueFor(source, buyer)
+    assert.equal(next.displayNumber, 'R-000003', 'numbering carries on where the studio left it')
+
+    // Copied into another studio, the rows get fresh ids; the Receipts keep
+    // their numbers, and that studio's numbering carries on from the archive too.
+    const copy = await emptyTenant(`receipts-copy-${Date.now()}`)
+    const summary = await transfer.importTenant(copy, archive)
+    assert.equal(summary.remapped, true)
+    assert.deepEqual((await receiptsAt(copy)).map(r => r.display_number), ['R-000001', 'R-000002'])
+    const nextInCopy = await receipts.issueFor(copy, await buyerAt(copy))
+    assert.equal(nextInCopy.displayNumber, 'R-000003')
   })
 
   test('a studio restored from an archive gets its branding too', options, async () => {
