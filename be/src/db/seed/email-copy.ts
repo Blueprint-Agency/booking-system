@@ -262,7 +262,9 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       'Your check-in code is <strong>{{code}}</strong>. Show it at the studio, or open the QR code below.',
       link('{{qr_url}}', 'Show your QR code'),
     ],
-    { note: 'Credits remaining: <strong>{{credits_remaining}}</strong>.' },
+    // `credits_line` is composed (notifications/booking-email.ts): a bare count
+    // reads "0 remaining" on an Unlimited Plan, which spent nothing.
+    { note: '{{credits_line}}' },
   )
 
   // Sent when a waitlist promotion books the member in (spec-waitlist.md §11).

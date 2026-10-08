@@ -35,6 +35,7 @@ import { readClassRule } from '../schedule/package-rules'
 import type { PackageRuleMode } from '../../db/enums'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
+import { sendClassBookingEmail } from '../notifications/send-booking-email'
 
 export interface BookClassInput {
   clientId: string
@@ -121,7 +122,7 @@ async function bookIntoClass(
   // selection and the Activation stamp all agree on what "now" is.
   const now = clockNow()
 
-  return db.transaction(async tx => {
+  const booking = await db.transaction(async tx => {
     // 1. Lock the class row so capacity is evaluated race-free.
     const cls = await lockClass(tx, tenantId, classId)
 
@@ -173,6 +174,12 @@ async function bookIntoClass(
 
     return paid.booking
   })
+
+  // NTF-08: after commit, and it never throws — a mail fault must not undo a
+  // seat that is already the member's. A waitlist promotion books through
+  // `payAndBook` and sends its own email (../waitlist/promote.ts).
+  await sendClassBookingEmail(tenantId, booking.bookingId)
+  return booking
 }
 
 /** An instructor reaches their own classes only — the same rule as check-in. */

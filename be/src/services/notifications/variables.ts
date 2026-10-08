@@ -8,7 +8,12 @@ import type { TemplateSlug } from './send'
 export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   welcome: ['client_name'],
   password_reset: ['client_name', 'reset_url'],
-  class_booking_confirmed: ['client_name', 'class_name', 'date', 'instructor_name', 'location', 'qr_url', 'code', 'credits_remaining'],
+  // NTF-08: `credits_line` is a whole composed sentence (./booking-email.ts) —
+  // the credits used and what remains, or, on an Unlimited Plan, that it used
+  // none. It replaces `credits_remaining`, a bare count that read "0" on a plan
+  // with no balance. The sender still supplies `credits_used` and
+  // `credits_remaining` for a studio's own wording that uses them.
+  class_booking_confirmed: ['client_name', 'class_name', 'date', 'instructor_name', 'location', 'qr_url', 'code', 'credits_line'],
   // A waitlist promotion booked the member in (spec-waitlist.md §11). `cancel_by`
   // is the moment the Cancellation Window closes on the class.
   class_waitlist_promoted: ['client_name', 'class_name', 'date', 'time', 'location_name', 'instructor_name', 'cancel_by'],
