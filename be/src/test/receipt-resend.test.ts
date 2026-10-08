@@ -275,6 +275,12 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
     )),
   ]
 
+  /** Every audit row the studio has, of any action. */
+  const auditRowCount = async (at: Studio) => {
+    const [row] = await harness.db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM audit_log WHERE tenant_id = ${at.id}`)
+    return row!.n
+  }
+
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
@@ -388,8 +394,12 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
     const second = await staffAt(one, `admin-${randomUUID().slice(0, 6)}`, 'admin')
 
     assert.deepEqual(await resendTrail(one, receipt.id), [], 'the purchase itself files no resend')
-    await expectStatus(await resend(one, receipt.id), 200)
-    await expectStatus(await resend(one, receipt.id, second.headers), 200)
+    // Every audit row a resend writes, whatever its action: exactly the one.
+    for (const headers of [one.admin.headers, second.headers]) {
+      const before = await auditRowCount(one)
+      await expectStatus(await resend(one, receipt.id, headers), 200)
+      assert.equal((await auditRowCount(one)) - before, 1, 'a resend writes one audit row in all')
+    }
 
     const trail = await resendTrail(one, receipt.id)
     assert.equal(trail.length, 2, 'one row per resend')

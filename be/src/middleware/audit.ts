@@ -15,13 +15,16 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
  *
  * Idempotent reads are not audited. Use `c.set('auditTarget', { table, id })` inside handlers
  * to capture which entity changed; falls back to method+path if not set. `c.set('auditDetail',
- * { … })` adds what else the row should record, as `payload.detail`.
+ * { … })` adds what else the row should record, as `payload.detail`. A handler whose
+ * service files the action's own audit row, naming the staff member, sets
+ * `c.set('auditFiled', true)` so the request is recorded once, not twice.
  */
 export const audit: MiddlewareHandler = async (c, next) => {
   await next()
 
   if (!MUTATING.has(c.req.method)) return
   if (c.res.status >= 400) return
+  if (c.get('auditFiled' as any) === true) return
 
   const staffRow = c.get('staffRow')
   const impersonatedBy = c.get('impersonatedBy')

@@ -76,10 +76,11 @@ const app = new Hono()
   })
   // The purchase's own email again, Receipt and PDF with it, to the member's
   // current address (#390). `409 receipt_member_deleted` once they are gone.
+  // The service files the one `receipt_resent` row naming the admin.
   .post('/:id/resend', zValidator('param', receiptIdParam), async c => {
     const { id } = c.req.valid('param')
     const sent = await resendReceipt({ tenantId: tenantId(c), receiptId: id, actorStaffId: c.get('staffUserId') })
-    c.set('auditTarget' as any, { table: 'receipts', id })
+    c.set('auditFiled' as any, true)
     return c.json({ sent_to: sent.sentTo })
   })
 
