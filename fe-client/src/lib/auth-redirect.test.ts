@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { safeNextPath, signedInRedirectTarget, signInPathFor } from "./auth-redirect.ts";
+import { authLinksFor, safeNextPath, signedInRedirectTarget, signInPathFor } from "./auth-redirect.ts";
 
 /** The rule as the login and register pages ask it, from a path with its query string. */
 const target = (path: string) => {
@@ -49,6 +49,22 @@ test("a signed-out visitor to a member page is sent to sign in, and back again",
 test("the sign-in path never carries an auth page as its next", () => {
   const signIn = new URL(signInPathFor("/login", ""), "http://acme.localhost:3000");
   assert.equal(safeNextPath(signIn.searchParams), null);
+});
+
+test("AUTH-07 the top bar's Log in and Sign up bring the visitor back to the page they were on", () => {
+  const { login, register } = authLinksFor("/workshops");
+  for (const href of [login, register]) {
+    const url = new URL(href, "http://acme.localhost:3000");
+    assert.equal(url.searchParams.get("next"), "/workshops");
+  }
+  assert.equal(new URL(login, "http://acme.localhost:3000").pathname, "/login");
+  assert.equal(new URL(register, "http://acme.localhost:3000").pathname, "/register");
+});
+
+test("the top bar's links carry no next from home or from an auth page", () => {
+  assert.deepEqual(authLinksFor("/"), { login: "/login", register: "/register" });
+  assert.deepEqual(authLinksFor("/login"), { login: "/login", register: "/register" });
+  assert.deepEqual(authLinksFor("/register"), { login: "/login", register: "/register" });
 });
 
 test("the shared next sanitiser", () => {

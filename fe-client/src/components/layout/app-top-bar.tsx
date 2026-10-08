@@ -1,13 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useAppUser } from "@/lib/auth";
+import { authLinksFor } from "@/lib/auth-redirect";
 import { cn } from "@/lib/utils";
 import { useBrand } from "@/components/brand/brand-provider";
 
 export function AppTopBar({ impersonating = false }: { impersonating?: boolean }) {
   const brand = useBrand();
   const { user, isLoaded, isSignedIn: isAuth } = useAppUser();
+  // Log in and Sign up come back to this page, as the page's own sign-in
+  // prompts do (AUTH-07), whichever of them the visitor taps.
+  const authLinks = authLinksFor(usePathname() ?? "/");
   const firstName = user?.firstName ?? "";
   const lastName = user?.lastName ?? "";
   const userInitials = isAuth
@@ -50,10 +55,10 @@ export function AppTopBar({ impersonating = false }: { impersonating?: boolean }
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <Link href="/login" className="px-4 py-2 text-sm font-semibold text-ink hover:text-accent-deep transition-colors">
+            <Link href={authLinks.login} className="px-4 py-2 text-sm font-semibold text-ink hover:text-accent-deep transition-colors">
               Log in
             </Link>
-            <Link href="/register" className="px-4 py-2 text-sm font-bold text-inverse bg-accent rounded-full hover:bg-accent-deep dark:hover:bg-accent/85 transition-colors">
+            <Link href={authLinks.register} className="px-4 py-2 text-sm font-bold text-inverse bg-accent rounded-full hover:bg-accent-deep dark:hover:bg-accent/85 transition-colors">
               Sign up
             </Link>
           </div>

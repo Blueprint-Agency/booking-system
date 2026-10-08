@@ -38,3 +38,14 @@ export function signInPathFor(pathname: string, search: string): string {
   const params = new URLSearchParams({ next: `${pathname}${search}` });
   return `/login?${params.toString()}`;
 }
+
+/**
+ * The top bar's Log in and Sign up, bringing the visitor back to `pathname`
+ * afterwards. Home and the auth pages carry no `next`: home is where a
+ * sign-in lands anyway, and an auth page is never a `next`.
+ */
+export function authLinksFor(pathname: string): { login: string; register: string } {
+  if (pathname === "/" || AUTH_PAGE.test(pathname)) return { login: "/login", register: "/register" };
+  const next = new URLSearchParams({ next: pathname }).toString();
+  return { login: `/login?${next}`, register: `/register?${next}` };
+}
