@@ -1,22 +1,23 @@
 "use client";
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, Download, Loader2 } from "lucide-react";
+import { ChevronLeft, Download, Loader2, Send } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui";
+import { Button, Dialog, DialogFooter } from "@/components/ui";
 import { ReceiptStatusBadge } from "@/components/receipts/receipt-status-badge";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { downloadFile } from "@/lib/download";
 import { getPortalToken } from "@/lib/portal-auth";
 import { formatDate } from "@/lib/formatters";
-import { paymentLabel, receiptAmount, receiptKindLabel, type Receipt } from "@/lib/receipts";
+import { paymentLabel, receiptAmount, receiptKindLabel, resendRefusal, type Receipt } from "@/lib/receipts";
 
 /**
  * One Receipt (#389), exactly as the member sees it on their own account: the
  * same payload, and the same PDF. Everything on it is what the studio wrote
  * when the purchase was paid; nothing is worked out here, and nothing on it
- * can be edited.
+ * can be edited. Resend (#390) sends it again, after a confirmation step, in
+ * the email the purchase sent, to the member's current address.
  */
 export default function AdminReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -24,6 +25,7 @@ export default function AdminReceiptPage({ params }: { params: Promise<{ id: str
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [failure, setFailure] = useState<"missing" | "error" | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [confirmingResend, setConfirmingResend] = useState(false);
 
   useEffect(() => {
     if (!api) return;
@@ -53,6 +55,19 @@ export default function AdminReceiptPage({ params }: { params: Promise<{ id: str
       toast.error(err instanceof ApiError ? err.message : "The receipt could not be downloaded.");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  // The purchase's own email again, with the Receipt and its PDF, to the
+  // member's current address (#390). The dialog stays open on a refusal.
+  const resend = async (of: Receipt) => {
+    if (!api) return;
+    try {
+      const sent = await api.post<{ sent_to: string }>(`/portal/admin/receipts/${of.id}/resend`);
+      toast.success(`Receipt ${of.number} sent to ${sent.sent_to}`);
+      setConfirmingResend(false);
+    } catch (err) {
+      toast.error(resendRefusal(err instanceof ApiError ? err.body : null));
     }
   };
 
@@ -87,7 +102,22 @@ export default function AdminReceiptPage({ params }: { params: Promise<{ id: str
               <Download className="h-4 w-4" aria-hidden />
               {downloading ? "Preparing PDF…" : "Download PDF"}
             </Button>
+            {/* A permanently deleted member's Receipt names no one, and has no one to go to. */}
+            {(receipt.buyer.name || receipt.buyer.email) && (
+              <Button variant="secondary" onClick={() => setConfirmingResend(true)}>
+                <Send className="h-4 w-4" aria-hidden />
+                Resend
+              </Button>
+            )}
           </div>
+
+          {confirmingResend && (
+            <ResendDialog
+              number={receipt.number}
+              onClose={() => setConfirmingResend(false)}
+              onConfirm={() => resend(receipt)}
+            />
+          )}
 
           <article
             aria-labelledby="receipt-heading"
@@ -192,6 +222,48 @@ export default function AdminReceiptPage({ params }: { params: Promise<{ id: str
         </>
       )}
     </div>
+  );
+}
+
+/** The confirmation step before a resend: what goes, and to whom. */
+function ResendDialog({
+  number,
+  onClose,
+  onConfirm,
+}: {
+  number: string;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && !busy && onClose()}
+      title={`Resend receipt ${number}?`}
+      description="The member gets the email their purchase sent, with this receipt and its PDF, at the email address they have now. The resend is recorded under your name."
+    >
+      <DialogFooter>
+        <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await onConfirm();
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Send className="h-4 w-4" aria-hidden />}
+          {busy ? "Sending…" : "Send receipt"}
+        </Button>
+      </DialogFooter>
+    </Dialog>
   );
 }
 

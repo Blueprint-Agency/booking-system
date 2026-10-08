@@ -6,8 +6,10 @@ import {
   receiptAmount,
   receiptKindLabel,
   receiptStatusLabel,
+  receiptsExportPath,
   receiptsQuery,
   receiptsSearch,
+  resendRefusal,
   type ReceiptsState,
 } from "./receipts";
 
@@ -55,4 +57,27 @@ test("INV-53 the list's position survives the address bar, and nonsense in it is
   assert.deepEqual(readReceiptsState(receiptsSearch(state)), state);
   assert.equal(receiptsSearch(everything), "");
   assert.deepEqual(readReceiptsState("?kind=gift_card&status=void&page=-1&size=7&from=soon"), everything);
+});
+
+// INV-78: what the Export CSV and Resend buttons send and say.
+
+test("INV-78 Export CSV asks for the list's search and filters, and never its page", () => {
+  assert.equal(receiptsExportPath({ ...everything, page: 4, pageSize: 100 }), "/portal/admin/receipts/export.csv");
+  assert.equal(
+    receiptsExportPath({ q: " Mia & Leo ", from: "2026-01-01", to: "2026-01-31", kind: "merch", status: "refunded", page: 3, pageSize: 50 }),
+    "/portal/admin/receipts/export.csv?q=Mia+%26+Leo&from=2026-01-01&to=2026-01-31&kind=merch&status=refunded",
+  );
+});
+
+test("INV-78 a refused resend says why, in words an admin can act on", () => {
+  assert.equal(
+    resendRefusal({ error: "receipt_member_deleted" }),
+    "This member has been permanently deleted, so there is no one to send it to.",
+  );
+  assert.equal(
+    resendRefusal({ error: "receipt_email_unavailable" }),
+    "This purchase sent no email to resend. Download the PDF and send it another way.",
+  );
+  assert.equal(resendRefusal({ error: "receipt_not_found" }), "There is no such receipt at this studio.");
+  assert.equal(resendRefusal(null), "The receipt could not be sent. Try again in a moment.");
 });

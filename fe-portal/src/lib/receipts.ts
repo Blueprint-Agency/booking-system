@@ -8,6 +8,7 @@
  * is the member's Receipt's, so the admin and the member read one Receipt the
  * same way on a call.
  */
+import { ERROR_CODES } from "./error-codes";
 
 export type ReceiptStatus = "issued" | "refunded";
 
@@ -183,6 +184,29 @@ export function receiptsQuery(s: ReceiptsState): Record<string, string | number>
   query.page = s.page;
   query.page_size = s.pageSize;
   return query;
+}
+
+/**
+ * Where Export CSV downloads the list from (#390): the search and filters the
+ * list is showing, and no page, so the file is every page of it.
+ */
+export function receiptsExportPath(s: ReceiptsState): string {
+  const filters = Object.entries(receiptsQuery(s)).filter(([k]) => k !== "page" && k !== "page_size");
+  const qs = new URLSearchParams(filters.map(([k, v]) => [k, String(v)])).toString();
+  return `/portal/admin/receipts/export.csv${qs ? `?${qs}` : ""}`;
+}
+
+/** Why a resend was refused (#390), from the refusal's body. */
+export function resendRefusal(body: unknown): string {
+  const code = (body as { error?: unknown } | null)?.error;
+  if (code === ERROR_CODES.receipt_member_deleted) {
+    return "This member has been permanently deleted, so there is no one to send it to.";
+  }
+  if (code === ERROR_CODES.receipt_email_unavailable) {
+    return "This purchase sent no email to resend. Download the PDF and send it another way.";
+  }
+  if (code === ERROR_CODES.receipt_not_found) return "There is no such receipt at this studio.";
+  return "The receipt could not be sent. Try again in a moment.";
 }
 
 /** The position as the address bar keeps it, so Back from a Receipt lands on the same page. */

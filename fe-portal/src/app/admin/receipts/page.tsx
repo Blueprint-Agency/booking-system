@@ -2,18 +2,22 @@
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2, ReceiptText, Search } from "lucide-react";
+import { Download, Loader2, ReceiptText, Search } from "lucide-react";
+import { toast } from "sonner";
 import { Button, EmptyState, Input, PageHeader, Pagination, Select } from "@/components/ui";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ReceiptStatusBadge as StatusBadge } from "@/components/receipts/receipt-status-badge";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { downloadFile } from "@/lib/download";
+import { getPortalToken } from "@/lib/portal-auth";
 import { formatDate } from "@/lib/formatters";
 import {
   RECEIPT_KINDS,
   readReceiptsState,
   receiptAmount,
   receiptKindLabel,
+  receiptsExportPath,
   receiptsQuery,
   receiptsSearch,
   type ReceiptKind,
@@ -101,11 +105,39 @@ function ReceiptsList() {
   const filtered = Boolean(state.q || state.from || state.to || state.kind !== "all" || state.status !== "all");
   const detailHref = (id: string) => `/admin/receipts/${id}`;
 
+  // Every Receipt the search and filters keep, every page of them, for the
+  // bookkeeper (#390). Fetched with the staff session, as the PDF is.
+  const [exporting, setExporting] = useState(false);
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      await downloadFile(getPortalToken, receiptsExportPath(state), {
+        fallbackName: "receipts.csv",
+        failure: "The receipts could not be exported.",
+      });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "The receipts could not be exported.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
         title="Receipts"
         description="Every receipt your studio has issued, exactly as the member received it. Receipts cannot be edited; a refunded one says so."
+        actions={
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={exporting || total === 0}
+            onClick={() => void exportCsv()}
+          >
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Download className="h-4 w-4" aria-hidden />}
+            Export CSV
+          </Button>
+        }
       />
 
       <div className="mb-4 space-y-3 rounded-xl border border-border bg-card p-4 shadow-soft">

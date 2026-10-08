@@ -274,6 +274,9 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'GET /api/v1/portal/admin/receipts': { gate: STUDIO_ADMIN },
   'GET /api/v1/portal/admin/receipts/:id': { gate: STUDIO_ADMIN },
   'GET /api/v1/portal/admin/receipts/:id/pdf': { gate: STUDIO_ADMIN },
+  // Resending a Receipt and exporting the list (#390).
+  'POST /api/v1/portal/admin/receipts/:id/resend': { gate: STUDIO_ADMIN },
+  'GET /api/v1/portal/admin/receipts/export.csv': { gate: STUDIO_ADMIN },
 }
 
 /** The prefixes the matrix speaks for: every route under them needs a line above. */

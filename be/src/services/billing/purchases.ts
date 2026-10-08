@@ -10,7 +10,7 @@
  * the first attempt settles on that first payment, which is every sale this
  * system takes today. Part payment is #92; this is the record it will need.
  */
-import { and, eq, ne } from 'drizzle-orm'
+import { and, eq, ne, sql } from 'drizzle-orm'
 
 import { db } from '../../db'
 import { purchases, stripePayments } from '../../db/schema/ledger'
@@ -111,6 +111,23 @@ export async function openSettledPurchase(
     .returning()
   await issueReceipt(db, input.tenantId, row!.id)
   return row!
+}
+
+/**
+ * The key, on a free package sale's settled Purchase, naming the package it
+ * granted. A free package is granted with no Purchase on it (it has no money
+ * for a Refund to return), so without it nothing would lead from the sale, or
+ * its Receipt, back to what it granted: the confirmation an admin resends
+ * (#390) is that package's.
+ */
+export const GRANTED_PACKAGE_KEY = 'granted_client_package_id'
+
+/** Name on a free sale's settled Purchase the package it granted (`GRANTED_PACKAGE_KEY`). */
+export async function noteFreeGrant(tenantId: string, purchaseId: string, clientPackageId: string): Promise<void> {
+  await db
+    .update(purchases)
+    .set({ metadata: sql`${purchases.metadata} || jsonb_build_object(${GRANTED_PACKAGE_KEY}::text, ${clientPackageId}::text)` })
+    .where(and(eq(purchases.tenantId, tenantId), eq(purchases.id, purchaseId)))
 }
 
 /**

@@ -92,22 +92,22 @@ export interface StudioReceiptSummary extends ReceiptSummary {
   buyerEmail: string | null
 }
 
-export interface StudioReceiptQuery extends MemberReceiptQuery {
+/** What narrows the studio's Receipts: the admin's search and filters. */
+export interface StudioReceiptFilters {
   /** Part of a receipt number, or of the buyer's name or email, as the Receipt has them. */
   q?: string
+  /** The first studio day to include, `YYYY-MM-DD`. */
+  from?: PlainDate
+  /** The last studio day to include, `YYYY-MM-DD`. */
+  to?: PlainDate
   kind?: ReceiptRow['kind']
   status?: ReceiptStatus
 }
 
-/**
- * Every Receipt at this studio, newest first, one page of them: the admin's
- * Receipts page (#389). The search reads the Receipt's own snapshot, the
- * number and the buyer it names, as everything else on a Receipt does.
- */
-export async function listStudioReceipts(
-  tenantId: string,
-  query: StudioReceiptQuery,
-): Promise<{ rows: StudioReceiptSummary[]; total: number }> {
+export interface StudioReceiptQuery extends StudioReceiptFilters, MemberReceiptQuery {}
+
+/** The studio's Receipts the filters keep. The search reads the Receipt's own snapshot. */
+function studioReceiptsWhere(tenantId: string, query: StudioReceiptFilters): SQL | undefined {
   const where: SQL[] = [eq(receipts.tenantId, tenantId)]
   if (query.from) where.push(gte(receipts.issuedAt, sgDayWindow(query.from).startsAt))
   if (query.to) where.push(lt(receipts.issuedAt, sgDayWindow(query.to).endsAt))
@@ -119,25 +119,50 @@ export async function listStudioReceipts(
     const like = `%${term}%`
     where.push(or(ilike(receipts.displayNumber, like), ilike(receipts.buyerName, like), ilike(receipts.buyerEmail, like))!)
   }
+  return and(...where)
+}
 
+const studioSummary = (r: ReceiptRow): StudioReceiptSummary => ({
+  ...summarise(r),
+  kind: r.kind,
+  clientId: r.clientId,
+  buyerName: r.buyerName,
+  buyerEmail: r.buyerEmail,
+})
+
+/**
+ * Every Receipt at this studio, newest first, one page of them: the admin's
+ * Receipts page (#389). The search reads the Receipt's own snapshot, the
+ * number and the buyer it names, as everything else on a Receipt does.
+ */
+export async function listStudioReceipts(
+  tenantId: string,
+  query: StudioReceiptQuery,
+): Promise<{ rows: StudioReceiptSummary[]; total: number }> {
+  const where = studioReceiptsWhere(tenantId, query)
   const rows = await db
     .select()
     .from(receipts)
-    .where(and(...where))
+    .where(where)
     .orderBy(desc(receipts.issuedAt), desc(receipts.number))
     .limit(query.pageSize)
     .offset((query.page - 1) * query.pageSize)
-  const [totals] = await db.select({ total: count() }).from(receipts).where(and(...where))
-  return {
-    rows: rows.map(r => ({
-      ...summarise(r),
-      kind: r.kind,
-      clientId: r.clientId,
-      buyerName: r.buyerName,
-      buyerEmail: r.buyerEmail,
-    })),
-    total: totals?.total ?? 0,
-  }
+  const [totals] = await db.select({ total: count() }).from(receipts).where(where)
+  return { rows: rows.map(studioSummary), total: totals?.total ?? 0 }
+}
+
+/**
+ * Every Receipt the admin's filters keep, newest first, unpaged: the list as a
+ * file for the bookkeeper (#390). The same filters and order as the list, so
+ * the export is the list the admin was looking at, every page of it.
+ */
+export async function exportStudioReceipts(tenantId: string, filters: StudioReceiptFilters): Promise<StudioReceiptSummary[]> {
+  const rows = await db
+    .select()
+    .from(receipts)
+    .where(studioReceiptsWhere(tenantId, filters))
+    .orderBy(desc(receipts.issuedAt), desc(receipts.number))
+  return rows.map(studioSummary)
 }
 
 /**

@@ -245,4 +245,56 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     assert.equal(byItem['Unlimited year'].receipt_id, null, 'an open Purchase has no Receipt yet')
     assert.ok('receipt_url' in byItem['Ten pack'], "the provider's receipt link stays in the payload for now")
   })
+
+  test('INV-76 an Admin exports the filtered Receipts as CSV: one row each, with number, date, member, kind, total and status, and none of another studio\'s', async () => {
+    const tag = `Export ${run}`
+    const una = await member(one, `Una ${tag}`)
+    const ray = await member(one, `Ray ${tag}`)
+    const elsewhere = await member(two, `Ivy ${tag}`)
+    const pack = await made.issueFor(one.id, una.clientId)
+    const tee = await made.issueFor(one.id, ray.clientId, { kind: 'merch', item: 'Studio tee, black' })
+    await made.stampRefunded(tee)
+    await made.issueFor(two.id, elsewhere.clientId)
+    const sgToday = new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10)
+
+    const exported = async (query: string, headers = adminOfOne) => {
+      const res = await harness.app.request(`/api/v1/portal/admin/receipts/export.csv${query}`, { headers })
+      assert.equal(res.status, 200, res.status === 200 ? '' : await res.text())
+      assert.equal(res.headers.get('Content-Type'), 'text/csv; charset=utf-8')
+      assert.equal(res.headers.get('Content-Disposition'), 'attachment; filename="receipts.csv"')
+      return (await res.text()).split('\r\n')
+    }
+
+    const all = await exported(`?q=${encodeURIComponent(tag)}`)
+    assert.deepEqual(all, [
+      'number,date,member,email,kind,item,total_sgd,status',
+      `${tee.displayNumber},${sgToday},Ray ${tag},${ray.email},Merch,"Studio tee, black",135.00,refunded`,
+      `${pack.displayNumber},${sgToday},Una ${tag},${una.email},Class package,Ten pack,135.00,issued`,
+    ], "both of this studio's, newest first, and not the other studio's")
+
+    assert.deepEqual(
+      (await exported(`?q=${encodeURIComponent(tag)}&status=issued`)).slice(1).map(l => l.split(',')[0]),
+      [pack.displayNumber],
+      'the status filter',
+    )
+    assert.deepEqual(
+      (await exported(`?q=${encodeURIComponent(tag)}&kind=merch`)).slice(1).map(l => l.split(',')[0]),
+      [tee.displayNumber],
+      'the kind filter',
+    )
+    const tomorrow = new Date(Date.now() + 8 * 3_600_000 + 86_400_000).toISOString().slice(0, 10)
+    assert.deepEqual(await exported(`?q=${encodeURIComponent(tag)}&from=${tomorrow}`), ['number,date,member,email,kind,item,total_sgd,status'], 'the date filter')
+    await expectStatus(await harness.app.request('/api/v1/portal/admin/receipts/export.csv?kind=gift_card', { headers: adminOfOne }), 400)
+  })
+
+  test('INV-77 a member name a spreadsheet would run as a formula is exported as text', async () => {
+    const eve = await member(one, `=HYPERLINK("http://x.test","Eve ${run}")`)
+    const receipt = await made.issueFor(one.id, eve.clientId)
+    const res = await harness.app.request(`/api/v1/portal/admin/receipts/export.csv?q=${encodeURIComponent(receipt.displayNumber)}`, { headers: adminOfOne })
+    const [, row] = (await res.text()).split('\r\n')
+    assert.ok(
+      row!.startsWith(`${receipt.displayNumber},`) && row!.includes(`,"'=HYPERLINK(""http://x.test"",""Eve ${run}"")",`),
+      `the name is quoted and cannot run: ${row}`,
+    )
+  })
 })
