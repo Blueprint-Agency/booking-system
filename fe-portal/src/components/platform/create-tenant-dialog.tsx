@@ -2,8 +2,17 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, Dialog, DialogFooter, Input, Label, Select } from "@/components/ui";
+import { Button, Dialog, DialogFooter, Input, Label, Select, Textarea } from "@/components/ui";
 import { ApiError, type Api } from "@/lib/api";
+import {
+  RECEIPT_DETAIL_LIMITS,
+  emptyReceiptDetailsDraft,
+  hasReceiptDetails,
+  receiptDetailsPayload,
+  receiptNumberPreview,
+  receiptPrefixProblem,
+  type ReceiptDetailsDraft,
+} from "@/lib/receipt-details";
 import {
   SLUG_REASONS,
   TERM_MONTHS,
@@ -57,6 +66,8 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
   const [adminName, setAdminName] = useState("");
   /** Months of the first Term, or "" for open-ended. */
   const [termMonths, setTermMonths] = useState<string>(DEFAULT_TERM);
+  /** What the studio's Receipts carry from its first one (#391); all optional. */
+  const [receipt, setReceipt] = useState<ReceiptDetailsDraft>(emptyReceiptDetailsDraft);
   const [verdict, setVerdict] = useState<SlugVerdict | null>(null);
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -72,6 +83,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
     setAdminEmail("");
     setAdminName("");
     setTermMonths(DEFAULT_TERM);
+    setReceipt(emptyReceiptDetailsDraft());
     setVerdict(null);
   }, [open]);
 
@@ -112,7 +124,14 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
   // The first admin is not required. A studio created to receive an archive
   // must be left with no staff rows at all — the archive brings its own, and
   // the import refuses to merge into rows that are already there.
-  const canSubmit = !submitting && name.trim() && slug && verdict?.available === true;
+  const prefixError = receiptPrefixProblem(receipt.prefix);
+  const canSubmit =
+    !submitting && name.trim() && slug && verdict?.available === true && !prefixError;
+  const receiptField = (key: keyof ReceiptDetailsDraft) => ({
+    value: receipt[key],
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setReceipt({ ...receipt, [key]: e.target.value }),
+  });
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -127,6 +146,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
         ...(termMonths ? { term_months: Number(termMonths) as TermMonths } : {}),
         ...(adminEmail.trim() ? { admin_email: adminEmail.trim() } : {}),
         ...(adminName.trim() ? { admin_name: adminName.trim() } : {}),
+        ...(hasReceiptDetails(receipt) ? { receipt_details: receiptDetailsPayload(receipt) } : {}),
       });
       toast.success(
         created.admin
@@ -141,12 +161,18 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
         err instanceof ApiError && err.body && typeof err.body === "object"
           ? (err.body as { error?: string }).error
           : undefined;
+      const message =
+        err instanceof ApiError && err.body && typeof err.body === "object"
+          ? (err.body as { message?: string }).message
+          : undefined;
       toast.error(
         code && SLUG_REASONS[code]
           ? SLUG_REASONS[code]
           : code === "admin_email_invalid"
             ? "That admin email doesn’t look like an address."
-            : "Could not create the studio. Nothing was left half-created — try again.",
+            : code === "invalid_request" && message
+              ? message
+              : "Could not create the studio. Nothing was left half-created — try again.",
       );
     } finally {
       setSubmitting(false);
@@ -259,6 +285,70 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
             placeholder="Jane Tan"
           />
         </div>
+
+        <details className="rounded-lg border border-border px-3 py-2">
+          <summary className="cursor-pointer text-sm font-medium text-ink">
+            Receipt details (optional)
+          </summary>
+          <p className="mt-1 text-xs text-muted">
+            What the studio’s Receipts carry from its first one. Its admin can change them later
+            under Receipt details. Leave blank to number Receipts {receiptNumberPreview("", 1)} with
+            no business details. An archive restored into the studio brings its own.
+          </p>
+          <div className="mt-3 flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tenant-receipt-prefix">Number prefix</Label>
+              <Input
+                id="tenant-receipt-prefix"
+                {...receiptField("prefix")}
+                maxLength={10}
+                aria-invalid={Boolean(prefixError)}
+                aria-describedby="tenant-receipt-prefix-help"
+              />
+              <p id="tenant-receipt-prefix-help" className="text-xs text-muted">
+                {prefixError ? (
+                  <span className="text-error">{prefixError}</span>
+                ) : (
+                  `The first Receipt is ${receiptNumberPreview(receipt.prefix, 1)}.`
+                )}
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tenant-receipt-legal-name">Legal name</Label>
+              <Input
+                id="tenant-receipt-legal-name"
+                {...receiptField("legal_name")}
+                maxLength={RECEIPT_DETAIL_LIMITS.legal_name}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tenant-receipt-registration">Registration number</Label>
+              <Input
+                id="tenant-receipt-registration"
+                {...receiptField("registration_number")}
+                maxLength={RECEIPT_DETAIL_LIMITS.registration_number}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tenant-receipt-address">Address</Label>
+              <Textarea
+                id="tenant-receipt-address"
+                {...receiptField("address")}
+                rows={2}
+                maxLength={RECEIPT_DETAIL_LIMITS.address}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tenant-receipt-footer">Footer note</Label>
+              <Textarea
+                id="tenant-receipt-footer"
+                {...receiptField("footer")}
+                rows={2}
+                maxLength={RECEIPT_DETAIL_LIMITS.footer}
+              />
+            </div>
+          </div>
+        </details>
 
         <DialogFooter>
           <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>

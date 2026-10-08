@@ -38,6 +38,7 @@ import { tenantOrigin } from '../../lib/allowed-origins'
 import { BadRequestError, ConflictError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { inviterNameFor, mailInvitation, writePendingStaff, type StaffInvitationRow } from '../auth/invitations'
+import { cleanReceiptDetails, receiptDetailColumns, type ReceiptDetailsInput } from '../receipts/details'
 import { claimSlug, slugConflict, type SlugConflict } from './former-slugs'
 import { assertUsableSlug } from './slug'
 import { DEFAULT_TIMEZONE, termEndDate, todayFor, type TermMonths } from './term-dates'
@@ -63,6 +64,11 @@ export interface ProvisionTenantInput {
    * leaves the Term open-ended until the operator sets one — see `./term.ts`.
    */
   termMonths?: TermMonths
+  /**
+   * What the studio's Receipts carry from its first one (#391). Omitted leaves
+   * the default prefix and no business details, for its admin to set.
+   */
+  receiptDetails?: ReceiptDetailsInput
 }
 
 export interface ProvisionedTenant {
@@ -164,6 +170,8 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
   const adminEmail = rawAdminEmail ? normaliseEmail(rawAdminEmail) : null
   const adminName = adminEmail ? input.adminName?.trim() || emailLocalPart(adminEmail) : null
   const portalUrl = adminEmail ? requirePortalUrl(slug) : null
+  // Refused here, before anything is written, like a bad address.
+  const receiptDetails = receiptDetailColumns(cleanReceiptDetails(input.receiptDetails ?? {}))
 
   try {
     const created = await db.transaction(async tx => {
@@ -200,7 +208,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       // pooled connection into the next request.
       await tx.execute(sql`select set_config('app.tenant_id', ${tenant.id}, true)`)
 
-      await tx.insert(tenantSettings).values({ tenantId: tenant.id, displayName: name })
+      await tx.insert(tenantSettings).values({ tenantId: tenant.id, displayName: name, ...receiptDetails })
 
       // The studio's own words, in its own voice, pointing at its own
       // hostnames. `sendTemplatedEmail` throws when the (tenant, slug) row is

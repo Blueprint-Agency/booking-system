@@ -792,6 +792,13 @@
       "when": 1791484281451,
       "tag": "0112_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1791490228089,
+      "tag": "0113_receipt_details",
+      "breakpoints": true
     }
   ]
 }
