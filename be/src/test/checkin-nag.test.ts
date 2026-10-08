@@ -94,13 +94,19 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
   type Row = 'pending' | 'attended' | 'no_show'
 
   /** A class that ended `endedAgo` before NOW, a confirmed booking per roster row. */
-  async function classEnded(at: Studio, endedAgo: number, roster: Row[], lifecycle: 'active' | 'cancelled' = 'active'): Promise<string> {
+  async function classEnded(
+    at: Studio,
+    endedAgo: number,
+    roster: Row[],
+    lifecycle: 'active' | 'cancelled' = 'active',
+    classTypeId = at.classTypeId,
+  ): Promise<string> {
     const endsAt = new Date(NOW.getTime() - endedAgo)
     const [cls] = await harness.db
       .insert(schema.classes)
       .values({
         tenantId: at.id,
-        classTypeId: at.classTypeId,
+        classTypeId,
         mainInstructorId: at.instructor.id,
         locationId: at.locationId,
         roomId: at.roomId,
@@ -128,8 +134,17 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
 
   /** A private session that ended `endedAgo` before NOW, its one member still unmarked. */
   async function ptSessionEnded(at: Studio, endedAgo: number): Promise<string> {
-    const endsAt = new Date(NOW.getTime() - endedAgo)
+    const session = await ptSessionOn(at, endedAgo, '1on1')
     const clientId = await client(at)
+    // On the session's roster, as scheduling puts every member on it, with a booking still undecided.
+    await harness.db.insert(schema.ptSessionClients).values({ tenantId: at.id, ptSessionId: session, clientId })
+    await harness.db.insert(schema.bookings).values({ tenantId: at.id, clientId, kind: 'pt', ptSessionId: session, creditsOrSessionsUsed: 0, ...codes() })
+    return session
+  }
+
+  /** A private session that ended `endedAgo` before NOW, nobody on it yet. */
+  async function ptSessionOn(at: Studio, endedAgo: number, sessionType: '1on1' | '2on1'): Promise<string> {
+    const endsAt = new Date(NOW.getTime() - endedAgo)
     const [session] = await harness.db
       .insert(schema.ptSessions)
       .values({
@@ -139,13 +154,12 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
         roomId: at.roomId,
         startsAt: new Date(endsAt.getTime() - HOUR),
         endsAt,
-        sessionType: '1on1',
-        capacityOnline: 1,
+        sessionType,
+        capacityOnline: sessionType === '2on1' ? 2 : 1,
         scheduledAt: new Date(endsAt.getTime() - 7 * 24 * HOUR),
         scheduledByStaffId: at.admin.id,
       })
       .returning({ id: schema.ptSessions.id })
-    await harness.db.insert(schema.bookings).values({ tenantId: at.id, clientId, kind: 'pt', ptSessionId: session!.id, creditsOrSessionsUsed: 0, ...codes() })
     return session!.id
   }
 
@@ -262,5 +276,82 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
     await jobs.scheduledJobs.sendCheckInNags()
     assert.deepEqual(drainNags(), [], 'exactly once')
     harness.clock.set(NOW)
+  })
+
+  test('NTF-18 a private session counts a member on it with no booking row as still unmarked, as its check-in state does', async () => {
+    harness.clock.set(NOW)
+    const session = await ptSessionOn(one, 25 * HOUR, '2on1')
+    const ticked = await client(one)
+    const unbooked = await client(one)
+    await harness.db.insert(schema.ptSessionClients).values([
+      { tenantId: one.id, ptSessionId: session, clientId: ticked },
+      { tenantId: one.id, ptSessionId: session, clientId: unbooked },
+    ])
+    // The requester checked in; the partner holds no booking row at all.
+    await harness.db
+      .insert(schema.bookings)
+      .values({ tenantId: one.id, clientId: ticked, kind: 'pt', ptSessionId: session, creditsOrSessionsUsed: 1, checkInState: 'attended', ...codes() })
+    const { getPtSessionDetail } = await import('../services/schedule/detail')
+    const { withTenant } = await import('../db')
+    const detail = await withTenant(one.id, () => getPtSessionDetail(one.id, session))
+    assert.equal(detail.checkInState, 'pending', 'the check-in desk reads the session as pending')
+    sent.splice(0)
+
+    await jobs.scheduledJobs.sendCheckInNags()
+
+    const nags = drainNags()
+    assert.ok(nags.length > 0, 'a session the desk reads as pending is nagged')
+    assert.ok(nags.every(m => /1 member\(s\) on it are still unmarked/.test(m.text ?? '')), 'the member with no booking row is the one unmarked')
+  })
+
+  test('NTF-18 one session\'s failed nag costs no other session its claim, and the next tick re-sends nothing', async () => {
+    harness.clock.set(NOW)
+    const labels: string[] = []
+    for (let i = 1; i <= 3; i++) {
+      const label = `${NAME} Ashtanga ${i}`
+      const [classType] = await harness.db
+        .insert(schema.classTypes)
+        .values({ tenantId: one.id, name: label })
+        .returning({ id: schema.classTypes.id })
+      await classEnded(one, 25 * HOUR, ['pending'], 'active', classType!.id)
+      labels.push(label)
+    }
+    const { db } = await import('../db')
+    const labelOf = (m: OutboundMessage) => labels.find(l => m.subject.includes(l))
+    const sessionsSeen: string[] = []
+    const failing: MailTransport = {
+      name: 'null',
+      async send(message) {
+        const label = labelOf(message)
+        if (label && !sessionsSeen.includes(label)) sessionsSeen.push(label)
+        if (label && sessionsSeen.indexOf(label) === 2) {
+          // The third session's send fails on the database and at the provider.
+          await db.execute(sql`select 1 / 0`).catch(() => {})
+          throw new Error('mail provider down')
+        }
+        return recording.send(message)
+      },
+    }
+    const restore = (await import('../lib/mailer')).useTransport(failing)
+    try {
+      sent.splice(0)
+      await jobs.scheduledJobs.sendCheckInNags()
+    } finally {
+      restore()
+    }
+    const first = drainNags()
+    assert.equal(sessionsSeen.length, 3, 'every session was nagged')
+    assert.deepEqual([...new Set(first.map(labelOf))].sort(), sessionsSeen.slice(0, 2).sort(), 'the first two went out')
+
+    const stamps = await harness.db
+      .select({ sentAt: schema.classes.checkinNagSentAt })
+      .from(schema.classes)
+      .innerJoin(schema.classTypes, eq(schema.classTypes.id, schema.classes.classTypeId))
+      .where(sql`${schema.classTypes.name} LIKE ${`${NAME} Ashtanga %`}`)
+    assert.equal(stamps.length, 3)
+    assert.ok(stamps.every(s => s.sentAt), 'all three claims committed')
+
+    await jobs.scheduledJobs.sendCheckInNags()
+    assert.deepEqual(drainNags(), [], 'nothing is sent again')
   })
 })

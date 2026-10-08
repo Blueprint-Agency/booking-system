@@ -28,8 +28,12 @@ import { bookingCreditsLine, classRefundLine, privateSessionLine, sessionsRefund
 import { sendTemplatedEmail } from './send'
 import type { PurchasedKind } from './purchase-email'
 
-/** "Thu, 8 Oct 2026, 9:00 am" in the studio's own zone — how a booking's time reads in its emails. */
-async function sessionTimeFormat(tenantId: string): Promise<Intl.DateTimeFormat> {
+/**
+ * "Thu, 8 Oct 2026, 9:00 am" in the studio's own zone — how a session's time
+ * reads in every email about it: the booking and cancellation emails here, and
+ * the check-in nag (../bookings/check-in-nag.ts).
+ */
+export async function sessionTimeFormat(tenantId: string): Promise<Intl.DateTimeFormat> {
   const tenant = await loadTenantById(tenantId)
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: tenant?.timezone ?? 'UTC',
