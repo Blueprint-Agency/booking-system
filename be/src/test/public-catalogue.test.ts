@@ -262,6 +262,44 @@ describe('public catalogue over HTTP', { skip: integrationTestsEnabled ? false :
     }
   })
 
+  test('CAT-12 an anonymous visitor reads the studio\'s own marketing copy, footer included, and none of the other studio\'s', async () => {
+    const studios = [one, two] as const
+    const saved = await harness.db
+      .select({ tenantId: schema.marketingContent.tenantId, footerText: schema.marketingContent.footerText })
+      .from(schema.marketingContent)
+    try {
+      for (const at of studios) {
+        await harness.db
+          .update(schema.marketingContent)
+          .set({ footerText: `${TAG} footer of ${at.slug}` })
+          .where(eq(schema.marketingContent.tenantId, at.id))
+      }
+      for (const [at, other] of [
+        [one, two],
+        [two, one],
+      ] as const) {
+        const copy = await getOk('/api/v1/public/marketing', visitor(at))
+        const [row] = await harness.db
+          .select()
+          .from(schema.marketingContent)
+          .where(eq(schema.marketingContent.tenantId, at.id))
+        assert.equal(copy.footer_text, `${TAG} footer of ${at.slug}`)
+        assert.equal(copy.hero_heading, row!.heroHeading)
+        assert.equal(copy.hero_subheading, row!.heroSubheading)
+        assert.ok(!JSON.stringify(copy).includes(other.slug), 'nothing of the other studio\'s copy')
+        // Display copy only: who last saved it is the studio's business.
+        assert.equal('updated_by_staff_id' in copy, false)
+      }
+    } finally {
+      for (const { tenantId, footerText } of saved) {
+        await harness.db
+          .update(schema.marketingContent)
+          .set({ footerText })
+          .where(eq(schema.marketingContent.tenantId, tenantId))
+      }
+    }
+  })
+
   test('CAT-01 an unknown studio address is refused, on the home page lookup and on the catalogue', async () => {
     const nobody = { slug: `no-such-studio-${run}` }
     const lookup = await get(`/api/v1/public/tenants/by-slug/${nobody.slug}`, visitor(nobody))

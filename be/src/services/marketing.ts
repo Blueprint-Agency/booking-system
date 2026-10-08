@@ -55,6 +55,17 @@ export async function updateMarketing(
   return row!
 }
 
+/** What any visitor may read: the copy, not who saved it or when. */
+export function serializePublicMarketing(row: MarketingRow) {
+  return {
+    hero_heading: row.heroHeading,
+    hero_subheading: row.heroSubheading,
+    pricing_blurb: row.pricingBlurb,
+    testimonials: row.testimonials,
+    footer_text: row.footerText,
+  }
+}
+
 export function serializeMarketing(row: MarketingRow) {
   return {
     hero_heading: row.heroHeading,

@@ -36,6 +36,22 @@ export type Studio = {
     checkInClassType: string
     waitlistClassType: string
     staffWaitlistClassType: string
+    myBookingsClassType: string
+    workshopName: string
+    ptPackageName: string
+    corporatePackageName: string
+    merchName: string
+    merchPriceSgd: string
+  }
+  site: {
+    name: string
+    tagline: string
+    footerText: string
+    termsUrl: string
+    privacyUrl: string
+    instagramUrl: string
+    locationName: string
+    locationAddress: string
   }
   classes: {
     buy: { id: string; startsAt: string }
@@ -44,6 +60,7 @@ export type Studio = {
     checkIn: { id: string; startsAt: string }
     waitlist: { id: string; startsAt: string }
     staffWaitlist: { id: string; startsAt: string }
+    myBookings: { id: string; startsAt: string }
   }
   /** The staff waitlist class's line, in order, by the names staff see. */
   staffWaitlistLine: string[]
@@ -53,7 +70,13 @@ export type Studio = {
     lateCanceller: { email: string; token: string }
     arriver: { email: string; token: string }
     waiter: { email: string; token: string }
+    newcomer: { email: string; token: string }
+    shopper: { email: string; token: string }
+    merchBuyer: { email: string; token: string }
+    returner: { email: string; token: string }
+    holder: { email: string; token: string }
   }
+  memberPassword: string
 }
 
 /** Where global setup leaves the run's slug, relative to `e2e/`. Git-ignored. */
@@ -145,6 +168,27 @@ export async function signInMember(page: Page, member: { token: string }): Promi
     },
     [client, member.token] as const,
   )
+}
+
+/**
+ * A signed-out visitor: no session, but an address of their own, as
+ * `signInMember` gives a member (see `ownAddress`). Call before the first page.
+ */
+export async function visitSignedOut(page: Page): Promise<void> {
+  await ownAddress(page)
+}
+
+/**
+ * Finish signing a member in on the member app's own /login form, which the
+ * page is already on: the email, then the password once the app says this
+ * account has one (#173). For the journeys whose point is where sign-in sends
+ * the member next; the rest start signed in (`signInMember`).
+ */
+export async function completeMemberLogin(page: Page, member: { email: string }): Promise<void> {
+  await page.getByLabel('Email').fill(member.email)
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await page.getByLabel('Password').fill(studio().memberPassword)
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 }
 
 /**

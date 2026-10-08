@@ -39,12 +39,12 @@ export default defineConfig({
   // The agents' seed (journeys/seed.spec.ts) runs where the agents do — the
   // local stack — and is noise against a deployed stack.
   //
-  // The paid journey (buy-and-book) runs only on the local stack too. A studio
-  // takes payments only on its own Stripe account (#293), and a deployed stack
-  // holds no key for a throwaway studio — the only Stripe keys there are
-  // studios' own, and a test must not borrow one. CI runs it against the
-  // Stripe stub (e2e-local.yml).
-  testIgnore: isLocalStack ? undefined : ['seed.spec.ts', 'buy-and-book.spec.ts'],
+  // The paid journeys (buy-and-book, member-checkout) run only on the local
+  // stack too. A studio takes payments only on its own Stripe account (#293),
+  // and a deployed stack holds no key for a throwaway studio — the only Stripe
+  // keys there are studios' own, and a test must not borrow one. CI runs them
+  // against the Stripe stub (e2e-local.yml).
+  testIgnore: isLocalStack ? undefined : ['seed.spec.ts', 'buy-and-book.spec.ts', 'member-checkout.spec.ts'],
   globalSetup: './src/global-setup.ts',
   webServer: isLocalStack ? localStackServers : undefined,
   fullyParallel: false,

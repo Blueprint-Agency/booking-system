@@ -28,22 +28,32 @@ export interface AccordionSection {
 export function OneOpenAccordion({
   sections,
   idPrefix,
+  initialKey,
   children,
 }: {
   sections: AccordionSection[];
   idPrefix: string;
+  /**
+   * The section open before the member picks one, when it is one of
+   * `sections` — the schedule's day holding a class it was sent to book.
+   * Otherwise the first section.
+   */
+  initialKey?: string | null;
   /** A section's contents, rendered for every section and shown for the open one. */
   children: (key: string) => ReactNode;
 }) {
   // `undefined` until the member taps a header (the first section is open),
   // `null` once they have closed the open one (none is).
   const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const has = (key: string | null | undefined) => !!key && sections.some((s) => s.key === key);
   const openKey =
     picked === null
       ? null
-      : sections.some((s) => s.key === picked)
+      : has(picked)
         ? picked!
-        : (sections[0]?.key ?? null);
+        : has(initialKey)
+          ? initialKey!
+          : (sections[0]?.key ?? null);
 
   // Opening a section moves everything around it: the one closing above it
   // pulls it up, and its own contents grow below. Once the slide has settled,
