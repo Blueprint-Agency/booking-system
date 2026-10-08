@@ -316,6 +316,39 @@ deploy that introduces maintenance mode cannot be wrapped in it, and neither can
 image older than it. The frontends' maintenance screen likewise appears only once their builds
 contain it.
 
+### Receipts for sales made before Receipts (one-off)
+
+Sales made before Receipts existed (#380) have none until the backfill issues them (#394). Run it
+**once per environment**, staging first, then production, **once the backend deploy carrying the
+Receipts migrations (0112, 0113) has finished**:
+
+```bash
+ssh bp-bpvps2
+cd /root/stacks/booking-staging          # booking-prod for production
+docker compose run --rm -T booking-be npm run -s receipts:backfill                   # every studio
+docker compose run --rm -T booking-be npm run -s receipts:backfill -- <studio-slug>  # or one
+```
+
+It prints one line per studio, `{"issued":n,"refunded":m}`. What it does:
+
+- One Receipt for every Purchase paid in full (paid, or paid and since refunded) that has none, in
+  the order the sales were paid (`settled_at`, falling back to `created_at`), each dated when its sale
+  was paid. A refunded one is stamped **Refunded on** the day the last of its money went back.
+  Migrated Purchases (`source_sale_id`), Open and Abandoned ones get none.
+- Numbers continue the studio's sequence. Run before the studio's first live Receipt, its earliest
+  sale is number 1. Run after, the backfilled Receipts take the numbers after those already issued,
+  and nothing already issued is renumbered or changed.
+- **No email.** Members are not told about the backfilled Receipts. They appear under
+  Account → Receipts.
+- Each studio is one transaction, as the application role in that studio's Tenant context. A sale
+  settling during the run waits for it and takes the next number. No maintenance window needed.
+- Safe to run again. A second run issues nothing and prints `{"issued":0,"refunded":0}`.
+
+**Set each studio's receipt details first** (portal Settings → Receipt details, or the super
+portal). The backfill copies the studio's name, prefix and details onto each Receipt as they stand
+when it runs, the same as a live sale. Receipts are never rewritten, so details set later reach only
+later Receipts.
+
 ### Rolling back the backend
 
 > Rolling back at 2am because something alerted? Start at
