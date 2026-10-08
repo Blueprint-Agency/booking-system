@@ -10,6 +10,7 @@ import {
   beginCrossLocationCheckout,
   beginPackageCheckout,
 } from '../../services/packages/checkout'
+import { beginCorporateCheckout } from '../../services/corporate/checkout'
 import { beginWorkshopCheckout } from '../../services/workshops/checkout'
 import {
   beginMerchCheckout,
@@ -74,7 +75,7 @@ const saveCard = z.boolean().optional()
 const balanceAware = (clientUrl: string, partSgd: number | undefined, query: string): string =>
   `${clientUrl}/booking/confirmation?${partSgd === undefined ? query : 'type=balance'}&session_id={CHECKOUT_SESSION_ID}`
 
-const checkoutPackageSchema = z.object({
+const planCheckoutSchema = z.object({
   package_kind: z.enum(['class', 'pt']),
   package_id: z.string().uuid(),
   promo_code: z.string().optional(),
@@ -88,6 +89,21 @@ const checkoutPackageSchema = z.object({
   cross_location_add_on: z.boolean().optional(),
   save_card: saveCard,
 })
+
+/**
+ * A corporate package (fe-client-features §6.2): paid by card at its price, and
+ * nothing else. Strict, so a Promo Code, a part payment or a plan's extras are
+ * refused rather than quietly ignored into a charge the member did not expect.
+ */
+const corporateCheckoutSchema = z
+  .object({
+    package_kind: z.literal('corporate'),
+    package_id: z.string().uuid(),
+    save_card: saveCard,
+  })
+  .strict()
+
+const checkoutPackageSchema = z.discriminatedUnion('package_kind', [planCheckoutSchema, corporateCheckoutSchema])
 
 const crossLocationSchema = z.object({
   /** The plan the Add-On attaches to. It belongs to one plan, never to a member. */
@@ -175,6 +191,28 @@ const app = new Hono()
   })
   .post('/checkout/package', zValidator('json', checkoutPackageSchema), async c => {
     const body = c.req.valid('json')
+    if (body.package_kind === 'corporate') {
+      const corporate = await beginCorporateCheckout(tenantId(c), c.get('clientId'), body.package_id)
+      if (corporate.outcome === 'granted') {
+        return c.json(
+          { outcome: 'granted', corporate_request_id: corporate.corporateRequestId, free: true },
+          201,
+        )
+      }
+      const clientUrl = await requireTenantUrl('client', tenantId(c))
+      const url = await createCheckoutSession({
+        tenantId: tenantId(c),
+        email: c.get('clientRow').email,
+        lines: corporate.lines,
+        expiresAt: null,
+        metadata: corporate.metadata,
+        successUrl: `${clientUrl}/booking/confirmation?type=corporate&package_id=${body.package_id}&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${clientUrl}/checkout?package=${body.package_id}&kind=corporate&cancelled=1`,
+        cardsOnly: true,
+        saveCard: body.save_card,
+      })
+      return c.json({ url })
+    }
     const quote = await beginPackageCheckout({
       tenantId: tenantId(c),
       clientId: c.get('clientId'),

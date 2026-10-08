@@ -162,7 +162,6 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'GET /api/v1/me/class-packages': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/corporate-packages': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/corporate-requests': { gate: MEMBER_OF_THE_STUDIO },
-  'POST /api/v1/me/corporate-requests': { gate: MEMBER_OF_THE_STUDIO },
   'PATCH /api/v1/me/display-prefs': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/merch-orders': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/packages': { gate: MEMBER_OF_THE_STUDIO },
