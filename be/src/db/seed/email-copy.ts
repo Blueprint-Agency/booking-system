@@ -509,13 +509,15 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
    * package and book no place, so there is no confirmation above for them to
    * ride on. One template for both, so nothing here may say which: the item
    * is `item_name`, and the itemised Receipt the frame draws under this copy
-   * says the rest. Sent only with a Receipt, so the link is always to it.
+   * says the rest. Sent only with a Receipt, so the link is always to it,
+   * and its number is always there to name.
    */
   const PURCHASE_RECEIPT_BODY = body('Thank you for your purchase', [
     'Hi {{client_name}},',
     facts([
       ['Purchase', '{{item_name}}'],
       ['Amount paid', '{{amount_paid}}'],
+      ['Receipt', '{{receipt_number}}'],
     ]),
     'Your receipt is below, and attached to this email as a PDF.',
     link('{{receipt_url}}', 'View your receipt'),

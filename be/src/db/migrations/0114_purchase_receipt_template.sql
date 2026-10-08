@@ -33,6 +33,10 @@ SELECT t.id, 'purchase_receipt', $new_subject$Your receipt for {{item_name}}$new
     <td data-text="label" valign="top" style="padding:10px 16px;border-top:1px solid #d6dae4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.5;color:#5a6174;width:30%;white-space:nowrap;">Amount paid</td>
     <td valign="top" style="padding:10px 16px;border-top:1px solid #d6dae4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;font-weight:600;color:#0d1a3e;">{{amount_paid}}</td>
   </tr>
+  <tr>
+    <td data-text="label" valign="top" style="padding:10px 16px;border-top:1px solid #d6dae4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.5;color:#5a6174;width:30%;white-space:nowrap;">Receipt</td>
+    <td valign="top" style="padding:10px 16px;border-top:1px solid #d6dae4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;font-weight:600;color:#0d1a3e;">{{receipt_number}}</td>
+  </tr>
 </table>
 <p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;">Your receipt is below, and attached to this email as a PDF.</p>
 <p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;"><a href="{{receipt_url}}" style="color:#1a2a7a;font-weight:600;text-decoration:underline;">View your receipt →</a></p>$new_body$

@@ -50,6 +50,12 @@ test('each template uses exactly its allow-listed variables', () => {
   }
 })
 
+test('the purchase receipt email names its receipt number in the default copy (#387, #388)', () => {
+  const t = SEEDED_TEMPLATES.find(s => s.slug === 'purchase_receipt')!
+  assert.ok(TEMPLATE_VARIABLES.purchase_receipt.includes('receipt_number'), 'receipt_number is allow-listed')
+  assert.ok(varsIn(t.bodyHtml).has('receipt_number'), `the copy shows it: ${t.bodyHtml}`)
+})
+
 test('no template is a bare name (the §13 placeholder bug)', () => {
   for (const t of SEEDED_TEMPLATES) {
     // Strip tags and variables: what is left is the copy a member actually
