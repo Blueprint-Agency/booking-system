@@ -13,7 +13,7 @@ test("the sidebar offers no Inbox or Notifications screen", () => {
 });
 
 // Every Receipt in the studio is the studio's money, for its admins (#389).
-test("INV-42the sidebar offers Receipts under Finance to an admin, and never to an instructor", () => {
+test("INV-47 the sidebar offers Receipts under Finance to an admin, and never to an instructor", () => {
   const receipts = NAV_ITEMS.find((item) => item.href === "/admin/receipts");
   assert.ok(receipts, "Receipts is in the nav");
   assert.equal(receipts.label, "Receipts");

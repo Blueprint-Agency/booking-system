@@ -15,7 +15,7 @@
  * with `issued: false`, so whoever sends the member's email (#387) sends it
  * from the delivery that issued it and from no other.
  */
-import { and, asc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import { purchases, receiptCounters, receipts, stripePayments } from '../../db/schema/ledger'
@@ -156,4 +156,22 @@ export async function issueReceipt(
     })
     .returning()
   return { receipt: receipt!, issued: true }
+}
+
+/**
+ * Stamp the Purchase's Receipt refunded (#392): the one later change a Receipt
+ * undergoes. Called in the transaction that marks the Purchase refunded
+ * (`markPurchaseRefunded`), so the two commit or roll back together, and dated
+ * by it. None of the figures move: a Refund is a fact about the money since,
+ * not a correction of what was sold.
+ *
+ * Once. `refunded_at IS NULL` keeps the first date whatever reaches it again.
+ * A Purchase with no Receipt — a migrated one — has nothing to stamp, and an
+ * Abandoned one never reaches here.
+ */
+export async function stampReceiptRefunded(tx: ReceiptTx, tenantId: string, purchaseId: string): Promise<void> {
+  await tx
+    .update(receipts)
+    .set({ refundedAt: sql`now()` })
+    .where(and(eq(receipts.tenantId, tenantId), eq(receipts.purchaseId, purchaseId), isNull(receipts.refundedAt)))
 }

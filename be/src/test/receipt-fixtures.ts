@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { eq, inArray, sql } from 'drizzle-orm'
+import { inArray, sql } from 'drizzle-orm'
 import type { PurchaseLine } from '../services/billing/purchase-lines'
 import type { ReceiptRow } from '../services/receipts/issue'
 import type { TestApp } from './harness'
@@ -60,13 +60,15 @@ export function receiptFixtures(harness: TestApp) {
   }
 
   /**
-   * The Receipt stamped refunded, as a Refund landing on its Purchase stamps
-   * it: the stamp is the only change a Receipt ever takes. Written here because
-   * the Refund path's own stamping is #385's to build and test.
+   * The Receipt stamped refunded by `stampReceiptRefunded`, the one writer of
+   * the stamp, as a Refund landing on its Purchase calls it. For features that
+   * need a refunded Receipt to exist; the Refund itself is
+   * `receipt-refund.test.ts`'s to drive over HTTP.
    */
-  const stampRefunded = async (receipt: Pick<ReceiptRow, 'id'>, at = new Date()) => {
-    const schema = await import('../db/schema')
-    await harness.db.update(schema.receipts).set({ refundedAt: at }).where(eq(schema.receipts.id, receipt.id))
+  const stampRefunded = async (receipt: Pick<ReceiptRow, 'tenantId' | 'purchaseId'>) => {
+    const { db, withTenant } = await import('../db')
+    const { stampReceiptRefunded } = await import('../services/receipts/issue')
+    await withTenant(receipt.tenantId, () => stampReceiptRefunded(db, receipt.tenantId, receipt.purchaseId))
   }
 
   /** The Receipts, payments and Purchases `issueFor` made, wherever they now are. */
