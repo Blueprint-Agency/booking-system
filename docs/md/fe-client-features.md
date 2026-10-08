@@ -545,12 +545,13 @@ The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a re
 
 **The blocked class is a nudge, not an ad.** On `/classes`, a class outside a member's plan coverage is shown, not hidden — the row dims, takes a "Not in your plan" lock chip where the Book button was, and carries one line under a hairline: "Your plan covers **Harbour Studio** only. [Add Parkside Studio for $30/month]". The link is weighted below the class itself — a louder treatment was tried and rejected because this state repeats on every wrong-Location class in the week's schedule, and at that density an accent border and a filled button read as an ad break. Coverage is read across **every** plan the member holds (`entitlements.unlimited_plans`), not one; a member who also holds credits, or a second plan homed at that Location, pays with it by picking it on the Book sheet (§3.1). *(The "· or [use 1 credit]" link that used to follow is gone with `use_credits` — `be/docs/adr/0010-several-packages-run-per-family.md`.)* A blocked class never silently spends a credit.
 
-**Four confirmation emails**, one per completed purchase, none for an admin's complimentary grant:
+**Five confirmation emails**, one per completed purchase, none for an admin's complimentary grant:
 
 | Purchase | Slug |
 |---|---|
 | Paid class / PT package | `package_purchase_confirmed` |
 | Paid workshop | `workshop_purchase_confirmed` |
+| Paid corporate package | `corporate_purchase_confirmed` |
 | Free trial pass | `trial_pass_purchase_confirmed` |
 | Free workshop tier | `workshop_purchase_confirmed` |
 

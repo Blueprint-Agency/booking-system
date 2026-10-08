@@ -43,6 +43,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     unlimitedId: string
     freeTrialId: string
     ptId: string
+    corporateId: string
   }
   type Member = { clientId: string; email: string; headers: Record<string, string> }
 
@@ -101,16 +102,22 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
       .insert(schema.ptPackages)
       .values({ tenantId: tenant.id, name: `${NAME} pt`, sessionType: '1on1', numSessions: 5, validityDays: 90, priceSgd: '400.00' })
       .returning({ id: schema.ptPackages.id })
+    const admin = await staffAt(tenant, 'admin', 'admin')
+    const [corporate] = await harness.db
+      .insert(schema.corporatePackages)
+      .values({ tenantId: tenant.id, name: `${NAME} corporate`, priceSgd: '480.00', status: 'active', createdByStaffId: admin.id })
+      .returning({ id: schema.corporatePackages.id })
     return {
       ...tenant,
       locationId: location!.id,
       roomId: room!.id,
-      admin: await staffAt(tenant, 'admin', 'admin'),
+      admin,
       instructor: await staffAt(tenant, 'instructor', 'instructor'),
       bundleId: await catalogue(tenant.id, { kind: 'credit_bundle', credits: 10, validityDays: 90, priceSgd: '150.00' }),
       unlimitedId: await catalogue(tenant.id, { kind: 'unlimited', durationMonths: 3, priceSgd: '300.00' }),
       freeTrialId: await catalogue(tenant.id, { kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00' }),
       ptId: pt!.id,
+      corporateId: corporate!.id,
     }
   }
 
@@ -238,6 +245,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
       const locations = sql`SELECT id FROM locations WHERE name = ${`Receipt hall ${run}`}`
       await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
       await harness.db.execute(sql`DELETE FROM promo_code_redemptions WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM corporate_requests WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM bookings WHERE workshop_id IN (${workshops}) OR client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
@@ -251,6 +259,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
       await harness.db.execute(sql`DELETE FROM workshops WHERE id IN (${workshops})`)
       await harness.db.execute(sql`DELETE FROM class_packages WHERE name LIKE ${`${NAME}%`}`)
       await harness.db.execute(sql`DELETE FROM pt_packages WHERE name LIKE ${`${NAME}%`}`)
+      await harness.db.execute(sql`DELETE FROM corporate_packages WHERE name LIKE ${`${NAME}%`}`)
       await harness.db.execute(sql`DELETE FROM rooms WHERE location_id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM locations WHERE id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
@@ -403,6 +412,89 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     assert.equal(place?.amountPaidSgd, '0.00')
 
     await oneConfirmation(sam, two, 'workshop_purchase_confirmed', 'S$0.00')
+  })
+
+  /* ── corporate ──────────────────────────────────────────────────────── */
+
+  const corporateRequestsOf = (who: Member) =>
+    harness.db.select().from(schema.corporateRequests).where(eq(schema.corporateRequests.clientId, who.clientId))
+
+  test('NTF-03 a paid corporate package is confirmed once with the amount paid, however often its payment is delivered', async () => {
+    const eve = await member(one)
+    const intent = `pi_${randomUUID()}`
+    await expectStatus(await checkout(eve, { package_kind: 'corporate', package_id: one.corporateId }), 200)
+    assert.equal(mailTo(eve.email).length, 0, 'nothing is confirmed before the money arrives')
+
+    await expectStatus(await deliver(intent), 200)
+    // The provider retries, and the confirmation page's fallback reads the same session.
+    await expectStatus(await deliver(intent), 200)
+
+    const requests = await corporateRequestsOf(eve)
+    assert.equal(requests.length, 1, 'one Corporate Request')
+    assert.equal(requests[0]?.status, 'pending')
+
+    const sent = await oneConfirmation(eve, one, 'corporate_purchase_confirmed', 'S$480.00')
+    assert.ok(textOf(sent).includes(`${NAME} corporate`), `it names the package: ${textOf(sent)}`)
+    assert.ok(sent.html.includes(`https://pay.example.test/receipts/${intent}`), 'it links the provider receipt')
+  })
+
+  test('NTF-03 a corporate delivery that fails to commit mails no one, and the provider\'s retry sends the one confirmation', async () => {
+    const kim = await member(one)
+    const intent = `pi_${randomUUID()}`
+    await expectStatus(await checkout(kim, { package_kind: 'corporate', package_id: one.corporateId }), 200)
+
+    // A check Postgres runs at COMMIT, refusing this member's Corporate Request:
+    // the delivery does all its work, then its transaction fails at the end.
+    const fn = sql.identifier(`refuse_corporate_${run}`)
+    await harness.db.execute(sql`
+      CREATE FUNCTION ${fn}() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.client_id = ${sql.raw(`'${kim.clientId}'`)}::uuid THEN RAISE EXCEPTION 'refused at commit'; END IF;
+        RETURN NEW;
+      END $$`)
+    try {
+      await harness.db.execute(sql`
+        CREATE CONSTRAINT TRIGGER refuse_corporate AFTER INSERT ON corporate_requests
+        DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION ${fn}()`)
+      const failed = await deliver(intent)
+      assert.equal(failed.status, 500, await failed.text())
+      assert.equal((await corporateRequestsOf(kim)).length, 0, 'the request was rolled back')
+      assert.equal(mailTo(kim.email).length, 0, 'nobody was told about a request that does not exist')
+      assert.equal((await logged(kim.email)).length, 0)
+    } finally {
+      await harness.db.execute(sql`DROP TRIGGER IF EXISTS refuse_corporate ON corporate_requests`)
+      await harness.db.execute(sql`DROP FUNCTION IF EXISTS ${fn}()`)
+    }
+
+    await expectStatus(await deliver(intent), 200)
+    assert.equal((await corporateRequestsOf(kim)).length, 1)
+    await oneConfirmation(kim, one, 'corporate_purchase_confirmed', 'S$480.00')
+  })
+
+  test('NTF-03, NTF-07 when the corporate confirmation cannot be sent, the request stands and the failure is logged', async () => {
+    // Take studio two's template away, so the send fails after the commit.
+    const where = and(eq(schema.emailTemplates.tenantId, two.id), eq(schema.emailTemplates.slug, 'corporate_purchase_confirmed'))
+    const [template] = await harness.db.select().from(schema.emailTemplates).where(where)
+    assert.ok(template, 'a studio has the corporate confirmation')
+    await harness.db.delete(schema.emailTemplates).where(where)
+    try {
+      const ada = await member(two)
+      harness.logs.clear()
+      await pay(ada, { package_kind: 'corporate', package_id: two.corporateId })
+
+      const requests = await corporateRequestsOf(ada)
+      assert.equal(requests.length, 1, 'the request stands')
+      assert.equal(requests[0]?.tenantId, two.id)
+      const [payment] = await harness.db.select().from(schema.stripePayments).where(eq(schema.stripePayments.clientId, ada.clientId))
+      assert.equal(payment?.status, 'succeeded', 'the payment is banked')
+      assert.equal(mailTo(ada.email).length, 0, 'the email did fail')
+      assert.ok(
+        harness.logs.lines().some(l => l.msg === 'corporate purchase confirmation email failed' && l.tenantId === two.id),
+        `the failure is logged: ${JSON.stringify(harness.logs.lines().map(l => l.msg))}`,
+      )
+    } finally {
+      await harness.db.insert(schema.emailTemplates).values(template)
+    }
   })
 
   /* ── NTF-04 ─────────────────────────────────────────────────────────── */

@@ -36,8 +36,9 @@ test('the archive is for the Tenant it was built for, and asks for accounts to b
   assert.equal(archive.manifest.tenant.id, TENANT)
   assert.equal(archive.manifest.ensureAccounts, true)
   // Every template a provisioned studio gets, class_waitlist_promoted (#308),
-  // class_rule_cancelled (#323) and pt_request_cancelled (#359) included.
-  assert.equal(archive.rows.email_templates!.length, 36)
+  // class_rule_cancelled (#323), pt_request_cancelled and
+  // corporate_purchase_confirmed (#359) included.
+  assert.equal(archive.rows.email_templates!.length, 37)
   assert.equal(archive.rows.global_policy!.length, 1)
   assert.equal(archive.rows.pt_booking_config!.length, 1)
   assert.ok(archive.rows.clients!.every(r => r.auth_user_id === null), 'accounts are the importer s to make')

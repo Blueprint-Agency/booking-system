@@ -37,6 +37,9 @@ export type TemplateSlug =
   // A first-timer's welcome and a $150 receipt are not the same email, and the
   // renderer has no conditionals, so the trial pass needs its own slug (§13).
   | 'trial_pass_purchase_confirmed'
+  // A corporate package grants no credits: what was bought is a Corporate
+  // Request the studio arranges with the member, so it says that (#374 step 5).
+  | 'corporate_purchase_confirmed'
   // §14: the provider sends its own money receipt; this is the one that says the
   // plan has ended and names the classes the Refund cancelled.
   | 'purchase_refunded'

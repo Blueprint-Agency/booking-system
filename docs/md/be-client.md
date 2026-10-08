@@ -541,12 +541,13 @@ tx commit
 
 #### Purchase confirmation emails (§13)
 
-Four paths send, one deliberately does not:
+Five paths send, one deliberately does not:
 
 | Path | Slug | Condition |
 |---|---|---|
 | Paid class / PT package | branches on granted `kind` → `package_purchase_confirmed` | `created` |
 | Paid workshop | `workshop_purchase_confirmed` | `created` |
+| Paid corporate package | `corporate_purchase_confirmed` | the delivery that made the Corporate Request, after it commits (§ Corporate branch) |
 | $0 trial pass | `trial_pass_purchase_confirmed` | always |
 | $0 workshop tier | `workshop_purchase_confirmed` | always — this closed a real gap: a free workshop booking produced a QR and a date and no email at all before this batch |
 | Admin comp grant | — | **never** — a comp grant is not a purchase, and announcing an admin's action to someone who did not ask is the wrong default |
@@ -573,11 +574,11 @@ tx start
 3. Insert corporate_requests: status='pending', client_id, corporate_package_id (from metadata),
    message=NULL  — this pending request is the entitlement; scheduling happens in the portal
 4. Update stripe_payments: status='succeeded', kind='corporate_package', receipt_url
-5. enqueueEmail('corporate_request_submitted' equivalent — confirmation that the studio will reach out on WhatsApp)
 tx commit
+5. send the corporate_purchase_confirmed email — once, from the delivery that made the request
 ```
 
-_As built (#374):_ `services/corporate/checkout.ts` (`beginCorporateCheckout`) prices the sale and `services/billing/webhook-handler.ts` has the branch; the request is made by `createCorporateRequest` (`services/corporate/requests.ts`) with no venue and no note. Step 1 is the payment row locked `FOR UPDATE` after its insert, so two deliveries of one intent at once (the webhook and the confirmation fallback `POST /checkout/sync-session`) make one request between them; a redelivery finds the payment `succeeded` and stops. A delivery naming another studio's member is refused (`webhook_tenant_mismatch`), as for every kind. Step 5 is not built: no email template for it exists, so a corporate purchase sends no confirmation email yet.
+_As built (#374):_ `services/corporate/checkout.ts` (`beginCorporateCheckout`) prices the sale and `services/billing/webhook-handler.ts` has the branch; the request is made by `createCorporateRequest` (`services/corporate/requests.ts`) with no venue and no note. Step 1 is the payment row locked `FOR UPDATE` after its insert, so two deliveries of one intent at once (the webhook and the confirmation fallback `POST /checkout/sync-session`) make one request between them; a redelivery finds the payment `succeeded` and stops. A delivery naming another studio's member is refused (`webhook_tenant_mismatch`), as for every kind. Step 5 (#359, NTF-03) runs after the delivery's transaction commits, so a delivery that rolls back mails no one and its retry sends instead; a redelivery stopped at step 1 sends nothing. `sendCorporatePurchaseEmail` (`services/notifications/send-purchase-email.ts`) fills the studio's `corporate_purchase_confirmed` template with `client_name`, `package_name`, `amount_paid` (the sale's figure in the shared money form, `sgdText`: "S$480.00") and `receipt_url` (the provider receipt, else the member's corporate bookings page), and says the studio will be in touch to arrange the date, time and venue. A failed send is reported and swallowed: the request and the payment stand. A package priced at zero (`201 granted`, no webhook) sends no email. Studios created before the template existed get it from migration 0109.
 
 The client then tracks the request on `/account/corporate` (`fe-client-features.md` §8.8); the studio schedules it via `be-portal.md` §3f.
 

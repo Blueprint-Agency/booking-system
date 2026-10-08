@@ -76,6 +76,11 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // allow-list would leave that footgun loaded for the portal template editor.
   package_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'amount_paid', 'receipt_url'],
   trial_pass_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'amount_paid', 'receipt_url'],
+  // A paid corporate package (be-client § Corporate branch, step 5). It grants
+  // no credits and has no validity, so no `contents_line` or `validity_line`:
+  // what was bought is the pending Corporate Request the studio now arranges.
+  // `amount_paid` in the shared money form, as on the confirmations above.
+  corporate_purchase_confirmed: ['client_name', 'package_name', 'amount_paid', 'receipt_url'],
   // §14: same composed-sentence rule. `cancelled_line` names the classes the
   // Refund cancelled and states plainly when there were none — cancelling
   // someone's booked classes silently is not acceptable.
