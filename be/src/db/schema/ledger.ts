@@ -14,6 +14,7 @@ import {
   stripePaymentKindEnum,
   stripePaymentStatusEnum,
 } from '../enums'
+import type { PurchaseLine } from '../../services/billing/purchase-lines'
 
 /**
  * A Purchase owns the money; a payment is evidence of part of it.
@@ -66,6 +67,18 @@ export const purchases = pgTable(
      * editable by anyone holding the session; this is the copy that is neither.
      */
     metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
+    /**
+     * What was in the sale, line by line (#382): each line's description,
+     * quantity, List Price, the discount with the Promotion or Promo Code that
+     * gave it, and the amount (`services/billing/purchase-lines.ts`). Frozen
+     * when the Purchase opens, from the same prices the provider is asked to
+     * charge, and never recomputed; the lines add up to `total_sgd`. What a
+     * Receipt is built from.
+     *
+     * Empty on every Purchase opened before the column existed: nothing here
+     * backfills them.
+     */
+    lines: jsonb('lines').$type<PurchaseLine[]>().notNull().default(sql`'[]'::jsonb`),
     /**
      * The one live checkout session, if a payment is in flight. Singular on
      * purpose: two open sessions against one Purchase is two members' worth of

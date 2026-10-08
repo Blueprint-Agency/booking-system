@@ -204,6 +204,7 @@ const app = new Hono()
         tenantId: tenantId(c),
         email: c.get('clientRow').email,
         lines: corporate.lines,
+        purchaseLines: corporate.purchaseLines,
         expiresAt: null,
         metadata: corporate.metadata,
         // Back to the member's corporate bookings, where the new request is
@@ -237,6 +238,7 @@ const app = new Hono()
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
+      purchaseLines: quote.purchaseLines,
       expiresAt: quote.expiresAt,
       metadata: quote.metadata,
       // A part payment lands on the balance page, not the "you're all set" one:
@@ -281,6 +283,7 @@ const app = new Hono()
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
+      purchaseLines: quote.purchaseLines,
       expiresAt: null,
       metadata: quote.metadata,
       successUrl: `${clientUrl}/booking/confirmation?type=cross_location&session_id={CHECKOUT_SESSION_ID}`,
@@ -305,6 +308,7 @@ const app = new Hono()
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
+      purchaseLines: quote.purchaseLines,
       expiresAt: quote.expiresAt,
       metadata: quote.metadata,
       successUrl: `${clientUrl}/booking/confirmation?type=merch&session_id={CHECKOUT_SESSION_ID}`,
@@ -373,6 +377,7 @@ const app = new Hono()
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
+      purchaseLines: quote.purchaseLines,
       expiresAt: quote.expiresAt,
       metadata: quote.metadata,
       successUrl: balanceAware(

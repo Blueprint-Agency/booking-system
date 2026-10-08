@@ -16,6 +16,7 @@ import { attachCheckoutSession, openPurchase, type PurchaseKind } from './purcha
 import { partPaymentEnabled } from '../policy/update'
 import { chargeableCents, refusePartPaymentWhenDisabled } from './part-payment'
 import { createSessionSurvivingStaleCustomer, providerCustomerFor } from './payment-customers'
+import type { PurchaseLine } from './purchase-lines'
 
 export interface CheckoutLine {
   name: string
@@ -47,7 +48,13 @@ export type CheckoutQuote<Granted> =
   | ({ outcome: 'granted' } & Granted)
   | {
       outcome: 'checkout'
+      /** What the provider is asked to charge. */
       lines: CheckoutLine[]
+      /**
+       * The same sale as the Purchase records it (#382): List Prices and what
+       * came off them, adding up to the same total as `lines`.
+       */
+      purchaseLines: PurchaseLine[]
       expiresAt: Date | null
       metadata: Record<string, string>
     }
@@ -321,6 +328,12 @@ export async function createCheckoutSession(
      * on what may be charged.
      */
     requestedPartPaymentCents?: number | null
+    /**
+     * The sale line by line, frozen on the Purchase (#382). The checkout
+     * service built them beside `lines`, from the same prices, and the
+     * Purchase refuses them if they add up to anything else.
+     */
+    purchaseLines: PurchaseLine[]
   },
 ): Promise<string | null> {
   // First, before a Purchase is opened: a studio with no account of its own
@@ -345,6 +358,7 @@ export async function createCheckoutSession(
     // a plan renamed or deleted in between would otherwise leave a member
     // looking at a debt for something with no name (#93).
     metadata: { ...input.metadata, item_name: itemName(input.lines) },
+    lines: input.purchaseLines,
   })
 
   const [stripe, customerId] = await Promise.all([

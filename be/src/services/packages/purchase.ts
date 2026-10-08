@@ -279,16 +279,19 @@ export async function readCrossLocationRateSgd(tenantId: string): Promise<string
  * so it prices at the stored Duration with no arithmetic.
  *
  * Here rather than in the checkout route so the rule cannot drift from the one
- * `quoteCrossLocationAddOn` applies to a plan the member already holds.
+ * `quoteCrossLocationAddOn` applies to a plan the member already holds. The
+ * months and the rate come back beside the price, which is what a Purchase's
+ * Add-On line is made of (#382).
  */
 export async function priceCrossLocationForNewPlan(
   tenantId: string,
   kind: PackageKind,
   durationMonths: number | null,
-): Promise<string> {
+): Promise<{ months: number; rateSgd: string; priceSgd: string }> {
   if (kind !== 'unlimited') throw new BadRequestError('cross_location_requires_unlimited')
   if (durationMonths == null) throw new BadRequestError('unlimited_requires_duration_months')
-  return crossLocationPriceSgd(durationMonths, await readCrossLocationRateSgd(tenantId))
+  const rateSgd = await readCrossLocationRateSgd(tenantId)
+  return { months: durationMonths, rateSgd, priceSgd: crossLocationPriceSgd(durationMonths, rateSgd) }
 }
 
 export interface CrossLocationQuote {

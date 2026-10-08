@@ -14,6 +14,7 @@ import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import { grantsWithoutPaying, saleDescription, type CheckoutQuote } from '../billing/checkout-session'
 import { openSettledPurchase } from '../billing/purchases'
+import { saleLine } from '../billing/purchase-lines'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { sendCorporatePurchaseEmail } from '../notifications/send-purchase-email'
 import { createCorporateRequest } from './requests'
@@ -49,8 +50,10 @@ export async function beginCorporateCheckout(
   // Nothing to charge: the provider is skipped, as for any free sale (§10), and
   // the request is made here because there is no webhook coming to make it.
   const cents = toCents(pkg.priceSgd)
+  // No Promotion and no Promo Code: the one line is the package at its price (#382).
+  const lines = [saleLine({ description: pkg.name, listPriceSgd: pkg.priceSgd })]
   if (grantsWithoutPaying(cents)) {
-    const purchase = await openSettledPurchase({ tenantId, clientId, kind: 'corporate_package', metadata })
+    const purchase = await openSettledPurchase({ tenantId, clientId, kind: 'corporate_package', metadata, lines })
     const { corporateRequestId } = await createCorporateRequest(tenantId, {
       clientId,
       corporatePackageId: pkg.id,
@@ -72,6 +75,7 @@ export async function beginCorporateCheckout(
         amountCents: cents,
       },
     ],
+    purchaseLines: lines,
     expiresAt: null,
     metadata,
   }
