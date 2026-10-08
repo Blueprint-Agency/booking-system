@@ -148,6 +148,7 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
       await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM classes WHERE class_type_id IN (SELECT id FROM class_types WHERE name LIKE ${`${NAME}%`})`)
       await harness.db.execute(sql`DELETE FROM workshop_tiers WHERE workshop_id IN (SELECT id FROM workshops WHERE created_by_staff_id IN (${staff}))`)
       await harness.db.execute(sql`DELETE FROM workshops WHERE created_by_staff_id IN (${staff})`)
@@ -337,6 +338,36 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
 
   const staffPost = (path: string) =>
     harness.app.request(`/api/v1/portal/${path}`, { method: 'POST', headers: { ...one.staffHeaders, ...json }, body: '{}' })
+
+  test('NTF-03 a free Trial Pass is confirmed only after the grant has committed', async () => {
+    const email = `member-${members++}@${DOMAIN}`
+    const headers = await harness.signInAs('client', email, one)
+    const [user] = await harness.db
+      .select({ id: schema.clientAuthUsers.id })
+      .from(schema.clientAuthUsers)
+      .where(and(eq(schema.clientAuthUsers.email, email), eq(schema.clientAuthUsers.tenantId, one.id)))
+    // A first-timer: no package of any kind yet, so the trial is theirs to take.
+    const [client] = await harness.db
+      .insert(schema.clients)
+      .values({ tenantId: one.id, email, name: 'Tia', phone: '+6580000000', authUserId: user!.id })
+      .returning({ id: schema.clients.id })
+    const [trial] = await harness.db
+      .insert(schema.classPackages)
+      .values({ tenantId: one.id, name: `${NAME} first class`, kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00', status: 'active' })
+      .returning({ id: schema.classPackages.id })
+    const held = async () =>
+      (await harness.db.select({ id: schema.clientPackages.id }).from(schema.clientPackages).where(eq(schema.clientPackages.clientId, client!.id))).length
+
+    const seen = await readAtSend(email, 'trial_pass_purchase_confirmed', held, async () => {
+      const res = await harness.app.request('/api/v1/me/checkout/package', {
+        method: 'POST',
+        headers: { ...headers, ...json },
+        body: JSON.stringify({ package_kind: 'class', package_id: trial!.id }),
+      })
+      assert.equal(res.status, 201, await res.text())
+    })
+    assert.deepEqual(seen, [1], 'one confirmation, sent when the Trial Pass was already visible outside its transaction')
+  })
 
   test('NTF-09 a member\'s cancellation email is sent only after the cancellation has committed', async () => {
     const mia = await member(one)

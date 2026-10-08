@@ -536,8 +536,9 @@ async function dispatchStripeEvent(
       })
 
       // One confirmation per purchase, however many times the provider retries:
-      // only the delivery that inserted the row sends. The helper cannot throw.
-      if (granted.created) await sendPackagePurchaseEmail(tenantId, granted.clientPackageId)
+      // only the delivery that inserted the row sends, once it has committed
+      // (`afterCommit`). The helper cannot throw.
+      if (granted.created) afterCommit(() => sendPackagePurchaseEmail(tenantId, granted.clientPackageId))
       return
     }
 
@@ -839,7 +840,8 @@ async function dispatchStripeEvent(
           )
       }
 
-      if (booked.created) await sendWorkshopPurchaseEmail(tenantId, booked.bookingId)
+      // Once the delivery has committed (`afterCommit`).
+      if (booked.created) afterCommit(() => sendWorkshopPurchaseEmail(tenantId, booked.bookingId))
       return
     }
   }
