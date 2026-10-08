@@ -47,25 +47,17 @@ export interface MemberReceiptQuery {
   pageSize: number
 }
 
-/** The member's Receipts at this studio, newest first, one page of them. */
+/**
+ * The member's Receipts at this studio, newest first, one page of them: the
+ * studio's list (`receiptsPage`), kept to the one member's.
+ */
 export async function listMemberReceipts(
   tenantId: string,
   clientId: string,
   query: MemberReceiptQuery,
 ): Promise<{ rows: ReceiptSummary[]; total: number }> {
-  const where: SQL[] = [eq(receipts.tenantId, tenantId), eq(receipts.clientId, clientId)]
-  if (query.from) where.push(gte(receipts.issuedAt, sgDayWindow(query.from).startsAt))
-  if (query.to) where.push(lt(receipts.issuedAt, sgDayWindow(query.to).endsAt))
-
-  const rows = await db
-    .select()
-    .from(receipts)
-    .where(and(...where))
-    .orderBy(desc(receipts.issuedAt), desc(receipts.number))
-    .limit(query.pageSize)
-    .offset((query.page - 1) * query.pageSize)
-  const [totals] = await db.select({ total: count() }).from(receipts).where(and(...where))
-  return { rows: rows.map(summarise), total: totals?.total ?? 0 }
+  const { rows, total } = await receiptsPage(receiptsWhere(tenantId, { clientId, from: query.from, to: query.to }), query)
+  return { rows: rows.map(summarise), total }
 }
 
 /**
@@ -106,9 +98,13 @@ export interface StudioReceiptFilters {
 
 export interface StudioReceiptQuery extends StudioReceiptFilters, MemberReceiptQuery {}
 
-/** The studio's Receipts the filters keep. The search reads the Receipt's own snapshot. */
-function studioReceiptsWhere(tenantId: string, query: StudioReceiptFilters): SQL | undefined {
+/**
+ * The studio's Receipts the filters keep, or one member's of them. The search
+ * reads the Receipt's own snapshot.
+ */
+function receiptsWhere(tenantId: string, query: StudioReceiptFilters & { clientId?: string }): SQL | undefined {
   const where: SQL[] = [eq(receipts.tenantId, tenantId)]
+  if (query.clientId) where.push(eq(receipts.clientId, query.clientId))
   if (query.from) where.push(gte(receipts.issuedAt, sgDayWindow(query.from).startsAt))
   if (query.to) where.push(lt(receipts.issuedAt, sgDayWindow(query.to).endsAt))
   if (query.kind) where.push(eq(receipts.kind, query.kind))
@@ -120,6 +116,22 @@ function studioReceiptsWhere(tenantId: string, query: StudioReceiptFilters): SQL
     where.push(or(ilike(receipts.displayNumber, like), ilike(receipts.buyerName, like), ilike(receipts.buyerEmail, like))!)
   }
   return and(...where)
+}
+
+/** The Receipts `where` keeps, newest first, one page of them, and how many it keeps in all. */
+async function receiptsPage(
+  where: SQL | undefined,
+  page: Pick<MemberReceiptQuery, 'page' | 'pageSize'>,
+): Promise<{ rows: ReceiptRow[]; total: number }> {
+  const rows = await db
+    .select()
+    .from(receipts)
+    .where(where)
+    .orderBy(desc(receipts.issuedAt), desc(receipts.number))
+    .limit(page.pageSize)
+    .offset((page.page - 1) * page.pageSize)
+  const [totals] = await db.select({ total: count() }).from(receipts).where(where)
+  return { rows, total: totals?.total ?? 0 }
 }
 
 const studioSummary = (r: ReceiptRow): StudioReceiptSummary => ({
@@ -139,16 +151,8 @@ export async function listStudioReceipts(
   tenantId: string,
   query: StudioReceiptQuery,
 ): Promise<{ rows: StudioReceiptSummary[]; total: number }> {
-  const where = studioReceiptsWhere(tenantId, query)
-  const rows = await db
-    .select()
-    .from(receipts)
-    .where(where)
-    .orderBy(desc(receipts.issuedAt), desc(receipts.number))
-    .limit(query.pageSize)
-    .offset((query.page - 1) * query.pageSize)
-  const [totals] = await db.select({ total: count() }).from(receipts).where(where)
-  return { rows: rows.map(studioSummary), total: totals?.total ?? 0 }
+  const { rows, total } = await receiptsPage(receiptsWhere(tenantId, query), query)
+  return { rows: rows.map(studioSummary), total }
 }
 
 /**
@@ -160,7 +164,7 @@ export async function exportStudioReceipts(tenantId: string, filters: StudioRece
   const rows = await db
     .select()
     .from(receipts)
-    .where(studioReceiptsWhere(tenantId, filters))
+    .where(receiptsWhere(tenantId, filters))
     .orderBy(desc(receipts.issuedAt), desc(receipts.number))
   return rows.map(studioSummary)
 }
