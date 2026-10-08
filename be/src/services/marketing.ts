@@ -25,12 +25,18 @@ export interface MarketingInput {
   footerText?: string | null
 }
 
-export async function getMarketing(tenantId: string): Promise<MarketingRow> {
+/** The studio's row, or null when it never saved one. */
+export async function findMarketing(tenantId: string): Promise<MarketingRow | null> {
   const [row] = await db
     .select()
     .from(marketingContent)
     .where(eq(marketingContent.tenantId, tenantId))
     .limit(1)
+  return row ?? null
+}
+
+export async function getMarketing(tenantId: string): Promise<MarketingRow> {
+  const row = await findMarketing(tenantId)
   if (!row) throw new NotFoundError('not_found')
   return row
 }
@@ -55,14 +61,18 @@ export async function updateMarketing(
   return row!
 }
 
-/** What any visitor may read: the copy, not who saved it or when. */
-export function serializePublicMarketing(row: MarketingRow) {
+/**
+ * What any visitor may read: the copy, not who saved it or when. A studio that
+ * never saved any reads as every field empty: there is nothing to show, which
+ * is not an error the member app should keep asking about.
+ */
+export function serializePublicMarketing(row: MarketingRow | null) {
   return {
-    hero_heading: row.heroHeading,
-    hero_subheading: row.heroSubheading,
-    pricing_blurb: row.pricingBlurb,
-    testimonials: row.testimonials,
-    footer_text: row.footerText,
+    hero_heading: row?.heroHeading ?? null,
+    hero_subheading: row?.heroSubheading ?? null,
+    pricing_blurb: row?.pricingBlurb ?? null,
+    testimonials: row?.testimonials ?? null,
+    footer_text: row?.footerText ?? null,
   }
 }
 

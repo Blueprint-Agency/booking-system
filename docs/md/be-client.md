@@ -96,7 +96,7 @@ The line's length and cap are not sent: like seat counts, they are for staff (`f
 ### `marketing.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/marketing` | The studio's own `marketing_content` row (one per Tenant): `{ hero_heading, hero_subheading, pricing_blurb, testimonials, footer_text }` — not who saved it or when. `404 not_found` when the studio has none |
+| GET | `/marketing` | The studio's own `marketing_content` row (one per Tenant): `{ hero_heading, hero_subheading, pricing_blurb, testimonials, footer_text }` — not who saved it or when. A studio that never saved any answers `200` with every field `null`, so the member app's footer reads it once like any other studio's rather than failing on every page |
 
 ### `tenants.ts`
 | Method | Path | Effect |
