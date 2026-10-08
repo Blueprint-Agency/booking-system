@@ -174,6 +174,7 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'GET /api/v1/me/purchases/open': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/receipts': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/receipts/:id': { gate: MEMBER_OF_THE_STUDIO },
+  'GET /api/v1/me/receipts/:id/pdf': { gate: MEMBER_OF_THE_STUDIO },
   'POST /api/v1/me/purchases/:id/resume': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/waitlist': { gate: MEMBER_OF_THE_STUDIO },
   'POST /api/v1/me/waitlist/classes/:classId': { gate: MEMBER_OF_THE_STUDIO },

@@ -113,3 +113,23 @@ test("a caller's own abort is not reported as a failure", async () => {
   await assert.rejects(pending);
   assert.equal(reported.length, 0);
 });
+
+test("INV-19 a file asked for as a file comes back byte for byte, and a refusal of it still reads as JSON", async () => {
+  // Not valid UTF-8 on purpose: reading it as text would change it.
+  const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x00, 0xff, 0x80, 0xc3, 0x28]);
+  globalThis.fetch = (async () =>
+    new Response(pdf, { status: 200, headers: { "Content-Type": "application/pdf" } })) as typeof fetch;
+  const { report } = recorder();
+
+  const file = await sendApiRequest("http://api.test/x.pdf", {}, { report, label: "Client API", as: "blob" });
+  assert.equal(file.ok, true);
+  assert.ok(file.body instanceof Blob);
+  assert.deepEqual(new Uint8Array(await (file.body as Blob).arrayBuffer()), pdf);
+  assert.equal((file.body as Blob).type, "application/pdf");
+
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: "receipt_not_found" }), { status: 404 })) as typeof fetch;
+  const refused = await sendApiRequest("http://api.test/x.pdf", {}, { report, label: "Client API", as: "blob" });
+  assert.equal(refused.ok, false);
+  assert.deepEqual(refused.body, { error: "receipt_not_found" });
+});

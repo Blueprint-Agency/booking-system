@@ -110,6 +110,11 @@ export function receiptStatusLabel(status: ReceiptStatus): string {
   return status === "refunded" ? "Refunded" : "Issued";
 }
 
+/** `R-000123.pdf`: what a downloaded Receipt is saved as, the name the backend gives it too. */
+export function receiptPdfFilename(number: string): string {
+  return `${number.replace(/[^A-Za-z0-9._-]/g, "_")}.pdf`;
+}
+
 /** What the Receipts page asks for: the days picked, if any, and the page. */
 export function receiptsQuery(input: { from: string; to: string; page: number }): Record<string, string | number> {
   const query: Record<string, string | number> = {};

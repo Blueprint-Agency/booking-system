@@ -50,6 +50,8 @@ interface RequestOptions {
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined | null>;
   signal?: AbortSignal;
+  /** `"blob"` for a file: the answer comes back as a `Blob`, untouched. */
+  as?: "json" | "blob";
 }
 
 function buildUrl(path: string, query?: RequestOptions["query"]) {
@@ -74,7 +76,7 @@ export async function apiFetch<T = unknown>(
   // The API hostname carries no tenancy — one backend serves every studio — so
   // every call names its own Tenant, read off the page's host.
   const headers: Record<string, string> = {
-    Accept: "application/json",
+    Accept: opts.as === "blob" ? "*/*" : "application/json",
     ...tenantRequestHeaders(),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -91,7 +93,7 @@ export async function apiFetch<T = unknown>(
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal: opts.signal,
     },
-    { report: reportError, label: "Client API" },
+    { report: reportError, label: "Client API", as: opts.as },
   );
   if (!answer.ok) {
     // Only a call that actually sent `Authorization` (an empty token sends none).
@@ -112,6 +114,9 @@ export function makeApi(getToken: TokenGetter) {
       apiFetch<T>(path, getToken, { method: "PATCH", body }),
     del: <T>(path: string) =>
       apiFetch<T>(path, getToken, { method: "DELETE" }),
+    /** A file the backend serves, such as a Receipt PDF. */
+    file: (path: string) =>
+      apiFetch<Blob>(path, getToken, { method: "GET", as: "blob" }),
   };
 }
 
