@@ -9,6 +9,7 @@ import { expireStaleSessions, completeEndedPtSessions } from '../services/pt-ses
 import { expirePackages, sendLapsingAlerts, sendExpiredNotifications } from '../services/packages/expire'
 import { flagExpiredWaivers } from '../services/waiver'
 import { expireWaitlists } from '../services/waitlist/line'
+import { sendCheckInNags } from '../services/bookings/check-in-nag'
 import { loadFeatureFlags } from '../services/feature-flags'
 import { now } from '../lib/clock'
 
@@ -124,6 +125,11 @@ export const scheduledJobs = {
   // the stored status agree.
   expireWaitlists: tenantJob('expireWaitlists', expireWaitlists),
 
+  // Every 15 min — a class or private session whose check-in is still pending
+  // 24 hours after it ended emails its Instructor, every active Admin copied,
+  // once (admin-restructure.md §11; services/bookings/check-in-nag.ts).
+  sendCheckInNags: tenantJob('sendCheckInNags', sendCheckInNags),
+
   // The daily jobs below all ride the same 15-minute grid; the hour named is
   // each tenant's *local* hour, taken from `tenants.timezone`, never from a UTC
   // offset or from the server's (or Postgres's) own clock.
@@ -160,6 +166,7 @@ export async function registerJobs() {
   cron.schedule('*/5 * * * *', scheduledJobs.expireStaleSessions)
   cron.schedule('*/5 * * * *', scheduledJobs.completeEndedPtSessions)
   cron.schedule('*/5 * * * *', scheduledJobs.expireWaitlists)
+  cron.schedule(SLOT_CRON, scheduledJobs.sendCheckInNags)
   cron.schedule(SLOT_CRON, scheduledJobs.expirePackages)
   cron.schedule(SLOT_CRON, scheduledJobs.sendLapsingAlerts)
   cron.schedule(SLOT_CRON, scheduledJobs.sendExpiredNotifications)

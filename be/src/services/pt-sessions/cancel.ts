@@ -11,6 +11,7 @@ import { cancelManualSessionInTx } from './manual'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
+import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notifications/send-booking-email'
 
 /**
  * Cancel a PT request, branching on its current status. Single entry point for
@@ -81,6 +82,19 @@ export interface CancelPtRequestResult {
 export async function cancelPtRequest(
   tenantId: string,
   input: CancelPtRequestInput,
+): Promise<CancelPtRequestResult> {
+  // The emails this cancel owes are gathered inside the transaction and sent
+  // only once it has committed (NTF-09, NTF-10, NTF-11). Sending never throws.
+  const mail = emptyPtCancelMail()
+  const result = await cancelPtRequestInTx(tenantId, input, mail)
+  await sendPtCancelMail(tenantId, mail)
+  return result
+}
+
+async function cancelPtRequestInTx(
+  tenantId: string,
+  input: CancelPtRequestInput,
+  mail: PtCancelMail,
 ): Promise<CancelPtRequestResult> {
   const { ptRequestId, source, clientId, actorStaffId } = input
 
@@ -162,6 +176,11 @@ export async function cancelPtRequest(
         // (`resolvedAt >= expiresAt`, bookings/cancellation-summary.ts).
         .set({ status: 'cancelled_before_scheduled', resolvedAt: clockNow(), resolvedByStaffId, cancelSource: source })
         .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+      // NTF-11. An expiry or a Remove is the studio's machinery, not a cancel
+      // anyone made, and tells the member its own way.
+      if (source !== 'system') {
+        mail.request.push({ clientId: req.clientId, sessionsReturned: req.debitedClientPackageId ? cost : 0, ptSessionId: null })
+      }
       return {
         status: 'cancelled_before_scheduled',
         refundedSessions: cost,
@@ -207,6 +226,7 @@ export async function cancelPtRequest(
         ...(clientId ? { clientId } : {}),
         actorStaffId: resolvedByStaffId,
         now,
+        mail,
       })
     }
 
@@ -350,8 +370,17 @@ export async function cancelPtRequest(
       },
     })
 
-    // NOTE(email): pt_cancelled_session_returned / pt_cancelled_forfeited are sent
-    // out-of-band, consistent with the class cancel path which is inbox-only in v1.
+    // NTF-11: every member the session booked is told — the requester with the
+    // sessions returned to them, a 2-on-1 partner, who paid nothing, without.
+    if (source !== 'system') {
+      for (const bk of sessionBookings) {
+        mail.request.push({
+          clientId: bk.clientId,
+          sessionsReturned: bk.clientId === req.clientId ? refundSessions : 0,
+          ptSessionId: session.id,
+        })
+      }
+    }
 
     return { status: 'cancelled_after_scheduled', refundedSessions: refundSessions, refundOutcome }
   })

@@ -262,7 +262,9 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       'Your check-in code is <strong>{{code}}</strong>. Show it at the studio, or open the QR code below.',
       link('{{qr_url}}', 'Show your QR code'),
     ],
-    { note: 'Credits remaining: <strong>{{credits_remaining}}</strong>.' },
+    // `credits_line` is composed (notifications/booking-email.ts): a bare count
+    // reads "0 remaining" on an Unlimited Plan, which spent nothing.
+    { note: '{{credits_line}}' },
   )
 
   // Sent when a waitlist promotion books the member in (spec-waitlist.md §11).
@@ -286,11 +288,15 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     ],
   )
 
+  // NTF-09. Links in the booking and cancellation emails are variables built
+  // per send (`classes_url`, `account_url`, …), not baked origins: the default
+  // wording then names no studio's hostname, so migration 0108 can write it
+  // into studios created before it, in SQL that cannot know their origins.
   const CLASS_CANCELLED_RETURNED_BODY = body('Your booking is cancelled — credit returned', [
     'Hi {{client_name}},',
     'Your booking for <strong>{{class_name}}</strong> on <strong>{{date}}</strong> has been cancelled.',
-    '<strong>{{credits_returned}}</strong> credit(s) are back in your account, ready for another class.',
-    link(CLASSES_URL, 'Book another class'),
+    '{{refund_line}}',
+    link('{{classes_url}}', 'Book another class'),
   ])
 
   // `reason_line` is a whole composed sentence (policy/evaluate-cancellation.ts:
@@ -307,8 +313,8 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   const ADMIN_CANCEL_CLASS_BODY = body('A class has been cancelled', [
     'Hi {{client_name}},',
     'The studio has cancelled <strong>{{class_name}}</strong> on <strong>{{date}}</strong>. We are sorry for the change of plan.',
-    '<strong>{{credits_returned}}</strong> credit(s) have been returned to your account — nothing was charged for the cancelled class.',
-    link(CLASSES_URL, 'Find another class'),
+    '{{refund_line}}',
+    link('{{classes_url}}', 'Find another class'),
   ])
 
   // Sent once per booking a Package rule change cancelled. Every such booking
@@ -366,12 +372,22 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     `Nothing was deducted. ${link(ACCOUNT_URL, 'Request another time')}`,
   ])
 
+  // NTF-11 (§9e): the same email before and after scheduling. `refund_line` is
+  // a whole sentence, empty when nothing came back — a 2-on-1 partner paid
+  // nothing — so it ends a paragraph rather than standing as one: an empty
+  // paragraph would be a gap in every such email.
+  const PT_REQUEST_CANCELLED_BODY = body('Your private session is cancelled', [
+    'Hi {{client_name}},',
+    '<strong>{{session_line}}</strong> has been cancelled. {{refund_line}}',
+    `You can ask for another time whenever you like. ${link('{{account_url}}', 'View your private sessions')}`,
+  ])
+
   const PT_CANCELLED_RETURNED_BODY = body(
     'Your private session is cancelled — session returned',
     [
       'Hi {{client_name}},',
       'Your private session with <strong>{{instructor_name}}</strong> on <strong>{{starts_at}}</strong> has been cancelled.',
-      `The session is back in your account and can be used for another booking. ${link(ACCOUNT_URL, 'Book another session')}`,
+      `{{refund_line}} ${link('{{account_url}}', 'Book another session')}`,
     ],
   )
 
@@ -385,7 +401,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   const ADMIN_CANCEL_PT_BODY = body('A private session has been cancelled', [
     'Hi {{client_name}},',
     'The studio has cancelled your private session with <strong>{{instructor_name}}</strong> on <strong>{{starts_at}}</strong>. We are sorry for the change of plan.',
-    `The session is back in your account. ${link(ACCOUNT_URL, 'Book another time')}`,
+    `{{refund_line}} ${link('{{account_url}}', 'Book another time')}`,
   ])
 
   /* ── Workshops ───────────────────────────────────────────────────────── */
@@ -420,8 +436,8 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   const ADMIN_CANCEL_WORKSHOP_BODY = body('A workshop has been cancelled', [
     'Hi {{client_name}},',
     'The studio has cancelled <strong>{{workshop_name}}</strong>. We are sorry — we know a workshop is a date people plan around.',
-    'You paid <strong>SGD {{refund_sgd}}</strong> for your place. The studio is arranging your refund and will contact you to settle it.',
-    link(WORKSHOPS_URL, 'See upcoming workshops'),
+    'You paid <strong>{{amount_paid}}</strong> for your place. The studio is arranging your refund and will contact you to settle it.',
+    link('{{workshops_url}}', 'See upcoming workshops'),
   ])
 
   /* ── Purchases and packages ──────────────────────────────────────────── */
@@ -515,14 +531,15 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     { cta: { href: `${portalUrl}/admin/schedule`, label: 'Open the schedule' } },
   )
 
+  // NTF-18. The Instructor gets it and each active Admin is copied, so it greets
+  // nobody; the button is the recipient's own check-in desk (`checkin_url`).
   const CHECKIN_NAG_BODY = body(
     'Check-in is still open for {{session_label}}',
     [
-      'Hi {{instructor_name}},',
-      '<strong>{{pending_count}}</strong> member(s) on <strong>{{session_label}}</strong> are still unmarked. Attendance drives credits and payroll, so it needs to be right.',
-      'It takes a moment in the portal — mark who came and who did not.',
+      '<strong>{{session_label}}</strong> on <strong>{{date}}</strong>, taught by <strong>{{instructor_name}}</strong>, ended more than a day ago, and <strong>{{pending_count}}</strong> member(s) on it are still unmarked.',
+      'Attendance drives credits and payroll, so it needs to be right. It takes a moment at the check-in desk — mark who came and who did not.',
     ],
-    { cta: { href: `${portalUrl}/instructor/classes`, label: 'Complete check-in' } },
+    { cta: { href: '{{checkin_url}}', label: 'Open the check-in desk' } },
   )
 
   /** `{{cap_warning}}` is the §17 sentence: this request breaches a declared
@@ -618,6 +635,11 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       slug: 'class_cancelled_forfeited',
       subject: 'Your class booking was cancelled',
       bodyHtml: CLASS_CANCELLED_FORFEITED_BODY,
+    },
+    {
+      slug: 'pt_request_cancelled',
+      subject: '{{session_line}} was cancelled',
+      bodyHtml: PT_REQUEST_CANCELLED_BODY,
     },
     {
       slug: 'pt_cancelled_session_returned',

@@ -247,8 +247,13 @@ tx start
    SET expires_at = booking moment + duration_months (Unlimited) or + validity_days
    (every other kind). One-way — no cancellation un-stamps it. Other packages of the
    family may be running beside it (ADR 0010); nothing refuses a second.
-8. enqueueEmail('class_booking_confirmed', client.email, { class_name, date, instructor, location, qr_url, code, credits_remaining })
 tx commit
+8. 'class_booking_confirmed' email to the member (after commit, best-effort — a failed send is
+   logged and the booking stands; NTF-08): { client_name, class_name, date, instructor_name,
+   location, qr_url, code, credits_line }. credits_line is one composed sentence
+   (services/notifications/booking-email.ts): "This booking used 2 credits from Ten Pack, and
+   8 credits remain on it." — or, on an Unlimited Plan, "Booked on your Unlimited Plan, so no
+   credits were used."
 
 Returns { booking_id, qr_token, code, paid_with: { client_package_id, name, kind } }
 ```
@@ -354,14 +359,20 @@ tx start
 6. UPDATE booking: state='cancelled', cancelled_at, refund_outcome
 7. INSERT cancellations: source='client', was_within_window, was_within_cap, refund_fired (boolean per outcome), kind
 8. INSERT inbox_items: type='client_cancellation', payload={ ... }
-9. enqueueEmail per refund_outcome → 'class_cancelled_credit_returned' / 'class_cancelled_forfeited' / 'pt_cancelled_session_returned' / 'pt_cancelled_forfeited'
+9. (no email inside the transaction — see 12)
 10. kind='class' AND booking.seat='online': services/waitlist/promote.ts:promoteFromWaitlist(tx, class_id, now)
     — outside the Cancellation Window only; fills free online seats from the line in (joined_at, id)
     order through the same booking path as POST /bookings/class; a member whose package cannot pay
     stays `waiting`. A buffer or overbook seat promotes nobody.
 tx commit
 11. 'class_waitlist_promoted' email to each promoted member (after commit, best-effort)
+12. refund fired (an in-time cancel that returned what the booking used): 'class_cancelled_credit_returned'
+    (class) or 'pt_cancelled_session_returned' (private session) to the member, after commit and
+    best-effort, with a composed refund_line ("2 credits have been returned to your package.") — NTF-09.
+    A late or over-cap cancel sends nothing yet: the forfeited pair is not wired.
 ```
+
+`POST /pt-sessions/:id/cancel` emails `pt_request_cancelled` to the requester (and to a 2-on-1 partner whose seat went with it) after commit — the same email before and after scheduling, its `refund_line` present only when sessions came back (NTF-11). Leaving a manual session in time sends `pt_cancelled_session_returned`.
 
 Every cancel of a class booking goes through this service — admin single-cancel, and the Refund and complimentary-removal unwinds (`packageVoided`) — so each promotes the same way.
 

@@ -16,6 +16,8 @@ export type TemplateSlug =
   | 'pt_session_approved'
   | 'pt_session_declined'
   | 'pt_request_expired'
+  // A PT Request cancelled before or after scheduling (§9e: one email for both).
+  | 'pt_request_cancelled'
   | 'workshop_purchase_confirmed'
   | 'workshop_waitlist_promoted'
   | 'class_cancelled_credit_returned'
