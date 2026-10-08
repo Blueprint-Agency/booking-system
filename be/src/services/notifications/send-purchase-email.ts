@@ -17,7 +17,7 @@
  * Receipt: what an admin's resend sends (#390), so a resent Receipt arrives in
  * the very email the purchase sent.
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { clientPackages, classPackages, corporatePackages, ptPackages } from '../../db/schema/packages'
@@ -25,7 +25,6 @@ import { bookings } from '../../db/schema/bookings'
 import { purchases, stripePayments } from '../../db/schema/ledger'
 import { toCents, toSgd } from '../../shared/money'
 import { corporateRequests, workshops, workshopDays, workshopTierDays } from '../../db/schema/schedule'
-import { GRANTED_PACKAGE_KEY } from '../billing/purchases'
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { ConflictError, NotFoundError } from '../../shared/errors'
@@ -120,9 +119,16 @@ export async function purchaseEmail(tenantId: string, receipt: ReceiptRow): Prom
 }
 
 /**
- * The package a class or PT package sale granted: the one the Purchase is on
- * when it was paid for, or, for a free sale, the one its Purchase names
- * (`GRANTED_PACKAGE_KEY`).
+ * The package a class or PT package sale granted.
+ *
+ * A paid one is on its Purchase (`client_packages.purchase_id`). A free one is
+ * granted with no Purchase on it (there is no money for a Refund to return),
+ * beside the settled Purchase its checkout opened (`openSettledPurchase`), in
+ * the one transaction of that checkout: the member's package of the product
+ * the sale names (`metadata.package_id`), bought by no Purchase and given by
+ * no admin, whose `purchased_at` is the sale's `created_at`, both being that
+ * transaction's `now()`. Every free package sale has carried those since it
+ * has had a Purchase at all (#169), so a Receipt of any age resends.
  */
 async function packageGrantedBy(tenantId: string, purchaseId: string): Promise<string | null> {
   const [paid] = await db
@@ -131,13 +137,25 @@ async function packageGrantedBy(tenantId: string, purchaseId: string): Promise<s
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.purchaseId, purchaseId)))
     .limit(1)
   if (paid) return paid.id
-  const [sale] = await db
-    .select({ metadata: purchases.metadata })
+
+  const source = sql`(CASE WHEN ${purchases.kind} = 'pt_package' THEN ${clientPackages.sourcePtPackageId} ELSE ${clientPackages.sourceClassPackageId} END)`
+  const [free] = await db
+    .select({ id: clientPackages.id })
     .from(purchases)
-    .where(and(eq(purchases.tenantId, tenantId), eq(purchases.id, purchaseId)))
+    .innerJoin(
+      clientPackages,
+      and(
+        eq(clientPackages.tenantId, purchases.tenantId),
+        eq(clientPackages.clientId, purchases.clientId),
+        isNull(clientPackages.purchaseId),
+        eq(clientPackages.complimentary, false),
+        eq(clientPackages.purchasedAt, purchases.createdAt),
+        sql`${source}::text = ${purchases.metadata}->>'package_id'`,
+      ),
+    )
+    .where(and(eq(purchases.tenantId, tenantId), eq(purchases.id, purchaseId), eq(purchases.totalSgd, '0.00')))
     .limit(1)
-  const named = (sale?.metadata as Record<string, unknown> | undefined)?.[GRANTED_PACKAGE_KEY]
-  return typeof named === 'string' ? named : null
+  return free?.id ?? null
 }
 
 /**

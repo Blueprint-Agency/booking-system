@@ -5,7 +5,6 @@ import { isUniqueViolation } from '../../db/unique-violation'
 import { now as clockNow } from '../../lib/clock'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { sendPackagePurchaseEmail } from '../notifications/send-purchase-email'
-import { noteFreeGrant } from '../billing/purchases'
 import { globalPolicy } from '../../db/schema/policy'
 import { listActiveInstructors } from '../schedule/client-catalog'
 import { bestPrice, listActivePromotionsFor } from './promotions'
@@ -617,7 +616,6 @@ export async function grantFreePurchase(
   input: GrantPackageInput,
 ): Promise<{ clientPackageId: string; created: boolean }> {
   const granted = await grantPackage(tenantId, input)
-  await noteFreeGrant(tenantId, salePurchaseId, granted.clientPackageId)
   // The slug comes off the granted kind, so a Promo Code that zeroes a trial
   // gets the trial email and one that zeroes a bundle does not.
   // Once the request's transaction has committed (`afterCommit`).
@@ -694,7 +692,6 @@ export async function purchaseFreeTrial(
     packageId: pkg.id,
     appliedPromotionId: eff.appliedPromotionId,
   })
-  await noteFreeGrant(tenantId, salePurchaseId, granted.clientPackageId)
 
   // A free trial has no sale to be idempotent on, so it reaches here
   // once or not at all — the eligibility gate and the partial unique index see

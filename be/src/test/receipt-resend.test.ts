@@ -530,4 +530,35 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
       assert.equal((await resendTrail(one, receipt.id)).length, 1, 'on record')
     }
   })
+
+  test('INV-85 a free Trial Pass and a free Credit Bundle sold before the sale named what it granted each resend their confirmation', async () => {
+    const [freeBundle] = await harness.db
+      .insert(schema.classPackages)
+      .values({ tenantId: one.id, name: `${NAME} free five pack`, kind: 'credit_bundle', credits: 5, validityDays: 30, priceSgd: '0.00' })
+      .returning({ id: schema.classPackages.id })
+    const cases: Array<{ slug: string; packageId: string }> = [
+      { slug: 'trial_pass_purchase_confirmed', packageId: one.freeTrialId },
+      { slug: 'package_purchase_confirmed', packageId: freeBundle!.id },
+    ]
+    for (const { slug, packageId } of cases) {
+      const who = await member(one)
+      await take(who, PACKAGE, { package_kind: 'class', package_id: packageId })
+      const receipt = await onlyReceipt(who)
+      const [confirmation] = mailTo(who.email)
+      assert.equal(templateOf(confirmation!), slug)
+      // A free sale settled before #390 carries nothing on its Purchase naming
+      // the package it granted: the backfill gave it a Receipt all the same.
+      await harness.db.execute(
+        sql`UPDATE purchases SET metadata = metadata - 'granted_client_package_id' WHERE tenant_id = ${one.id} AND id = (SELECT purchase_id FROM receipts WHERE id = ${receipt.id})`,
+      )
+
+      await expectStatus(await resend(one, receipt.id), 200)
+      const sent = mailTo(who.email)
+      assert.equal(sent.length, 2, `the confirmation and the resend of ${slug}`)
+      const mail = sent[1]!
+      assert.equal(templateOf(mail), slug, 'the email the purchase sent')
+      assert.equal(mail.subject, confirmation!.subject)
+      await carries(mail, receipt)
+    }
+  })
 })
