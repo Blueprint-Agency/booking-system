@@ -2,7 +2,15 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { eq, inArray, sql } from 'drizzle-orm'
-import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import postgres from 'postgres'
+import {
+  appRoleUrl,
+  integrationTestsEnabled,
+  SKIP_REASON,
+  startTestApp,
+  TEST_DATABASE_URL,
+  type TestApp,
+} from './harness'
 import { memberFixtures } from './member-fixtures'
 import { withEnv } from './with-env'
 
@@ -438,6 +446,88 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
       sql`SELECT id FROM audit_log WHERE tenant_id <> ${tenant.id} ORDER BY id`,
     )
     assert.deepEqual(othersAfter, othersBefore)
+  })
+
+  test('AUD-09 a studio session cannot read the archive, and no session can edit or delete a row in it', async () => {
+    const { tenant, trail } = await auditedStudio('sealed')
+    await expectStatus(await remove(tenant.id, tenant.slug), 200)
+    const before = await archivedFor(tenant.id)
+    assert.equal(before.length, trail.length)
+
+    // As the application role, exactly as the server connects: inside a studio's
+    // context, which is every studio request, and outside every one, which is
+    // the super portal.
+    const app = postgres(appRoleUrl(TEST_DATABASE_URL!), { max: 1 })
+    try {
+      const inside = <T>(tenantId: string, fn: (tx: postgres.TransactionSql) => Promise<T>) =>
+        app.begin(async tx => {
+          await tx`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+          return fn(tx)
+        })
+      const read = (tx: postgres.TransactionSql | postgres.Sql) =>
+        tx`SELECT id FROM audit_log_archive WHERE former_tenant_id = ${tenant.id}`
+
+      for (const context of [harness.tenants.one.id, harness.tenants.two.id, tenant.id]) {
+        assert.equal((await inside(context, read)).length, 0, `a studio context (${context}) read the archive`)
+        assert.equal(
+          (await inside(context, tx => tx`SELECT 1 FROM audit_log_archive`)).length,
+          0,
+          `a studio context (${context}) read some studio's archived trail`,
+        )
+      }
+      assert.equal((await read(app)).length, trail.length, 'the super portal, outside every context, reads it')
+
+      // Never edited, never deleted: not by a studio, not by the platform.
+      for (const change of [
+        (tx: postgres.TransactionSql | postgres.Sql) =>
+          tx`UPDATE audit_log_archive SET action = 'tampered' WHERE former_tenant_id = ${tenant.id} RETURNING 1`,
+        (tx: postgres.TransactionSql | postgres.Sql) =>
+          tx`DELETE FROM audit_log_archive WHERE former_tenant_id = ${tenant.id} RETURNING 1`,
+      ]) {
+        assert.equal((await change(app)).length, 0)
+        assert.equal((await inside(tenant.id, change)).length, 0)
+      }
+      // Nor written into by a studio about another one.
+      await assert.rejects(
+        inside(harness.tenants.one.id, tx =>
+          tx`INSERT INTO audit_log_archive (id, former_tenant_id, former_tenant_slug, former_tenant_name, actor_type, action, target_table, target_id, created_at)
+             VALUES (${randomUUID()}, ${tenant.id}, ${tenant.slug}, 'Forged', 'staff', 'forged', 'clients', ${randomUUID()}, now())`,
+        ),
+        /row-level security/,
+      )
+    } finally {
+      await app.end({ timeout: 5 })
+    }
+    assert.deepEqual(await archivedFor(tenant.id), before, 'the archived trail is exactly as it was')
+  })
+
+  test('AUD-10 a studio delete that fails part-way archives nothing, and leaves the studio’s trail where it was', async () => {
+    const { tenant, staff, trail } = await auditedStudio('failed')
+    // A row the delete cannot get past: another studio's audit row naming this
+    // studio's staff member as its actor, which the foreign key will not let go.
+    // It is met only after the trail has been copied to the archive.
+    const [blocker] = await harness.db.execute<{ id: string }>(sql`
+      INSERT INTO audit_log (tenant_id, actor_staff_id, actor_type, action, target_table, target_id)
+      VALUES (${harness.tenants.two.id}, ${staff.id as string}, 'staff', 'blocks-a-delete', 'clients', ${randomUUID()})
+      RETURNING id`)
+    try {
+      const res = await remove(tenant.id, tenant.slug)
+      assert.equal(res.status, 500, await res.text())
+
+      assert.deepEqual([...(await archivedFor(tenant.id))], [], 'the failed delete archived rows')
+      const still = await harness.db.execute<Record<string, unknown>>(
+        sql`SELECT * FROM audit_log WHERE tenant_id = ${tenant.id} ORDER BY id`,
+      )
+      assert.deepEqual(still, trail, 'the studio’s trail is where it was')
+      const [studio] = await harness.db.select().from(schema.tenants).where(eq(schema.tenants.id, tenant.id))
+      assert.ok(studio, 'the studio is still there')
+    } finally {
+      await harness.db.execute(sql`DELETE FROM audit_log WHERE id = ${blocker!.id}`)
+    }
+
+    // And once nothing is in the way, the same delete goes through and archives it.
+    await expectStatus(await remove(tenant.id, tenant.slug), 200)
+    assert.equal((await archivedFor(tenant.id)).length, trail.length)
   })
 
   /**
