@@ -1,5 +1,5 @@
 import { frameTemplatedEmail, type FramedEmail } from './frame'
-import { sendMail } from '../../lib/mailer'
+import { sendMail, type MailAttachment } from '../../lib/mailer'
 import { tenantMailIdentity } from '../tenants/mail-identity'
 import { db } from '../../db'
 import { emailTemplates, emailLog } from '../../db/schema/content'
@@ -74,6 +74,11 @@ export interface SendInput {
    * rest.
    */
   secretVariables?: readonly string[]
+  /**
+   * Files sent with the message, as they are: the studio's template has no say
+   * in them. `email_log` keeps the rendered subject and body, not the files.
+   */
+  attachments?: readonly MailAttachment[]
 }
 
 const REDACTED = '[redacted]'
@@ -90,7 +95,7 @@ const REDACTED = '[redacted]'
  * failure: sending another studio's wording is worse than sending nothing.
  */
 export async function sendTemplatedEmail(input: SendInput): Promise<void> {
-  const { tenantId, slug, recipient, variables, secretVariables = [] } = input
+  const { tenantId, slug, recipient, variables, secretVariables = [], attachments } = input
   const [tpl] = await db
     .select()
     .from(emailTemplates)
@@ -116,7 +121,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       template: tpl,
       variables: vars,
     })
-  await deliver({ tenantId, slug, recipient, identity, email: frame(variables), loggedEmail: frame(logged) })
+  await deliver({ tenantId, slug, recipient, identity, email: frame(variables), loggedEmail: frame(logged), attachments })
 }
 
 /** Mail worded by the platform rather than a studio template, sent in the studio's name. */
@@ -165,8 +170,9 @@ async function deliver(input: {
   identity: Awaited<ReturnType<typeof tenantMailIdentity>>
   email: FramedEmail
   loggedEmail: FramedEmail
+  attachments?: readonly MailAttachment[]
 }): Promise<boolean> {
-  const { tenantId, slug, recipient, identity, email, loggedEmail } = input
+  const { tenantId, slug, recipient, identity, email, loggedEmail, attachments } = input
   const [logRow] = await db
     .insert(emailLog)
     .values({
@@ -196,6 +202,7 @@ async function deliver(input: {
       idempotencyKey: logRow.id,
       fromName: identity.fromName,
       replyTo: identity.replyTo,
+      attachments,
     })
     await db
       .update(emailLog)
