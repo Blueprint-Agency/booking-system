@@ -23,6 +23,12 @@
  * by `ON DELETE CASCADE` its former Slugs. Last, after the commit, the studio's
  * uploads under its own object-storage folder.
  *
+ * **What is kept: its audit trail.** Audit rows are never deleted (prd §3.9,
+ * docs/adr/0008). Before any row goes, in the same transaction, the studio's
+ * `audit_log` rows are copied into the platform's `audit_log_archive`, each
+ * naming the studio by its id, Slug and name as plain values; then they are
+ * deleted with the rest. A delete that fails part-way archives nothing.
+ *
  * **What does not.** Anything outside this database and that folder: objects
  * uploaded before keys carried a tenant prefix, the studio's Customers and cards
  * at its payment provider, mail already sent. And the platform's own sign-in
@@ -34,8 +40,9 @@
  * backstop is not the only thing standing between this and another studio.
  * `tenants` and `tenant_settings` carry no policy and are deleted by id.
  *
- * Not written to the studio's own `audit_log`, which is deleted with it. The
- * route's log line — who, which studio, how many rows — is the record.
+ * The deletion itself is not an audit row: the studio's `audit_log` is archived
+ * as it stood. The route's log line — who, which studio, how many rows — is the
+ * record of the act.
  */
 import { eq, getTableName, sql } from 'drizzle-orm'
 import { currentTenantId, db, withTenant } from '../../db'
@@ -50,6 +57,7 @@ import {
   staffAuthUsers,
   staffAuthVerifications,
 } from '../../db/schema/auth'
+import { auditLog, auditLogArchive } from '../../db/schema/ledger'
 import { tenantImports, tenants, tenantSettings } from '../../db/schema/tenancy'
 import { deleteObjectsUnder, r2Bucket } from '../../lib/r2'
 import { tenantKey } from '../../lib/object-key'
@@ -75,6 +83,9 @@ export interface DeletedTenant {
   rows: number
   /** The studio's logins removed, per pool. */
   accounts: { client: number; staff: number }
+  /** Rows moved into a platform archive before the studio's copies were
+   *  deleted, per table: its audit trail (`audit_log_archive`). */
+  archived: { audit_log: number }
   /** Uploads removed from object storage; null when storage is not configured
    *  here, or the removal failed (logged, and the rows are gone regardless). */
   objects: number | null
@@ -101,6 +112,7 @@ export async function deleteTenant(input: DeleteTenantInput): Promise<DeletedTen
   const { order, deferred } = await tenantTableOrder()
   const tables: Record<string, number> = {}
   const accounts = { client: 0, staff: 0 }
+  const archived = { audit_log: 0 }
   const id = before.id
 
   await withTenant(id, async () => {
@@ -108,8 +120,21 @@ export async function deleteTenant(input: DeleteTenantInput): Promise<DeletedTen
     if (!locked) throw new NotFoundError('not_found')
     if (!DELETABLE.has(locked.status)) throw new ConflictError('tenant_not_suspended')
 
+    // Its audit trail first, into the platform's archive: audit rows are never
+    // deleted (prd §3.9, docs/adr/0008). Each keeps its own id and fields, and
+    // names the studio by value, so nothing points at the rows about to go. No
+    // RETURNING: inside a Tenant context the archive can be written, not read.
+    const moved = await db.execute(sql`
+      INSERT INTO ${auditLogArchive} (id, former_tenant_id, former_tenant_slug, former_tenant_name,
+        actor_staff_id, actor_type, action, target_table, target_id, payload, created_at)
+      SELECT id, tenant_id, ${locked.slug}, ${locked.name},
+        actor_staff_id, actor_type, action, target_table, target_id, payload, created_at
+      FROM ${auditLog} WHERE tenant_id = ${id}`)
+    archived.audit_log = moved.count
+
     // Every studio row, children first, its self- and cyclic references
-    // cleared before any delete meets them.
+    // cleared before any delete meets them. Its `audit_log` rows among them,
+    // now that they are in the archive.
     Object.assign(tables, await clearStudioRows(id, order, deferred))
 
     const settings = await db
@@ -149,6 +174,7 @@ export async function deleteTenant(input: DeleteTenantInput): Promise<DeletedTen
     tables,
     rows: Object.values(tables).reduce((a, b) => a + b, 0),
     accounts,
+    archived,
     objects: await purgeObjects(id),
   }
 }

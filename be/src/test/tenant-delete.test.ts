@@ -146,9 +146,15 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
     if (!harness) return
     // The rows this file put into the fixture studio; the deleted studio's are
     // already gone, which is the point.
-    await fixtures.cleanup()
-    await harness.db.delete(schema.platformAuthUsers).where(eq(schema.platformAuthUsers.email, OPERATOR))
-    await harness.close()
+    try {
+      await fixtures.cleanup()
+      // The archived trails of the studios this file deleted, every one of which
+      // has a Slug ending in this run's suffix.
+      await harness.db.execute(sql`DELETE FROM audit_log_archive WHERE former_tenant_slug LIKE ${`%-${run}`}`)
+      await harness.db.delete(schema.platformAuthUsers).where(eq(schema.platformAuthUsers.email, OPERATOR))
+    } finally {
+      await harness.close()
+    }
   })
 
   test('an active studio cannot be deleted', async () => {
@@ -351,6 +357,87 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
 
     // A second delete of the same id finds nothing.
     await expectStatus(await remove(doomed, slug), 404)
+  })
+
+  /** A suspended studio with an audit trail of its own: two staff actions and a system one. */
+  async function auditedStudio(label: string) {
+    const name = `Audited ${label}`
+    const { tenant } = await provision.provisionTenant({ slug: `del-audit-${label}-${run}`, name })
+    assert.equal(tenant.status, 'suspended', 'a studio with no admin opens suspended, so it can be deleted')
+    const staff = await fixtures.insertRow('staff_users', tenant.id, { email: `audit-${label}@${DOMAIN}` })
+    const target = randomUUID()
+    await fixtures.insertRow('audit_log', tenant.id, {
+      actor_type: 'staff',
+      actor_staff_id: staff.id,
+      action: 'client_profile_edited',
+      target_table: 'clients',
+      target_id: target,
+      payload: { from: { name: 'Before' }, to: { name: 'After' } },
+    })
+    await fixtures.insertRow('audit_log', tenant.id, {
+      actor_type: 'staff',
+      actor_staff_id: staff.id,
+      action: `PATCH /api/v1/portal/admin/clients/${target}/profile`,
+      target_table: 'clients',
+      target_id: target,
+      payload: { method: 'PATCH', path: `/api/v1/portal/admin/clients/${target}/profile` },
+    })
+    await fixtures.insertRow('audit_log', tenant.id, {
+      actor_type: 'system',
+      action: 'purchase_abandoned',
+      target_table: 'purchases',
+      target_id: randomUUID(),
+      payload: null,
+    })
+    const trail = await harness.db.execute<Record<string, unknown>>(
+      sql`SELECT * FROM audit_log WHERE tenant_id = ${tenant.id} ORDER BY id`,
+    )
+    assert.equal(trail.length, 3)
+    return { tenant: { ...tenant, name }, staff, trail }
+  }
+
+  const archivedFor = (tenantId: string) =>
+    harness.db.execute<Record<string, unknown>>(
+      sql`SELECT * FROM audit_log_archive WHERE former_tenant_id = ${tenantId} ORDER BY id`,
+    )
+
+  test('AUD-08 a deleted studio’s audit rows move to the platform archive, each as it was, naming the studio in plain values', async () => {
+    const { tenant, trail } = await auditedStudio('moved')
+    const othersBefore = await harness.db.execute<{ id: string }>(
+      sql`SELECT id FROM audit_log WHERE tenant_id <> ${tenant.id} ORDER BY id`,
+    )
+
+    const startedAt = Date.now()
+    await expectStatus(await remove(tenant.id, tenant.slug), 200)
+
+    // The studio is gone, and nothing of its trail is left under it…
+    const [gone] = await harness.db.select().from(schema.tenants).where(eq(schema.tenants.id, tenant.id))
+    assert.equal(gone, undefined, 'the tenants row is gone')
+    const left = await harness.db.execute(sql`SELECT 1 FROM audit_log WHERE tenant_id = ${tenant.id}`)
+    assert.equal(left.length, 0)
+
+    // …every row of which is in the archive, field for field, with the studio it
+    // belonged to written out instead of pointed at.
+    const archived = await archivedFor(tenant.id)
+    assert.deepEqual(
+      archived.map(({ former_tenant_deleted_at, ...row }) => row),
+      trail.map(({ tenant_id, ...row }) => ({
+        ...row,
+        former_tenant_id: tenant.id,
+        former_tenant_slug: tenant.slug,
+        former_tenant_name: tenant.name,
+      })),
+    )
+    for (const row of archived) {
+      const at = new Date(row.former_tenant_deleted_at as string).getTime()
+      assert.ok(at >= startedAt - 5_000 && at <= Date.now() + 5_000, `when the studio was deleted: ${row.former_tenant_deleted_at}`)
+    }
+
+    // No other studio's trail moved.
+    const othersAfter = await harness.db.execute<{ id: string }>(
+      sql`SELECT id FROM audit_log WHERE tenant_id <> ${tenant.id} ORDER BY id`,
+    )
+    assert.deepEqual(othersAfter, othersBefore)
   })
 
   /**
