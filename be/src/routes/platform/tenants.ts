@@ -298,14 +298,15 @@ const app = new Hono()
 
     const deleted = await deleteTenant({ tenantId: id.data, confirmSlug: c.req.valid('query').confirm })
 
-    // The record of the deletion. The studio's own audit trail went with it, so
-    // this line — who, which studio, how much — is what remains.
+    // The record of the deletion. The studio's own audit trail is archived as it
+    // stood, so this line — who, which studio, how much — is the record of the act.
     logger.warn(
       {
         tenantId: deleted.id,
         slug: deleted.slug,
         rows: deleted.rows,
         accounts: deleted.accounts,
+        archived: deleted.archived,
         objects: deleted.objects,
         by,
       },
@@ -318,6 +319,7 @@ const app = new Hono()
         rows: deleted.rows,
         tables: deleted.tables,
         accounts: deleted.accounts,
+        archived: deleted.archived,
         objects: deleted.objects,
       },
     })

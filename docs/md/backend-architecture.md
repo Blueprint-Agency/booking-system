@@ -68,7 +68,7 @@ be/
     │   │   │                          #   pt_requests, pt_sessions, pt_session_clients
     │   │   ├── # availability.ts      # REMOVED in v1 — see §4f (replaced by pt_requests)
     │   │   ├── bookings.ts            # bookings, cancellations, check_ins
-    │   │   ├── ledger.ts              # manual_adjustments, credit_movements, audit_log, stripe_payments
+    │   │   ├── ledger.ts              # manual_adjustments, credit_movements, audit_log, audit_log_archive, stripe_payments
     │   │   ├── content.ts             # email_templates, email_log, waiver, waiver_signatures, marketing_content
     │   │   ├── inbox.ts               # inbox_items
     │   │   ├── ops.ts                 # feature_flags
@@ -876,6 +876,13 @@ id, actor_staff_id (FK, nullable for system events), actor_type enum (`staff`, `
 **Indexes:** `(target_table, target_id, created_at desc)`, `(actor_staff_id, created_at desc)`, `(action, created_at desc)`.
 
 UI surfacing is next phase (§19) but the table is populated this phase.
+
+Rows are never deleted (prd §3.9, `docs/adr/0008-audit-rows-are-archived-not-deleted.md`). A member's permanent deletion anonymises the rows that named them (`services/clients/erase-audit-row.ts`); a studio's deletion moves its rows into `audit_log_archive`.
+
+#### `audit_log_archive`
+
+The audit trails of deleted studios: an `audit_log` row as it was, with `tenant_id` replaced by former_tenant_id, former_tenant_slug, former_tenant_name (plain values, no FK) and former_tenant_deleted_at. `actor_staff_id` has no FK. Platform data: no `tenant_id`, so no studio sweep reaches it; its own RLS (migration 0106) lets only a connection outside every Tenant context read it, only the deleted studio's own context insert into it, and nobody update or delete.
+**Indexes:** `(former_tenant_id, created_at)`.
 
 #### `stripe_payments`
 

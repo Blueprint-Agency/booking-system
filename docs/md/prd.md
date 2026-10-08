@@ -229,7 +229,9 @@ A user with an expired waiver can browse but not confirm a class booking. Existi
 - Every credit adjustment, session adjustment, refund-inbox state change, schedule cancellation, waiver reset, and impersonation event writes a row to its respective audit log.
 - Audit rows surface on the relevant client / invoice / session / class detail page as a timeline.
 - Required fields on every audit row: `actor_id`, `actor_role`, `impersonated_by` (nullable), `action`, `target_id`, `reason` (free-text where mandatory per matrix), `timestamp`.
-- Audit rows are append-only — no row edits, no row deletes, even by super-admin.
+- Audit rows are append-only — no row edits, no row deletes, even by super-admin. Two acts that delete what an audit row is about keep the row (`docs/adr/0008-audit-rows-are-archived-not-deleted.md`):
+  - **Permanently deleting a member** keeps every audit row that named them, anonymised: their name, email, phone, ids and any free text naming them are replaced with an "erased member" placeholder; who acted, the action, the time and the rest of the row stay. This is the one edit an audit row ever takes (`member-data-retention.md`).
+  - **Deleting a studio** moves its audit rows, in the same transaction, into a platform-level archive, each row as it was with the former studio's id, slug and name written in. Only the super portal can read the archive, and nobody can edit or delete a row in it.
 - Retention: 24 months in-app; archived after.
 
 ---
