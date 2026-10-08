@@ -24,6 +24,8 @@ import { leaveWaitlist, listWaitlist, waitlistRefusal, type ApiWaitlistEntry } f
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
 import { ptCancelResult, ptPolicyNote } from "@/lib/cancellation-copy";
 import { useClientPackages } from "@/lib/use-client-packages";
+import { corporateArrival } from "@/lib/corporate-return";
+import { CorporateRequestSent } from "@/components/corporate/corporate-request-sent";
 import {
   bookingItems,
   sortForPhase,
@@ -89,6 +91,8 @@ function YourBookings() {
     return isPhase(w) ? w : "upcoming";
   });
   const submitted = SUBMITTED[params.get("submitted") ?? ""] ?? null;
+  // A corporate package just bought: the celebration and the WhatsApp button (§6.2).
+  const [arrival] = useState(() => corporateArrival(new URLSearchParams(params.toString())));
 
   const [src, setSrc] = useState<BookingSources | null>(null);
   const [waitlisted, setWaitlisted] = useState<ApiWaitlistEntry[]>([]);
@@ -180,6 +184,15 @@ function YourBookings() {
         <div role="status" className="mb-5 rounded-xl border border-sage/30 bg-sage/10 px-4 py-3 text-sm text-ink">
           {submitted}
         </div>
+      )}
+
+      {arrival && (
+        <CorporateRequestSent
+          packageId={arrival.packageId}
+          sessionId={arrival.sessionId}
+          requests={src?.corporate ?? null}
+          onSynced={reload}
+        />
       )}
 
       {banner && (
