@@ -169,6 +169,15 @@ describe('a Refund stamps the Receipt refunded, over HTTP', { skip: integrationT
     return expectStatus(await harness.app.request(`/api/v1/me/receipts/${listed[0].id}`, { headers: who.headers }), 200)
   }
 
+  /**
+   * The database's clock now, in epoch milliseconds, rounded `down` or `up` to
+   * the millisecond the API's timestamps are written to.
+   */
+  const databaseNow = async (round: 'down' | 'up'): Promise<number> => {
+    const [row] = await harness.db.execute<{ ms: string }>(sql`SELECT (extract(epoch FROM clock_timestamp()) * 1000)::text AS ms`)
+    return (round === 'down' ? Math.floor : Math.ceil)(Number(row!.ms))
+  }
+
   /** What a Receipt says about money: its lines, totals and payments, which a Refund never changes. */
   const figuresOf = (r: Record<string, any>) => ({
     number: r.number,
@@ -261,9 +270,11 @@ describe('a Refund stamps the Receipt refunded, over HTTP', { skip: integrationT
     assert.equal(issued.status, 'issued')
     assert.equal(issued.refunded_at, null)
 
-    const landedFrom = Date.now()
+    // Bounded by the database's own clock, the one that dates the stamp, so a
+    // skew between it and this process's clock cannot move the window.
+    const landedFrom = await databaseNow('down')
     for (const confirmed of await refund(mia)) await deliver(confirmed)
-    const landedBy = Date.now()
+    const landedBy = await databaseNow('up')
 
     const [listed] = await receiptsOf(mia)
     assert.equal(listed.status, 'refunded', 'the list says it was refunded')
@@ -271,7 +282,7 @@ describe('a Refund stamps the Receipt refunded, over HTTP', { skip: integrationT
     assert.equal(stamped.id, issued.id, 'the same Receipt')
     assert.equal(stamped.status, 'refunded')
     const at = new Date(stamped.refunded_at).getTime()
-    assert.ok(at >= landedFrom - 1000 && at <= landedBy + 1000, `stamped when the Refund landed: ${stamped.refunded_at}`)
+    assert.ok(at >= landedFrom && at <= landedBy, `stamped when the Refund landed: ${stamped.refunded_at}`)
     assert.deepEqual(figuresOf(stamped), figuresOf(issued), 'the figures are as issued')
   })
 
