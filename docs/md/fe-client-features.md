@@ -193,6 +193,8 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 **User journey**
 - Visitor reads tiers → "View packages" CTA → routed to `/packages` (which requires auth to actually purchase).
 
+_As built:_ there is no separate pricing page: `/pricing` redirects (308) to `/packages` (`fe-client/next.config.ts`), so the tiers a visitor reads are the catalogue itself, browsable signed out. Purchase opens the sign-in gate and starts no checkout until the visitor has signed in (CAT-02).
+
 **Where admin comes in**
 - Pricing tiers are published from the same Products catalogue admin manages.
 
@@ -233,7 +235,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 | Already booked by user | "Booked" (link → `/account/classes`). A booked class never shows a waitlist control. |
 | In this class's line (`waitlist.my_entry`) | "On waitlist · #N" with a secondary "Leave" → confirm dialog → toast *"Left the waitlist."*; the row then reads "Join waitlist" if the line is still open, else "Full" |
 | Booked into another class, private session or workshop day that overlaps this one (`clash`), and the class would otherwise offer Book or Join waitlist | "Clashes · {its start time}" (muted; the row dims) — a tap opens the class detail. Under the row: *"You're booked into {title} at {time} ({Location}), which overlaps this class. Cancel that booking to book this one."* and a **My bookings** link. One body, one class at a time: no travel time is added, and back-to-back is allowed (`class-booking-lifecycle.md` §3.6). A booking or join refused `time_clash` since the schedule was read shows the same, titled "Time clash"; a booking made from the row re-reads the schedule so the classes it now overlaps show it |
-| Logged out, seat available | "Book Now" → `/login?next=/booking/confirmation?sessionId=...` |
+| Logged out, seat available | "Book Now" → `/login?next=/booking/confirmation?sessionId=...`. _As built:_ `/login?next=/?book={class id}` (`lib/book-return.ts`): after signing in the member lands on the schedule with that class's day open and its Book sheet up — or the "You need a package" popup, as the tap would have opened (CAT-06) |
 | Logged in, has credits, seat available | "Book Now" (sage, filled) → the **Book sheet** *"Book {class}?"* (date, time, location, instructor, the package picker below, and the cancellation policy) → "Book class" books it with the picked package, "Not now" closes it; nothing is spent until "Book class" |
 | Logged in, no credits / exhausted | Grey "Book Now" → popup *"You need a package to book this class"* → "Buy a Package" CTA → `/packages` |
 | Online seats full + `waitlist.open` (studio switch on, before the Cancellation Window, room in the line) | "Join waitlist" (warning, outlined). Joining debits nothing; the row becomes "On waitlist · #N" without a reload |
@@ -515,7 +517,7 @@ _As built, a corporate request is sent from the package card's request form (pre
 
 **Business logic — the review step is live, and every paid purchase routes through it.**
 
-The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a real review step, and it is the **only** surface in the member app with a code input anywhere — a Promo Code can be scoped to any product, so the picker's page and the code's page have to be the same page. A package or workshop tier priced above zero keeps its existing auth gate (login modal, return-to-page) and then pushes here; at zero it keeps the old post-and-grant, so a Promotion that drives a package to $0 falls into the free branch for free — the branch is decided by price, not by kind. The Trial card never used the buy button and is untouched.
+The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a real review step, and it is the **only** surface in the member app with a code input anywhere — a Promo Code can be scoped to any product, so the picker's page and the code's page have to be the same page. A package or workshop tier priced above zero keeps its existing auth gate (login modal, return-to-page) and then pushes here; at zero it keeps the old post-and-grant, so a Promotion that drives a package to $0 falls into the free branch for free — the branch is decided by price, not by kind. The Trial card never used the buy button and is untouched. _As built:_ the gate's Log in returns a signed-out buyer straight to this review step for the item they tapped (`components/checkout/buy-button.tsx`, PAY-01); merch and a $0 item, which have no review step, return to the page they were bought from.
 
 **A studio that takes no online payments** (#293) — one that has not supplied its own payment account — shows "This studio isn't taking online payments yet." in place of every paid buy button and of the Pay button here, read from `GET /public/online-payments`. A $0 item keeps its button: it never reaches the payment provider. If the read is slow or fails the buttons stay, and the server's `payments_not_configured` refusal reads as the same sentence (`fe-client/src/lib/online-payments-rule.ts`).
 
@@ -770,6 +772,7 @@ How the app looks for the member: **Theme** (Light, Dark) and **Text size** (Sma
 
 - Studio info, location addresses, social links, legal links (Terms, Privacy), copyright.
 - (No "For Business" / SaaS marketing link — a studio's client app is for that studio's members, not a pitch surface for the platform.)
+- _As built_ (`components/layout/site-footer.tsx`), on every member page of a studio's address and below the page's `<main>`: the studio's name and tagline (`tenant_settings`), its footer text (`marketing_content.footer_text`, read from `GET /public/marketing`), each active Location's name and address (the name linking to its map when `gmaps_url` is set), its social links (`tenant_settings.copy` keys `social.instagram`, `social.facebook`), its legal links (`legal.terms_url`, `legal.privacy_url`) and "© {year} {studio}". Each piece is shown only when the studio has set it, a link only when it is an http(s) address (`lib/site-footer.ts`); nothing is hard-coded and nothing names the platform (CAT-07).
 
 **Where admin comes in**
 - Footer copy is editable from admin.
