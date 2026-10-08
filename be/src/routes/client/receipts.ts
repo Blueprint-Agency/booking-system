@@ -4,9 +4,11 @@ import { z } from 'zod'
 import { tenantId } from '../../middleware/tenant'
 import { listMemberReceipts, memberReceipt, receiptStatus, type ReceiptSummary } from '../../services/receipts/read'
 import type { ReceiptRow } from '../../services/receipts/issue'
+import { receiptPdf, receiptPdfFilename } from '../../services/receipts/pdf'
 
 /**
- * The member's Receipts (#384): `GET /me/receipts` and `GET /me/receipts/:id`.
+ * The member's Receipts (#384): `GET /me/receipts`, `GET /me/receipts/:id`,
+ * and `GET /me/receipts/:id/pdf`, the same Receipt as a PDF (#386).
  * Only ever the member's own, at this studio; anything else is
  * `404 receipt_not_found`.
  */
@@ -85,6 +87,16 @@ const app = new Hono()
   .get('/:id', zValidator('param', idParam), async c => {
     const receipt = await memberReceipt(tenantId(c), c.get('clientId'), c.req.valid('param').id)
     return c.json(receiptView(receipt))
+  })
+  .get('/:id/pdf', zValidator('param', idParam), async c => {
+    const receipt = await memberReceipt(tenantId(c), c.get('clientId'), c.req.valid('param').id)
+    const bytes = await receiptPdf(receipt)
+    c.header('Content-Type', 'application/pdf')
+    c.header('Content-Disposition', `attachment; filename="${receiptPdfFilename(receipt)}"`)
+    c.header('Access-Control-Expose-Headers', 'Content-Disposition')
+    c.header('Cache-Control', 'private, no-store')
+    // Copied off Node's shared buffer pool, as the member export does.
+    return c.newResponse(new Uint8Array(bytes))
   })
 
 export default app

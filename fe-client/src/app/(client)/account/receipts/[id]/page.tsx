@@ -8,12 +8,25 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Download } from "lucide-react";
 import { ContentLoading } from "@/components/ui/content-loading";
-import { CARD } from "@/components/ui/styles";
+import { BTN_SECONDARY, CARD } from "@/components/ui/styles";
 import { apiErrorCode, useApi } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
-import { paymentLabel, receiptAmount, receiptStatusLabel, type Receipt } from "@/lib/receipts";
+import { paymentLabel, receiptAmount, receiptPdfFilename, receiptStatusLabel, type Receipt } from "@/lib/receipts";
+
+/** Hand the browser a file to save, as a link to it would. */
+function saveFile(file: Blob, filename: string) {
+  const url = URL.createObjectURL(file);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // After the click has handed the file over; revoking at once can cancel it in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
@@ -29,6 +42,21 @@ export default function AccountReceiptPage() {
   const api = useApi();
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [failure, setFailure] = useState<"missing" | "error" | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadFailed, setDownloadFailed] = useState(false);
+
+  // The PDF is behind the member's session, so it is fetched with it rather than linked to.
+  async function downloadPdf(of: Receipt) {
+    setDownloading(true);
+    setDownloadFailed(false);
+    try {
+      saveFile(await api.file(`/me/receipts/${of.id}/pdf`), receiptPdfFilename(of.number));
+    } catch {
+      setDownloadFailed(true);
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +179,20 @@ export default function AccountReceiptPage() {
             <footer className="border-t border-ink/5 pt-4 text-xs text-muted whitespace-pre-line">{receipt.seller.footer}</footer>
           )}
         </article>
+      )}
+
+      {receipt && (
+        <div className="mt-4 flex flex-col items-start gap-2">
+          <button type="button" className={BTN_SECONDARY} disabled={downloading} onClick={() => downloadPdf(receipt)}>
+            <Download className="h-4 w-4" aria-hidden />
+            {downloading ? "Preparing PDF…" : "Download PDF"}
+          </button>
+          {downloadFailed && (
+            <p role="alert" className="text-sm text-error">
+              We couldn&apos;t download this receipt right now. Please try again in a moment.
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

@@ -6,7 +6,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { dateRangeProblem, paymentLabel, receiptAmount, receiptsQuery, receiptStatusLabel } from "./receipts.ts";
+import {
+  dateRangeProblem,
+  paymentLabel,
+  receiptAmount,
+  receiptPdfFilename,
+  receiptsQuery,
+  receiptStatusLabel,
+} from "./receipts.ts";
 
 test("INV-09 amounts print as the studio prints money to members, always to the cent", () => {
   assert.equal(receiptAmount("150.00"), "S$150.00");
@@ -39,4 +46,10 @@ test("INV-09 a range that ends before it starts is refused before it is sent", (
   assert.equal(dateRangeProblem("2026-02-01", "2026-01-31"), "The end date is before the start date.");
   assert.equal(dateRangeProblem("2026-01-31", "2026-01-31"), null);
   assert.equal(dateRangeProblem("", "2026-01-31"), null);
+});
+
+test("INV-16 a downloaded Receipt is saved under its number", () => {
+  assert.equal(receiptPdfFilename("R-000123"), "R-000123.pdf");
+  // A studio's own prefix (#391) cannot reach outside the file's name.
+  assert.equal(receiptPdfFilename("NW/2026 000123"), "NW_2026_000123.pdf");
 });

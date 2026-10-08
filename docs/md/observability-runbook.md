@@ -216,8 +216,8 @@ The names are fixed — alert rules key on them.
 | `impersonatedBy` | the acting Admin's Better Auth user id, present only under an impersonation grant | `middleware/client-impersonation.ts` |
 | `job` | the cron job's name (`expirePackages`, `sendLapsingAlerts`, …) | the wrappers in `jobs/index.ts` |
 | `webhook` | the vendor a webhook came from: `stripe` \| `resend` | the two webhook routes |
-| `vendor` | which vendor an **outbound** call went to: `stripe` \| `storage` \| `resend` | `lib/outbound.ts` |
-| `op` | which operation on that vendor — `checkout.sessions.create`, `refunds.create`, `putObject`, `emails.send` | `lib/outbound.ts` |
+| `vendor` | which vendor an **outbound** call went to: `stripe` \| `storage` \| `resend` \| `logo` (a studio's logo, fetched for a Receipt PDF; one that fails leaves the PDF without it) | `lib/outbound.ts` |
+| `op` | which operation on that vendor — `checkout.sessions.create`, `refunds.create`, `putObject`, `emails.send`, `fetch` | `lib/outbound.ts` |
 | `ms` | how long it took, milliseconds. On an access line, the whole request; on an outbound line, that one call; on a cron line, the whole run. | access log, `lib/outbound.ts`, `jobs/index.ts` |
 | `outcome` | how it ended. Outbound: `ok` \| `timeout` \| `error`. Cron: `ok` \| `error`. | `lib/outbound.ts`, `jobs/index.ts` |
 

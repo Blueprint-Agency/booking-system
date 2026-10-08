@@ -25,12 +25,17 @@ export interface ApiRequestOptions {
   /** Names the app in the reported message, e.g. "Client API". */
   label: string;
   timeoutMs?: number;
+  /**
+   * `"blob"` for a file (a Receipt PDF): a successful answer's body is handed
+   * back untouched as a `Blob`. A refusal still reads as JSON.
+   */
+  as?: "json" | "blob";
 }
 
 export interface ApiAnswer {
   ok: boolean;
   status: number;
-  /** Parsed JSON, the raw text when it isn't JSON, or null when empty. */
+  /** Parsed JSON, the raw text when it isn't JSON, or null when empty; a `Blob` for a file asked for `as: "blob"`. */
   body: unknown;
 }
 
@@ -45,7 +50,7 @@ function requestIdOf(body: unknown): string | undefined {
 export async function sendApiRequest(
   url: string,
   init: RequestInit,
-  { report, label, timeoutMs = DEFAULT_API_TIMEOUT_MS }: ApiRequestOptions,
+  { report, label, timeoutMs = DEFAULT_API_TIMEOUT_MS, as = "json" }: ApiRequestOptions,
 ): Promise<ApiAnswer> {
   const method = init.method ?? "GET";
   let res: Response;
@@ -62,6 +67,9 @@ export async function sendApiRequest(
     }
     throw err;
   }
+
+  // Read as text, a file's bytes would not survive the round trip.
+  if (as === "blob" && res.ok) return { ok: true, status: res.status, body: await res.blob() };
 
   let body: unknown = null;
   const text = await res.text();

@@ -3,8 +3,8 @@ import { ERROR_CODES } from '../shared/error-codes'
 import { logger } from '../shared/logger'
 
 /**
- * The one door every call to a vendor goes through: Stripe, object storage and
- * Resend (which also carries Better Auth's mail).
+ * The one door every call to a vendor goes through: Stripe, object storage,
+ * Resend (which also carries Better Auth's mail) and the host of a studio's logo.
  *
  * A vendor that stops answering must not hold a member's request open, so each
  * call runs under a short deadline and ends in one of three ways — `ok`,
@@ -22,7 +22,8 @@ import { logger } from '../shared/logger'
  * its own backoff that honours `retry-after`, so the Resend call never asks.
  */
 
-export type Vendor = 'stripe' | 'storage' | 'resend'
+/** `logo` is wherever a studio's logo is hosted, fetched to draw a Receipt PDF. */
+export type Vendor = 'stripe' | 'storage' | 'resend' | 'logo'
 export type OutboundOutcome = 'ok' | 'timeout' | 'error'
 
 /** Catalogued error code for a vendor that did not answer in time. */
@@ -33,6 +34,8 @@ export const VENDOR_DEADLINE_MS: Record<Vendor, number> = {
   stripe: 8_000,
   storage: 8_000,
   resend: 5_000,
+  // A PDF without its logo is still the Receipt, so this one waits least.
+  logo: 3_000,
 }
 
 export class VendorTimeoutError extends AppError {

@@ -120,6 +120,11 @@ const readable = (s: string) => {
 }
 const nameOf = (s: string) => NAMES[s] ?? readable(s)
 
+/** A method or a wallet as a person reads it: `paynow` → "PayNow", `apple_pay` → "Apple Pay". */
+export const methodName = nameOf
+/** A card network as a person reads it: `visa` → "Visa". */
+export const cardBrandName = (brand: string) => BRANDS[brand] ?? readable(brand)
+
 /** One method as a person reads it: "Visa ··4242", "Apple Pay · Visa ··4242", "PayNow". */
 function describe(m: PaymentMethod): string {
   if (m.method === 'card' && !m.label) {
