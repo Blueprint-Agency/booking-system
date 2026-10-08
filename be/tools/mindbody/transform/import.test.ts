@@ -213,9 +213,9 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(await count('locations', studio.tenant.id), 2)
     // Hatha and Vinyasa Flow, plus the Personal Training focus the PT import needs.
     assert.equal(await count('class_types', studio.tenant.id), 3)
-    // Every template a provisioned studio gets, class_waitlist_promoted (#308) and
-    // class_rule_cancelled (#323) included.
-    assert.equal(await count('email_templates', studio.tenant.id), 35)
+    // Every template a provisioned studio gets, class_waitlist_promoted (#308),
+    // class_rule_cancelled (#323) and pt_request_cancelled (#359) included.
+    assert.equal(await count('email_templates', studio.tenant.id), 36)
     assert.equal(await count('clients', studio.tenant.id), 8)
 
     // A member cancellation reads the policy, and finds the studio's own.
