@@ -750,6 +750,13 @@
       "when": 1791429007980,
       "tag": "0106_checkin_nag_sent_at",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1791429221244,
+      "tag": "0107_booking_notification_templates",
+      "breakpoints": true
     }
   ]
 }

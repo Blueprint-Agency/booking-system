@@ -290,7 +290,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
 
   // NTF-09. Links in the booking and cancellation emails are variables built
   // per send (`classes_url`, `account_url`, …), not baked origins: the default
-  // wording then names no studio's hostname, so migration 0106 can write it
+  // wording then names no studio's hostname, so migration 0107 can write it
   // into studios created before it, in SQL that cannot know their origins.
   const CLASS_CANCELLED_RETURNED_BODY = body('Your booking is cancelled — credit returned', [
     'Hi {{client_name}},',

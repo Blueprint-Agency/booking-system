@@ -37,7 +37,7 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // NTF-09/10: `refund_line` is a composed sentence (./booking-email.ts), and a
   // link is a variable (`classes_url`, `account_url`, `workshops_url`,
   // `checkin_url`) built per send from the studio's own origin, so the default
-  // wording names no origin and a data migration can write it (migration 0106).
+  // wording names no origin and a data migration can write it (migration 0107).
   // The senders still supply the variables these replaced
   // (`credits_returned`, `refund_sgd`) for a studio's own wording.
   class_cancelled_credit_returned: ['client_name', 'class_name', 'date', 'refund_line', 'classes_url'],
