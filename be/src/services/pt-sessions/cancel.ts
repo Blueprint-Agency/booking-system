@@ -1,5 +1,5 @@
 import { and, eq, inArray, lt } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
@@ -84,10 +84,13 @@ export async function cancelPtRequest(
   input: CancelPtRequestInput,
 ): Promise<CancelPtRequestResult> {
   // The emails this cancel owes are gathered inside the transaction and sent
-  // only once it has committed (NTF-09, NTF-10, NTF-11). Sending never throws.
+  // only once the request's transaction has committed (`afterCommit`; NTF-09,
+  // NTF-10, NTF-11). Sending never throws.
   const mail = emptyPtCancelMail()
   const result = await cancelPtRequestInTx(tenantId, input, mail)
-  await sendPtCancelMail(tenantId, mail)
+  if (mail.studio.length || mail.memberReturned.length || mail.request.length) {
+    afterCommit(() => sendPtCancelMail(tenantId, mail))
+  }
   return result
 }
 
@@ -372,11 +375,14 @@ async function cancelPtRequestInTx(
 
     // NTF-11: every member the session booked is told — the requester with the
     // sessions returned to them, a 2-on-1 partner, who paid nothing, without.
+    // Returned only when there was a package to return them to, as on the
+    // pending path: `refundToPackage` moves nothing without one.
     if (source !== 'system') {
+      const returned = req.debitedClientPackageId ? refundSessions : 0
       for (const bk of sessionBookings) {
         mail.request.push({
           clientId: bk.clientId,
-          sessionsReturned: bk.clientId === req.clientId ? refundSessions : 0,
+          sessionsReturned: bk.clientId === req.clientId ? returned : 0,
           ptSessionId: session.id,
         })
       }

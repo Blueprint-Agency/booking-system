@@ -15,7 +15,7 @@
  * transaction; the class row is locked FOR UPDATE so it can't race in-flight bookings/cancels.
  */
 import { and, eq } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { classes } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
@@ -201,20 +201,24 @@ export async function cancelClass(
     }
   })
 
+  // Both once the request's transaction has committed (`afterCommit`), the
+  // Admins first.
   if (source === 'instructor') {
-    await emailAdmins({
-      tenantId,
-      classTypeId: outcome.classTypeId,
-      startsAt: outcome.startsAt,
-      instructorStaffId: actorStaffId,
-      reason,
-      refundedCount: outcome.refundedCount,
-    })
+    afterCommit(() =>
+      emailAdmins({
+        tenantId,
+        classTypeId: outcome.classTypeId,
+        startsAt: outcome.startsAt,
+        instructorStaffId: actorStaffId,
+        reason,
+        refundedCount: outcome.refundedCount,
+      }),
+    )
   }
 
   // NTF-10: every member who was booked is told, whoever cancelled — the
-  // outcome for them is the same. After commit; never throws.
-  await sendClassCancelledByStudioEmails(tenantId, outcome.notices)
+  // outcome for them is the same. Never throws.
+  afterCommit(() => sendClassCancelledByStudioEmails(tenantId, outcome.notices))
 
   return { totalBookings: outcome.totalBookings, refundedCount: outcome.refundedCount }
 }

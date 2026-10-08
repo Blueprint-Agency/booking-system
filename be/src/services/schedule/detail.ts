@@ -22,7 +22,7 @@ import {
 } from '../../db/schema'
 import type { BookingSeat, ClassDifficulty, ClientPackageKind } from '../../db/enums'
 import { ForbiddenError, NotFoundError } from '../../shared/errors'
-import { sessionCheckInState, type SessionCheckInState } from '../bookings/session-check-in'
+import { ptSeats, sessionCheckInState, type SessionCheckInState } from '../bookings/session-check-in'
 import { attendanceCapacity, countSeats, type SeatCounts } from '../bookings/seats'
 import { waitlistEnabled } from '../waitlist/line'
 import { waitlistPanel, type WaitlistPanelRow } from '../waitlist/staff'
@@ -436,21 +436,9 @@ export async function getPtSessionDetail(
       and(eq(ptSessionClients.tenantId, tenantId), eq(ptSessionClients.ptSessionId, id)),
     )
 
-  // A manual session's member removed and added back holds a cancelled booking
-  // and a confirmed one: the confirmed one is their seat, else the latest.
-  type SeatRow = (typeof clientRows)[number]
-  const outranks = (a: SeatRow, b: SeatRow) =>
-    a.state === 'confirmed' && b.state !== 'confirmed'
-      ? true
-      : a.state !== 'confirmed' && b.state === 'confirmed'
-        ? false
-        : (a.bookedAt?.getTime() ?? 0) > (b.bookedAt?.getTime() ?? 0)
-  const seatOf = new Map<string, SeatRow>()
-  for (const c of clientRows) {
-    const held = seatOf.get(c.id)
-    if (!held || outranks(c, held)) seatOf.set(c.id, c)
-  }
-  const attendees: PtSessionAttendee[] = [...seatOf.values()].map(c => ({
+  // One seat per member (`ptSeats`): a manual session's member removed and
+  // added back holds a cancelled booking and a confirmed one.
+  const attendees: PtSessionAttendee[] = ptSeats(clientRows, c => c.id).map(c => ({
     id: c.id,
     name: c.name,
     code: c.code ?? null,

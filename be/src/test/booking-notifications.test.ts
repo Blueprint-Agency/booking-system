@@ -539,6 +539,23 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
     assert.match(to(mia.email).subject, /Retreat weekend was cancelled/)
   })
 
+  test('NTF-10 a workshop place that was free is cancelled with no refund wording, while a paid one is told its refund is being arranged', async () => {
+    const mia = await member(one)
+    const leo = await member(one, 'Leo')
+    const workshopId = await workshopWith(one, [
+      { who: mia, paid: '120.00' },
+      { who: leo, paid: '0.00' },
+    ])
+    drain()
+
+    await expectStatus(await staffPost(one.admin, `admin/workshops/${workshopId}/cancel`), 200)
+
+    const mail = drain()
+    const to = (email: string) => mail.find(m => m.to === email)!
+    assert.match(to(mia.email).text, /The studio is arranging your refund and will contact you to settle it\./)
+    assert.doesNotMatch(to(leo.email).text, /refund/i, 'nothing was paid, so nothing is refunded')
+  })
+
   test('NTF-10 an Admin cancelling a private session emails every member on it the admin-cancellation email with the session returned', async () => {
     const mia = await member(one)
     const leo = await member(one, 'Leo')
@@ -622,6 +639,22 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
     assert.ok(to(mia.email).subject.includes(one.instructor.name), 'a scheduled session is named by its instructor')
     assert.match(to(mia.email).text, /2 sessions have been returned to your package\./)
     assert.doesNotMatch(to(leo.email).text, /returned to your package/)
+  })
+
+  test('NTF-11 a scheduled PT Request with no debited package is cancelled with no refund line, as nothing came back', async () => {
+    const mia = await member(one)
+    const pkg = await givePt(one, mia, 4)
+    const { requestId } = await ptRequest(one, mia, pkg, { scheduled: true })
+    await harness.db.update(schema.ptRequests).set({ debitedClientPackageId: null }).where(eq(schema.ptRequests.id, requestId))
+    drain()
+
+    const res = await expectStatus(await staffPost(one.admin, `admin/pt-sessions/${requestId}/cancel`), 200)
+    assert.equal(res.result.status, 'cancelled_after_scheduled')
+    assert.equal(await balance(pkg), 4, 'no package was debited, so none is refunded')
+
+    const mail = drain()
+    assert.deepEqual(mail.map(m => [m.to, m.template]), [[mia.email, 'pt_request_cancelled']])
+    assert.doesNotMatch(mail[0]!.text, /returned to your package/)
   })
 
   test('NTF-11 a PT Request cancel refused to another member, another studio\'s member or an instructor on the admin route sends nothing', async () => {

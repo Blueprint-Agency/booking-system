@@ -8,7 +8,7 @@
  * prices the sale and names it for the webhook to read back.
  */
 import { and, eq, isNull } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { corporatePackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
@@ -56,9 +56,10 @@ export async function beginCorporateCheckout(
       corporatePackageId: pkg.id,
       purchaseId: purchase.id,
     })
-    // Confirmed as every free purchase is (NTF-03), at S$0.00. The sender
-    // reports and swallows, so a failed send cannot undo the request.
-    await sendCorporatePurchaseEmail(tenantId, corporateRequestId, null)
+    // Confirmed as every free purchase is (NTF-03), at S$0.00, once the
+    // request's transaction has committed (`afterCommit`). The sender reports
+    // and swallows, so a failed send cannot undo the request.
+    afterCommit(() => sendCorporatePurchaseEmail(tenantId, corporateRequestId, null))
     return { outcome: 'granted', corporateRequestId }
   }
 

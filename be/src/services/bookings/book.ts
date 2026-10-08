@@ -16,7 +16,7 @@
  * and so a Dormant package has exactly one writer at Activation.
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { classes } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
@@ -175,10 +175,11 @@ async function bookIntoClass(
     return paid.booking
   })
 
-  // NTF-08: after commit, and it never throws — a mail fault must not undo a
+  // NTF-08: once the request's transaction has committed (`afterCommit`), so
+  // the class lock is not held across the send and a mail fault cannot undo a
   // seat that is already the member's. A waitlist promotion books through
   // `payAndBook` and sends its own email (../waitlist/promote.ts).
-  await sendClassBookingEmail(tenantId, booking.bookingId)
+  afterCommit(() => sendClassBookingEmail(tenantId, booking.bookingId))
   return booking
 }
 

@@ -432,11 +432,13 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
 
   // Automated refunds do not exist for a cancelled workshop — `services/
   // workshops/cancel.ts` marks affected bookings `refund_outcome='n_a'`. So the
-  // copy says what is true: the studio arranges it by hand.
+  // copy says what is true: the studio arranges it by hand. `refund_line` is
+  // the whole sentence (services/notifications/booking-email.ts), because a
+  // place that was free has nothing to refund and must not say otherwise.
   const ADMIN_CANCEL_WORKSHOP_BODY = body('A workshop has been cancelled', [
     'Hi {{client_name}},',
     'The studio has cancelled <strong>{{workshop_name}}</strong>. We are sorry — we know a workshop is a date people plan around.',
-    'You paid <strong>{{amount_paid}}</strong> for your place. The studio is arranging your refund and will contact you to settle it.',
+    '{{refund_line}}',
     link('{{workshops_url}}', 'See upcoming workshops'),
   ])
 

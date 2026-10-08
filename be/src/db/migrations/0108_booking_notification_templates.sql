@@ -3,7 +3,8 @@
 -- have to: the credits a booking used and what remains (class_booking_confirmed),
 -- what a cancellation returned (class_cancelled_credit_returned,
 -- pt_cancelled_session_returned, admin_cancel_class, admin_cancel_pt), the
--- amount paid in the shared money form (admin_cancel_workshop), and a check-in
+-- amount paid in the shared money form, with no refund wording for a place that
+-- was free (admin_cancel_workshop), and a check-in
 -- nag the Admins are copied on (checkin_nag). PT Requests gained an email of
 -- their own (pt_request_cancelled). A studio's templates are written once, when
 -- it is created (db/seed/email-templates.ts), so this brings the new wording to
@@ -161,7 +162,7 @@ SET subject = $new_subject${{workshop_name}} was cancelled$new_subject$,
     body_html = $new_body$<h1 style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:22px;line-height:1.3;font-weight:700;letter-spacing:-0.01em;color:#0d1a3e;">A workshop has been cancelled</h1>
 <p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;">Hi {{client_name}},</p>
 <p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;">The studio has cancelled <strong>{{workshop_name}}</strong>. We are sorry — we know a workshop is a date people plan around.</p>
-<p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;">You paid <strong>{{amount_paid}}</strong> for your place. The studio is arranging your refund and will contact you to settle it.</p>
+<p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;">{{refund_line}}</p>
 <p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;"><a href="{{workshops_url}}" style="color:#1a2a7a;font-weight:600;text-decoration:underline;">See upcoming workshops →</a></p>$new_body$ || coalesce(substring(et.body_html from '(\n<p data-email-footer-note style="display:none;">[^<]*</p>)$'), ''),
     updated_at = now()
 WHERE et.slug = 'admin_cancel_workshop'
@@ -280,7 +281,7 @@ INSERT INTO email_templates (tenant_id, slug, subject, body_html)
 SELECT t.id, 'admin_cancel_workshop', $new_subject${{workshop_name}} was cancelled$new_subject$, $new_body$<h1 style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:22px;line-height:1.3;font-weight:700;letter-spacing:-0.01em;color:#0d1a3e;">A workshop has been cancelled</h1>
 <p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;">Hi {{client_name}},</p>
 <p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;">The studio has cancelled <strong>{{workshop_name}}</strong>. We are sorry — we know a workshop is a date people plan around.</p>
-<p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;">You paid <strong>{{amount_paid}}</strong> for your place. The studio is arranging your refund and will contact you to settle it.</p>
+<p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;">{{refund_line}}</p>
 <p style="margin:0 0 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0d1a3e;"><a href="{{workshops_url}}" style="color:#1a2a7a;font-weight:600;text-decoration:underline;">See upcoming workshops →</a></p>$new_body$
 FROM tenants AS t
 ON CONFLICT (tenant_id, slug) DO NOTHING;

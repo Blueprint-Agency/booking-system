@@ -1139,6 +1139,7 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
   - Parse template body for `{{variable}}` tokens
   - Validate against `services/notifications/variables.ts` allow-list per slug (this is what powers the §17c amber flag in fe — same source of truth)
   - Substitute values; sanitise (XSS safe — rich text from admin trusted, but variables themselves escaped)
+- **After commit.** Mail that announces a write is queued with `afterCommit` and sent once the request's (or job's, or delivery's) transaction has committed — §7 After-commit work.
 - **Logging.** One `email_log` row per recipient per send. On send success, store Resend's email `id` in `smtp_message_id` (column name kept from the SMTP era; `smtp_response` is now always null). On a refused send, store the error in `error` and set `status='failed'`.
 - **No bounce webhook.** Resend exposes `email.bounced` / `email.complained` webhooks; v1 does not consume them. Add as a route under `routes/webhooks/` later — out of scope for v1.
 - **Testing.** Local dev uses `SMTP_HOST=localhost` + `mailpit` or `mailhog` running on port 1025; staging uses the production provider with a sandboxed sender domain.
@@ -1177,6 +1178,17 @@ Scope: class packages, PT packages and workshops. A refunded workshop payment ca
 **A workshop purchase has its own portal button, reusing the same path.** A workshop's booking IS the purchase, so it carries no `client_packages` row and — before this shipped — never appeared beside the package rows the button lived on. `issueWorkshopRefund()` (`services/billing/refunds.ts`) shares its provider call with `issueRefund()` and stops there, same as the package path; the already-workshop-aware `unwindRefund()` does the rest, so a workshop refund from the portal and one from the provider's dashboard stay indistinguishable by construction. The client detail page now lists workshop purchases as their own rows with the same button, dialog and attended notice as a package row.
 
 The member is told with a new `purchase_refunded` slug, composed the same way the four purchase-confirmation emails are (`be-client.md` §4e) — the provider's own receipt says money moved; this one names the classes that were cancelled.
+
+### After-commit work (mail)
+
+**Mail announcing a write is sent only once that write has committed — through `afterCommit(fn)` (`be/src/db/index.ts`), never inline in a service.** A studio request is ONE transaction: the tenant middleware wraps it in `withTenant` (`middleware/tenant.ts`), so a service's own `db.transaction` is only a savepoint inside it, and "after the service's transaction" is still before COMMIT. A send there holds the request's row locks (a class's `FOR UPDATE`) across the mail provider's call, and a database error on the mail path aborts the request's transaction under a write the route has already answered.
+
+- `afterCommit(fn)` queues `fn` on the transaction the **outermost** `withTenant` opened: the request's, a scheduled job's per-Tenant step (`jobs/index.ts`), a Stripe delivery's (`services/billing/webhook-handler.ts`). It runs once that transaction commits, in the order registered, each in a Tenant context and transaction of its own.
+- A rollback drops what was queued; so does a rolled-back savepoint (`db.transaction` inside a Tenant context) for what was queued inside it.
+- A failure is reported (`after-commit work failed`) and goes no further: it never changes the response or undoes the write. The outermost `withTenant` awaits the work before returning, so a request answers once its mail is handed over.
+- Called outside any Tenant context it throws: there is no transaction to wait for, and that is a wiring bug.
+
+Users today: the booking confirmation, every cancellation email (member, admin, instructor, workshop, PT), the waitlist promotion emails a cancel causes, every purchase confirmation — paid ones from the Stripe delivery, free ones (a free Trial Pass, a purchase a discount took to zero, a free workshop tier, a free corporate package) from the request — and the check-in nag — whose claim stamps therefore commit before any nag is sent (`services/bookings/check-in-nag.ts`).
 
 ### Audit middleware
 

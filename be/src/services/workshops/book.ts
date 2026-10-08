@@ -1,5 +1,5 @@
 import { and, eq, ne, sql } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
 import {
   workshops,
@@ -321,7 +321,8 @@ export async function bookWorkshopFree(
   // The worst case in the set (§13): a confirmed booking with a QR code and a
   // date that used to send nothing at all. No Purchase means nothing to
   // be idempotent on — `assertWorkshopBookable` above is the duplicate gate —
-  // so it sends every time it gets here. The helper cannot throw.
-  await sendWorkshopPurchaseEmail(tenantId, booked.bookingId)
+  // so it sends every time it gets here, once the request's transaction has
+  // committed (`afterCommit`). The helper cannot throw.
+  afterCommit(() => sendWorkshopPurchaseEmail(tenantId, booked.bookingId))
   return booked
 }
