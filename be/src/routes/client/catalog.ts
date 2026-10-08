@@ -18,7 +18,6 @@ import { listMyWorkshopBookings } from '../../services/workshops/my-bookings'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
 import {
   listCorporateRequestsForClient,
-  submitCorporateRequest,
   type HydratedCorporateRequest,
 } from '../../services/corporate/requests'
 
@@ -201,31 +200,7 @@ const app = new Hono()
     const rows = await listCorporateRequestsForClient(tenantId(c), clientId)
     return c.json({ corporate_requests: rows.map(serializeCorporateRequest) })
   })
-  // Submit a corporate request directly — no payment. Creates one pending request;
-  // the studio arranges dates/location/instructor over WhatsApp, then schedules it.
-  // `preferred_location` carries the member's chosen venue (studio name or own venue
-  // address); `notes` is free text. Both optional.
-  .post(
-    '/corporate-requests',
-    zValidator(
-      'json',
-      z.object({
-        package_id: z.string().uuid(),
-        preferred_location: z.string().trim().max(300).optional(),
-        notes: z.string().trim().max(500).optional(),
-      }),
-    ),
-    async c => {
-      const clientId = c.get('clientId')
-      const { package_id, preferred_location, notes } = c.req.valid('json')
-      const { corporateRequestId } = await submitCorporateRequest(tenantId(c), {
-        clientId,
-        corporatePackageId: package_id,
-        preferredLocation: preferred_location || null,
-        message: notes || null,
-      })
-      return c.json({ corporate_request_id: corporateRequestId }, 201)
-    },
-  )
+  // No route makes one: a Corporate Request is made by paying for the package
+  // (`POST /checkout/package` with `package_kind: 'corporate'`), never for free (#374).
 
 export default app

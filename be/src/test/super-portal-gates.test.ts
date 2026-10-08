@@ -402,11 +402,12 @@ describe('super portal gates', { skip: integrationTestsEnabled ? false : SKIP_RE
     // fields in the body. The portal's as the admin and as the instructor, the
     // platform's as the Platform administrator.
     //
-    // Two acts do remove audit rows, as a consequence and by design: permanently
-    // deleting a member takes the trail about them (#144,
-    // docs/md/member-data-retention.md), and deleting a studio takes all of its
-    // own (services/tenants/delete.ts). Each deletes a member or a studio, never
-    // an audit row on its own, and an audit row's id names neither.
+    // No act deletes an audit row (#375, docs/adr/0008). Two touch them, each as
+    // a consequence of deleting something else, never an audit row on its own
+    // (and an audit row's id names neither): permanently deleting a member keeps
+    // the trail about them with their personal data replaced (AUD-07,
+    // member-delete.test.ts), and deleting a studio moves its trail into the
+    // platform's audit_log_archive (AUD-08 to AUD-10, tenant-delete.test.ts).
     const mutating = routeTable().filter(r => r.method !== 'GET')
     const portal = mutating.filter(r => r.path.startsWith('/api/v1/portal/'))
     const platform = mutating.filter(r => r.path.startsWith('/api/v1/platform/'))

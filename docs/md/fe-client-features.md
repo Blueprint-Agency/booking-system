@@ -488,7 +488,7 @@ The studio can write back on the request: when it schedules a time none of the p
 2. On success → a pending corporate request is created; the user lands on `/account/corporate` (§8.8) with a WhatsApp contact button (number the studio's own `tenant_settings.copy->>'contact.whatsapp'`).
 3. Studio negotiates on WhatsApp, then schedules → the request flips to **Scheduled** (date/time, location, instructor shown), and the member's app shows the **"Approved!"** celebration with Add to Google Calendar (§11.2). After the session, it moves to **done** (attended). Either side can end up at **Cancelled**.
 
-_As built, a corporate request is sent from the package card's request form (preferred venue and notes, no payment — `submitCorporateRequest`); sending it shows the **"Request sent!"** celebration (§5.2 step 4) naming the package and venue, and **Done** goes to `/account/corporate`._
+_As built (#374):_ the catalogue is the **Corporate** tab of `/packages` (`/packages#corporate`). **Buy** goes to `/checkout?package=<id>&kind=corporate`, which shows the package at its price with no Promo Code field and no Part Payment, and pays by card only (`POST /me/checkout/package` with `package_kind: 'corporate'`). The confirmed payment makes the one pending request; there is no request form and no free way to send one. The member lands on their corporate bookings (`/account/bookings?type=corporate`, where `/account/corporate` redirects) with the **"Request sent!"** celebration (§5.2 step 4) naming the package, and the studio's WhatsApp button when the studio has set a number. A corporate package priced at zero skips the checkout's payment and lands there the same way.
 
 **Where admin comes in**
 - Admin (superadmin) manages corporate packages under Packages.

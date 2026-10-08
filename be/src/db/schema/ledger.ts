@@ -229,6 +229,46 @@ export const auditLog = pgTable(
   }),
 )
 
+/**
+ * The audit trails of deleted studios (docs/adr/0008). Audit rows are never
+ * deleted (prd §3.9): deleting a studio moves its `audit_log` rows here, in the
+ * same transaction, before anything of the studio goes.
+ *
+ * **Platform data, not a studio's.** Each row is an `audit_log` row as it was,
+ * with its `tenant_id` swapped for the former studio's id, Slug and name as
+ * plain values — no foreign key, since the studio is gone, and no `tenant_id`:
+ * the column is `former_tenant_id`, so neither the Row-Level Security sweep
+ * (`ensureTenantIsolation`), nor the studio archive and delete
+ * (`tenantTableOrder`), nor member export and deletion pick the table up, as
+ * `former_slugs` stays out by `renamed_tenant_id`. `actor_staff_id` points at
+ * nothing for the same reason.
+ *
+ * Row-Level Security of its own, in migration 0106: readable only outside every
+ * Tenant context (the super portal), insertable only inside the context of the
+ * studio it names (the delete runs there), and never updated or deleted.
+ */
+export const auditLogArchive = pgTable(
+  'audit_log_archive',
+  {
+    // The `audit_log` row's own id, kept.
+    id: uuid('id').primaryKey(),
+    formerTenantId: uuid('former_tenant_id').notNull(),
+    formerTenantSlug: text('former_tenant_slug').notNull(),
+    formerTenantName: text('former_tenant_name').notNull(),
+    formerTenantDeletedAt: timestamp('former_tenant_deleted_at', { withTimezone: true }).notNull().defaultNow(),
+    actorStaffId: uuid('actor_staff_id'),
+    actorType: auditActorTypeEnum('actor_type').notNull(),
+    action: text('action').notNull(),
+    targetTable: text('target_table').notNull(),
+    targetId: uuid('target_id').notNull(),
+    payload: jsonb('payload'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  table => ({
+    formerTenantIdx: index('audit_log_archive_former_tenant_idx').on(table.formerTenantId, table.createdAt),
+  }),
+)
+
 export const stripePayments = pgTable(
   'stripe_payments',
   {

@@ -493,6 +493,29 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(row?.priceSgd, '12.00', 'still there, at its price')
   })
 
+  test('MRC-11 a merch photo sent as JSON, or as multipart with no file part, is refused 400, writes nothing and logs no unhandled error', async () => {
+    const item = created(await send('POST', '/merch', one.admin, { title: `${NAME} Block`, price_sgd: '15.00' }))
+    const [was] = await harness.db.select().from(schema.merch).where(eq(schema.merch.id, item.id))
+    const errors = () => harness.logs.lines().filter(l => l.level === 'error')
+    const errorsBefore = errors().length
+
+    const asJson = await send('POST', `/merch/${item.id}/image`, one.admin, { file: 'block.png' })
+    assert.equal(asJson.status, 400, JSON.stringify(asJson.body))
+    assert.equal(asJson.body.error, 'invalid_request', JSON.stringify(asJson.body))
+
+    const noFile = new FormData()
+    noFile.append('caption', 'no file here')
+    const asForm = await reply(
+      await harness.app.request(`/api/v1/portal/admin/merch/${item.id}/image`, { method: 'POST', headers: one.admin, body: noFile }),
+    )
+    assert.equal(asForm.status, 400, JSON.stringify(asForm.body))
+    assert.equal(asForm.body.error, 'image_required', JSON.stringify(asForm.body))
+
+    const [row] = await harness.db.select().from(schema.merch).where(eq(schema.merch.id, item.id))
+    assert.deepEqual(row, was, 'the item is unchanged')
+    assert.deepEqual(errors().slice(errorsBefore), [], 'no unhandled error is logged')
+  })
+
   /* ── Rooms ──────────────────────────────────────────────────────────── */
 
   test('SCH-21 a room is made at one of the studio’s Locations, keeps it, and must be archived before it is deleted', async () => {

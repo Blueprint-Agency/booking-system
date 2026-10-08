@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import { Check, Loader2, MessageCircle } from "lucide-react";
 import { useMemberSession } from "@/lib/member-auth";
-import { useRouter } from "next/navigation";
 import { useAuthGate } from "@/components/auth/auth-gate";
 import { BuyButton } from "@/components/checkout/buy-button";
 import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
@@ -27,14 +25,12 @@ import {
   SHEET_BACKDROP,
   SHEET_HANDLE,
   SHEET_PANEL,
-  SHEET_TEXT,
   SHEET_TITLE,
 } from "@/components/ui/styles";
 import { useApi } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { useLocations } from "@/lib/classes";
 import {
   ApiClassPackage,
   ApiPtPackage,
@@ -45,22 +41,16 @@ import {
 import {
   ApiCorporatePackage,
   corporateContactWhatsappHref,
-  submitCorporateRequest,
   useCorporatePackages,
   WHATSAPP_COPY_KEY,
 } from "@/lib/corporate";
 import { useBrandCopy } from "@/components/brand/brand-provider";
-import { RequestSentCelebration } from "@/components/celebration/request-sent-celebration";
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
 type MainTab = "group" | "private" | "corporate";
 type ClassSubTab = "bundle" | "unlimited" | "trial";
 type PrivateSubTab = "1on1" | "2on1";
-
-// Indicative transport surcharge shown for corporate sessions at the member's own
-// venue. Display only — nothing is charged in-app; the studio confirms it in the quote.
-const CORPORATE_TRANSPORT_SURCHARGE_SGD = 50;
 
 /**
  * The studio's own terms for its trial pass — who may buy it and what happens
@@ -891,7 +881,7 @@ function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
   return (
     <div className="space-y-4">
       <p className="text-center text-sm text-muted">
-        Classes at your workplace. Send a request and we&apos;ll arrange dates, venue and
+        Classes at your workplace. Buy a package and we&apos;ll arrange dates, venue and
         instructor with you on WhatsApp.
       </p>
 
@@ -912,7 +902,7 @@ function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
         <div className={cn(CARD, "flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5")}>
           <div>
             <p className="font-semibold text-ink">Have a question first?</p>
-            <p className="text-sm text-muted">Message us before you send a request.</p>
+            <p className="text-sm text-muted">Message us before you buy.</p>
           </div>
           <a
             href={whatsapp}
@@ -929,41 +919,10 @@ function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
   );
 }
 
+// Buy goes to the normal checkout (§6.2): paid by card, and the payment sends the
+// request. There is no request form — date, venue and headcount are settled with
+// the studio on WhatsApp, and the member lands on their corporate bookings.
 function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
-  const { isSignedIn } = useMemberSession();
-  const { requireAuth, gate } = useAuthGate("buy a package");
-  const api = useApi();
-  const router = useRouter();
-  const [pending, setPending] = useState(false);
-  const [err, setErr] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
-  // The venue asked for, once sent: the "Request sent!" celebration.
-  const [sent, setSent] = useState<{ location: string } | null>(null);
-
-  // Submitting the request form sends a corporate request directly — no payment.
-  // The studio arranges the rest over WhatsApp; the new request appears under the
-  // member's account, where the celebration's Done takes them.
-  async function startRequest(details: {
-    location: string;
-    notes: string;
-    customLocation: boolean;
-  }) {
-    setPending(true);
-    setErr(false);
-    try {
-      await submitCorporateRequest(api, pkg.id, {
-        location: details.location || undefined,
-        notes: details.notes || undefined,
-      });
-      setFormOpen(false);
-      setPending(false);
-      setSent({ location: details.location });
-    } catch {
-      setErr(true);
-      setPending(false);
-    }
-  }
-
   return (
     <div className={cn(CARD, "flex flex-col p-5 sm:p-6")}>
       <p className="font-bold text-ink">{pkg.name}</p>
@@ -972,226 +931,15 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
       )}
       <p className="mt-4 text-xl font-bold text-ink">{formatSgd(pkg.price_sgd)}</p>
       <div className="mt-auto pt-5" />
-      {err && (
-        <p className="mb-2 text-xs text-error">Couldn&apos;t send your request. Try again.</p>
-      )}
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() => {
-          if (!isSignedIn) {
-            requireAuth("/packages#corporate");
-            return;
-          }
-          if (!pending) {
-            setErr(false);
-            setFormOpen(true);
-          }
-        }}
-        className={cn(CARD_BUTTON, pending && "opacity-70 cursor-wait")}
+      <BuyButton
+        target={{ kind: "package", packageKind: "corporate", packageId: pkg.id }}
+        context="buy a package"
+        gateHref="/packages#corporate"
+        priceSgd={pkg.price_sgd}
+        className={CARD_BUTTON}
       >
-        {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-        {pending ? "Sending…" : "Request"}
-      </button>
-      {gate}
-
-      {formOpen && (
-        <CorporateRequestModal
-          pkg={pkg}
-          pending={pending}
-          submitError={err}
-          onCancel={() => {
-            setErr(false);
-            setFormOpen(false);
-          }}
-          onSubmit={startRequest}
-        />
-      )}
-
-      {sent && (
-        <RequestSentCelebration
-          kind="corporate"
-          name={pkg.name}
-          detail={null}
-          place={sent.location || null}
-          person={null}
-          onClose={() => router.push("/account/bookings?type=corporate")}
-        />
-      )}
+        Buy
+      </BuyButton>
     </div>
-  );
-}
-
-// Collected before checkout so we can tell the studio where the member wants
-// the corporate sessions held and capture any notes. The choices are the studio
-// locations plus a free-text "our own venue" option.
-function CorporateRequestModal({
-  pkg,
-  pending,
-  submitError,
-  onCancel,
-  onSubmit,
-}: {
-  pkg: ApiCorporatePackage;
-  pending: boolean;
-  submitError: boolean;
-  onCancel: () => void;
-  onSubmit: (details: {
-    location: string;
-    notes: string;
-    customLocation: boolean;
-  }) => void;
-}) {
-  const { data: locations } = useLocations();
-  const studioOptions = (locations ?? []).map((l) => l.name);
-  const CUSTOM = "__custom__";
-  const [where, setWhere] = useState("");
-  const [customWhere, setCustomWhere] = useState("");
-  const [notes, setNotes] = useState("");
-  const [mounted, setMounted] = useState(false);
-
-  const isCustom = where === CUSTOM;
-  const resolvedWhere = isCustom ? customWhere.trim() : where.trim();
-  const canSubmit = resolvedWhere.length > 0 && !pending;
-
-  const trapRef = useFocusTrap<HTMLDivElement>(mounted);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useBodyScrollLock(true);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !pending) onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel, pending]);
-
-  function handleSubmit() {
-    if (!canSubmit) return;
-    onSubmit({ location: resolvedWhere, notes: notes.trim(), customLocation: isCustom });
-  }
-
-  if (!mounted) return null;
-
-  return createPortal(
-    <div className={SHEET_BACKDROP} onClick={pending ? undefined : onCancel}>
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="corporate-request-title"
-        tabIndex={-1}
-        className={SHEET_PANEL}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <span aria-hidden className={SHEET_HANDLE} />
-        <h3 id="corporate-request-title" className={SHEET_TITLE}>
-          Request {pkg.name}
-        </h3>
-        <p className={SHEET_TEXT}>We&apos;ll contact you to confirm the details.</p>
-
-        {/* Where */}
-        <div className="mt-5" role="radiogroup" aria-labelledby="corporate-where-label">
-          <p id="corporate-where-label" className="text-sm font-semibold text-ink">
-            Where
-          </p>
-          <div className="mt-2 space-y-2">
-            {studioOptions.map((name) => (
-              <label
-                key={name}
-                className="flex min-h-[44px] items-center gap-2.5 rounded-xl border border-ink/10 px-3.5 text-sm text-ink cursor-pointer transition-colors has-[:checked]:border-accent has-[:checked]:bg-accent/5"
-              >
-                <input
-                  type="radio"
-                  name="corporate-where"
-                  value={name}
-                  checked={where === name}
-                  onChange={(e) => setWhere(e.target.value)}
-                  className="h-4 w-4 border-ink/30 text-accent focus:ring-accent"
-                />
-                <span>{name}</span>
-              </label>
-            ))}
-            <label className="flex min-h-[44px] items-center gap-2.5 rounded-xl border border-ink/10 px-3.5 text-sm text-ink cursor-pointer transition-colors has-[:checked]:border-accent has-[:checked]:bg-accent/5">
-              <input
-                type="radio"
-                name="corporate-where"
-                value={CUSTOM}
-                checked={where === CUSTOM}
-                onChange={(e) => setWhere(e.target.value)}
-                className="h-4 w-4 border-ink/30 text-accent focus:ring-accent"
-              />
-              <span>Your own venue</span>
-            </label>
-          </div>
-          {isCustom && (
-            <>
-              <input
-                type="text"
-                aria-label="Venue address"
-                value={customWhere}
-                onChange={(e) => setCustomWhere(e.target.value)}
-                placeholder="Address or venue name"
-                className="mt-2 w-full min-h-[44px] rounded-xl border border-ink/15 bg-card px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-              <p className="mt-2 text-xs text-muted">
-                Usually adds a {formatSgd(CORPORATE_TRANSPORT_SURCHARGE_SGD)} transport fee.
-                We&apos;ll confirm it in your quote.
-              </p>
-            </>
-          )}
-        </div>
-
-        {/* Notes */}
-        <div className="mt-5">
-          <label htmlFor="corporate-notes" className="block text-sm font-semibold text-ink">
-            Notes <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <textarea
-            id="corporate-notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={4}
-            maxLength={500}
-            placeholder="Group size, preferred dates and times, anything else"
-            className="mt-2 w-full rounded-xl border border-ink/15 bg-card px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent resize-none"
-          />
-        </div>
-
-        {/* Indicative price — nothing is charged here; the studio confirms the
-            final quote when arranging the sessions. */}
-        <dl className="mt-5 space-y-1 border-t border-ink/5 pt-4 text-sm">
-          <div className="flex items-center justify-between font-semibold text-ink">
-            <dt>{pkg.name}</dt>
-            <dd>{formatSgd(pkg.price_sgd)}</dd>
-          </div>
-          <p className="text-xs text-muted">
-            Nothing to pay now. We confirm the final quote{isCustom ? ", with transport," : ""} when
-            we contact you.
-          </p>
-        </dl>
-
-        {submitError && (
-          <p className="mt-4 rounded-xl border border-error/25 bg-error/10 px-3 py-2 text-sm text-ink">
-            Couldn&apos;t send your request. Try again.
-          </p>
-        )}
-
-        <div className={SHEET_ACTIONS}>
-          <button type="button" disabled={pending} onClick={onCancel} className={BTN_SECONDARY}>
-            Cancel
-          </button>
-          <button type="button" disabled={!canSubmit} onClick={handleSubmit} className={BTN_PRIMARY}>
-            {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {pending ? "Sending…" : "Send request"}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
   );
 }

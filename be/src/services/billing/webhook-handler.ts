@@ -26,6 +26,7 @@ import { purchaseKindFor } from './checkout-session'
 import { toCents } from '../../shared/money'
 import { bookWorkshopPaid, tierDaysClash } from '../workshops/book'
 import { recordMerchOrder } from '../catalog/merch-orders'
+import { createCorporateRequest } from '../corporate/requests'
 import {
   sendPackagePurchaseEmail,
   sendWorkshopPurchaseEmail,
@@ -653,6 +654,69 @@ async function dispatchStripeEvent(
         amountSgd,
         paymentIntentId,
       })
+
+      await bankPayment(
+        tenantId,
+        paymentIntentId,
+        await chargePatch(tenantId, paymentIntentId, providerAccountId, retry),
+      )
+      return
+    }
+
+    // A corporate package (be-client § Corporate branch, #374). No credits: the
+    // one pending Corporate Request this makes is the whole of what was bought,
+    // and the studio settles the rest with the member over WhatsApp.
+    if (kind === 'corporate_package') {
+      const packageId = meta.package_id
+      const clientId = meta.client_id
+      if (!packageId || !clientId) return
+      const tenantId = await tenantForClient(clientId)
+
+      const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
+
+      const existing = await existingPayment(tenantId, paymentIntentId)
+      if (existing?.status === 'succeeded') return
+
+      const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
+        clientId,
+        amountSgd,
+      })
+
+      if (!existing) {
+        await db
+          .insert(stripePayments)
+          .values({
+            tenantId,
+            paymentIntentId,
+            purchaseId: purchase.id,
+            amountSgd: capturedSgd(session, amountSgd),
+            kind: 'corporate_package',
+            clientId,
+            providerAccountId,
+            status: 'pending',
+          })
+          .onConflictDoNothing()
+      }
+
+      // The request has no unique key of its own to stop a second one, so the
+      // payment row is the lock: two deliveries of this intent at once (the
+      // webhook and the confirmation page's fallback) queue here, and the one
+      // that waited reads the other's `succeeded` and stops.
+      const [locked] = await db
+        .select({ status: stripePayments.status })
+        .from(stripePayments)
+        .where(
+          and(
+            eq(stripePayments.tenantId, tenantId),
+            eq(stripePayments.paymentIntentId, paymentIntentId),
+          ),
+        )
+        .for('update')
+      if (locked?.status === 'succeeded') return
+
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
+
+      await createCorporateRequest(tenantId, { clientId, corporatePackageId: packageId })
 
       await bankPayment(
         tenantId,

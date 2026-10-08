@@ -6,6 +6,7 @@ import * as svc from '../../../services/catalog/merch'
 import { BadRequestError } from '../../../shared/errors'
 import { ERROR_CODES } from '../../../shared/error-codes'
 import { tenantId } from '../../../middleware/tenant'
+import { uploadedFile } from '../uploaded-file'
 
 /**
  * Merch CRUD. The photo is its own call (POST /:id/image) so a file that is
@@ -83,12 +84,7 @@ const app = new Hono()
     zValidator('param', idParam),
     async c => {
       const { id } = c.req.valid('param')
-      const file = (await c.req.formData()).get('file')
-      if (!file || typeof file === 'string') {
-        throw new BadRequestError('image_required', {
-          message: 'Attach a JPG, PNG or WebP image.',
-        })
-      }
+      const file = await uploadedFile(c, { code: 'image_required', message: 'Attach a JPG, PNG or WebP image.' })
       const row = await svc.setMerchImage({
         tenantId: tenantId(c),
         id,
