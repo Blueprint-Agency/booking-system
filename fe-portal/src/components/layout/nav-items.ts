@@ -103,6 +103,8 @@ export const NAV_ITEMS: NavItem[] = [
   // --- Settings (location-independent policy + config) ---
   { group: "Settings", label: "Global Policy", href: "/admin/policy", icon: Shield, scope: "global" },
   { group: "Settings", label: "Waiver", href: "/admin/waiver", icon: FileText, scope: "global" },
+  // What the studio's Receipts carry (#391): number prefix and business details.
+  { group: "Settings", label: "Receipt details", href: "/admin/receipt-details", icon: ReceiptText, scope: "global" },
   { group: "Settings", label: "Features", href: "/admin/feature-flags", icon: ToggleRight, scope: "global" },
 ];
 

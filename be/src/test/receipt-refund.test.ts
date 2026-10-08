@@ -374,7 +374,7 @@ describe('a Refund stamps the Receipt refunded, over HTTP', { skip: integrationT
     assert.equal(after.refunded_at, null)
   })
 
-  test("INV-48 the admin's Receipts read a Refund's stamp too: status=refunded finds it, status=issued no longer does, and it opens refunded as the member's does", async () => {
+  test("INV-55 the admin's Receipts read a Refund's stamp too: status=refunded finds it, status=issued no longer does, and it opens refunded as the member's does", async () => {
     const ten = await tenPack('150.00')
     const ada = await member()
     await buyAndPay(ada, ten.id)
