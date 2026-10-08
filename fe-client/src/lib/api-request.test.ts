@@ -114,7 +114,7 @@ test("a caller's own abort is not reported as a failure", async () => {
   assert.equal(reported.length, 0);
 });
 
-test("INV-16 a file asked for as a file comes back byte for byte, and a refusal of it still reads as JSON", async () => {
+test("INV-19 a file asked for as a file comes back byte for byte, and a refusal of it still reads as JSON", async () => {
   // Not valid UTF-8 on purpose: reading it as text would change it.
   const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x00, 0xff, 0x80, 0xc3, 0x28]);
   globalThis.fetch = (async () =>

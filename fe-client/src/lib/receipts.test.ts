@@ -48,7 +48,7 @@ test("INV-09 a range that ends before it starts is refused before it is sent", (
   assert.equal(dateRangeProblem("", "2026-01-31"), null);
 });
 
-test("INV-16 a downloaded Receipt is saved under its number", () => {
+test("INV-19 a downloaded Receipt is saved under its number", () => {
   assert.equal(receiptPdfFilename("R-000123"), "R-000123.pdf");
   // A studio's own prefix (#391) cannot reach outside the file's name.
   assert.equal(receiptPdfFilename("NW/2026 000123"), "NW_2026_000123.pdf");

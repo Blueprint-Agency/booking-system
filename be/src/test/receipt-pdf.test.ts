@@ -174,7 +174,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
     await harness.close()
   })
 
-  test('INV-12 a member downloads their Receipt as a PDF that names the studio, the number, the line, the total and the payment', async () => {
+  test('INV-15 a member downloads their Receipt as a PDF that names the studio, the number, the line, the total and the payment', async () => {
     const mia = await member(one)
     const receipt = await buy(mia, one)
 
@@ -194,7 +194,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
     assert.ok(text.includes('Visa •••• 4242'), 'how it was paid, as the Receipt page words it')
   })
 
-  test("INV-13 another member's Receipt and another studio's are 404 receipt_not_found as a PDF too", async () => {
+  test("INV-16 another member's Receipt and another studio's are 404 receipt_not_found as a PDF too", async () => {
     const owner = await member(one)
     const theirs = await buy(owner, one)
     const neighbour = await member(one)
@@ -208,7 +208,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
     assert.equal(unknown.error, 'receipt_not_found', 'the same answer as one that does not exist')
   })
 
-  test('INV-14 the PDF shows the studio’s logo, and a logo that cannot be had leaves the name standing alone', async () => {
+  test('INV-17 the PDF shows the studio’s logo, and a logo that cannot be had leaves the name standing alone', async () => {
     // A PNG of one pixel: the smallest logo there is.
     const png = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -271,7 +271,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
     }
   })
 
-  test('INV-15 the renderer: a S$0.00 Receipt says no payment was due, a refunded one is stamped, and one Receipt always gives the same document', async () => {
+  test('INV-18 the renderer: a S$0.00 Receipt says no payment was due, a refunded one is stamped, and one Receipt always gives the same document', async () => {
     // The renderer the member's download, the admin's (#389) and the email's
     // attachment (#387) share, handed Receipts as they are stored. Free paths
     // and Refunds issue and stamp Receipts in their own tickets (#385); what
