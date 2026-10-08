@@ -10,6 +10,7 @@ import { Portal } from "@/components/ui/portal";
 import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
 import { notAcceptedCopy, notCoveredCopy, planRunsOutCopy } from "@/lib/booking-copy";
 import { RESTRICTED_HINT } from "@/lib/package-rule";
+import { bookSignInPath } from "@/lib/book-return";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
@@ -61,6 +62,8 @@ export function ClassRow({
   isSignedIn,
   entitlements,
   onStale,
+  autoBook = false,
+  onAutoBooked,
 }: {
   cls: ApiClassCard;
   showLocation: boolean;
@@ -70,6 +73,13 @@ export function ClassRow({
   entitlements: ClassEntitlements | null;
   /** Re-read the feed: the row's state turned out to be out of date. */
   onStale?: () => void;
+  /**
+   * Book this class as soon as the member's packages are known, as if Book Now
+   * had been tapped: the schedule was opened to book it (`lib/book-return.ts`).
+   */
+  autoBook?: boolean;
+  /** The automatic Book Now has been taken. */
+  onAutoBooked?: () => void;
 }) {
   const router = useRouter();
   const api = useApi();
@@ -150,7 +160,9 @@ export function ClassRow({
     e?.preventDefault();
     e?.stopPropagation();
     if (!isSignedIn) {
-      router.push(`/login?next=${encodeURIComponent("/")}`);
+      // Back to this class's Book sheet once signed in, not to the schedule
+      // with the class to find again (§3.1).
+      router.push(bookSignInPath(cls.id));
       return;
     }
     if (canBookLoaded && !canBook) {
@@ -160,6 +172,16 @@ export function ClassRow({
     if (booking || booked) return;
     setConfirmBook(true);
   };
+
+  // The Book Now the member tapped before signing in, taken now — once their
+  // packages are known, so it opens the Book sheet or the "You need a
+  // package" popup exactly as the tap would have.
+  useEffect(() => {
+    if (!autoBook || !isSignedIn || !canBookLoaded) return;
+    onAutoBooked?.();
+    requestBook();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the row can answer the tap
+  }, [autoBook, isSignedIn, canBookLoaded]);
 
   /** Book, paid by the package the member picked on the sheet. */
   const handleBook = async (clientPackageId: string, choices: number) => {
@@ -638,11 +660,14 @@ export function ClassRow({
         <div className={SHEET_BACKDROP} onClick={() => setShowNoPackage(false)}>
           <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-labelledby={`no-package-${cls.id}`} tabIndex={-1} className={SHEET_PANEL} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === "Escape" && setShowNoPackage(false)}>
             <span aria-hidden className={SHEET_HANDLE} />
-            <h3 id={`no-package-${cls.id}`} className={SHEET_TITLE}>You&apos;re out of credits</h3>
-            <p className={SHEET_TEXT}>Buy a package to book this class.</p>
+            {/* fe-client-features §3.1: the words a member who holds nothing, or
+                has run out, is shown — never "out of credits" to someone who
+                never had any. */}
+            <h3 id={`no-package-${cls.id}`} className={SHEET_TITLE}>You need a package to book this class</h3>
+            <p className={SHEET_TEXT}>Nothing you hold can pay for it. Pick a package, then come back and book.</p>
             <div className={SHEET_ACTIONS}>
               <button onClick={() => setShowNoPackage(false)} className={BTN_SECONDARY}>Not now</button>
-              <Link href="/packages" className={BTN_PRIMARY}>See packages</Link>
+              <Link href="/packages" className={BTN_PRIMARY}>Buy a Package</Link>
             </div>
           </div>
         </div>

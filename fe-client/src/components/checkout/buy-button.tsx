@@ -10,9 +10,10 @@ import { cn } from "@/lib/utils";
 import { reportError } from "@/lib/report-error";
 import { checkoutErrorMessage } from "@/lib/checkout-messages";
 import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
+import { corporateRequestSentHref } from "@/lib/corporate-return";
 
 type BuyTarget =
-  | { kind: "package"; packageKind: "class" | "pt"; packageId: string }
+  | { kind: "package"; packageKind: "class" | "pt" | "corporate"; packageId: string }
   | { kind: "workshop"; workshopId: string; tierId: string | null }
   | { kind: "merch"; merchId: string };
 
@@ -25,8 +26,9 @@ type AuthGateContext = "buy a package" | "book a workshop" | "buy merch";
  * BE grants immediately (free trial / free workshop / a package a Promotion
  * drives to $0) and lands on the confirmation page.
  *
- * `gateHref` is where the login modal sends the user to come back after
- * signing in (the original page they were on).
+ * Signed out, the login modal sends the user to sign in and then on to the
+ * review page when the purchase has one, or back to `gateHref` (the page they
+ * were on) when it does not: merch, and a $0 item.
  *
  * A studio that takes no online payments (#293) gets a sentence in place of a
  * paid button — a button that can only be refused is worse than being told.
@@ -109,6 +111,9 @@ export function BuyButton({
           );
         } else if (target.kind === "merch") {
           router.push("/booking/confirmation?type=merch");
+        } else if (target.kind === "package" && data.corporate_request_id) {
+          // A corporate package grants no package: the request is what was bought.
+          router.push(corporateRequestSentHref(target.packageId));
         } else if (target.kind === "package" && data.client_package_id) {
           router.push(
             `/booking/confirmation?type=package&package_id=${target.packageId}&package_kind=${target.packageKind}`,
@@ -142,23 +147,27 @@ export function BuyButton({
         type="button"
         disabled={busy}
         onClick={() => {
-          if (!isSignedIn) {
-            requireAuth(gateHref);
-            return;
-          }
-          if (busy) return;
           // Merch has no order-summary page to review: one item, no Promo Code,
           // no choices — straight to the provider (or straight to the order, if
           // the studio priced it at zero).
           // A NaN price reads as paid on purpose — bad catalogue data must never
           // grant something for free.
-          if (target.kind !== "merch" && (requiresReview || !(Number(priceSgd) <= 0))) {
-            setBusy(true);
-            router.push(
-              target.kind === "workshop"
+          const review =
+            target.kind !== "merch" && (requiresReview || !(Number(priceSgd) <= 0))
+              ? target.kind === "workshop"
                 ? `/checkout?workshop=${target.workshopId}${target.tierId ? `&tier=${target.tierId}` : ""}`
-                : `/checkout?package=${target.packageId}&kind=${target.packageKind}`,
-            );
+                : `/checkout?package=${target.packageId}&kind=${target.packageKind}`
+              : null;
+          if (!isSignedIn) {
+            // Signed in, a purchase with a review step lands on it (§7, PAY-01);
+            // anything else comes back to the page it was bought from.
+            requireAuth(review ?? gateHref);
+            return;
+          }
+          if (busy) return;
+          if (review) {
+            setBusy(true);
+            router.push(review);
             return;
           }
           void start();

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray, like, or, sql } from 'drizzle-orm'
+import { and, eq, getTableName, inArray, like, or, sql, type SQL } from 'drizzle-orm'
+import type { PgTable } from 'drizzle-orm/pg-core'
 import type * as Schema from '../db/schema'
 import { MEMBER_TABLES, type MemberKey, type MemberTable } from '../services/clients/member-tables'
 import type { TestApp } from './harness'
@@ -200,11 +201,67 @@ export function memberFixtures(harness: TestApp, schema: typeof Schema, domain: 
     return fixtures
   }
 
-  /** Remove everything made under `domain`, children first. */
+  /* ── cleanup ────────────────────────────────────────────────────────── */
+
+  /** The foreign keys that refuse a delete from `table` while a row still points at it. */
+  const blockersOf = (table: string) =>
+    harness.db.execute<ForeignKey & { child: string }>(sql`
+      SELECT c.conrelid::regclass::text AS child,
+             (SELECT array_agg(a.attname ORDER BY k.i) FROM unnest(c.conkey) WITH ORDINALITY k(n, i)
+                JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.n) AS cols,
+             (SELECT array_agg(a.attname ORDER BY k.i) FROM unnest(c.confkey) WITH ORDINALITY k(n, i)
+                JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = k.n) AS refcols
+      FROM pg_constraint c
+      WHERE c.contype = 'f' AND c.confrelid = ${`public.${table}`}::regclass AND c.confdeltype IN ('a', 'r')`)
+
+  const foreignKeyViolation = (err: unknown) => {
+    const { code, cause } = err as { code?: string; cause?: { code?: string } }
+    return (cause?.code ?? code) === '23503'
+  }
+
+  /**
+   * Delete the rows of `table` matching `where`, and when a foreign key refuses
+   * that, first whatever still points at them. A test can hang its own rows off
+   * a fixture (the bookings `tenant-delete.test.ts` bulk-inserts onto a fixture
+   * class); those are fixture data too, and one of them must not strand the rest.
+   */
+  const purge = async (table: string, where: SQL, path: string[] = []): Promise<void> => {
+    const remove = () => harness.db.execute(sql`DELETE FROM ${sql.identifier(table)} WHERE ${where}`)
+    try {
+      await remove()
+      return
+    } catch (err) {
+      if (!foreignKeyViolation(err)) throw err
+    }
+    const columns = (names: string[]) => sql.join(names.map(n => sql.identifier(n)), sql`, `)
+    for (const fk of await blockersOf(table)) {
+      if (fk.child === table || path.includes(fk.child)) continue
+      const pointing = sql`(${columns(fk.cols)}) IN (SELECT ${columns(fk.refcols)} FROM ${sql.identifier(table)} WHERE ${where})`
+      await purge(fk.child, pointing, [...path, table])
+    }
+    await remove()
+  }
+
+  /**
+   * Remove everything made under `domain`, children first. One row that cannot
+   * go does not keep the others: every delete is tried, and what failed is
+   * reported together at the end.
+   */
   const cleanup = async () => {
+    const failures: string[] = []
+    const attempt = async (table: string, where: SQL | undefined) => {
+      if (!where) return
+      try {
+        await purge(table, where)
+      } catch (err) {
+        const { message, cause } = err as { message?: string; cause?: { message?: string } }
+        failures.push(`${table}: ${cause?.message ?? message}`)
+      }
+    }
+
     for (const { table, key } of [...made].reverse()) {
       const where = Object.entries(key).map(([k, v]) => sql`${sql.identifier(k)} = ${v}`)
-      await harness.db.execute(sql`DELETE FROM ${sql.identifier(table)} WHERE ${sql.join(where, sql` AND `)}`)
+      await attempt(table, sql.join(where, sql` AND `))
     }
     const staff = await harness.db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(like(schema.staffUsers.email, `%@${domain}`))
     const staffIds = staff.map(s => s.id)
@@ -212,17 +269,21 @@ export function memberFixtures(harness: TestApp, schema: typeof Schema, domain: 
       ...(await harness.db.select({ id: schema.staffAuthUsers.id }).from(schema.staffAuthUsers).where(like(schema.staffAuthUsers.email, `%@${domain}`))),
       ...(await harness.db.select({ id: schema.clientAuthUsers.id }).from(schema.clientAuthUsers).where(like(schema.clientAuthUsers.email, `%@${domain}`))),
     ].map(u => u.id)
+    const nameOf = (t: PgTable) => getTableName(t)
     if (authIds.length) {
-      await harness.db
-        .delete(schema.authEvents)
-        .where(or(inArray(schema.authEvents.actorUserId, authIds), inArray(schema.authEvents.subjectUserId, authIds)))
+      await attempt(
+        nameOf(schema.authEvents),
+        or(inArray(schema.authEvents.actorUserId, authIds), inArray(schema.authEvents.subjectUserId, authIds)),
+      )
     }
-    if (staffIds.length) await harness.db.delete(schema.auditLog).where(inArray(schema.auditLog.actorStaffId, staffIds))
-    await harness.db.delete(schema.emailLog).where(like(schema.emailLog.recipientEmail, `%@${domain}`))
-    await harness.db.delete(schema.clients).where(like(schema.clients.email, `%@${domain}`))
-    if (staffIds.length) await harness.db.delete(schema.staffUsers).where(inArray(schema.staffUsers.id, staffIds))
-    await harness.db.delete(schema.clientAuthUsers).where(like(schema.clientAuthUsers.email, `%@${domain}`))
-    await harness.db.delete(schema.staffAuthUsers).where(like(schema.staffAuthUsers.email, `%@${domain}`))
+    if (staffIds.length) await attempt(nameOf(schema.auditLog), inArray(schema.auditLog.actorStaffId, staffIds))
+    await attempt(nameOf(schema.emailLog), like(schema.emailLog.recipientEmail, `%@${domain}`))
+    await attempt(nameOf(schema.clients), like(schema.clients.email, `%@${domain}`))
+    if (staffIds.length) await attempt(nameOf(schema.staffUsers), inArray(schema.staffUsers.id, staffIds))
+    await attempt(nameOf(schema.clientAuthUsers), like(schema.clientAuthUsers.email, `%@${domain}`))
+    await attempt(nameOf(schema.staffAuthUsers), like(schema.staffAuthUsers.email, `%@${domain}`))
+
+    if (failures.length) throw new Error(`member-fixtures cleanup left rows behind:\n${failures.join('\n')}`)
   }
 
   return { at, staffAt, memberAt, insertRow, fixturesFor, cleanup }

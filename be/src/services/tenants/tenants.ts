@@ -4,6 +4,7 @@ import { tenants, tenantSettings } from '../../db/schema/tenancy'
 import type { TenantRow, TenantSettingsRow } from '../../db/schema/tenancy'
 import type { TenantStatus } from '../../db/enums'
 import { isUniqueViolation } from '../../db/unique-violation'
+import { now as clockNow } from '../../lib/clock'
 import { ConflictError } from '../../shared/errors'
 import { claimSlug } from './former-slugs'
 import { assertUsableSlug, E2E_SLUG_PREFIX, normaliseSlug } from './slug'
@@ -264,7 +265,7 @@ export async function activateAfterFirstStaff(id: string): Promise<TenantRow | n
         eq(tenants.status, 'suspended'),
         // Nor a studio whose Term has ended: that suspension has a reason of
         // its own, which gaining staff does not remove.
-        sql`(${tenants.termEndDate} IS NULL OR (now() AT TIME ZONE ${tenants.timezone})::date < ${tenants.termEndDate})`,
+        sql`(${tenants.termEndDate} IS NULL OR (${clockNow().toISOString()}::timestamptz AT TIME ZONE ${tenants.timezone})::date < ${tenants.termEndDate})`,
       ),
     )
     .returning()

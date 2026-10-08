@@ -144,6 +144,43 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(me.status, 200, await me.clone().text())
   })
 
+  test('the first admin’s invitation is good for a week from the app clock, and the link reads it on the same clock', async () => {
+    const slug = `prov-invite-clock-${Date.now()}`
+    const invitedAt = new Date('2031-05-01T04:00:00.000Z')
+    const lastSecond = new Date('2031-05-08T04:00:00.000Z')
+    harness.clock.set(invitedAt)
+    try {
+      const { tenant } = await provision.provisionTenant({ slug, name: 'Invite Clock', adminEmail: `owner@${slug}.test` })
+      const [invitation] = await harness.db
+        .select()
+        .from(schema.staffInvitations)
+        .where(eq(schema.staffInvitations.tenantId, tenant.id))
+      assert.equal(invitation!.expiresAt.toISOString(), lastSecond.toISOString())
+
+      const lookup = async () => {
+        const res = await harness.app.request(`/api/v1/public/staff-invitation?token=${invitation!.token}`, {
+          headers: { 'X-Tenant-Slug': slug },
+        })
+        assert.equal(res.status, 200, await res.clone().text())
+        return ((await res.json()) as { status: string }).status
+      }
+      harness.clock.set(lastSecond)
+      assert.equal(await lookup(), 'valid')
+
+      harness.clock.set(new Date(lastSecond.getTime() + 1000))
+      assert.equal(await lookup(), 'expired')
+      const accepted = await harness.app.request('/api/v1/public/staff-invitation/accept', {
+        method: 'POST',
+        headers: { 'X-Tenant-Slug': slug, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: invitation!.token, password: 'a-first-password' }),
+      })
+      assert.equal(accepted.status, 409, await accepted.clone().text())
+      assert.equal(((await accepted.json()) as { error: string }).error, 'invitation_expired')
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
   test('a new studio can send email at all: it is created with its own copy', async () => {
     // The bug this covers: nothing seeded a provisioned studio's templates, and
     // `sendTemplatedEmail` throws on a missing (tenant, slug) row rather than

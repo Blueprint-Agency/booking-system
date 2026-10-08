@@ -43,6 +43,8 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
   let partnerRequest!: Row
   /** A PT session scheduled from the member's own request. */
   let requestedSession!: Row
+  /** Every audit row that named the member before they were deleted. */
+  let memberTrail!: Row[]
 
   const deletePath = (clientId: string) => `/api/v1/portal/admin/clients/${clientId}/permanently`
   const remove = (clientId: string, headers: Record<string, string>) =>
@@ -118,7 +120,42 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
         action: `POST /api/v1/portal/admin/clients/${m.clientId}/credits/adjust`,
       })
       await insertRow('audit_log', one.id, { actor_type: 'staff', target_table: 'bookings', payload: { impersonatedClientId: m.clientId } })
+      // The rows that carry who the member is, not only their id: an admin's
+      // edit of their profile and of their email, each from an earlier value to
+      // the current one, and a route call whose free text names them.
+      await insertRow('audit_log', one.id, {
+        actor_type: 'staff',
+        actor_staff_id: admin.row.id,
+        action: 'client_profile_edited',
+        target_table: 'clients',
+        target_id: m.clientId,
+        payload: { from: { name: 'Ada Byron', phone: '+6580001111', gender: 'female' }, to: { name: 'Ada Lovelace', phone: PHONE } },
+      })
+      await insertRow('audit_log', one.id, {
+        actor_type: 'staff',
+        actor_staff_id: admin.row.id,
+        action: 'client_email_changed',
+        target_table: 'clients',
+        target_id: m.clientId,
+        payload: { from: `earlier.${m.email}`, to: m.email },
+      })
+      await insertRow('audit_log', one.id, {
+        actor_type: 'staff',
+        actor_staff_id: admin.row.id,
+        action: `PATCH /api/v1/portal/admin/clients/${m.clientId}/profile`,
+        target_table: 'clients',
+        target_id: m.clientId,
+        payload: {
+          method: 'PATCH',
+          path: `/api/v1/portal/admin/clients/${m.clientId}/profile`,
+          detail: { note: `Ada Lovelace asked from ${m.email.toUpperCase()}, phone ${PHONE}, login ${m.authUserId}` },
+        },
+      })
     }
+    memberTrail = await harness.db.execute<Row>(
+      sql`SELECT * FROM audit_log WHERE tenant_id = ${one.id} AND ${MEMBER_TABLES.find(e => e.table === 'audit_log')!.where(member)}`,
+    )
+    assert.ok(memberTrail.length >= 6, `the member has an audit trail to keep: ${JSON.stringify(memberTrail)}`)
   })
 
   after(async () => {
@@ -150,6 +187,53 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
     test('no row at the studio names them any more', async () => {
       const left = await rowsNaming(one, member)
       assert.deepEqual(Object.entries(left).filter(([, n]) => n > 0), [])
+    })
+
+    test('AUD-07 every audit row that named them stays, anonymised: no value of theirs is left anywhere in it', async () => {
+      const ids = memberTrail.map(r => String(r.id)).sort()
+      const kept = await harness.db.execute<Row>(sql`SELECT * FROM audit_log WHERE id IN ${ids}`)
+      assert.deepEqual(kept.map(r => String(r.id)).sort(), ids, 'an audit row that named them was deleted')
+
+      const personal = [
+        'Ada Lovelace',
+        'Ada Byron',
+        PHONE,
+        '+6580001111',
+        'female',
+        member.email,
+        member.clientId,
+        member.authUserId,
+      ]
+      for (const row of kept) {
+        const was = memberTrail.find(r => r.id === row.id)!
+        // Who acted, what kind of thing it was done to, under which studio, and when.
+        for (const column of ['tenant_id', 'actor_staff_id', 'actor_type', 'target_table', 'created_at']) {
+          assert.deepEqual(row[column], was[column], `${column} of ${row.id} changed`)
+        }
+        const text = JSON.stringify(row).toLowerCase()
+        for (const value of personal) {
+          assert.ok(!text.includes(value.toLowerCase()), `audit row still holds ${value}: ${JSON.stringify(row)}`)
+        }
+      }
+
+      const byAction = (action: string) => kept.find(r => r.action === action)
+      // The profile edit still says which fields changed; not from what, nor to what.
+      const edited = byAction('client_profile_edited')!
+      assert.deepEqual(edited.payload, {
+        from: { name: '[erased member]', phone: '[erased member]', gender: '[erased member]' },
+        to: { name: '[erased member]', phone: '[erased member]' },
+      })
+      assert.deepEqual(byAction('client_email_changed')!.payload, { from: '[erased member]', to: '[erased member]' })
+      // A route call keeps its route, and the placeholder stands where they were.
+      const called = byAction('PATCH /api/v1/portal/admin/clients/[erased member]/profile')
+      assert.ok(called, `the route's action was not kept: ${JSON.stringify(kept.map(r => r.action))}`)
+      assert.deepEqual(called.payload, {
+        method: 'PATCH',
+        path: '/api/v1/portal/admin/clients/[erased member]/profile',
+        detail: { note: '[erased member] asked from [erased member], phone [erased member], login [erased member]' },
+      })
+      assert.ok(byAction('POST /api/v1/portal/admin/clients/[erased member]/credits/adjust'))
+      assert.ok(kept.some(r => (r.payload as Row | null)?.impersonatedClientId === '[erased member]'))
     })
 
     test('the accounting rows stay, and hold no name, email or phone', async () => {
@@ -257,6 +341,37 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
     const account = await harness.db.select().from(schema.clientAuthUsers).where(eq(schema.clientAuthUsers.id, solo.authUserId))
     assert.deepEqual(account, [])
     assert.deepEqual(Object.entries(await rowsNaming(one, solo)).filter(([, n]) => n > 0), [])
+  })
+
+  test('AUD-07 a member named by hundreds of audit rows has every one kept and anonymised', async () => {
+    const busy = { ...(await fixtures.memberAt(one, admin.headers, fixtures.at('busy'))), email: fixtures.at('busy') }
+    const ROWS = 600
+    await harness.db.execute(sql`
+      INSERT INTO audit_log (tenant_id, actor_staff_id, actor_type, action, target_table, target_id, payload)
+      SELECT ${one.id}::uuid, ${admin.row.id}::uuid, 'staff',
+             'POST /api/v1/portal/admin/clients/' || ${busy.clientId}::text || '/notes/' || n,
+             'clients', ${busy.clientId}::uuid,
+             jsonb_build_object('n', n, 'detail', 'wrote to ' || ${busy.email}::text, 'to', ${busy.email}::text)
+      FROM generate_series(1, ${ROWS}::int) AS n`)
+    const trail = await harness.db.execute<Row>(
+      sql`SELECT id FROM audit_log WHERE tenant_id = ${one.id} AND target_id = ${busy.clientId}::uuid AND action LIKE '%/notes/%'`,
+    )
+    assert.equal(trail.length, ROWS)
+    const ids = trail.map(r => String(r.id))
+
+    const res = await remove(busy.clientId, admin.headers)
+    assert.equal(res.status, 200, await res.clone().text())
+
+    const kept = await harness.db.execute<Row>(sql`SELECT * FROM audit_log WHERE id IN ${ids}`)
+    assert.equal(kept.length, ROWS, 'an audit row that named them was deleted')
+    const named = kept.filter(row => {
+      const text = JSON.stringify(row).toLowerCase()
+      return [busy.clientId, busy.email, busy.authUserId].some(v => text.includes(v.toLowerCase()))
+    })
+    assert.deepEqual(named.map(r => r.id), [], 'audit rows still name the member')
+    // Each row was rewritten from its own contents, not all alike.
+    assert.equal(new Set(kept.map(r => r.action)).size, ROWS)
+    assert.ok(kept.every(r => (r.payload as Row).to === '[erased member]' && typeof (r.payload as Row).n === 'number'))
   })
 
   test('a member of another studio is not found here', async () => {

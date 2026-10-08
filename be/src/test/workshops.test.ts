@@ -522,6 +522,70 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal((await bookingsOf(late, w)).length, 0)
   })
 
+  test('WSP-06 a tier covering several days has room only while every day it covers has room, and no count is sent', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Weekend intensive',
+      days: [{ capacity: 2 }, { capacity: 1 }],
+      tiers: [
+        { name: 'Both days', price: '180.00', days: [0, 1] },
+        { name: 'Day 1 only', price: '0.00', days: [0] },
+        { name: 'Day 2 only', price: '0.00', days: [1] },
+      ],
+    })
+    const [bothDays, dayOne, dayTwo] = w.tierIds
+    const ana = await member(one, 'Ana Room')
+    const room = async () => {
+      const detail = await call(`/api/v1/me/workshops/${w.id}`, ana.headers)
+      assert.equal(detail.status, 200, detail.text)
+      return Object.fromEntries((detail.body.tiers as { id: string; has_room: unknown }[]).map(t => [t.id, t.has_room]))
+    }
+
+    assert.deepEqual(await room(), { [bothDays!]: true, [dayOne!]: true, [dayTwo!]: true })
+
+    // Day 1 still has a seat left after one place: every tier keeps its room.
+    const first = await member(one, 'Ana Day One')
+    assert.equal((await checkout(first, w, 1)).status, 201)
+    assert.deepEqual(await room(), { [bothDays!]: true, [dayOne!]: true, [dayTwo!]: true })
+
+    // Day 2's one seat goes: every tier covering day 2 is out of room, day 1 alone is not.
+    const second = await member(one, 'Ana Day Two')
+    assert.equal((await checkout(second, w, 2)).status, 201)
+    assert.deepEqual(await room(), { [bothDays!]: false, [dayOne!]: true, [dayTwo!]: false })
+
+    // What the catalogue says is what the purchase gate does.
+    const late = await member(one, 'Ana No Room')
+    const refused = await checkout(late, w, 0)
+    assert.equal(refused.status, 409, refused.text)
+    assert.equal(refused.body.error, 'workshop_full')
+    assert.equal((await bookingsOf(late, w)).length, 0)
+
+    // No figure of seats, room or bookings leaves the member catalogue: not per
+    // tier, not per day, not on the card.
+    const countLike = /(^|_)(capacity|spots?|seats?|room|booked|bookings|remaining|left|taken|count|enrolled|available)(_|$)/i
+    const detail = await call(`/api/v1/me/workshops/${w.id}`, ana.headers)
+    const list = await call('/api/v1/me/workshops', ana.headers)
+    const card = (list.body.workshops as { id: string }[]).find(x => x.id === w.id)!
+    // `days_count` / `tiers_count` are how many days and tiers the workshop has.
+    const keysOf = (o: object) =>
+      Object.keys(o).filter(k => countLike.test(k) && k !== 'days_count' && k !== 'tiers_count')
+    for (const tier of detail.body.tiers as object[]) assert.deepEqual(keysOf(tier), ['has_room'])
+    for (const day of detail.body.days as object[]) assert.deepEqual(keysOf(day), [])
+    assert.deepEqual(keysOf(card), [])
+    assert.deepEqual(keysOf(detail.body), [])
+
+    // Reading the catalogue wrote nothing: the two places are still the only ones.
+    const placed = await harness.db.select().from(schema.bookings).where(eq(schema.bookings.workshopId, w.id))
+    assert.equal(placed.length, 2)
+
+    // Another studio's member is told nothing about it; staff are not members.
+    const bo = await member(two, 'Bo Room')
+    const peek = await call(`/api/v1/me/workshops/${w.id}`, bo.headers)
+    assert.equal(peek.status, 404, peek.text)
+    assert.equal(peek.body.error, 'workshop_not_found')
+    const staffPeek = await call(`/api/v1/me/workshops/${w.id}`, adminAtOne.headers)
+    assert.equal(staffPeek.status, 401, staffPeek.text)
+  })
+
   test('WSP-12 the free-register path refuses a paid tier and books nothing', async () => {
     const w = await workshop(one, adminAtOne, teacherAtOne, {
       name: 'Not free',
@@ -678,6 +742,55 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
       const res = await checkout(ana, w, tier)
       assert.equal(res.status, 400, res.text)
       assert.equal(res.body.error, 'workshop_ended')
+    }
+    assert.equal(stripe.callsTo('checkout.sessions.create').length, before)
+    assert.equal((await bookingsOf(ana, w)).length, 0)
+  })
+
+  test('an early-bird price is charged until its cutoff on the app clock, and the regular price from then', async () => {
+    const cutoff = new Date(Math.floor((Date.now() + 10 * DAY) / 60_000) * 60_000)
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Early bird retreat',
+      days: [{ capacity: 10 }],
+      tiers: [{ name: 'Full', price: '150.00', days: [0], earlyBird: { price: '120.00', cutoff } }],
+    })
+    const charged = async (who: Member) => {
+      const before = stripe.callsTo('checkout.sessions.create').length
+      const res = await checkout(who, w)
+      assert.equal(res.status, 200, res.text)
+      const created = stripe.callsTo('checkout.sessions.create').slice(before)
+      assert.equal(created.length, 1)
+      return (created[0]!.args[0] as { line_items: { price_data: { unit_amount: number } }[] }).line_items[0]!.price_data
+        .unit_amount
+    }
+    try {
+      harness.clock.set(new Date(cutoff.getTime() - 1000))
+      assert.equal(await charged(await member(one, 'Ana Early')), 12000)
+      harness.clock.set(cutoff)
+      assert.equal(await charged(await member(one, 'Ana On Time')), 15000)
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
+  test('a workshop stops being sold when its last day ends on the app clock', async () => {
+    const startsAt = nextStart()
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Ends by the clock',
+      days: [{ capacity: 10, startsAt }],
+      tiers: [{ name: 'Free', price: '0.00', days: [0] }, { name: 'Paid', price: '50.00', days: [0] }],
+    })
+    const ana = await member(one, 'Ana By The Clock')
+    const before = stripe.callsTo('checkout.sessions.create').length
+    try {
+      harness.clock.set(new Date(startsAt.getTime() + 2 * HOUR)) // the day's end
+      for (const tier of [0, 1]) {
+        const res = await checkout(ana, w, tier)
+        assert.equal(res.status, 400, res.text)
+        assert.equal(res.body.error, 'workshop_ended')
+      }
+    } finally {
+      harness.clock.reset()
     }
     assert.equal(stripe.callsTo('checkout.sessions.create').length, before)
     assert.equal((await bookingsOf(ana, w)).length, 0)

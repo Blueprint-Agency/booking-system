@@ -1,5 +1,5 @@
 import { and, eq, inArray, lt } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
@@ -11,6 +11,7 @@ import { cancelManualSessionInTx } from './manual'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
+import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notifications/send-booking-email'
 
 /**
  * Cancel a PT request, branching on its current status. Single entry point for
@@ -81,6 +82,22 @@ export interface CancelPtRequestResult {
 export async function cancelPtRequest(
   tenantId: string,
   input: CancelPtRequestInput,
+): Promise<CancelPtRequestResult> {
+  // The emails this cancel owes are gathered inside the transaction and sent
+  // only once the request's transaction has committed (`afterCommit`; NTF-09,
+  // NTF-10, NTF-11). Sending never throws.
+  const mail = emptyPtCancelMail()
+  const result = await cancelPtRequestInTx(tenantId, input, mail)
+  if (mail.studio.length || mail.memberReturned.length || mail.request.length) {
+    afterCommit(() => sendPtCancelMail(tenantId, mail))
+  }
+  return result
+}
+
+async function cancelPtRequestInTx(
+  tenantId: string,
+  input: CancelPtRequestInput,
+  mail: PtCancelMail,
 ): Promise<CancelPtRequestResult> {
   const { ptRequestId, source, clientId, actorStaffId } = input
 
@@ -158,8 +175,15 @@ export async function cancelPtRequest(
         .update(ptRequests)
         // The source is the request's only record of who ended it: a Remove
         // names the admin who took the package back, yet it is no staff cancel.
-        .set({ status: 'cancelled_before_scheduled', resolvedAt: new Date(), resolvedByStaffId, cancelSource: source })
+        // On the app clock: the member's history reads an expiry off it
+        // (`resolvedAt >= expiresAt`, bookings/cancellation-summary.ts).
+        .set({ status: 'cancelled_before_scheduled', resolvedAt: clockNow(), resolvedByStaffId, cancelSource: source })
         .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+      // NTF-11. An expiry or a Remove is the studio's machinery, not a cancel
+      // anyone made, and tells the member its own way.
+      if (source !== 'system') {
+        mail.request.push({ clientId: req.clientId, sessionsReturned: req.debitedClientPackageId ? cost : 0, ptSessionId: null })
+      }
       return {
         status: 'cancelled_before_scheduled',
         refundedSessions: cost,
@@ -205,6 +229,7 @@ export async function cancelPtRequest(
         ...(clientId ? { clientId } : {}),
         actorStaffId: resolvedByStaffId,
         now,
+        mail,
       })
     }
 
@@ -348,8 +373,20 @@ export async function cancelPtRequest(
       },
     })
 
-    // NOTE(email): pt_cancelled_session_returned / pt_cancelled_forfeited are sent
-    // out-of-band, consistent with the class cancel path which is inbox-only in v1.
+    // NTF-11: every member the session booked is told — the requester with the
+    // sessions returned to them, a 2-on-1 partner, who paid nothing, without.
+    // Returned only when there was a package to return them to, as on the
+    // pending path: `refundToPackage` moves nothing without one.
+    if (source !== 'system') {
+      const returned = req.debitedClientPackageId ? refundSessions : 0
+      for (const bk of sessionBookings) {
+        mail.request.push({
+          clientId: bk.clientId,
+          sessionsReturned: bk.clientId === req.clientId ? returned : 0,
+          ptSessionId: session.id,
+        })
+      }
+    }
 
     return { status: 'cancelled_after_scheduled', refundedSessions: refundSessions, refundOutcome }
   })

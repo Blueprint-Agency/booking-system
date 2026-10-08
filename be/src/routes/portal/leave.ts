@@ -4,9 +4,9 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../services/leave/requests'
 import { SUPPORTING_DOCUMENT_MAX_BYTES } from '../../services/leave/rules'
-import { BadRequestError } from '../../shared/errors'
 import { ERROR_CODES } from '../../shared/error-codes'
 import { tenantId } from '../../middleware/tenant'
+import { uploadedFile } from './uploaded-file'
 
 /**
  * /api/v1/portal/leave — the caller's OWN leave, whichever role they hold.
@@ -116,12 +116,7 @@ const app = new Hono()
     zValidator('param', z.object({ id: z.string().uuid() })),
     async c => {
       const { id } = c.req.valid('param')
-      const file = (await c.req.formData()).get('file')
-      if (!file || typeof file === 'string') {
-        throw new BadRequestError('document_required', {
-          message: 'Attach a JPG, PNG or PDF file.',
-        })
-      }
+      const file = await uploadedFile(c, { code: 'document_required', message: 'Attach a JPG, PNG or PDF file.' })
       const row = await svc.attachSupportingDocument({
         tenantId: tenantId(c),
         staffUserId: c.get('staffUserId'), // forced — their own request only

@@ -26,6 +26,7 @@
  * and summing those as floats is how a Purchase ends up one cent from settled.
  */
 import { BadRequestError } from '../../shared/errors'
+import { sgdText as sgd } from '../../shared/money'
 
 /**
  * The smallest payment worth sending to the provider, in cents.
@@ -117,6 +118,3 @@ export function refusePartPaymentWhenDisabled(requestedCents: number | null): vo
     message: 'This studio is not accepting part payments. Refresh and pay in full.',
   })
 }
-
-/** Cents as a member reads them, for the sentences above. */
-const sgd = (cents: number): string => `S$${(cents / 100).toFixed(2)}`

@@ -1,5 +1,6 @@
 import { getTableName, sql, type SQL } from 'drizzle-orm'
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core'
+import { AUDIT_ROW_REWRITES, eraseAuditRow } from './erase-audit-row'
 
 /**
  * Where a member lives in the database: every Tenant-scoped table with a row
@@ -23,6 +24,9 @@ export type MemberKey = {
   /** Their email at this Tenant, which mail sent before they had an account records. */
   email: string
 }
+
+/** The member being deleted: their key, and the profile values a row may hold in free text. */
+export type ErasedMember = MemberKey & { name: string; phone: string | null }
 
 export type MemberTable = {
   table: string
@@ -56,6 +60,19 @@ export type EraseStep =
    * writes out.
    */
   | { keptBecause: string; set: SQL; where: (member: MemberKey) => SQL }
+  /**
+   * The rows stay, each rewritten by `anonymise`: for a table whose rows hold
+   * the member's name, email or phone inside text and JSON, which clearing a
+   * column cannot reach. Given one row, read whole, it returns that row's new
+   * value for each column `rewrites` names; `rewrites` gives each one's
+   * Postgres type, so every row can be written back in one statement.
+   */
+  | {
+      keptBecause: string
+      anonymise: (row: Record<string, unknown>, member: ErasedMember) => Record<string, unknown>
+      rewrites: Readonly<Record<string, string>>
+      where: (member: MemberKey) => SQL
+    }
 
 /** The steps deletion takes on `entry`, its default filled in. */
 export const eraseSteps = (entry: MemberTable): readonly EraseStep[] => entry.erase ?? [{ delete: entry.where }]
@@ -68,6 +85,10 @@ const byClientId = (table: string, erase?: readonly EraseStep[]): MemberTable =>
   where: clientIdIs,
   erase,
 })
+
+/** An audit row that names the member: see the `audit_log` entry below. */
+const auditRowNaming = (m: MemberKey) =>
+  sql`((target_table = 'clients' AND target_id = ${m.clientId}) OR strpos(action, ${m.clientId}) > 0 OR payload->>'impersonatedClientId' = ${m.clientId})`
 
 const ACCOUNTS =
   'The studio’s accounts: what was sold, for how much, and what was refunded. The member’s identity is removed.'
@@ -183,8 +204,18 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
     // bookings targets those, but its path runs through `/clients/:id`; one taken
     // while impersonating them records them in the payload.
     columns: ['target_id', 'action', 'payload'],
-    where: m =>
-      sql`((target_table = 'clients' AND target_id = ${m.clientId}) OR strpos(action, ${m.clientId}) > 0 OR payload->>'impersonatedClientId' = ${m.clientId})`,
+    where: auditRowNaming,
+    // Audit rows are never deleted (prd §3.9, docs/adr/0008): each one stays,
+    // with every trace of the member replaced (`erase-audit-row.ts`).
+    erase: [
+      {
+        keptBecause:
+          'The staff audit trail: who did what to a member’s record, and when. It is never deleted; the member’s name, email, phone and ids in it are replaced with a placeholder.',
+        anonymise: eraseAuditRow,
+        rewrites: AUDIT_ROW_REWRITES,
+        where: auditRowNaming,
+      },
+    ],
   },
   {
     table: 'auth_events',

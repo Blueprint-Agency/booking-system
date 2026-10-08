@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { and, eq, gte, inArray, isNull, lt } from 'drizzle-orm'
 import { db } from '../../db'
+import { now as clockNow } from '../../lib/clock'
 import { publicObjectUrl } from '../../lib/r2'
 import { bookings } from '../../db/schema/bookings'
 import { classes, classSupportingInstructors } from '../../db/schema/schedule'
@@ -15,6 +16,8 @@ import { waitlistSummaries, type WaitlistSummary } from '../waitlist/line'
 import { clashJson, firstClash, heldWindows } from '../bookings/member-time'
 import { cancelWindowResolver, classCancelWindow } from '../policy/cancel-window'
 import { namedClassRule, namedRuleJson } from './package-rules'
+import { localDateOf, zonedInstant } from './series-dates'
+import { loadTenantById } from '../tenants/tenants'
 
 export interface LocationLite {
   id: string
@@ -96,9 +99,13 @@ export function parseClassFilters(raw: Record<string, string>): ClassListFilters
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** Default window: start of today → +28 days. Range hard-capped at 90 days. */
-export function resolveWindow(from?: Date, to?: Date): { from: Date; to: Date } {
-  const start = from ?? new Date(new Date().setHours(0, 0, 0, 0))
+/**
+ * Default window: start of today → +28 days. Range hard-capped at 90 days.
+ * "Today" is the studio's own day on the app clock: midnight in its timezone,
+ * never the server's.
+ */
+export function resolveWindow(timezone: string, from?: Date, to?: Date): { from: Date; to: Date } {
+  const start = from ?? zonedInstant(localDateOf(clockNow(), timezone), '00:00', timezone)
   let end = to ?? new Date(start.getTime() + 28 * DAY_MS)
   if (end.getTime() - start.getTime() > 90 * DAY_MS) {
     end = new Date(start.getTime() + 90 * DAY_MS)
@@ -122,7 +129,9 @@ export async function listClassCards(
   filters: ClassListFilters,
   clientId: string | null = null,
 ): Promise<ClassCardPayload[]> {
-  const { from, to } = resolveWindow(filters.from, filters.to)
+  const tenant = await loadTenantById(tenantId)
+  if (!tenant) throw new NotFoundError('tenant_not_found')
+  const { from, to } = resolveWindow(tenant.timezone, filters.from, filters.to)
   const conds = [
     eq(classes.tenantId, tenantId),
     eq(classes.lifecycle, 'active'),

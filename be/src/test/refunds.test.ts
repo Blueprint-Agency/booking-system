@@ -542,7 +542,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     }
   })
 
-  test('RFD-01 a Purchase cannot be refunded twice: the second press is refused and calls nobody', async () => {
+  test('RFD-01, RFD-17 a Purchase cannot be refunded twice: the second press is refused and calls nobody, and a redelivered refund changes nothing', async () => {
     const ed = await member(one, 'Ed Twice')
     const paid = await buy(one, ed, 'bundle')
     const from = refundCalls().length
@@ -692,6 +692,42 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     const again = await refundPackage(adminAtOne, ivy, paid)
     assert.equal(again.status, 409)
     assert.equal(refundCalls().length, from)
+  })
+
+  test('RFD-16 a refunded member is emailed once, from the button or the dashboard, naming the package, the amount and every upcoming booking it cancelled', async () => {
+    const refundMail = (who: string) =>
+      harness.db
+        .select()
+        .from(schema.emailLog)
+        .where(sql`${schema.emailLog.recipientEmail} = ${who} AND ${schema.emailLog.templateSlug} = 'purchase_refunded'`)
+
+    // From the portal's Refund button, with a class booked on the package.
+    const una = await member(one, 'Una Told')
+    const paid = await buy(one, una, 'bundle')
+    // An hour no other test here uses: the class stays on the timetable after the refund.
+    const booked = await book(una, await addClass(one, 11 * DAY + 5 * HOUR))
+    assert.equal(booked.status, 201, JSON.stringify(booked.body))
+    const from = refundCalls().length
+    assert.equal((await refundPackage(adminAtOne, una, paid)).status, 200)
+    await settle(from)
+    // The provider redelivering the event sends nothing more.
+    assert.equal((await deliverRefund(paid.intents[0]!)).status, 200)
+
+    const told = await refundMail(emailFor(`Una Told-${one.slug}`))
+    assert.equal(told.length, 1, 'one email, however many deliveries')
+    assert.equal(told[0]!.tenantId, one.id)
+    assert.match(told[0]!.bodyRendered, new RegExp(`${BUNDLE_NAME} has been refunded in full \\(S\\$200\\.00\\)`))
+    assert.match(told[0]!.bodyRendered, /no longer covers any bookings/)
+    assert.match(told[0]!.bodyRendered, new RegExp(`cancelled 1 upcoming booking: ${CLASS_TYPE_NAME} on`))
+
+    // From the provider's dashboard, with nothing booked.
+    const vic = await member(one, 'Vic Told')
+    const quiet = await buy(one, vic, 'bundle')
+    assert.equal((await deliverRefund(quiet.intents[0]!)).status, 200)
+
+    const alsoTold = await refundMail(emailFor(`Vic Told-${one.slug}`))
+    assert.equal(alsoTold.length, 1)
+    assert.match(alsoTold[0]!.bodyRendered, /You had no upcoming bookings on it, so nothing was cancelled\./)
   })
 
   test('RFD-15 a refund whose Void cancels a scheduled private session settles its request and session, which the member no longer sees scheduled and is never completed as attended', async () => {

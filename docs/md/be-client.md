@@ -96,7 +96,7 @@ The line's length and cap are not sent: like seat counts, they are for staff (`f
 ### `marketing.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/marketing` | Singleton `marketing_content` row |
+| GET | `/marketing` | The studio's own `marketing_content` row (one per Tenant): `{ hero_heading, hero_subheading, pricing_blurb, testimonials, footer_text }` — not who saved it or when. A studio that never saved any answers `200` with every field `null`, so the member app's footer reads it once like any other studio's rather than failing on every page |
 
 ### `tenants.ts`
 | Method | Path | Effect |
@@ -124,7 +124,7 @@ All endpoints prefixed with `/api/v1/me`.
 | GET | `/packages` | List `client_packages` for this client with each linked source (class_packages or pt_packages) and the `applied_promotion` frozen at purchase (if any). Each row carries `cross_location_paid_sgd` — null means the plan Covers its Home Location only. The `entitlements` block also carries `unlimited_plan_id` (the plan a **Cross-Location Add-On** would attach to), `unlimited_covers_both` (it already carries one) and `cross_location_rate_sgd` (the Global Policy rate right now), which is what the member surfaces quote the Add-On at. A member may hold several plans at once (be/docs/adr/0010), so the block also carries `unlimited_plans: [{ id, location, covers_both, running }]` — every live plan — and `class_family_running` / `pt_family_running` mean "any package of that Family is running". The same fields appear on `/me/class-packages`, where the schedule's blocked-class nudge reads them. |
 | GET | `/packages/:id/credit-history` | One of the member's own packages' **Credit history** (#353): `{ history_from, movements: [{ id, at, cause, delta, balance_after, actor, booking: { id, kind, title, starts_at, cancelled_late } \| null }] }`, newest first. `cause` is `booked` / `returned` / `kept` / `no_show` / `expired` / `adjusted` / `pt_requested` / `pt_returned`; `actor` is `member` / `staff` / `system`. No staff name or note. Another member's package, or another studio's, is 404 `client_package_not_found`. See backend-architecture §4i `credit_movements`. |
 | GET | `/cards` | The member's **Saved Cards** (#185): `{ cards: [{ id, brand, last4, exp_month, exp_year }] }`, read live from the payment provider for the `payment_customers` row matching `(tenant, client, current Payment Account)`. Never a card number — the brand, last four and expiry are the whole of what this platform sees. A member who has saved none, or who is not a Provider Customer yet, gets `{ cards: [] }`: an empty list is the honest answer and not an error. |
-| DELETE | `/cards/:id` | Detach one Saved Card, so it is no longer offered. `:id` is a provider payment-method id (`pm_…`), not a uuid. The service fetches the method and compares its Customer with **this** member's before detaching anything — a card that is not theirs, and an id that does not exist, both answer 404 `card_not_found`, so the route cannot be used to ask whether a given card exists at this studio. Detached, not deleted: the provider keeps its record against the payments already made with it, which Refunds still need. |
+| DELETE | `/cards/:id` | Detach one Saved Card, so it is no longer offered. `:id` is a provider payment-method id (`pm_…`), not a uuid. The service fetches the method and compares its Customer with **this** member's before detaching anything — a card that is not theirs, and an id that does not exist, both answer 404 `card_not_found`, so the route cannot be used to ask whether a given card exists at this studio. A studio that has supplied no payment credentials of its own (#293) answers 409 `payments_not_configured`, as its checkout does, without asking any provider. Detached, not deleted: the provider keeps its record against the payments already made with it, which Refunds still need. |
 | GET | `/packages/eligibility` | `{ trial_used: bool, holds_active_bundle: bool, holds_active_unlimited: bool }` — drives fe-client `/packages` gating per `fe-client-features.md` §6.1. `trial_used` is `true` if any `client_packages WHERE client_id=me AND kind='trial'` exists (active or expired). `holds_active_bundle` / `holds_active_unlimited` derive the "Bundle excludes Unlimited and vice versa" rule. Cheap query — call on every `/packages` page load. |
 | GET | `/corporate-packages` | List active `corporate_packages`: `{ corporate_packages: [{ id, name, description, price_sgd, status }] }`. Powers the fe-client Corporate catalog (`fe-client-features.md` §6.2). |
 | GET | `/corporate-requests` | The client's own corporate requests: `{ corporate_requests: [{ id, status, package: { id, name }, created_at, cancelled_at, session: null \| { starts_at, ends_at, location_name, instructor_name } }] }`. `session` is populated when `status='scheduled'`. `cancelled_at` is when the studio cancelled it (the request's `resolved_at`), null unless `status='cancelled'` (#351) — only the studio cancels one, pending or scheduled — with the shared summary's `who_line` and `outcome_line` (`Cancelled by the studio`), null otherwise. Drives the corporate cards on My bookings. |
@@ -180,7 +180,7 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 ### `purchases.ts` (verification gate applies)
 | Method | Path | Effect |
 |---|---|---|
-| POST | `/checkout/package` | `{ package_kind: 'class' \| 'pt' \| 'corporate', package_id, promo_code?, location_id? }` — creates Stripe checkout, returns `{ url }`. `location_id` is the Home Location the member picked on the review page: **required** for `class_packages.kind='unlimited'` (400 `unlimited_requires_location`), refused for every other kind (400 `location_only_applies_to_unlimited`). A member may hold any number of Unlimited Plans, homed at any Locations — a second plan, a renewal at another Location, a third live plan are all sold and land Dormant (be/docs/adr/0010 retired `unlimited_renewal_location_mismatch` and `unlimited_limit_reached`). The same rules run again in the grant; running them here is what stops a member being charged for a purchase the webhook would refuse. It rides the intent metadata as `location_id` so the webhook can freeze it onto `client_packages`. **Server resolves the best-price-wins promotion and the intent amount is derived from `effective_price_sgd`** — client-supplied price is never trusted. For `class_packages.kind='trial'`: pre-check the `(client_id) WHERE kind='trial'` partial unique index — 409 `trial_already_used` if the client already holds one. The intent metadata carries `applied_promotion_id` so the webhook can freeze it onto `client_packages`. **`package_kind='corporate'`** is paid (no promotions); on success the webhook records a `stripe_payments` row (kind `corporate_package`) and auto-creates ONE pending `corporate_requests` row — it does **not** insert a `client_packages` row (no credits; the request is the entitlement). See §4e. |
+| POST | `/checkout/package` | `{ package_kind: 'class' \| 'pt' \| 'corporate', package_id, promo_code?, location_id? }` — creates Stripe checkout, returns `{ url }`. `location_id` is the Home Location the member picked on the review page: **required** for `class_packages.kind='unlimited'` (400 `unlimited_requires_location`), refused for every other kind (400 `location_only_applies_to_unlimited`). A member may hold any number of Unlimited Plans, homed at any Locations — a second plan, a renewal at another Location, a third live plan are all sold and land Dormant (be/docs/adr/0010 retired `unlimited_renewal_location_mismatch` and `unlimited_limit_reached`). The same rules run again in the grant; running them here is what stops a member being charged for a purchase the webhook would refuse. It rides the intent metadata as `location_id` so the webhook can freeze it onto `client_packages`. **Server resolves the best-price-wins promotion and the intent amount is derived from `effective_price_sgd`** — client-supplied price is never trusted. For `class_packages.kind='trial'`: pre-check the `(client_id) WHERE kind='trial'` partial unique index — 409 `trial_already_used` if the client already holds one. The intent metadata carries `applied_promotion_id` so the webhook can freeze it onto `client_packages`. **`package_kind='corporate'`** is paid by card at the package's `price_sgd`, with no Promotion and no Promo Code: its body is `{ package_kind, package_id, save_card? }` and nothing else — a `promo_code`, `part_payment_sgd`, `location_id`, `instructor_id` or `cross_location_add_on` is a 400, never ignored. `404 corporate_package_not_found` for another studio's or a deleted package, `400 corporate_package_not_active` for an archived one. The session is cards only and returns to `/account/bookings?type=corporate&submitted=corporate&package_id=…&session_id=…`. On success the webhook records a `stripe_payments` row (kind `corporate_package`) and auto-creates ONE pending `corporate_requests` row — it does **not** insert a `client_packages` row (no credits; the request is the entitlement). A package priced at zero makes the request at once and answers `201 { outcome: 'granted', corporate_request_id, free: true }`. There is no other way to make a Corporate Request: the free `POST /me/corporate-requests` form was removed (#374). See § Corporate branch. |
 | POST | `/checkout/cross-location/quote` | `{ client_package_id }` — prices the **Cross-Location Add-On** against a plan the member already holds (§5). Returns `{ client_package_id, months, rate_sgd, price_sgd }`: months is the plan's whole months remaining with part months rounded up, or its full stored Duration while Dormant, and the rate is read from Global Policy at this moment. 400 `cross_location_requires_unlimited`, 400 `cross_location_plan_not_live`, 409 `cross_location_already_added` — one Add-On per plan, never two. |
 | POST | `/checkout/cross-location` | `{ client_package_id }` — the same refusals, then its own Stripe session carrying `kind='cross_location_add_on'` and `client_package_id` in the metadata; the webhook fills `client_packages.cross_location_paid_sgd` on the named plan. Bought **with** a plan instead, it rides `/checkout/package` as `cross_location_add_on: true` — one session, two line items, `amount_sgd` (plan) plus `cross_location_sgd` (Add-On) equalling the charge. A Promo Code discounts the plan line only: the Add-On is a Global Policy rate, not a product. |
 | POST | `/checkout/workshop` | `{ workshop_id, workshop_tier_id }` — same. Server resolves the workshop's best-price-wins promotion plus tier-level early-bird (early_bird wins over regular, then promotion further reduces if applicable — see §4b for the ordering). Free workshops (effective_price = 0) **bypass Stripe entirely** and route through `/workshops/:id/register` semantics inline. |
@@ -247,8 +247,13 @@ tx start
    SET expires_at = booking moment + duration_months (Unlimited) or + validity_days
    (every other kind). One-way — no cancellation un-stamps it. Other packages of the
    family may be running beside it (ADR 0010); nothing refuses a second.
-8. enqueueEmail('class_booking_confirmed', client.email, { class_name, date, instructor, location, qr_url, code, credits_remaining })
 tx commit
+8. 'class_booking_confirmed' email to the member (after commit, best-effort — a failed send is
+   logged and the booking stands; NTF-08): { client_name, class_name, date, instructor_name,
+   location, qr_url, code, credits_line }. credits_line is one composed sentence
+   (services/notifications/booking-email.ts): "This booking used 2 credits from Ten Pack, and
+   8 credits remain on it." — or, on an Unlimited Plan, "Booked on your Unlimited Plan, so no
+   credits were used."
 
 Returns { booking_id, qr_token, code, paid_with: { client_package_id, name, kind } }
 ```
@@ -302,7 +307,7 @@ tx start
    purchase_id=P            — the sale; a Refund routes on it, not on the intent (#92)
 3. Generate qr_token + code
 4. Update stripe_payments: status='succeeded', receipt_url = paymentIntent.charges.data[0].receipt_url
-5. enqueueEmail('workshop_purchase_confirmed', client.email, { workshop_name, date, qr_url, code, receipt_url })
+5. enqueueEmail('workshop_purchase_confirmed', client.email, { workshop_name, date, qr_url, code, amount_paid, receipt_url })
 6. If client.referred_by_client_id IS NOT NULL AND client.referral_credit_granted_at IS NULL:
    call services/referrals.ts:onRefereeFirstPayment(client_id) — see spine §6 (referral conversion)
 tx commit
@@ -318,7 +323,7 @@ tx start
 2. Insert bookings row: kind='workshop', workshop_id, workshop_tier_id, state='confirmed',
    purchase_id=NULL, refund_outcome='n_a', check_in_state='pending'
 3. Generate qr_token + code
-4. enqueueEmail('workshop_purchase_confirmed', { ..., receipt_url=NULL })
+4. enqueueEmail('workshop_purchase_confirmed', { ..., amount_paid='S$0.00', receipt_url=NULL })
 tx commit
 ```
 
@@ -354,14 +359,20 @@ tx start
 6. UPDATE booking: state='cancelled', cancelled_at, refund_outcome
 7. INSERT cancellations: source='client', was_within_window, was_within_cap, refund_fired (boolean per outcome), kind
 8. INSERT inbox_items: type='client_cancellation', payload={ ... }
-9. enqueueEmail per refund_outcome → 'class_cancelled_credit_returned' / 'class_cancelled_forfeited' / 'pt_cancelled_session_returned' / 'pt_cancelled_forfeited'
+9. (no email inside the transaction — see 12)
 10. kind='class' AND booking.seat='online': services/waitlist/promote.ts:promoteFromWaitlist(tx, class_id, now)
     — outside the Cancellation Window only; fills free online seats from the line in (joined_at, id)
     order through the same booking path as POST /bookings/class; a member whose package cannot pay
     stays `waiting`. A buffer or overbook seat promotes nobody.
 tx commit
 11. 'class_waitlist_promoted' email to each promoted member (after commit, best-effort)
+12. refund fired (an in-time cancel that returned what the booking used): 'class_cancelled_credit_returned'
+    (class) or 'pt_cancelled_session_returned' (private session) to the member, after commit and
+    best-effort, with a composed refund_line ("2 credits have been returned to your package.") — NTF-09.
+    A late or over-cap cancel sends nothing yet: the forfeited pair is not wired.
 ```
+
+`POST /pt-sessions/:id/cancel` emails `pt_request_cancelled` to the requester (and to a 2-on-1 partner whose seat went with it) after commit — the same email before and after scheduling, its `refund_line` present only when sessions came back (NTF-11). Leaving a manual session in time sends `pt_cancelled_session_returned`.
 
 Every cancel of a class booking goes through this service — admin single-cancel, and the Refund and complimentary-removal unwinds (`packageVoided`) — so each promotes the same way.
 
@@ -386,6 +397,10 @@ services/pt-sessions/request.ts:submitPtRequest({
   ↓
 tx start
 1. Validate class_type_id, when given, exists and is active. Validate location_id exists and is not archived.
+   Each must be this studio's own (TEN-12): another studio's id is refused exactly as a missing
+   one is, 404 class_type_not_found / location_not_found, and so is an existing partner's
+   co_client_id that is not a member here, 404 partner_client_not_found. Nothing is written or
+   debited. (A foreign key cannot say this: its reference check skips Row-Level Security.)
 2. Validate slots[]: 1..N rows; end_time, where sent, > start_time; each proposed_date in
    [today + min_book_in_advance_days, today + book_in_advance_days] (Singapore calendar
    days, `pt_booking_config`, read on the app clock). Sooner is refused 400
@@ -526,13 +541,15 @@ tx commit
 
 #### Purchase confirmation emails (§13)
 
-Four paths send, one deliberately does not:
+Five paths send, one deliberately does not:
 
 | Path | Slug | Condition |
 |---|---|---|
 | Paid class / PT package | branches on granted `kind` → `package_purchase_confirmed` | `created` |
 | Paid workshop | `workshop_purchase_confirmed` | `created` |
+| Paid corporate package | `corporate_purchase_confirmed` | the delivery that made the Corporate Request, after it commits (§ Corporate branch) |
 | $0 trial pass | `trial_pass_purchase_confirmed` | always |
+| $0 corporate package | `corporate_purchase_confirmed` | always, from checkout's nothing-to-pay path, at S$0.00 and linking to the member's corporate bookings |
 | $0 workshop tier | `workshop_purchase_confirmed` | always — this closed a real gap: a free workshop booking produced a QR and a date and no email at all before this batch |
 | Admin comp grant | — | **never** — a comp grant is not a purchase, and announcing an admin's action to someone who did not ask is the wrong default |
 
@@ -540,6 +557,8 @@ The slug is decided by the granted package's **kind**, not by which code path gr
 
 - `contents_line` — "Unlimited classes" · "10 class credits" · "5 private sessions" · "3 classes" (trial, which counts classes rather than credits — a first-timer has never heard of a credit).
 - `validity_line` — **reads `isDormant`, not the package kind.** A Dormant purchase gets "Valid {Duration or validity} from your first class — your package activates when you make your first booking," reading the frozen `duration_months` or `validity_days`; a row that already has an expiry prints "Expires {date}". Since every purchase lands Dormant (be/docs/adr/0004) — whatever else the member holds, since several may run at once (be/docs/adr/0010) — a purchase email is the Dormant sentence in practice. *(This used to read that only an Unlimited Plan bought behind a live plan was Dormant, and one bought with nothing in front carried a real end date; both halves predate ADR 0004.)* This is a deliberate deviation from an earlier reading of the spec that branched on package kind alone; the shipped code branches on `isDormant` because the promise "activates on your first booking" would otherwise be printed on a plan that had already started.
+
+`amount_paid` is on all three purchase templates (package, trial pass, workshop): the confirmation is the member's receipt (#370). It is the figure with its currency, "S$120.00", the form every member-facing amount takes (`shared/money.ts:sgdText`; every studio sells in SGD), read off the sale: the Purchase's `amount_paid_sgd` — the plan plus any Cross-Location Add-On bought with it, after any Promotion or Promo Code — and, on a free purchase that has no Purchase, the package's or workshop place's own `amount_paid_sgd`, so a free one prints "S$0.00". Never the catalogue price.
 
 `receipt_url` is never empty: a paid purchase gets the Stripe receipt (retrieved with the latest charge expanded, since the webhook's own event carries none), a free one falls back to the account page with neutral anchor text — an escaped empty string in an href is a visible link to nowhere, which is not a safe default here.
 
@@ -556,9 +575,11 @@ tx start
 3. Insert corporate_requests: status='pending', client_id, corporate_package_id (from metadata),
    message=NULL  — this pending request is the entitlement; scheduling happens in the portal
 4. Update stripe_payments: status='succeeded', kind='corporate_package', receipt_url
-5. enqueueEmail('corporate_request_submitted' equivalent — confirmation that the studio will reach out on WhatsApp)
 tx commit
+5. send the corporate_purchase_confirmed email — once, from the delivery that made the request
 ```
+
+_As built (#374):_ `services/corporate/checkout.ts` (`beginCorporateCheckout`) prices the sale and `services/billing/webhook-handler.ts` has the branch; the request is made by `createCorporateRequest` (`services/corporate/requests.ts`) with no venue and no note. Step 1 is the payment row locked `FOR UPDATE` after its insert, so two deliveries of one intent at once (the webhook and the confirmation fallback `POST /checkout/sync-session`) make one request between them; a redelivery finds the payment `succeeded` and stops. A delivery naming another studio's member is refused (`webhook_tenant_mismatch`), as for every kind. Step 5 (#359, NTF-03) runs after the delivery's transaction commits, so a delivery that rolls back mails no one and its retry sends instead; a redelivery stopped at step 1 sends nothing. `sendCorporatePurchaseEmail` (`services/notifications/send-purchase-email.ts`) fills the studio's `corporate_purchase_confirmed` template with `client_name`, `package_name`, `amount_paid` (the sale's figure in the shared money form, `sgdText`: "S$480.00") and `receipt_url` (the provider receipt, else the member's corporate bookings page), and says the studio will be in touch to arrange the date, time and venue. A failed send is reported and swallowed: the request and the payment stand. A package priced at zero (`201 granted`, no webhook) is confirmed from checkout with the same template, `amount_paid` "S$0.00" read off its zero-total Purchase and `receipt_url` the member's corporate bookings page. Each request names its Purchase (`purchase_id`, migration 0110), so a full Refund of a paid one cancels the request while it is pending (backend-architecture §14). Studios created before the template existed get it from migration 0109.
 
 The client then tracks the request on `/account/corporate` (`fe-client-features.md` §8.8); the studio schedules it via `be-portal.md` §3f.
 

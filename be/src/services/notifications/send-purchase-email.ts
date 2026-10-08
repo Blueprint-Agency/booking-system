@@ -14,15 +14,16 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients, staffUsers } from '../../db/schema/identity'
-import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
+import { clientPackages, classPackages, corporatePackages, ptPackages } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
-import { stripePayments } from '../../db/schema/ledger'
-import { workshops, workshopDays, workshopTierDays } from '../../db/schema/schedule'
+import { purchases, stripePayments } from '../../db/schema/ledger'
+import { toCents, toSgd } from '../../shared/money'
+import { corporateRequests, workshops, workshopDays, workshopTierDays } from '../../db/schema/schedule'
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { NotFoundError } from '../../shared/errors'
 import { sgFormat } from '../../lib/time'
-import { composePurchaseEmail } from './purchase-email'
+import { amountPaid, composePurchaseEmail } from './purchase-email'
 import { sendTemplatedEmail } from './send'
 
 /**
@@ -45,6 +46,9 @@ const accountUrlFor = (tenantId: string) =>
 /** Where a workshop booking's QR code lives. */
 const workshopQrUrlFor = (tenantId: string) =>
   requireTenantUrl('client', tenantId).then(base => `${base}/account/workshops`)
+/** Where a member's Corporate Requests are listed. */
+const corporateRequestsUrlFor = (tenantId: string) =>
+  requireTenantUrl('client', tenantId).then(base => `${base}/account/bookings?type=corporate`)
 
 const SG_DATETIME = sgFormat('en-GB', {
   day: 'numeric',
@@ -83,6 +87,9 @@ export async function sendPackagePurchaseEmail(
         ptPackageName: ptPackages.name,
         boundInstructorName: staffUsers.name,
         receiptUrl: stripePayments.receiptUrl,
+        purchasePaidSgd: purchases.amountPaidSgd,
+        packagePaidSgd: clientPackages.amountPaidSgd,
+        crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
       })
       .from(clientPackages)
       .innerJoin(clients, eq(clients.id, clientPackages.clientId))
@@ -94,6 +101,7 @@ export async function sendPackagePurchaseEmail(
       // Through the sale, not the intent (#92). One payment per Purchase today,
       // so this picks the same row it always did.
       .leftJoin(stripePayments, eq(stripePayments.purchaseId, clientPackages.purchaseId))
+      .leftJoin(purchases, eq(purchases.id, clientPackages.purchaseId))
       .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
       .limit(1)
     if (!row) throw new NotFoundError('client_package_not_found', { clientPackageId })
@@ -107,6 +115,13 @@ export async function sendPackagePurchaseEmail(
       durationMonths: row.durationMonths,
       validityDays: row.validityDays,
       boundInstructorName: row.boundInstructorName,
+      // The sale's own figure (#370): what the Purchase collected, which is
+      // the plan and any Cross-Location Add-On bought with it. A free purchase
+      // is granted with no Purchase on the package, and the package records
+      // what it cost — zero.
+      amountPaidSgd:
+        row.purchasePaidSgd ??
+        toSgd(toCents(row.packagePaidSgd) + toCents(row.crossLocationPaidSgd ?? 0)),
       receiptUrl: row.receiptUrl,
       accountUrl: await accountUrlFor(tenantId),
     })
@@ -127,13 +142,90 @@ export async function sendPackagePurchaseEmail(
 }
 
 /**
+ * Confirm a paid corporate package (be-client § Corporate branch, step 5): the
+ * package, what was paid for it, and that the studio now arranges the session.
+ * No credits, so none of the package confirmation's sentences apply.
+ *
+ * Called once the delivery that made the Corporate Request has committed, so
+ * the payment row it reads already carries the receipt, and a delivery that
+ * rolled back never mailed anyone.
+ *
+ * A package with nothing to pay (`paymentIntentId` null) is confirmed the same
+ * way, from the zero-total Purchase the request names: no payment, so no
+ * receipt, and the link is to where the request is.
+ */
+export async function sendCorporatePurchaseEmail(
+  tenantId: string,
+  corporateRequestId: string,
+  paymentIntentId: string | null,
+): Promise<void> {
+  try {
+    const [row] = await db
+      .select({
+        clientName: clients.name,
+        clientEmail: clients.email,
+        clientId: clients.id,
+        packageName: corporatePackages.name,
+        purchasePaidSgd: purchases.amountPaidSgd,
+      })
+      .from(corporateRequests)
+      .innerJoin(clients, eq(clients.id, corporateRequests.clientId))
+      .innerJoin(corporatePackages, eq(corporatePackages.id, corporateRequests.corporatePackageId))
+      .leftJoin(purchases, eq(purchases.id, corporateRequests.purchaseId))
+      .where(and(eq(corporateRequests.tenantId, tenantId), eq(corporateRequests.id, corporateRequestId)))
+      .limit(1)
+    // Not a refusal anyone is shown: reported below, with the ids.
+    if (!row) throw new Error('corporate request not found')
+
+    const payment = paymentIntentId
+      ? (
+          await db
+            .select({
+              receiptUrl: stripePayments.receiptUrl,
+              paymentSgd: stripePayments.amountSgd,
+              purchasePaidSgd: purchases.amountPaidSgd,
+            })
+            .from(stripePayments)
+            .leftJoin(purchases, eq(purchases.id, stripePayments.purchaseId))
+            .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.paymentIntentId, paymentIntentId)))
+            .limit(1)
+        )[0]
+      : row.purchasePaidSgd != null
+        ? { receiptUrl: null, paymentSgd: row.purchasePaidSgd, purchasePaidSgd: row.purchasePaidSgd }
+        : undefined
+    if (!payment) throw new Error(`no payment ${paymentIntentId ?? '(free)'} for the corporate request`)
+
+    await sendTemplatedEmail({
+      tenantId,
+      slug: 'corporate_purchase_confirmed',
+      recipient: { email: row.clientEmail, userId: row.clientId, userKind: 'client' },
+      variables: {
+        client_name: row.clientName,
+        package_name: row.packageName,
+        // The sale's figure, as on every other confirmation (#370).
+        amount_paid: amountPaid(payment.purchasePaidSgd ?? payment.paymentSgd),
+        // Where the request is, when the provider gave no receipt: an escaped
+        // empty href is a link to nowhere.
+        receipt_url: payment.receiptUrl || (await corporateRequestsUrlFor(tenantId)),
+      },
+    })
+  } catch (err) {
+    reportError(err, 'corporate purchase confirmation email failed', {
+      scope: 'purchase-email',
+      tenantId,
+      corporateRequestId,
+    })
+  }
+}
+
+/**
  * Confirm one workshop booking, paid or free. The free path is the worst case
  * in the set — it produces a confirmed booking with a QR code and a date, and
  * used to send nothing at all.
  *
- * The workshop template's declared variables are unchanged, so this fills the
- * six it already has; `receipt_url` falls back to the account page the same way,
- * because an escaped empty value inside an href renders a link that goes nowhere.
+ * Fills the workshop template's seven declared variables; `receipt_url` falls
+ * back to the account page the same way, because an escaped empty value inside
+ * an href renders a link that goes nowhere.
  */
 export async function sendWorkshopPurchaseEmail(
   tenantId: string,
@@ -149,11 +241,14 @@ export async function sendWorkshopPurchaseEmail(
         clientEmail: clients.email,
         clientId: clients.id,
         receiptUrl: stripePayments.receiptUrl,
+        purchasePaidSgd: purchases.amountPaidSgd,
+        bookingPaidSgd: bookings.amountPaidSgd,
       })
       .from(bookings)
       .innerJoin(clients, eq(clients.id, bookings.clientId))
       .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
       .leftJoin(stripePayments, eq(stripePayments.purchaseId, bookings.purchaseId))
+      .leftJoin(purchases, eq(purchases.id, bookings.purchaseId))
       .where(
         and(
           eq(bookings.tenantId, tenantId),
@@ -191,6 +286,9 @@ export async function sendWorkshopPurchaseEmail(
         date: firstDay ? SG_DATETIME.format(firstDay.startsAt) : 'See your account for the date',
         qr_url: await workshopQrUrlFor(tenantId),
         code: row.code,
+        // The sale's figure; a free tier is booked with no Purchase, and the
+        // booking records the zero it cost (required on every workshop place).
+        amount_paid: amountPaid(row.purchasePaidSgd ?? row.bookingPaidSgd ?? '0.00'),
         receipt_url: row.receiptUrl || (await accountUrlFor(tenantId)),
       },
     })

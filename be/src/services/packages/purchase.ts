@@ -1,5 +1,5 @@
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { now as clockNow } from '../../lib/clock'
@@ -611,7 +611,8 @@ export async function grantFreePurchase(
   const granted = await grantPackage(tenantId, input)
   // The slug comes off the granted kind, so a Promo Code that zeroes a trial
   // gets the trial email and one that zeroes a bundle does not.
-  if (granted.created) await sendPackagePurchaseEmail(tenantId, granted.clientPackageId)
+  // Once the request's transaction has committed (`afterCommit`).
+  if (granted.created) afterCommit(() => sendPackagePurchaseEmail(tenantId, granted.clientPackageId))
   return granted
 }
 
@@ -684,7 +685,8 @@ export async function purchaseFreeTrial(
 
   // A free trial has no sale to be idempotent on, so it reaches here
   // once or not at all — the eligibility gate and the partial unique index see
-  // to that. It sends unconditionally, and the helper cannot throw (§13).
-  await sendPackagePurchaseEmail(tenantId, granted.clientPackageId)
+  // to that. It sends unconditionally, once the request's transaction has
+  // committed (`afterCommit`), and the helper cannot throw (§13).
+  afterCommit(() => sendPackagePurchaseEmail(tenantId, granted.clientPackageId))
   return granted
 }

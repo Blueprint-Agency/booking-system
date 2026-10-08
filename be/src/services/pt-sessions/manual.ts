@@ -38,6 +38,7 @@ import { activationExpiry } from '../packages/validity'
 import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
 import type { CancelSource, RefundOutcome as BookingRefundOutcome } from '../bookings/refund-outcome'
 import { now as clockNow } from '../../lib/clock'
+import type { PtCancelMail } from '../notifications/send-booking-email'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
 import { assertInstructorsAvailable, findClash } from '../schedule/occupancy'
@@ -705,6 +706,8 @@ export async function cancelManualSessionInTx(
     clientId?: string
     actorStaffId: string | null
     now: Date
+    /** Where the emails this cancel owes are gathered, to be sent after commit. */
+    mail?: PtCancelMail
   },
 ): Promise<ManualCancelResult> {
   const { req, session, now } = input
@@ -745,6 +748,7 @@ export async function cancelManualSessionInTx(
       actorStaffId: null,
       now,
     })
+    if (refunded > 0) input.mail?.memberReturned.push(mine.id)
     const last = seats.length === 1
     if (last) await endSession()
     else await followRoster(tx, tenantId, session.id, req)
@@ -782,6 +786,11 @@ export async function cancelManualSessionInTx(
       now,
     })
     refundedSessions += refunded
+    // A person on staff cancelled it (NTF-10); the studio's machinery — a
+    // Refund's Void, a Complimentary Package's Remove — tells the member its own way.
+    if (input.source === 'admin' || input.source === 'instructor') {
+      input.mail?.studio.push({ bookingId: seat.id, returned: refunded })
+    }
   }
   await endSession()
   const refundOutcome: RefundOutcome = refundedSessions > 0 ? 'session_returned' : 'n_a'

@@ -13,6 +13,7 @@
  */
 import { and, asc, eq, gt } from 'drizzle-orm'
 import { db } from '../../db'
+import { now as clockNow } from '../../lib/clock'
 import { staffUsers } from '../../db/schema/identity'
 import { classTypes, locations } from '../../db/schema/catalog'
 import { corporatePackages } from '../../db/schema/packages'
@@ -39,7 +40,7 @@ export interface UnseenApproval {
 }
 
 export async function listUnseenApprovals(tenantId: string, clientId: string): Promise<UnseenApproval[]> {
-  const now = new Date()
+  const now = clockNow()
 
   // Only the requester's own: a 2on1 partner never asked, and a manual session
   // (#334) is never pending, so it is never approved.

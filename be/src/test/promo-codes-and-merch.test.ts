@@ -404,6 +404,80 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
     assert.deepEqual(await purchasesOf(who.clientId), [], 'nothing was opened to charge')
   })
 
+  test('a Promotion runs, and a Promo Code expires, on the app clock', async () => {
+    const start = Math.floor(Date.now() / 60_000) * 60_000
+    const promoted = await classPackage(one, {
+      name: `${NAME} Clock pass`,
+      kind: 'credit_bundle',
+      credits: 5,
+      validity_days: 60,
+      price_sgd: '100.00',
+      promotions: [
+        {
+          label: 'Later week',
+          kind: 'percent',
+          percent_off: 10,
+          starts_at: new Date(start + 10 * DAY).toISOString(),
+          ends_at: new Date(start + 20 * DAY).toISOString(),
+        },
+      ],
+    })
+    const expiresAt = new Date(start + 30 * DAY)
+    const code = await promoCode(one, { expires_at: expiresAt.toISOString() })
+    const who = await member(one)
+
+    try {
+      // Inside the Promotion's window: the catalogue and the check both price it.
+      harness.clock.set(new Date(start + 15 * DAY))
+      const catalogue = await send('GET', '/api/v1/public/packages', anonymous(one))
+      assert.equal(catalogue.status, 200, JSON.stringify(catalogue.body))
+      const listed = catalogue.body.class_packages.find((p: { id: string }) => p.id === promoted.id)
+      assert.equal(listed?.effective_price_sgd, '90.00')
+      const checked = await validate(who, code.code, promoted.id)
+      assert.equal(checked.body.valid, true, JSON.stringify(checked.body))
+      assert.equal(checked.body.effective_price_sgd, '72.00', '20% off the promoted 90.00')
+
+      // The code's expiry, to the millisecond.
+      harness.clock.set(expiresAt)
+      const expired = await validate(who, code.code, promoted.id)
+      assert.equal(expired.body.valid, false)
+      assert.equal(expired.body.message, 'This code has expired')
+      const res = await checkout(who, { package_id: promoted.id, promo_code: code.code })
+      assert.equal(res.status, 400, JSON.stringify(res.body))
+      assert.equal(res.body.message, 'This code has expired')
+      assert.deepEqual(await purchasesOf(who.clientId), [], 'nothing was opened to charge')
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
+  test('a Hold is taken for its half hour from the app clock, and lapses by it', async () => {
+    const code = await promoCode(one, { max_redemptions: 1 })
+    const first = await member(one)
+    const second = await member(one)
+    const takenAt = new Date(Math.floor((Date.now() + DAY) / 60_000) * 60_000)
+
+    try {
+      harness.clock.set(takenAt)
+      const taken = await checkout(first, { package_id: bundle.id, promo_code: code.code })
+      assert.equal(taken.status, 200, JSON.stringify(taken.body))
+      const [held] = await redemptionsOf(code.id)
+      const lapses = new Date(takenAt.getTime() + 31 * 60_000) // 30 minutes, and the minute's cushion
+      assert.equal(held?.heldUntil.toISOString(), lapses.toISOString())
+
+      harness.clock.set(new Date(lapses.getTime() - 1000))
+      const claimed = await validate(second, code.code)
+      assert.equal(claimed.body.valid, false)
+      assert.equal(claimed.body.message, 'This code has been fully claimed')
+
+      harness.clock.set(lapses)
+      const free = await validate(second, code.code)
+      assert.equal(free.body.valid, true, JSON.stringify(free.body))
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
   test('PRM-05 a code at its total cap is refused with "This code has been fully claimed"', async () => {
     const code = await promoCode(one, { max_redemptions: 1 })
     const first = await member(one)

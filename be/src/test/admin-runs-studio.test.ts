@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, inArray, isNull, like, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { buyCorporatePackage, forgetPurchases } from './corporate-purchase'
 
 /**
  * A studio admin runs the whole studio (#148), over real HTTP.
@@ -102,6 +103,7 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
     await harness.db.execute(sql`UPDATE corporate_sessions SET corporate_request_id = NULL WHERE client_name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM corporate_sessions WHERE client_name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM corporate_requests WHERE id IN (${requests})`)
+    await forgetPurchases(harness, sql`SELECT id FROM clients WHERE email LIKE ${`%@${DOMAIN}`}`)
     await harness.db.execute(sql`DELETE FROM corporate_packages WHERE name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM rooms WHERE name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM locations WHERE name LIKE ${pattern}`)
@@ -205,24 +207,20 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
 
     // A corporate session only comes from a member's Corporate Request (admin-restructure §7c).
     const email = at('corporate-client')
-    const memberHeaders = await harness.signInAs('client', email, one)
+    await harness.signInAs('client', email, one)
     const [authUser] = await harness.db.select().from(schema.clientAuthUsers).where(eq(schema.clientAuthUsers.email, email))
-    await harness.db
+    const [client] = await harness.db
       .insert(schema.clients)
       .values({ tenantId: one.id, email, name: `${TAG} Client`, phone: '+6591234570', authUserId: authUser!.id })
-    const requested = await ok(
-      await harness.app.request('/api/v1/me/corporate-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...memberHeaders },
-        body: JSON.stringify({ package_id: pkg.corporatePackage.id, preferred_location: 'the studio' }),
-      }),
-    )
+      .returning({ id: schema.clients.id })
+    // The member pays for the package; the payment is what makes the request (#374).
+    const requestId = await buyCorporatePackage(harness, schema, { clientId: client!.id }, one, pkg.corporatePackage.id)
 
     // Far out and at a random hour, so no fixture class holds the room or the instructor.
     const startsAt = new Date(Date.now() + (400 + Math.floor(Math.random() * 300)) * 24 * 3600_000)
     startsAt.setUTCHours(Math.floor(Math.random() * 20), 0, 0, 0)
     await ok(
-      await send(`/corporate-requests/${requested.corporate_request_id}/schedule`, admin.headers, 'POST', {
+      await send(`/corporate-requests/${requestId}/schedule`, admin.headers, 'POST', {
         main_instructor_id: instructor.row.id,
         location_id: location.id,
         room_id: room.id,

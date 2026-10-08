@@ -55,7 +55,12 @@ const nextConfig: NextConfig = {
     ],
   },
   async redirects() {
-    return [{ source: "/classes", destination: "/", permanent: true }];
+    return [
+      { source: "/classes", destination: "/", permanent: true },
+      // The pricing page is the packages catalogue itself (fe-client-features
+      // §2.2): one catalogue, browsable signed out, bought only signed in.
+      { source: "/pricing", destination: "/packages", permanent: true },
+    ];
   },
   // Hardening headers and the Content-Security-Policy on every response (#142).
   async headers() {

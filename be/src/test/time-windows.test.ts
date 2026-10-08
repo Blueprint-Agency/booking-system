@@ -343,4 +343,81 @@ describe('time-window rules over HTTP', { skip: integrationTestsEnabled ? false 
       assert.equal((await packageOf(cal)).creditsOrSessionsRemaining, 8)
     })
   }
+
+  test('the class catalogue’s default window opens at the start of today on the app clock', async () => {
+    const at = studios[0]!
+    // Sixty days out, mid-morning: beyond the four weeks the wall clock's window reaches.
+    const today = new Date(Math.floor((Date.now() + 60 * DAY) / DAY) * DAY)
+    const yesterdays = await addClass(at, new Date(today.getTime() - DAY + 10 * HOUR))
+    const tomorrows = await addClass(at, new Date(today.getTime() + DAY + 10 * HOUR))
+    const ids = (body: string) => (JSON.parse(body) as { classes: { id: string }[] }).classes.map(c => c.id)
+    try {
+      harness.clock.set(new Date(today.getTime() + 10 * HOUR))
+      const listed = ids(
+        await expectStatus(await harness.app.request('/api/v1/public/classes', { headers: { 'X-Tenant-Slug': at.slug } }), 200),
+      )
+      assert.ok(listed.includes(tomorrows), 'tomorrow’s class is in the window')
+      assert.ok(!listed.includes(yesterdays), 'yesterday’s is not')
+
+      const signedIn = await member(at, 'catalogue-reader')
+      const mine = ids(await expectStatus(await harness.app.request('/api/v1/me/classes', { headers: signedIn.headers }), 200))
+      assert.ok(mine.includes(tomorrows))
+      assert.ok(!mine.includes(yesterdays))
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
+  test('the catalogue’s “today” is the studio’s own day: at 03:00 in Singapore, yesterday’s classes are out and today’s early ones in', async () => {
+    const at = studios[0]!
+    const [tenant] = await harness.db
+      .select({ timezone: schema.tenants.timezone })
+      .from(schema.tenants)
+      .where(eq(schema.tenants.id, at.id))
+    assert.equal(tenant?.timezone, 'Asia/Singapore', 'studio one keeps Singapore time, UTC+8')
+    // A Singapore date sixty days out, as the instant its midnight falls on.
+    const utcDay = new Date(Math.floor((Date.now() + 60 * DAY) / DAY) * DAY)
+    const sgMidnight = new Date(utcDay.getTime() - 8 * HOUR)
+    // 10:00 the Singapore day before, and 01:00 on the day itself, already over by 03:00.
+    const yesterdays = await addClass(at, new Date(sgMidnight.getTime() - DAY + 10 * HOUR))
+    const todaysEarly = await addClass(at, new Date(sgMidnight.getTime() + HOUR))
+    const ids = (body: string) => (JSON.parse(body) as { classes: { id: string }[] }).classes.map(c => c.id)
+    try {
+      // 03:00 in Singapore is still the day before in UTC, the server's zone here.
+      harness.clock.set(new Date(sgMidnight.getTime() + 3 * HOUR))
+      const listed = ids(
+        await expectStatus(await harness.app.request('/api/v1/public/classes', { headers: { 'X-Tenant-Slug': at.slug } }), 200),
+      )
+      assert.ok(!listed.includes(yesterdays), 'yesterday’s class is not in the window')
+      assert.ok(listed.includes(todaysEarly), 'today’s 01:00 class is')
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
+  test('a booking is upcoming until its class starts on the app clock, and past from then', async () => {
+    const at = studios[0]!
+    const dee = await member(at, 'dee-lists')
+    const startsAt = aWeekOut()
+    const bookingId = await bookOk(dee, await addClass(at, startsAt))
+    const listed = async (scope: 'upcoming' | 'past') =>
+      (
+        JSON.parse(
+          await expectStatus(await harness.app.request(`/api/v1/me/bookings/${scope}`, { headers: dee.headers }), 200),
+        ) as { bookings: { booking_id: string }[] }
+      ).bookings.map(b => b.booking_id)
+    try {
+      harness.clock.set(new Date(startsAt.getTime() - 1))
+      assert.deepEqual(await listed('upcoming'), [bookingId])
+      assert.deepEqual(await listed('past'), [])
+
+      harness.clock.set(startsAt)
+      assert.deepEqual(await listed('upcoming'), [bookingId], 'a class starting this instant is still to come')
+      harness.clock.set(new Date(startsAt.getTime() + 1))
+      assert.deepEqual(await listed('upcoming'), [])
+      assert.deepEqual(await listed('past'), [bookingId])
+    } finally {
+      harness.clock.reset()
+    }
+  })
 })

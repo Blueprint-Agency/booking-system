@@ -14,6 +14,7 @@
  * server or a payment provider.
  */
 import { sgFormat } from '../../lib/time'
+import { sgdText, toCents } from '../../shared/money'
 import { isDormant } from '../packages/validity'
 
 export type PurchasedKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
@@ -91,6 +92,18 @@ export function validityLine(
 }
 
 /**
+ * What the member paid, as a receipt prints it (#370): "S$120.00", the form
+ * the studio's other member-facing money takes (`sgdText`: refund notices,
+ * part payments). A free purchase prints the zero amount rather than nothing,
+ * because a receipt that leaves the line blank reads as an error.
+ *
+ * Takes the stored numeric string and works in cents, so nothing drifts.
+ */
+export function amountPaid(amountSgd: string): string {
+  return sgdText(toCents(amountSgd))
+}
+
+/**
  * A first-timer's welcome and a $150 receipt are not the same email, and with
  * no conditionals in the renderer, different copy has no other home.
  *
@@ -116,6 +129,12 @@ export interface PurchaseEmailInput {
   validityDays: number | null
   /** The Bound Instructor a PT package's sessions are with; null when open. */
   boundInstructorName?: string | null
+  /**
+   * What the member paid for this purchase — the Purchase's figure, or "0.00"
+   * on a free one. Never the catalogue price: a Promotion or Promo Code makes
+   * those two differ, and the receipt states what was charged.
+   */
+  amountPaidSgd: string
   /** The provider's receipt for a paid purchase; null on the free paths. */
   receiptUrl: string | null
   /** Where a free purchase points instead — the page that lists what they own. */
@@ -123,7 +142,7 @@ export interface PurchaseEmailInput {
 }
 
 /**
- * The whole email, as the five allow-listed variables. `receipt_url` is never
+ * The whole email, as the six allow-listed variables. `receipt_url` is never
  * empty: an escaped empty value inside an href renders a visible link that goes
  * nowhere, so a purchase with no receipt links the account page instead (the
  * anchor text is neutral, and correct either way).
@@ -148,6 +167,7 @@ export function composePurchaseEmail(input: PurchaseEmailInput): {
         input.durationMonths,
         input.validityDays,
       ),
+      amount_paid: amountPaid(input.amountPaidSgd),
       receipt_url: input.receiptUrl || input.accountUrl,
     },
   }

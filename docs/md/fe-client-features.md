@@ -193,6 +193,8 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 **User journey**
 - Visitor reads tiers → "View packages" CTA → routed to `/packages` (which requires auth to actually purchase).
 
+_As built:_ there is no separate pricing page: `/pricing` redirects (308) to `/packages` (`fe-client/next.config.ts`), so the tiers a visitor reads are the catalogue itself, browsable signed out. Purchase opens the sign-in gate and starts no checkout until the visitor has signed in (CAT-02).
+
 **Where admin comes in**
 - Pricing tiers are published from the same Products catalogue admin manages.
 
@@ -233,7 +235,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 | Already booked by user | "Booked" (link → `/account/classes`). A booked class never shows a waitlist control. |
 | In this class's line (`waitlist.my_entry`) | "On waitlist · #N" with a secondary "Leave" → confirm dialog → toast *"Left the waitlist."*; the row then reads "Join waitlist" if the line is still open, else "Full" |
 | Booked into another class, private session or workshop day that overlaps this one (`clash`), and the class would otherwise offer Book or Join waitlist | "Clashes · {its start time}" (muted; the row dims) — a tap opens the class detail. Under the row: *"You're booked into {title} at {time} ({Location}), which overlaps this class. Cancel that booking to book this one."* and a **My bookings** link. One body, one class at a time: no travel time is added, and back-to-back is allowed (`class-booking-lifecycle.md` §3.6). A booking or join refused `time_clash` since the schedule was read shows the same, titled "Time clash"; a booking made from the row re-reads the schedule so the classes it now overlaps show it |
-| Logged out, seat available | "Book Now" → `/login?next=/booking/confirmation?sessionId=...` |
+| Logged out, seat available | "Book Now" → `/login?next=/booking/confirmation?sessionId=...`. _As built:_ `/login?next=/?book={class id}` (`lib/book-return.ts`): after signing in the member lands on the schedule with that class's day open and its Book sheet up — or the "You need a package" popup, as the tap would have opened (CAT-06) |
 | Logged in, has credits, seat available | "Book Now" (sage, filled) → the **Book sheet** *"Book {class}?"* (date, time, location, instructor, the package picker below, and the cancellation policy) → "Book class" books it with the picked package, "Not now" closes it; nothing is spent until "Book class" |
 | Logged in, no credits / exhausted | Grey "Book Now" → popup *"You need a package to book this class"* → "Buy a Package" CTA → `/packages` |
 | Online seats full + `waitlist.open` (studio switch on, before the Cancellation Window, room in the line) | "Join waitlist" (warning, outlined). Joining debits nothing; the row becomes "On waitlist · #N" without a reload |
@@ -331,7 +333,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 - Workshops are one or multi-day events with finite capacity. Each workshop has:
   - A list of **days** (`WorkshopDay[]`) — each day has its own date, time window, capacity, and base price.
   - A list of **tiers** (`WorkshopTier[]`) — each tier names a name (e.g. "Full Event", "Day 1 only"), an explicit set of `day_ids` it grants access to, a regular price, and optional early-bird price + cutoff.
-- **Tier capacity is derived** as the *minimum capacity across the days it covers* — a tier can never sell more than the smallest constituent day's room. The server is the authority. As for classes (§3.1), the member is never told a count: a tier with no room reads as full, and the catalogue sends no day's capacities.
+- **Tier capacity is derived** as the *minimum capacity across the days it covers* — a tier can never sell more than the smallest constituent day's room. The server is the authority. As for classes (§3.1), the member is never told a count: a tier with no room reads as full, and the catalogue sends no day's capacities. _As built (#371):_ each tier in `GET /me/workshops/:id` carries `has_room`, true only while every day it covers has a seat left — the same rule the purchase gate refuses `409 workshop_full` by (`services/workshops/book.ts` `tierHasRoom`).
 - Workshops are **paid directly** — credits cannot be used. The card carries a clarification note: *"Direct payment only — credits cannot be used."*
 - Status: upcoming / fully enrolled / ended.
 - Free workshops (price 0) use **"Register"** copy and skip checkout entirely — go directly to a confirmation success page.
@@ -486,7 +488,7 @@ The studio can write back on the request: when it schedules a time none of the p
 2. On success → a pending corporate request is created; the user lands on `/account/corporate` (§8.8) with a WhatsApp contact button (number the studio's own `tenant_settings.copy->>'contact.whatsapp'`).
 3. Studio negotiates on WhatsApp, then schedules → the request flips to **Scheduled** (date/time, location, instructor shown), and the member's app shows the **"Approved!"** celebration with Add to Google Calendar (§11.2). After the session, it moves to **done** (attended). Either side can end up at **Cancelled**.
 
-_As built, a corporate request is sent from the package card's request form (preferred venue and notes, no payment — `submitCorporateRequest`); sending it shows the **"Request sent!"** celebration (§5.2 step 4) naming the package and venue, and **Done** goes to `/account/corporate`._
+_As built (#374):_ the catalogue is the **Corporate** tab of `/packages` (`/packages#corporate`). **Buy** goes to `/checkout?package=<id>&kind=corporate`, which shows the package at its price with no Promo Code field and no Part Payment, and pays by card only (`POST /me/checkout/package` with `package_kind: 'corporate'`). The confirmed payment makes the one pending request; there is no request form and no free way to send one. The member lands on their corporate bookings (`/account/bookings?type=corporate`, where `/account/corporate` redirects) with the **"Request sent!"** celebration (§5.2 step 4) naming the package, and the studio's WhatsApp button when the studio has set a number. A corporate package priced at zero skips the checkout's payment and lands there the same way.
 
 **Where admin comes in**
 - Admin (superadmin) manages corporate packages under Packages.
@@ -515,7 +517,7 @@ _As built, a corporate request is sent from the package card's request form (pre
 
 **Business logic — the review step is live, and every paid purchase routes through it.**
 
-The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a real review step, and it is the **only** surface in the member app with a code input anywhere — a Promo Code can be scoped to any product, so the picker's page and the code's page have to be the same page. A package or workshop tier priced above zero keeps its existing auth gate (login modal, return-to-page) and then pushes here; at zero it keeps the old post-and-grant, so a Promotion that drives a package to $0 falls into the free branch for free — the branch is decided by price, not by kind. The Trial card never used the buy button and is untouched.
+The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a real review step, and it is the **only** surface in the member app with a code input anywhere — a Promo Code can be scoped to any product, so the picker's page and the code's page have to be the same page. A package or workshop tier priced above zero keeps its existing auth gate (login modal, return-to-page) and then pushes here; at zero it keeps the old post-and-grant, so a Promotion that drives a package to $0 falls into the free branch for free — the branch is decided by price, not by kind. The Trial card never used the buy button and is untouched. _As built:_ the gate's Log in returns a signed-out buyer straight to this review step for the item they tapped (`components/checkout/buy-button.tsx`, PAY-01); merch and a $0 item, which have no review step, return to the page they were bought from.
 
 **A studio that takes no online payments** (#293) — one that has not supplied its own payment account — shows "This studio isn't taking online payments yet." in place of every paid buy button and of the Pay button here, read from `GET /public/online-payments`. A $0 item keeps its button: it never reaches the payment provider. If the read is slow or fails the buttons stay, and the server's `payments_not_configured` refusal reads as the same sentence (`fe-client/src/lib/online-payments-rule.ts`).
 
@@ -543,12 +545,13 @@ The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a re
 
 **The blocked class is a nudge, not an ad.** On `/classes`, a class outside a member's plan coverage is shown, not hidden — the row dims, takes a "Not in your plan" lock chip where the Book button was, and carries one line under a hairline: "Your plan covers **Harbour Studio** only. [Add Parkside Studio for $30/month]". The link is weighted below the class itself — a louder treatment was tried and rejected because this state repeats on every wrong-Location class in the week's schedule, and at that density an accent border and a filled button read as an ad break. Coverage is read across **every** plan the member holds (`entitlements.unlimited_plans`), not one; a member who also holds credits, or a second plan homed at that Location, pays with it by picking it on the Book sheet (§3.1). *(The "· or [use 1 credit]" link that used to follow is gone with `use_credits` — `be/docs/adr/0010-several-packages-run-per-family.md`.)* A blocked class never silently spends a credit.
 
-**Four confirmation emails**, one per completed purchase, none for an admin's complimentary grant:
+**Five confirmation emails**, one per completed purchase, none for an admin's complimentary grant:
 
 | Purchase | Slug |
 |---|---|
 | Paid class / PT package | `package_purchase_confirmed` |
 | Paid workshop | `workshop_purchase_confirmed` |
+| Paid corporate package | `corporate_purchase_confirmed` |
 | Free trial pass | `trial_pass_purchase_confirmed` |
 | Free workshop tier | `workshop_purchase_confirmed` |
 
@@ -770,6 +773,7 @@ How the app looks for the member: **Theme** (Light, Dark) and **Text size** (Sma
 
 - Studio info, location addresses, social links, legal links (Terms, Privacy), copyright.
 - (No "For Business" / SaaS marketing link — a studio's client app is for that studio's members, not a pitch surface for the platform.)
+- _As built_ (`components/layout/site-footer.tsx`), on every member page of a studio's address and below the page's `<main>`: the studio's name and tagline (`tenant_settings`), its footer text (`marketing_content.footer_text`, read from `GET /public/marketing`), each active Location's name and address (the name linking to its map when `gmaps_url` is set), its social links (`tenant_settings.copy` keys `social.instagram`, `social.facebook`), its legal links (`legal.terms_url`, `legal.privacy_url`) and "© {year} {studio}". Each piece is shown only when the studio has set it, a link only when it is an http(s) address (`lib/site-footer.ts`); nothing is hard-coded and nothing names the platform (CAT-07).
 
 **Where admin comes in**
 - Footer copy is editable from admin.

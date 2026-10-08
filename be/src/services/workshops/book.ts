@@ -1,5 +1,5 @@
-import { and, eq, inArray, ne, sql } from 'drizzle-orm'
-import { db } from '../../db'
+import { and, eq, ne, sql } from 'drizzle-orm'
+import { afterCommit, db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
 import {
   workshops,
@@ -9,11 +9,13 @@ import {
 } from '../../db/schema/schedule'
 import { stripePayments } from '../../db/schema/ledger'
 import { isUniqueViolation } from '../../db/unique-violation'
+import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
 import { memberClash, type HeldWindow } from '../bookings/member-time'
 import { bestPrice, listActivePromotionsFor } from '../packages/promotions'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { sendWorkshopPurchaseEmail } from '../notifications/send-purchase-email'
+import { confirmedPlacesByDay, tierHasRoom } from './capacity'
 
 type WorkshopTierRow = typeof workshopTiers.$inferSelect
 
@@ -49,7 +51,7 @@ export async function tierDaysClash(
 export function tierEffectivePrice(
   tier: WorkshopTierRow,
   promos: Parameters<typeof bestPrice>[1],
-  now = new Date(),
+  now = clockNow(),
 ): { baseSgd: string; appliedPromotionId: string | null } {
   const earlyBirdActive =
     tier.earlyBirdPriceSgd != null && tier.earlyBirdCutoffAt != null && tier.earlyBirdCutoffAt > now
@@ -69,7 +71,7 @@ export function tierEffectivePrice(
 export async function assertWorkshopOnSale(
   tenantId: string,
   ws: { id: string; lifecycle: string },
-  now = new Date(),
+  now = clockNow(),
 ): Promise<void> {
   if (ws.lifecycle !== 'active') throw new BadRequestError('workshop_not_active')
   const [last] = await db
@@ -125,32 +127,8 @@ export async function assertWorkshopBookable(
     )
   if (tierDayRows.length === 0) return
 
-  // The count that decides "full" is the sharp one: unscoped it would add
-  // another studio's seats to this studio's day and turn a workshop away that
-  // has room.
-  const dayIds = tierDayRows.map(r => r.dayId)
-  const counts = await db
-    .select({
-      dayId: workshopTierDays.workshopDayId,
-      cnt: sql<number>`count(*)::int`,
-    })
-    .from(bookings)
-    .innerJoin(workshopTierDays, eq(workshopTierDays.workshopTierId, bookings.workshopTierId))
-    .where(
-      and(
-        eq(bookings.tenantId, tenantId),
-        eq(workshopTierDays.tenantId, tenantId),
-        eq(bookings.kind, 'workshop'),
-        eq(bookings.state, 'confirmed'),
-        inArray(workshopTierDays.workshopDayId, dayIds),
-      ),
-    )
-    .groupBy(workshopTierDays.workshopDayId)
-  const bookedByDay = new Map(counts.map(c => [c.dayId, Number(c.cnt)]))
-
-  for (const d of tierDayRows) {
-    if ((bookedByDay.get(d.dayId) ?? 0) >= d.cap) throw new ConflictError('workshop_full')
-  }
+  const bookedByDay = await confirmedPlacesByDay(tenantId, tierDayRows.map(r => r.dayId))
+  if (!tierHasRoom(tierDayRows, bookedByDay)) throw new ConflictError('workshop_full')
 }
 
 export interface BookWorkshopInput {
@@ -343,7 +321,8 @@ export async function bookWorkshopFree(
   // The worst case in the set (§13): a confirmed booking with a QR code and a
   // date that used to send nothing at all. No Purchase means nothing to
   // be idempotent on — `assertWorkshopBookable` above is the duplicate gate —
-  // so it sends every time it gets here. The helper cannot throw.
-  await sendWorkshopPurchaseEmail(tenantId, booked.bookingId)
+  // so it sends every time it gets here, once the request's transaction has
+  // committed (`afterCommit`). The helper cannot throw.
+  afterCommit(() => sendWorkshopPurchaseEmail(tenantId, booked.bookingId))
   return booked
 }

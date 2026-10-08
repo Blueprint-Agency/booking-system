@@ -33,6 +33,7 @@ import { tenantDisplayName } from '../tenants/mail-identity'
 import { requireTenantUrl } from '../tenants/urls'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { sendTemplatedEmail } from '../notifications/send'
+import { now as clockNow } from '../../lib/clock'
 import { splitName, joinName } from '../../lib/name'
 import { sgFormat } from '../../lib/time'
 import { withLeaveFigures } from '../leave/requests'
@@ -124,7 +125,8 @@ export async function writePendingStaff(
   input: PendingStaffInput,
 ): Promise<{ staff: StaffUserRow; invitation: StaffInvitationRow }> {
   const email = input.email.trim().toLowerCase()
-  const now = new Date()
+  // The clock's: `now` sets the invitation's expiry, a deadline a rule reads later.
+  const now = clockNow()
   const { firstName, lastName } = splitName(input.name)
 
   const authUserId = await ensureAuthUser(tx, 'staff', { tenantId: input.tenantId, email, name: input.name })
@@ -276,7 +278,7 @@ async function findInvitation(tenantId: string, token: string) {
   if (inv.status === 'revoked') return { inv, status: 'revoked' as const }
   // pending (or a legacy 'expired' status) — treat a past-due invite as expired
   // by comparison, without mutating the row.
-  if (inv.status === 'expired' || inv.expiresAt.getTime() < Date.now()) {
+  if (inv.status === 'expired' || inv.expiresAt.getTime() < clockNow().getTime()) {
     return { inv, status: 'expired' as const }
   }
   return { inv, status: 'valid' as const }
@@ -421,6 +423,8 @@ export async function acceptInvitationOnPasswordReset(tenantId: string, authUser
       .limit(1)
     if (!staff) return false
 
+    // The expiry is a rule and reads the clock; the acceptance stamps are
+    // record stamps and stay on real time.
     const now = new Date()
     const claimed = await tx
       .update(staffInvitations)
@@ -430,7 +434,7 @@ export async function acceptInvitationOnPasswordReset(tenantId: string, authUser
           eq(staffInvitations.tenantId, tenantId),
           eq(staffInvitations.staffUserId, staff.id),
           eq(staffInvitations.status, 'pending'),
-          gt(staffInvitations.expiresAt, now),
+          gt(staffInvitations.expiresAt, clockNow()),
         ),
       )
       .returning({ id: staffInvitations.id })
@@ -644,7 +648,9 @@ export async function resendInvitation(
   }
 
   const now = new Date()
-  const expiresAt = new Date(now.getTime() + INVITE_TTL_MS)
+  // The clock's: the expiry is a deadline `findInvitation` reads against the
+  // clock. `createdAt` is a record stamp and stays on real time.
+  const expiresAt = new Date(clockNow().getTime() + INVITE_TTL_MS)
 
   // Before the extension, for the reason `inviteAdmin` gives: an invitation
   // whose expiry was pushed out but whose email could not be built is a link

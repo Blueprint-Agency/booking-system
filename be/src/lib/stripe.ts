@@ -139,7 +139,16 @@ const paymentsNotConfigured = () =>
 
 /** The provider, bound to the studio whose money is moving. */
 export async function stripeForTenant(tenantId: string): Promise<Stripe> {
-  return clientFor(await requireProviderAccount(tenantId))
+  return stripeForAccount(await requireProviderAccount(tenantId))
+}
+
+/**
+ * The provider, bound to an account the caller has already looked up, for a
+ * caller that needs the account itself as well as the client: one lookup, and
+ * the client and the account cannot disagree.
+ */
+export function stripeForAccount(account: ProviderAccount): Stripe {
+  return clientFor(account)
 }
 
 /**

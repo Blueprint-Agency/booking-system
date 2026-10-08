@@ -234,6 +234,31 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
     await expectStatus(await accept(one, token, NEW_PASSWORD), 200)
   })
 
+  test('a resent invitation runs its 7 days from the app clock, so it still opens 8 days on', async () => {
+    const email = at('resent-on-the-clock')
+    await invite(email)
+    const { token } = invitationMail(email)
+    const row = await staffRow(one.id, email)
+    const [invitation] = await harness.db
+      .select()
+      .from(schema.staffInvitations)
+      .where(eq(schema.staffInvitations.staffUserId, row!.id))
+
+    try {
+      harness.clock.set(new Date(Date.now() + 8 * 24 * 60 * 60 * 1000))
+      await expectStatus(await accept(one, token, NEW_PASSWORD), 409, 'invitation_expired')
+
+      await expectStatus(
+        await send(`/api/v1/portal/admin/staff/invitations/${invitation!.id}/resend`, { body: {}, headers: admin }),
+        200,
+      )
+      await expectStatus(await accept(one, token, NEW_PASSWORD), 200)
+      assert.equal((await staffRow(one.id, email))?.status, 'active')
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
   test('a password shorter than the pool allows is refused, and the invitation stays open', async () => {
     const email = at('short-password')
     await invite(email)

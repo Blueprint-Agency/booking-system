@@ -20,6 +20,7 @@ import { tenantIdColumn } from './tenancy'
 import { staffUsers, clients } from './identity'
 import { instructors, classTypes, locations, rooms } from './catalog'
 import { classPackages, clientPackages, corporatePackages } from './packages'
+import { purchases } from './ledger'
 import {
   cancellationSourceEnum,
   lifecycleEnum,
@@ -74,6 +75,10 @@ export const classes = pgTable(
     cancelledByStaffId: uuid('cancelled_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',
     }),
+    // When the check-in nag went out for this class (admin-restructure §11,
+    // services/bookings/check-in-nag.ts): set as the nag is claimed, so it goes
+    // out once. Null until then, and for every class whose check-in was done.
+    checkinNagSentAt: timestamp('checkin_nag_sent_at', { withTimezone: true }),
     // The Class Series that created this class, if any. Provenance only: the
     // class is an ordinary class in every other respect.
     seriesId: uuid('series_id').references((): AnyPgColumn => classSeries.id, {
@@ -676,6 +681,8 @@ export const ptSessions = pgTable(
     cancelledByStaffId: uuid('cancelled_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',
     }),
+    // When the check-in nag went out for this session — as `classes.checkin_nag_sent_at`.
+    checkinNagSentAt: timestamp('checkin_nag_sent_at', { withTimezone: true }),
     scheduledAt: timestamp('scheduled_at', { withTimezone: true }).notNull(),
     scheduledByStaffId: uuid('scheduled_by_staff_id')
       .notNull()
@@ -906,6 +913,12 @@ export const corporateRequests = pgTable(
       .notNull()
       .references(() => corporatePackages.id, { onDelete: 'restrict' }),
     status: corporateRequestStatusEnum('status').notNull().default('pending'),
+    // The Purchase that paid for it, so refunding the Purchase can close the
+    // request. Null on a request made before the link existed, and on one made
+    // without a purchase.
+    purchaseId: uuid('purchase_id').references((): AnyPgColumn => purchases.id, {
+      onDelete: 'restrict',
+    }),
     // Member's preferred location for the sessions, captured by the fe-client
     // request form. Free text — a studio name or the member's own venue.
     preferredLocation: text('preferred_location'),
@@ -926,6 +939,7 @@ export const corporateRequests = pgTable(
   table => ({
     clientIdFkIdx: index('corporate_requests_client_id_fk_idx').on(table.clientId),
     corporatePackageIdFkIdx: index('corporate_requests_corporate_package_id_fk_idx').on(table.corporatePackageId),
+    purchaseIdFkIdx: index('corporate_requests_purchase_id_fk_idx').on(table.purchaseId),
     resolvedByStaffIdFkIdx: index('corporate_requests_resolved_by_staff_id_fk_idx').on(table.resolvedByStaffId),
     statusCreatedIdx: index('corporate_requests_status_created_idx').on(
       table.tenantId,

@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { classToBook } from "@/lib/book-return";
 import { useMemberSession } from "@/lib/member-auth";
 import { useClasses, useLocations, useCanBookClass, toLocalDateStr, type ApiClassCard } from "@/lib/classes";
 import { BookingSurface } from "@/components/booking/booking-surface";
@@ -50,6 +52,19 @@ function dayHeaderLabel(dateStr: string): string {
 export function ClassFeed() {
   const [selectedLocation, setSelectedLocation] = useState("");
   const [instructor, setInstructor] = useState("");
+  // A class this page was sent to book (`?book=`), after a signed-out Book
+  // Now and the sign-in it led to: its day opens and its Book sheet with it.
+  // Read from the address once, in the browser.
+  const router = useRouter();
+  const [toBook, setToBook] = useState<string | null>(null);
+  useEffect(() => {
+    setToBook(classToBook(new URLSearchParams(window.location.search)));
+  }, []);
+  const bookHandled = useCallback(() => {
+    setToBook(null);
+    // Off the address too, so a reload or Back does not open it again.
+    router.replace("/", { scroll: false });
+  }, [router]);
 
   const from = useMemo(() => startOfTodayISO(), []);
   const to = useMemo(() => windowEndISO(WINDOW_DAYS), []);
@@ -123,6 +138,12 @@ export function ClassFeed() {
     [groups],
   );
   const itemsByDate = useMemo(() => new Map(groups.map((g) => [g.date, g.items])), [groups]);
+  const bookDay = toBook ? (groups.find((g) => g.items.some((c) => c.id === toBook))?.date ?? null) : null;
+  // A class that is not on this schedule (gone, started, another Location's)
+  // has no sheet to open: forget it rather than open one later by surprise.
+  useEffect(() => {
+    if (toBook && classes && !loading && !bookDay) bookHandled();
+  }, [toBook, classes, loading, bookDay, bookHandled]);
 
   const filtered = Boolean(instructor);
   const clearFilters = () => setInstructor("");
@@ -178,7 +199,7 @@ export function ClassFeed() {
           )}
         </div>
       ) : (
-        <OneOpenAccordion sections={sections} idPrefix="day">
+        <OneOpenAccordion sections={sections} idPrefix="day" initialKey={bookDay}>
           {(date) => (
             <div className={cn(CARD, "divide-y divide-ink/5")}>
               {(itemsByDate.get(date) ?? []).map((c) => (
@@ -191,6 +212,8 @@ export function ClassFeed() {
                   isSignedIn={!!isSignedIn}
                   entitlements={entitlements}
                   onStale={refresh}
+                  autoBook={c.id === toBook}
+                  onAutoBooked={bookHandled}
                 />
               ))}
             </div>

@@ -90,7 +90,10 @@ function serialize(
 
 
 const createBody = z.object({
-  slug: z.string().min(1),
+  // Any string: whether it may be an address — a blank one included, which is
+  // `slug_too_short` — is `checkSlug`'s to say, so the form gets one of its
+  // reasons rather than a validation error it has no words for.
+  slug: z.string(),
   name: z.string().min(1).max(200),
   // IANA zone. Validated against the runtime's own database rather than a list
   // we would have to maintain — a zone this process cannot resolve would make
@@ -168,7 +171,9 @@ const statusBody = z.object({
   status: z.enum(['active', 'suspended', 'archived']),
 })
 
-const renameBody = z.object({ slug: z.string().min(1) })
+// Any string, as on create: a blank one is `slug_too_short`, the rename's own
+// reason, not a validation error the form has no words for.
+const renameBody = z.object({ slug: z.string() })
 
 const app = new Hono()
   .get('/tenants', async c => {
@@ -293,14 +298,15 @@ const app = new Hono()
 
     const deleted = await deleteTenant({ tenantId: id.data, confirmSlug: c.req.valid('query').confirm })
 
-    // The record of the deletion. The studio's own audit trail went with it, so
-    // this line — who, which studio, how much — is what remains.
+    // The record of the deletion. The studio's own audit trail is archived as it
+    // stood, so this line — who, which studio, how much — is the record of the act.
     logger.warn(
       {
         tenantId: deleted.id,
         slug: deleted.slug,
         rows: deleted.rows,
         accounts: deleted.accounts,
+        archived: deleted.archived,
         objects: deleted.objects,
         by,
       },
@@ -313,6 +319,7 @@ const app = new Hono()
         rows: deleted.rows,
         tables: deleted.tables,
         accounts: deleted.accounts,
+        archived: deleted.archived,
         objects: deleted.objects,
       },
     })

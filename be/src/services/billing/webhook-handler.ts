@@ -11,7 +11,7 @@
  *   - the entire unwind, in ./refunds.ts
  */
 import Stripe from 'stripe'
-import { db, withTenant } from '../../db'
+import { afterCommit, db, withTenant } from '../../db'
 import { tenantForClient as routeToTenant, tenantForPaymentIntent } from '../../db/routing'
 import { stripePayments } from '../../db/schema/ledger'
 import { clients } from '../../db/schema/identity'
@@ -26,7 +26,9 @@ import { purchaseKindFor } from './checkout-session'
 import { toCents } from '../../shared/money'
 import { bookWorkshopPaid, tierDaysClash } from '../workshops/book'
 import { recordMerchOrder } from '../catalog/merch-orders'
+import { createCorporateRequest } from '../corporate/requests'
 import {
+  sendCorporatePurchaseEmail,
   sendPackagePurchaseEmail,
   sendWorkshopPurchaseEmail,
 } from '../notifications/send-purchase-email'
@@ -420,9 +422,13 @@ export async function handleStripeEvent(
   // must land in front of a human, not vanish — see `tenantForClient` below.
   if (!named) throw new NotFoundError('client_not_found', { clientId })
 
-  await withTenant(named, () =>
-    dispatchStripeEvent(event, expectedTenantId, providerAccountId, retry),
-  )
+  // The delivery's own outermost transaction. What it registers with
+  // `afterCommit` — the member's email — runs only once this has committed: a
+  // delivery that failed part-way rolled back, and must not have mailed anyone
+  // about a request that does not exist; its retry sends instead. A failed
+  // send is reported, never thrown: failing the delivery now would only make
+  // the provider retry one that finds nothing left to do.
+  await withTenant(named, () => dispatchStripeEvent(event, expectedTenantId, providerAccountId, retry))
 }
 
 async function dispatchStripeEvent(
@@ -530,8 +536,9 @@ async function dispatchStripeEvent(
       })
 
       // One confirmation per purchase, however many times the provider retries:
-      // only the delivery that inserted the row sends. The helper cannot throw.
-      if (granted.created) await sendPackagePurchaseEmail(tenantId, granted.clientPackageId)
+      // only the delivery that inserted the row sends, once it has committed
+      // (`afterCommit`). The helper cannot throw.
+      if (granted.created) afterCommit(() => sendPackagePurchaseEmail(tenantId, granted.clientPackageId))
       return
     }
 
@@ -662,6 +669,78 @@ async function dispatchStripeEvent(
       return
     }
 
+    // A corporate package (be-client § Corporate branch, #374). No credits: the
+    // one pending Corporate Request this makes is the whole of what was bought,
+    // and the studio settles the rest with the member over WhatsApp.
+    if (kind === 'corporate_package') {
+      const packageId = meta.package_id
+      const clientId = meta.client_id
+      if (!packageId || !clientId) return
+      const tenantId = await tenantForClient(clientId)
+
+      const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
+
+      const existing = await existingPayment(tenantId, paymentIntentId)
+      if (existing?.status === 'succeeded') return
+
+      const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
+        clientId,
+        amountSgd,
+      })
+
+      if (!existing) {
+        await db
+          .insert(stripePayments)
+          .values({
+            tenantId,
+            paymentIntentId,
+            purchaseId: purchase.id,
+            amountSgd: capturedSgd(session, amountSgd),
+            kind: 'corporate_package',
+            clientId,
+            providerAccountId,
+            status: 'pending',
+          })
+          .onConflictDoNothing()
+      }
+
+      // The request has no unique key of its own to stop a second one, so the
+      // payment row is the lock: two deliveries of this intent at once (the
+      // webhook and the confirmation page's fallback) queue here, and the one
+      // that waited reads the other's `succeeded` and stops.
+      const [locked] = await db
+        .select({ status: stripePayments.status })
+        .from(stripePayments)
+        .where(
+          and(
+            eq(stripePayments.tenantId, tenantId),
+            eq(stripePayments.paymentIntentId, paymentIntentId),
+          ),
+        )
+        .for('update')
+      if (locked?.status === 'succeeded') return
+
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
+
+      const { corporateRequestId } = await createCorporateRequest(tenantId, {
+        clientId,
+        corporatePackageId: packageId,
+        purchaseId: purchase.id,
+      })
+
+      await bankPayment(
+        tenantId,
+        paymentIntentId,
+        await chargePatch(tenantId, paymentIntentId, providerAccountId, retry),
+      )
+
+      // Step 5: one confirmation, from the delivery that made the request — a
+      // redelivery stopped at the `succeeded` guard above. Sent once the
+      // delivery has committed (`afterCommit`); the sender reports and swallows.
+      afterCommit(() => sendCorporatePurchaseEmail(tenantId, corporateRequestId, paymentIntentId))
+      return
+    }
+
     if (kind === 'workshop') {
       const workshopId = meta.workshop_id
       const workshopTierId = meta.workshop_tier_id
@@ -761,7 +840,8 @@ async function dispatchStripeEvent(
           )
       }
 
-      if (booked.created) await sendWorkshopPurchaseEmail(tenantId, booked.bookingId)
+      // Once the delivery has committed (`afterCommit`).
+      if (booked.created) afterCommit(() => sendWorkshopPurchaseEmail(tenantId, booked.bookingId))
       return
     }
   }

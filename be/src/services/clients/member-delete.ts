@@ -12,8 +12,9 @@ import { MEMBER_TABLES, eraseSteps } from './member-tables'
  * blocking (`softDeleteClient`), which stays the reversible option.
  *
  * Every row `MEMBER_TABLES` finds for them goes, except the rows each table's
- * `erase` says to keep — the studio's accounts — which stay with the member's
- * identity removed. What is kept, and why, is `docs/md/member-data-retention.md`.
+ * `erase` says to keep — the studio's accounts, and the staff audit trail about
+ * them, which is never deleted — which stay with the member's identity removed.
+ * What is kept, and why, is `docs/md/member-data-retention.md`.
  *
  * **It reaches outside the database too.** Since #185 a member is a Customer at
  * the payment provider, with cards kept against them, and neither is a row this
@@ -41,6 +42,7 @@ export async function deleteMemberPermanently(input: {
   const { tenantId } = input
   const member = await getClientById(tenantId, input.clientId)
   const key = { clientId: member.id, authUserId: member.authUserId, email: member.email }
+  const erased = { ...key, name: member.name, phone: member.phone }
 
   await endClientSessionsAt(db, tenantId, member.authUserId)
 
@@ -70,6 +72,29 @@ export async function deleteMemberPermanently(input: {
     for (const step of eraseSteps(entry)) {
       if ('delete' in step) {
         await db.execute(sql`DELETE FROM ${table} WHERE tenant_id = ${tenantId} AND ${step.delete(key)}`)
+      } else if ('anonymise' in step) {
+        // Each row is rewritten from its own contents, so it is read whole and
+        // rewritten here — then every row goes back in one statement, however
+        // many there are, rather than one round trip per row.
+        const rows = await db.execute<Record<string, unknown>>(
+          sql`SELECT * FROM ${table} WHERE tenant_id = ${tenantId} AND ${step.where(key)}`,
+        )
+        if (rows.length === 0) continue
+        const rewritten = rows.map(row => ({ ...step.anonymise(row, erased), id: row.id }))
+        const columns = Object.entries(step.rewrites)
+        const set = sql.join(
+          columns.map(([c]) => sql`${sql.identifier(c)} = v.${sql.identifier(c)}`),
+          sql`, `,
+        )
+        const shape = sql.join(
+          [sql`id uuid`, ...columns.map(([c, type]) => sql`${sql.identifier(c)} ${sql.raw(type)}`)],
+          sql`, `,
+        )
+        await db.execute(
+          sql`UPDATE ${table} AS t SET ${set}
+              FROM jsonb_to_recordset(${JSON.stringify(rewritten)}::jsonb) AS v(${shape})
+              WHERE t.tenant_id = ${tenantId} AND t.id = v.id`,
+        )
       } else {
         await db.execute(sql`UPDATE ${table} SET ${step.set} WHERE tenant_id = ${tenantId} AND ${step.where(key)}`)
       }

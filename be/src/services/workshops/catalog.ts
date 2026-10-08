@@ -18,6 +18,7 @@ import {
 import { NotFoundError } from '../../shared/errors'
 import { readRoster, readRosters } from '../schedule/roster'
 import { lineupOf, lineupsOf, type Lineup } from '../schedule/lineup'
+import { confirmedPlacesByDay, tierHasRoom } from './capacity'
 
 export type WorkshopRow = typeof workshops.$inferSelect
 
@@ -54,6 +55,11 @@ interface TierPayload {
   applied_promotion_id: string | null
   ord: number
   day_ids: string[]
+  /**
+   * Whether a place can still be bought: true only while every day the tier
+   * covers has a seat left. A yes or no, never a count (fe-client-features §4.1).
+   */
+  has_room: boolean
   promotions: ReturnType<typeof serializePromotion>[]
 }
 
@@ -96,14 +102,37 @@ async function loadCommon(tenantId: string, workshopIds: string[]) {
     }
   }
 
-  const daysRows = await db
-    .select()
-    .from(workshopDays)
-    .where(
-      and(eq(workshopDays.tenantId, tenantId), inArray(workshopDays.workshopId, workshopIds)),
-    )
-    .orderBy(workshopDays.ord)
+  // The days, the tiers and the promotions each need only the workshop ids, so
+  // they are asked for together; then the seats taken on those days and which
+  // days each tier covers, again together.
+  const [daysRows, tierRows, promosByWorkshop] = await Promise.all([
+    db
+      .select()
+      .from(workshopDays)
+      .where(and(eq(workshopDays.tenantId, tenantId), inArray(workshopDays.workshopId, workshopIds)))
+      .orderBy(workshopDays.ord),
+    db
+      .select()
+      .from(workshopTiers)
+      .where(and(eq(workshopTiers.tenantId, tenantId), inArray(workshopTiers.workshopId, workshopIds)))
+      .orderBy(workshopTiers.ord),
+    // Promotions are scoped per-workshop (parent_type='workshop', parent_id=workshop.id)
+    // — applied uniformly to all tiers of that workshop.
+    listActivePromotionsFor(tenantId, 'workshop', workshopIds),
+  ])
+  const tierIds = tierRows.map(t => t.id)
+  const [bookedByDay, tierDayRows] = await Promise.all([
+    confirmedPlacesByDay(tenantId, daysRows.map(d => d.id)),
+    tierIds.length
+      ? db
+          .select()
+          .from(workshopTierDays)
+          .where(and(eq(workshopTierDays.tenantId, tenantId), inArray(workshopTierDays.workshopTierId, tierIds)))
+      : Promise.resolve([]),
+  ])
+
   const daysByWorkshop = new Map<string, DayPayload[]>()
+  const capacityByDay = new Map(daysRows.map(d => [d.id, d.capacityOnline]))
   for (const d of daysRows) {
     const list = daysByWorkshop.get(d.workshopId) ?? []
     list.push({
@@ -115,23 +144,6 @@ async function loadCommon(tenantId: string, workshopIds: string[]) {
     daysByWorkshop.set(d.workshopId, list)
   }
 
-  const tierRows = await db
-    .select()
-    .from(workshopTiers)
-    .where(and(eq(workshopTiers.tenantId, tenantId), inArray(workshopTiers.workshopId, workshopIds)))
-    .orderBy(workshopTiers.ord)
-  const tierIds = tierRows.map(t => t.id)
-  const tierDayRows = tierIds.length
-    ? await db
-        .select()
-        .from(workshopTierDays)
-        .where(
-          and(
-            eq(workshopTierDays.tenantId, tenantId),
-            inArray(workshopTierDays.workshopTierId, tierIds),
-          ),
-        )
-    : []
   const dayIdsByTier = new Map<string, string[]>()
   for (const td of tierDayRows) {
     const list = dayIdsByTier.get(td.workshopTierId) ?? []
@@ -139,15 +151,13 @@ async function loadCommon(tenantId: string, workshopIds: string[]) {
     dayIdsByTier.set(td.workshopTierId, list)
   }
 
-  // Promotions are scoped per-workshop (parent_type='workshop', parent_id=workshop.id)
-  // — applied uniformly to all tiers of that workshop.
-  const promosByWorkshop = await listActivePromotionsFor(tenantId, 'workshop', workshopIds)
-
   const tiersByWorkshop = new Map<string, TierPayload[]>()
   for (const t of tierRows) {
     const wsPromos = promosByWorkshop[t.workshopId] ?? []
     const eff = bestPrice(t.regularPriceSgd, wsPromos)
     const list = tiersByWorkshop.get(t.workshopId) ?? []
+    const dayIds = dayIdsByTier.get(t.id) ?? []
+    const covered = dayIds.map(dayId => ({ dayId, cap: capacityByDay.get(dayId) ?? 0 }))
     list.push({
       id: t.id,
       name: t.name,
@@ -159,7 +169,8 @@ async function loadCommon(tenantId: string, workshopIds: string[]) {
       effective_price_sgd: eff.effectivePriceSgd,
       applied_promotion_id: eff.appliedPromotionId,
       ord: t.ord,
-      day_ids: dayIdsByTier.get(t.id) ?? [],
+      day_ids: dayIds,
+      has_room: tierHasRoom(covered, bookedByDay),
       promotions: wsPromos.map(serializePromotion),
     })
     tiersByWorkshop.set(t.workshopId, list)

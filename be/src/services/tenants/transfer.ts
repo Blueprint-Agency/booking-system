@@ -3,6 +3,7 @@ import { db, withTenant } from '../../db'
 import { auditLog } from '../../db/schema/ledger'
 import { tenants } from '../../db/schema/tenancy'
 import { isUniqueViolation } from '../../db/unique-violation'
+import { now as clockNow } from '../../lib/clock'
 import { ensureAuthUser } from '../auth/auth-users'
 import { INVITE_TTL_MS } from '../auth/invitations'
 import { loadFeatureFlags } from '../feature-flags'
@@ -572,7 +573,7 @@ export async function importTenant(
         // were downloaded, maybe days ago. Its invitations were sent by nobody
         // yet: they are good for the usual week from now, when they arrive.
         if (builtOutside && table === 'staff_invitations' && values.status === 'pending') {
-          const week = Date.now() + INVITE_TTL_MS
+          const week = clockNow().getTime() + INVITE_TTL_MS
           const written = Date.parse(String(values.expires_at))
           if (!(written >= week)) values.expires_at = new Date(week).toISOString()
         }

@@ -9,7 +9,7 @@
  * others — the rule booking and check-in use.
  */
 import { and, eq, inArray } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { waitlistEntries } from '../../db/schema/bookings'
 import {
   candidatePackages,
@@ -177,7 +177,8 @@ export async function staffPromote(tenantId: string, input: StaffPromoteInput): 
     }
   })
 
-  if (emailable) await sendPromotionEmails(tenantId, [promotion])
+  // Once the request's transaction has committed (`afterCommit`), never inside it.
+  if (emailable) afterCommit(() => sendPromotionEmails(tenantId, [promotion]))
   return booking
 }
 

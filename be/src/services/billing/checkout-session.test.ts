@@ -19,6 +19,7 @@ test('the Purchase kind is read off the same field the webhook dispatches on', (
   assert.equal(purchaseKindFor({ kind: 'workshop' }), 'workshop')
   assert.equal(purchaseKindFor({ kind: 'merch' }), 'merch')
   assert.equal(purchaseKindFor({ kind: 'cross_location_add_on' }), 'cross_location_add_on')
+  assert.equal(purchaseKindFor({ kind: 'corporate_package' }), 'corporate_package')
 })
 
 test('a kind nothing could grant is refused rather than becoming a meaningless Purchase', () => {
@@ -27,7 +28,7 @@ test('a kind nothing could grant is refused rather than becoming a meaningless P
     assert.equal(err.code, 'checkout_kind_unknown')
     return true
   })
-  assert.throws(() => purchaseKindFor({ kind: 'corporate_package' }), AppError)
+  assert.throws(() => purchaseKindFor({ kind: 'gift_card' }), AppError)
 })
 
 test('the total is what the lines add up to — the plan and its Add-On together', () => {
@@ -92,6 +93,14 @@ test('a part payment is ONE line for the instalment, and cards only', () => {
   // PayNow and the other one-shot methods settle outside the session; a balance
   // being closed by a second instalment cannot wait on that.
   assert.deepEqual(params.payment_method_types, ['card'])
+})
+
+test('CORP-02 a sale asked to be paid by card is cards only, with every line intact', () => {
+  const params = checkoutSessionParams(
+    sessionInput({ cardsOnly: true, metadata: { kind: 'corporate_package', client_id: 'c-1' } }))
+  assert.deepEqual(params.payment_method_types, ['card'])
+  assert.equal(params.line_items?.length, 2)
+  assert.equal(params.payment_intent_data?.setup_future_usage, undefined, 'consent to keep the card is still the member’s')
 })
 
 test('the part-payment line names the remainder, and what it does not buy', () => {

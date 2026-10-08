@@ -23,7 +23,7 @@
  * with the cancels it causes (a Package rule change) uses `cancelBookingInTx`.
  */
 import { and, eq } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { inboxItems } from '../../db/schema/inbox'
@@ -43,6 +43,7 @@ import type { Tx } from '../schedule/roster'
 import { settleSessionAfterBookingCancel } from '../pt-sessions/manual'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
+import { sendMemberCancelReturnedEmail } from '../notifications/send-booking-email'
 
 export type { CancelSource, StaffCancelSource, StaffCredit }
 
@@ -108,7 +109,12 @@ export async function cancelBooking(
   input: CancelInput,
 ): Promise<CancelResult> {
   const { result, promotions } = await db.transaction(tx => cancelBookingInTx(tx, tenantId, input))
-  await sendPromotionEmails(tenantId, promotions)
+  // Once the request's transaction has committed (`afterCommit`), never inside it.
+  if (promotions.length) afterCommit(() => sendPromotionEmails(tenantId, promotions))
+  // NTF-09: a member who cancelled in time is told what came back. Never throws.
+  if (input.source === 'client' && result.refundFired) {
+    afterCommit(() => sendMemberCancelReturnedEmail(tenantId, input.bookingId))
+  }
   return result
 }
 
