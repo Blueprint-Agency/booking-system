@@ -96,7 +96,7 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     }
   })
 
-  test("INV-20 an Admin lists every member's Receipts in the studio, newest first, a page at a time, and none of another studio's", async () => {
+  test("INV-35 an Admin lists every member's Receipts in the studio, newest first, a page at a time, and none of another studio's", async () => {
     const mia = await member(one, `Mia ${run} lists`)
     const leo = await member(one, `Leo ${run} lists`)
     const elsewhere = await member(two, `Ivy ${run} lists`)
@@ -138,7 +138,7 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     assert.deepEqual([page2.total, page2.page, page2.page_size], [3, 2, 2])
   })
 
-  test("INV-21 an Admin finds a Receipt by its number, or by part of the member's name or email, in any case", async () => {
+  test("INV-36 an Admin finds a Receipt by its number, or by part of the member's name or email, in any case", async () => {
     const ada = await member(one, `Ada Finds ${run}`)
     const kai = await member(one, `Kai Finds ${run}`)
     const adas = await made.issueFor(one.id, ada.clientId)
@@ -152,7 +152,7 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     assert.deepEqual(await found(`nobody-${run}`), [], 'and nothing for a search that matches nothing')
   })
 
-  test('INV-22 the date, kind and status filters each narrow the list to the Receipts they name', async () => {
+  test('INV-37 the date, kind and status filters each narrow the list to the Receipts they name', async () => {
     const tag = `Filters ${run}`
     const noa = await member(one, tag)
     const pack = await made.issueFor(one.id, noa.clientId)
@@ -182,7 +182,7 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     }
   })
 
-  test('INV-23 an Admin opens a Receipt and downloads its PDF, and both are exactly what the member sees', async () => {
+  test('INV-38 an Admin opens a Receipt and downloads its PDF, and both are exactly what the member sees', async () => {
     const zoe = await member(one, `Zoe Opens ${run}`)
     const receipt = await made.issueFor(one.id, zoe.clientId)
     const get = (path: string, headers: Record<string, string>) => harness.app.request(path, { headers })
@@ -210,7 +210,7 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     )
   })
 
-  test("INV-24 another studio's Receipt is 404 receipt_not_found to an Admin, as for an id that names nothing", async () => {
+  test("INV-39 another studio's Receipt is 404 receipt_not_found to an Admin, as for an id that names nothing", async () => {
     const ivy = await member(two, `Ivy Elsewhere ${run}`)
     const theirs = await made.issueFor(two.id, ivy.clientId)
     for (const id of [theirs.id, randomUUID()]) {
@@ -222,7 +222,7 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     assert.equal((await listed(`?q=${encodeURIComponent(theirs.displayNumber)}`)).receipts.some((r: any) => r.id === theirs.id), false)
   })
 
-  test("INV-25 each payment on a member's detail page names the Receipt its Purchase was given, and a part payment names none", async () => {
+  test("INV-40 each payment on a member's detail page names the Receipt its Purchase was given, and a part payment names none", async () => {
     const eve = await member(one, `Eve Payments ${run}`)
     const receipt = await made.issueFor(one.id, eve.clientId)
     // A Purchase part-paid and still open: its payment is banked, and no

@@ -255,6 +255,7 @@ describe('client launch scenarios over HTTP', { skip: integrationTestsEnabled ? 
       await harness.db.execute(sql`DELETE FROM pt_sessions WHERE pt_request_id IN (${requests})`)
       await harness.db.execute(sql`DELETE FROM pt_request_slots WHERE pt_request_id IN (${requests})`)
       await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)

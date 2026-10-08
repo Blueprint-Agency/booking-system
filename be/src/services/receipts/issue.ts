@@ -2,8 +2,11 @@
  * Issuing a Receipt (#380). **The one way anything writes to `receipts`.**
  *
  * Called inside the transaction that settles a Purchase, wherever settlement
- * happens — today the webhook's paid class package (#384); every other settle
- * path, the Refund stamp and the backfill reach it the same way. Settling and
+ * happens (#385): the webhook, for every kind, once the payment that brings the
+ * Balance to zero is banked, and `openSettledPurchase`, for every free path.
+ * Never for a Complimentary Package (not a Purchase), an Open or Abandoned one
+ * (not settled), or a migrated one (no settle path writes it). The Refund stamp
+ * and the backfill reach it the same way. Settling and
  * issuing commit or roll back together: a delivery that fails leaves no
  * Receipt and hands its number back.
  *

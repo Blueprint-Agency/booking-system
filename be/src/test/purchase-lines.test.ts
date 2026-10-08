@@ -319,6 +319,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
       await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM bookings WHERE workshop_id IN (${workshops}) OR client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM promo_codes WHERE created_by_staff_id IN (${staffIds})`)

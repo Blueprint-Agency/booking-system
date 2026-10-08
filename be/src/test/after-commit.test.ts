@@ -149,6 +149,7 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
       await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM classes WHERE class_type_id IN (SELECT id FROM class_types WHERE name LIKE ${`${NAME}%`})`)
       await harness.db.execute(sql`DELETE FROM workshop_tiers WHERE workshop_id IN (SELECT id FROM workshops WHERE created_by_staff_id IN (${staff}))`)

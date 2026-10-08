@@ -15,6 +15,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { purchases, stripePayments } from '../../db/schema/ledger'
 import { toCents, toSgd } from '../../shared/money'
+import { issueReceipt } from '../receipts/issue'
 import { amountPaidCents, isSettled, outstandingCents } from './balance'
 import { linesTotalCents, type PurchaseLine } from './purchase-lines'
 
@@ -85,6 +86,10 @@ export async function openPurchase(input: OpenPurchaseInput): Promise<PurchaseRo
  * free trial pass and a $500 plan are both things a member acquired on a day,
  * and a history that shows only the ones that moved money is a history with
  * holes in it.
+ *
+ * Settled here, so its Receipt is issued here too (#385): a S$0.00 Receipt
+ * with no payments, in the same transaction as the sale, which is every free
+ * path's — package, trial, Merch, corporate and workshop alike.
  */
 export async function openSettledPurchase(
   input: Omit<OpenPurchaseInput, 'totalCents'>,
@@ -104,6 +109,7 @@ export async function openSettledPurchase(
       settledAt: new Date(),
     })
     .returning()
+  await issueReceipt(db, input.tenantId, row!.id)
   return row!
 }
 

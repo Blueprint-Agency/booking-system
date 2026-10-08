@@ -270,6 +270,7 @@ describe('a member in one place at a time', { skip: integrationTestsEnabled ? fa
     await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)

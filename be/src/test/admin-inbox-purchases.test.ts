@@ -413,6 +413,7 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     await q(sql`DELETE FROM pt_request_slots WHERE pt_request_id IN (${requests})`)
     await q(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+    await q(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await q(sql`DELETE FROM class_packages WHERE name = ${BUNDLE_NAME}`)
