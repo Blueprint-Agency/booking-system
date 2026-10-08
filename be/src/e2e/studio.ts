@@ -11,6 +11,7 @@ import { tenantOrigin } from '../lib/allowed-origins'
 import { discardedMail, transport } from '../lib/mailer'
 import { ensureAuthUser, setFirstStaffPassword } from '../services/auth/auth-users'
 import { configureProviderAccount } from '../services/billing/provider-onboarding'
+import { saleLine } from '../services/billing/purchase-lines'
 import { createClassType } from '../services/catalog/class-types'
 import { createMerch } from '../services/catalog/merch'
 import { bookClass } from '../services/bookings/book'
@@ -522,7 +523,12 @@ export async function createE2eStudio({
       ord: 1,
       dayIds: [day.id],
     })
-    await bookWorkshopFree(tenant.id, { clientId: holderId, workshopId: workshop.id, workshopTierId: tier.id })
+    await bookWorkshopFree(tenant.id, {
+      clientId: holderId,
+      workshopId: workshop.id,
+      workshopTierId: tier.id,
+      lines: [saleLine({ description: `${catalogue.workshopName} — Free place`, listPriceSgd: '0.00' })],
+    })
 
     // A private session: requested on a PT package, then scheduled by the admin
     // a week out — outside the studio's PT window, so it can still be cancelled.

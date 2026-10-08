@@ -578,6 +578,33 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
     )
   })
 
+  test('PAY-55 a workshop place a Promo Code took to zero settles with its line at S$0.00, and the place points at that Purchase', async () => {
+    const w = await workshop({ regular_price_sgd: '60.00' })
+    const code = await promoCode('60.00')
+    const lea = await member()
+    await assertFreeSale(
+      lea,
+      await post(lea.headers, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId, promo_code: code.code }),
+      'workshop',
+      [
+        {
+          description: w.name,
+          quantity: 1,
+          listPriceSgd: '60.00',
+          discountSgd: '60.00',
+          discounts: [{ source: 'promo_code', id: code.id, label: code.code, amountSgd: '60.00' }],
+          amountSgd: '0.00',
+        },
+      ],
+    )
+    const sale = await purchaseOf(lea)
+    const places = await harness.db
+      .select({ purchaseId: schema.bookings.purchaseId })
+      .from(schema.bookings)
+      .where(eq(schema.bookings.clientId, lea.clientId))
+    assert.deepEqual(places, [{ purchaseId: sale.id }])
+  })
+
   /* ── before the column ──────────────────────────────────────────────── */
 
   test('PAY-56 a Purchase written without lines, as every one opened before them was, reads as having none', async () => {
