@@ -21,6 +21,11 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   pt_session_approved: ['client_name', 'instructor_name', 'starts_at', 'location', 'qr_url'],
   pt_session_declined: ['client_name', 'instructor_name', 'decline_note'],
   pt_request_expired: ['client_name', 'instructor_name', 'starts_at'],
+  // NTF-11 (admin-restructure §9e): one email whether the request was
+  // cancelled before or after it was scheduled. `session_line` names it — a
+  // scheduled session by instructor and time, else "Your private session
+  // request" — and `refund_line` is empty when no session came back.
+  pt_request_cancelled: ['client_name', 'session_line', 'refund_line', 'account_url'],
   // A purchase confirmation is the member's receipt (#370), so it states what
   // was paid: `amount_paid` is the figure with its currency ("S$120.00"),
   // and the zero amount on a free tier. Same variable on the package and trial

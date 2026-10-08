@@ -24,7 +24,7 @@ import { loadTenantById } from '../tenants/tenants'
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { NotFoundError } from '../../shared/errors'
-import { bookingCreditsLine, classRefundLine, sessionsRefundLine } from './booking-email'
+import { bookingCreditsLine, classRefundLine, privateSessionLine, sessionsRefundLine } from './booking-email'
 import { sendTemplatedEmail } from './send'
 import type { PurchasedKind } from './purchase-email'
 
@@ -263,14 +263,67 @@ export interface PtCancelMail {
   studio: StudioCancelNotice[]
   /** NTF-09: a member cancelled their own seat in time and got its session back. */
   memberReturned: string[]
+  /** NTF-11: a PT Request was cancelled — each member it booked, and what they got back. */
+  request: PtRequestCancelNotice[]
 }
 
-export const emptyPtCancelMail = (): PtCancelMail => ({ studio: [], memberReturned: [] })
+export interface PtRequestCancelNotice {
+  clientId: string
+  sessionsReturned: number
+  /** The scheduled session; null for a request cancelled before it was scheduled. */
+  ptSessionId: string | null
+}
+
+export const emptyPtCancelMail = (): PtCancelMail => ({ studio: [], memberReturned: [], request: [] })
 
 /** Send what a private-session cancel gathered. Never throws. */
 export async function sendPtCancelMail(tenantId: string, mail: PtCancelMail): Promise<void> {
   await sendPtCancelledByStudioEmails(tenantId, mail.studio)
   for (const bookingId of mail.memberReturned) await sendMemberCancelReturnedEmail(tenantId, bookingId)
+  await sendPtRequestCancelledEmails(tenantId, mail.request)
+}
+
+/**
+ * NTF-11: a PT Request was cancelled, before or after it was scheduled, by the
+ * member or by staff (admin-restructure §9e). One email for both paths
+ * (`pt_request_cancelled`); the refund line is there only when sessions came
+ * back — a 2-on-1 partner, who paid nothing, gets none.
+ */
+async function sendPtRequestCancelledEmails(tenantId: string, notices: readonly PtRequestCancelNotice[]): Promise<void> {
+  for (const n of notices) {
+    try {
+      const [client] = await db
+        .select({ name: clients.name, email: clients.email })
+        .from(clients)
+        .where(and(eq(clients.tenantId, tenantId), eq(clients.id, n.clientId)))
+        .limit(1)
+      if (!client) throw new NotFoundError('client_not_found', { clientId: n.clientId })
+      const [session] = n.ptSessionId
+        ? await db
+            .select({ startsAt: ptSessions.startsAt, instructorName: staffUsers.name })
+            .from(ptSessions)
+            .innerJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
+            .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, n.ptSessionId)))
+            .limit(1)
+        : []
+      const when = await sessionTimeFormat(tenantId)
+      await sendTemplatedEmail({
+        tenantId,
+        slug: 'pt_request_cancelled',
+        recipient: { email: client.email, userId: n.clientId, userKind: 'client' },
+        variables: {
+          client_name: client.name,
+          session_line: privateSessionLine(
+            session ? { instructorName: session.instructorName || 'your instructor', startsAt: when.format(session.startsAt) } : null,
+          ),
+          refund_line: sessionsRefundLine(n.sessionsReturned),
+          account_url: await clientUrl(tenantId, '/account/private-sessions'),
+        },
+      })
+    } catch (err) {
+      reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, clientId: n.clientId })
+    }
+  }
 }
 
 /**

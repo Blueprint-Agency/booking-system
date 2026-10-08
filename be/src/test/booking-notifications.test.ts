@@ -577,4 +577,72 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
     await expectStatus(await staffPost(elsewhere, `admin/schedule/classes/${classId}/cancel`), 401, 'invalid_token')
     assert.deepEqual(drain(), [])
   })
+
+  /* ── NTF-11 ─────────────────────────────────────────────────────────── */
+
+  const memberCancelRequest = (who: Member, requestId: string) =>
+    harness.app.request(`/api/v1/me/pt-sessions/${requestId}/cancel`, { method: 'POST', headers: who.headers })
+
+  test('NTF-11 a PT Request cancelled before scheduling emails the member, with the sessions returned', async () => {
+    const mia = await member(one)
+    const pkg = await givePt(one, mia, 4)
+    const { requestId } = await ptRequest(one, mia, pkg, { scheduled: false })
+    drain()
+
+    const res = await expectStatus(await memberCancelRequest(mia, requestId), 200)
+    assert.equal(res.status, 'cancelled_before_scheduled')
+    assert.equal(await balance(pkg), 5)
+
+    const mail = drain()
+    assert.deepEqual(mail.map(m => [m.to, m.template]), [[mia.email, 'pt_request_cancelled']])
+    assert.equal(mail[0]!.subject, 'Your private session request was cancelled')
+    assert.match(mail[0]!.text, /1 session has been returned to your package\./)
+  })
+
+  test('NTF-11 a PT Request cancelled after scheduling emails the member with the refund, and the partner, who paid nothing, with no refund line', async () => {
+    const mia = await member(one)
+    const leo = await member(one, 'Leo')
+    const pkg = await givePt(one, mia, 4)
+    const { requestId } = await ptRequest(one, mia, pkg, { scheduled: true, partner: leo })
+    drain()
+
+    const res = await expectStatus(await staffPost(one.admin, `admin/pt-sessions/${requestId}/cancel`), 200)
+    assert.equal(res.result.status, 'cancelled_after_scheduled')
+    assert.equal(await balance(pkg), 6, 'both sessions of the 2-on-1 are back')
+
+    const mail = drain()
+    assert.deepEqual(
+      mail.map(m => [m.to, m.template]).sort(),
+      [
+        [leo.email, 'pt_request_cancelled'],
+        [mia.email, 'pt_request_cancelled'],
+      ].sort(),
+    )
+    const to = (email: string) => mail.find(m => m.to === email)!
+    assert.ok(to(mia.email).subject.includes(one.instructor.name), 'a scheduled session is named by its instructor')
+    assert.match(to(mia.email).text, /2 sessions have been returned to your package\./)
+    assert.doesNotMatch(to(leo.email).text, /returned to your package/)
+  })
+
+  test('NTF-11 a PT Request cancel refused to another member, another studio\'s member or an instructor on the admin route sends nothing', async () => {
+    const mia = await member(one)
+    const sam = await member(one, 'Sam')
+    const outsider = await member(two, 'Oli')
+    const pkg = await givePt(one, mia, 4)
+    const { requestId } = await ptRequest(one, mia, pkg, { scheduled: true })
+    drain()
+
+    await expectStatus(await memberCancelRequest(sam, requestId), 403, 'not_your_request')
+    await expectStatus(
+      await harness.app.request(`/api/v1/me/pt-sessions/${requestId}/cancel`, {
+        method: 'POST',
+        headers: { ...outsider.headers, 'X-Tenant-Slug': one.slug, Origin: `http://${one.slug}.localhost:3000` },
+      }),
+      401,
+      'invalid_token',
+    )
+    await expectStatus(await staffPost(one.instructor, `admin/pt-sessions/${requestId}/cancel`), 403, 'forbidden_role')
+    assert.deepEqual(drain(), [])
+    assert.equal(await balance(pkg), 4, 'nothing moved')
+  })
 })

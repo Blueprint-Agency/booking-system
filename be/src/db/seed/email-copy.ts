@@ -372,6 +372,16 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     `Nothing was deducted. ${link(ACCOUNT_URL, 'Request another time')}`,
   ])
 
+  // NTF-11 (§9e): the same email before and after scheduling. `refund_line` is
+  // a whole sentence, empty when nothing came back — a 2-on-1 partner paid
+  // nothing — so it ends a paragraph rather than standing as one: an empty
+  // paragraph would be a gap in every such email.
+  const PT_REQUEST_CANCELLED_BODY = body('Your private session is cancelled', [
+    'Hi {{client_name}},',
+    '<strong>{{session_line}}</strong> has been cancelled. {{refund_line}}',
+    `You can ask for another time whenever you like. ${link('{{account_url}}', 'View your private sessions')}`,
+  ])
+
   const PT_CANCELLED_RETURNED_BODY = body(
     'Your private session is cancelled — session returned',
     [
@@ -624,6 +634,11 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       slug: 'class_cancelled_forfeited',
       subject: 'Your class booking was cancelled',
       bodyHtml: CLASS_CANCELLED_FORFEITED_BODY,
+    },
+    {
+      slug: 'pt_request_cancelled',
+      subject: '{{session_line}} was cancelled',
+      bodyHtml: PT_REQUEST_CANCELLED_BODY,
     },
     {
       slug: 'pt_cancelled_session_returned',
