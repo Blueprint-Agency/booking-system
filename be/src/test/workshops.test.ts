@@ -488,6 +488,16 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(bought[0]!.totalSgd, '0.00')
     assert.equal(bought[0]!.amountPaidSgd, '0.00')
     assert.ok(bought[0]!.settledAt instanceof Date, 'the Purchase is settled')
+    assert.deepEqual(bought[0]!.lines, [
+      {
+        description: `Free settled open day ${run} — Free`,
+        quantity: 1,
+        listPriceSgd: '0.00',
+        discountSgd: '0.00',
+        discounts: [],
+        amountSgd: '0.00',
+      },
+    ])
 
     const [place] = await bookingsOf(ana, w)
     assert.equal(place!.id, res.body.booking_id)
@@ -696,7 +706,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     })
     const ana = await member(one, 'Ana Freeloader')
     await assert.rejects(
-      () => bookSvc.bookWorkshopFree(one.id, { clientId: ana.clientId, workshopId: w.id, workshopTierId: w.tierIds[0]! }),
+      () => bookSvc.bookWorkshopFree(one.id, { clientId: ana.clientId, workshopId: w.id, workshopTierId: w.tierIds[0]!, lines: [] }),
       (err: { code?: string }) => err.code === 'workshop_is_not_free',
     )
     assert.equal((await bookingsOf(ana, w)).length, 0)

@@ -16,6 +16,7 @@ import { db } from '../../db'
 import { purchases, stripePayments } from '../../db/schema/ledger'
 import { toCents, toSgd } from '../../shared/money'
 import { amountPaidCents, isSettled, outstandingCents } from './balance'
+import { linesTotalCents, type PurchaseLine } from './purchase-lines'
 
 export type PurchaseRow = typeof purchases.$inferSelect
 export type PurchaseKind = PurchaseRow['kind']
@@ -28,6 +29,24 @@ export interface OpenPurchaseInput {
   totalCents: number
   /** What the webhook will grant from, frozen beside the price. */
   metadata: Record<string, string>
+  /**
+   * What was in the sale, line by line, frozen beside the price (#382). Empty
+   * only where nothing knows them: a payment from a session opened before
+   * Purchases existed, which the webhook gives a Purchase after the fact.
+   */
+  lines: PurchaseLine[]
+}
+
+/**
+ * A Purchase's lines are what its total is made of, so lines that add up to
+ * anything else are a checkout that priced the sale twice and got two answers.
+ * Refused before the row is written: a Receipt built from them would print a
+ * total the member was not charged.
+ */
+function assertLinesMakeTotal(lines: PurchaseLine[], totalCents: number): void {
+  if (lines.length > 0 && linesTotalCents(lines) !== totalCents) {
+    throw new Error(`purchase lines add up to ${linesTotalCents(lines)} cents, not the total ${totalCents}`)
+  }
 }
 
 /**
@@ -38,6 +57,7 @@ export interface OpenPurchaseInput {
  * is no money for a Purchase to own — see `grantsWithoutPaying`.
  */
 export async function openPurchase(input: OpenPurchaseInput): Promise<PurchaseRow> {
+  assertLinesMakeTotal(input.lines, input.totalCents)
   const [row] = await db
     .insert(purchases)
     .values({
@@ -48,6 +68,7 @@ export async function openPurchase(input: OpenPurchaseInput): Promise<PurchaseRo
       amountPaidSgd: '0.00',
       status: 'open',
       metadata: input.metadata,
+      lines: input.lines,
     })
     .returning()
   return row!
@@ -68,6 +89,7 @@ export async function openPurchase(input: OpenPurchaseInput): Promise<PurchaseRo
 export async function openSettledPurchase(
   input: Omit<OpenPurchaseInput, 'totalCents'>,
 ): Promise<PurchaseRow> {
+  assertLinesMakeTotal(input.lines, 0)
   const [row] = await db
     .insert(purchases)
     .values({
@@ -78,6 +100,7 @@ export async function openSettledPurchase(
       amountPaidSgd: '0.00',
       status: 'paid',
       metadata: input.metadata,
+      lines: input.lines,
       settledAt: new Date(),
     })
     .returning()

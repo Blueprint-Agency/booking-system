@@ -185,6 +185,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
         tenantId,
         email: emailFor('ben'),
         lines: [{ name: 'Plan', description: 'Studio', amountCents: 20000 }],
+        purchaseLines: [{ description: 'Plan', quantity: 1, listPriceSgd: '200.00', discountSgd: '0.00', discounts: [], amountSgd: '200.00' }],
         expiresAt: null,
         metadata: { kind: 'class_package', client_id: ben.clientId, package_id: paidPackageId },
         successUrl: 'https://example.test/ok',

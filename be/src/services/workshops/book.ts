@@ -13,6 +13,7 @@ import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
 import { lockMemberTime, memberClash, type HeldWindow } from '../bookings/member-time'
 import { openSettledPurchase } from '../billing/purchases'
+import type { PurchaseLine } from '../billing/purchase-lines'
 import { bestPrice, listActivePromotionsFor } from '../packages/promotions'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { sendWorkshopPurchaseEmail } from '../notifications/send-purchase-email'
@@ -276,6 +277,8 @@ export async function bookWorkshopFree(
      * price is allowed to be above zero when one is present.
      */
     appliedPromoCodeId?: string | null
+    /** The place as its Purchase records it (#382), adding up to S$0.00. */
+    lines: PurchaseLine[]
   },
 ): Promise<{ bookingId: string; qrToken: string; code: string }> {
   const [tier] = await db
@@ -333,6 +336,7 @@ export async function bookWorkshopFree(
         promo_code_id: args.appliedPromoCodeId ?? '',
         applied_promotion_id: eff.appliedPromotionId ?? '',
       },
+      lines: args.lines,
     })
 
     return insertWorkshopBooking(tenantId, {

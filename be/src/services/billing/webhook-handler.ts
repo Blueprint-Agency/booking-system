@@ -179,6 +179,9 @@ async function purchaseForPayment(
     kind: purchaseKindFor(meta),
     totalCents: toCents(fallback.amountSgd),
     metadata: meta,
+    // A session from before Purchases existed never said what was in it line
+    // by line, and nothing here can say it now.
+    lines: [],
   })
 }
 

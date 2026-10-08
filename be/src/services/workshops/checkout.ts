@@ -14,6 +14,7 @@ import {
   saleDescription,
   type CheckoutQuote,
 } from '../billing/checkout-session'
+import { promoCodeReduction, promotionReduction, saleLine, type LineReduction } from '../billing/purchase-lines'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { listActivePromotionsFor } from '../packages/promotions'
 import { applyPromoCode, type AppliedPromoCode } from '../packages/promo-redemption'
@@ -104,6 +105,16 @@ export async function beginWorkshopCheckout(
   // disagree with the one frozen onto the Redemption.
   const totalCents = toCents(applied?.effectivePriceSgd ?? eff.baseSgd)
 
+  // The place as the Purchase records it (#382): the tier's regular price, then
+  // whatever lowered it — a Promotion, or else the early-bird price, which
+  // `tierEffectivePrice` lets win while its cutoff is live — then the code.
+  const lowered: LineReduction = eff.appliedPromotionId
+    ? promotionReduction(promos[workshopId] ?? [], eff.appliedPromotionId, eff.baseSgd)!
+    : { source: 'early_bird', id: null, label: 'Early bird', priceSgd: eff.baseSgd }
+  const lines = [
+    saleLine({ description: name, listPriceSgd: tier.regularPriceSgd, reductions: [lowered, promoCodeReduction(applied)] }),
+  ]
+
   // Nothing left to charge — the tier was free, or the code took it to zero.
   // Book now; the Redemption is already `consumed`, no webhook is coming. The
   // place opens its own settled Purchase and points at it (`bookWorkshopFree`).
@@ -113,12 +124,14 @@ export async function beginWorkshopCheckout(
       workshopId,
       workshopTierId,
       appliedPromoCodeId: applied?.promoCodeId ?? null,
+      lines,
     })
     return { outcome: 'granted', bookingId: result.bookingId }
   }
 
   return {
     outcome: 'checkout',
+    purchaseLines: lines,
     lines: [
       {
         name,

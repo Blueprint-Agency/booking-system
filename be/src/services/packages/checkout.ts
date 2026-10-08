@@ -18,6 +18,13 @@ import {
   type CheckoutQuote,
 } from '../billing/checkout-session'
 import { openSettledPurchase } from '../billing/purchases'
+import {
+  promoCodeReduction,
+  promotionReduction,
+  saleLine,
+  type LineReduction,
+  type PurchaseLine,
+} from '../billing/purchase-lines'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import { applyPromoCode, type AppliedPromoCode } from './promo-redemption'
@@ -72,6 +79,31 @@ export function purchaseLines(args: {
   return { lines, planCents, crossLocationCents, totalCents: planCents + crossLocationCents }
 }
 
+/**
+ * The same sale as the Purchase records it (#382): the plan at its List Price
+ * with what came off it, and the Add-On as its months at the studio's rate. A
+ * plan line a discount took to zero stays here, unlike the provider's lines:
+ * the Receipt says what was bought, and the plan was.
+ */
+export function packageSaleLines(args: {
+  planName: string
+  listPriceSgd: string
+  reductions: Array<LineReduction | null>
+  crossLocation: { months: number; rateSgd: string } | null
+}): PurchaseLine[] {
+  const lines = [saleLine({ description: args.planName, listPriceSgd: args.listPriceSgd, reductions: args.reductions })]
+  if (args.crossLocation) {
+    lines.push(
+      saleLine({
+        description: 'Cross-Location Add-On',
+        listPriceSgd: args.crossLocation.rateSgd,
+        quantity: args.crossLocation.months,
+      }),
+    )
+  }
+  return lines
+}
+
 export interface PackageCheckoutInput {
   /** Whose catalogue is being bought from, and where the grant lands. */
   tenantId: string
@@ -101,8 +133,10 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   let appliedPromotionId: string | null = null
   let effectivePriceSgd: string
   let productType: 'class_package' | 'pt_package'
+  /** The Promotion that lowered the price, for the Purchase's line (#382). */
+  let promotion: LineReduction | null = null
   /** The Add-On bought alongside the plan — its own line item and its own money. */
-  let crossLocationSgd: string | null = null
+  let crossLocation: { months: number; rateSgd: string; priceSgd: string } | null = null
 
   if (packageKind === 'class') {
     const [pkg] = await db
@@ -132,7 +166,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     // Duration ahead of it whether it starts today or waits Dormant, so it
     // prices at the stored Duration with no arithmetic.
     if (input.crossLocationAddOn) {
-      crossLocationSgd = await priceCrossLocationForNewPlan(
+      crossLocation = await priceCrossLocationForNewPlan(
         tenantId,
         pkg.kind,
         pkg.durationMonths,
@@ -141,6 +175,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
 
     const promos = await listActivePromotionsFor(tenantId, 'class_package', [pkg.id])
     const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
+    promotion = promotionReduction(promos[pkg.id] ?? [], eff.appliedPromotionId, eff.effectivePriceSgd)
 
     // Trial pass: new-member-only + once-per-client. Gate BEFORE any charge.
     if (pkg.kind === 'trial') {
@@ -156,6 +191,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
           clientId,
           kind: 'class_package',
           metadata: { kind: 'class_package', client_id: clientId, package_id: pkg.id },
+          lines: [saleLine({ description: pkg.name, listPriceSgd: pkg.priceSgd, reductions: [promotion] })],
         })
         return { outcome: 'granted', clientPackageId: result.clientPackageId }
       }
@@ -189,6 +225,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
 
     const promos = await listActivePromotionsFor(tenantId, 'pt_package', [pkg.id])
     const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
+    promotion = promotionReduction(promos[pkg.id] ?? [], eff.appliedPromotionId, eff.effectivePriceSgd)
     packageName = pkg.name
     priceSgd = pkg.priceSgd
     appliedPromotionId = eff.appliedPromotionId
@@ -215,12 +252,19 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   // The effective price comes from the pure module, which already floored the
   // discount at zero — re-deriving it here would be a second opinion free to
   // disagree with the one frozen onto the Redemption.
+  const crossLocationSgd = crossLocation?.priceSgd ?? null
   const charge = purchaseLines({
     planName: packageName,
     studioName: await tenantDisplayName(tenantId),
     planSgd: applied?.effectivePriceSgd ?? effectivePriceSgd,
     crossLocationSgd,
     promoCode: applied?.code,
+  })
+  const lines = packageSaleLines({
+    planName: packageName,
+    listPriceSgd: priceSgd,
+    reductions: [promotion, promoCodeReduction(applied)],
+    crossLocation,
   })
 
   // A discount that takes the total to zero skips the payment provider entirely
@@ -257,6 +301,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
         applied_promotion_id: appliedPromotionId ?? '',
         location_id: locationId ?? '',
       },
+      lines,
     })
     return { outcome: 'granted', clientPackageId: granted.clientPackageId }
   }
@@ -264,6 +309,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   return {
     outcome: 'checkout',
     lines: charge.lines,
+    purchaseLines: lines,
     expiresAt: applied?.holdExpiresAt ?? null,
     metadata: {
       kind: productType,
@@ -295,7 +341,7 @@ export async function beginCrossLocationCheckout(
   tenantId: string,
   clientId: string,
   clientPackageId: string,
-): Promise<{ lines: CheckoutLine[]; metadata: Record<string, string> }> {
+): Promise<{ lines: CheckoutLine[]; purchaseLines: PurchaseLine[]; metadata: Record<string, string> }> {
   // Refuses a plan that is not the member's, not this studio's, not Unlimited,
   // not live, or already carrying one — before Stripe, never after.
   const quote = await quoteCrossLocationAddOn(tenantId, clientId, clientPackageId)
@@ -309,6 +355,7 @@ export async function beginCrossLocationCheckout(
         amountCents: totalCents,
       },
     ],
+    purchaseLines: [saleLine({ description: 'Cross-Location Add-On', listPriceSgd: quote.rateSgd, quantity: quote.months })],
     metadata: {
       kind: 'cross_location_add_on',
       client_id: clientId,

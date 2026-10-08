@@ -94,12 +94,14 @@ export function checkoutWebhook(harness: TestApp, schema: typeof Schema, fake: S
   /** A Purchase opened ahead of its payments — what checkout does for a Part Payment. */
   const openPurchase = async (clientId: string, packageId: string, totalCents: number): Promise<string> => {
     const purchases = inTenantContext(await import('../services/billing/purchases'))
+    const { saleLine } = await import('../services/billing/purchase-lines')
     const row = await purchases.openPurchase({
       tenantId,
       clientId,
       kind: 'class_package',
       totalCents,
       metadata: { kind: 'class_package', client_id: clientId, package_id: packageId },
+      lines: [saleLine({ description: 'Bundle', listPriceSgd: (totalCents / 100).toFixed(2) })],
     })
     return row.id
   }
