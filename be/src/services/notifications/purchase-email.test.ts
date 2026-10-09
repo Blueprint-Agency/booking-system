@@ -136,23 +136,22 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
   }
 }
 
-// --- the receipt URL falls back to the account page --------------------------
-// An escaped empty value inside an href renders a visible link that goes
-// nowhere, so the free paths point at the page that lists what they bought.
+// --- the receipt URL is the member's Receipt, else the account page ----------
+// Paid or free, a purchase links the member's Receipt in the booking app
+// (#387). An escaped empty value inside an href renders a visible link that
+// goes nowhere, so a grant with no Receipt points at the page that lists what
+// they own.
 {
-  const free = composePurchaseEmail(input({ kind: 'trial', creditsOrSessions: 3 }))
+  const RECEIPT_URL = 'https://northwind.reservetoday.app/account/receipts/0b9c1d2e'
+  const free = composePurchaseEmail(input({ kind: 'trial', creditsOrSessions: 3, amountPaidSgd: '0.00', receiptUrl: RECEIPT_URL }))
+  assert.strictEqual(free.variables.receipt_url, RECEIPT_URL, 'a free purchase links its S$0.00 Receipt')
+  const paid = composePurchaseEmail(input({ receiptUrl: RECEIPT_URL }))
+  assert.strictEqual(paid.variables.receipt_url, RECEIPT_URL, 'a paid purchase links its Receipt')
+  const none = composePurchaseEmail(input({ receiptUrl: null }))
   assert.strictEqual(
-    free.variables.receipt_url,
+    none.variables.receipt_url,
     ACCOUNT_URL,
-    'a free purchase has no receipt, so the link goes to the account page',
-  )
-  const paid = composePurchaseEmail(
-    input({ receiptUrl: 'https://pay.stripe.com/receipts/abc' }),
-  )
-  assert.strictEqual(
-    paid.variables.receipt_url,
-    'https://pay.stripe.com/receipts/abc',
-    'a paid purchase links its real receipt',
+    'a grant with no Receipt links the account page',
   )
 }
 

@@ -14,6 +14,8 @@ import {
   stripePaymentKindEnum,
   stripePaymentStatusEnum,
 } from '../enums'
+import type { PurchaseLine } from '../../services/billing/purchase-lines'
+import type { ReceiptPayment } from '../../services/receipts/snapshot'
 
 /**
  * A Purchase owns the money; a payment is evidence of part of it.
@@ -66,6 +68,18 @@ export const purchases = pgTable(
      * editable by anyone holding the session; this is the copy that is neither.
      */
     metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
+    /**
+     * What was in the sale, line by line (#382): each line's description,
+     * quantity, List Price, the discount with the Promotion or Promo Code that
+     * gave it, and the amount (`services/billing/purchase-lines.ts`). Frozen
+     * when the Purchase opens, from the same prices the provider is asked to
+     * charge, and never recomputed; the lines add up to `total_sgd`. What a
+     * Receipt is built from.
+     *
+     * Empty on every Purchase opened before the column existed: nothing here
+     * backfills them.
+     */
+    lines: jsonb('lines').$type<PurchaseLine[]>().notNull().default(sql`'[]'::jsonb`),
     /**
      * The one live checkout session, if a payment is in flight. Singular on
      * purpose: two open sessions against one Purchase is two members' worth of
@@ -433,3 +447,80 @@ export const paymentCustomers = pgTable(
     ),
   }),
 )
+
+/**
+ * A Receipt (#380): the studio's own record of one completed Purchase, issued
+ * by `services/receipts` in the transaction that settles it. One per Purchase,
+ * ever — `purchase_id` is unique per Tenant, which is what stops a webhook
+ * redelivery or the confirmation page's fallback from issuing a second.
+ *
+ * **A snapshot, never recomputed.** Everything a Receipt shows is copied onto
+ * it at issue: the studio's name, the member's name and email, the lines, the
+ * totals and the payments. Nothing is joined from the catalogue, the member or
+ * the settings when it is read later, so a renamed package or a member's new
+ * name never rewrites a Receipt already issued.
+ *
+ * Written once. The only later change is `refunded_at`, and the redaction a
+ * member's permanent deletion requires (`client_id`, `buyer_name`,
+ * `buyer_email` emptied; the amounts are the studio's accounts and stay).
+ */
+export const receipts = pgTable(
+  'receipts',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    purchaseId: uuid('purchase_id')
+      .notNull()
+      .references(() => purchases.id, { onDelete: 'restrict' }),
+    // Nullable for permanent deletion only, as on `purchases`.
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
+    /** The studio's own sequence: 1, 2, 3… with no gaps (`receipt_counters`). */
+    number: integer('number').notNull(),
+    /** The number as issued, prefix and all (`R-000123`), so a later prefix change renumbers nothing. */
+    displayNumber: text('display_number').notNull(),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
+    // The seller, as of issue. Only the name is ever known today; the rest are
+    // the studio's receipt details, which the studio sets (#391).
+    sellerName: text('seller_name').notNull(),
+    sellerLegalName: text('seller_legal_name'),
+    sellerRegistrationNumber: text('seller_registration_number'),
+    sellerAddress: text('seller_address'),
+    sellerFooter: text('seller_footer'),
+    // The buyer, as of issue.
+    buyerName: text('buyer_name'),
+    buyerEmail: text('buyer_email'),
+    kind: purchaseKindEnum('kind').notNull(),
+    lines: jsonb('lines').$type<PurchaseLine[]>().notNull(),
+    /** What the lines cost before anything was taken off: the sum of quantity × List Price. */
+    subtotalSgd: numeric('subtotal_sgd', { precision: 10, scale: 2 }).notNull(),
+    discountSgd: numeric('discount_sgd', { precision: 10, scale: 2 }).notNull(),
+    /** The Purchase's frozen total: what the member was charged. No tax is added to it or derived from it. */
+    totalSgd: numeric('total_sgd', { precision: 10, scale: 2 }).notNull(),
+    /** Every payment that paid it; empty for a $0 Purchase. */
+    payments: jsonb('payments').$type<ReceiptPayment[]>().notNull().default(sql`'[]'::jsonb`),
+    refundedAt: timestamp('refunded_at', { withTimezone: true }),
+  },
+  table => ({
+    purchaseIdFkIdx: index('receipts_purchase_id_fk_idx').on(table.purchaseId),
+    clientIdFkIdx: index('receipts_client_id_fk_idx').on(table.clientId),
+    purchaseUnique: uniqueIndex('receipts_purchase_unique').on(table.tenantId, table.purchaseId),
+    numberUnique: uniqueIndex('receipts_number_unique').on(table.tenantId, table.number),
+    displayNumberUnique: uniqueIndex('receipts_display_number_unique').on(table.tenantId, table.displayNumber),
+    clientIssuedIdx: index('receipts_client_issued_idx').on(table.tenantId, table.clientId, table.issuedAt),
+  }),
+)
+
+/**
+ * The next Receipt number, one row per studio. Taken under a row lock
+ * (`SELECT … FOR UPDATE`) in the transaction that issues the Receipt, so two
+ * settlements at once cannot share a number and a delivery that rolls back
+ * hands its number back. Not a Postgres sequence: a sequence is not per
+ * Tenant, and it leaves a gap on every rollback.
+ *
+ * Written the first time a studio issues one. A studio restored from its
+ * archive brings its row along, so numbering carries on where it left off.
+ */
+export const receiptCounters = pgTable('receipt_counters', {
+  tenantId: tenantIdColumn().primaryKey(),
+  nextNumber: integer('next_number').notNull().default(1),
+})

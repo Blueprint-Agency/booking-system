@@ -135,16 +135,19 @@ export interface PurchaseEmailInput {
    * those two differ, and the receipt states what was charged.
    */
   amountPaidSgd: string
-  /** The provider's receipt for a paid purchase; null on the free paths. */
+  /**
+   * The member's Receipt in the booking app (#387), paid or free; null only
+   * for a grant no Receipt was issued for.
+   */
   receiptUrl: string | null
-  /** Where a free purchase points instead — the page that lists what they own. */
+  /** Where a grant with no Receipt points instead — the page that lists what they own. */
   accountUrl: string
 }
 
 /**
  * The whole email, as the six allow-listed variables. `receipt_url` is never
  * empty: an escaped empty value inside an href renders a visible link that goes
- * nowhere, so a purchase with no receipt links the account page instead (the
+ * nowhere, so a grant with no Receipt links the account page instead (the
  * anchor text is neutral, and correct either way).
  */
 export function composePurchaseEmail(input: PurchaseEmailInput): {

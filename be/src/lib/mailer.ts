@@ -52,6 +52,15 @@ export function mailKind(slug: string): MailKind {
   return CREDENTIAL_SLUGS.has(slug) ? 'credential' : 'everyday'
 }
 
+/** A file sent with a message — a Receipt PDF, for one. */
+export interface MailAttachment {
+  /** What the recipient's mail client names the file. */
+  filename: string
+  contentType: string
+  /** The file itself, byte for byte. */
+  content: Buffer
+}
+
 export interface SendMailInput {
   to: string
   subject: string
@@ -72,6 +81,8 @@ export interface SendMailInput {
   fromName?: string
   /** The studio's own address, so a reply reaches the studio and not the platform. */
   replyTo?: string | null
+  /** Files to send with the message. None, when absent or empty. */
+  attachments?: readonly MailAttachment[]
 }
 
 export interface SendMailResult {
@@ -87,6 +98,8 @@ export interface OutboundMessage {
   html: string
   text?: string
   replyTo?: string
+  /** Present only when the message carries at least one file. */
+  attachments?: MailAttachment[]
   kind: MailKind
   idempotencyKey: string
   tags: MailTag[]
@@ -162,7 +175,25 @@ export function createResendTransport(
   })
   return {
     name: 'resend',
-    send: ({ kind, idempotencyKey, ...payload }) => gate.send({ kind, idempotencyKey, payload }),
+    send: ({ kind, idempotencyKey, attachments, ...payload }) =>
+      gate.send({
+        kind,
+        idempotencyKey,
+        payload: {
+          ...payload,
+          // Base64, not the Buffer: the SDK puts `content` into a JSON body
+          // as it is, and a Buffer serialises there as an array of numbers.
+          ...(attachments?.length
+            ? {
+                attachments: attachments.map(({ filename, contentType, content }) => ({
+                  filename,
+                  contentType,
+                  content: content.toString('base64'),
+                })),
+              }
+            : {}),
+        },
+      }),
   }
 }
 
@@ -221,6 +252,7 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
     subject: input.subject,
     html: input.html,
     text: input.text,
+    ...(input.attachments?.length ? { attachments: [...input.attachments] } : {}),
     kind,
     idempotencyKey: input.idempotencyKey,
     tags: [

@@ -47,7 +47,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `-${-n}` : null);
 
 /** `unit` is "credit" for a class package, "session" for a PT package. */
 export function movementLine(m: CreditMovement, unit: "credit" | "session"): MovementLine {
-  const kept = `${unit} kept`;
+  const kept = `${unit} not returned`;
   const line = (label: string): MovementLine => ({ label, amount: signed(m.delta), balance: m.balance_after });
   switch (m.cause) {
     case "booked":

@@ -37,8 +37,8 @@ test('the archive is for the Tenant it was built for, and asks for accounts to b
   assert.equal(archive.manifest.ensureAccounts, true)
   // Every template a provisioned studio gets, class_waitlist_promoted (#308),
   // class_rule_cancelled (#323), pt_request_cancelled and
-  // corporate_purchase_confirmed (#359) included.
-  assert.equal(archive.rows.email_templates!.length, 37)
+  // corporate_purchase_confirmed (#359) and purchase_receipt (#388) included.
+  assert.equal(archive.rows.email_templates!.length, 38)
   assert.equal(archive.rows.global_policy!.length, 1)
   assert.equal(archive.rows.pt_booking_config!.length, 1)
   assert.ok(archive.rows.clients!.every(r => r.auth_user_id === null), 'accounts are the importer s to make')
@@ -2032,6 +2032,94 @@ test('two PT packages run side by side with their own expiries; a session is pai
   )
   const session = archive.rows.bookings!.find(b => b.client_id === ids.clients!['100000008'] && b.kind === 'pt')!
   assert.equal(session.client_package_id, pkg('PT - Bundle of 5').id)
+})
+
+/**
+ * Mei holds two purchases of one PT bundle, one with each trainer: the first,
+ * from July, she trains with Olive; the second, from mid-August, with Ivy.
+ * Mindbody took one of Ivy's sessions off the bundle Olive teaches, so its
+ * register says 3 and 8 left where her trainers' visits say 4 and 7.
+ */
+const twoTrainers = async (visits: 'every one' | 'some missing') => {
+  const reports = await readReports(REPORTS)
+  const mei = (h: { clientId: string; option: string }) => h.clientId === '100000008' && h.option === 'PT - Bundle of 10'
+  const holding = reports.holdings.find(mei)!
+  // 20 bought, 11 left, one of them already booked: Ivy's session in 2090.
+  const holdings = [
+    ...reports.holdings.filter(h => !mei(h)),
+    { ...holding, purchased: { unlimited: false, count: 20 }, remaining: { unlimited: false, count: 11 }, unbooked: { unlimited: false, count: 10 } },
+  ]
+  const optionSales = [
+    ...reports.optionSales.filter(s => !/PT - Bundle of 10/.test(s.option)),
+    sale({ client: '林, Mei', phone: '', option: 'PT - Bundle of 10', activation: day(2026, 7, 5), expiration: day(2090, 2, 1), paid: 1200, remaining: { unlimited: false, count: 3 } }),
+    sale({ client: '林, Mei', phone: '', option: 'PT - Bundle of 10', activation: day(2026, 8, 10), expiration: day(2090, 4, 1), paid: 1100, remaining: { unlimited: false, count: 8 } }),
+  ]
+  const pt = reports.attendance.find(a => a.clientId === '100000008' && a.option === 'PT - Bundle of 10')!
+  const visit = (month: number, d: number, staff: string) => ({ ...pt, date: { year: 2026, month, day: d }, staff, status: 'Signed in' })
+  // Olive's two September visits are in the fixture already; Mindbody used 9 sessions in all.
+  const extra =
+    visits === 'every one'
+      ? [visit(7, 10, 'Owner, Olive'), visit(7, 20, 'Owner, Olive'), visit(8, 1, 'Owner, Olive'), visit(8, 5, 'Owner, Olive')]
+      : []
+  const attendance = [
+    ...reports.attendance,
+    ...extra,
+    visit(8, 20, 'Instructor, Ivy'),
+    visit(8, 27, 'Instructor, Ivy'),
+    visit(9, 8, 'Instructor, Ivy'),
+  ]
+  const roster = reports.roster.map(r =>
+    r.clientId === '100000008' && r.date.year === 2090 ? { ...r, staff: 'Instructor, Ivy' } : r,
+  )
+  const result = mapStudio({ ...reports, holdings, optionSales, attendance, roster }, validateConfig(withHistory()), TENANT)
+  const pkg = (key: string) => result.archive.rows.client_packages!.find(p => p.id === result.ids.client_packages![key])!
+  return { ...result, olives: pkg('100000008/PT - Bundle of 10'), ivys: pkg('100000008/PT - Bundle of 10#2') }
+}
+
+test('two purchases of one PT bundle used with two trainers: each is bound to its trainer and holds what that trainer s visits left', async () => {
+  const { archive, ids, preflight, olives, ivys } = await twoTrainers('every one')
+  const staff = ids.staff_users!
+
+  assert.deepEqual(
+    [olives.bound_instructor_id, olives.credits_or_sessions_remaining],
+    [staff['Olive Owner'], 4],
+    'Olive taught 6 of its 10 sessions, so 4 are left on it, whatever Mindbody took off it',
+  )
+  assert.deepEqual(
+    [ivys.bound_instructor_id, ivys.credits_or_sessions_remaining],
+    [staff['Ivy Instructor'], 6],
+    'Ivy taught 3 of its 10, and her session in 2090 is already booked on it',
+  )
+
+  const future = archive.rows.pt_sessions!.find(s => String(s.starts_at).startsWith('2090'))!
+  const seat = archive.rows.bookings!.find(b => b.pt_session_id === future.id)!
+  assert.equal(seat.client_package_id, ivys.id, 'Ivy s session is paid from Ivy s bundle, though Olive s ends sooner')
+
+  const pastWith = (instructor: string) =>
+    archive.rows.pt_sessions!.filter(s => String(s.starts_at) < '2026-09-17' && s.instructor_id === staff[instructor])
+  const debited = (sessions: Record<string, unknown>[]) =>
+    new Set(sessions.map(s => archive.rows.pt_requests!.find(r => r.scheduled_pt_session_id === s.id)!.debited_client_package_id))
+  assert.deepEqual([...debited(pastWith('Ivy Instructor'))], [ivys.id], 'her past sessions with Ivy name Ivy s bundle')
+  assert.deepEqual([...debited(pastWith('Olive Owner'))], [olives.id], 'and those with Olive name Olive s')
+
+  assert.ok(
+    preflight.schedule.some(n => /100000008 .*PT - Bundle of 10 re-split by trainer, sessions left Olive Owner 3 → 4, Ivy Instructor 8 → 7 \(1 moved/.test(n)),
+    'the preflight names the member and what moved',
+  )
+})
+
+test('two purchases of one PT bundle whose trainers visits do not account for Mindbody s balances stay as Mindbody split them, and are listed', async () => {
+  const { preflight, olives, ivys } = await twoTrainers('some missing')
+
+  assert.deepEqual(
+    [olives.bound_instructor_id, olives.credits_or_sessions_remaining, ivys.bound_instructor_id, ivys.credits_or_sessions_remaining],
+    [null, 2, null, 8],
+    'Mindbody s split, the booked session coming off the sooner-ending purchase, and nobody bound',
+  )
+  assert.ok(
+    preflight.schedule.some(n => /100000008 .*PT - Bundle of 10.*2 trainers.*settle by hand/.test(n)),
+    'a person settles it',
+  )
 })
 
 test('two Unlimited Plans run side by side with their own expiries; a booking is paid by the soonest-ending one that Covers the class', async () => {

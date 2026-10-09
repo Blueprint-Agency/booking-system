@@ -20,6 +20,7 @@ import {
   Wallet,
   HandCoins,
   ShoppingBag,
+  ReceiptText,
 } from "lucide-react";
 
 export type NavScope = "global" | "workspace" | "both";
@@ -62,6 +63,9 @@ export const NAV_ITEMS: NavItem[] = [
   // the page exists to be acted on. Both roles see the list; only a superadmin
   // refunds, gated at the backend the same way every other Refund is.
   { group: "Finance", label: "Partial payments", href: "/admin/purchases", icon: HandCoins, scope: "both" },
+  // Every Receipt in the studio (#389). The studio's money, so admins only:
+  // the backend refuses an instructor every receipt route.
+  { group: "Finance", label: "Receipts", href: "/admin/receipts", icon: ReceiptText, scope: "global" },
 
   // --- Config (global building blocks, shared across locations) ---
   { group: "Config", label: "Class Types", href: "/admin/class-types", icon: Tag, scope: "global" },
@@ -99,6 +103,8 @@ export const NAV_ITEMS: NavItem[] = [
   // --- Settings (location-independent policy + config) ---
   { group: "Settings", label: "Global Policy", href: "/admin/policy", icon: Shield, scope: "global" },
   { group: "Settings", label: "Waiver", href: "/admin/waiver", icon: FileText, scope: "global" },
+  // What the studio's Receipts carry (#391): number prefix and business details.
+  { group: "Settings", label: "Receipt details", href: "/admin/receipt-details", icon: ReceiptText, scope: "global" },
   { group: "Settings", label: "Features", href: "/admin/feature-flags", icon: ToggleRight, scope: "global" },
 ];
 

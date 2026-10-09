@@ -6,7 +6,7 @@ A **multi-tenant** booking & management platform for yoga studios. One deploymen
 
 ## Tenancy
 
-- **Shared schema, row scoping, Row-Level Security.** One Postgres database. `tenant_id` on all 61 domain tables, `NOT NULL` with no default. One more table carries it nullable: the sign-in audit log `auth_events`, whose null rows are the super portal's (`PLATFORM_ROWS` in `be/src/db/roles.ts`). The nine `staff` / `client` auth pool tables carry it too, `NOT NULL` but defaulting to the Tenant context, because Better Auth writes them itself: logins are per studio (`docs/adr/0006-per-studio-logins.md`). Postgres policies (migration `0033`) are the fail-closed backstop for a query that forgets to scope. See `docs/adr/0002-shared-schema-row-level-security.md`.
+- **Shared schema, row scoping, Row-Level Security.** One Postgres database. `tenant_id` on all 63 domain tables, `NOT NULL` with no default. One more table carries it nullable: the sign-in audit log `auth_events`, whose null rows are the super portal's (`PLATFORM_ROWS` in `be/src/db/roles.ts`). The nine `staff` / `client` auth pool tables carry it too, `NOT NULL` but defaulting to the Tenant context, because Better Auth writes them itself: logins are per studio (`docs/adr/0006-per-studio-logins.md`). Postgres policies (migration `0033`) are the fail-closed backstop for a query that forgets to scope. See `docs/adr/0002-shared-schema-row-level-security.md`.
 - **The app must not connect as the table owner.** Postgres exempts superusers and owners from RLS, so the server connects as the non-owning `booking_app` role via `DATABASE_APP_URL`. `DATABASE_URL` (the owner) is for migrations and seeds only.
 - **Tenant context is transaction-local.** `withTenant` (`be/src/db/index.ts`) sets `app.tenant_id` per transaction — session scope would ride a pooled connection into the next request.
 - **The API's own hostname carries no Tenant.** The frontends read the slug from their hostname and send `X-Tenant-Slug`; the backend corroborates it against the browser `Origin` or the Tenant claim on the caller's session. See `docs/md/spec-tenant-resolution.md`.
@@ -26,7 +26,7 @@ BE layout: routes split by audience (`routes/portal/{admin,instructor}/`, `route
 
 ## Spec docs (`docs/md/`)
 
-`prd.md` (product requirements) · `fe-client-features.md` (source of truth for fe-client) · `admin-restructure.md` (source of truth for fe-portal) · `backend-architecture.md` (BE spine — stack, folders, DB schema, integrations, jobs) · `be-portal.md` / `be-client.md` (route surfaces) · `deployment.md` (Vercel + VPS deploy, envs, CORS, auth, CI settings) · `testing.md` (suites, and naming a test with its `test-scenarios.md` Scenario Inventory ID).
+`prd.md` (product requirements) · `fe-client-features.md` (source of truth for fe-client) · `admin-restructure.md` (source of truth for fe-portal) · `backend-architecture.md` (BE spine — stack, folders, DB schema, integrations, jobs) · `be-portal.md` / `be-client.md` (route surfaces) · `deployment.md` (Vercel + VPS deploy, envs, CORS, auth, CI settings) · `observability-runbook.md` (the host, logs, and reading a studio's production data for a support complaint) · `testing.md` (suites, and naming a test with its `test-scenarios.md` Scenario Inventory ID).
 
 ## Conventions
 

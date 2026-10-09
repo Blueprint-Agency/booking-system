@@ -75,6 +75,15 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // ./purchase-email.ts — the fragment-shaped pair produced a wrong sentence for
   // some kind whatever the template said around them, and leaving them in the
   // allow-list would leave that footgun loaded for the portal template editor.
+  //
+  // #387: on these four `receipt_url` is the member's Receipt in the booking
+  // app, and `services/receipts/email.ts:withReceipt` also fills
+  // `receipt_number` and draws the receipt block under the copy. No default
+  // copy shows `receipt_number`, and this list holds what the defaults show
+  // (db/seed/email-copy.test.ts), so it is not listed here. The defaults
+  // cannot gain it as they stand: migrations 0105 and 0109 bring studios
+  // created earlier to today's default byte for byte, and their tests hold
+  // them to it, so a new default here means a data migration for those rows.
   package_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'amount_paid', 'receipt_url'],
   trial_pass_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'amount_paid', 'receipt_url'],
   // A paid corporate package (be-client § Corporate branch, step 5). It grants
@@ -82,6 +91,12 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // what was bought is the pending Corporate Request the studio now arranges.
   // `amount_paid` in the shared money form, as on the confirmations above.
   corporate_purchase_confirmed: ['client_name', 'package_name', 'amount_paid', 'receipt_url'],
+  // #388: Merch and a standalone Cross-Location Add-On, sent only with a
+  // Receipt to carry, so `receipt_url` is always the member's Receipt and
+  // `receipt_number`, which `withReceipt` fills, its number: the default copy
+  // shows it. `item_name` is what was bought, in the Receipt's own phrase:
+  // the item, or the first line "+ N more".
+  purchase_receipt: ['client_name', 'item_name', 'amount_paid', 'receipt_url', 'receipt_number'],
   // §14: same composed-sentence rule. `cancelled_line` names the classes the
   // Refund cancelled and states plainly when there were none — cancelling
   // someone's booked classes silently is not acceptable.

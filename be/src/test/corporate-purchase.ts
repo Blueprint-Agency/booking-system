@@ -162,6 +162,7 @@ export async function buyCorporatePackage(
  */
 export async function forgetPurchases(harness: TestApp, clientIds: SQL): Promise<void> {
   await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clientIds})`)
+  await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clientIds})`)
   await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clientIds})`)
   await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clientIds})`)
 }

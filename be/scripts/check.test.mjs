@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import {
   BASE_FLAGS,
   DEFAULT_PATTERNS,
+  databaseRefusal,
   listTestFiles,
   nodeArgs,
   nodeRefusal,
@@ -97,4 +98,12 @@ test('named files replace the default patterns', () => {
     'src/test/refunds.test.ts',
     'src/test/rls.test.ts',
   ])
+})
+
+test('a test database that refuses the connection is named by host and port, never by its password', () => {
+  const said = databaseRefusal('postgres://postgres:s3cret@localhost:5433/reservetoday-test', 'password authentication failed for user "postgres"')
+  assert.match(said, /localhost:5433/)
+  assert.match(said, /password authentication failed/)
+  assert.match(said, /docker ps/, 'it says how to find the port this checkout s Postgres is on')
+  assert.doesNotMatch(said, /s3cret/)
 })

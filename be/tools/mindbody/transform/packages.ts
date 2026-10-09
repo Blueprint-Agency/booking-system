@@ -1,6 +1,6 @@
 import { isLive } from './catalogue'
 import { ConfigError, type CatalogueEntry, type StudioConfig } from './config'
-import type { AccountBalanceRow, AttendanceRow, HoldingRow, MemberListRow, MembershipRow, OptionSaleRow, RetentionRow } from './readers'
+import type { AccountBalanceRow, AttendanceRow, HoldingRow, MemberListRow, MembershipRow, OptionSaleRow, RetentionRow, RosterRow } from './readers'
 import { fold, locationNamedIn } from './lookups'
 import { registerMatcher } from './register'
 import { packageMoney, type JoinedSales } from './sales'
@@ -9,7 +9,9 @@ import {
   isoDay,
   localDateOf,
   money,
+  normaliseClassName,
   normaliseOptionName,
+  normaliseStaffName,
   zonedToInstant,
   type CalendarDate,
   type LocalDateTime,
@@ -29,6 +31,9 @@ import {
  *
  * Balances are the report's *unbooked* count: a booking here spends its credit
  * when it is made, so a visit already booked is a credit already spent.
+ *
+ * One exception, for PT: purchases of one bundle a member trained on with more
+ * than one trainer are re-split by trainer (`byTrainer`), each bound to its own.
  */
 
 type Row = Record<string, unknown>
@@ -86,6 +91,8 @@ type Held = {
   discount: number
   /** The Location the option it was bought as names (`optionHome`), for a plan Mindbody sold once per Location. */
   home: string | null
+  /** The **Bound Instructor**'s staff key (`normaliseStaffName`), where `byTrainer` bound this PT purchase; else null. */
+  trainer: string | null
 }
 
 const count = (s: HoldingRow['remaining']) => (s && !s.unlimited ? s.count : 0)
@@ -107,6 +114,7 @@ function combine(clientId: string, entry: Sold, holdings: HoldingRow[], home: st
     suffix: '',
     discount: 0,
     home,
+    trainer: null,
   }
 }
 
@@ -147,8 +155,101 @@ function split(combined: Held, holdings: HoldingRow[], purchases: OptionSaleRow[
       suffix: i === 0 ? '' : `#${i + 1}`,
       discount: discountOf(p),
       home: combined.home,
+      trainer: null,
     }
   })
+}
+
+/** A PT session as far as which purchase should pay for it: who taught it (a staff key), and its day. */
+type PtVisit = { trainer: string; day: number }
+
+/**
+ * A PT holding already split into its purchases, re-split by trainer.
+ *
+ * Mindbody records which pricing option a visit came off, never which purchase
+ * of it, and nothing ties a purchase to a trainer. So a member who bought one
+ * bundle for one trainer and a second of the same bundle for another sees
+ * sessions with the second trainer taken off the first bundle, and the register's
+ * balances carry that. The platform has the tie Mindbody lacked, the **Bound
+ * Instructor**, and this restores it. Each purchase, oldest first, is bound to
+ * the trainer who taught the most visits in its run (once taken, a trainer is
+ * not offered again). Then each purchase's sessions left are what its trainer's
+ * visits left, and sessions already booked ahead come off the purchase bound to
+ * that appointment's trainer.
+ *
+ * Only where that accounts for Mindbody exactly: the visits by each purchase's
+ * own trainer in its run add up to the sessions Mindbody used across the
+ * purchases. The member's total sessions left is therefore Mindbody's, moved
+ * between purchases and never made or lost. Anything short of that (a third
+ * trainer, a visit outside every run, a past purchase sharing the window) is
+ * `unsettled`, and the holding stays as Mindbody split it, unbound. Null where
+ * there is nothing to do: fewer than two trainers.
+ */
+function byTrainer(
+  parts: Held[],
+  visits: PtVisit[],
+  ahead: string[],
+  today: number,
+): { parts: Held[]; moved: number } | { unsettled: { trainers: number; used: number; taught: number } } | null {
+  const entry = parts[0]!.entry
+  if (entry.kind !== 'pt') return null
+  const runs = parts.map(p => ({
+    p,
+    from: p.firstActivation ? dayNumber(p.firstActivation) : -Infinity,
+    to: Math.min(dayNumber(p.lastExpiration), today),
+  }))
+  const earliest = Math.min(...runs.map(r => r.from))
+  const seen = visits.filter(v => v.day >= earliest && v.day <= today)
+  const trainers = new Set(seen.map(v => v.trainer))
+  if (trainers.size < 2) return null
+
+  const inRun = (r: (typeof runs)[number], v: PtVisit) => v.day >= r.from && v.day <= r.to
+  const trainerOf = new Map<Held, string>()
+  const taken = new Set<string>()
+  for (const r of [...runs].sort((a, b) => a.from - b.from || dayNumber(a.p.lastExpiration) - dayNumber(b.p.lastExpiration))) {
+    const tally = new Map<string, number>()
+    for (const v of seen) if (inRun(r, v) && !taken.has(v.trainer)) tally.set(v.trainer, (tally.get(v.trainer) ?? 0) + 1)
+    const best = [...tally].sort(([a, x], [b, y]) => y - x || a.localeCompare(b))[0]?.[0]
+    if (best === undefined) continue
+    trainerOf.set(r.p, best)
+    taken.add(best)
+  }
+
+  const taughtOn = (r: (typeof runs)[number]) => seen.filter(v => v.trainer === trainerOf.get(r.p) && inRun(r, v)).length
+  // Mindbody's own sessions left on a purchase: its balance and what it set aside.
+  const used = parts.reduce((sum, p) => sum + entry.credits - (p.balance! + p.bookedAhead), 0)
+  const taught = runs.reduce((sum, r) => sum + taughtOn(r), 0)
+  const unsettled = { unsettled: { trainers: trainers.size, used, taught } }
+  if (trainerOf.size < parts.length || taught !== used || runs.some(r => taughtOn(r) > entry.credits)) return unsettled
+
+  // Booked ahead: each appointment off its trainer's purchase, any left over
+  // off the soonest-ending purchase with room, as `split` takes it.
+  const left = new Map(runs.map(r => [r.p, entry.credits - taughtOn(r)]))
+  const aside = new Map(parts.map(p => [p, 0]))
+  let toTake = parts.reduce((sum, p) => sum + p.bookedAhead, 0)
+  for (const p of parts) {
+    const theirs = ahead.filter(t => t === trainerOf.get(p)).length
+    const n = Math.min(theirs, toTake, left.get(p)!)
+    aside.set(p, n)
+    toTake -= n
+  }
+  for (const p of parts) {
+    const n = Math.min(toTake, left.get(p)! - aside.get(p)!)
+    aside.set(p, aside.get(p)! + n)
+    toTake -= n
+  }
+  if (toTake > 0) return unsettled
+
+  const moved = runs.reduce((sum, r) => sum + Math.max(0, left.get(r.p)! - (r.p.balance! + r.p.bookedAhead)), 0)
+  return {
+    parts: parts.map(p => ({
+      ...p,
+      balance: left.get(p)! - aside.get(p)!,
+      bookedAhead: aside.get(p)!,
+      trainer: trainerOf.get(p)!,
+    })),
+    moved,
+  }
 }
 
 /**
@@ -253,6 +354,11 @@ export function mapPackages(input: {
   sales: JoinedSales
   /** The Location each member belongs to, where a report says (`memberHomes`): an Unlimited Plan's Home Location. */
   homes: ReturnType<typeof memberHomes>
+  /** Past visits and the option each came off, and the appointments to come: who trained a member's PT purchases (`byTrainer`). */
+  attendance: AttendanceRow[]
+  roster: RosterRow[]
+  /** Staff key (`normaliseStaffName`) → staff user id, for everyone coming across: a Bound Instructor must be one of them. */
+  staffIds: Map<string, string>
 }): MappedPackages {
   const { config, tenantId, id, ids, memberNames } = input
   const tz = config.studio.timezone
@@ -454,6 +560,25 @@ export function mapPackages(input: {
     livePurchases.set(key, [...(livePurchases.get(key) ?? []), sale])
   }
   const discountOf = (p: OptionSaleRow) => input.sales.saleOf.get(p)?.discount ?? 0
+
+  // Who taught each member's PT, for `byTrainer`: every past visit the report
+  // says came off a PT option (an early cancel gave its session back), by member
+  // and catalogue entry; and every PT appointment still to come, by member.
+  const ptVisits = new Map<string, PtVisit[]>()
+  for (const a of input.attendance) {
+    const entry = a.option ? entryOf.get(normaliseOptionName(a.option)) : undefined
+    if (!entry || entry.migrate === 'skip' || entry.kind !== 'pt' || /early cancel/i.test(a.status)) continue
+    const key = `${a.clientId}/${slotOf(entry, a.option)}`
+    ptVisits.set(key, [...(ptVisits.get(key) ?? []), { trainer: normaliseStaffName(a.staff), day: dayNumber(a.date) }])
+  }
+  const ptNames = new Set(config.ptAppointmentNames.map(normaliseClassName))
+  const ptAhead = new Map<string, string[]>()
+  for (const r of input.roster) {
+    if (!ptNames.has(normaliseClassName(r.description)) || /cancel/i.test(r.status)) continue
+    if (zonedToInstant({ ...r.date, hour: r.start.hour, minute: r.start.minute, second: 0 }, tz) <= asOf) continue
+    ptAhead.set(r.clientId, [...(ptAhead.get(r.clientId) ?? []), normaliseStaffName(r.staff)])
+  }
+  const staffName = new Map(config.staff.map(s => [normaliseStaffName(s.mindbodyName), s.mindbodyName.trim()]))
   let splitHoldings = 0
   let splitInto = 0
   let pricedFromRegister = 0
@@ -464,8 +589,28 @@ export function mapPackages(input: {
       .flatMap(([groupKey, g]) => {
         const combined = combine(clientId, g.entry, g.holdings, g.home)
         const purchases = livePurchases.get(`${clientId}/${groupKey}`) ?? []
-        const parts = split(combined, g.holdings, purchases, discountOf)
+        let parts = split(combined, g.holdings, purchases, discountOf)
         if (parts) {
+          const resplit = byTrainer(parts, ptVisits.get(`${clientId}/${groupKey}`) ?? [], ptAhead.get(clientId) ?? [], dayNumber(today))
+          const who = `packages: ${clientId} ${nameOf(clientId)}: ${g.entry.name}`
+          const missing = resplit && 'parts' in resplit ? resplit.parts.filter(p => !input.staffIds.has(p.trainer!)) : []
+          if (resplit && 'unsettled' in resplit) {
+            const { trainers, used, taught } = resplit.unsettled
+            notes.push(
+              `${who} is ${parts.length} purchases used with ${trainers} trainers, but each purchase's own trainer taught ${taught} ` +
+                `of the ${used} sessions Mindbody used — left as Mindbody split them, unbound: settle by hand`,
+            )
+          } else if (missing.length > 0) {
+            notes.push(`${who} would be re-split by trainer, but ${missing.map(p => p.trainer).join(', ')} is not coming across — left as Mindbody split them, unbound: settle by hand`)
+          } else if (resplit) {
+            const name = (key: string) => staffName.get(key) ?? key
+            const line = parts
+              .map((p, i) => `${name(resplit.parts[i]!.trainer!)} ${p.balance! + p.bookedAhead} → ${resplit.parts[i]!.balance! + resplit.parts[i]!.bookedAhead}`)
+              .join(', ')
+            const moved = resplit.moved > 0 ? `${resplit.moved} moved: Mindbody had taken them off another trainer's purchase` : 'none moved'
+            notes.push(`${who} re-split by trainer, sessions left ${line} (${moved}); each purchase is bound to its trainer`)
+            parts = resplit.parts
+          }
           parts.forEach(p => splitParts.add(p))
           splitHoldings++
           splitInto += parts.length
@@ -536,6 +681,7 @@ export function mapPackages(input: {
         ...length,
         cross_location_paid_sgd: addOn,
         credits_or_sessions_remaining: h.balance,
+        bound_instructor_id: h.trainer ? input.staffIds.get(h.trainer)! : null,
         expires_at: runs ? endOfDay(h.lastExpiration) : null,
         active: true,
         purchased_at: (started > asOf ? asOf : started).toISOString(),
@@ -603,6 +749,7 @@ export function mapPackages(input: {
       validity_days: entry.validityDays,
       cross_location_paid_sgd: null,
       credits_or_sessions_remaining: 0,
+      bound_instructor_id: null,
       expires_at: endOfDay(h.lastExpiration),
       active: false,
       purchased_at: (started > asOf ? asOf : started).toISOString(),

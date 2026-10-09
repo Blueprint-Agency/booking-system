@@ -249,6 +249,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
       await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM bookings WHERE workshop_id IN (${workshops}) OR client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+      await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM promo_codes WHERE created_by_staff_id IN (${staffIds})`)
@@ -416,6 +417,13 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
 
   /* ── corporate ──────────────────────────────────────────────────────── */
 
+  /** The member's one Receipt, as their account lists it: what the email's receipt link opens (#387). */
+  async function onlyReceiptOf(who: Member): Promise<{ id: string }> {
+    const listed = await expectStatus(await harness.app.request('/api/v1/me/receipts', { headers: who.headers }), 200)
+    assert.equal(listed.receipts.length, 1, 'exactly one Receipt')
+    return listed.receipts[0]
+  }
+
   const corporateRequestsOf = (who: Member) =>
     harness.db.select().from(schema.corporateRequests).where(eq(schema.corporateRequests.clientId, who.clientId))
 
@@ -435,10 +443,10 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
 
     const sent = await oneConfirmation(eve, one, 'corporate_purchase_confirmed', 'S$480.00')
     assert.ok(textOf(sent).includes(`${NAME} corporate`), `it names the package: ${textOf(sent)}`)
-    assert.ok(sent.html.includes(`https://pay.example.test/receipts/${intent}`), 'it links the provider receipt')
+    assert.ok(sent.html.includes(`/account/receipts/${(await onlyReceiptOf(eve)).id}"`), 'it links the member\'s Receipt')
   })
 
-  test('NTF-03 a free corporate package is confirmed once with the zero amount, linking to the member\'s corporate requests', async () => {
+  test('NTF-03 a free corporate package is confirmed once with the zero amount, linking to the member\'s Receipt', async () => {
     const [free] = await harness.db
       .insert(schema.corporatePackages)
       .values({ tenantId: two.id, name: `${NAME} corporate free`, priceSgd: '0.00', status: 'active', createdByStaffId: two.admin.id })
@@ -454,7 +462,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
 
     const sent = await oneConfirmation(ana, two, 'corporate_purchase_confirmed', 'S$0.00')
     assert.ok(textOf(sent).includes(`${NAME} corporate free`), `it names the package: ${textOf(sent)}`)
-    assert.ok(sent.html.includes('/account/bookings?type=corporate'), `it links where the request is: ${sent.html}`)
+    assert.ok(sent.html.includes(`/account/receipts/${(await onlyReceiptOf(ana)).id}"`), `it links the member's Receipt: ${sent.html}`)
   })
 
   test('NTF-03 a corporate delivery that fails to commit mails no one, and the provider\'s retry sends the one confirmation', async () => {

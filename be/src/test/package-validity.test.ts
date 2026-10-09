@@ -271,6 +271,7 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     await harness.db.execute(sql`DELETE FROM pt_request_slots WHERE pt_request_id IN (SELECT id FROM pt_requests WHERE client_id IN (${clients}))`)
     await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)

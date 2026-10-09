@@ -66,7 +66,15 @@ export interface ResendPayload {
   /** The plain-text alternative, for clients that do not render HTML. */
   text?: string
   replyTo?: string
+  /** Files, base64-encoded: the form Resend's API takes `content` in. */
+  attachments?: ResendAttachment[]
   tags: MailTag[]
+}
+
+export interface ResendAttachment {
+  filename: string
+  contentType: string
+  content: string
 }
 
 /** The SDK's result shape: it returns refusals rather than throwing them. */

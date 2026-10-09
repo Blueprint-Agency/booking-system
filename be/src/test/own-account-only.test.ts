@@ -139,6 +139,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (SELECT id FROM staff_users WHERE email LIKE ${ours})`)
     await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
@@ -185,6 +186,7 @@ describe('payments on the studio’s own account only', { skip: integrationTests
         tenantId,
         email: emailFor('ben'),
         lines: [{ name: 'Plan', description: 'Studio', amountCents: 20000 }],
+        purchaseLines: [{ description: 'Plan', quantity: 1, listPriceSgd: '200.00', discountSgd: '0.00', discounts: [], amountSgd: '200.00' }],
         expiresAt: null,
         metadata: { kind: 'class_package', client_id: ben.clientId, package_id: paidPackageId },
         successUrl: 'https://example.test/ok',

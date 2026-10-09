@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cancelledNotice, confirmationOutcome, confirmationEyebrow } from "./checkout-return.ts";
+import { cancelledNotice, confirmationOutcome, confirmationEyebrow, syncedReceipt } from "./checkout-return.ts";
 
 const params = (query: string) => new URLSearchParams(query);
 
@@ -49,4 +49,13 @@ test("PAY-28 only a confirmed payment is ever called successful", () => {
   assert.equal(confirmationEyebrow("free"), "Added to your account");
   assert.doesNotMatch(confirmationEyebrow("pending"), /successful/i);
   assert.doesNotMatch(confirmationEyebrow("free"), /payment/i);
+});
+
+test("INV-10 the confirmation links the Receipt the sync named, and nothing when it named none", () => {
+  const receipt = { id: "6f1d6c1e-6e0a-4d4e-9d5b-3d1d0c7a2b11", number: "R-000042" };
+  assert.deepEqual(syncedReceipt({ ok: true, body: { status: "granted", receipt } }), receipt);
+  assert.equal(syncedReceipt({ ok: true, body: { status: "granted", receipt: null } }), null);
+  assert.equal(syncedReceipt({ ok: true, body: { status: "pending" } }), null);
+  assert.equal(syncedReceipt({ ok: false, body: { error: "forbidden" } }), null);
+  assert.equal(syncedReceipt("failed"), null);
 });

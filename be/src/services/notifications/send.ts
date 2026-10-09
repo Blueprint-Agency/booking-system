@@ -1,5 +1,5 @@
 import { frameTemplatedEmail, type FramedEmail } from './frame'
-import { sendMail } from '../../lib/mailer'
+import { sendMail, type MailAttachment } from '../../lib/mailer'
 import { tenantMailIdentity } from '../tenants/mail-identity'
 import { db } from '../../db'
 import { emailTemplates, emailLog } from '../../db/schema/content'
@@ -40,6 +40,10 @@ export type TemplateSlug =
   // A corporate package grants no credits: what was bought is a Corporate
   // Request the studio arranges with the member, so it says that (#374 step 5).
   | 'corporate_purchase_confirmed'
+  // Merch and a standalone Cross-Location Add-On (#388): neither grants a
+  // package or books a place, so neither has a confirmation of its own to
+  // carry the Receipt. This one is the Receipt, under the studio's copy.
+  | 'purchase_receipt'
   // §14: the provider sends its own money receipt; this is the one that says the
   // plan has ended and names the classes the Refund cancelled.
   | 'purchase_refunded'
@@ -74,6 +78,17 @@ export interface SendInput {
    * rest.
    */
   secretVariables?: readonly string[]
+  /**
+   * Files sent with the message, as they are: the studio's template has no say
+   * in them. `email_log` keeps the rendered subject and body, not the files.
+   */
+  attachments?: readonly MailAttachment[]
+  /**
+   * System-built markup the frame draws under the studio's body, untouched by
+   * the template: the Receipt block (`services/receipts/email.ts:withReceipt`).
+   * Trusted HTML.
+   */
+  appendixHtml?: string
 }
 
 const REDACTED = '[redacted]'
@@ -90,7 +105,7 @@ const REDACTED = '[redacted]'
  * failure: sending another studio's wording is worse than sending nothing.
  */
 export async function sendTemplatedEmail(input: SendInput): Promise<void> {
-  const { tenantId, slug, recipient, variables, secretVariables = [] } = input
+  const { tenantId, slug, recipient, variables, secretVariables = [], attachments, appendixHtml } = input
   const [tpl] = await db
     .select()
     .from(emailTemplates)
@@ -115,8 +130,9 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       studioName: identity.fromName,
       template: tpl,
       variables: vars,
+      appendixHtml,
     })
-  await deliver({ tenantId, slug, recipient, identity, email: frame(variables), loggedEmail: frame(logged) })
+  await deliver({ tenantId, slug, recipient, identity, email: frame(variables), loggedEmail: frame(logged), attachments })
 }
 
 /** Mail worded by the platform rather than a studio template, sent in the studio's name. */
@@ -165,8 +181,9 @@ async function deliver(input: {
   identity: Awaited<ReturnType<typeof tenantMailIdentity>>
   email: FramedEmail
   loggedEmail: FramedEmail
+  attachments?: readonly MailAttachment[]
 }): Promise<boolean> {
-  const { tenantId, slug, recipient, identity, email, loggedEmail } = input
+  const { tenantId, slug, recipient, identity, email, loggedEmail, attachments } = input
   const [logRow] = await db
     .insert(emailLog)
     .values({
@@ -196,6 +213,7 @@ async function deliver(input: {
       idempotencyKey: logRow.id,
       fromName: identity.fromName,
       replyTo: identity.replyTo,
+      attachments,
     })
     await db
       .update(emailLog)

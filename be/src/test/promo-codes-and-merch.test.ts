@@ -247,6 +247,7 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
       await db.delete(schema.merchOrders).where(inArray(schema.merchOrders.clientId, clientIds))
       await db.delete(schema.stripePayments).where(inArray(schema.stripePayments.clientId, clientIds))
       await db.delete(schema.clientPackages).where(inArray(schema.clientPackages.clientId, clientIds))
+      await db.delete(schema.receipts).where(inArray(schema.receipts.clientId, clientIds))
       await db.delete(schema.purchases).where(inArray(schema.purchases.clientId, clientIds))
       // Checkout makes each member a customer at the payment provider.
       await db.delete(schema.paymentCustomers).where(inArray(schema.paymentCustomers.clientId, clientIds))

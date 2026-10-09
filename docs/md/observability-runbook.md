@@ -57,6 +57,22 @@ cd /root/stacks/booking-staging       # or /root/stacks/booking-prod
 The compose file itself lives in the infrastructure repo at
 `vps/bpvps2/stacks/booking/docker-compose.yml` — edit it there, never on the box.
 
+### Reading a studio's data (a support complaint)
+
+The databases are the containers `booking-db-prod` and `booking-db-staging`. Live studios are on
+**prod**; staging holds an older copy of the same studios. Feed the SQL on stdin, inside a
+read-only transaction, so no shell quoting reaches it and nothing can be written:
+
+```bash
+( echo 'BEGIN READ ONLY;'; cat query.sql; echo 'ROLLBACK;' ) | ssh bp-bpvps2 \
+  'docker exec -i booking-db-prod sh -c "psql -U \$POSTGRES_USER -d \$POSTGRES_DB -P pager=off"'
+```
+
+Scope by `tenants.slug`: the owner role this connects as bypasses Row-Level Security. A member's
+credits are `client_packages` (balance, `bound_instructor_id`), with `credit_movements` as their
+history. Data that came from Mindbody (`tenant_imports` lists each import) is checked against the
+download it was built from: `mindbody-import.md` § Looking up one member.
+
 ## 3. Where to look
 
 Grafana stack: **https://blueprintdigital.grafana.net**
@@ -200,8 +216,8 @@ The names are fixed — alert rules key on them.
 | `impersonatedBy` | the acting Admin's Better Auth user id, present only under an impersonation grant | `middleware/client-impersonation.ts` |
 | `job` | the cron job's name (`expirePackages`, `sendLapsingAlerts`, …) | the wrappers in `jobs/index.ts` |
 | `webhook` | the vendor a webhook came from: `stripe` \| `resend` | the two webhook routes |
-| `vendor` | which vendor an **outbound** call went to: `stripe` \| `storage` \| `resend` | `lib/outbound.ts` |
-| `op` | which operation on that vendor — `checkout.sessions.create`, `refunds.create`, `putObject`, `emails.send` | `lib/outbound.ts` |
+| `vendor` | which vendor an **outbound** call went to: `stripe` \| `storage` \| `resend` \| `logo` (a studio's logo, fetched for a Receipt PDF; one that fails leaves the PDF without it) | `lib/outbound.ts` |
+| `op` | which operation on that vendor — `checkout.sessions.create`, `refunds.create`, `putObject`, `emails.send`, `fetch` | `lib/outbound.ts` |
 | `ms` | how long it took, milliseconds. On an access line, the whole request; on an outbound line, that one call; on a cron line, the whole run. | access log, `lib/outbound.ts`, `jobs/index.ts` |
 | `outcome` | how it ended. Outbound: `ok` \| `timeout` \| `error`. Cron: `ok` \| `error`. | `lib/outbound.ts`, `jobs/index.ts` |
 

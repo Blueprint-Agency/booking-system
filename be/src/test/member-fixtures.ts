@@ -113,6 +113,9 @@ export function memberFixtures(harness: TestApp, schema: typeof Schema, domain: 
     class_packages: async () => ({ kind: 'credit_bundle', credits: 1, validity_days: 30 }),
     client_packages: async () => ({ kind: 'credit_bundle', validity_days: 30 }),
     promo_codes: async () => ({ kind: 'percent', percent_off: 10, code: `FIX-${randomUUID().slice(0, 8).toUpperCase()}` }),
+    // A number unique in the studio, which the Receipts other files issued
+    // there have already started counting from 1.
+    receipts: async () => ({ number: 1_000_000 + Math.floor(Math.random() * 1_000_000_000), lines: [] }),
   }
 
   /**

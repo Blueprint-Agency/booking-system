@@ -24,10 +24,10 @@ test("CRD-27 booked and returned read with their signed amount and the balance a
 
 test("CRD-27 a credit kept says why, without an amount", () => {
   const kept = { ...booked, cause: "kept" as const, delta: 0 };
-  assert.equal(movementText({ ...kept, booking: { ...booked.booking!, cancelled_late: true } }, "credit").text, "Late cancel · credit kept");
-  assert.equal(movementText({ ...kept, booking: { ...booked.booking!, cancelled_late: false } }, "credit").text, "Over the cancellation limit · credit kept");
-  assert.equal(movementText({ ...kept, actor: "staff" }, "credit").text, "Cancelled by the studio · credit kept");
-  assert.equal(movementText({ ...kept, cause: "no_show" }, "session").text, "No-show · session kept");
+  assert.equal(movementText({ ...kept, booking: { ...booked.booking!, cancelled_late: true } }, "credit").text, "Late cancel · credit not returned");
+  assert.equal(movementText({ ...kept, booking: { ...booked.booking!, cancelled_late: false } }, "credit").text, "Over the cancellation limit · credit not returned");
+  assert.equal(movementText({ ...kept, actor: "staff" }, "credit").text, "Cancelled by the studio · credit not returned");
+  assert.equal(movementText({ ...kept, cause: "no_show" }, "session").text, "No-show · session not returned");
 });
 
 test("CRD-27 an expiry takes what was left, leaving nothing to use", () => {

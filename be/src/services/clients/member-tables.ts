@@ -123,6 +123,16 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
   byClientId('purchases', [
     { keptBecause: ACCOUNTS, set: sql`client_id = NULL, metadata = '{}'::jsonb`, where: clientIdIs },
   ]),
+  // The studio's Receipt for each sale (#380): its record of what was sold and
+  // for how much, so it stays with the Purchase it is for. Who it was issued to
+  // goes — the member's id and the name and email copied onto it.
+  byClientId('receipts', [
+    {
+      keptBecause: ACCOUNTS,
+      set: sql`client_id = NULL, buyer_name = NULL, buyer_email = NULL`,
+      where: clientIdIs,
+    },
+  ]),
   // The booking the payment was for is deleted; the receipt link opens a page
   // that shows who paid. The payment intent stays, which is how the studio
   // matches this row to the payment provider's own record.

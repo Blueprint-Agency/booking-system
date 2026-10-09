@@ -19,8 +19,8 @@ const THROWAWAY_SLUG = `matrix-${run}`
 
 /**
  * The authorization matrix (#363): every `/me`, `/public` and `/platform` route
- * the app has, called as every kind of caller, each answered by its gate as
- * declared below.
+ * the app has, and the portal's admin Receipts routes (#389), called as every
+ * kind of caller, each answered by its gate as declared below.
  *
  * The routes come from the app's own route table, never from a list kept here,
  * so a route added without an expectation fails the first test, and an
@@ -38,14 +38,18 @@ const THROWAWAY_SLUG = `matrix-${run}`
  * tests (`maintenance-mode.test.ts`, `tenant-provisioning.test.ts`).
  */
 
-/** Who is calling. Every caller except `noStudio` is on studio one's hostname. */
-type Caller = 'anonymous' | 'memberOfOne' | 'memberOfTwo' | 'adminOfOne' | 'platformAdmin' | 'noStudio'
+/**
+ * Who is calling. Every caller except `noStudio` is on studio one's hostname:
+ * its member app for `/me` and `/public`, its portal for `/portal`.
+ */
+type Caller = 'anonymous' | 'memberOfOne' | 'memberOfTwo' | 'adminOfOne' | 'instructorOfOne' | 'platformAdmin' | 'noStudio'
 
 const CALLERS: readonly Caller[] = [
   'anonymous', //       nobody signed in
   'memberOfOne', //     a member of studio one, signed in there
   'memberOfTwo', //     a member of studio two, presenting that session on studio one's hostname
-  'adminOfOne', //      an Admin of studio one, presenting their staff session to the member app
+  'adminOfOne', //      an Admin of studio one, signed in to its portal
+  'instructorOfOne', // an Instructor of studio one, signed in to its portal
   'platformAdmin', //   a Platform administrator, on the PLATFORM_ADMIN_EMAIL allowlist
   'noStudio', //        nobody signed in, and no studio named at all
 ]
@@ -62,6 +66,7 @@ const MEMBER_OF_THE_STUDIO: Gate = {
     anonymous: [401, 'missing_bearer_token'],
     memberOfTwo: [401, 'invalid_token'],
     adminOfOne: [401, 'invalid_token'],
+    instructorOfOne: [401, 'invalid_token'],
     platformAdmin: [401, 'invalid_token'],
     noStudio: [400, 'tenant_required'],
   },
@@ -69,7 +74,7 @@ const MEMBER_OF_THE_STUDIO: Gate = {
 
 /** `/public/*`: anyone, signed in or not, as long as a studio is named. */
 const ANYONE_NAMING_A_STUDIO: Gate = {
-  allowed: ['anonymous', 'memberOfOne', 'memberOfTwo', 'adminOfOne', 'platformAdmin'],
+  allowed: ['anonymous', 'memberOfOne', 'memberOfTwo', 'adminOfOne', 'instructorOfOne', 'platformAdmin'],
   refused: { noStudio: [400, 'tenant_required'] },
 }
 
@@ -84,7 +89,7 @@ const STAFF_STEP: Gate = ANYONE_NAMING_A_STUDIO
 
 /** Needs no studio: the slug lookup the frontends' proxies make for every page. */
 const ANYONE: Gate = {
-  allowed: ['anonymous', 'memberOfOne', 'memberOfTwo', 'adminOfOne', 'platformAdmin', 'noStudio'],
+  allowed: ['anonymous', 'memberOfOne', 'memberOfTwo', 'adminOfOne', 'instructorOfOne', 'platformAdmin', 'noStudio'],
   refused: {},
 }
 
@@ -100,12 +105,31 @@ const PLATFORM_ADMIN_ONLY: Gate = {
     memberOfOne: [404, 'not_found'],
     memberOfTwo: [404, 'not_found'],
     adminOfOne: [404, 'not_found'],
+    instructorOfOne: [404, 'not_found'],
     noStudio: [404, 'not_found'],
   },
 }
 
 /** The super portal's sign-in step, which runs before anyone has a session. */
 const PLATFORM_SIGN_IN: Gate = ANYONE
+
+/**
+ * `/portal/admin/*`: an Admin of the studio named, and nobody else. An
+ * Instructor's own staff session is refused by the role; a member's or the
+ * platform's is no staff session at all. The matrix holds the portal's routes
+ * surface by surface, as each is brought under it (`UNDER_THE_MATRIX`).
+ */
+const STUDIO_ADMIN: Gate = {
+  allowed: ['adminOfOne'],
+  refused: {
+    anonymous: [401, 'missing_bearer_token'],
+    memberOfOne: [401, 'invalid_token'],
+    memberOfTwo: [401, 'invalid_token'],
+    instructorOfOne: [403, 'forbidden_role'],
+    platformAdmin: [401, 'invalid_token'],
+    noStudio: [400, 'tenant_required'],
+  },
+}
 
 /**
  * Every refusal any gate gives. An admitted caller's response must be none of
@@ -117,6 +141,8 @@ const GATE_REFUSALS: readonly Refusal[] = [
   [401, 'missing_bearer_token'],
   [401, 'invalid_token'],
   [403, 'tenant_mismatch'],
+  [403, 'forbidden_role'],
+  [403, 'staff_not_provisioned'],
   [403, 'client_blocked'],
   [403, 'tenant_suspended'],
   [404, 'client_not_found'],
@@ -172,6 +198,9 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'POST /api/v1/me/pt-sessions/request': { gate: MEMBER_OF_THE_STUDIO },
   'POST /api/v1/me/pt-sessions/:id/cancel': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/purchases/open': { gate: MEMBER_OF_THE_STUDIO },
+  'GET /api/v1/me/receipts': { gate: MEMBER_OF_THE_STUDIO },
+  'GET /api/v1/me/receipts/:id': { gate: MEMBER_OF_THE_STUDIO },
+  'GET /api/v1/me/receipts/:id/pdf': { gate: MEMBER_OF_THE_STUDIO },
   'POST /api/v1/me/purchases/:id/resume': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/waitlist': { gate: MEMBER_OF_THE_STUDIO },
   'POST /api/v1/me/waitlist/classes/:classId': { gate: MEMBER_OF_THE_STUDIO },
@@ -181,8 +210,6 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'GET /api/v1/me/workshops/:id': { gate: MEMBER_OF_THE_STUDIO },
   // Not built yet (they answer 501), and behind the member gate all the same.
   'GET /api/v1/me/dashboard': { gate: MEMBER_OF_THE_STUDIO },
-  'GET /api/v1/me/invoices': { gate: MEMBER_OF_THE_STUDIO },
-  'GET /api/v1/me/invoices/:id': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/referral': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/waiver': { gate: MEMBER_OF_THE_STUDIO },
   'POST /api/v1/me/waiver/sign': { gate: MEMBER_OF_THE_STUDIO },
@@ -241,9 +268,19 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'POST /api/v1/platform/tenants/:id/imports/:jobId/dismiss': { gate: PLATFORM_ADMIN_ONLY },
   'PUT /api/v1/platform/tenants/:id/payment-credentials': { gate: PLATFORM_ADMIN_ONLY },
   'DELETE /api/v1/platform/tenants/:id/payment-credentials': { gate: PLATFORM_ADMIN_ONLY },
+
+  // ── /portal ──────────────────────────────────────────────────────────────
+  // Every Receipt in the studio (#389): the studio's money, for its admins only.
+  'GET /api/v1/portal/admin/receipts': { gate: STUDIO_ADMIN },
+  'GET /api/v1/portal/admin/receipts/:id': { gate: STUDIO_ADMIN },
+  'GET /api/v1/portal/admin/receipts/:id/pdf': { gate: STUDIO_ADMIN },
+  // Resending a Receipt and exporting the list (#390).
+  'POST /api/v1/portal/admin/receipts/:id/resend': { gate: STUDIO_ADMIN },
+  'GET /api/v1/portal/admin/receipts/export.csv': { gate: STUDIO_ADMIN },
 }
 
-const UNDER_THE_MATRIX = /^\/api\/v1\/(me|public|platform)(\/|$)/
+/** The prefixes the matrix speaks for: every route under them needs a line above. */
+const UNDER_THE_MATRIX = /^\/api\/v1\/(me|public|platform|portal\/admin\/receipts)(\/|$)/
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH'])
 
 describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
@@ -254,8 +291,11 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
   let one!: { id: string; slug: string }
   let two!: { id: string; slug: string }
 
-  /** What each caller presents: on a studio's surfaces, and on the super portal's. */
-  let sessions!: Record<Caller, { studio: () => Record<string, string>; platform: () => Record<string, string> }>
+  /** What each caller presents: on a studio's member app, on its portal, and on the super portal. */
+  let sessions!: Record<
+    Caller,
+    { studio: () => Record<string, string>; portal: () => Record<string, string>; platform: () => Record<string, string> }
+  >
   /** A studio of this file's own, and an import job of its, for the platform's `:id` and `:jobId`. */
   let throwaway!: { id: string; slug: string }
   let finishedJobId!: string
@@ -302,7 +342,9 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
 
   const headersFor = (key: string, caller: Caller) => {
     const path = key.split(' ')[1]!
-    return path.startsWith('/api/v1/platform') ? sessions[caller].platform() : sessions[caller].studio()
+    if (path.startsWith('/api/v1/platform')) return sessions[caller].platform()
+    if (path.startsWith('/api/v1/portal')) return sessions[caller].portal()
+    return sessions[caller].studio()
   }
 
   /** `[status, error]` of a response; `error` is null when the body names no string code. */
@@ -359,8 +401,8 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
     return headers
   }
 
-  /** An active Admin of `at`, signed in to its portal. */
-  const admin = async (at: { id: string; slug: string }, email: string) => {
+  /** An active staff member of `at` with `role`, signed in to its portal. */
+  const staff = async (at: { id: string; slug: string }, email: string, role: 'admin' | 'instructor') => {
     const headers = await harness.signInAs('staff', email, at)
     const [user] = await harness.db
       .select({ id: schema.staffAuthUsers.id })
@@ -368,7 +410,7 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
       .where(and(eq(schema.staffAuthUsers.email, email), eq(schema.staffAuthUsers.tenantId, at.id)))
     await harness.db
       .insert(schema.staffUsers)
-      .values({ tenantId: at.id, email, name: 'Matrix Admin', role: 'admin', status: 'active', authUserId: user!.id })
+      .values({ tenantId: at.id, email, name: `Matrix ${role}`, role, status: 'active', authUserId: user!.id })
     return headers
   }
 
@@ -397,29 +439,39 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
 
     const memberOfOne = await member(one, `member-one@${DOMAIN}`)
     const memberOfTwo = await member(two, `member-two@${DOMAIN}`)
-    const adminOfOne = await admin(one, `admin-one@${DOMAIN}`)
+    const adminOfOne = await staff(one, `admin-one@${DOMAIN}`, 'admin')
+    const instructorOfOne = await staff(one, `instructor-one@${DOMAIN}`, 'instructor')
     const platformAdmin = await harness.signInAs('platform', OPERATOR, null)
 
-    // Studio one's member app, as its pages call the API — from a fresh client
-    // address each time, so the run's hundreds of calls stay under the limiters.
-    const atStudioOne = (token?: string) => (): Record<string, string> => ({
+    // Studio one's member app, and its portal, as their pages call the API —
+    // from a fresh client address each time, so the run's hundreds of calls
+    // stay under the limiters.
+    const onStudioOne = (pool: 'client' | 'staff') => (token?: string) => (): Record<string, string> => ({
       'X-Tenant-Slug': one.slug,
-      Origin: frontendOrigin('client', one),
+      Origin: frontendOrigin(pool, one),
       'X-Forwarded-For': harnessAddress(),
       ...(token ? { Authorization: token } : {}),
     })
+    const atStudioOne = onStudioOne('client')
+    const atPortalOne = onStudioOne('staff')
     // The super portal ignores the hostname; each signed-in caller comes from
     // the frontend they signed in on.
     const asSignedIn = (headers: Record<string, string>) => () => ({ ...headers, 'X-Forwarded-For': harnessAddress() })
     const nobody = () => ({ 'X-Forwarded-For': harnessAddress() })
 
+    const presenting = (headers?: Record<string, string>) => ({
+      studio: atStudioOne(headers?.Authorization),
+      portal: atPortalOne(headers?.Authorization),
+      platform: headers ? asSignedIn(headers) : nobody,
+    })
     sessions = {
-      anonymous: { studio: atStudioOne(), platform: nobody },
-      memberOfOne: { studio: atStudioOne(memberOfOne.Authorization), platform: asSignedIn(memberOfOne) },
-      memberOfTwo: { studio: atStudioOne(memberOfTwo.Authorization), platform: asSignedIn(memberOfTwo) },
-      adminOfOne: { studio: atStudioOne(adminOfOne.Authorization), platform: asSignedIn(adminOfOne) },
-      platformAdmin: { studio: atStudioOne(platformAdmin.Authorization), platform: asSignedIn(platformAdmin) },
-      noStudio: { studio: nobody, platform: nobody },
+      anonymous: presenting(),
+      memberOfOne: presenting(memberOfOne),
+      memberOfTwo: presenting(memberOfTwo),
+      adminOfOne: presenting(adminOfOne),
+      instructorOfOne: presenting(instructorOfOne),
+      platformAdmin: presenting(platformAdmin),
+      noStudio: { studio: nobody, portal: nobody, platform: nobody },
     }
   })
 
@@ -444,7 +496,7 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
     }
   })
 
-  test('every /me, /public and /platform route has an expectation, and every expectation a route', () => {
+  test('every /me, /public, /platform and admin Receipts route has an expectation, and every expectation a route', () => {
     const routes = routesUnderTheMatrix()
     assert.ok(routes.length > 0, 'the route table was read')
     const declared = Object.keys(EXPECTATIONS).sort()
@@ -467,7 +519,7 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
     }
   })
 
-  test('a refused caller gets the gate’s own refusal, and the refused calls write nothing', async () => {
+  test('INV-54 a refused caller gets the gate’s own refusal, and the refused calls write nothing', async () => {
     const before = await snapshot()
     const wrong: string[] = []
     for (const key of declaredRoutes()) {

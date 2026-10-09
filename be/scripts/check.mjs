@@ -28,8 +28,9 @@
  * suite in one run.
  *
  * It refuses to start where a green run would not predict CI's: on a Node
- * major other than `.nvmrc`'s, or with no `TEST_DATABASE_URL` (the integration
- * tests would skip). A full run — no test files named — starts from an empty
+ * major other than `.nvmrc`'s, with no `TEST_DATABASE_URL` (the integration
+ * tests would skip), or with one that refuses a connection (they would be
+ * cancelled). A full run — no test files named — starts from an empty
  * database, as CI's does: it drops and recreates the checkout's test database
  * first. CI's own database is new with every job, so there it is left alone.
  */
@@ -38,6 +39,7 @@ import { existsSync, globSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'dotenv'
+import postgres from 'postgres'
 import { prepareTestDatabase, resetRefusal } from './test-db.mjs'
 
 export const BASE_FLAGS = [
@@ -118,6 +120,34 @@ export function testDatabaseUrl(env, dotenvText) {
   return env.TEST_DATABASE_URL?.trim() || parse(dotenvText).TEST_DATABASE_URL?.trim() || null
 }
 
+/**
+ * Why the run stops when the test database refuses a connection. Without this,
+ * every integration file's `before` hook fails, its tests are reported
+ * cancelled, and the summary reads `# fail 0` over a run that proved nothing.
+ * Named by host and port, never the URL: it carries the password.
+ */
+export function databaseRefusal(url, reason) {
+  return (
+    `TEST_DATABASE_URL (${new URL(url).host}) refused the connection: ${reason}. ` +
+    'Is it this checkout\'s Postgres? `docker ps` shows the host port each container publishes'
+  )
+}
+
+/** Connects to the server `url` names, or says why it cannot. */
+async function connectionProblem(url) {
+  const server = new URL(url)
+  server.pathname = '/postgres'
+  const sql = postgres(server.toString(), { max: 1, connect_timeout: 5, onnotice: () => {} })
+  try {
+    await sql`select 1`
+    return null
+  } catch (err) {
+    return databaseRefusal(url, err.message)
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
+}
+
 /** A full run on a developer's machine, which starts from an empty database. */
 export function resetsDatabase(args, env) {
   return !args.some(a => !a.startsWith('-')) && env.CI !== 'true'
@@ -156,6 +186,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (!url) {
     refuse('no TEST_DATABASE_URL, so the integration tests would skip and prove nothing: run `npm run test:db` once')
   }
+  const unreachable = await connectionProblem(url)
+  if (unreachable) refuse(unreachable)
 
   if (resetsDatabase(args, process.env)) {
     const database = decodeURIComponent(new URL(url).pathname.replace(/^\//, ''))

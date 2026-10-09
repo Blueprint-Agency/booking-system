@@ -456,8 +456,10 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
    * amount (#370). The confirmation is the member's receipt, so it says what
    * they paid.
    *
-   * The anchor text is neutral on purpose: `receipt_url` is the provider's
-   * receipt on a paid purchase and the account page on a free one.
+   * The anchor text is neutral on purpose: `receipt_url` is the member's
+   * Receipt in the booking app (#387), and the account page only for a grant
+   * no Receipt was issued for. The Receipt itself is drawn under this copy by
+   * the frame (`services/receipts/email.ts`), so no template carries it.
    */
   const PACKAGE_PURCHASE_BODY = body('Your package is confirmed', [
     'Hi {{client_name}},',
@@ -500,6 +502,25 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     ]),
     'Your request is with the studio. They will be in touch to arrange the date, time and venue with you.',
     link('{{receipt_url}}', 'View your purchase'),
+  ])
+
+  /**
+   * Merch and a standalone Cross-Location Add-On (#388), which grant no
+   * package and book no place, so there is no confirmation above for them to
+   * ride on. One template for both, so nothing here may say which: the item
+   * is `item_name`, and the itemised Receipt the frame draws under this copy
+   * says the rest. Sent only with a Receipt, so the link is always to it,
+   * and its number is always there to name.
+   */
+  const PURCHASE_RECEIPT_BODY = body('Thank you for your purchase', [
+    'Hi {{client_name}},',
+    facts([
+      ['Purchase', '{{item_name}}'],
+      ['Amount paid', '{{amount_paid}}'],
+      ['Receipt', '{{receipt_number}}'],
+    ]),
+    'Your receipt is below, and attached to this email as a PDF.',
+    link('{{receipt_url}}', 'View your receipt'),
   ])
 
   /**
@@ -761,6 +782,11 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       slug: 'corporate_purchase_confirmed',
       subject: 'Your corporate package is confirmed',
       bodyHtml: CORPORATE_PURCHASE_BODY,
+    },
+    {
+      slug: 'purchase_receipt',
+      subject: 'Your receipt for {{item_name}}',
+      bodyHtml: PURCHASE_RECEIPT_BODY,
     },
     { slug: 'sign_in_code', subject: `Your ${STUDIO} sign-in code`, bodyHtml: SIGN_IN_CODE_BODY },
     {

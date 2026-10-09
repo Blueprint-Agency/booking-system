@@ -215,8 +215,8 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(await count('class_types', studio.tenant.id), 3)
     // Every template a provisioned studio gets, class_waitlist_promoted (#308),
     // class_rule_cancelled (#323), pt_request_cancelled and
-    // corporate_purchase_confirmed (#359) included.
-    assert.equal(await count('email_templates', studio.tenant.id), 37)
+    // corporate_purchase_confirmed (#359) and purchase_receipt (#388) included.
+    assert.equal(await count('email_templates', studio.tenant.id), 38)
     assert.equal(await count('clients', studio.tenant.id), 8)
 
     // A member cancellation reads the policy, and finds the studio's own.

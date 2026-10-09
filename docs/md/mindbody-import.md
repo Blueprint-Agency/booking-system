@@ -323,7 +323,20 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   started yet waits Dormant with its whole validity, and starts on the first booking it pays for.
   Both carry the catalogue's validity or duration. A member's holdings of one
   option are one package, as they are in the report, and every trial spelling is one trial. A
-  trial used up long ago comes across spent and inactive, so the one-trial rule holds. A holding
+  trial used up long ago comes across spent and inactive, so the one-trial rule holds. **Two or
+  more purchases of one PT bundle trained on with more than one trainer** are re-split by trainer
+  (`byTrainer` in `transform/packages.ts`). Mindbody records which option a visit came off, never
+  which purchase, so a session with the second bundle's trainer is often taken off the first
+  bundle, and the register's balances carry that. Each purchase, oldest first, is bound to the
+  trainer who taught most of the visits in its run (its **Bound Instructor**), and holds what that
+  trainer's visits left of it. Sessions already booked ahead come off the purchase bound to that
+  appointment's trainer. The member's total stays Mindbody's: sessions move between purchases,
+  never appear or vanish, and only where each purchase's own trainer's visits add up exactly to the
+  sessions Mindbody used across the purchases. The preflight names each member re-split, with
+  before → after per trainer. Anything that does not add up (a third trainer, a visit outside every
+  run, a used-up purchase in the same window) stays as Mindbody split it, unbound, and is a
+  preflight line to settle by hand. A past or future PT session is then paid by the purchase bound
+  to its trainer before one bound to someone else. A holding
   Mindbody sold with **no expiration at all** cannot be answered for by that rule, and no package
   here runs forever: it does not come across, and is listed in the preflight instead of vanishing.
   Visits Remaining leaves some live purchases out altogether (a plan started the day before the
@@ -794,3 +807,26 @@ Waitlists scrape took, since it opens a screen per future class and grows with t
 how long the transform took, how long the import took, what verify said, and every gap found — a config field nobody could
 answer, a report that came back capped, a preflight line the studio had not seen. Those timings
 are what the freeze window is budgeted from.
+
+## 8. Looking up one member
+
+For a complaint after an import ("my sessions went to the wrong package"), first tell whether
+Mindbody recorded it that way or the transform made it. Open the download the import was built
+from (the newest `<MB_EXPORT_ROOT>/<date time>/` before the import time in `tenant_imports`). The
+member's id there is the Mindbody barcode, not the platform's: find it in Visits Remaining by
+email. Print every row with `--all` (without it, wide reports are cut to their first rows) and grep:
+
+```bash
+npm run mindbody:download -- inspect --all "<download>/reports/Clients/15 Visits Remaining" | grep -i "<email>"
+```
+
+- **Visits Remaining**: each option held, with Mindbody combining a member's purchases of one option
+  into one row. Its Unbooked is the balance.
+- **Pricing Option Expirations**: one row per purchase, with that purchase's Remaining, which is
+  how a combined holding is split. No client id, so grep the `Surname, First` name.
+- **Attendance without Revenue**: one row per visit, naming the trainer and the *option* it came
+  off, never the purchase. So which purchase paid for a visit is inferred, not read (§3, Live
+  packages).
+
+The preflight beside the archive (`<slug>.preflight.md`) names every member the transform
+re-split or left for a person.

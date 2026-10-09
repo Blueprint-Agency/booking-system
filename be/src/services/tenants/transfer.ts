@@ -14,6 +14,16 @@ import { upgradeArchiveRows } from './transfer-upgrade'
 import { ARCHIVE_VERSION, type ArchivedPasswords, type TenantArchive, type TenantManifest } from './transfer-shape'
 import { loadTenantById } from './tenants'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { DEFAULT_RECEIPT_PREFIX } from '../receipts/snapshot'
+
+/** The `tenant_settings` columns that hold the studio's receipt details (#391). */
+const RECEIPT_DETAIL_COLUMNS = [
+  'receipt_prefix',
+  'receipt_legal_name',
+  'receipt_registration_number',
+  'receipt_address',
+  'receipt_footer',
+] as const
 
 // Re-exported so a caller that already reaches for the service keeps working.
 // The declarations live in `transfer-shape.ts`, which carries no database
@@ -154,6 +164,15 @@ export async function exportTenant(tenantId: string, options: ExportOptions = {}
       ;[settings] = await db.execute<Record<string, unknown>>(
         sql`SELECT * FROM current_tenant_settings()`,
       )
+      // The receipt details (#391) are columns the app may read directly, so
+      // they come out beside the reader's row rather than through it.
+      if (settings) {
+        const [receipt] = await db.execute<Record<string, unknown>>(sql`
+          SELECT ${sql.raw(RECEIPT_DETAIL_COLUMNS.join(', '))}
+          FROM tenant_settings WHERE tenant_id = ${tenantId}
+        `)
+        settings = { ...settings, ...receipt }
+      }
 
       // In the same snapshot as the rows, so a password is there for exactly
       // the people the archive holds.
@@ -658,6 +677,22 @@ export async function importTenant(
           ${kept('waiver_text')}
         )
       `)
+      // The receipt details (#391), written directly: the app role may. An
+      // archive exported before they existed does not carry the columns at
+      // all, and leaves the details the super portal gave the studio standing.
+      const carried = RECEIPT_DETAIL_COLUMNS.filter(column => column in settings)
+      if (carried.length > 0) {
+        const value = (column: string) =>
+          column === 'receipt_prefix' ? (kept(column) ?? DEFAULT_RECEIPT_PREFIX) : kept(column)
+        await db.execute(sql`
+          UPDATE tenant_settings
+          SET ${sql.join(
+            carried.map(column => sql`${sql.identifier(column)} = ${value(column)}`),
+            sql`, `,
+          )}
+          WHERE tenant_id = ${targetTenantId}
+        `)
+      }
       written.tenant_settings = 1
       step('settings', 1)
     }

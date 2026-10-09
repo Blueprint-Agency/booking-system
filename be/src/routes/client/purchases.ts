@@ -27,6 +27,7 @@ import {
   type OpenPurchaseView,
 } from '../../services/billing/open-purchases'
 import { describeProduct, previewPromoCode } from '../../services/packages/promo-redemption'
+import { receiptForPurchase } from '../../services/receipts/read'
 import { requireTenantUrl } from '../../services/tenants/urls'
 import { tenantId } from '../../middleware/tenant'
 
@@ -204,6 +205,7 @@ const app = new Hono()
         tenantId: tenantId(c),
         email: c.get('clientRow').email,
         lines: corporate.lines,
+        purchaseLines: corporate.purchaseLines,
         expiresAt: null,
         metadata: corporate.metadata,
         // Back to the member's corporate bookings, where the new request is
@@ -237,6 +239,7 @@ const app = new Hono()
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
+      purchaseLines: quote.purchaseLines,
       expiresAt: quote.expiresAt,
       metadata: quote.metadata,
       // A part payment lands on the balance page, not the "you're all set" one:
@@ -281,6 +284,7 @@ const app = new Hono()
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
+      purchaseLines: quote.purchaseLines,
       expiresAt: null,
       metadata: quote.metadata,
       successUrl: `${clientUrl}/booking/confirmation?type=cross_location&session_id={CHECKOUT_SESSION_ID}`,
@@ -305,6 +309,7 @@ const app = new Hono()
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
+      purchaseLines: quote.purchaseLines,
       expiresAt: quote.expiresAt,
       metadata: quote.metadata,
       successUrl: `${clientUrl}/booking/confirmation?type=merch&session_id={CHECKOUT_SESSION_ID}`,
@@ -373,6 +378,7 @@ const app = new Hono()
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
+      purchaseLines: quote.purchaseLines,
       expiresAt: quote.expiresAt,
       metadata: quote.metadata,
       successUrl: balanceAware(
@@ -438,9 +444,14 @@ const app = new Hono()
     const purchase = purchaseId
       ? await openPurchaseById(tenantId(c), clientId, purchaseId)
       : null
+    // The Receipt the sale was given, for the confirmation page to link to
+    // (#384). Null until the Purchase is paid in full, and for the kinds that
+    // are not issued one yet.
+    const receipt = purchaseId ? await receiptForPurchase(tenantId(c), clientId, purchaseId) : null
     return c.json({
       status: 'granted',
       purchase: purchase ? serializeOpenPurchase(purchase) : null,
+      receipt: receipt ? { id: receipt.id, number: receipt.number } : null,
     })
   })
 

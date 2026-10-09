@@ -30,7 +30,7 @@ export interface StaffCancellation {
   outcome: CancellationOutcome;
   /** Who: "Member", the staff member's name, "Automatic" or "Studio". */
   who_line: string;
-  /** Where the credit went, in one line: "Late cancel · credit kept". */
+  /** Where the credit went, in one line: "Late cancel · credit not returned". */
   outcome_line: string;
   credits_used: number | null;
 }

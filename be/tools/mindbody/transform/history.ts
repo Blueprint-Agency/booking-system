@@ -183,7 +183,7 @@ export function mapHistory(input: {
    * because it is the fallback, then every past purchase in the order they were
    * bought. `paidBy` reads it.
    */
-  const packagesByOption = new Map<string, { id: string; kind: string; from: number; to: number }[]>()
+  const packagesByOption = new Map<string, { id: string; kind: string; from: number; to: number; trainer?: string | null }[]>()
   // A plan sold once per Location is one slot per Location (`…@<Location>`), as the live packages are keyed.
   const optionSlot = (clientId: string, entry: CatalogueEntry, home: string | null) =>
     `${clientId}/${entry.migrate !== 'skip' && entry.kind === 'trial' ? 'trial' : entry.name}${home ? `@${home}` : ''}`
@@ -196,7 +196,13 @@ export function mapHistory(input: {
     const slotKey = key.replace(/#\d+$/, '')
     const slot = packagesByOption.get(slotKey) ?? []
     const run = input.packageRuns?.get(packageId)
-    slot.push({ id: packageId, kind: String(row.kind), from: run?.from ?? -Infinity, to: run?.to ?? Infinity })
+    slot.push({
+      id: packageId,
+      kind: String(row.kind),
+      from: run?.from ?? -Infinity,
+      to: run?.to ?? Infinity,
+      trainer: (row.bound_instructor_id as string | null | undefined) ?? null,
+    })
     packagesByOption.set(slotKey, slot)
   }
 
@@ -231,10 +237,12 @@ export function mapHistory(input: {
   /**
    * The package a past visit was taken from: the member's holding of the option
    * the attendance report names, choosing one that covered the day where more
-   * than one is known. Null where that option did not come across — a booking
-   * pointing at the wrong package would be worse than one pointing at none.
+   * than one is known — for a PT session, the one bound to its trainer
+   * (`instructorId`) before one bound to someone else. Null where that option
+   * did not come across — a booking pointing at the wrong package would be
+   * worse than one pointing at none.
    */
-  const paidBy = (clientId: string, option: string, on: CalendarDate) => {
+  const paidBy = (clientId: string, option: string, on: CalendarDate, instructorId: string | null = null) => {
     const entry = entryOf.get(normaliseOptionName(option))
     if (!entry || entry.migrate === 'skip' || entry.kind === 'access_pass') return undefined
     const held = packagesByOption.get(optionSlot(clientId, entry, optionHome(config, entry, option)))
@@ -244,8 +252,9 @@ export function mapHistory(input: {
     // that, the package the member still holds of that option, which is what
     // Mindbody would have spent. A purchase whose run did *not* cover the day
     // is no answer at all — the seat names no package rather than a guess.
-    const dated = held.filter(h => Number.isFinite(h.from))
-    return dated.find(h => day >= h.from && day <= h.to) ?? held.find(h => !Number.isFinite(h.from))
+    const covering = held.filter(h => Number.isFinite(h.from) && day >= h.from && day <= h.to)
+    const elsewhere = (h: (typeof held)[number]) => instructorId !== null && h.trainer != null && h.trainer !== instructorId
+    return covering.find(h => !elsewhere(h)) ?? covering[0] ?? held.find(h => !Number.isFinite(h.from))
   }
 
   /* ── Past classes: the schedule report, and any session only the roster has ─ */
@@ -492,8 +501,10 @@ export function mapHistory(input: {
     option: string
     on: CalendarDate
     startsAt: Date
+    /** A PT session's trainer: their own bound package pays (`paidBy`). */
+    instructorId?: string
   }) => {
-    const pkg = paidBy(args.clientId, args.option, args.on)
+    const pkg = paidBy(args.clientId, args.option, args.on, args.instructorId ?? null)
     const made = input.codes(args.key)
     const settlement = SETTLEMENT[args.outcome]
     const at = args.startsAt.toISOString()
@@ -790,7 +801,7 @@ export function mapHistory(input: {
       startsAt,
       endsAt,
       status,
-      debitedClientPackageId: paidBy(requester!, mine.option, a.date)?.id ?? null,
+      debitedClientPackageId: paidBy(requester!, mine.option, a.date, instructorId)?.id ?? null,
       ownerId: input.ownerId,
       scheduledById: booker ?? null,
       // Settled when it happened, not at the download: it is the studio's past.
@@ -826,6 +837,7 @@ export function mapHistory(input: {
         option: visit.option,
         on: a.date,
         startsAt,
+        instructorId,
       })
     }
   }

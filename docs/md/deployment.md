@@ -283,7 +283,7 @@ docker exec backup restic snapshots --tag booking-staging    # the one just befo
 docker exec backup /app/bin/restore-live.sh booking-staging <id> --confirm booking-staging
 ```
 
-Both branches, on purpose: `booking-staging` holds the real member data. The backup job, the
+Both branches, on purpose: both stacks hold real member data. The backup job, the
 restore command and what it does are the infrastructure repo's
 [`docs/backup-restore.md`](https://github.com/Blueprint-Agency/infrastructure/blob/main/docs/backup-restore.md).
 A deploy failing with `Pre-migration snapshot FAILED (backup.sh exit 2)` most often met the
@@ -315,6 +315,39 @@ switch.
 deploy that introduces maintenance mode cannot be wrapped in it, and neither can a rollback to an
 image older than it. The frontends' maintenance screen likewise appears only once their builds
 contain it.
+
+### Receipts for sales made before Receipts (one-off)
+
+Sales made before Receipts existed (#380) have none until the backfill issues them (#394). Run it
+**once per environment**, staging first, then production, **once the backend deploy carrying the
+Receipts migrations (0112, 0113) has finished**:
+
+```bash
+ssh bp-bpvps2
+cd /root/stacks/booking-staging          # booking-prod for production
+docker compose run --rm -T booking-be npm run -s receipts:backfill                   # every studio
+docker compose run --rm -T booking-be npm run -s receipts:backfill -- <studio-slug>  # or one
+```
+
+It prints one line per studio, `{"issued":n,"refunded":m}`. What it does:
+
+- One Receipt for every Purchase paid in full (paid, or paid and since refunded) that has none, in
+  the order the sales were paid (`settled_at`, falling back to `created_at`), each dated when its sale
+  was paid. A refunded one is stamped **Refunded on** the day the last of its money went back.
+  Migrated Purchases (`source_sale_id`), Open and Abandoned ones get none.
+- Numbers continue the studio's sequence. Run before the studio's first live Receipt, its earliest
+  sale is number 1. Run after, the backfilled Receipts take the numbers after those already issued,
+  and nothing already issued is renumbered or changed.
+- **No email.** Members are not told about the backfilled Receipts. They appear under
+  Account → Receipts.
+- Each studio is one transaction, as the application role in that studio's Tenant context. A sale
+  settling during the run waits for it and takes the next number. No maintenance window needed.
+- Safe to run again. A second run issues nothing and prints `{"issued":0,"refunded":0}`.
+
+**Set each studio's receipt details first** (portal Settings → Receipt details, or the super
+portal). The backfill copies the studio's name, prefix and details onto each Receipt as they stand
+when it runs, the same as a live sale. Receipts are never rewritten, so details set later reach only
+later Receipts.
 
 ### Rolling back the backend
 
@@ -412,8 +445,10 @@ Notes:
 
 `NODE_ENV` stays `production` on any server/build, incl. Vercel previews (build flag — enables optimizations + JSON logging); the backend's environment NAME lives in `APP_ENV`.
 
-> **`booking-staging` carries the real data.** It predates `booking-prod`, which is a fresh
-> database. Migrating that data is a separate job — don't assume prod is populated.
+> **Live studios are on `booking-prod`.** Each was imported there through the super portal
+> (`tenant_imports`), and its members book on `{slug}.reservetoday.app`. `booking-staging` still
+> holds an older copy of the same studios, so a member complaint is read on prod
+> (`observability-runbook.md` § Reading a studio's data).
 
 > There is no `vercel.json` in either frontend on purpose. Vercel's defaults already give
 > `main` → production and every other branch → preview; a `git.deploymentEnabled` block existed
@@ -508,6 +543,8 @@ A studio's charges carry **no statement descriptor suffix**: its own account's s
 2. asks Stripe which account the key opens — that account id is what the super portal shows back;
 3. **creates the webhook endpoint on the studio's own account**, at **`https://api.<root domain>/api/v1/webhooks/stripe/{slug}`**, subscribed to exactly `checkout.session.completed` and `charge.refunded`, pinned to the API version the backend reads;
 4. stores the key and the endpoint's signing secret sealed, with the endpoint's id.
+
+**Then switch off the provider's own receipt emails on the studio's account (#387).** In the studio's Stripe dashboard, Settings → Business → Customer emails, turn off **Successful payments**. The platform mails the member the studio's own Receipt in the purchase confirmation; left on, every paid purchase also sends the provider's receipt, so the member gets two. This is a manual step: the platform does not change the account's email settings from code. Check it before the studio's first live sale.
 
 The URL is the studio's own because its account signs with its own secret and the URL is what selects which secret to verify against. It is built from `BETTER_AUTH_URL`, not the request, and is always `https://` off development, since behind the TLS-terminating proxy the request arrives as `http` (#276). An endpoint already at that URL on the account (one made by hand before #294) is replaced, not duplicated; endpoints at other URLs are left alone.
 

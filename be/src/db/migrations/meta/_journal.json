@@ -778,6 +778,34 @@
       "when": 1791433697197,
       "tag": "0110_corporate_request_purchase",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1791481871702,
+      "tag": "0111_purchase_lines",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1791484281451,
+      "tag": "0112_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1791490228089,
+      "tag": "0113_receipt_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1791493358808,
+      "tag": "0114_purchase_receipt_template",
+      "breakpoints": true
     }
   ]
 }

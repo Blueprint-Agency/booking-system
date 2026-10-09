@@ -283,7 +283,7 @@ function CancelledSection({ role, rows, open }: { role: StaffRole; rows: Schedul
                 </div>
               </div>
               <div className="ml-auto flex shrink-0 items-center gap-2">
-                {/* A Late cancel reads "Late cancel · credit kept", toned as a warning. */}
+                {/* A Late cancel reads "Late cancel · credit not returned", toned as a warning. */}
                 <Badge tone={b.late ? "warning" : "neutral"}>{b.outcome_line}</Badge>
               </div>
             </li>

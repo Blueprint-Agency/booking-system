@@ -30,7 +30,10 @@ queue and on every push.
 once. It creates `reservetoday-test-<checkout folder>` on the local Postgres named by `be/.env`,
 and fills in `TEST_DATABASE_URL` there if it is blank. The harness migrates and seeds that database
 on first use. `npm run check` refuses to start without `TEST_DATABASE_URL`: the integration tests
-would skip, and a green run would prove nothing. `npm run test:db -- --reset` drops and recreates
+would skip, and a green run would prove nothing. It also refuses one that will not accept a
+connection, naming its host and port: otherwise every integration test is reported *cancelled*
+under a `# fail 0` summary. The usual cause is another project's Postgres on the port `be/.env`
+names (`docker ps` shows each container's). `npm run test:db -- --reset` drops and recreates
 the database by hand. It refuses any database not named `reservetoday-test` or
 `reservetoday-test-*`, and the development one (`POSTGRES_DB`).
 
@@ -113,9 +116,11 @@ the predictor of CI remains the whole serial `npm run check`.
 ## Authorization matrix
 
 `be/src/test/authorization-matrix.test.ts` reads every `/api/v1/me`, `/api/v1/public` and
-`/api/v1/platform` route from the app's own route table and calls each one as anonymous, a member of
-studio one, a member of studio two on studio one's hostname, an Admin of studio one, a Platform
-administrator, and a caller naming no studio. Its `EXPECTATIONS` table says, per method and path
+`/api/v1/platform` route from the app's own route table, and the portal's routes surface by surface as
+each is brought under it (so far `/api/v1/portal/admin/receipts`, #389), and calls each one as
+anonymous, a member of studio one, a member of studio two on studio one's hostname, an Admin of studio
+one, an Instructor of studio one, a Platform administrator, and a caller naming no studio. On `/me`
+and `/public` every caller calls from studio one's member app, on `/portal` from studio one's portal. Its `EXPECTATIONS` table says, per method and path
 pattern, which callers the gate admits and the status and error code it answers each one it refuses.
 A refused call must get exactly that answer and, together, the refused calls must change no row in any
 Tenant-scoped table (`auth_events` and `audit_log` included). An admitted call must merely not be a

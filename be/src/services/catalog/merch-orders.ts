@@ -8,8 +8,9 @@
  * receipt the studio hands the item over against.
  */
 import { and, desc, eq } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { merch, merchOrders } from '../../db/schema/catalog'
+import { sendPurchaseReceiptEmail } from '../notifications/send-purchase-email'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import {
@@ -18,6 +19,7 @@ import {
   type CheckoutQuote,
 } from '../billing/checkout-session'
 import { openSettledPurchase } from '../billing/purchases'
+import { saleLine } from '../billing/purchase-lines'
 import { tenantDisplayName } from '../tenants/mail-identity'
 
 export type MerchOrderRow = typeof merchOrders.$inferSelect
@@ -37,6 +39,8 @@ export async function beginMerchCheckout(input: {
   if (item.archivedAt) throw new BadRequestError('merch_not_available')
 
   const totalCents = toCents(item.priceSgd)
+  // One item, no Promotion and no Promo Code: its line is its price (#382).
+  const lines = [saleLine({ description: item.title, listPriceSgd: item.priceSgd })]
 
   // A free item still becomes an order — it is the line the studio hands it over
   // against — it just never reaches the payment provider.
@@ -51,7 +55,7 @@ export async function beginMerchCheckout(input: {
     })
     // A free item is still a sale — the Purchase opens and closes here, because
     // a total of zero leaves nothing outstanding.
-    await openSettledPurchase({
+    const purchase = await openSettledPurchase({
       tenantId: input.tenantId,
       clientId: input.clientId,
       kind: 'merch',
@@ -61,12 +65,19 @@ export async function beginMerchCheckout(input: {
         client_id: input.clientId,
         merch_title: item.title,
       },
+      lines,
     })
+    // Its S$0.00 Receipt, which that Purchase was issued, is the member's
+    // email (#388), once the order's transaction has committed. The sender
+    // reports and swallows, so a failed send cannot undo the order.
+    const tenantId = input.tenantId
+    afterCommit(() => sendPurchaseReceiptEmail(tenantId, purchase.id))
     return { outcome: 'granted', orderId: order.id }
   }
 
   return {
     outcome: 'checkout',
+    purchaseLines: lines,
     lines: [
       {
         name: item.title,

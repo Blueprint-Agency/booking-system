@@ -209,6 +209,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     const locations = sql`SELECT id FROM locations WHERE name LIKE ${`% ${run}`}`
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM bookings WHERE workshop_id IN (${workshops}) OR client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
@@ -465,6 +466,118 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.ok(logged[0]!.queuedAt instanceof Date && logged[0]!.sentAt instanceof Date)
   })
 
+  const purchasesOf = (who: Member) =>
+    harness.db.select().from(schema.purchases).where(eq(schema.purchases.clientId, who.clientId))
+
+  test('WSP-18 a free registration opens one settled S$0.00 workshop Purchase, and the place points at it', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Free settled open day',
+      days: [{ capacity: 10 }],
+      tiers: [{ name: 'Free', price: '0.00', days: [0] }],
+    })
+    const ana = await member(one, 'Ana Settled')
+
+    const res = await checkout(ana, w)
+    assert.equal(res.status, 201, res.text)
+    assert.equal(res.body.outcome, 'granted')
+
+    const bought = await purchasesOf(ana)
+    assert.equal(bought.length, 1, 'one Purchase for one place')
+    assert.equal(bought[0]!.tenantId, one.id)
+    assert.equal(bought[0]!.kind, 'workshop')
+    assert.equal(bought[0]!.status, 'paid')
+    assert.equal(bought[0]!.totalSgd, '0.00')
+    assert.equal(bought[0]!.amountPaidSgd, '0.00')
+    assert.ok(bought[0]!.settledAt instanceof Date, 'the Purchase is settled')
+    assert.deepEqual(bought[0]!.lines, [
+      {
+        description: `Free settled open day ${run} — Free`,
+        quantity: 1,
+        listPriceSgd: '0.00',
+        discountSgd: '0.00',
+        discounts: [],
+        amountSgd: '0.00',
+      },
+    ])
+
+    const [place] = await bookingsOf(ana, w)
+    assert.equal(place!.id, res.body.booking_id)
+    assert.equal(place!.purchaseId, bought[0]!.id, 'the booking points at its Purchase')
+
+    // Registering again is refused, and opens nothing.
+    const again = await checkout(ana, w)
+    assert.equal(again.status, 409, again.text)
+    assert.equal(again.body.error, 'already_booked')
+    assert.equal((await purchasesOf(ana)).length, 1)
+    assert.equal((await bookingsOf(ana, w)).length, 1)
+
+    // What the member sees is unchanged: the place, its QR, the one confirmation.
+    const mine = await call('/api/v1/me/workshop-bookings', ana.headers)
+    assert.equal(mine.status, 200, mine.text)
+    const listed = (mine.body.workshop_bookings as { id: string; qr_token: string; code: string }[]).find(
+      b => b.id === res.body.booking_id,
+    )
+    assert.ok(listed, 'the booking is on the member’s own list')
+    assert.equal(listed.qr_token, place!.qrToken, 'with its QR code')
+    assert.equal(listed.code, place!.code)
+    const mailed = await harness.db
+      .select()
+      .from(schema.emailLog)
+      .where(eq(schema.emailLog.recipientEmail, emailFor(`Ana Settled-${one.slug}`)))
+    assert.deepEqual(mailed.map(m => m.templateSlug), ['workshop_purchase_confirmed'])
+
+    // Finance shows the free ticket as it always has: S$0.00 paid, nothing
+    // refunded, no way it was paid, and nothing added to the totals.
+    const finance = await call(
+      `/api/v1/portal/admin/finance?${new URLSearchParams({
+        type: 'workshop',
+        q: 'Ana Settled',
+        from: new Date(Date.now() - DAY).toISOString(),
+        to: new Date(Date.now() + DAY).toISOString(),
+      })}`,
+      adminAtOne.headers,
+    )
+    assert.equal(finance.status, 200, finance.text)
+    const tickets = (finance.body.rows as { kind: string; id: string }[]).filter(r => r.kind === 'workshop_ticket')
+    assert.equal(tickets.length, 1, finance.text)
+    assert.deepEqual(
+      (({ id, list_price_sgd, paid_sgd, discount_sgd, refunded, complimentary, methods, method_label }) =>
+        ({ id, list_price_sgd, paid_sgd, discount_sgd, refunded, complimentary, methods, method_label }))(
+        tickets[0] as any,
+      ),
+      {
+        id: res.body.booking_id,
+        list_price_sgd: 0,
+        paid_sgd: 0,
+        discount_sgd: 0,
+        refunded: false,
+        complimentary: false,
+        methods: [],
+        method_label: null,
+      },
+    )
+    assert.equal(finance.body.totals.gross_sgd, 0)
+    assert.equal(finance.body.totals.refunds_sgd, 0)
+  })
+
+  test('WSP-19 two registrations for one free place at once leave one place and one Purchase', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Free double tap',
+      days: [{ capacity: 10 }],
+      tiers: [{ name: 'Free', price: '0.00', days: [0] }],
+    })
+    const ana = await member(one, 'Ana Double Tap')
+
+    const both = await Promise.all([checkout(ana, w), checkout(ana, w)])
+    assert.deepEqual(both.map(r => r.status).sort(), [201, 409], both.map(r => r.text).join(' / '))
+
+    const places = await bookingsOf(ana, w)
+    const bought = await purchasesOf(ana)
+    assert.equal(places.length, 1, 'one place')
+    assert.equal(bought.length, 1, 'one Purchase')
+    assert.equal(places[0]!.purchaseId, bought[0]!.id)
+  })
+
   test('WSP-10 the lowest of the active promotions sets the price shown and the price charged', async () => {
     const w = await workshop(one, adminAtOne, teacherAtOne, {
       name: 'Promoted retreat',
@@ -594,7 +707,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     })
     const ana = await member(one, 'Ana Freeloader')
     await assert.rejects(
-      () => bookSvc.bookWorkshopFree(one.id, { clientId: ana.clientId, workshopId: w.id, workshopTierId: w.tierIds[0]! }),
+      () => bookSvc.bookWorkshopFree(one.id, { clientId: ana.clientId, workshopId: w.id, workshopTierId: w.tierIds[0]!, lines: [] }),
       (err: { code?: string }) => err.code === 'workshop_is_not_free',
     )
     assert.equal((await bookingsOf(ana, w)).length, 0)

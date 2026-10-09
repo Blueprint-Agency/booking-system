@@ -324,6 +324,9 @@ function paymentView(p: MemberPaymentView) {
     amount_sgd: p.amountSgd,
     status: p.status,
     purchase_status: p.purchaseStatus,
+    // The studio's Receipt for the sale (#389); null while it is part-paid.
+    receipt_id: p.receiptId,
+    // The provider's receipt for this charge, kept for now (spec #380).
     receipt_url: p.receiptUrl,
     refunded_at: p.refundedAt,
     refund_processing: p.refundProcessing,
