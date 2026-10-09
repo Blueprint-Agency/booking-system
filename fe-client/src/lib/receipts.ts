@@ -61,6 +61,11 @@ export interface Receipt {
   discount_sgd: string;
   total_sgd: string;
   payments: Required<ReceiptPayment>[];
+  /**
+   * The Receipt drawn as a page of its own, by the backend: the one design the
+   * PDF, the email and the studio portal share. The Receipt page frames it.
+   */
+  html: string;
 }
 
 export interface ReceiptsPage {

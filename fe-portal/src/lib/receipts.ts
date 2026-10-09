@@ -86,6 +86,11 @@ export interface Receipt {
   discount_sgd: string;
   total_sgd: string;
   payments: ReceiptPayment[];
+  /**
+   * The Receipt drawn as a page of its own, by the backend: the one design the
+   * PDF, the email and the member's Receipt page share. The Receipt page frames it.
+   */
+  html: string;
 }
 
 /** Money as the Receipt prints it: `S$150.00`, always to the cent. */

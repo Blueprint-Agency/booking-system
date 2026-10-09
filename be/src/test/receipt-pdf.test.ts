@@ -314,4 +314,56 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
     const refunded = await pdfText(await receiptPdf({ ...free, refundedAt: new Date('2026-10-05T03:00:00Z') }))
     assert.ok(refunded.includes('Refunded on 5 Oct 2026'), refunded)
   })
+
+  test('INV-86 every page of a Receipt credits ReserveToday and names its Receipt and page, and a promo code reads as one', async () => {
+    const { receiptPdf } = await import('../services/receipts/pdf')
+    const line = { description: 'Workshop seat', quantity: 1, listPriceSgd: '45.00', discountSgd: '0.00', discounts: [], amountSgd: '45.00' }
+    const long: import('../services/receipts/issue').ReceiptRow = {
+      tenantId: one.id,
+      id: randomUUID(),
+      purchaseId: randomUUID(),
+      clientId: null,
+      number: 77,
+      displayNumber: 'R-000077',
+      issuedAt: new Date('2026-10-01T02:00:00Z'),
+      sellerName: one.displayName,
+      sellerLegalName: null,
+      sellerRegistrationNumber: null,
+      sellerAddress: null,
+      sellerFooter: null,
+      buyerName: 'Mia Tan',
+      buyerEmail: `long@${DOMAIN}`,
+      kind: 'workshop',
+      lines: [
+        {
+          description: 'Grip socks',
+          quantity: 2,
+          listPriceSgd: '12.00',
+          discountSgd: '5.00',
+          discounts: [{ source: 'promo_code', id: randomUUID(), label: 'WELCOME5', amountSgd: '5.00' }],
+          amountSgd: '19.00',
+        },
+        ...Array.from({ length: 30 }, () => line),
+      ],
+      subtotalSgd: '1374.00',
+      discountSgd: '5.00',
+      totalSgd: '1369.00',
+      payments: [{ method: 'paynow', cardBrand: null, cardLast4: null, wallet: null, amountSgd: '1369.00', paidAt: '2026-10-01T02:00:00Z' }],
+      refundedAt: null,
+    }
+
+    const bytes = await receiptPdf(long)
+    const { extractText, getDocumentProxy } = await import('unpdf')
+    const { text: pages } = await extractText(await getDocumentProxy(new Uint8Array(bytes)), { mergePages: false })
+    assert.ok(pages.length >= 2, `thirty-one lines run onto a second page, not ${pages.length}`)
+    pages.forEach((page, i) => {
+      assert.ok(page.includes('Powered by ReserveToday · reservetoday.app'), `page ${i + 1} credits the platform: ${page}`)
+      assert.ok(page.includes(`R-000077 · Page ${i + 1} of ${pages.length}`), `page ${i + 1} names its Receipt and page: ${page}`)
+    })
+    const all = pages.join('\n')
+    assert.ok(all.includes('Promo code WELCOME5'), 'a code is named as a promo code')
+    assert.ok(all.includes('S$24.00'), "the line at its List Price times its quantity, before the code's discount")
+    assert.ok(all.includes('S$1369.00'), 'the total paid')
+    assert.equal(Buffer.from(bytes).includes('/Subtype /Image'), false, 'the mark is drawn, so a studio without a logo embeds no image')
+  })
 })

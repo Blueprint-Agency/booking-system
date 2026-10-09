@@ -1,13 +1,15 @@
 import type { Context } from 'hono'
 import { z } from 'zod'
+import { receiptDocument, receiptStudio } from '../services/receipts/document'
+import { receiptHtmlPage } from '../services/receipts/html'
 import type { ReceiptRow } from '../services/receipts/issue'
 import { receiptPdf, receiptPdfFilename } from '../services/receipts/pdf'
 import { receiptStatus, type ReceiptSummary } from '../services/receipts/read'
 
 /**
  * How a Receipt goes over the wire, to the member (`/me/receipts`, #384) and
- * to the studio's admins (`/portal/admin/receipts`, #389) alike: one shape and
- * one PDF, so the two can never show the same Receipt differently.
+ * to the studio's admins (`/portal/admin/receipts`, #389) alike: one shape,
+ * one HTML and one PDF, so the two can never show the same Receipt differently.
  */
 
 /** A studio calendar day. */
@@ -70,6 +72,15 @@ export const receiptView = (r: ReceiptRow) => ({
     paid_at: p.paidAt,
   })),
 })
+
+/**
+ * One Receipt, whole: its fields, and `html`, the Receipt drawn as a page of
+ * its own. Both apps show the `html` rather than lay the fields out, so the
+ * Receipt reads on their pages exactly as in the email and the PDF.
+ */
+export async function receiptDetailView(r: ReceiptRow) {
+  return { ...receiptView(r), html: receiptHtmlPage(receiptDocument(r, await receiptStudio(r))) }
+}
 
 /** The Receipt as its PDF (#386), saved under its number. */
 export async function receiptPdfResponse(c: Context, receipt: ReceiptRow): Promise<Response> {

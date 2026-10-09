@@ -394,6 +394,18 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     assert.ok(mail.text!.indexOf('Total paid') > copy, 'the Receipt comes under it')
   })
 
+  test('INV-87 the Receipt in the email is the very Receipt the member\'s page shows: one design, drawn once', async () => {
+    const lee = await member(one)
+    await pay(lee, PACKAGE, { package_kind: 'class', package_id: one.bundleId })
+
+    const { mail, receipt } = await carriesReceipt(lee, one, 'package_purchase_confirmed')
+    const page: string = receipt.html
+    const body = page.slice(page.indexOf('>', page.indexOf('<body')) + 1, page.lastIndexOf('</body>')).trim()
+    assert.ok(body.includes('data-receipt-block'), `the page is the Receipt: ${page}`)
+    assert.ok(mail.html.includes(body), 'the email carries the same markup the member\'s page frames')
+    assert.ok(mail.text!.includes('Powered by ReserveToday · reservetoday.app'), `credited to the platform: ${mail.text}`)
+  })
+
   test('INV-57 a free Trial Pass\'s confirmation carries its S$0.00 Receipt, linked in the member\'s account', async () => {
     for (const at of [one, two]) {
       const ivy = await member(at)
