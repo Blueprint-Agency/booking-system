@@ -298,7 +298,13 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     assert.equal(held?.listPriceSgd, '150.00')
 
     const sent = await oneConfirmation(mia, one, 'package_purchase_confirmed', 'S$120.00')
-    assert.ok(!textOf(sent).includes('150.00'), 'the list price is not what the receipt says was paid')
+    // The Receipt shows the List Price as its Unit price and Subtotal, the
+    // discount under its line, and S$120.00 as what was paid; the list price
+    // is never what it says was paid.
+    const text = textOf(sent)
+    assert.ok(text.includes('Total paid: S$120.00'), `the total paid is the amount paid: ${text}`)
+    assert.ok(text.includes('Subtotal: S$150.00') && text.includes('Discount: -S$30.00'), `the list price is the subtotal: ${text}`)
+    assert.doesNotMatch(text, /paid\W{0,12}S\$150\.00/i, 'the list price is not what the receipt says was paid')
   })
 
   test('NTF-03 a paid Unlimited Plan bought with its Cross-Location Add-On is confirmed once with the whole charge', async () => {

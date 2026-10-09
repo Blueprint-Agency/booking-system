@@ -11,7 +11,7 @@ import {
   type StudioReceiptSummary,
 } from '../../../services/receipts/read'
 import { resendReceipt } from '../../../services/receipts/resend'
-import { receiptIdParam, receiptPdfResponse, receiptSummaryView, receiptsListQuery, receiptView } from '../../receipt-views'
+import { receiptDetailView, receiptIdParam, receiptPdfResponse, receiptSummaryView, receiptsListQuery } from '../../receipt-views'
 
 /**
  * Every Receipt in the studio, for its admins (#389): `GET /`, searched by
@@ -68,7 +68,7 @@ const app = new Hono()
   })
   .get('/:id', zValidator('param', receiptIdParam), async c => {
     const receipt = await studioReceipt(tenantId(c), c.req.valid('param').id)
-    return c.json(receiptView(receipt))
+    return c.json(await receiptDetailView(receipt))
   })
   .get('/:id/pdf', zValidator('param', receiptIdParam), async c => {
     const receipt = await studioReceipt(tenantId(c), c.req.valid('param').id)

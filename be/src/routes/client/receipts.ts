@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { tenantId } from '../../middleware/tenant'
 import { listMemberReceipts, memberReceipt } from '../../services/receipts/read'
-import { receiptIdParam, receiptPdfResponse, receiptSummaryView, receiptsListQuery, receiptView } from '../receipt-views'
+import { receiptDetailView, receiptIdParam, receiptPdfResponse, receiptSummaryView, receiptsListQuery } from '../receipt-views'
 
 /**
  * The member's Receipts (#384): `GET /me/receipts`, `GET /me/receipts/:id`,
@@ -24,7 +24,7 @@ const app = new Hono()
   })
   .get('/:id', zValidator('param', receiptIdParam), async c => {
     const receipt = await memberReceipt(tenantId(c), c.get('clientId'), c.req.valid('param').id)
-    return c.json(receiptView(receipt))
+    return c.json(await receiptDetailView(receipt))
   })
   .get('/:id/pdf', zValidator('param', receiptIdParam), async c => {
     const receipt = await memberReceipt(tenantId(c), c.get('clientId'), c.req.valid('param').id)
