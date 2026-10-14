@@ -16,11 +16,11 @@ Resolves #152 ("Class waitlist: no join, no promotion — build it for v1 or kee
 
 ## Solution
 
-**Two kinds of seat, one queue.** A class has `capacity_online` seats members book themselves and `capacity_buffer` seats only staff can fill. Attendance capacity is their sum. `capacity_waitlist` is not a seat count: it is how many members may stand in line once the online seats are gone. This is Mindbody's model (total capacity, "how many can book online", "how many can waitlist"), stored with the buffer made explicit instead of derived.
+**Two kinds of seat, one queue.** A class has `capacity_online` seats members book themselves (and staff may also fill) and `capacity_buffer` seats only staff can fill, once the online seats are gone. Attendance capacity is their sum. `capacity_waitlist` is not a seat count: it is how many members may stand in line once the online seats are gone. This is Mindbody's model (total capacity, "how many can book online", "how many can waitlist"), stored with the buffer made explicit instead of derived.
 
 **Members join a queue, and the queue fills seats by itself.** When the online seats are full and the waitlist is open, the member app offers "Join waitlist". Joining costs nothing and takes no credit; it checks that the member *could* pay. When a confirmed online booking is cancelled outside the Cancellation Window, the first member in line whose package can still pay is booked in the same transaction — credit debited, package activated if dormant, booking `confirmed` — and emailed. Inside the window nobody is moved automatically; staff move people by hand.
 
-**Staff see the queue and can act on it.** The session page gains a Waitlist panel in queue order with each member's payment status, "Add to class" and "Remove". Staff can also book a member directly, which takes a buffer seat, and an admin can overbook past the buffer after an explicit confirmation.
+**Staff see the queue and can act on it.** The session page gains a Waitlist panel in queue order with each member's payment status, "Add to class" and "Remove". Staff can also book a member directly, which takes a free online seat first and a buffer seat once online is full, and an admin can overbook past the buffer after an explicit confirmation.
 
 **Numbers say what they mean.** "Booked 8 / 16" is people in seats over attendance capacity; the waitlist is shown beside it as "3 waiting of 5". Those numbers are staff's. The member sees no number at all: only `has_seats` (an online seat is free), whether the line is open, and their own place in it (§9; `fe-client-features.md` §3.1).
 
@@ -40,7 +40,7 @@ Resolves #152 ("Class waitlist: no join, no promotion — build it for v1 or kee
 ### Staff
 
 9. As an admin or instructor, I want the session page to show the waitlist in order with each member's join time and whether their package can pay, so that I know who gets the next seat.
-10. As an admin or instructor, I want to add a member to a class from the roster, taking a buffer seat, so that walk-ins and phone bookings are recorded like everyone else.
+10. As an admin or instructor, I want to add a member to a class from the roster, taking a free online seat and a buffer seat only once online is full, so that walk-ins and phone bookings are recorded like everyone else.
 11. As an admin, when online and buffer seats are both full, I want to be asked "Overbook, or add to the waitlist?" and to be able to overbook, so that a regular at the front desk is never turned away by software.
 12. As an instructor, I want the same prompt but without the overbook option, so that only admins can exceed the room.
 13. As an admin or instructor, I want "Add to class" on a waitlist row, so that inside the Cancellation Window I can still fill a freed seat by hand.
@@ -66,8 +66,8 @@ Resolves #152 ("Class waitlist: no join, no promotion — build it for v1 or kee
 
 | Term | Meaning |
 |---|---|
-| **Online seat** | One of `capacity_online`. Filled by a member booking themselves, or by a waitlist promotion. |
-| **Buffer seat** | One of `capacity_buffer`. Filled only by staff booking a member. Never shown to members. |
+| **Online seat** | One of `capacity_online`. Filled by a member booking themselves, by a waitlist promotion, or by staff booking a member while one is free (§2, §7) — even with members waiting. A staff booking in an online seat is an ordinary online booking: it lowers `spots_left`, and cancelling it frees an online seat that promotes as usual. |
+| **Buffer seat** | One of `capacity_buffer`. Filled only by staff booking a member, and only once every online seat is taken: the studio's reserve for a full class. Never shown to members. |
 | **Attendance capacity** | `capacity_online + capacity_buffer`. The most people the roster can hold without an overbook. |
 | **Overbook** | An admin-only staff booking made when every online and buffer seat is taken. |
 | **Waitlist** | The ordered line of members waiting for an online seat. Its length is capped by `capacity_waitlist`. Not a seat. |
@@ -82,15 +82,15 @@ Resolves #152 ("Class waitlist: no join, no promotion — build it for v1 or kee
 Add `bookings.seat` enum `online | buffer | overbook`, `NOT NULL`, default `online` for the backfill (every existing class booking came through `POST /me/bookings/class`).
 
 - Member self-booking and promotion insert `seat = 'online'`.
-- Staff booking inserts `seat = 'buffer'` while `buffer_used < capacity_buffer`, else `seat = 'overbook'` when the caller is an admin who passed `overbook: true`, else 409 `class_full` with `waitlist_open` in the body so the portal can offer the waitlist instead.
+- Staff booking ("Add member", and "Add to class" from the waitlist, §7) inserts `seat = 'online'` while `online_used < capacity_online` — whether or not members are waiting — else `seat = 'buffer'` while `buffer_used < capacity_buffer`, else `seat = 'overbook'` when the caller is an admin who passed `overbook: true`, else 409 `class_full` with `waitlist_open` in the body so the portal can offer the waitlist instead. The buffer is spent only once the class is full online, so a walk-in at a full class still finds it (Mindbody: online capacity sits below total capacity, and the gap is staff's once online is full). Bookings already in a `buffer` seat keep it.
 - Counts, all over `state = 'confirmed'`:
   - `online_used` = seats `online`
   - `buffer_used` = seats `buffer`
   - `attending` = all confirmed (the roster count staff see)
   - `spots_left` (members) = `max(0, capacity_online − online_used)` — unchanged in meaning.
-- Promotion fires only when `online_used < capacity_online`. A cancelled buffer or overbook booking frees a buffer seat, which does not promote (Mindbody: staff seats are not the queue's). Staff can still "Add to class" from the waitlist into it.
+- Promotion fires only when `online_used < capacity_online`. A cancelled buffer or overbook booking frees a buffer seat, which does not promote (Mindbody: staff seats are not the queue's). Staff can still "Add to class" from the waitlist into it. A cancelled staff booking that held an online seat frees an online seat, and promotes like any other.
 
-All of this lives in one module, `services/bookings/seats.ts`, exporting `countSeats(tx, classId)` and pure `seatFor(counts, capacities, role, overbook)`. `book.ts`, `client-catalog.ts`, `timetable.ts`, `detail.ts` and the new waitlist service call it; none keeps a private count.
+All of this lives in one module, `services/bookings/seats.ts`, exporting `countSeats(tx, classId)` and pure `seatFor(counts, capacities, role, overbook)` — one staff path, shared by "Add member" and "Add to class". `book.ts`, `client-catalog.ts`, `timetable.ts`, `detail.ts` and the new waitlist service call it; none keeps a private count.
 
 ### 3. The waitlist table
 
@@ -152,12 +152,19 @@ The promoted booking is a normal booking: it cancels under the normal policy and
 
 ### 7. Staff booking and overbooking
 
-`POST /portal/{admin,instructor}/schedule/classes/:id/bookings { client_id, overbook?: boolean }` → `201` with the booking, or:
+`POST /portal/{admin,instructor}/schedule/classes/:id/bookings { client_id, overbook?: boolean }` ("Add member") → `201` with the booking and the `seat` it took — a free online seat first, even with members waiting, else a buffer seat, else an overbook seat for an admin who asked (§2) — or:
 
 - 409 `class_full { waitlist_open, waiting, capacity_waitlist }` when online and buffer are full and `overbook` is not set or the caller is an instructor. The portal turns this into the Mindbody prompt: admin sees "No seats left. Overbook, or add to the waitlist?"; instructor sees "No seats left. Add to the waitlist?".
 - Package selection errors as for members; a staff booking still debits (there is no "unpaid reservation" in v1).
 
-`POST …/waitlist/:entryId/promote` → books the member exactly as §5 does for one entry, regardless of the window, into an online seat if one is free, else a buffer seat, else 409 `class_full` unless `overbook: true` from an admin. This is Mindbody's "Add to class" button.
+`POST …/waitlist/:entryId/promote` → books the member exactly as §5 does for one entry, regardless of the window, into an online seat if one is free, else a buffer seat, else 409 `class_full` unless `overbook: true` from an admin — the same order as "Add member", so the two staff actions agree. This is Mindbody's "Add to class" button.
+
+| Who | Seat taken |
+|---|---|
+| Member booking themselves | Online seat, else offered the waitlist. Never a buffer seat |
+| Staff "Add member" | Online seat → buffer seat → overbook (admin only) → else `class_full` with the waitlist fields |
+| Staff "Add to class" from the waitlist | Online seat → buffer seat → overbook (admin only) |
+| Automatic promotion | Online seat only |
 
 Raising `capacity_online` on an existing class does **not** auto-promote (Mindbody: "expanding the capacity … does not automatically add people from the waitlist"). Staff use Add to class. Lowering `capacity_waitlist` below the line length is allowed; it only blocks new joins. Lowering `capacity_online` below `online_used` stays refused as today (`capacity_below_bookings`).
 
@@ -201,7 +208,7 @@ Session detail (`[type]/[id]/page.tsx`):
 
 Timetable cells read `attending / attendance_capacity`, with a small "+N waiting" when the line is non-empty. `capacity-fields.tsx` keeps its three inputs and shows "Attendance capacity: N · Waitlist: M" instead of "Max capacity: N+M+…".
 
-The instructor session page gets the same roster, Add member (buffer only) and Waitlist panel; the 501 instructor roster route is replaced by the same detail service scoped to the instructor's own classes.
+The instructor session page gets the same roster, Add member (online, then buffer; never overbook) and Waitlist panel; the 501 instructor roster route is replaced by the same detail service scoped to the instructor's own classes.
 
 ### 11. Notifications
 
@@ -256,8 +263,8 @@ Each step lands with its scenarios. Step 3 is the one the #140 journey was writt
 - WTL-14 refund-driven cancel promotes like a member cancel
 - WTL-15 studio flag off → join refused, existing entry still promotes
 - WTL-16 promoted member cancels inside their window → credit returned as any booking
-- SEAT-01 staff booking takes a buffer seat and does not change `spots_left`
-- SEAT-02 staff booking when buffer full → `class_full` with `waitlist_open`; admin `overbook: true` succeeds; instructor cannot
+- SEAT-01 staff booking takes a free online seat first (lowering `spots_left`, even with members waiting), and a buffer seat only once online is full
+- SEAT-02 staff booking when online and buffer are full → `class_full` with `waitlist_open`; admin `overbook: true` succeeds; instructor cannot
 - SEAT-03 cancelled buffer booking does not promote
 - SEAT-04 roster shows `attending / attendance_capacity`; timetable and detail agree with the catalogue
 - SEAT-05 isolation: another studio's waiting entries never count toward, or get promoted into, this studio's class
