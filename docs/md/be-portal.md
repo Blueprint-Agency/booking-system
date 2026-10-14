@@ -424,14 +424,14 @@ Block, unblock and sign-out are **per studio**: a login is one studio's own (ADR
 | PATCH | `/feature-flags/:key` | `{ enabled: bool }`. Updates DB + invalidates `lib/feature-flags-cache.ts` (process-local). Multi-instance deployments require pub/sub trigger — deferred. |
 
 ### `settings.ts`
-The studio's own settings (studio admins; instructors `403 forbidden_role`). Today the **receipt details** (#391), `tenant_settings` columns the studio owns: what its Receipts carry, copied onto each Receipt as it is issued, so a save reaches only the Receipts issued afterwards.
+The studio's own settings (studio admins; instructors `403 forbidden_role`). Today the **Business details** (#391, #398), `tenant_settings` columns the studio owns: the Business name it trades under and what its Receipts carry, copied onto each Receipt as it is issued, so a save reaches only the Receipts issued afterwards.
 
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/settings/receipt-details` | `{ receipt_details: { prefix, legal_name, registration_number, address, footer }, next_number, next_sequence }`. `next_number` (`R-000124`) is the number the next Receipt takes: the saved prefix and the studio's next sequence, which a prefix change never restarts. `next_sequence` is the sequence alone, for the form's live preview. |
-| PUT | `/settings/receipt-details` | The same five fields, replacing what is there; answers as GET. Trimmed; a blank or absent detail is none, a blank prefix is `R`. A prefix is up to 10 letters or digits with hyphens only between them; legal name ≤ 200, registration number ≤ 50, address ≤ 500, footer ≤ 1000 characters. Anything else is `400 invalid_request` with a `message` naming the field. |
+| GET | `/settings/business-details` | `{ business_details: { business_name, prefix, registration_number, address, footer }, next_number, next_sequence }`. `next_number` (`R-000124`) is the number the next Receipt takes: the saved prefix and the studio's next sequence, which a prefix change never restarts. `next_sequence` is the sequence alone, for the form's live preview. |
+| PUT | `/settings/business-details` | The same five fields, replacing what is there; answers as GET. Trimmed; a blank or absent detail is none, a blank prefix is `R`. The Business name is required and ≤ 200 characters ("A business name is required." / "The business name is at most 200 characters."). A prefix is up to 10 letters or digits with hyphens only between them; registration number ≤ 50, address ≤ 500, footer ≤ 1000 characters. Anything else is `400 invalid_request` with a `message` naming the field. |
 
-The super portal sets the same fields when it creates a studio: `POST /api/v1/platform/tenants` takes an optional `receipt_details` object of this shape, refused by the same rule before anything is written. A studio restored from an archive takes the archive's details; an archive exported before they existed leaves the studio's own.
+The super portal sets the same fields when it creates a studio: `POST /api/v1/platform/tenants` takes an optional `business_details` object of this shape, refused by the same rule before anything is written, except that a blank or absent Business name is the studio's Domain name (`name`). A studio restored from an archive takes the archive's details; an archive exported before they existed leaves the studio's own.
 
 ---
 

@@ -88,6 +88,7 @@ export async function seedTenants(db: PostgresJsDatabase<typeof schema>) {
       .values({
         tenantId: tenant.id,
         displayName: tenant.name,
+        businessName: tenant.name,
         logoUrl: branding?.logoUrl ?? null,
         ogImageUrl: branding?.ogImageUrl ?? null,
         tagline: branding?.tagline ?? null,

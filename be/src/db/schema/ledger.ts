@@ -479,10 +479,11 @@ export const receipts = pgTable(
     /** The number as issued, prefix and all (`R-000123`), so a later prefix change renumbers nothing. */
     displayNumber: text('display_number').notNull(),
     issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
-    // The seller, as of issue. Only the name is ever known today; the rest are
-    // the studio's receipt details, which the studio sets (#391).
+    // The seller, as of issue. The rest are the studio's Business details,
+    // which the studio sets (#391, #398). The Business name is null on a
+    // Receipt issued before #398 that carried no Legal name.
     sellerName: text('seller_name').notNull(),
-    sellerLegalName: text('seller_legal_name'),
+    sellerBusinessName: text('seller_business_name'),
     sellerRegistrationNumber: text('seller_registration_number'),
     sellerAddress: text('seller_address'),
     sellerFooter: text('seller_footer'),

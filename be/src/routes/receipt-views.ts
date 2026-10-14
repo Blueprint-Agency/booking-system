@@ -46,7 +46,7 @@ export const receiptView = (r: ReceiptRow) => ({
   refunded_at: r.refundedAt,
   seller: {
     name: r.sellerName,
-    legal_name: r.sellerLegalName,
+    business_name: r.sellerBusinessName,
     registration_number: r.sellerRegistrationNumber,
     address: r.sellerAddress,
     footer: r.sellerFooter,

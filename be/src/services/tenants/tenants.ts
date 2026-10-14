@@ -354,7 +354,8 @@ export async function createTenant(input: CreateTenantInput): Promise<ResolvedTe
 
       const [settings] = await tx
         .insert(tenantSettings)
-        .values({ ...input.settings, tenantId: tenant.id })
+        // Trading under its Domain name until it is told otherwise (#398).
+        .values({ businessName: input.name, ...input.settings, tenantId: tenant.id })
         // Display columns only, for the same reason the resolver reads only
         // those: the application role has SELECT on nothing else here.
         .returning(DISPLAY_SETTINGS)

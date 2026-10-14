@@ -16,10 +16,10 @@ import { loadTenantById } from './tenants'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { DEFAULT_RECEIPT_PREFIX } from '../receipts/snapshot'
 
-/** The `tenant_settings` columns that hold the studio's receipt details (#391). */
+/** The `tenant_settings` columns that hold the studio's Business details (#391, #398). */
 const RECEIPT_DETAIL_COLUMNS = [
+  'business_name',
   'receipt_prefix',
-  'receipt_legal_name',
   'receipt_registration_number',
   'receipt_address',
   'receipt_footer',
@@ -677,9 +677,11 @@ export async function importTenant(
           ${kept('waiver_text')}
         )
       `)
-      // The receipt details (#391), written directly: the app role may. An
-      // archive exported before they existed does not carry the columns at
+      // The Business details (#391, #398), written directly: the app role may.
+      // An archive exported before they existed does not carry the columns at
       // all, and leaves the details the super portal gave the studio standing.
+      // A Business name the archive leaves null is the trigger's to fill
+      // (migration 0115): the display name, else the Domain name.
       const carried = RECEIPT_DETAIL_COLUMNS.filter(column => column in settings)
       if (carried.length > 0) {
         const value = (column: string) =>

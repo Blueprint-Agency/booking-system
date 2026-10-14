@@ -66,7 +66,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
   const [adminName, setAdminName] = useState("");
   /** Months of the first Term, or "" for open-ended. */
   const [termMonths, setTermMonths] = useState<string>(DEFAULT_TERM);
-  /** What the studio's Receipts carry from its first one (#391); all optional. */
+  /** The studio's Business details from its first Receipt (#391, #398); all optional. */
   const [receipt, setReceipt] = useState<ReceiptDetailsDraft>(emptyReceiptDetailsDraft);
   const [verdict, setVerdict] = useState<SlugVerdict | null>(null);
   const [checking, setChecking] = useState(false);
@@ -146,7 +146,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
         ...(termMonths ? { term_months: Number(termMonths) as TermMonths } : {}),
         ...(adminEmail.trim() ? { admin_email: adminEmail.trim() } : {}),
         ...(adminName.trim() ? { admin_name: adminName.trim() } : {}),
-        ...(hasReceiptDetails(receipt) ? { receipt_details: receiptDetailsPayload(receipt) } : {}),
+        ...(hasReceiptDetails(receipt) ? { business_details: receiptDetailsPayload(receipt) } : {}),
       });
       toast.success(
         created.admin
@@ -188,7 +188,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
     >
       <form className="flex flex-col gap-4" onSubmit={submit}>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="tenant-name">Studio name</Label>
+          <Label htmlFor="tenant-name">Domain name</Label>
           <Input
             id="tenant-name"
             value={name}
@@ -197,6 +197,21 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
             autoFocus
             required
           />
+          <p className="text-xs text-muted">The platform’s own label for the studio. Members don’t see it.</p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="tenant-business-name">Business name (optional)</Label>
+          <Input
+            id="tenant-business-name"
+            {...receiptField("business_name")}
+            placeholder={name.trim() || "Acme Yoga Pte. Ltd."}
+            maxLength={RECEIPT_DETAIL_LIMITS.business_name}
+          />
+          <p className="text-xs text-muted">
+            The name the studio trades under, on its Receipts. Left blank, it is the Domain name. Its
+            admin can change it later under Business details.
+          </p>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -288,12 +303,12 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
 
         <details className="rounded-lg border border-border px-3 py-2">
           <summary className="cursor-pointer text-sm font-medium text-ink">
-            Receipt details (optional)
+            Business details (optional)
           </summary>
           <p className="mt-1 text-xs text-muted">
             What the studio’s Receipts carry from its first one. Its admin can change them later
-            under Receipt details. Leave blank to number Receipts {receiptNumberPreview("", 1)} with
-            no business details. An archive restored into the studio brings its own.
+            under Business details. Leave blank to number Receipts {receiptNumberPreview("", 1)} with
+            no further details. An archive restored into the studio brings its own.
           </p>
           <div className="mt-3 flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
@@ -312,14 +327,6 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
                   `The first Receipt is ${receiptNumberPreview(receipt.prefix, 1)}.`
                 )}
               </p>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="tenant-receipt-legal-name">Legal name</Label>
-              <Input
-                id="tenant-receipt-legal-name"
-                {...receiptField("legal_name")}
-                maxLength={RECEIPT_DETAIL_LIMITS.legal_name}
-              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tenant-receipt-registration">Registration number</Label>

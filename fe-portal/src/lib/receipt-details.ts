@@ -1,21 +1,26 @@
 import type { Api } from "./api";
 
 /**
- * A studio's receipt details (#391): the prefix its Receipt numbers carry and
- * the business details its Receipts print. Saving them reaches only Receipts
- * issued afterwards; the backend copies them onto each one as it is issued.
+ * A studio's Business details (#391, #398): the Business name it trades under,
+ * the prefix its Receipt numbers carry and the details its Receipts print.
+ * Saving them reaches only Receipts issued afterwards; the backend copies them
+ * onto each one as it is issued.
  */
 export interface ReceiptDetails {
+  /**
+   * Always set on a saved studio. Null only in what the super portal's create
+   * form sends, where none means "the Domain name".
+   */
+  business_name: string | null;
   prefix: string;
-  legal_name: string | null;
   registration_number: string | null;
   address: string | null;
   footer: string | null;
 }
 
-/** `GET` / `PUT /portal/admin/settings/receipt-details`. */
+/** `GET` / `PUT /portal/admin/settings/business-details`. */
 export interface ReceiptDetailsView {
-  receipt_details: ReceiptDetails;
+  business_details: ReceiptDetails;
   /** `R-000124`: the number the studio's next Receipt takes under the saved prefix. */
   next_number: string;
   /** `124`: the sequence alone, for previewing a prefix not yet saved. */
@@ -30,7 +35,7 @@ export const DEFAULT_RECEIPT_PREFIX = "R";
 
 /** The most each free-text detail may hold, as the backend counts it. */
 export const RECEIPT_DETAIL_LIMITS = {
-  legal_name: 200,
+  business_name: 200,
   registration_number: 50,
   address: 500,
   footer: 1000,
@@ -52,9 +57,17 @@ export function receiptPrefixProblem(prefix: string): string | null {
     : "Up to 10 letters or digits, with hyphens only between them.";
 }
 
+/** Why `name` cannot be a studio's Business name, or null when it can. */
+export function businessNameProblem(name: string): string | null {
+  if (!name.trim()) return "A business name is required.";
+  return name.trim().length > RECEIPT_DETAIL_LIMITS.business_name
+    ? `At most ${RECEIPT_DETAIL_LIMITS.business_name} characters.`
+    : null;
+}
+
 export const emptyReceiptDetailsDraft = (): ReceiptDetailsDraft => ({
+  business_name: "",
   prefix: DEFAULT_RECEIPT_PREFIX,
-  legal_name: "",
   registration_number: "",
   address: "",
   footer: "",
@@ -62,8 +75,8 @@ export const emptyReceiptDetailsDraft = (): ReceiptDetailsDraft => ({
 
 /** Saved details, as the form shows them. */
 export const receiptDetailsDraft = (details: ReceiptDetails): ReceiptDetailsDraft => ({
+  business_name: details.business_name ?? "",
   prefix: details.prefix,
-  legal_name: details.legal_name ?? "",
   registration_number: details.registration_number ?? "",
   address: details.address ?? "",
   footer: details.footer ?? "",
@@ -71,10 +84,14 @@ export const receiptDetailsDraft = (details: ReceiptDetails): ReceiptDetailsDraf
 
 const orNull = (value: string) => value.trim() || null;
 
-/** What the form sends: trimmed, a blank detail as none, a blank prefix as the default. */
+/**
+ * What the form sends: trimmed, a blank detail as none, a blank prefix as the
+ * default. A blank Business name is the create form's "use the Domain name";
+ * the Business details page never sends one.
+ */
 export const receiptDetailsPayload = (draft: ReceiptDetailsDraft): ReceiptDetails => ({
+  business_name: orNull(draft.business_name),
   prefix: prefixOf(draft.prefix),
-  legal_name: orNull(draft.legal_name),
   registration_number: orNull(draft.registration_number),
   address: orNull(draft.address),
   footer: orNull(draft.footer),
@@ -82,17 +99,17 @@ export const receiptDetailsPayload = (draft: ReceiptDetailsDraft): ReceiptDetail
 
 /**
  * Whether the operator filled in anything beyond the default, so the create
- * form sends receipt details only when there are some to send.
+ * form sends Business details only when there are some to send.
  */
 export function hasReceiptDetails(draft: ReceiptDetailsDraft): boolean {
   const payload = receiptDetailsPayload(draft);
   return (
     payload.prefix !== DEFAULT_RECEIPT_PREFIX ||
-    [payload.legal_name, payload.registration_number, payload.address, payload.footer].some(Boolean)
+    [payload.business_name, payload.registration_number, payload.address, payload.footer].some(Boolean)
   );
 }
 
-const PATH = "/portal/admin/settings/receipt-details";
+const PATH = "/portal/admin/settings/business-details";
 
 export const getReceiptDetails = (api: Api) => api.get<ReceiptDetailsView>(PATH);
 

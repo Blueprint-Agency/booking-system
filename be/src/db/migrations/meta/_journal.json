@@ -806,6 +806,13 @@
       "when": 1791493358808,
       "tag": "0114_purchase_receipt_template",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1792001629263,
+      "tag": "0115_business_name",
+      "breakpoints": true
     }
   ]
 }

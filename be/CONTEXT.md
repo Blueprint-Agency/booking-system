@@ -15,6 +15,18 @@ The domain. Every rule in the platform lives here — booking, credits, scheduli
 One studio business on the platform, and one row in `tenants`. Creating a Tenant is that insert — never infrastructure — and its subdomains resolve the moment the row exists. Tenant #1 (id `10000000-…-0001`) is a *position*, not a business: migration 0027 backfilled every row that predated tenancy to it, so on any given deployment it is whichever studio that database already held. Which one that is appears nowhere in the code.
 _Avoid_: account, org, workspace, customer, client (a Client is a member — see below)
 
+**Domain name**:
+The label the platform knows a Tenant by: `tenants.name`, which the super portal's create form and studio list call "Domain name". Internal: members do not see it on any business document, and the studio cannot change it. Not the hostname, which is the Slug.
+_Avoid_: studio name (ambiguous), tenant name
+
+**Business name**:
+The one name a studio trades under: `tenant_settings.business_name`, a row the studio owns. The super portal sets it when it creates the studio (the Domain name when the operator leaves it blank), and the studio's admin changes it on its **Business details** page. Never blank, at most 200 characters. It names the studio as seller on every Receipt issued while it stands; a rename reaches only the Receipts issued after it. It replaced the Receipt's separate *Legal name* (migration 0115), which a studio that had one now trades under. Distinct from the display name the studio's website header shows.
+_Avoid_: legal name, company name, studio name
+
+**Business details**:
+What a studio's business documents say about it, set together on one page: its Business name, registration number, address, a footer note, and the prefix its Receipt numbers carry. Formerly *receipt details*. See `services/tenants/business-details.ts`.
+_Avoid_: receipt details, receipt settings
+
 **Slug**:
 A Tenant's leftmost DNS label, and the only thing the frontends can read a Tenant from — the API's own hostname never carries one. Validated as a hostname label and checked against the reserved list (`admin`, `api`, `portal`, `www`, `dev`, `staging`, `app`, `mail`, `clerk`, `assets`) at creation, because a Tenant that took the slug `admin` would take over the super portal's hostname. See `services/tenants/slug.ts`.
 
@@ -276,7 +288,7 @@ An Open Purchase an admin has closed by giving back everything paid into it. The
 _Avoid_: cancelled purchase, written off, lapsed, expired purchase, partial refund, credited back
 
 **Receipt**:
-The studio's own record of one completed Purchase, issued the moment its Balance reaches zero — one per Purchase, ever, however many times the provider says it was paid. It carries a number of the studio's own (`R-000123`: a prefix and a sequence per studio with no gaps), the studio's name and its **receipt details** (the legal name, registration number, address and footer note the studio sets, with the prefix), the member's name and email, what was bought line by line, anything a Promotion or Promo Code took off, the total paid and every payment that paid it. All of it is copied onto the Receipt when it is issued and never recomputed, so a renamed package or a member's new name never rewrites one. It shows exactly what the member was charged: no tax line, no GST, nothing added to or derived from the total. Never edited, voided or deleted; a Refund only stamps it refunded. A Complimentary Package, an Open Purchase, an Abandoned Purchase and a migrated Purchase have none. Not the payment provider's receipt, which is one per charge and is not the studio's document.
+The studio's own record of one completed Purchase, issued the moment its Balance reaches zero — one per Purchase, ever, however many times the provider says it was paid. It carries a number of the studio's own (`R-000123`: a prefix and a sequence per studio with no gaps), the studio's name and its **Business details** (its Business name, registration number, address and footer note as the studio has set them, with the prefix), the member's name and email, what was bought line by line, anything a Promotion or Promo Code took off, the total paid and every payment that paid it. All of it is copied onto the Receipt when it is issued and never recomputed, so a renamed package or a member's new name never rewrites one. It shows exactly what the member was charged: no tax line, no GST, nothing added to or derived from the total. Never edited, voided or deleted; a Refund only stamps it refunded. A Complimentary Package, an Open Purchase, an Abandoned Purchase and a migrated Purchase have none. Not the payment provider's receipt, which is one per charge and is not the studio's document.
 _Avoid_: invoice, tax invoice, bill, statement, payment receipt
 
 **Payment Account**:

@@ -232,6 +232,7 @@ export async function createE2eStudio({
   await db.insert(schema.tenantSettings).values({
     tenantId: tenant.id,
     displayName: name,
+    businessName: name,
     tagline: site.tagline,
     copy: { 'legal.terms_url': site.termsUrl, 'legal.privacy_url': site.privacyUrl, 'social.instagram': site.instagramUrl },
   })

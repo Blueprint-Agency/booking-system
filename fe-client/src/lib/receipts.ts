@@ -50,7 +50,7 @@ export interface Receipt {
   refunded_at: string | null;
   seller: {
     name: string;
-    legal_name: string | null;
+    business_name: string | null;
     registration_number: string | null;
     address: string | null;
     footer: string | null;

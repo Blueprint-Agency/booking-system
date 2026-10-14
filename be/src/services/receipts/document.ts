@@ -43,7 +43,7 @@ export interface ReceiptDocument {
   /** `R-000123`. */
   number: string
   studio: ReceiptStudio & {
-    /** Legal name, registration number and address, those the studio has set. */
+    /** Business name as issued, registration number and address, those the studio has set. */
     details: string[]
   }
   /** `S$150.00`: the total paid, the figure the panel leads with. */
@@ -143,7 +143,7 @@ export function receiptDocument(receipt: ReceiptRow, studio: ReceiptStudio): Rec
     number: receipt.displayNumber,
     studio: {
       ...studio,
-      details: [receipt.sellerLegalName, receipt.sellerRegistrationNumber, receipt.sellerAddress].filter(
+      details: [receipt.sellerBusinessName, receipt.sellerRegistrationNumber, receipt.sellerAddress].filter(
         (d): d is string => Boolean(d),
       ),
     },

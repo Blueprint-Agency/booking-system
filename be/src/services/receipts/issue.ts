@@ -99,7 +99,7 @@ export async function issueReceipt(
       name: tenants.name,
       displayName: tenantSettings.displayName,
       prefix: tenantSettings.receiptPrefix,
-      legalName: tenantSettings.receiptLegalName,
+      businessName: tenantSettings.businessName,
       registrationNumber: tenantSettings.receiptRegistrationNumber,
       address: tenantSettings.receiptAddress,
       footer: tenantSettings.receiptFooter,
@@ -164,7 +164,8 @@ export async function issueReceipt(
       displayNumber: displayNumber(seller!.prefix || DEFAULT_RECEIPT_PREFIX, number),
       // What the studio calls itself to members, as of now.
       sellerName: seller!.displayName || seller!.name,
-      sellerLegalName: seller!.legalName,
+      // The name it trades under (#398), as of now.
+      sellerBusinessName: seller!.businessName ?? seller!.name,
       sellerRegistrationNumber: seller!.registrationNumber,
       sellerAddress: seller!.address,
       sellerFooter: seller!.footer,

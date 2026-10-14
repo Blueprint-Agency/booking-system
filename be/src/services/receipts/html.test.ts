@@ -22,7 +22,7 @@ const paid: ReceiptRow = {
   displayNumber: 'R-000042',
   issuedAt: new Date('2026-10-02T03:00:00Z'),
   sellerName: 'Northwind Yoga',
-  sellerLegalName: 'Northwind Wellness Pte. Ltd.',
+  sellerBusinessName: 'Northwind Wellness Pte. Ltd.',
   sellerRegistrationNumber: null,
   sellerAddress: '12 Example Road\nSingapore 000000',
   sellerFooter: null,

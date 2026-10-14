@@ -40,6 +40,27 @@ test('an archive already in the current shape is returned as it was', () => {
   assert.deepEqual(upgradeArchiveRows(current), current)
 })
 
+test('TEN-39 an archive from before #398 restores its Legal name as the Business name, and its Receipts’ Legal name as their Business name', () => {
+  const rows = upgradeArchiveRows({
+    tenant_settings: [{ tenant_id: ADA, display_name: 'Shown', receipt_prefix: 'NW', receipt_legal_name: 'Northwind Pte. Ltd.' }],
+    receipts: [
+      { id: 'r1', seller_name: 'Shown', seller_legal_name: 'Northwind Pte. Ltd.' },
+      { id: 'r2', seller_name: 'Shown', seller_legal_name: null },
+    ],
+  })
+  assert.deepEqual(rows.tenant_settings, [
+    { tenant_id: ADA, display_name: 'Shown', receipt_prefix: 'NW', business_name: 'Northwind Pte. Ltd.' },
+  ])
+  assert.deepEqual(rows.receipts, [
+    { id: 'r1', seller_name: 'Shown', seller_business_name: 'Northwind Pte. Ltd.' },
+    { id: 'r2', seller_name: 'Shown', seller_business_name: null },
+  ])
+
+  // No Legal name says nothing about the Business name: the studio keeps its own.
+  const unnamed = upgradeArchiveRows({ tenant_settings: [{ tenant_id: ADA, receipt_legal_name: null }] })
+  assert.deepEqual(unnamed.tenant_settings, [{ tenant_id: ADA }])
+})
+
 test("the caller's archive is not changed", () => {
   const archive = { leave_pools: [{ instructor_id: ADA }] }
   upgradeArchiveRows(archive)

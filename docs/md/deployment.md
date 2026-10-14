@@ -344,7 +344,7 @@ It prints one line per studio, `{"issued":n,"refunded":m}`. What it does:
   settling during the run waits for it and takes the next number. No maintenance window needed.
 - Safe to run again. A second run issues nothing and prints `{"issued":0,"refunded":0}`.
 
-**Set each studio's receipt details first** (portal Settings → Receipt details, or the super
+**Set each studio's Business details first** (portal Settings → Business details, or the super
 portal). The backfill copies the studio's name, prefix and details onto each Receipt as they stand
 when it runs, the same as a live sale. Receipts are never rewritten, so details set later reach only
 later Receipts.

@@ -395,7 +395,12 @@ export default function PlatformPage() {
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="min-w-0 break-words font-medium text-ink">{tenant.name}</span>
+                  {/* `tenants.name`: the Domain name, the platform's own label
+                      for the studio (#398), not the Business name members see. */}
+                  <span className="min-w-0 break-words font-medium text-ink" title="Domain name">
+                    <span className="sr-only">Domain name: </span>
+                    {tenant.name}
+                  </span>
                   <StatusBadge status={tenant.status} />
                   {/* A studio with no staff is one nobody can sign in to. It is
                       a legitimate step — a studio created to receive an archive

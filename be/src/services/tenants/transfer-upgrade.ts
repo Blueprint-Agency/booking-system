@@ -51,5 +51,21 @@ export function upgradeArchiveRows(rows: Readonly<Rows>): Rows {
     }
   }
 
+  // Migration 0115 (#398): the Legal name became the Business name. A studio's
+  // Legal name is the name it trades under; none says nothing, and the
+  // studio's own Business name stands. A Receipt's copy is renamed as it is.
+  const settings = rows.tenant_settings
+  if (settings?.some(r => 'receipt_legal_name' in r)) {
+    out.tenant_settings = settings.map(({ receipt_legal_name, ...rest }) =>
+      receipt_legal_name == null || 'business_name' in rest ? rest : { ...rest, business_name: receipt_legal_name },
+    )
+  }
+  const receipts = rows.receipts
+  if (receipts?.some(r => 'seller_legal_name' in r)) {
+    out.receipts = receipts.map(({ seller_legal_name, ...rest }) =>
+      seller_legal_name === undefined ? rest : { ...rest, seller_business_name: seller_legal_name },
+    )
+  }
+
   return out
 }
