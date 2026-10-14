@@ -1,6 +1,22 @@
 import type { TemplateSlug } from './send'
 
 /**
+ * The studio's Business name (#400), filled at send time on every template.
+ *
+ * Not in any slug's list below, because it is not the sender's to supply:
+ * `sendTemplatedEmail` fills it from the studio's mail identity, the same name
+ * the email's From header and frame carry, whatever the caller passed. A
+ * template that names the studio says `{{studio_name}}` rather than the name
+ * itself, so a rename on Business details reaches the next email without
+ * anyone rewriting a template. The seeder writes it into every default
+ * (`db/seed/email-templates.ts`), and migration 0117 swapped it in for the
+ * provisioned name in the studios created before.
+ *
+ * A template editor allowing variables must allow this one on every slug.
+ */
+export const STUDIO_NAME_VARIABLE = 'studio_name'
+
+/**
  * Per-template variable allow-list. Powers the §17c amber flag in the fe-portal
  * template editor: PATCH /portal/admin/notifications/templates/:slug rejects
  * any {{var}} not in this list.

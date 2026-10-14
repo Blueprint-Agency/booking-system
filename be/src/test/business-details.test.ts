@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
-import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { frontendOrigin, harnessAddress, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { receiptFixtures } from './receipt-fixtures'
 import { withEnv } from './with-env'
 
@@ -107,6 +107,11 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     if (!harness) return
     await receipts?.cleanup()
     const ours = `%@${DOMAIN}`
+    // What PAY-57's checkouts left: the provider customers made for its buyers,
+    // and their Open Purchases, which no payment settled.
+    const buyers = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
+    await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${buyers})`)
+    await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${buyers})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM client_auth_users WHERE email LIKE ${ours}`)
     await harness.close()
@@ -180,6 +185,93 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     assert.equal(refused.error, 'invalid_request')
     assert.equal(refused.message, 'The business name is at most 200 characters.')
     assert.deepEqual(await harness.db.select().from(schema.tenants).where(eq(schema.tenants.slug, slug)), [])
+  })
+
+  /** A visitor asks the studio's member app for a sign-in code: the studio's `sign_in_code` email. */
+  async function signInCodeMail(at: Studio, email: string) {
+    const sentBefore = mailer.discardedMail.length
+    await expectStatus(
+      await harness.app.request('/api/v1/auth/client/email-otp/send-verification-otp', {
+        method: 'POST',
+        headers: {
+          ...json,
+          'X-Tenant-Slug': at.slug,
+          Origin: frontendOrigin('client', at),
+          'X-Forwarded-For': harnessAddress(),
+        },
+        body: JSON.stringify({ email, type: 'sign-in' }),
+      }),
+      200,
+    )
+    const [mail] = mailer.discardedMail.slice(sentBefore).filter(m => m.to === email)
+    assert.ok(mail, `a sign-in code was mailed to ${email}`)
+    return { from: mail.from, subject: mail.subject, html: mail.html, text: mail.text ?? '' }
+  }
+
+  test('NTF-24 an email sent after the Admin sets a Business name comes from it, and names it in its subject and body; after a rename the next email says the new name and never the old', async () => {
+    const studio = await newStudio()
+    const [firstName, secondName] = [`Northwind ${run} & Co`, `Northwind ${run} Renamed & Sons`]
+
+    await expectStatus(await saveDetails(studio, { business_name: firstName }), 200)
+    const first = await signInCodeMail(studio, `visitor-first@${DOMAIN}`)
+    assert.match(first.from, new RegExp(`^"${firstName}" <`), 'the From name is the Business name')
+    assert.equal(first.subject, `Your ${firstName} sign-in code`)
+    assert.ok(first.text.includes(`sign in to your ${firstName} account`), `the body names it: ${first.text}`)
+    assert.ok(first.html.includes(`sign in to your ${firstName.replace('&', '&amp;')} account`), 'escaped in the HTML')
+    for (const surface of ['from', 'subject', 'html', 'text'] as const) {
+      assert.ok(!first[surface].includes(studio.domainName), `the ${surface} never names the Domain name`)
+    }
+
+    await expectStatus(await saveDetails(studio, { business_name: secondName }), 200)
+    const second = await signInCodeMail(studio, `visitor-second@${DOMAIN}`)
+    assert.match(second.from, new RegExp(`^"${secondName}" <`))
+    assert.equal(second.subject, `Your ${secondName} sign-in code`)
+    assert.ok(second.text.includes(`sign in to your ${secondName} account`), `the body names the new name: ${second.text}`)
+    for (const surface of ['from', 'subject', 'html', 'text'] as const) {
+      assert.ok(!second[surface].includes(firstName) && !second[surface].includes(firstName.replace('&', '&amp;')), `the ${surface} no longer names ${firstName}`)
+    }
+  })
+
+  test('PAY-57 the charge description a member’s card statement shows is the studio’s Business name, and a rename reaches the next checkout', async () => {
+    const studio = await newStudio()
+    const { installStripeFake } = await import('./stripe-fake')
+    const fake = installStripeFake()
+    try {
+      fake.ownAccount(studio)
+      fake.reply('customers.create', () => ({ id: `cus_${run}_${fake.calls.length}` }))
+      fake.reply('checkout.sessions.create', () => ({ id: `cs_${run}_${fake.calls.length}`, url: 'https://pay.example.test/session' }))
+      const mat = await expectStatus(
+        await harness.app.request('/api/v1/portal/admin/merch', {
+          method: 'POST',
+          headers: { ...studio.admin, ...json },
+          body: JSON.stringify({ title: 'Yoga mat', price_sgd: '45' }),
+        }),
+        201,
+      )
+
+      /** A member buys the mat; what the payment page and the card statement are told. */
+      const chargeDescription = async () => {
+        const buyer = await member(studio)
+        await expectStatus(
+          await harness.app.request('/api/v1/me/checkout/merch', {
+            method: 'POST',
+            headers: { ...buyer.headers, ...json },
+            body: JSON.stringify({ merch_id: mat.id }),
+          }),
+          200,
+        )
+        const session = fake.callsTo('checkout.sessions.create').at(-1)!.args[0] as { line_items: any[] }
+        return session.line_items.map(l => l.price_data.product_data.description as string)
+      }
+
+      const [firstName, secondName] = [`Northwind ${run} Charges`, `Northwind ${run} Charges Renamed`]
+      await expectStatus(await saveDetails(studio, { business_name: firstName }), 200)
+      assert.deepEqual(await chargeDescription(), [firstName])
+      await expectStatus(await saveDetails(studio, { business_name: secondName }), 200)
+      assert.deepEqual(await chargeDescription(), [secondName])
+    } finally {
+      fake.restore()
+    }
   })
 
   test('INV-89 a Receipt issued after a Business name change names the studio by the new name in its JSON, html, PDF and email; one issued before keeps the old', async () => {
