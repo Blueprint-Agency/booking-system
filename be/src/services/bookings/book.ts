@@ -92,8 +92,9 @@ export interface StaffBookClassInput {
 }
 
 /**
- * Staff booking a member onto a class (spec-waitlist.md §7): a buffer seat, or
- * an overbook seat for an admin who asked. Everything else — package selection
+ * Staff booking a member onto a class (spec-waitlist.md §7): a free online
+ * seat, else a buffer seat, else an overbook seat for an admin who asked
+ * (`seatFor`). Everything else — package selection
  * (staff's pick or the Default payer), the debit, Activation, the QR code — is
  * the member's booking, unchanged.
  */

@@ -20,7 +20,7 @@ import {
   refusalError,
   type BookClassResult,
 } from '../bookings/book'
-import { countSeats, staffPromotionSeat } from '../bookings/seats'
+import { countSeats, seatFor } from '../bookings/seats'
 import { selectPackage, type PackageRule, type SelectionRefusal } from '../packages/selection'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
@@ -116,8 +116,8 @@ export interface StaffPromoteInput {
 
 /**
  * Book one waiting member onto the class (§7, Mindbody's "Add to class"):
- * whatever the Cancellation Window says, into a free online seat, else a buffer
- * seat, else an overbook seat for an admin who asked, else `class_full`. The
+ * whatever the Cancellation Window says, into the seat any staff booking takes
+ * (`seatFor`): a free online seat, else a buffer seat, else an overbook seat for an admin who asked, else `class_full`. The
  * booking is paid for as any booking is; a package that cannot pay is refused
  * with the selection's reason and the member keeps their place.
  *
@@ -139,7 +139,7 @@ export async function staffPromote(tenantId: string, input: StaffPromoteInput): 
     // Booking by hand settles a place in line, so this is a guard, not a path.
     if (await holdsSeat(tx, tenantId, entry.clientId, cls.id)) throw new ConflictError('already_booked')
 
-    const decision = staffPromotionSeat(
+    const decision = seatFor(
       await countSeats(tx, tenantId, cls.id),
       cls,
       input.actor.role,

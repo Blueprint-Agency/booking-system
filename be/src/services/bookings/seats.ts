@@ -43,11 +43,13 @@ const EMPTY: SeatCounts = { onlineUsed: 0, bufferUsed: 0, overbookUsed: 0, atten
  * The seat a new booking takes, or why there is none.
  *
  * - A member takes an online seat while one is free, and nothing else.
- * - Staff take a buffer seat while one is free. Staff never take an online seat:
- *   those are the members' (and the waitlist's), and a staff booking must leave
- *   `spots_left` where it was.
- * - With the buffer full, an admin who said `overbook` gets an overbook seat. An
- *   instructor never overbooks.
+ * - Staff, booking a member ("Add member") or adding one from the waitlist
+ *   ("Add to class"), take a free online seat first, even with members waiting:
+ *   a staff booking in an online seat is an ordinary online booking. With the
+ *   online seats gone they take a buffer seat, so the buffer stays the studio's
+ *   reserve for a full class.
+ * - With online and buffer full, an admin who said `overbook` gets an overbook
+ *   seat. An instructor never overbooks.
  */
 export function seatFor(
   counts: SeatCounts,
@@ -55,29 +57,11 @@ export function seatFor(
   role: SeatRole,
   overbook: boolean,
 ): SeatDecision {
-  if (role === 'member') {
-    return counts.onlineUsed < capacities.capacityOnline
-      ? { ok: true, seat: 'online' }
-      : { ok: false, refusal: 'class_full' }
-  }
+  if (counts.onlineUsed < capacities.capacityOnline) return { ok: true, seat: 'online' }
+  if (role === 'member') return { ok: false, refusal: 'class_full' }
   if (counts.bufferUsed < capacities.capacityBuffer) return { ok: true, seat: 'buffer' }
   if (role === 'admin' && overbook) return { ok: true, seat: 'overbook' }
   return { ok: false, refusal: 'class_full' }
-}
-
-/**
- * The seat staff "Add to class" gives a member from the waitlist (§7): a freed
- * online seat first — the one the line was waiting for — and only then what a
- * staff booking may take (`seatFor`).
- */
-export function staffPromotionSeat(
-  counts: SeatCounts,
-  capacities: SeatCapacities,
-  role: Exclude<SeatRole, 'member'>,
-  overbook: boolean,
-): SeatDecision {
-  if (counts.onlineUsed < capacities.capacityOnline) return { ok: true, seat: 'online' }
-  return seatFor(counts, capacities, role, overbook)
 }
 
 /** Online seats a member can still book. The member catalogue's `spots_left`. */

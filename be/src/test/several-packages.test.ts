@@ -453,7 +453,7 @@ describe('several packages per Family, the member picks the payer', { skip: inte
     const jo = await member(one)
     await holds(one, jo, 'unlimited', { locationId: one.secondLocationId, expiresAt: days(20) })
     const bundle = await holds(one, jo, 'credit_bundle')
-    // Staff book into a buffer seat (spec-waitlist §7).
+    // Staff take a free online seat, else a buffer seat (spec-waitlist §7).
     const classId = await addClass(one, { capacityBuffer: 2 })
 
     const res = await expectStatus(
