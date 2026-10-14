@@ -582,7 +582,7 @@ The account section is a sticky sidebar (desktop, from `lg`) listing **My bookin
 
 ### 8.0 Account home `/account` (as built)
 
-No greeting: the page opens on unfinished purchases (#93) and the checkout-cancelled banner (#274), then **Up next** only: the one ticket of the old "Coming up" below — the same component the schedule shows above its feed (`ComingUp`), with **Show my QR** and a red **Cancel**. Below `lg` the **My account** menu follows it: the member's card (→ Profile), My bookings, My practice, My packages, Merch, Receipts, Profile & security, General settings, and a red **Sign out**. Every section page heads itself with "‹ Account" back to it below `lg`.
+No greeting: the page opens on unfinished purchases (#93) and the checkout-cancelled banner (#274), then **Up next** only: the one ticket of the old "Coming up" below — the same component the schedule shows above its feed (`ComingUp`), with **Show my QR** and a red **Cancel**. Below `lg` the **My account** menu follows it: the member's card (→ Profile), My bookings, My practice, My packages, Merch, Receipts, Billing details, Profile & security, General settings, and a red **Sign out**. Every section page heads itself with "‹ Account" back to it below `lg`.
 
 ### 8.1 My bookings `/account/bookings` (as built)
 
@@ -734,6 +734,15 @@ The studio's own **Receipt** for each completed purchase (be/CONTEXT.md § Money
 
 **Where admin comes in**
 - Admin sees every Receipt in the studio, can open, download and resend one, and exports the list (#389, #390). There is no void and no editing of a Receipt.
+
+### 8.6a Billing details `/account/billing-details` (as built, #399)
+
+The names and addresses the member's Receipts are made out to: up to **three** sets, each a free-text name (their own, or a company's) and an address of line 1, line 2 (optional), city, state (optional), postcode and country (Singapore unless they pick another). In the account nav after Receipts.
+
+- Each set is a card: the name, the address one line per component with the country by name, a **Default** chip on the default, and **Edit**, **Make default** (not on the default) and **Delete** (asks to confirm inline).
+- **Add** opens a sheet (`BillingDetailsSheet`, the same one checkout uses, #401); on the first set the name starts as the member's own. With three saved, Add is gone and the page says to edit or delete one. A refusal shows the backend's own sentence.
+- The first set becomes the default; deleting the default hands it to the most recently added set left — the page reads the list back after every change rather than deciding.
+- Endpoints: be-client §3 `/me/billing-details`.
 
 ### 8.7 Referral `/account/referral`
 
