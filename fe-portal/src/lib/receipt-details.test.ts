@@ -29,15 +29,15 @@ test("INV-46 a prefix that could not head a number is caught as it is typed, wit
 test("INV-46 the form sends trimmed details with blanks as none, and reads saved ones back as it shows them", () => {
   assert.deepEqual(
     receiptDetailsPayload({
+      business_name: " Example Pte. Ltd. ",
       prefix: " NW ",
-      legal_name: " Example Pte. Ltd. ",
       registration_number: "",
       address: "1 Example Street\n#02-03",
       footer: "   ",
     }),
     {
+      business_name: "Example Pte. Ltd.",
       prefix: "NW",
-      legal_name: "Example Pte. Ltd.",
       registration_number: null,
       address: "1 Example Street\n#02-03",
       footer: null,
@@ -45,8 +45,8 @@ test("INV-46 the form sends trimmed details with blanks as none, and reads saved
   );
   assert.deepEqual(receiptDetailsPayload(emptyReceiptDetailsDraft()).prefix, "R");
   assert.deepEqual(
-    receiptDetailsDraft({ prefix: "R", legal_name: null, registration_number: "REG 1", address: null, footer: null }),
-    { prefix: "R", legal_name: "", registration_number: "REG 1", address: "", footer: "" },
+    receiptDetailsDraft({ business_name: "Example", prefix: "R", registration_number: "REG 1", address: null, footer: null }),
+    { business_name: "Example", prefix: "R", registration_number: "REG 1", address: "", footer: "" },
   );
 });
 

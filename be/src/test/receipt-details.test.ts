@@ -44,7 +44,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
   type Member = { clientId: string; email: string; headers: Record<string, string> }
 
   const json = { 'Content-Type': 'application/json' }
-  const DETAILS_PATH = '/api/v1/portal/admin/settings/receipt-details'
+  const DETAILS_PATH = '/api/v1/portal/admin/settings/business-details'
 
   async function expectStatus(res: Response, status: number): Promise<Record<string, any>> {
     const text = await res.text()
@@ -116,20 +116,26 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
 
     const fresh = await expectStatus(await readDetails(studio), 200)
     assert.deepEqual(fresh, {
-      receipt_details: { prefix: 'R', legal_name: null, registration_number: null, address: null, footer: null },
+      business_details: {
+        business_name: `Receipt details ${studio.slug}`,
+        prefix: 'R',
+        registration_number: null,
+        address: null,
+        footer: null,
+      },
       next_number: 'R-000001',
       next_sequence: 1,
     })
 
     const details = {
+      business_name: `Legal ${run} Pte. Ltd.`,
       prefix: 'R',
-      legal_name: `Legal ${run} Pte. Ltd.`,
       registration_number: `2026${run}`,
       address: `1 Example Street\n#02-03\nSingapore 000001`,
       footer: 'Thank you for practising with us.',
     }
     const saved = await expectStatus(await saveDetails(studio, details), 200)
-    assert.deepEqual(saved, { receipt_details: details, next_number: 'R-000001', next_sequence: 1 })
+    assert.deepEqual(saved, { business_details: details, next_number: 'R-000001', next_sequence: 1 })
     assert.deepEqual(await expectStatus(await readDetails(studio), 200), saved, 'what was saved is what is read')
   })
 
@@ -139,8 +145,8 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     const before = await receipts.issueFor(studio.id, mia.clientId)
 
     const details = {
+      business_name: `Legal ${run} Pte. Ltd.`,
       prefix: 'R',
-      legal_name: `Legal ${run} Pte. Ltd.`,
       registration_number: `UEN ${run}`,
       address: '1 Example Street, Singapore 000001',
       footer: 'Thank you for practising with us.',
@@ -157,27 +163,27 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     }
 
     const issuedAfter = await seller(afterSave.id)
-    assert.equal(issuedAfter.legal_name, details.legal_name)
+    assert.equal(issuedAfter.business_name, details.business_name)
     assert.equal(issuedAfter.registration_number, details.registration_number)
     assert.equal(issuedAfter.address, details.address)
     assert.equal(issuedAfter.footer, details.footer)
     const afterText = await pdf(afterSave.id)
-    for (const value of [details.legal_name, details.registration_number, details.address, details.footer]) {
+    for (const value of [details.business_name, details.registration_number, details.address, details.footer]) {
       assert.ok(afterText.includes(value), `the PDF prints ${value}: ${afterText}`)
     }
 
     const issuedBefore = await seller(before.id)
     assert.deepEqual(
-      [issuedBefore.legal_name, issuedBefore.registration_number, issuedBefore.address, issuedBefore.footer],
-      [null, null, null, null],
-      'a Receipt issued before the details were saved carries none of them',
+      [issuedBefore.business_name, issuedBefore.registration_number, issuedBefore.address, issuedBefore.footer],
+      [`Receipt details ${studio.slug}`, null, null, null],
+      'a Receipt issued before the details were saved carries none of them, and the Business name it had then',
     )
     const beforeText = await pdf(before.id)
-    assert.ok(!beforeText.includes(details.legal_name) && !beforeText.includes(details.footer), beforeText)
+    assert.ok(!beforeText.includes(details.business_name) && !beforeText.includes(details.footer), beforeText)
 
     // A later edit reaches neither of them.
-    await expectStatus(await saveDetails(studio, { ...details, legal_name: `Renamed ${run} Pte. Ltd.`, footer: null }), 200)
-    assert.equal((await seller(afterSave.id)).legal_name, details.legal_name)
+    await expectStatus(await saveDetails(studio, { ...details, business_name: `Renamed ${run} Pte. Ltd.`, footer: null }), 200)
+    assert.equal((await seller(afterSave.id)).business_name, details.business_name)
     assert.equal((await seller(afterSave.id)).footer, details.footer)
     assert.ok(!(await pdf(afterSave.id)).includes('Renamed'), 'the PDF is drawn from what the Receipt was issued with')
   })
@@ -194,8 +200,8 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     await receipts.issueFor(studio.id, mia.clientId)
     assert.equal((await expectStatus(await readDetails(studio), 200)).next_number, 'R-000003')
 
-    const saved = await expectStatus(await saveDetails(studio, { prefix: 'NW' }), 200)
-    assert.equal(saved.receipt_details.prefix, 'NW')
+    const saved = await expectStatus(await saveDetails(studio, { business_name: `Receipt details ${studio.slug}`, prefix: 'NW' }), 200)
+    assert.equal(saved.business_details.prefix, 'NW')
     assert.equal(saved.next_number, 'NW-000003', 'the preview: the new prefix, the sequence carrying on')
     assert.equal(saved.next_sequence, 3)
 
@@ -207,15 +213,15 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
 
   test('INV-43 the super portal sets the receipt details when it creates a studio, and the studio’s first Receipt carries them', async () => {
     const details = {
+      business_name: `Created ${run} Pte. Ltd.`,
       prefix: 'AC',
-      legal_name: `Created ${run} Pte. Ltd.`,
       registration_number: `REG ${run}`,
       address: '2 Example Road, Singapore 000002',
       footer: 'See you on the mat.',
     }
-    const studio = await newStudio({ receipt_details: details })
+    const studio = await newStudio({ business_details: details })
     assert.deepEqual(await expectStatus(await readDetails(studio), 200), {
-      receipt_details: details,
+      business_details: details,
       next_number: 'AC-000001',
       next_sequence: 1,
     })
@@ -224,7 +230,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     const first = await receipts.issueFor(studio.id, mia.clientId)
     const read = await expectStatus(await harness.app.request(`/api/v1/me/receipts/${first.id}`, { headers: mia.headers }), 200)
     assert.equal(read.number, 'AC-000001')
-    assert.equal(read.seller.legal_name, details.legal_name)
+    assert.equal(read.seller.business_name, details.business_name)
     assert.equal(read.seller.footer, details.footer)
 
     // A prefix that could not head a number is refused before any studio is made.
@@ -233,7 +239,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
       await harness.app.request('/api/v1/platform/tenants', {
         method: 'POST',
         headers: { ...operator, ...json },
-        body: JSON.stringify({ slug, name: 'Refused studio', receipt_details: { prefix: 'R 1' } }),
+        body: JSON.stringify({ slug, name: 'Refused studio', business_details: { prefix: 'R 1' } }),
       }),
       400,
     )
@@ -244,7 +250,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
 
   test('INV-44 an instructor can neither read nor change the receipt details, and an admin’s unusable prefix or overlong detail is refused', async () => {
     const studio = await newStudio()
-    const details = { prefix: 'R', legal_name: `Kept ${run} Pte. Ltd.`, registration_number: null, address: null, footer: null }
+    const details = { business_name: `Kept ${run} Pte. Ltd.`, prefix: 'R', registration_number: null, address: null, footer: null }
     await expectStatus(await saveDetails(studio, details), 200)
 
     const instructorEmail = `instructor-${run}@${DOMAIN}`
@@ -263,14 +269,14 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     })
 
     assert.equal((await expectStatus(await readDetails(studio, instructor), 403)).error, 'forbidden_role')
-    const change = await saveDetails(studio, { ...details, legal_name: 'Not theirs to set' }, instructor)
+    const change = await saveDetails(studio, { ...details, business_name: 'Not theirs to set' }, instructor)
     assert.equal((await expectStatus(change, 403)).error, 'forbidden_role')
 
     for (const [body, about] of [
       [{ prefix: 'R/1' }, /prefix/],
       [{ prefix: '-R' }, /prefix/],
       [{ prefix: 'ABCDEFGHIJK' }, /prefix/],
-      [{ legal_name: 'x'.repeat(201) }, /legal name/],
+      [{ business_name: 'x'.repeat(201) }, /business name/],
       [{ footer: 'x'.repeat(1001) }, /footer/],
     ] as const) {
       const refused = await expectStatus(await saveDetails(studio, body), 400)
@@ -278,7 +284,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
       assert.match(refused.message, about)
     }
     assert.deepEqual(
-      (await expectStatus(await readDetails(studio), 200)).receipt_details,
+      (await expectStatus(await readDetails(studio), 200)).business_details,
       details,
       'nothing refused changed what the studio has',
     )
