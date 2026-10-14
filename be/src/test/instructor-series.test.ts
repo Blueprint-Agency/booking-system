@@ -107,7 +107,6 @@ describe('instructor scheduling for themselves', { skip: integrationTestsEnabled
     end_time: '20:00',
     capacity_online: 10,
     credit_cost: 1,
-    cancel_window_hours: 24,
     first_date: firstDate,
     last_date: addDays(firstDate, (weeks - 1) * 7),
     excluded_dates: [] as string[],
@@ -201,7 +200,8 @@ describe('instructor scheduling for themselves', { skip: integrationTestsEnabled
     assert.equal(created.series.main_instructor_id, tara.id)
     assert.equal(created.series.instructor_pay_sgd, null)
     assert.deepEqual(created.series.supporting_instructors, [])
-    assert.equal(created.series.cancel_window_hours, 24, 'the rest of the form is taken as sent')
+    assert.equal(created.series.capacity_online, 10, 'the rest of the form is taken as sent')
+    assert.equal(created.series.credit_cost, 1, 'the rest of the form is taken as sent')
 
     const rows = await classesOf(created.series.id)
     assert.deepEqual(rows.map(r => r.id).sort(), [...classIds].sort())

@@ -53,6 +53,8 @@ export interface ApiWorkshopTier {
   applied_promotion_id: string | null;
   ord: number;
   day_ids: string[];
+  /** A place can still be bought: every day the tier covers has a seat left. Never a count. */
+  has_room: boolean;
   promotions: ApiWorkshopPromotion[];
 }
 

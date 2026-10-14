@@ -39,14 +39,14 @@ const oldPack = pkg("p4", "Old 5-pack", "credit_bundle", true);
 const oldPlan = pkg("p5", "Legacy Unlimited", "unlimited", true);
 
 test("PKR-14 the rule reads as one sentence: all, only these, or all except these", () => {
-  assert.equal(ruleSentence({ mode: "all", packages: [] }), "All packages");
+  assert.equal(ruleSentence({ mode: "all", packages: [] }), "All group packages");
   assert.equal(
     ruleSentence({ mode: "only", packages: [aerial, monthly] }),
     "Only: Aerial 10-pack, Unlimited Monthly",
   );
   assert.equal(ruleSentence({ mode: "except", packages: [intro] }), "All except: Intro Trial");
   // "All except" nothing excepts nothing.
-  assert.equal(ruleSentence({ mode: "except", packages: [] }), "All packages");
+  assert.equal(ruleSentence({ mode: "except", packages: [] }), "All group packages");
   assert.equal(
     acceptsLine({ mode: "only", packages: [aerial, monthly] }),
     "Accepts: Only: Aerial 10-pack, Unlimited Monthly",
@@ -92,7 +92,7 @@ test("a catalogue row becomes a picker package; archived by status, and never a 
   assert.equal(rulePackageFromApi({ id: "x", name: "PT 5", kind: "pt", status: "active" }), null);
 });
 
-test("the request body sends the mode and the ticked packages, and none under All packages", () => {
+test("the request body sends the mode and the ticked packages, and none under All group packages", () => {
   assert.deepEqual(packageRuleBody(ACCEPTS_ALL_DRAFT), { mode: "all", package_ids: [] });
   assert.deepEqual(packageRuleBody({ mode: "only", packageIds: ["p2", "p1", "p2"] }), {
     mode: "only",
@@ -102,7 +102,7 @@ test("the request body sends the mode and the ticked packages, and none under Al
     mode: "except",
     package_ids: ["p3"],
   });
-  // Ticks survive a switch to All packages in the field, but aren't sent.
+  // Ticks survive a switch to All group packages in the field, but aren't sent.
   assert.deepEqual(packageRuleBody({ mode: "all", packageIds: ["p1"] }), { mode: "all", package_ids: [] });
 });
 
@@ -115,7 +115,7 @@ test("ticking and unticking a package", () => {
 test("Only these with nothing ticked is caught before it is sent", () => {
   assert.equal(
     packageRuleProblem({ mode: "only", packageIds: [] }),
-    "Tick at least one package, or choose All packages.",
+    "Tick at least one package, or choose All group packages.",
   );
   assert.equal(packageRuleProblem({ mode: "only", packageIds: ["p1"] }), null);
   assert.equal(packageRuleProblem({ mode: "except", packageIds: [] }), null);
@@ -128,7 +128,7 @@ test("the editor sees a rule as changed only when it accepts something different
   assert.equal(sameRule(saved, { mode: "only", packageIds: ["p2", "p1"] }), true);
   assert.equal(sameRule(saved, { mode: "only", packageIds: ["p1"] }), false);
   assert.equal(sameRule(saved, { mode: "except", packageIds: ["p1", "p2"] }), false);
-  // An empty "all except" is "all"; ticks left behind under All packages don't count.
+  // An empty "all except" is "all"; ticks left behind under All group packages don't count.
   assert.equal(sameRule(draftFromRule(null), { mode: "except", packageIds: [] }), true);
   assert.equal(sameRule(draftFromRule({ mode: "all", packages: [] }), { mode: "all", packageIds: ["p1"] }), true);
 });
@@ -148,7 +148,7 @@ test("PKR-14 a rule change that cancels bookings says how many, in the singular 
 test("PKR-15 the rule's own refusals read as sentences on the scheduling forms", () => {
   assert.equal(
     scheduleErrorMessage(new ApiError(400, { error: "package_rule_empty" })),
-    '"Only these" needs at least one package. Tick at least one package, or choose All packages.',
+    '"Only these" needs at least one package. Tick at least one package, or choose All group packages.',
   );
   assert.equal(
     scheduleErrorMessage(new ApiError(400, { error: "package_rule_invalid_package", package_ids: ["x"] })),

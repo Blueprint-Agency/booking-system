@@ -242,7 +242,7 @@ async function cancelPtRequestInTx(
       refundSessions = cost
       // The window never decides a staff cancel's refund, but it is recorded
       // truthfully, and a late one keeps the package Activated (below).
-      wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, null, now)
+      wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, now)
     } else {
       const evaluation = await evaluateCancellation({
         tenantId,

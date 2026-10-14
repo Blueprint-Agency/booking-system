@@ -39,7 +39,7 @@ test('a class on an Unlimited plan previews nothing spent', () => {
 test('the preview says whether the class is already inside its Cancellation Window', () => {
   assert.equal(staffCancelPreview({ ...booked, startsAt: at(25) }, 24, now)?.late, false)
   assert.equal(staffCancelPreview({ ...booked, startsAt: at(23) }, 24, now)?.late, true)
-  // The class's own window, not the studio's, is the one passed in.
+  // Judged by the window passed in, whatever it is.
   assert.equal(staffCancelPreview({ ...booked, startsAt: at(23) }, 12, now)?.late, false)
   // Started: inside by any window.
   assert.equal(staffCancelPreview({ ...booked, startsAt: at(-1) }, 0, now)?.late, true)

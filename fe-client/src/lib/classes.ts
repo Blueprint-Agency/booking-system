@@ -34,8 +34,6 @@ export interface ApiClassCard {
   /** An online seat is free. Whether, never how many: seat counts are the studio's. */
   has_seats: boolean;
   lifecycle: string;
-  /** This class's Cancellation Window in hours — its own, else the studio's. */
-  effective_cancel_window_hours: number;
   is_booked?: boolean;
   /**
    * Signed in only: the member's own booking this class overlaps, which they

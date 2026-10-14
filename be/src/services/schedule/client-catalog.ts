@@ -14,8 +14,8 @@ import { countSeats, countSeatsByClass, seatsOf, spotsLeft, type SeatCounts } fr
 import { lineupsOf } from './lineup'
 import { waitlistSummaries, type WaitlistSummary } from '../waitlist/line'
 import { clashJson, firstClash, heldWindows } from '../bookings/member-time'
-import { cancelWindowResolver, classCancelWindow } from '../policy/cancel-window'
 import { namedClassRule, namedRuleJson } from './package-rules'
+import { classCancelWindow } from '../policy/cancel-window'
 import { localDateOf, zonedInstant } from './series-dates'
 import { loadTenantById } from '../tenants/tenants'
 
@@ -45,8 +45,6 @@ export interface ClassCardPayload {
    */
   has_seats: boolean
   lifecycle: string
-  /** This class's Cancellation Window in hours — its own, else the studio's (policy/cancel-window.ts). */
-  effective_cancel_window_hours: number
   /** The class's line (spec-waitlist.md §9). `my_entry` is null for a signed-out reader. */
   waitlist: WaitlistSummary
   /**
@@ -55,6 +53,12 @@ export interface ClassCardPayload {
    * read for the class opened.
    */
   restricted: boolean
+  /**
+   * TRANSITIONAL — the studio's class window. Remove with the contract
+   * migration that drops `cancel_window_hours`: only a member bundle from
+   * before the per-class window was retired reads it.
+   */
+  effective_cancel_window_hours: number
 }
 
 export interface ClassDetailPayload extends ClassCardPayload {
@@ -161,7 +165,6 @@ export async function listClassCards(
       creditCost: classes.creditCost,
       capacityOnline: classes.capacityOnline,
       capacityWaitlist: classes.capacityWaitlist,
-      cancelWindowHours: classes.cancelWindowHours,
       packageRuleMode: classes.packageRuleMode,
       lifecycle: classes.lifecycle,
     })
@@ -173,7 +176,6 @@ export async function listClassCards(
     .where(and(...conds))
     .orderBy(classes.startsAt)
   const waitlists = await waitlistSummaries(tenantId, rows, clientId)
-  const windowOf = await cancelWindowResolver(tenantId)
 
   const roomIds = Array.from(new Set(rows.map(r => r.roomId).filter((v): v is string => !!v)))
   const roomById = new Map<string, { id: string; name: string }>()
@@ -197,6 +199,8 @@ export async function listClassCards(
     rows.map(r => r.id),
   )
 
+  const windowHours = await classCancelWindow(tenantId)
+
   return rows.map(r => {
     const supporting = supportingByClass.get(r.id) ?? []
     return {
@@ -213,9 +217,9 @@ export async function listClassCards(
       credit_cost: r.creditCost,
       ...memberSeats(seatsOf(seats, r.id), r.capacityOnline),
       lifecycle: r.lifecycle,
-      effective_cancel_window_hours: windowOf(r),
       waitlist: waitlists.get(r.id)!,
       restricted: r.packageRuleMode !== 'all',
+      effective_cancel_window_hours: windowHours,
     }
   })
 }
@@ -257,7 +261,6 @@ export async function getClassDetail(
       creditCost: classes.creditCost,
       capacityOnline: classes.capacityOnline,
       capacityWaitlist: classes.capacityWaitlist,
-      cancelWindowHours: classes.cancelWindowHours,
       packageRuleMode: classes.packageRuleMode,
       lifecycle: classes.lifecycle,
     })
@@ -321,10 +324,10 @@ export async function getClassDetail(
     credit_cost: r.creditCost,
     ...memberSeats(seats, r.capacityOnline),
     lifecycle: r.lifecycle,
-    effective_cancel_window_hours: await classCancelWindow(tenantId, r),
     // Public route: whether the line is open, never anyone's place in it.
     waitlist: (await waitlistSummaries(tenantId, [r], null)).get(r.id)!,
     restricted: r.packageRuleMode !== 'all',
+    effective_cancel_window_hours: await classCancelWindow(tenantId),
     package_rule: namedRuleJson(await namedClassRule(tenantId, r)),
   }
 }

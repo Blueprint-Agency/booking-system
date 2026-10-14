@@ -49,7 +49,7 @@ export async function promoteFromWaitlist(
 ): Promise<Promotion[]> {
   const cls = await lockClass(tx, tenantId, classId)
   if (!cls || cls.lifecycle !== 'active') return []
-  if (!beforeWindow(cls.startsAt, await classCancelWindow(tenantId, cls), now)) return []
+  if (!beforeWindow(cls.startsAt, await classCancelWindow(tenantId), now)) return []
 
   const line = await waitingLine(tx, tenantId, classId, now)
   const outcomes = new Map<string, PromotionOutcome>()
@@ -94,6 +94,8 @@ export async function promoteFromWaitlist(
  * must not undo a seat that is already theirs. Failures are reported.
  */
 export async function sendPromotionEmails(tenantId: string, promotions: readonly Promotion[]): Promise<void> {
+  // One window for every class: read once, on the first email that needs it.
+  let windowHours: number | undefined
   for (const p of promotions) {
     try {
       const [row] = await db
@@ -102,7 +104,6 @@ export async function sendPromotionEmails(tenantId: string, promotions: readonly
           clientEmail: clients.email,
           className: classTypes.name,
           startsAt: classes.startsAt,
-          cancelWindowHours: classes.cancelWindowHours,
           locationName: locations.name,
           instructorName: staffUsers.name,
         })
@@ -124,7 +125,8 @@ export async function sendPromotionEmails(tenantId: string, promotions: readonly
         year: 'numeric',
       })
       const time = new Intl.DateTimeFormat('en-GB', { timeZone, hour: 'numeric', minute: '2-digit', hour12: true })
-      const cancelBy = waitlistClosesAt(row.startsAt, await classCancelWindow(tenantId, row))
+      windowHours ??= await classCancelWindow(tenantId)
+      const cancelBy = waitlistClosesAt(row.startsAt, windowHours)
 
       await sendTemplatedEmail({
         tenantId,

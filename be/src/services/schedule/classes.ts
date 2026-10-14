@@ -42,8 +42,6 @@ export interface CreateClassInput {
    * be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md.
    */
   instructorPaySgd?: number | null
-  /** This class's own Cancellation Window in hours. null/absent = follow the studio's. */
-  cancelWindowHours?: number | null
   /** Which packages may pay for the class. Absent = accepts all. */
   packageRule?: PackageRule
   createdByStaffId: string
@@ -87,7 +85,6 @@ export async function createClass(tenantId: string, input: CreateClassInput): Pr
         capacityWaitlist: input.capacityWaitlist,
         capacityBuffer: input.capacityBuffer,
         creditCost: input.creditCost,
-        cancelWindowHours: input.cancelWindowHours ?? null,
         // Initial value on a brand-new row, not a movement — nothing to merge
         // against yet. Every later change goes through the roster module.
         instructorPaySgd:
@@ -138,8 +135,6 @@ export interface UpdateClassInput {
   creditCost?: number
   /** undefined = leave unchanged; null = clear; number = set (SGD). */
   instructorPaySgd?: number | null
-  /** undefined = leave unchanged; null = back to the studio's window; number = this class's own. */
-  cancelWindowHours?: number | null
   /**
    * undefined = leave unchanged. A new rule cancels the bookings paid by a
    * package it no longer accepts (./package-rule-change) — preview the count
@@ -263,7 +258,6 @@ export async function updateClass(
     if (patch.capacityWaitlist !== undefined) set.capacityWaitlist = patch.capacityWaitlist
     if (patch.capacityBuffer !== undefined) set.capacityBuffer = patch.capacityBuffer
     if (patch.creditCost !== undefined) set.creditCost = patch.creditCost
-    if (patch.cancelWindowHours !== undefined) set.cancelWindowHours = patch.cancelWindowHours
 
     let row = existing
     if (Object.keys(set).length) {

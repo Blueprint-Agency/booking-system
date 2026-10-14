@@ -17,7 +17,7 @@ import { db } from '../../db'
 import { globalPolicy } from '../../db/schema/policy'
 import { cancellations } from '../../db/schema/bookings'
 import { AppError, NotFoundError } from '../../shared/errors'
-import { effectiveCancelWindow, insideCancelWindow } from './cancel-window'
+import { insideCancelWindow } from './cancel-window'
 
 export type CancellationKind = 'class' | 'pt'
 
@@ -26,12 +26,6 @@ export interface EvaluateInput {
   clientId: string
   kind: CancellationKind
   sessionStartsAt: Date
-  /**
-   * A class's own Cancellation Window (`classes.cancel_window_hours`); null or
-   * absent = the studio's. A class caller must pass what the row holds, or the
-   * class is judged by the studio's window. Ignored for PT.
-   */
-  classOwnWindowHours?: number | null
   now: Date
 }
 
@@ -78,16 +72,12 @@ export async function readCancellationPolicy(tenantId: string): Promise<Cancella
 }
 
 /**
- * The window a cancel of this kind is judged by, in hours: a class's effective
- * window (its own, else the studio's), or the studio's PT window. A staff
- * cancel records it the same way a member's is decided by it.
+ * The window a cancel of this kind is judged by, in hours: the studio's class
+ * window or its PT window. A staff cancel records it the same way a member's is
+ * decided by it.
  */
-export function cancelWindowHoursFor(
-  policy: CancellationPolicy,
-  kind: CancellationKind,
-  classOwnWindowHours: number | null,
-): number {
-  return kind === 'class' ? effectiveCancelWindow(classOwnWindowHours, policy.classWindowHours) : policy.ptWindowHours
+export function cancelWindowHoursFor(policy: CancellationPolicy, kind: CancellationKind): number {
+  return kind === 'class' ? policy.classWindowHours : policy.ptWindowHours
 }
 
 /**
@@ -99,10 +89,9 @@ export async function staffCancelInTime(
   tenantId: string,
   kind: CancellationKind,
   startsAt: Date,
-  classOwnWindowHours: number | null,
   now: Date,
 ): Promise<boolean> {
-  const windowHours = cancelWindowHoursFor(await readCancellationPolicy(tenantId), kind, classOwnWindowHours)
+  const windowHours = cancelWindowHoursFor(await readCancellationPolicy(tenantId), kind)
   return !insideCancelWindow(startsAt, windowHours, now)
 }
 
@@ -118,9 +107,8 @@ export async function evaluateCancellation(input: EvaluateInput): Promise<Evalua
 
   const policy = await readCancellationPolicy(tenantId)
 
-  // Window: the booking must be cancelled at least N hours before it starts —
-  // for a class, its effective window (./cancel-window).
-  const windowHours = cancelWindowHoursFor(policy, kind, input.classOwnWindowHours ?? null)
+  // Window: the booking must be cancelled at least N hours before it starts.
+  const windowHours = cancelWindowHoursFor(policy, kind)
   const wasWithinWindow = !insideCancelWindow(sessionStartsAt, windowHours, now)
 
   // Cap: count this client's cancellations (class + PT, client-initiated) in the rolling cycle.

@@ -212,8 +212,6 @@ export interface LockedClass {
   creditCost: number
   lifecycle: string
   mainInstructorId: string
-  /** The class's own Cancellation Window; null = the studio's (policy/cancel-window.ts). */
-  cancelWindowHours: number | null
   /** The class's Package rule mode; its list is read by `readClassRule` when it has one. */
   packageRuleMode: PackageRuleMode
 }
@@ -236,7 +234,6 @@ export async function lockClass(tx: Tx, tenantId: string, classId: string): Prom
       creditCost: classes.creditCost,
       lifecycle: classes.lifecycle,
       mainInstructorId: classes.mainInstructorId,
-      cancelWindowHours: classes.cancelWindowHours,
       packageRuleMode: classes.packageRuleMode,
     })
     .from(classes)

@@ -173,7 +173,7 @@ export async function staffPromote(tenantId: string, input: StaffPromoteInput): 
     return {
       booking: paid.booking,
       promotion: { entryId: entry.id, bookingId: paid.booking.bookingId, clientId: entry.clientId, classId: cls.id },
-      emailable: beforeWindow(cls.startsAt, await classCancelWindow(tenantId, cls), now),
+      emailable: beforeWindow(cls.startsAt, await classCancelWindow(tenantId), now),
     }
   })
 

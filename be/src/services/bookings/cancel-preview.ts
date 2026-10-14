@@ -40,7 +40,6 @@ export async function previewMemberClassCancel(
     clientId,
     kind: 'class',
     sessionStartsAt: booking.startsAt,
-    classOwnWindowHours: booking.cancelWindowHours,
     now,
   })
   const { refundFired } = settleCancel({

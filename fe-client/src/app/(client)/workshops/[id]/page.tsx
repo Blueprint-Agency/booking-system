@@ -42,9 +42,15 @@ export default function WorkshopDetailPage() {
     [workshop],
   );
 
+  // Opens on the first option that still has a place, so a full one isn't
+  // what the member is offered before they choose.
   const selectedTier: ApiWorkshopTier | null = useMemo(() => {
     if (!sortedTiers.length) return null;
-    return sortedTiers.find((t) => t.id === selectedTierId) ?? sortedTiers[0]!;
+    return (
+      sortedTiers.find((t) => t.id === selectedTierId) ??
+      sortedTiers.find((t) => t.has_room) ??
+      sortedTiers[0]!
+    );
   }, [sortedTiers, selectedTierId]);
 
   if (loading) {
@@ -124,6 +130,10 @@ export default function WorkshopDetailPage() {
         : null;
 
   const isFree = Number(priceForSelected?.amount) <= 0;
+  // Said here, before checkout, rather than found at Pay: the server's
+  // `has_room` is the same rule the purchase gate refuses `workshop_full` by.
+  const selectedFull = selectedTier !== null && !selectedTier.has_room;
+  const allFull = sortedTiers.length > 0 && sortedTiers.every((t) => !t.has_room);
 
   return (
     <BookingSurface>
@@ -163,10 +173,16 @@ export default function WorkshopDetailPage() {
                   <p className="text-xs text-muted">{sortedTiers.length} options</p>
                 )}
               </div>
-              <a href="#book" className={cn(BTN_PRIMARY, "min-h-[44px] shrink-0")}>
-                Book
-                <ArrowDown className="h-4 w-4" aria-hidden />
-              </a>
+              {allFull ? (
+                <span className="inline-flex min-h-[44px] shrink-0 items-center rounded-full bg-ink/5 px-5 text-sm font-semibold text-muted">
+                  Fully booked
+                </span>
+              ) : (
+                <a href="#book" className={cn(BTN_PRIMARY, "min-h-[44px] shrink-0")}>
+                  Book
+                  <ArrowDown className="h-4 w-4" aria-hidden />
+                </a>
+              )}
             </div>
           )}
 
@@ -304,12 +320,15 @@ export default function WorkshopDetailPage() {
                         type="button"
                         role="radio"
                         aria-checked={isActive}
+                        disabled={!t.has_room}
                         onClick={() => setSelectedTierId(t.id)}
                         className={cn(
                           "w-full rounded-xl border px-4 py-3 text-left transition-colors",
-                          isActive
-                            ? "border-accent bg-accent/5 ring-1 ring-accent"
-                            : "border-ink/10 hover:border-ink/25",
+                          !t.has_room
+                            ? "cursor-not-allowed border-ink/10 bg-ink/[0.03] opacity-70"
+                            : isActive
+                              ? "border-accent bg-accent/5 ring-1 ring-accent"
+                              : "border-ink/10 hover:border-ink/25",
                         )}
                       >
                         <div className="flex items-baseline justify-between gap-2">
@@ -319,6 +338,7 @@ export default function WorkshopDetailPage() {
                         {t.description && <p className="mt-1 text-xs text-muted">{t.description}</p>}
                         <p className="mt-1 text-xs text-muted">
                           {t.day_ids.length} {t.day_ids.length === 1 ? "day" : "days"}
+                          {!t.has_room && <span className="font-semibold text-ink"> · Fully booked</span>}
                         </p>
                       </button>
                     );
@@ -326,28 +346,45 @@ export default function WorkshopDetailPage() {
                 </div>
               )}
 
-              <BuyButton
-                target={{
-                  kind: "workshop",
-                  workshopId: workshop.id,
-                  tierId: selectedTier?.id ?? null,
-                }}
-                context="book a workshop"
-                gateHref={`/workshops/${workshop.id}`}
-                // NaN, not 0: an absent price must fall to the paid branch.
-                // Coercing it to 0 would post-and-grant the workshop for free.
-                priceSgd={priceForSelected?.amount ?? NaN}
-                className={cn(BTN_BOOK, "w-full")}
-                loadingLabel="Redirecting…"
-              >
-                {isFree ? "Book for free" : "Book now"}
-              </BuyButton>
-              {/* A paid tier goes to our review page first, not straight to
-                  the payment provider; a free one is booked on the spot. */}
-              <p className="text-xs leading-relaxed text-muted text-center">
-                {isFree ? "" : "You'll review your order before paying. "}
-                Workshop bookings can&apos;t be cancelled in the app.
-              </p>
+              {selectedFull ? (
+                <>
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex min-h-[48px] w-full items-center justify-center rounded-full bg-ink/5 px-5 text-sm font-semibold text-muted"
+                  >
+                    Fully booked
+                  </button>
+                  <p className="text-xs leading-relaxed text-muted text-center">
+                    {allFull ? "Every place in this workshop has been taken." : "This option has no places left."}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <BuyButton
+                    target={{
+                      kind: "workshop",
+                      workshopId: workshop.id,
+                      tierId: selectedTier?.id ?? null,
+                    }}
+                    context="book a workshop"
+                    gateHref={`/workshops/${workshop.id}`}
+                    // NaN, not 0: an absent price must fall to the paid branch.
+                    // Coercing it to 0 would post-and-grant the workshop for free.
+                    priceSgd={priceForSelected?.amount ?? NaN}
+                    className={cn(BTN_BOOK, "w-full")}
+                    loadingLabel="Redirecting…"
+                  >
+                    {isFree ? "Book for free" : "Book now"}
+                  </BuyButton>
+                  {/* A paid tier goes to our review page first, not straight to
+                      the payment provider; a free one is booked on the spot. */}
+                  <p className="text-xs leading-relaxed text-muted text-center">
+                    {isFree ? "" : "You'll review your order before paying. "}
+                    Workshop bookings can&apos;t be cancelled in the app.
+                  </p>
+                </>
+              )}
             </>
           )}
         </div>

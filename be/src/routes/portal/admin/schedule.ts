@@ -19,7 +19,6 @@ import {
   staffPackagesQuery,
 } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
-import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-window'
 import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
 import { namedRuleJson } from '../../../services/schedule/package-rules'
 import { ptSessionDetailJson } from '../pt-session-detail'
@@ -87,8 +86,6 @@ const createClassSchema = z
     // prices it later from Finance's "Needs pay" filter. An explicit 0 is a
     // price. See be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md.
     instructor_pay_sgd: z.number().min(0).nullable().optional(),
-    // Blank (omitted or null) follows the studio's class window.
-    cancel_window_hours: cancelWindowHoursSchema.optional(),
     // Omitted = accepts all.
     package_rule: packageRuleSchema.optional(),
   })
@@ -118,8 +115,6 @@ const updateClassSchema = z.object({
   capacity_buffer: z.number().int().min(0).optional(),
   credit_cost: z.number().int().min(0).optional(),
   instructor_pay_sgd: z.number().min(0).nullable().optional(),
-  // Omitted = unchanged; an explicit null puts the class back on the studio's window.
-  cancel_window_hours: cancelWindowHoursSchema.optional(),
   // Omitted = unchanged. Saving one cancels the bookings paid by a package it
   // no longer accepts, so the portal previews first.
   package_rule: packageRuleSchema.optional(),
@@ -211,7 +206,6 @@ async function classRow(tenant: string, c: classesSvc.ClassRow) {
     capacity_buffer: c.capacityBuffer,
     credit_cost: c.creditCost,
     instructor_pay_sgd: c.instructorPaySgd == null ? null : Number(c.instructorPaySgd),
-    ...(await cancelWindowJson(tenant, c)),
     package_rule: await classPackageRuleJson(tenant, c),
     lifecycle: c.lifecycle,
     series_id: c.seriesId,
@@ -259,8 +253,11 @@ const app = new Hono()
       capacity_waitlist: d.capacityWaitlist,
       capacity_buffer: d.capacityBuffer,
       credit_cost: d.creditCost,
-      ...(await cancelWindowJson(tenantId(c), d)),
       package_rule: namedRuleJson(d.packageRule),
+      // TRANSITIONAL — remove with the contract migration that drops the
+      // column. A portal bundle from before the per-class window was retired
+      // reads this field; null keeps its editor saving rather than refusing.
+      cancel_window_hours: null,
       ...classSeatsJson(d),
       check_in_state: d.checkInState,
       created_at: d.createdAt.toISOString(),
@@ -334,7 +331,6 @@ const app = new Hono()
       capacityBuffer: body.capacity_buffer,
       creditCost: body.credit_cost,
       instructorPaySgd: body.instructor_pay_sgd ?? null,
-      cancelWindowHours: body.cancel_window_hours ?? null,
       ...(body.package_rule ? { packageRule: toPackageRule(body.package_rule) } : {}),
       createdByStaffId: staffId,
     })
@@ -377,9 +373,6 @@ const app = new Hono()
         ...(body.credit_cost !== undefined ? { creditCost: body.credit_cost } : {}),
         ...(body.instructor_pay_sgd !== undefined
           ? { instructorPaySgd: body.instructor_pay_sgd }
-          : {}),
-        ...(body.cancel_window_hours !== undefined
-          ? { cancelWindowHours: body.cancel_window_hours }
           : {}),
         ...(body.package_rule !== undefined ? { packageRule: toPackageRule(body.package_rule) } : {}),
       }

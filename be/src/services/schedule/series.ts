@@ -76,8 +76,6 @@ export interface SeriesTemplate {
   capacityWaitlist: number
   capacityBuffer: number
   creditCost: number
-  /** Copied onto every class the series creates. null/absent = those classes follow the studio's window. */
-  cancelWindowHours?: number | null
   /** Copied onto every class the series creates, extends included. Absent = accepts all. */
   packageRule?: PackageRule
 }
@@ -162,7 +160,6 @@ export async function createSeries(
         capacityWaitlist: input.capacityWaitlist,
         capacityBuffer: input.capacityBuffer,
         creditCost: input.creditCost,
-        cancelWindowHours: input.cancelWindowHours ?? null,
         firstDate: input.firstDate,
         lastDate: input.lastDate,
         excludedDates: normaliseDates(input.excludedDates),
@@ -473,7 +470,6 @@ async function loadSeries(tenantId: string, seriesId: string, tx?: Tx): Promise<
     capacityWaitlist: row.capacityWaitlist,
     capacityBuffer: row.capacityBuffer,
     creditCost: row.creditCost,
-    cancelWindowHours: row.cancelWindowHours,
     packageRule,
     packageRuleNamed: await nameRule(exec(tx), tenantId, packageRule),
     firstDate: row.firstDate,
@@ -551,7 +547,6 @@ async function createClasses(
         capacityWaitlist: template.capacityWaitlist,
         capacityBuffer: template.capacityBuffer,
         creditCost: template.creditCost,
-        cancelWindowHours: template.cancelWindowHours ?? null,
         instructorPaySgd: template.instructorPaySgd?.toFixed(2) ?? null,
         createdByStaffId,
       })),

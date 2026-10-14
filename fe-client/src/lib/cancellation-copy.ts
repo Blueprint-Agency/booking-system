@@ -116,15 +116,9 @@ function countsToward(policy: CancellationPolicy | null, still = false): string 
   return ` It ${still ? "still " : ""}counts toward your ${capText(policy)}.`;
 }
 
-/**
- * Stated where a member books a class, before they do. `windowHours` is that
- * class's own Cancellation Window (`effective_cancel_window_hours`); left out,
- * the sentence is about the studio's.
- */
-export function classBookingPolicy(
-  policy: CancellationPolicy,
-  windowHours: number = policy.class_window_hours,
-): string {
+/** Stated where a member books a class, before they do. */
+export function classBookingPolicy(policy: CancellationPolicy): string {
+  const windowHours = policy.class_window_hours;
   if (capped(policy) && policy.cancel_cap_count === 0) {
     return "You can cancel a class any time before it starts. Cancelling doesn't return the credit.";
   }
@@ -138,27 +132,38 @@ export function classBookingPolicy(
 }
 
 /**
+ * One line of the schedule's policy notice: a bold `label`, an optional
+ * `when` in brackets after it, then `text` — "**Early cancellation** (at least
+ * 24 hours before class): you get your credit back."
+ */
+export interface PolicyPoint {
+  label: string;
+  when?: string;
+  text: string;
+}
+
+/**
  * The same rule as `classBookingPolicy`, cut into short lines for the
  * schedule's policy notice: one fact per line, each readable at a glance.
  */
-export function classPolicyPoints(
-  policy: CancellationPolicy,
-  windowHours: number = policy.class_window_hours,
-): string[] {
+export function classPolicyPoints(policy: CancellationPolicy): PolicyPoint[] {
+  const windowHours = policy.class_window_hours;
   if (capped(policy) && policy.cancel_cap_count === 0) {
-    return ["You can cancel any time before class starts.", "You won't get your credit back."];
+    return [{ label: "Cancelling", text: "you can cancel any time before class starts, but you won't get your credit back." }];
   }
-  const points = [
+  const points: PolicyPoint[] =
     windowHours === 0
-      ? "Cancel any time before class starts and you get your credit back."
-      : `Cancel at least ${hoursText(windowHours)} before class and you get your credit back.`,
-  ];
-  if (windowHours > 0) points.push(`Cancel within ${hoursText(windowHours)} of class and you lose the credit.`);
+      ? [{ label: "Cancelling", when: "any time before class starts", text: "you get your credit back." }]
+      : [
+          { label: "Early cancellation", when: `at least ${hoursText(windowHours)} before class`, text: "you get your credit back." },
+          { label: "Late cancellation", when: `under ${hoursText(windowHours)} before class`, text: "you lose the credit." },
+        ];
   if (capped(policy)) {
     const cycle = policy.cancel_cap_cycle_days === 1 ? "a day" : `every ${policy.cancel_cap_cycle_days} days`;
-    points.push(
-      `You get ${plural(policy.cancel_cap_count, "cancellation")} ${cycle}. After that, you lose the credit even if you cancel early.`,
-    );
+    points.push({
+      label: "Limit",
+      text: `${plural(policy.cancel_cap_count, "cancellation")} ${cycle}. Past that, you lose the credit even if you cancel early.`,
+    });
   }
   return points;
 }
@@ -167,8 +172,8 @@ export function classPolicyPoints(
 export const LATE_CANCEL_LINE = "This is a late cancellation — your credit won't be returned.";
 
 /**
- * One class's Cancellation Window, alone — the class detail's line, where the
- * studio's cap is not the point. "Cancel up to 12 hours before it starts."
+ * The studio's class window, alone — the class detail's line, where the cap
+ * is not the point. "Cancel up to 12 hours before it starts."
  */
 export function classCancelWindowLine(windowHours: number): string {
   return `Cancel ${deadline(windowHours, "it")}.`;
@@ -179,13 +184,12 @@ export function classCancelWindowLine(windowHours: number): string {
  *
  * `preview` is the server's own answer for this booking, cap and window
  * included; without it (still loading, or the read failed) the dialog states
- * the whole rule instead, for `windowHours` — that class's window.
+ * the whole rule instead.
  */
 export function classCancelNotice(
   policy: CancellationPolicy | null,
   wasUnlimited: boolean,
   preview: CancelPreview | null = null,
-  windowHours: number | null = null,
 ): string {
   if (preview?.unlimited || (!preview && wasUnlimited)) {
     const late = preview?.late ? "This is a late cancellation. " : "";
@@ -205,7 +209,7 @@ export function classCancelNotice(
   if (!policy) {
     return "Whether your credit comes back depends on the studio's cancellation policy.";
   }
-  return classBookingPolicy(policy, windowHours ?? policy.class_window_hours);
+  return classBookingPolicy(policy);
 }
 
 /** After a class cancel succeeds: did the credit come back, and if not, why? */

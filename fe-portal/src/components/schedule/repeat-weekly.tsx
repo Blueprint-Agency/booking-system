@@ -94,9 +94,6 @@ export function RepeatRangeFields({
   );
 }
 
-/** The Cancellation Window field's hint with Repeat weekly on. */
-export const SERIES_WINDOW_HINT =
-  "Copied onto every class in the series. Leave blank to follow the studio's cancellation policy.";
 
 export type SeriesDates = ReturnType<typeof useSeriesDates>;
 

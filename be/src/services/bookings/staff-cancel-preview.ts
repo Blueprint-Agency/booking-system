@@ -33,7 +33,7 @@ export interface StaffCancelPreview {
   /** The package that paid, by name; a Return credit goes back to it. */
   packageName: string | null
   unlimited: boolean
-  /** Inside the class's effective Cancellation Window (or started). */
+  /** Inside the studio's class Cancellation Window (or started). */
   late: boolean
 }
 
@@ -44,7 +44,7 @@ export function staffCanCancel(b: StaffCancelInput): boolean {
 
 /**
  * The dialog's facts; null when there is no cancel to offer. `windowHours` is
- * the class's effective window (`cancelWindowResolver`).
+ * the studio's class window (`classCancelWindow`).
  */
 export function staffCancelPreview(b: StaffCancelInput, windowHours: number, now: Date): StaffCancelPreview | null {
   if (!staffCanCancel(b)) return null

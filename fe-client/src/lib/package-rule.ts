@@ -30,7 +30,7 @@ export interface ApiPackageRule {
 export const RESTRICTED_HINT = "Some packages";
 
 /**
- * "All packages", "Only: A, B", "All except: C". An `except` naming nothing
+ * "All group packages", "Only: A, B", "All except: C". An `except` naming nothing
  * takes everything; an `only` naming nothing takes nothing.
  */
 export function ruleSentence(rule: ApiPackageRule): string {
@@ -39,8 +39,8 @@ export function ruleSentence(rule: ApiPackageRule): string {
     case "only":
       return names ? `Only: ${names}` : "No packages";
     case "except":
-      return names ? `All except: ${names}` : "All packages";
+      return names ? `All except: ${names}` : "All group packages";
     default:
-      return "All packages";
+      return "All group packages";
   }
 }

@@ -69,7 +69,6 @@ export async function cancelClass(
         startsAt: classes.startsAt,
         endsAt: classes.endsAt,
         classTypeId: classes.classTypeId,
-        cancelWindowHours: classes.cancelWindowHours,
       })
       .from(classes)
       .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
@@ -118,9 +117,9 @@ export async function cancelClass(
       )
       .for('update')
 
-    // Whether the cancel came before the class's window, as a staff cancel of
+    // Whether the cancel came before the class window, as a staff cancel of
     // one booking records it (#350): never acted on, every credit comes back.
-    const wasWithinWindow = await staffCancelInTime(tenantId, 'class', cls.startsAt, cls.cancelWindowHours, now)
+    const wasWithinWindow = await staffCancelInTime(tenantId, 'class', cls.startsAt, now)
 
     let refundedCount = 0
     const notices: StudioCancelNotice[] = []

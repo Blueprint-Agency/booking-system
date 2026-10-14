@@ -45,19 +45,19 @@ export interface PackageRuleDraft {
 export const ACCEPTS_ALL_DRAFT: PackageRuleDraft = { mode: "all", packageIds: [] };
 
 export const RULE_MODES: { value: PackageRuleMode; label: string }[] = [
-  { value: "all", label: "All packages" },
+  { value: "all", label: "All group packages" },
   { value: "only", label: "Only these" },
   { value: "except", label: "All except" },
 ];
 
 /* ------------------------------- Wording ------------------------------- */
 
-/** "All packages" · "Only: A, B" · "All except: C". */
+/** "All group packages" · "Only: A, B" · "All except: C". */
 export function ruleSentence(rule: NamedPackageRule): string {
   const names = rule.packages.map((p) => p.name).join(", ");
   if (rule.mode === "only") return rule.packages.length > 0 ? `Only: ${names}` : "No packages";
   if (rule.mode === "except" && rule.packages.length > 0) return `All except: ${names}`;
-  return "All packages";
+  return "All group packages";
 }
 
 /** "Accepts: Only: A, B" — the rule as a class's or series' details line reads it. */
@@ -75,7 +75,7 @@ export function draftFromRule(rule: NamedPackageRule | null | undefined): Packag
 
 /**
  * The draft as the API takes it. The ticked packages are kept while the mode is
- * "All packages" so switching back restores them, but none is sent with it.
+ * "All group packages" so switching back restores them, but none is sent with it.
  */
 export function packageRuleBody(draft: PackageRuleDraft): PackageRuleInput {
   if (draft.mode === "all") return { mode: "all", package_ids: [] };
@@ -231,7 +231,7 @@ export function wouldCancelCopy(n: number) {
   };
 }
 
-const RULE_EMPTY_COPY = "Tick at least one package, or choose All packages.";
+const RULE_EMPTY_COPY = "Tick at least one package, or choose All group packages.";
 
 /** Staff copy for the rule's own refusals, on any scheduling form. */
 export const PACKAGE_RULE_ERROR_COPY: Record<string, string> = {

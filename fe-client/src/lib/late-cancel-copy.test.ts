@@ -77,7 +77,7 @@ test("CXL-43 the dialog says what the preview says: back, over the cap, or an Un
 test("CXL-42 with the cap off nothing mentions a cap", () => {
   const sentences = [
     classBookingPolicy(capOff),
-    classBookingPolicy(capOff, 6),
+    classBookingPolicy({ ...capOff, class_window_hours: 6 }),
     classCancelNotice(capOff, false, preview()),
     classCancelNotice(capOff, true, preview({ credits: 0, unlimited: true, credit_back: false })),
     classCancelNotice(capOff, false),
@@ -92,7 +92,7 @@ test("CXL-42 with the cap off nothing mentions a cap", () => {
 test("CXL-39 the booking sentence says a later cancel is allowed but late", () => {
   assert.match(classBookingPolicy(policy()), /late cancellation: allowed until the class starts, but the credit isn't returned/);
   // With no window every cancel before the start is in time: there is no "later".
-  assert.doesNotMatch(classBookingPolicy(policy(), 0), /late/);
+  assert.doesNotMatch(classBookingPolicy(policy({ class_window_hours: 0 })), /late/);
 });
 
 test("CXL-43 an upcoming booking says until when a cancel is in time", () => {

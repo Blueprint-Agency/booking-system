@@ -435,7 +435,7 @@ export default function PolicyPage() {
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Cancellation windows</h2>
             <p className="mt-0.5 text-xs text-muted">
-              Customers can always cancel a class before it starts; the window decides whether the credit comes back. A class cancelled inside it is a late cancellation: the credit is kept, and it counts toward the cap. A PT session can only be cancelled by the customer before its window. A class can set its own window, which replaces the class window here.
+              Customers can always cancel a class before it starts; the window decides whether the credit comes back. A class cancelled inside it is a late cancellation: the credit is kept, and it counts toward the cap. A PT session can only be cancelled by the customer before its window. The class window applies to every class.
             </p>
           </header>
           <div className="grid gap-4 sm:grid-cols-2">

@@ -29,9 +29,7 @@ export interface ApiBooking {
   state: "confirmed" | "cancelled" | "no_show";
   qr_token: string;
   code: string;
-  /** This class's Cancellation Window in hours, as the server applies it now. */
-  effective_cancel_window_hours: number;
-  /** When that window opens: a cancel after it is a late cancellation. */
+  /** When the studio's class window opens: a cancel after it is a late cancellation. */
   cancel_deadline: string;
   /**
    * Only on `GET /me/bookings/cancelled`: the cancellation's summary (#349) —

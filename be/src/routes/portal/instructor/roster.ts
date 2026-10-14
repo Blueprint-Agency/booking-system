@@ -6,7 +6,6 @@ import { searchClients } from '../../../services/clients/manage'
 import { tenantId } from '../../../middleware/tenant'
 import { requirePermission } from '../../../middleware/require-permission'
 import { classSeatsJson } from '../class-seats'
-import { cancelWindowJson } from '../class-cancel-window'
 import { namedRuleJson } from '../../../services/schedule/package-rules'
 import { ptSessionDetailJson } from '../pt-session-detail'
 
@@ -51,7 +50,6 @@ const app = new Hono()
         capacity_waitlist: d.capacityWaitlist,
         capacity_buffer: d.capacityBuffer,
         credit_cost: d.creditCost,
-        ...(await cancelWindowJson(tenantId(c), d)),
         package_rule: namedRuleJson(d.packageRule),
         ...classSeatsJson(d),
         check_in_state: d.checkInState,

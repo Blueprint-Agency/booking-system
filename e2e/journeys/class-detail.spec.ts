@@ -26,7 +26,7 @@ test('BKG-06, BKG-30 a member opens a class detail overlay from the schedule and
   await page.getByRole('button', { name: `Details: ${catalogue.buyClassType},` }).locator('visible=true').click()
 
   const detail = page.getByRole('dialog', { name: catalogue.buyClassType, exact: true })
-  await expect(detail.getByText('All packages')).toBeVisible()
+  await expect(detail.getByText('All group packages')).toBeVisible()
   // Signed in, the member's own plan is listed, and nothing says it cannot pay.
   const mine = detail.getByRole('list', { name: 'Your packages' })
   await expect(mine.getByText(catalogue.packageName, { exact: true })).toBeVisible()

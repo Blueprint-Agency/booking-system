@@ -230,7 +230,7 @@ export function ConfirmBookingSheet({
           )}
 
           {policy && (
-            <p className={SHEET_TEXT}>{classBookingPolicy(policy, cls.effective_cancel_window_hours)}</p>
+            <p className={SHEET_TEXT}>{classBookingPolicy(policy)}</p>
           )}
           <div className={SHEET_ACTIONS}>
             <button type="button" onClick={close} disabled={booking} className={BTN_SECONDARY}>

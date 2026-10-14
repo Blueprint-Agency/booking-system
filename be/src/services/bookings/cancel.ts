@@ -172,13 +172,10 @@ export async function cancelBookingInTx(
 
   // 2. Load + lock the session to read its start time (race-safe vs admin bulk cancel).
   let sessionStartsAt: Date
-  // A class's own Cancellation Window, read now: an edit applies to bookings made before it.
-  let classOwnWindowHours: number | null = null
   if (bk.kind === 'class') {
     const [cls] = await tx
       .select({
         startsAt: classes.startsAt,
-        cancelWindowHours: classes.cancelWindowHours,
         mainInstructorId: classes.mainInstructorId,
       })
       .from(classes)
@@ -188,7 +185,6 @@ export async function cancelBookingInTx(
     if (!cls) throw new NotFoundError('class_not_found')
     if (source === 'instructor') assertMayWorkClass({ role: 'instructor', staffId: actorStaffId! }, cls)
     sessionStartsAt = cls.startsAt
-    classOwnWindowHours = cls.cancelWindowHours
   } else {
     const [pt] = await tx
       .select({ startsAt: ptSessions.startsAt })
@@ -210,7 +206,6 @@ export async function cancelBookingInTx(
           clientId: bk.clientId,
           kind: cancelKind,
           sessionStartsAt,
-          classOwnWindowHours,
           now,
         })
 
@@ -245,7 +240,7 @@ export async function cancelBookingInTx(
   // Whether the cancel came in time, judged against the same window a
   // member's would be. A staff cancel's is recorded, never acted on.
   const wasWithinWindow =
-    evaluation?.wasWithinWindow ?? (await staffCancelInTime(tenantId, cancelKind, sessionStartsAt, classOwnWindowHours, now))
+    evaluation?.wasWithinWindow ?? (await staffCancelInTime(tenantId, cancelKind, sessionStartsAt, now))
 
   // 4. Return the credit/session to the originating package. The ledger also
   // re-derives `active`, so a bundle emptied to zero becomes spendable again

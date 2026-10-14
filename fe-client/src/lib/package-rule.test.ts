@@ -11,7 +11,7 @@ const pack = (name: string, over: Partial<RulePackage> = {}): RulePackage => ({
 });
 
 test("BKG-32 a class that takes every package says so", () => {
-  assert.equal(ruleSentence({ mode: "all", packages: [] }), "All packages");
+  assert.equal(ruleSentence({ mode: "all", packages: [] }), "All group packages");
 });
 
 test("BKG-32 an only rule names the packages it takes, in the order given", () => {
@@ -34,6 +34,6 @@ test("an archived package is still named: members may hold one", () => {
 });
 
 test("an empty list reads as what it means", () => {
-  assert.equal(ruleSentence({ mode: "except", packages: [] }), "All packages");
+  assert.equal(ruleSentence({ mode: "except", packages: [] }), "All group packages");
   assert.equal(ruleSentence({ mode: "only", packages: [] }), "No packages");
 });

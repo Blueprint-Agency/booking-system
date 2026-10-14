@@ -183,7 +183,7 @@ Defaults a studio starts with (admin-editable, per Tenant; written when the stud
 
 **Cancellation Cap** — how many member cancellations per cycle return the credit (or session); class and PT share one count, and late cancels count too. Default **on, 10 per 30 days**. A studio can switch it off: then every cancel made in time returns, however many. Cancels are recorded either way, so switching it back on counts the ones already in the current cycle. Existing studios keep the count they had.
 
-A class (or weekly series) may carry its own window; left blank it follows the studio's.
+The class window is studio-wide: every class follows it, and no class or weekly series carries its own.
 
 Reschedule = cancel + rebook, re-evaluated against policy.
 

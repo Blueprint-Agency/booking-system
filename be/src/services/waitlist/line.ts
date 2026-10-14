@@ -18,7 +18,7 @@ import { classTypes, locations } from '../../db/schema/catalog'
 import { staffUsers, clients } from '../../db/schema/identity'
 import type { Tx } from '../schedule/roster'
 import { isEnabled } from '../feature-flags'
-import { cancelWindowResolver, classCancelWindow, type HasCancelWindow } from '../policy/cancel-window'
+import { classCancelWindow } from '../policy/cancel-window'
 import { now as clockNow } from '../../lib/clock'
 import { inLine, positions, waitlistOpen, type LineEntry } from './rules'
 
@@ -72,17 +72,17 @@ export interface LineState {
 
 /**
  * How a class's line stands now: the `class_full` body and a join both read
- * this. The line closes at the class's Cancellation Window — no policy of its
+ * this. The line closes at the class Cancellation Window — no policy of its
  * own (§4).
  */
 export async function lineState(
   reader: Reader,
   tenantId: string,
-  cls: { id: string; lifecycle: string; startsAt: Date; capacityWaitlist: number } & HasCancelWindow,
+  cls: { id: string; lifecycle: string; startsAt: Date; capacityWaitlist: number },
   now: Date,
 ): Promise<LineState> {
   const enabled = waitlistEnabled(tenantId)
-  const windowHours = await classCancelWindow(tenantId, cls)
+  const windowHours = await classCancelWindow(tenantId)
   const waiting = (await liveWaiting(reader, tenantId, [cls.id], now)).length
   return {
     enabled,
@@ -106,14 +106,14 @@ export interface WaitlistSummary {
 /** `WaitlistSummary` for every class in a catalogue page, in one read. */
 export async function waitlistSummaries(
   tenantId: string,
-  rows: readonly ({ id: string; lifecycle: string; startsAt: Date; capacityWaitlist: number } & HasCancelWindow)[],
+  rows: readonly { id: string; lifecycle: string; startsAt: Date; capacityWaitlist: number }[],
   clientId: string | null,
   now: Date = clockNow(),
 ): Promise<Map<string, WaitlistSummary>> {
   const out = new Map<string, WaitlistSummary>()
   if (rows.length === 0) return out
   const enabled = waitlistEnabled(tenantId)
-  const windowOf = await cancelWindowResolver(tenantId)
+  const windowHours = await classCancelWindow(tenantId)
   const waiting = await liveWaiting(
     db,
     tenantId,
@@ -128,7 +128,7 @@ export async function waitlistSummaries(
     const mine = clientId ? line.find(e => e.clientId === clientId) : undefined
     out.set(r.id, {
       enabled,
-      open: waitlistOpen({ enabled, windowHours: windowOf(r), waiting: line.length, now, ...r }),
+      open: waitlistOpen({ enabled, windowHours, waiting: line.length, now, ...r }),
       my_entry: mine ? { id: mine.id, position: positions(line).get(mine.id)! } : null,
     })
   }

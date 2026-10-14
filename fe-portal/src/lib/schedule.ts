@@ -112,10 +112,6 @@ export interface ScheduleClassDetail extends ClassSeats, ClassWaitlist {
   capacity_waitlist: number;
   capacity_buffer: number;
   credit_cost: number;
-  /** The class's own Cancellation Window in hours; null = it follows the studio's. */
-  cancel_window_hours: number | null;
-  /** The window that applies now: its own, else the studio's. */
-  effective_cancel_window_hours: number;
   /** Which class packages may pay for this class, named. */
   package_rule: NamedPackageRule;
   /** Every confirmed booking — the same number as `attending`. */
@@ -268,8 +264,6 @@ export interface ClassPatch {
   capacity_online?: number;
   capacity_waitlist?: number;
   capacity_buffer?: number;
-  /** The class's own Cancellation Window; null puts it back on the studio's. */
-  cancel_window_hours?: number | null;
   /**
    * Sent only when changed. Saving it cancels the bookings paid by a package
    * the class no longer accepts — `previewClassRule` counts them first.

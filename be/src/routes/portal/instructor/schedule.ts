@@ -11,7 +11,6 @@ import { tenantId } from '../../../middleware/tenant'
 import { requirePermission } from '../../../middleware/require-permission'
 import { seatFields, staffBookingJson, staffBookingSchema, staffPackagesJson, staffPackagesQuery } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
-import { cancelWindowHoursSchema, cancelWindowJson } from '../class-cancel-window'
 import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
 import { hasCapacity, NO_CAPACITY, previewJson, seriesRow, seriesTemplateFields, toSeriesInput } from '../class-series'
 
@@ -76,8 +75,6 @@ const createClassSchema = z
     capacity_waitlist: z.number().int().min(0).default(0),
     capacity_buffer: z.number().int().min(0).default(0),
     credit_cost: z.number().int().min(0),
-    // Blank (omitted or null) follows the studio's class window.
-    cancel_window_hours: cancelWindowHoursSchema.optional(),
     // Omitted = accepts all. Instructors set it on the classes they schedule.
     package_rule: packageRuleSchema.optional(),
   })
@@ -164,7 +161,6 @@ const app = new Hono()
       capacityBuffer: body.capacity_buffer,
       creditCost: body.credit_cost,
       instructorPaySgd: null, // left unpriced; an admin sets pay from Payroll
-      cancelWindowHours: body.cancel_window_hours ?? null,
       ...(body.package_rule ? { packageRule: toPackageRule(body.package_rule) } : {}),
       createdByStaffId: self,
     })
@@ -183,7 +179,6 @@ const app = new Hono()
         capacity_buffer: row.capacityBuffer,
         credit_cost: row.creditCost,
         instructor_pay_sgd: null,
-        ...(await cancelWindowJson(tenantId(c), row)),
         package_rule: await classPackageRuleJson(tenantId(c), row),
         lifecycle: row.lifecycle,
       },

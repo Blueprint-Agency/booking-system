@@ -34,7 +34,6 @@ function bookingRow(b: ClassBookingRow) {
     state: b.state,
     qr_token: b.qrToken,
     code: b.code,
-    effective_cancel_window_hours: b.effectiveCancelWindowHours,
     cancel_deadline: b.cancelDeadline.toISOString(),
   }
 }

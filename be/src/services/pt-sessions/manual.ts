@@ -771,7 +771,7 @@ export async function cancelManualSessionInTx(
 
   // The window never decides a staff cancel's refund, but it is recorded
   // truthfully, and a late one keeps each package Activated.
-  const wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, null, now)
+  const wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, now)
   let refundedSessions = 0
   for (const seat of seats) {
     const { refunded } = await cancelSeat(tx, tenantId, {
@@ -842,7 +842,7 @@ export async function removeManualPtSessionMember(
       source: input.source,
       refund: true,
       reason: 'pt_manual_seat_removed_refund',
-      wasWithinWindow: await staffCancelInTime(tenantId, 'pt', session.startsAt, null, now),
+      wasWithinWindow: await staffCancelInTime(tenantId, 'pt', session.startsAt, now),
       wasWithinCap: true,
       actorStaffId: input.actorStaffId,
       now,
@@ -925,7 +925,7 @@ export async function retypeManualSessionInTx(
     )
   } else {
     const now = clockNow()
-    const wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, null, now)
+    const wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, now)
     for (const seat of leaving) {
       await cancelSeat(tx, tenantId, {
         seat,

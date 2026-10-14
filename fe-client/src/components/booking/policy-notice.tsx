@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { AlertCircle, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { PolicyPoint } from "@/lib/cancellation-copy";
 
 /**
  * A rule the member agrees to by booking, framed in the warning colour so it
@@ -16,7 +17,7 @@ export function PolicyNotice({
   className,
 }: {
   title: string;
-  points: string[];
+  points: PolicyPoint[];
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -42,9 +43,12 @@ export function PolicyNotice({
       </button>
       <ul id={listId} hidden={!open} className="space-y-1.5 px-4 pb-3.5 text-sm text-ink/85 sm:px-5">
         {points.map((p) => (
-          <li key={p} className="flex gap-2 leading-snug">
+          <li key={p.label} className="flex gap-2 leading-snug">
             <span aria-hidden className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
-            <span>{p}</span>
+            <span>
+              <strong className="font-semibold text-ink">{p.label}</strong>
+              {p.when && ` (${p.when})`}: {p.text}
+            </span>
           </li>
         ))}
       </ul>

@@ -56,8 +56,6 @@ export interface SeriesInput {
   capacity_waitlist: number;
   capacity_buffer: number;
   credit_cost: number;
-  /** Copied onto every class the series creates; null = the studio's window. */
-  cancel_window_hours?: number | null;
   /** Copied onto every class the series creates and extends; omitted = accepts all. */
   package_rule?: PackageRuleInput;
   first_date: string;

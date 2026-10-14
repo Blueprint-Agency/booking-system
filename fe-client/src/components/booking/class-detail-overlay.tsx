@@ -42,6 +42,7 @@ import {
 } from "@/lib/classes";
 import { classLength, seatsLine } from "@/lib/class-detail";
 import { classCancelWindowLine } from "@/lib/cancellation-copy";
+import { useCancellationPolicy } from "@/lib/cancellation-policy";
 import { acceptsNone, credits, packageMeta, reasonText } from "@/lib/package-picker";
 import { ruleSentence } from "@/lib/package-rule";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
@@ -148,7 +149,8 @@ export function ClassDetailOverlay({
   const location = detail?.location ?? cls.location;
   const gmapsUrl = detail?.location?.gmaps_url ?? null;
   const supporting = detail?.supporting_instructors ?? [];
-  const windowHours = detail?.effective_cancel_window_hours ?? cls.effective_cancel_window_hours;
+  // Every class follows the studio's one class window.
+  const policy = useCancellationPolicy();
   const seats = seatsLine(hasSeats, { enabled: cls.waitlist.enabled, open: waitlistOpen });
 
   return (
@@ -246,9 +248,11 @@ export function ClassDetailOverlay({
               <Fact icon={<Users />} label="Availability">
                 {seats}
               </Fact>
-              <Fact icon={<Hourglass />} label="Cancellation">
-                {classCancelWindowLine(windowHours)}
-              </Fact>
+              {policy && (
+                <Fact icon={<Hourglass />} label="Cancellation">
+                  {classCancelWindowLine(policy.class_window_hours)}
+                </Fact>
+              )}
             </dl>
 
             {/* Read with the detail: the list states only that a rule exists. */}

@@ -5,7 +5,6 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Loader2, Repeat, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
-import { CancelWindowField } from "@/components/schedule/cancel-window-field";
 import { PackageRuleField } from "@/components/schedule/package-rule-field";
 import {
   ACCEPTS_ALL_DRAFT,
@@ -17,11 +16,9 @@ import {
 import {
   RepeatRangeFields,
   RepeatWeeklySwitch,
-  SERIES_WINDOW_HINT,
   SeriesDatesSection,
   useSeriesDates,
 } from "@/components/schedule/repeat-weekly";
-import { parseCancelWindow } from "@/lib/cancel-window";
 import { createClassesLabel, repeatWeeklyFromParams } from "@/lib/repeat-weekly";
 import { weekdayOf, type SeriesInput } from "@/lib/series";
 import {
@@ -90,7 +87,6 @@ function NewClassForm() {
     buffer: 2,
   });
   const [creditCost, setCreditCost] = useState("1");
-  const [cancelWindow, setCancelWindow] = useState("");
   const [packageRule, setPackageRule] = useState<PackageRuleDraft>(ACCEPTS_ALL_DRAFT);
   const [difficulty, setDifficulty] = useState<ClassTypeDifficulty>("general");
   const [submitting, setSubmitting] = useState(false);
@@ -145,8 +141,6 @@ function NewClassForm() {
     }
     if (!date || !lastDate) return "Pick a first and a last date.";
     if (endTime <= startTime) return "End time must be after start time.";
-    const ownWindow = parseCancelWindow(cancelWindow);
-    if (!ownWindow.ok) return ownWindow.message;
     const ruleProblem = packageRuleProblem(packageRule);
     if (ruleProblem) return ruleProblem;
     return {
@@ -166,7 +160,6 @@ function NewClassForm() {
       capacity_waitlist: capacity.waitlist,
       capacity_buffer: capacity.buffer,
       credit_cost: Number(creditCost),
-      cancel_window_hours: ownWindow.hours,
       package_rule: packageRuleBody(packageRule),
       first_date: date,
       last_date: lastDate,
@@ -191,11 +184,6 @@ function NewClassForm() {
     const endsAt = new Date(`${date}T${endTime}:00`);
     if (endsAt <= startsAt) {
       setSubmitError("End time must be after start time.");
-      return;
-    }
-    const ownWindow = parseCancelWindow(cancelWindow);
-    if (!ownWindow.ok) {
-      setSubmitError(ownWindow.message);
       return;
     }
     const ruleProblem = packageRuleProblem(packageRule);
@@ -223,7 +211,6 @@ function NewClassForm() {
         capacity_buffer: capacity.buffer,
         credit_cost: Number(creditCost),
         instructor_pay_sgd: payOrNull(mainPay),
-        cancel_window_hours: ownWindow.hours,
         package_rule: packageRuleBody(packageRule),
       });
       router.push("/admin/schedule");
@@ -413,11 +400,6 @@ function NewClassForm() {
               />
               <p className="text-xs text-muted">Credits charged per booking on this instance.</p>
             </div>
-            <CancelWindowField
-              value={cancelWindow}
-              onChange={setCancelWindow}
-              {...(repeat ? { hint: SERIES_WINDOW_HINT } : {})}
-            />
             <PackageRuleField
               role="admin"
               value={packageRule}

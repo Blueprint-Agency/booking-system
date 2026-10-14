@@ -136,7 +136,7 @@ export function CancelBookingDialog({
                 Checking your credit…
               </span>
             ) : (
-              classCancelNotice(policy, booking.was_unlimited, preview, booking.effective_cancel_window_hours)
+              classCancelNotice(policy, booking.was_unlimited, preview)
             )}
           </div>
           <div className="mt-6 flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">

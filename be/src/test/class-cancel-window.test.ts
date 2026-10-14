@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, like, sql } from 'drizzle-orm'
 import { inTenantContext, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
-import { addDays, isoWeekday } from '../services/schedule/series-dates'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.cancel-window.test`
@@ -17,18 +16,17 @@ const DAY = 24 * HOUR
 const STUDIO_HOURS = 24
 
 /**
- * The per-class Cancellation Window (#313, be/CONTEXT.md § Cancellation
- * Window): a class, or a weekly series for every class it makes, may carry its
- * own window; left blank it follows the studio's class window, live. Every rule
- * that turns on "the class window" reads the class's effective one — a member's
- * cancel, the waitlist closing, automatic seat-filling and the promotion
- * email's cancel-by time.
+ * The class Cancellation Window (be/CONTEXT.md § Cancellation Window) is the
+ * studio's class window on Global Policy, read live; a class carries none of its
+ * own (the per-class window of #313 was removed). Every rule that turns on "the
+ * class window" reads it at the time of the action — a member's cancel, the
+ * waitlist closing, automatic seat-filling and the promotion email's cancel-by
+ * time.
  *
- * Staff-facing fields go through the portal routes; the classes the member
- * rules run against are written directly, and every rule under test runs
- * behind a route.
+ * The classes the member rules run against are written directly, and every
+ * rule under test runs behind a route.
  */
-describe('per-class Cancellation Window', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+describe('class Cancellation Window', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let classPackagesSvc!: typeof import('../services/packages/class-packages')
@@ -105,10 +103,9 @@ describe('per-class Cancellation Window', { skip: integrationTestsEnabled ? fals
     return { clientId: client!.id, headers, email }
   }
 
-  /** A class starting `startsIn` from now, one credit a seat, with `ownHours` as its own window (null = studio's). */
+  /** A class starting `startsIn` from now, one credit a seat. */
   async function addClass(
     startsIn: number,
-    ownHours: number | null,
     capacity: { online: number; waitlist: number } = { online: 10, waitlist: 0 },
   ): Promise<{ id: string; startsAt: Date }> {
     const startsAt = new Date(Date.now() + startsIn)
@@ -125,7 +122,6 @@ describe('per-class Cancellation Window', { skip: integrationTestsEnabled ? fals
         capacityOnline: capacity.online,
         capacityWaitlist: capacity.waitlist,
         creditCost: 1,
-        cancelWindowHours: ownHours,
         createdByStaffId: admin.id,
       })
       .returning({ id: schema.classes.id })
@@ -188,24 +184,6 @@ describe('per-class Cancellation Window', { skip: integrationTestsEnabled ? fals
     assert.ok(card, `class ${classId} missing from /me/classes`)
     return card
   }
-
-  /** A slot far enough out that nothing else in the run is in this room then. */
-  let slotSeq = 0
-  const slot = () => {
-    const startsAt = new Date(Date.now() + (40 + ++slotSeq) * DAY)
-    return { starts_at: startsAt.toISOString(), ends_at: new Date(startsAt.getTime() + HOUR).toISOString() }
-  }
-  const classBody = (extra: Record<string, unknown> = {}) => ({
-    class_type_id: classTypeId,
-    main_instructor_id: teacher.id,
-    location_id: locationId,
-    room_id: roomId,
-    ...slot(),
-    capacity_online: 10,
-    credit_cost: 1,
-    instructor_pay_sgd: 50,
-    ...extra,
-  })
 
   before(async () => {
     harness = await startTestApp()
@@ -289,168 +267,20 @@ describe('per-class Cancellation Window', { skip: integrationTestsEnabled ? fals
     await harness.close()
   })
 
-  /* ── Staff set it ────────────────────────────────────────────────── */
-
-  test('SCH-23 an admin schedules a class with its own window, or none; the portal row says both, and a negative one is refused', async () => {
-    const own = await send('POST', '/portal/admin/schedule/classes', admin.headers, classBody({ cancel_window_hours: 12 }))
-    assert.equal(own.status, 201, JSON.stringify(own.body))
-    assert.equal(own.body.cancel_window_hours, 12)
-    assert.equal(own.body.effective_cancel_window_hours, 12)
-
-    const detail = await send('GET', `/portal/admin/schedule/classes/${own.body.id}`, admin.headers)
-    assert.equal(detail.status, 200, JSON.stringify(detail.body))
-    assert.equal(detail.body.cancel_window_hours, 12)
-    assert.equal(detail.body.effective_cancel_window_hours, 12)
-
-    const plain = await send('POST', '/portal/admin/schedule/classes', admin.headers, classBody())
-    assert.equal(plain.status, 201, JSON.stringify(plain.body))
-    assert.equal(plain.body.cancel_window_hours, null)
-    assert.equal(plain.body.effective_cancel_window_hours, STUDIO_HOURS)
-
-    const negative = await send('POST', '/portal/admin/schedule/classes', admin.headers, classBody({ cancel_window_hours: -1 }))
-    assert.equal(negative.status, 400, JSON.stringify(negative.body))
-    const fraction = await send('POST', '/portal/admin/schedule/classes', admin.headers, classBody({ cancel_window_hours: 1.5 }))
-    assert.equal(fraction.status, 400, JSON.stringify(fraction.body))
-  })
-
-  test('SCH-24 an admin changes a class’s window, and an explicit null puts it back on the studio default', async () => {
-    const created = await send('POST', '/portal/admin/schedule/classes', admin.headers, classBody())
-    assert.equal(created.status, 201, JSON.stringify(created.body))
-    const id = created.body.id as string
-
-    const set = await send('PATCH', `/portal/admin/schedule/classes/${id}`, admin.headers, { cancel_window_hours: 6 })
-    assert.equal(set.status, 200, JSON.stringify(set.body))
-    assert.equal(set.body.cancel_window_hours, 6)
-    assert.equal(set.body.effective_cancel_window_hours, 6)
-
-    // A patch that does not name the field leaves it alone.
-    const untouched = await send('PATCH', `/portal/admin/schedule/classes/${id}`, admin.headers, { credit_cost: 2 })
-    assert.equal(untouched.status, 200, JSON.stringify(untouched.body))
-    assert.equal(untouched.body.cancel_window_hours, 6)
-
-    const cleared = await send('PATCH', `/portal/admin/schedule/classes/${id}`, admin.headers, { cancel_window_hours: null })
-    assert.equal(cleared.status, 200, JSON.stringify(cleared.body))
-    assert.equal(cleared.body.cancel_window_hours, null)
-    assert.equal(cleared.body.effective_cancel_window_hours, STUDIO_HOURS)
-  })
-
-  test('SCH-25 an instructor schedules their own class with its own window', async () => {
-    const res = await send('POST', '/portal/instructor/schedule/classes', teacher.headers, {
-      class_type_id: classTypeId,
-      location_id: locationId,
-      room_id: roomId,
-      ...slot(),
-      capacity_online: 8,
-      credit_cost: 1,
-      cancel_window_hours: 36,
-    })
-    assert.equal(res.status, 201, JSON.stringify(res.body))
-    assert.equal(res.body.cancel_window_hours, 36)
-    assert.equal(res.body.effective_cancel_window_hours, 36)
-    const [row] = await harness.db
-      .select({ hours: schema.classes.cancelWindowHours })
-      .from(schema.classes)
-      .where(eq(schema.classes.id, res.body.id))
-    assert.equal(row!.hours, 36)
-  })
-
-  test('SCH-26 a series copies its window onto every class it creates, and onto every class an extend adds', async () => {
-    // Mondays well past every other slot this file books in the room.
-    const base = addDays(new Date().toISOString().slice(0, 10), 200)
-    const monday = addDays(base, (1 - isoWeekday(base) + 7) % 7)
-    const created = await send('POST', '/portal/admin/schedule/series', admin.headers, {
-      class_type_id: classTypeId,
-      main_instructor_id: teacher.id,
-      instructor_pay_sgd: 40,
-      location_id: locationId,
-      room_id: roomId,
-      weekday: 1,
-      start_time: '07:00',
-      end_time: '08:00',
-      capacity_online: 12,
-      credit_cost: 1,
-      first_date: monday,
-      last_date: addDays(monday, 14),
-      cancel_window_hours: 48,
-    })
-    assert.equal(created.status, 201, JSON.stringify(created.body))
-    assert.equal(created.body.series.cancel_window_hours, 48)
-    const seriesId = created.body.series.id as string
-
-    const windowsOf = async () =>
-      (
-        await harness.db
-          .select({ hours: schema.classes.cancelWindowHours })
-          .from(schema.classes)
-          .where(eq(schema.classes.seriesId, seriesId))
-      ).map(r => r.hours)
-    assert.deepEqual(await windowsOf(), [48, 48, 48])
-
-    const extended = await send('POST', `/portal/admin/schedule/series/${seriesId}/extend`, admin.headers, {
-      last_date: addDays(monday, 28),
-    })
-    assert.equal(extended.status, 200, JSON.stringify(extended.body))
-    assert.equal(extended.body.class_ids.length, 2)
-    assert.deepEqual(await windowsOf(), [48, 48, 48, 48, 48])
-
-    // A series with none leaves its classes on the studio default.
-    const plain = await send('POST', '/portal/admin/schedule/series', admin.headers, {
-      class_type_id: classTypeId,
-      main_instructor_id: teacher.id,
-      instructor_pay_sgd: 40,
-      location_id: locationId,
-      room_id: roomId,
-      weekday: 1,
-      start_time: '09:00',
-      end_time: '10:00',
-      capacity_online: 12,
-      credit_cost: 1,
-      first_date: monday,
-      last_date: monday,
-    })
-    assert.equal(plain.status, 201, JSON.stringify(plain.body))
-    assert.equal(plain.body.series.cancel_window_hours, null)
-    const [only] = await harness.db
-      .select({ hours: schema.classes.cancelWindowHours })
-      .from(schema.classes)
-      .where(eq(schema.classes.seriesId, plain.body.series.id))
-    assert.equal(only!.hours, null)
-  })
-
   /* ── Members are held to it ──────────────────────────────────────── */
 
-  test('CXL-36 a class’s own window beats the studio default for a member’s cancel, both ways, and members are shown it', async () => {
-    // Shorter: 6h, class 12h out — inside the studio's 24h, outside its own.
-    const short = await addClass(12 * HOUR, 6)
-    const early = await member()
-    const earlyBooking = await booked(early, short.id)
-    assert.equal((await memberCard(early, short.id)).effective_cancel_window_hours, 6)
-    assert.equal((await upcomingRow(early, short.id)).effective_cancel_window_hours, 6)
-    assert.equal(await creditsLeft(early), 9)
-    const freed = await cancel(early, earlyBooking)
-    assert.equal(freed.status, 200, JSON.stringify(freed.body))
-    assert.equal(freed.body.refund_outcome, 'credit_returned')
-    assert.equal(await creditsLeft(early), 10, 'in time by the class’s own window: the credit comes back')
+  /** When My Bookings says the window opens on a class starting at `startsAt`, under `hours`. */
+  const deadline = (startsAt: Date, hours: number) => new Date(startsAt.getTime() - hours * HOUR).toISOString()
 
-    // Longer: 48h, class 30h out — outside the studio's 24h, inside its own.
-    const long = await addClass(30 * HOUR, 48)
-    const late = await member()
-    const lateBooking = await booked(late, long.id)
-    assert.equal((await upcomingRow(late, long.id)).effective_cancel_window_hours, 48)
-    assertLate(await cancel(late, lateBooking), 48)
-    assert.equal(await creditsLeft(late), 9, 'inside the class’s own window: the credit is not returned')
-  })
-
-  test('CXL-37 a class with no window of its own follows the studio default live, even after it was booked', async () => {
-    const cls = await addClass(12 * HOUR, null)
+  test('CXL-37 a booked class follows the studio window live, even after it was booked', async () => {
+    const cls = await addClass(12 * HOUR)
     const who = await member()
     const bookingId = await booked(who, cls.id)
-    assert.equal((await upcomingRow(who, cls.id)).effective_cancel_window_hours, STUDIO_HOURS)
+    assert.equal((await upcomingRow(who, cls.id)).cancel_deadline, deadline(cls.startsAt, STUDIO_HOURS))
 
     await setStudioHours(6)
     try {
-      assert.equal((await upcomingRow(who, cls.id)).effective_cancel_window_hours, 6)
-      assert.equal((await memberCard(who, cls.id)).effective_cancel_window_hours, 6)
+      assert.equal((await upcomingRow(who, cls.id)).cancel_deadline, deadline(cls.startsAt, 6))
       const res = await cancel(who, bookingId)
       assert.equal(res.status, 200, JSON.stringify(res.body))
       assert.equal(res.body.refund_outcome, 'credit_returned')
@@ -460,40 +290,27 @@ describe('per-class Cancellation Window', { skip: integrationTestsEnabled ? fals
     }
   })
 
-  test('CXL-38 clearing a class’s window puts an existing booking back on the studio default', async () => {
-    const cls = await addClass(12 * HOUR, 6)
-    const who = await member()
-    const bookingId = await booked(who, cls.id)
-    assert.equal((await upcomingRow(who, cls.id)).effective_cancel_window_hours, 6)
-
-    const cleared = await send('PATCH', `/portal/admin/schedule/classes/${cls.id}`, admin.headers, { cancel_window_hours: null })
-    assert.equal(cleared.status, 200, JSON.stringify(cleared.body))
-    assert.equal((await upcomingRow(who, cls.id)).effective_cancel_window_hours, STUDIO_HOURS)
-    assertLate(await cancel(who, bookingId), STUDIO_HOURS)
-    assert.equal(await creditsLeft(who), 9, '12h out is inside the studio’s 24h: the credit is not returned')
-  })
-
   /* ── The waitlist follows it ─────────────────────────────────────── */
 
-  test('WTL-27 a class’s own window decides when its waitlist closes, and the refusal names that class’s hours', async () => {
-    // 48h, class 30h out: the studio's 24h would still be open; its own is closed.
-    const closed = await addClass(30 * HOUR, 48, { online: 1, waitlist: 3 })
+  test('WTL-27 the studio window decides when a class’s waitlist closes, and the refusal names its hours', async () => {
+    // Class 12h out: inside the studio's 24h, the line is closed.
+    const closed = await addClass(12 * HOUR, { online: 1, waitlist: 3 })
     await booked(await member(), closed.id)
     const refused = await member()
     assert.equal((await memberCard(refused, closed.id)).waitlist.open, false)
     const res = await send('POST', `/me/waitlist/classes/${closed.id}`, refused.headers)
     assert.equal(res.status, 409, JSON.stringify(res.body))
     assert.equal(res.body.error, 'waitlist_closed')
-    assert.equal(res.body.window_hours, 48)
+    assert.equal(res.body.window_hours, STUDIO_HOURS)
 
-    // A full class answers a booking with its line's state, by its own window.
+    // A full class answers a booking with its line's state, by the studio window.
     const full = await send('POST', '/me/bookings/class', refused.headers, { class_id: closed.id })
     assert.equal(full.status, 409, JSON.stringify(full.body))
     assert.equal(full.body.error, 'class_full')
     assert.equal(full.body.waitlist_open, false)
 
-    // 6h, class 12h out: the studio's 24h would be closed; its own is open.
-    const open = await addClass(12 * HOUR, 6, { online: 1, waitlist: 3 })
+    // Class 30h out: outside the studio's 24h, the line is open.
+    const open = await addClass(30 * HOUR, { online: 1, waitlist: 3 })
     await booked(await member(), open.id)
     const waiter = await member()
     assert.equal((await memberCard(waiter, open.id)).waitlist.open, true)
@@ -501,9 +318,9 @@ describe('per-class Cancellation Window', { skip: integrationTestsEnabled ? fals
     assert.equal(joined.status, 201, JSON.stringify(joined.body))
   })
 
-  test('WTL-28 a freed seat is filled automatically by the class’s own window, and the promotion email’s cancel-by uses it', async () => {
-    // 6h, class 12h out: inside the studio's 24h nobody would be moved.
-    const cls = await addClass(12 * HOUR, 6, { online: 1, waitlist: 3 })
+  test('WTL-28 a freed seat is filled automatically outside the studio window, and the promotion email’s cancel-by uses it', async () => {
+    // Class 30h out: outside the studio's 24h, the freed seat is filled.
+    const cls = await addClass(30 * HOUR, { online: 1, waitlist: 3 })
     const seated = await member()
     const seatBooking = await booked(seated, cls.id)
     const waiter = await member()
@@ -535,30 +352,30 @@ describe('per-class Cancellation Window', { skip: integrationTestsEnabled ? fals
       .from(schema.tenants)
       .where(eq(schema.tenants.id, one.id))
     const timeZone = tenant!.timezone
-    const cancelBy = new Date(cls.startsAt.getTime() - 6 * HOUR)
+    const cancelBy = new Date(cls.startsAt.getTime() - STUDIO_HOURS * HOUR)
     const date = new Intl.DateTimeFormat('en-GB', { timeZone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
     const time = new Intl.DateTimeFormat('en-GB', { timeZone, hour: 'numeric', minute: '2-digit', hour12: true })
     const expected = `${date.format(cancelBy)}, ${time.format(cancelBy)}`
     assert.ok(mail.body.includes(expected), `expected the cancel-by "${expected}" in: ${mail.body}`)
 
-    // 48h, class 30h out: the studio's 24h would still promote; its own window does not.
-    const long = await addClass(30 * HOUR, 48, { online: 1, waitlist: 3 })
+    // Class 12h out: inside the studio's 24h, nobody is moved.
+    const soon = await addClass(12 * HOUR, { online: 1, waitlist: 3 })
     const holder = await member()
-    const holderBooking = await booked(holder, long.id)
+    const holderBooking = await booked(holder, soon.id)
     const next = await member()
-    const inLine = await send('POST', `/me/waitlist/classes/${long.id}`, next.headers)
-    // Joined before the class's own window closed it: written directly, as the
-    // join itself is refused now (WTL-27).
+    const inLine = await send('POST', `/me/waitlist/classes/${soon.id}`, next.headers)
+    // Joined before the window closed the line: written directly, as the join
+    // itself is refused now (WTL-27).
     assert.equal(inLine.status, 409, JSON.stringify(inLine.body))
     const [entry] = await harness.db
       .insert(schema.waitlistEntries)
-      .values({ tenantId: one.id, clientId: next.clientId, classId: long.id, status: 'waiting' })
+      .values({ tenantId: one.id, clientId: next.clientId, classId: soon.id, status: 'waiting' })
       .returning({ id: schema.waitlistEntries.id })
-    assertLate(await cancel(holder, holderBooking), 48)
+    assertLate(await cancel(holder, holderBooking), STUDIO_HOURS)
     const [still] = await harness.db
       .select({ status: schema.waitlistEntries.status })
       .from(schema.waitlistEntries)
       .where(eq(schema.waitlistEntries.id, entry!.id))
-    assert.equal(still!.status, 'waiting', 'inside the class’s own window nobody is moved automatically')
+    assert.equal(still!.status, 'waiting', 'inside the studio window nobody is moved automatically')
   })
 })

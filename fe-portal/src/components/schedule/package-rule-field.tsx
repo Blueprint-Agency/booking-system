@@ -16,9 +16,9 @@ import {
 } from "@/lib/package-rule";
 
 const MODE_HINT = {
-  all: "Members can book with any of their class packages.",
-  only: "Members can book only with a ticked package.",
-  except: "Members can book with any package except a ticked one.",
+  all: "Members can book with any of their group class packages.",
+  only: "Members can book only with the packages you tick.",
+  except: "Members can book with any package except the ones you tick.",
 } as const;
 
 /**
@@ -54,30 +54,28 @@ export function PackageRuleField({
   return (
     <fieldset disabled={disabled} className="min-w-0 space-y-2 disabled:opacity-50">
       <legend className="mb-1.5 text-sm font-medium text-ink">Accepted packages</legend>
-      <div
-        role="radiogroup"
-        aria-label="Accepted packages"
-        className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-card p-1"
-      >
-        {RULE_MODES.map((m) => {
-          const on = value.mode === m.value;
-          return (
-            <button
-              key={m.value}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => onChange({ ...value, mode: m.value })}
-              className={`min-h-10 rounded-md px-1.5 py-1.5 text-sm font-medium leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:min-h-9 ${
-                on ? "bg-accent text-white" : "text-muted hover:bg-paper hover:text-ink"
-              }`}
-            >
-              {m.label}
-            </button>
-          );
-        })}
+      {/* A plain radio list, each choice with its own line of meaning, so
+          the three can be compared before one is picked. */}
+      <div className="divide-y divide-border rounded-lg border border-border">
+        {RULE_MODES.map((m) => (
+          <label
+            key={m.value}
+            className="flex min-h-11 cursor-pointer items-start gap-3 px-3 py-2.5 hover:bg-paper"
+          >
+            <input
+              type="radio"
+              name={`${uid}-mode`}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-accent"
+              checked={value.mode === m.value}
+              onChange={() => onChange({ ...value, mode: m.value })}
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-ink">{m.label}</span>
+              <span className="block text-xs text-muted">{MODE_HINT[m.value]}</span>
+            </span>
+          </label>
+        ))}
       </div>
-      <p className="text-xs text-muted">{MODE_HINT[value.mode]}</p>
 
       {value.mode !== "all" && (
         <div className="space-y-2">

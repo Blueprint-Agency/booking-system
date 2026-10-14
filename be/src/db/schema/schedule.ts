@@ -60,8 +60,9 @@ export const classes = pgTable(
     capacityWaitlist: integer('capacity_waitlist').notNull().default(0),
     capacityBuffer: integer('capacity_buffer').notNull().default(0),
     creditCost: integer('credit_cost').notNull(),
-    // This class's own Cancellation Window, in hours. NULL = follow the studio's
-    // class window (Global Policy), live — services/policy/cancel-window.ts.
+    // RETIRED — nothing reads or writes it: every class follows the studio's
+    // class window (Global Policy). Kept only until the contract migration drops
+    // it in a later deploy (migrations/README.md rule 0). Do not use.
     cancelWindowHours: integer('cancel_window_hours'),
     // The class's Package rule: which catalogue class packages may pay for it.
     // `all` (every existing and imported class) has no list; `only` / `except`
@@ -195,8 +196,9 @@ export const classSeries = pgTable(
     capacityWaitlist: integer('capacity_waitlist').notNull().default(0),
     capacityBuffer: integer('capacity_buffer').notNull().default(0),
     creditCost: integer('credit_cost').notNull(),
-    // Copied onto every class the series creates, extends included. NULL = those
-    // classes follow the studio's class window.
+    // RETIRED — nothing reads or writes it: every class follows the studio's
+    // class window. Kept only until the contract migration drops it in a later
+    // deploy (migrations/README.md rule 0). Do not use.
     cancelWindowHours: integer('cancel_window_hours'),
     // Copied onto every class the series creates, extends included, with its
     // list (class_series_rule_packages). Editing one class's rule never reaches back.

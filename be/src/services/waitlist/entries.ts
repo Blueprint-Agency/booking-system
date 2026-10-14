@@ -61,8 +61,8 @@ export async function join(
       if (!client) throw new NotFoundError('client_not_found')
     }
     const active = !!cls && cls.lifecycle === 'active'
-    // The line closes at this class's Cancellation Window (§4).
-    const windowHours = cls ? await classCancelWindow(tenantId, cls) : 0
+    // The line closes at the class Cancellation Window (§4).
+    const windowHours = cls ? await classCancelWindow(tenantId) : 0
 
     const booked = await holdsSeat(tx, tenantId, clientId, classId)
     const waiting = cls ? await waitingLine(tx, tenantId, classId, now) : []

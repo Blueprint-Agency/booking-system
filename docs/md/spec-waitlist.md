@@ -73,7 +73,7 @@ Resolves #152 ("Class waitlist: no join, no promotion — build it for v1 or kee
 | **Waitlist** | The ordered line of members waiting for an online seat. Its length is capped by `capacity_waitlist`. Not a seat. |
 | **Promotion** | Moving the head of the line into a freed online seat, creating a confirmed booking. |
 | **Waitlist open** | Waitlists are enabled for the studio, the class is `active` and not started, `now < starts_at − window`, and `waiting < capacity_waitlist`. |
-| **window** | The class's effective Cancellation Window in hours: its own `classes.cancel_window_hours`, else the studio's `class_window_hours` (`services/policy/cancel-window.ts`, #313). Read at the moment of the join, cancel or promotion, so an edited window applies at once. |
+| **window** | The class Cancellation Window in hours: the studio's `class_window_hours` (`services/policy/cancel-window.ts`); a class has none of its own. Read at the moment of the join, cancel or promotion, so an edited window applies at once. |
 
 `admin-restructure.md` §7d's `max_capacity = waitlist + online_booking + buffer` is replaced by attendance capacity. SCH-04 ("waitlist 5, online 10, buffer 2 → max capacity 17") is a spec change: the correct reading is 12, with 5 waiting. **This needs a human to approve the scenario edit** per `docs/md/test-guardrails.md`; it is uncovered today, so no test file changes.
 
@@ -128,7 +128,7 @@ Order is `joined_at, id`. Position is `1 + count(waiting rows for the class with
 
 No credit is debited and no package is activated at join. Mindbody records the "pending" pricing option at join; we re-select at promotion instead, because packages change between the two moments.
 
-The join check that the class starts outside the window is Mindbody's reason and ours: whoever is promoted must always be able to cancel free. Mindbody has a separate, shorter "waitlist lock window"; we reuse the class's Cancellation Window and add no new policy field. A class with its own window closes its line at that window, not the studio's.
+The join check that the class starts outside the window is Mindbody's reason and ours: whoever is promoted must always be able to cancel free. Mindbody has a separate, shorter "waitlist lock window"; we reuse the class Cancellation Window and add no new policy field.
 
 ### 5. Promotion
 

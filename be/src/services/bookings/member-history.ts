@@ -21,7 +21,7 @@
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { now as clockNow } from '../../lib/clock'
-import { cancelWindowResolver } from '../policy/cancel-window'
+import { classCancelWindow } from '../policy/cancel-window'
 import { staffCancelPreview, type StaffCancelPreview } from './staff-cancel-preview'
 import type { CancellationSource } from '../../db/enums'
 import {
@@ -81,7 +81,6 @@ type Raw = {
   credits_used: number | null
   package_name: string | null
   package_kind: string | null
-  cancel_window_hours: number | null
   code: string
   booked_at: string | Date
   cancelled_at: string | Date | null
@@ -304,7 +303,6 @@ async function readBookings(
       b.credits_or_sessions_used as credits_used,
       coalesce(cpk.name, ppk.name) as package_name,
       cp.kind as package_kind,
-      c.cancel_window_hours,
       b.code,
       b.booked_at,
       b.cancelled_at,
@@ -345,7 +343,7 @@ async function readBookings(
     limit ${limit}
   `)
 
-  const windowOf = await cancelWindowResolver(tenantId)
+  const windowHours = await classCancelWindow(tenantId)
   const now = clockNow()
   return Array.from(rows).map(r => {
     const row = {
@@ -372,7 +370,7 @@ async function readBookings(
       raw: r,
       row: {
         ...row,
-        cancelPreview: staffCancelPreview(row, windowOf({ cancelWindowHours: r.cancel_window_hours }), now),
+        cancelPreview: staffCancelPreview(row, windowHours, now),
       },
     }
   })

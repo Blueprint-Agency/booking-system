@@ -78,8 +78,6 @@ export interface ClassDetail {
   capacityWaitlist: number
   capacityBuffer: number
   creditCost: number
-  /** The class's own Cancellation Window; null = the studio's. */
-  cancelWindowHours: number | null
   /** Which packages may pay for the class, each named. */
   packageRule: NamedPackageRule
   /** Every confirmed booking — the same number as `seats.attending`. */
@@ -114,7 +112,6 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       capacityWaitlist: classes.capacityWaitlist,
       capacityBuffer: classes.capacityBuffer,
       creditCost: classes.creditCost,
-      cancelWindowHours: classes.cancelWindowHours,
       packageRuleMode: classes.packageRuleMode,
       instructorPaySgd: classes.instructorPaySgd,
       classTypeId: classes.classTypeId,
@@ -176,7 +173,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       ),
     )
     .orderBy(bookings.bookedAt)
-  const windowHours = await classCancelWindow(tenantId, row)
+  const windowHours = await classCancelWindow(tenantId)
   const now = clockNow()
   const attendees: ClassAttendee[] = attendeeRows.map(r => {
     const checkInState = r.checkInState as ClassAttendee['checkInState']
@@ -257,7 +254,6 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     capacityWaitlist: row.capacityWaitlist,
     capacityBuffer: row.capacityBuffer,
     creditCost: row.creditCost,
-    cancelWindowHours: row.cancelWindowHours,
     bookedCount: seats.attending,
     packageRule: await nameRule(db, tenantId, rule),
     attendanceCapacity: attendanceCapacity(row),

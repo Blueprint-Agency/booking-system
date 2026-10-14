@@ -19,7 +19,7 @@ import { clientPackages } from '../../db/schema/packages'
 import type { ClientPackageKind } from '../../db/enums'
 import { now as clockNow } from '../../lib/clock'
 import { NotFoundError } from '../../shared/errors'
-import { cancelWindowResolver, type HasCancelWindow } from '../policy/cancel-window'
+import { classCancelWindow } from '../policy/cancel-window'
 import { cancellationRecord, summarizeCancellation, type CancellationSummary } from './cancellation-summary'
 
 interface NamedRef {
@@ -44,12 +44,11 @@ export interface ClassBookingRow {
   state: 'confirmed' | 'cancelled' | 'no_show'
   qrToken: string
   code: string
-  /** The class's Cancellation Window in hours, read now — its own, else the studio's. */
-  effectiveCancelWindowHours: number
-  /** When that window opens: a cancel after this instant is a Late cancel (#318). */
+  /**
+   * When the studio's class Cancellation Window opens, read now: a cancel after
+   * this instant is a Late cancel (#318).
+   */
   cancelDeadline: Date
-  /** The class's own window, null for the studio's — what a cancel is judged by. */
-  cancelWindowHours: number | null
   /** The package that paid; null when none did. */
   clientPackageId: string | null
 }
@@ -67,7 +66,6 @@ const baseSelect = {
   startsAt: classes.startsAt,
   endsAt: classes.endsAt,
   creditCost: classes.creditCost,
-  cancelWindowHours: classes.cancelWindowHours,
   creditsUsed: bookings.creditsOrSessionsUsed,
   clientPackageId: bookings.clientPackageId,
   packageKind: clientPackages.kind,
@@ -90,7 +88,6 @@ type Raw = {
   startsAt: Date
   endsAt: Date
   creditCost: number
-  cancelWindowHours: number | null
   creditsUsed: number | null
   clientPackageId: string | null
   packageKind: string | null
@@ -102,9 +99,8 @@ type Raw = {
 
 const HOUR_MS = 3_600_000
 
-function toRow(r: Raw, windowOf: (cls: HasCancelWindow) => number): ClassBookingRow {
+function toRow(r: Raw, windowHours: number): ClassBookingRow {
   const used = r.creditsUsed ?? 0
-  const windowHours = windowOf(r)
   return {
     bookingId: r.bookingId,
     classId: r.classId,
@@ -122,9 +118,7 @@ function toRow(r: Raw, windowOf: (cls: HasCancelWindow) => number): ClassBooking
     state: r.state as ClassBookingRow['state'],
     qrToken: r.qrToken,
     code: r.code,
-    effectiveCancelWindowHours: windowHours,
     cancelDeadline: new Date(r.startsAt.getTime() - windowHours * HOUR_MS),
-    cancelWindowHours: r.cancelWindowHours,
     clientPackageId: r.clientPackageId,
   }
 }
@@ -164,8 +158,8 @@ export async function listClassBookings(
     .where(where)
     .orderBy(scope === 'upcoming' ? asc(classes.startsAt) : desc(classes.startsAt))) as Raw[]
 
-  const windowOf = await cancelWindowResolver(tenantId)
-  return rows.map(r => toRow(r, windowOf))
+  const windowHours = await classCancelWindow(tenantId)
+  return rows.map(r => toRow(r, windowHours))
 }
 
 export interface CancelledClassBookingRow extends ClassBookingRow {
@@ -206,9 +200,9 @@ export async function listCancelledClassBookings(
     )
     .orderBy(sql`${cancelledAt} DESC NULLS LAST`, desc(classes.startsAt))
 
-  const windowOf = await cancelWindowResolver(tenantId)
+  const windowHours = await classCancelWindow(tenantId)
   return rows.map(r => {
-    const row = toRow(r as Raw, windowOf)
+    const row = toRow(r as Raw, windowHours)
     return {
       ...row,
       cancellation: summarizeCancellation({
@@ -251,5 +245,5 @@ export async function getClassBookingDetail(
     )
     .limit(1)) as Raw[]
   if (!row) throw new NotFoundError('booking_not_found')
-  return toRow(row, await cancelWindowResolver(tenantId))
+  return toRow(row, await classCancelWindow(tenantId))
 }

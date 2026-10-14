@@ -55,7 +55,7 @@ These show up in many features. Understanding them up front makes the rest read 
 
 ### 0.6 Cancellation policy (set in admin)
 
-The studio sets a class window, a PT window, and a **cap**: how many cancellations a member may make per cycle and still get the credit back (class and PT share one count). The cap can be switched off on the Policy page; then every cancel made in time returns, and nothing a member sees mentions a cap. A class may carry its own window (#313).
+The studio sets a class window, a PT window, and a **cap**: how many cancellations a member may make per cycle and still get the credit back (class and PT share one count). The cap can be switched off on the Policy page; then every cancel made in time returns, and nothing a member sees mentions a cap. Every class follows the studio's class window; no class carries its own.
 
 A member can cancel a **class** until it starts (`422 class_started` after). The class's **window** decides whether the credit comes back: inside it the cancel is a **late cancellation** — it goes through, the credit is kept, and it counts toward the cap (#318). A scheduled **PT session** is different: its window is a deadline, and inside it the server refuses (`422 cancellation_window_passed`) and the member has to contact the studio.
 
@@ -213,7 +213,7 @@ _As built:_ there is no separate pricing page: `/pricing` redirects (308) to `/p
 
 **Layout & controls**
 - _As built:_ a signed-in member's next booking leads the schedule as the same ticket "Your bookings" opens with (§8.1, `ComingUp`), Cancel included; a cancel there re-reads the feed.
-- _As built:_ the cancellation rules sit under the filters in a **yellow-framed "Cancellation policy" notice**, collapsed to its title with a chevron — a tap opens it — one short line each (`classPolicyPoints`): the window ("Cancel at least 2 hours before class and you get your credit back."), the late rule ("Cancel within 2 hours of class and you lose the credit."), and the cap and what going over it costs ("You get 3 cancellations every 30 days. After that, you lose the credit even if you cancel early."). The Book sheet keeps the full sentence (`classBookingPolicy`). The cancel dialog frames its notice amber whenever the credit will stay spent — late, or over the cap — and names the cap.
+- _As built:_ the cancellation rules sit under the filters in a **yellow-framed "Cancellation policy" notice**, collapsed to its title with a chevron — a tap opens it — one short line each, led by a bold label (`classPolicyPoints`): **Early cancellation** (at least 2 hours before class): you get your credit back. **Late cancellation** (under 2 hours before class): you lose the credit. **Limit**: 3 cancellations every 30 days. Past that, you lose the credit even if you cancel early. The window stated is the studio's class window (`class_window_hours` from `GET /cancellation-policy`), the one every class is judged by. A cancel dialog whose credit comes back names it ("You're cancelling at least 4 hours before class, so you'll get your 1 credit back."). The Book sheet keeps the full sentence (`classBookingPolicy`). The cancel dialog frames its notice amber whenever the credit will stay spent — late, or over the cap — and names the cap.
 - _As built:_ each row is time · class and instructor · location · cost · action; from `md` up the location and the cost are columns of their own, so they line up down the day whatever the instructor's name. Every **Book Now** (row, class detail, Book sheet's "Book class", workshop "Book now") wears the studio accent (`BTN_BOOK`).
 - The schedule shows the next **10 days** (today and the nine after it), grouped by day. Past classes and days with no classes are left out.
 - The days are an **accordion, at most one open**. The soonest day with classes opens by default; each collapsed day shows its label ("Today", "Tomorrow", or the weekday, with the date) and its class count. Tapping a collapsed day opens it and closes the one that was open; tapping the open day closes it, leaving none open. Days slide open and shut (no slide with reduced motion). The open day's header stays pinned under the top bar while its classes scroll.
@@ -271,7 +271,7 @@ There is no other way to choose: the old "use N credits" shortcut on a blocked r
 - the Location with its address and a map link, and the room;
 - the credit cost, and **Availability**: "Available", or, full, "Full · waitlist open", "Full · waitlist closed" or "Full" (`lib/class-detail.ts` `seatsLine`) — never a count;
 - the effective Cancellation Window;
-- the packages accepted: **"All packages"**, **"Only: …"** or **"All except: …"**, naming each;
+- the packages accepted: **"All group packages"**, **"Only: …"** or **"All except: …"**, naming each;
 - signed in, the member's own class packages, each ticked or with the reason it cannot pay (the Book sheet's reasons above); signed out, a prompt to sign in to see which of theirs can pay.
 
 Its **Book** button opens the same Book sheet as the row's. A class the member is already booked into, or waiting for, opens with that state.
@@ -318,7 +318,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 5. Success dialog: *"Your booking is confirmed! Please arrive 15 minutes before class."* → CTA "I will attend on time" → routes to `/account/classes`.
 
 **Where admin comes in**
-- Admin sets the studio's cancellation window, and staff may give any class (or weekly series) its own. The confirm sheet uses that class's `effective_cancel_window_hours`, and the booking cards its `cancel_deadline` (#313, #318).
+- Admin sets the studio's cancellation window; every class follows it (a class has no window of its own). The confirm sheet uses the studio's `class_window_hours`, and the booking cards their `cancel_deadline` (#318).
 - Admin sees who reserved and credit-source per booking (audit trail).
 
 ---
