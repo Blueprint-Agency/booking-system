@@ -14,6 +14,7 @@ import { Badge, Button, Input } from "@/components/ui";
 import { CancelBookingDialog, type StaffCancelTarget } from "@/components/bookings/cancel-booking-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import {
+  addedMemberLine,
   memberPackagesForClass,
   packagePick,
   searchMembers,
@@ -347,7 +348,8 @@ function PackageChoice({
 }
 
 /**
- * Find a member and book them on. Staff take a buffer seat; when there is none
+ * Find a member and book them on. Staff take a free online seat, else a buffer
+ * seat, and the confirmation names which; when there is neither
  * the refusal becomes a question — "Overbook, or add to the waitlist?" for an
  * admin, "Add to the waitlist?" for an instructor, without the waitlist when
  * the class's line is closed.
@@ -443,11 +445,7 @@ function AddMember({
     setChoosing(null);
     try {
       const res = await staffBookClass(api, role, classId, member.id, overbook, packageId);
-      setAdded(
-        res.seat === "overbook"
-          ? `${member.name} was added as an overbooking.`
-          : `${member.name} was added to a buffer seat.`,
-      );
+      setAdded(addedMemberLine(member.name, res.seat));
       close();
       onBooked();
     } catch (e) {

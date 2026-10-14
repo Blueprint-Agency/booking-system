@@ -3,6 +3,7 @@ import assert from "node:assert";
 import { ApiError } from "./api";
 import { capacityLine } from "./capacity";
 import {
+  addedMemberLine,
   packagePick,
   seatTag,
   seatsSummary,
@@ -36,6 +37,12 @@ test("roster rows tag buffer and overbook seats; an online seat carries no tag",
   assert.strictEqual(seatTag("online"), null);
   assert.strictEqual(seatTag("buffer"), "Buffer");
   assert.strictEqual(seatTag("overbook"), "Overbook");
+});
+
+test("SEAT-01 Add member's confirmation names the seat the booking took", () => {
+  assert.strictEqual(addedMemberLine("Ana Lim", "online"), "Ana Lim was added to an online seat.");
+  assert.strictEqual(addedMemberLine("Ana Lim", "buffer"), "Ana Lim was added to a buffer seat.");
+  assert.strictEqual(addedMemberLine("Ana Lim", "overbook"), "Ana Lim was added as an overbooking.");
 });
 
 test("a full class asks an admin whether to overbook", () => {

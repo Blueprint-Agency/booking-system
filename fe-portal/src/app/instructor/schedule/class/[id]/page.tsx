@@ -15,8 +15,8 @@ import { acceptsLine } from "@/lib/package-rule";
 
 /**
  * An instructor's own class (spec-waitlist.md §10): the seats, the roster with
- * each member's seat and check-in, Add member into a buffer seat (or the
- * waitlist), and the Waitlist panel. Without Manage rosters the roster and the
+ * each member's seat and check-in, Add member into a free online seat, else a
+ * buffer seat (or the waitlist), and the Waitlist panel. Without Manage rosters the roster and the
  * line stay; Add member, Cancel and the line's actions go.
  * No pay and no editing — those are the admin's page.
  */

@@ -1,7 +1,8 @@
 // A class's seats on the portal's session page (spec-waitlist.md §2, §10).
 //
-// Online seats are the members'; buffer seats only staff fill; attendance
-// capacity is the two together, and the waitlist is not a seat. The backend
+// Online seats are the members' to book, and staff take a free one first;
+// buffer seats only staff fill, once online is full; attendance capacity is
+// the two together, and the waitlist is not a seat. The backend
 // counts every number here; this file only words them, and words a refused
 // staff booking for whoever made it. Shapes mirror
 // be/src/routes/portal/class-seats.ts.
@@ -50,6 +51,12 @@ export function seatTag(seat: BookingSeat): string | null {
 
 /* ------------------------------ Staff booking ------------------------------ */
 
+/** Add member's confirmation, naming the seat the booking actually took. */
+export function addedMemberLine(name: string, seat: BookingSeat): string {
+  if (seat === "overbook") return `${name} was added as an overbooking.`;
+  return `${name} was added to ${seat === "online" ? "an online" : "a buffer"} seat.`;
+}
+
 export interface StaffBookingResult {
   booking_id: string;
   seat: BookingSeat;
@@ -58,8 +65,9 @@ export interface StaffBookingResult {
 }
 
 /**
- * Book a member onto a class from the session page. An admin's `overbook` takes
- * a seat past a full buffer; the instructor route ignores it. `clientPackageId`
+ * Book a member onto a class from the session page: a free online seat, else a
+ * buffer seat, as the response's `seat` says. An admin's `overbook` takes a
+ * seat past a full room; the instructor route ignores it. `clientPackageId`
  * is staff's pick of the member's packages; null lets the Default payer pay.
  * A member booked elsewhere at an overlapping time is asked about first, and
  * booked anyway on yes (`./time-clash`).
