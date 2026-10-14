@@ -133,7 +133,7 @@ describe('a member in one place at a time', { skip: integrationTestsEnabled ? fa
         startsAt,
         endsAt: new Date(startsAt.getTime() + (opts.minutes ?? 60) * MINUTE),
         capacityOnline: opts.online ?? 10,
-        // Staff book into buffer seats.
+        // Staff take a buffer seat once the online seats are full.
         capacityBuffer: opts.buffer ?? 2,
         capacityWaitlist: opts.waitlist ?? 0,
         creditCost: 1,

@@ -399,7 +399,7 @@ Workshops are still *configured* under Packages (§7e) — the scheduler only pi
 | Field | Meaning |
 |---|---|
 | `online_booking` | Online seats: members book these themselves in the client app |
-| `buffer` | Buffer seats: only staff fill these, by booking a member from the session page; never shown to members |
+| `buffer` | Buffer seats: only staff fill these, by booking a member from the session page once every online seat is taken (a staff booking takes a free online seat first); never shown to members |
 | `waitlist` | How many members may queue once the online seats are gone. **Not a seat.** |
 | `attendance_capacity` (derived) | `online_booking + buffer` — the most people the roster holds without an overbook |
 
@@ -407,7 +407,7 @@ The waitlist is a line, not part of the room, so it is never added into a capaci
 
 A shared `<CapacityFields />` block appears on every scheduling form, reading "Attendance capacity: N · Waitlist: M" under its three inputs.
 
-**Seats.** Every class booking records the seat it holds — `online`, `buffer` or `overbook` — and `services/bookings/seats.ts` is the only place they are counted. A member takes an online seat; staff take a buffer seat; an admin may **overbook** past a full buffer after confirming "No seats left. Overbook?". An instructor is told "No seats left." and cannot overbook. The member catalogue's `has_seats` reads online seats only, so a staff booking never changes it. Seat counts are shown to staff only — the member app never states one (`fe-client-features.md` §3.1).
+**Seats.** Every class booking records the seat it holds — `online`, `buffer` or `overbook` — and `services/bookings/seats.ts` is the only place they are counted. A member takes an online seat; staff take a free online seat first, then a buffer seat once online is full (Add member and the Waitlist's Add to class alike, #404); an admin may **overbook** past a full room after confirming "No seats left. Overbook?". An instructor is told "No seats left." and cannot overbook. The member catalogue's `has_seats` reads online seats only, so a staff booking in an online seat lowers it like any booking, and one in a buffer or overbook seat never changes it. Seat counts are shown to staff only — the member app never states one (`fe-client-features.md` §3.1).
 
 **Session page** (admin and instructor): **Booked** `attending / attendance capacity` (e.g. 8 / 16); **Seats** `online used / online · buffer used / buffer`, plus "N overbooked" when any; the roster tags each buffer and overbook row; **Add member** searches the studio's members and books one on; when the member holds more than one package that can pay, a **Pay with** select opens on their row with the Default payer chosen and Ineligible packages greyed with their reason (a Dormant one says "Starts today, runs until {date}"), and with one or none the booking goes straight through (#333). The timetable cell reads `attending / attendance capacity`. An instructor reaches this page for the classes they lead.
 
@@ -702,7 +702,7 @@ Two staff roles in the system: `admin` and `instructor`. The `staff_role` type h
 |---|---|---|
 | `schedule_classes` | Schedule classes | Create a class, preview and create a Class Series, cancel a class they lead |
 | `take_pt_bookings` | Take PT bookings | See the pending PT Request queue, schedule a request to themselves, cancel a PT session they lead |
-| `manage_rosters` | Manage rosters | Search members, book a member into a buffer seat, join, promote and remove on the Waitlist, cancel a member's booking (Return or Keep credit) |
+| `manage_rosters` | Manage rosters | Search members, book a member onto a class (a free online seat, else a buffer seat), join, promote and remove on the Waitlist, cancel a member's booking (Return or Keep credit) |
 
 - **All three are on** for every existing Instructor and every newly invited one, so nothing changes at release. An instructor who "should not do any type of scheduling" is one with the first two switched off.
 - **Never a role, never on an Admin.** Admins hold every permission and are never gated by one; the API refuses an attempt to set permissions on an Admin (or to promote someone to Admin and set them in the same request). The Staff list shows the switches on an Instructor's row and none on an Admin's.

@@ -30,6 +30,9 @@ switch an Admin sets per person:
 | `take_pt_bookings` | Take PT bookings | See the pending PT Request queue, schedule a request to themselves, cancel a PT session they lead |
 | `manage_rosters` | Manage rosters | Search members, book a member into a buffer seat, join, promote and remove on the Waitlist, cancel a member's booking |
 
+_Note (2026-10-15, #404): a staff booking now takes a free online seat first, and a buffer seat only
+once the online seats are full (`docs/md/spec-waitlist.md` §2). The permission is unchanged._
+
 **The list is fixed in code and grows only by decision.** It is a Postgres enum
 (`instructor_permission`), not a table an Admin adds rows to. A fourth permission is a new enum
 value, a backfill, and a decision about whether it defaults on or off.

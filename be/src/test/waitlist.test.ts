@@ -514,6 +514,55 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     assert.equal((await entryStatus(entry.entry_id)).status, 'waiting')
   })
 
+  test('SEAT-01 staff Add member takes a free online seat while members are waiting', async () => {
+    const { classId, seated } = await fullClass(one, { online: 1, buffer: 1, waitlist: 3 })
+    const waiter = await member(one)
+    const entry = await joined(waiter, classId)
+    const walkIn = await member(one)
+
+    // Inside the window a freed online seat is not promoted, so the class has
+    // one free with a member in line. Staff may still take it.
+    harness.clock.set(new Date(Date.now() + 3 * DAY - 20 * HOUR))
+    try {
+      const freed = await send('POST', `/portal/admin/bookings/${seated[0]!.bookingId}/cancel`, one.admin.headers, {
+        credit: 'return',
+      })
+      assert.equal(freed.status, 200, JSON.stringify(freed.body))
+      assert.equal((await entryStatus(entry.entry_id)).status, 'waiting')
+
+      const res = await send('POST', `/portal/admin/schedule/classes/${classId}/bookings`, one.admin.headers, {
+        client_id: walkIn.clientId,
+      })
+      assert.equal(res.status, 201, JSON.stringify(res.body))
+      assert.equal(res.body.seat, 'online')
+    } finally {
+      harness.clock.reset()
+    }
+    assert.equal((await confirmedOn(walkIn, classId)).length, 1)
+    assert.equal((await entryStatus(entry.entry_id)).status, 'waiting', 'the line keeps its place')
+  })
+
+  test('SEAT-01 cancelling a staff booking that holds an online seat promotes the head of the line', async () => {
+    const classId = await addClass(one, { online: 1, buffer: 1, waitlist: 3 })
+    const walkIn = await member(one)
+    const staffBooked = await send('POST', `/portal/admin/schedule/classes/${classId}/bookings`, one.admin.headers, {
+      client_id: walkIn.clientId,
+    })
+    assert.equal(staffBooked.status, 201, JSON.stringify(staffBooked.body))
+    assert.equal(staffBooked.body.seat, 'online')
+
+    const waiter = await member(one)
+    const entry = await joined(waiter, classId)
+
+    const res = await send('POST', `/portal/admin/bookings/${staffBooked.body.booking_id}/cancel`, one.admin.headers, {
+      credit: 'return',
+    })
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    assert.equal((await confirmedOn(waiter, classId)).length, 1)
+    assert.equal((await entryStatus(entry.entry_id)).status, 'promoted')
+    assert.equal(await creditsLeft(waiter), 9)
+  })
+
   test('staff booking a full class is told whether the line is open and how long it is', async () => {
     const classId = await addClass(one, { online: 1, buffer: 0, waitlist: 4 })
     await booked(await member(one), classId)

@@ -17,7 +17,8 @@ const DAY = 24 * HOUR
  * A class has online seats members book and buffer seats staff fill;
  * attendance capacity is their sum and the waitlist is not a seat. Staff book a
  * member through the same booking as the member route — package, debit, QR —
- * into a buffer seat, and an admin may overbook past a full buffer. Every
+ * into a free online seat, else a buffer seat, and an admin may overbook past
+ * a full room. Every
  * surface that shows a class's numbers (the member catalogue, the portal
  * timetable, the session detail) reads them from one count, so they agree.
  *
@@ -224,6 +225,8 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
     const staff = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staff})`)
+    await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
+    await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
@@ -239,28 +242,35 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     await harness.close()
   })
 
-  test('SEAT-01 an admin books a member into a buffer seat: paid like any booking, spots left unchanged', async () => {
+  test('SEAT-01 an admin books a member into a free online seat before the buffer: paid like any booking, spots left drop', async () => {
     const classId = await addClass(one, { online: 2, buffer: 1 })
     const walkIn = await member(one)
-    const before = await catalogue(one, classId)
 
     const res = await adminBooks(one, classId, walkIn)
     assert.equal(res.status, 201, JSON.stringify(res.body))
-    assert.equal(res.body.seat, 'buffer')
+    assert.equal(res.body.seat, 'online')
     assert.ok(res.body.code, 'a staff booking gets a booking code like a member booking')
 
     // The same booking as the member route: a credit spent, a QR token issued.
     assert.equal(await creditsLeft(walkIn), 9)
     const [row] = await harness.db.select().from(schema.bookings).where(eq(schema.bookings.id, res.body.booking_id))
-    assert.equal(row!.seat, 'buffer')
+    assert.equal(row!.seat, 'online')
     assert.equal(row!.state, 'confirmed')
     assert.ok(row!.qrToken)
 
-    // Both online seats are still the members': none taken, and the catalogue
-    // still offers one.
-    assert.equal((await detail(one, classId)).online_used, 0)
-    assert.equal(before.has_seats, true)
+    // An ordinary online booking: one of the two online seats is gone, the
+    // buffer is untouched, and the catalogue offers the last online seat.
+    const d = await detail(one, classId)
+    assert.equal(d.online_used, 1)
+    assert.equal(d.buffer_used, 0)
     assert.equal((await catalogue(one, classId)).has_seats, true)
+
+    // The next staff booking takes that last online seat, and the member
+    // catalogue reads full.
+    const second = await adminBooks(one, classId, await member(one))
+    assert.equal(second.status, 201, JSON.stringify(second.body))
+    assert.equal(second.body.seat, 'online')
+    assert.equal((await catalogue(one, classId)).has_seats, false)
 
     // Booking the same member twice is refused, as for a member.
     const again = await adminBooks(one, classId, walkIn)
@@ -268,20 +278,39 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(again.body.error, 'already_booked')
   })
 
-  test('SEAT-01 an instructor books a member onto their own class into a buffer seat', async () => {
+  test('SEAT-01 an instructor books a member onto their own class into a free online seat', async () => {
     const classId = await addClass(one, { online: 2, buffer: 1 })
     const walkIn = await member(one)
 
     const res = await instructorBooks(one.instructor, classId, walkIn)
     assert.equal(res.status, 201, JSON.stringify(res.body))
-    assert.equal(res.body.seat, 'buffer')
-    assert.equal((await detail(one, classId)).online_used, 0)
-    assert.equal((await catalogue(one, classId)).has_seats, true)
+    assert.equal(res.body.seat, 'online')
+    const d = await detail(one, classId)
+    assert.equal(d.online_used, 1)
+    assert.equal(d.buffer_used, 0)
   })
 
-  test('SEAT-02 a full buffer refuses staff with class_full; an admin who overbooks gets in, an instructor never does', async () => {
+  test('SEAT-01 with the online seats full, staff take a buffer seat and spots left stay at none', async () => {
+    const classId = await addClass(one, { online: 1, buffer: 1 })
+    assert.equal((await memberBooks(await member(one), classId)).status, 201)
+    assert.equal((await catalogue(one, classId)).has_seats, false)
+
+    const walkIn = await member(one)
+    const res = await instructorBooks(one.instructor, classId, walkIn)
+    assert.equal(res.status, 201, JSON.stringify(res.body))
+    assert.equal(res.body.seat, 'buffer')
+    assert.equal(await creditsLeft(walkIn), 9)
+    const d = await detail(one, classId)
+    assert.equal(d.online_used, 1)
+    assert.equal(d.buffer_used, 1)
+    assert.equal((await catalogue(one, classId)).has_seats, false)
+  })
+
+  test('SEAT-02 online and buffer full refuses staff with class_full; an admin who overbooks gets in, an instructor never does', async () => {
     const classId = await addClass(one, { online: 1, buffer: 1, waitlist: 5 })
-    await adminBooks(one, classId, await member(one))
+    assert.equal((await memberBooks(await member(one), classId)).status, 201)
+    const buffered = await adminBooks(one, classId, await member(one))
+    assert.equal(buffered.body.seat, 'buffer', JSON.stringify(buffered.body))
 
     const late = await member(one)
     const refused = await adminBooks(one, classId, late)
@@ -306,9 +335,9 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const row = d.attendees.find((a: { client: { id: string } }) => a.client.id === late.clientId)
     assert.equal(row.seat, 'overbook')
     assert.equal(d.overbook_used, 1)
-    // The online seat is still the members'.
-    assert.equal(d.online_used, 0)
-    assert.equal((await catalogue(one, classId)).has_seats, true)
+    assert.equal(d.online_used, 1)
+    assert.equal(d.buffer_used, 1)
+    assert.equal((await catalogue(one, classId)).has_seats, false)
   })
 
   test('a member never takes a buffer seat: online full is full to them', async () => {
@@ -325,8 +354,15 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const classId = await addClass(one, { online: 3, buffer: 1, waitlist: 5 })
     await memberBooks(await member(one), classId)
     await memberBooks(await member(one), classId)
-    await adminBooks(one, classId, await member(one))
-    await adminBooks(one, classId, await member(one), true)
+    const leaver = await member(one)
+    const leaving = await memberBooks(leaver, classId)
+    assert.equal(leaving.status, 201, JSON.stringify(leaving.body))
+    // Staff reach the buffer and the overbook only once online is full...
+    assert.equal((await adminBooks(one, classId, await member(one))).body.seat, 'buffer')
+    assert.equal((await adminBooks(one, classId, await member(one), true)).body.seat, 'overbook')
+    // ...and a member leaving frees an online seat (nobody is waiting to take it).
+    const left = await send('DELETE', `/me/bookings/${leaving.body.booking_id}`, leaver.headers)
+    assert.equal(left.status, 200, JSON.stringify(left.body))
 
     const d = await detail(one, classId)
     assert.equal(d.attendance_capacity, 4, 'online plus buffer; the waitlist is not a seat')
@@ -412,9 +448,10 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const roster = await send('GET', `/portal/instructor/sessions/class/${classId}/roster`, one.instructor.headers)
     assert.equal(roster.status, 200, JSON.stringify(roster.body))
     assert.equal(roster.body.attendance_capacity, 3)
-    assert.equal(roster.body.buffer_used, 1)
+    assert.equal(roster.body.online_used, 1)
+    assert.equal(roster.body.buffer_used, 0)
     assert.equal(roster.body.attendees.length, 1)
-    assert.equal(roster.body.attendees[0].seat, 'buffer')
+    assert.equal(roster.body.attendees[0].seat, 'online')
     assert.equal('instructor_pay_sgd' in roster.body, false, 'an instructor never sees pay')
 
     const other = await send('GET', `/portal/instructor/sessions/class/${classId}/roster`, one.otherInstructor.headers)
@@ -439,8 +476,14 @@ describe('class seats over HTTP', { skip: integrationTestsEnabled ? false : SKIP
   test('lowering online capacity is measured against online seats, not buffer or overbook ones', async () => {
     const classId = await addClass(one, { online: 2, buffer: 1 })
     await memberBooks(await member(one), classId)
-    await adminBooks(one, classId, await member(one))
-    await adminBooks(one, classId, await member(one), true)
+    const leaver = await member(one)
+    const leaving = await memberBooks(leaver, classId)
+    assert.equal(leaving.status, 201, JSON.stringify(leaving.body))
+    assert.equal((await adminBooks(one, classId, await member(one))).body.seat, 'buffer')
+    assert.equal((await adminBooks(one, classId, await member(one), true)).body.seat, 'overbook')
+    // One online seat held, one buffer, one overbook.
+    const left = await send('DELETE', `/me/bookings/${leaving.body.booking_id}`, leaver.headers)
+    assert.equal(left.status, 200, JSON.stringify(left.body))
 
     const toOne = await send('PATCH', `/portal/admin/schedule/classes/${classId}`, one.admin.headers, {
       capacity_online: 1,

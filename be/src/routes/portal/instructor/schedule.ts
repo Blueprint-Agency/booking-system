@@ -33,7 +33,8 @@ import { hasCapacity, NO_CAPACITY, previewJson, seriesRow, seriesTemplateFields,
  *   GET  /schedule/classes/:id/packages — a member's class packages for a class
  *                           the caller is the MAIN instructor of, classified.
  *   POST /schedule/classes/:id/bookings — book a member onto a class the caller
- *                           is the MAIN instructor of, into a buffer seat, paid
+ *                           is the MAIN instructor of, into a free online seat,
+ *                           else a buffer seat, paid
  *                           by the package picked or the Default payer.
  *   POST /schedule/classes/:id/cancel — cancel a class the caller is the MAIN
  *                           instructor of, with a reason. Same service (and so
@@ -46,7 +47,7 @@ import { hasCapacity, NO_CAPACITY, previewJson, seriesRow, seriesTemplateFields,
  * without it `403 forbidden_permission` before any ownership check. The rest —
  * the timetable, booking a member, the waitlist — is not this permission's.
  *
- * Booking a member into a buffer seat and the three waitlist actions are the
+ * Booking a member onto a class and the three waitlist actions are the
  * **Manage rosters** permission. The waitlist factory is shared with the admin
  * mount, so its gate is applied here, on the paths it mounts, registered before
  * it so it runs first — never inside the factory.
@@ -218,9 +219,9 @@ const app = new Hono()
       return c.json(staffPackagesJson(res))
     },
   )
-  // Book a member onto a class the caller teaches: a buffer seat only. An
-  // instructor never overbooks, so `overbook` in the body changes nothing. They
-  // may pick the member's package, as an admin may.
+  // Book a member onto a class the caller teaches: a free online seat, else a
+  // buffer seat. An instructor never overbooks, so `overbook` in the body
+  // changes nothing. They may pick the member's package, as an admin may.
   .post(
     '/classes/:id/bookings',
     managesRosters,
