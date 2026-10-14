@@ -225,8 +225,8 @@ const app = new Hono()
     },
   )
   // Book a member onto a class the caller teaches: a free online seat, else a
-  // buffer seat. An instructor never overbooks, so `overbook` in the body changes nothing. They
-  // may pick the member's package, as an admin may.
+  // buffer seat. An instructor never overbooks, so `overbook` in the body
+  // changes nothing. They may pick the member's package, as an admin may.
   .post(
     '/classes/:id/bookings',
     managesRosters,

@@ -16,7 +16,7 @@ Five tickets (#307–#311), each sized for one agent session. Each cites the spe
 - `POST /portal/admin/schedule/classes/:id/bookings { client_id, overbook?: boolean }` and the instructor equivalent (own classes only): books through the same service as the member route (`selectPackage`, debit, activation, QR) with `seat` from `seatFor`. Full → `409 class_full { waitlist_open: false, waiting: 0, capacity_waitlist }` (the waitlist fields are stubs until T2 fills them). Instructor never overbooks.
 - `capacity_below_bookings` on class edit compares against `online_used`, not all confirmed.
 - fe-portal session page: stats per §10 ("Booked 8 / 16", seats line, overbook count); roster rows tagged `buffer` / `overbook`; **Add member** (client search → book → on `class_full` the admin prompt "No seats left. Overbook?" / instructor "No seats left."; the "add to waitlist" half of the prompt arrives in T4). Timetable cells read `attending / attendance_capacity`. `capacity-fields.tsx` shows "Attendance capacity: N · Waitlist: M".
-- Instructor session page gets the same roster and Add member (buffer only); replace the 501 `routes/portal/instructor/roster.ts` stub with the detail service scoped to the instructor's classes.
+- Instructor session page gets the same roster and Add member (~~buffer only~~ — superseded by #404: online first, then buffer); replace the 501 `routes/portal/instructor/roster.ts` stub with the detail service scoped to the instructor's classes.
 - Error codes: `class_full` body shape documented; no new code. Update `docs/md/be-portal.md` route table and `admin-restructure.md` §7d.
 
 ### Before starting (human)
@@ -28,7 +28,7 @@ Five tickets (#307–#311), each sized for one agent session. Each cites the spe
 - [ ] `bookings.seat` exists; existing rows are `online`; RLS policy unchanged.
 - [ ] `countSeats` is the only place that counts confirmed bookings for capacity; `grep "state, 'confirmed'"` across the four call sites finds no private count.
 - [ ] Member catalogue `spots_left` is unchanged for every existing test (`booking-lifecycle`, `booking-credits`, `class-series`).
-- [ ] Staff booking takes a buffer seat and leaves `spots_left` unchanged (SEAT-01).
+- [ ] ~~Staff booking takes a buffer seat and leaves `spots_left` unchanged (SEAT-01).~~ Superseded by #404: staff booking takes a free online seat first (lowering `spots_left`), and a buffer seat only once online is full.
 - [ ] Staff booking when buffer is full → `class_full`; admin with `overbook: true` succeeds and the row shows `overbook`; instructor with `overbook: true` still gets `class_full` (SEAT-02).
 - [ ] Portal detail, timetable and member catalogue agree on the numbers for the same class (SEAT-04).
 - [ ] Another studio's bookings never count toward this studio's seats (SEAT-05, in `isolation.test.ts`).

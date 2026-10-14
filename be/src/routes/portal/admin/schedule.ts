@@ -291,8 +291,7 @@ const app = new Hono()
   )
   // Book a member onto a class: a free online seat, else a buffer seat, else an
   // overbook seat when both are full and the admin said so (spec-waitlist.md
-  // §7), paid by the
-  // package the admin picked or the Default payer.
+  // §7), paid by the package the admin picked or the Default payer.
   .post(
     '/classes/:id/bookings',
     zValidator('param', z.object({ id: z.string().uuid() })),

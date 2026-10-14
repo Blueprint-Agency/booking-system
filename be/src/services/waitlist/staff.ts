@@ -117,9 +117,10 @@ export interface StaffPromoteInput {
 /**
  * Book one waiting member onto the class (§7, Mindbody's "Add to class"):
  * whatever the Cancellation Window says, into the seat any staff booking takes
- * (`seatFor`): a free online seat, else a buffer seat, else an overbook seat for an admin who asked, else `class_full`. The
- * booking is paid for as any booking is; a package that cannot pay is refused
- * with the selection's reason and the member keeps their place.
+ * (`seatFor`): a free online seat, else a buffer seat, else an overbook seat
+ * for an admin who asked, else `class_full`. The booking is paid for as any
+ * booking is; a package that cannot pay is refused with the selection's reason
+ * and the member keeps their place.
  *
  * The member is emailed as an automatic promotion would email them only while
  * the free cancel the email promises is still theirs — before the window. Inside
