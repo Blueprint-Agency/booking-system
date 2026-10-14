@@ -1,4 +1,5 @@
 "use client";
+import { useEffect } from "react";
 import Link from "next/link";
 import { X } from "lucide-react";
 import { Avatar, Badge, Button } from "@/components/ui";
@@ -29,10 +30,19 @@ export function PtRequestDrawer({
   // Staff put a manual session on the Schedule (#338): the member asked for
   // nothing, so there are no proposed slots, class type, message or binding.
   const manual = request.origin === "portal";
+  // As Sheet does: on a phone a swipe on the backdrop or a short panel would
+  // otherwise scroll the list underneath.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative z-50 h-full w-full max-w-md overflow-y-auto bg-card p-4 shadow-xl sm:p-6">
+      <div className="relative z-50 h-full w-full max-w-md overflow-y-auto overscroll-contain bg-card p-4 shadow-xl sm:p-6">
         <button
           type="button"
           onClick={onClose}

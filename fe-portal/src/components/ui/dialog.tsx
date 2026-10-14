@@ -62,7 +62,7 @@ export function Dialog({ open, onOpenChange, title, description, children, class
             {description && <p className="mt-1 break-words text-sm text-muted">{description}</p>}
           </div>
         )}
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-4 sm:px-6 sm:pb-6">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 pt-4 sm:px-6 sm:pb-6">
           {children}
         </div>
       </div>

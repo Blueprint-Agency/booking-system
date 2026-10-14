@@ -338,7 +338,7 @@ export default function PrivateSessionsPage() {
                   {/* Date and start time side by side; the remove button under
                       them on a phone, beside them from sm. */}
                   <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
-                    <div>
+                    <div className="min-w-0">
                       <label
                         htmlFor={`slot-${i}-date`}
                         className="text-xs text-muted mb-1 block"
@@ -355,7 +355,7 @@ export default function PrivateSessionsPage() {
                         className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
                       />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <label
                         htmlFor={`slot-${i}-start`}
                         className="text-xs text-muted mb-1 block"

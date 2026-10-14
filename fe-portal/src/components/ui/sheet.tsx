@@ -69,7 +69,7 @@ export function Sheet({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-auto px-4 py-4 sm:px-6">{children}</div>
+        <div className="flex-1 overflow-auto overscroll-contain px-4 py-4 sm:px-6">{children}</div>
       </div>
     </div>,
     document.body
