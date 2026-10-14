@@ -15,6 +15,7 @@ The tables and what deletion does to each are one list, `MEMBER_TABLES` in `be/s
 | What | Tables |
 |---|---|
 | The member's profile at this studio | `clients` |
+| Their Billing details — names and addresses to bill; a Purchase keeps its own copy | `client_billing_details` |
 | Bookings, cancellations, check-ins | `bookings`, `cancellations`, `check_ins` |
 | Manual credit adjustments (credit movements with a staff member's free-text reason — no money, and the reason may name the member) | `manual_adjustments` |
 | Credit history (which of their bookings spent or returned which credits — no money) | `credit_movements` |

@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   unique,
   foreignKey,
+  boolean,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
@@ -70,6 +71,44 @@ export const clients = pgTable(
       foreignColumns: [table.id],
       name: 'clients_referrer_fk',
     }).onDelete('set null'),
+  }),
+)
+
+/**
+ * A member's Billing details (#399): a name (their own, or a company's) and a
+ * postal address, which a Purchase bills to. At most three per member per
+ * studio, a cap the service holds under a lock on the member's row; at most
+ * one of them the default, which the partial unique index holds.
+ *
+ * Deleting one is a hard delete: a Purchase and its Receipt carry their own
+ * copy of the set they were billed to, never a reference to this row.
+ */
+export const clientBillingDetails = pgTable(
+  'client_billing_details',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    name: text('name').notNull(),
+    line1: text('line1').notNull(),
+    line2: text('line2'),
+    city: text('city').notNull(),
+    state: text('state'),
+    postcode: text('postcode').notNull(),
+    // ISO 3166-1 alpha-2.
+    country: text('country').notNull().default('SG'),
+    isDefault: boolean('is_default').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    clientIdFkIdx: index('client_billing_details_client_id_fk_idx').on(table.clientId),
+    clientIdx: index('client_billing_details_client_idx').on(table.tenantId, table.clientId, table.createdAt),
+    oneDefault: uniqueIndex('client_billing_details_one_default')
+      .on(table.tenantId, table.clientId)
+      .where(sql`${table.isDefault}`),
   }),
 )
 

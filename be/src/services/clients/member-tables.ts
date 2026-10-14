@@ -95,6 +95,10 @@ const ACCOUNTS =
 
 export const MEMBER_TABLES: readonly MemberTable[] = [
   { table: 'clients', columns: ['id'], where: m => sql`id = ${m.clientId}` },
+  // Their Billing details (#399): names and addresses they gave the studio to
+  // bill. Nothing sold points at them — a Purchase keeps its own copy — so
+  // they go with the member.
+  byClientId('client_billing_details'),
   byClientId('bookings'),
   // Their places in class waitlists. After `bookings`, which a promoted entry
   // points at, so deletion reaches it first.
