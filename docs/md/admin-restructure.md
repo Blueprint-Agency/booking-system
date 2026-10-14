@@ -399,7 +399,7 @@ Workshops are still *configured* under Packages (§7e) — the scheduler only pi
 | Field | Meaning |
 |---|---|
 | `online_booking` | Online seats: members book these themselves in the client app |
-| `buffer` | Buffer seats: only staff fill these, by booking a member from the session page; never shown to members |
+| `buffer` | Buffer seats: only staff fill these, by booking a member from the session page once every online seat is taken (a staff booking takes a free online seat first); never shown to members |
 | `waitlist` | How many members may queue once the online seats are gone. **Not a seat.** |
 | `attendance_capacity` (derived) | `online_booking + buffer` — the most people the roster holds without an overbook |
 
@@ -702,7 +702,7 @@ Two staff roles in the system: `admin` and `instructor`. The `staff_role` type h
 |---|---|---|
 | `schedule_classes` | Schedule classes | Create a class, preview and create a Class Series, cancel a class they lead |
 | `take_pt_bookings` | Take PT bookings | See the pending PT Request queue, schedule a request to themselves, cancel a PT session they lead |
-| `manage_rosters` | Manage rosters | Search members, book a member into a buffer seat, join, promote and remove on the Waitlist, cancel a member's booking (Return or Keep credit) |
+| `manage_rosters` | Manage rosters | Search members, book a member onto a class (a free online seat, else a buffer seat), join, promote and remove on the Waitlist, cancel a member's booking (Return or Keep credit) |
 
 - **All three are on** for every existing Instructor and every newly invited one, so nothing changes at release. An instructor who "should not do any type of scheduling" is one with the first two switched off.
 - **Never a role, never on an Admin.** Admins hold every permission and are never gated by one; the API refuses an attempt to set permissions on an Admin (or to promote someone to Admin and set them in the same request). The Staff list shows the switches on an Instructor's row and none on an Admin's.

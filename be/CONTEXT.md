@@ -374,7 +374,7 @@ A weekly repeating class, defined once — Class Type, weekday, start and end ti
 _Avoid_: recurring class, repeating event, template, schedule rule, recurrence
 
 **Online Seat** / **Buffer Seat**:
-A class's two kinds of seat (`bookings.seat`, counted only by `services/bookings/seats.ts`). An Online Seat is one of `capacity_online`, taken by a member booking themselves or by a Promotion. A Buffer Seat is one of `capacity_buffer`, filled only by staff booking a member. **Attendance Capacity** is their sum — the most people the roster holds. An **Overbook** is an admin's booking past both. The waitlist is not a seat.
+A class's two kinds of seat (`bookings.seat`, counted only by `services/bookings/seats.ts`). An Online Seat is one of `capacity_online`, taken by a member booking themselves, by a Promotion, or by staff booking a member while one is free — even with members waiting; a staff booking in an Online Seat is an ordinary one, and cancelling it frees an Online Seat that promotes as usual. A Buffer Seat is one of `capacity_buffer`, filled only by staff booking a member once every Online Seat is taken — the studio's reserve for a full class. Staff "Add member" and the Waitlist's "Add to class" take seats in the same order: Online, then Buffer, then (admin only) Overbook. **Attendance Capacity** is their sum — the most people the roster holds. An **Overbook** is an admin's booking past both. The waitlist is not a seat.
 _Avoid_: max capacity, total capacity, spots (outside the member app, where `spots_left` means free Online Seats)
 
 **Cancellation Window**:
