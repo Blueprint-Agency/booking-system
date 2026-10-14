@@ -292,6 +292,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
       sellerFooter: null,
       buyerName: 'Mia Tan',
       buyerEmail: `free@${DOMAIN}`,
+      billTo: null,
       kind: 'class_package',
       lines: [{ description: 'Trial class', quantity: 1, listPriceSgd: '0.00', discountSgd: '0.00', discounts: [], amountSgd: '0.00' }],
       subtotalSgd: '0.00',
@@ -333,6 +334,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
       sellerFooter: null,
       buyerName: 'Mia Tan',
       buyerEmail: `long@${DOMAIN}`,
+      billTo: null,
       kind: 'workshop',
       lines: [
         {

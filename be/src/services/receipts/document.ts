@@ -6,8 +6,9 @@
  * words, formats or orders anything of its own, so they cannot drift apart.
  *
  * Top to bottom: the studio beside the number; the amount paid, with a PAID
- * or REFUNDED chip and one sentence on how it was paid; Issued to, Issued on
- * and Paid with; the lines as a table (each at List Price × quantity, each
+ * or REFUNDED chip and one sentence on how it was paid; Bill to (or, on a
+ * Receipt whose Purchase chose no Billing details, Issued to), Issued on and
+ * Paid with; the lines as a table (each at List Price × quantity, each
  * discount under the line it came off); Subtotal, Discount, Total paid; the
  * studio's note; the platform's credit.
  *
@@ -20,6 +21,7 @@ import { db } from '../../db'
 import { tenantSettings } from '../../db/schema/tenancy'
 import { sgFormat } from '../../lib/time'
 import { sgdText, toCents } from '../../shared/money'
+import type { BillingAddress } from '../billing-details/billing-details'
 import type { LineDiscount, PurchaseLine } from '../billing/purchase-lines'
 import { cardBrandName, methodName } from '../finance/methods'
 import type { ReceiptRow } from './issue'
@@ -54,7 +56,11 @@ export interface ReceiptDocument {
   status: string
   /** `Refunded on 5 Oct 2026`, or null. */
   refunded: string | null
-  facts: { key: 'issuedTo' | 'issuedOn' | 'paidWith'; label: string; lines: ReceiptFactLine[] }[]
+  /**
+   * Bill to (#401) where the Purchase chose Billing details, else Issued to
+   * with the member's name and email; then Issued on and Paid with.
+   */
+  facts: { key: 'billTo' | 'issuedTo' | 'issuedOn' | 'paidWith'; label: string; lines: ReceiptFactLine[] }[]
   columns: { description: string; quantity: string; unitPrice: string; amount: string }
   lines: {
     description: string
@@ -91,6 +97,18 @@ export const paymentLabel = (p: ReceiptPayment): string => {
   return p.method ? methodName(p.method) : 'Online payment'
 }
 
+const REGIONS = new Intl.DisplayNames(['en'], { type: 'region', fallback: 'code' })
+
+/**
+ * A Bill to's address as it prints, a line each: the two address lines, then
+ * city, state and postcode together, then the country by its name. The same
+ * reading as the member's Billing details page (fe-client `addressLines`).
+ */
+export const billToAddressLines = (bill: BillingAddress): string[] =>
+  [bill.line1, bill.line2, [bill.city, bill.state, bill.postcode].filter(Boolean).join(' '), REGIONS.of(bill.country) ?? bill.country].filter(
+    (line): line is string => Boolean(line && line.trim()),
+  )
+
 /** How a discount reads under its line: a code alone would mean nothing on paper. */
 const discountLabel = (d: LineDiscount): string => (d.source === 'promo_code' ? `Promo code ${d.label}` : d.label)
 
@@ -117,7 +135,17 @@ export async function receiptStudio(receipt: Pick<ReceiptRow, 'tenantId' | 'sell
 export function receiptDocument(receipt: ReceiptRow, studio: ReceiptStudio): ReceiptDocument {
   const refunded = receipt.refundedAt !== null
   const facts: ReceiptDocument['facts'] = []
-  if (receipt.buyerName || receipt.buyerEmail) {
+  if (receipt.billTo) {
+    facts.push({
+      key: 'billTo',
+      label: 'Bill to',
+      lines: [
+        { text: receipt.billTo.name, strong: true },
+        ...billToAddressLines(receipt.billTo).map(text => ({ text, strong: false })),
+        ...(receipt.buyerEmail ? [{ text: receipt.buyerEmail, strong: false }] : []),
+      ],
+    })
+  } else if (receipt.buyerName || receipt.buyerEmail) {
     facts.push({
       key: 'issuedTo',
       label: 'Issued to',

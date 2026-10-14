@@ -15,6 +15,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { purchases, stripePayments } from '../../db/schema/ledger'
 import { toCents, toSgd } from '../../shared/money'
+import type { BillingAddress } from '../billing-details/billing-details'
 import { issueReceipt, stampReceiptRefunded } from '../receipts/issue'
 import { amountPaidCents, isSettled, outstandingCents } from './balance'
 import { linesTotalCents, type PurchaseLine } from './purchase-lines'
@@ -36,6 +37,11 @@ export interface OpenPurchaseInput {
    * Purchases existed, which the webhook gives a Purchase after the fact.
    */
   lines: PurchaseLine[]
+  /**
+   * Who the sale is billed to (#401): the member's chosen Billing details,
+   * copied, or null where the checkout chose none.
+   */
+  billTo?: BillingAddress | null
 }
 
 /**
@@ -70,6 +76,7 @@ export async function openPurchase(input: OpenPurchaseInput): Promise<PurchaseRo
       status: 'open',
       metadata: input.metadata,
       lines: input.lines,
+      billTo: input.billTo ?? null,
     })
     .returning()
   return row!
