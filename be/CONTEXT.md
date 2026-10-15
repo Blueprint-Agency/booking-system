@@ -20,11 +20,15 @@ The label the platform knows a Tenant by: `tenants.name`, which the super portal
 _Avoid_: studio name (ambiguous), tenant name
 
 **Business name**:
-The one name a studio trades under: `tenant_settings.business_name`, a row the studio owns. The super portal sets it when it creates the studio (the Domain name when the operator leaves it blank), and the studio's admin changes it on its **Business details** page, as the operator can from the super portal's studio list. Never blank, at most 200 characters. It names the studio as seller on every Receipt issued while it stands; a rename reaches only the Receipts issued after it. Every email the studio sends goes out under it: the From name, the studio named in the email's frame, and in its subject and body, where templates say `{{studio_name}}` and the name is filled in when the email is sent, so a rename reaches the next email (#400). It is also the charge description on a member's card statement. It replaced the Receipt's separate *Legal name* (migration 0115), which a studio that had one now trades under. Distinct from the display name the studio's website header shows.
+The formal name a studio trades under: `tenant_settings.business_name`, a row the studio owns. The super portal sets it when it creates the studio (the Domain name when the operator leaves it blank), and the studio's admin changes it on its **Business details** page, as the operator can from the super portal's studio list. Never blank, at most 200 characters. It names the studio as seller on every Receipt issued while it stands; a rename reaches only the Receipts issued after it. It is also the charge description on a member's card statement, so the statement and the Receipt name the same business. It replaced the Receipt's separate *Legal name* (migration 0115), which a studio that had one now trades under. Emails do not use it: they use the **Display name**.
 _Avoid_: legal name, company name, studio name
 
+**Display name**:
+The everyday name a studio is known by: `tenant_settings.display_name`. Its member app and portal show it, and every email the studio sends goes out under it: the From name, the studio named in the email's frame, and in its subject and body, where templates say `{{studio_name}}` and the name is filled in when the email is sent, so a rename reaches the next email (#400, migration 0120). Set when the studio is created (the Domain name when left blank) and changed beside the Business name on **Business details**. Never blank once saved, at most 200 characters; a studio with none (an old archive) is called by its Domain name.
+_Avoid_: brand name, studio name
+
 **Business details**:
-What a studio's business documents say about it, set together on one page: its Business name, registration number, address, a footer note, and the prefix its Receipt numbers carry. Formerly *receipt details*. See `services/tenants/business-details.ts`.
+What a studio's business documents say about it, set together on one page: its Business name and Display name, registration number, address, a footer note, and the prefix its Receipt numbers carry. Formerly *receipt details*. See `services/tenants/business-details.ts`.
 _Avoid_: receipt details, receipt settings
 
 **Slug**:

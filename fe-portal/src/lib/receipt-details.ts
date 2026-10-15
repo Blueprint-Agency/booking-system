@@ -12,6 +12,12 @@ export interface ReceiptDetails {
    * form sends, where none means "the Domain name".
    */
   business_name: string | null;
+  /**
+   * The everyday name the studio's apps and emails call it by, where the
+   * Business name is the formal one on its Receipts. Null, like the Business
+   * name, only in what the create form sends.
+   */
+  display_name: string | null;
   prefix: string;
   registration_number: string | null;
   address: string | null;
@@ -39,6 +45,7 @@ export const DEFAULT_RECEIPT_PREFIX = "R";
 /** The most each free-text detail may hold, as the backend counts it. */
 export const RECEIPT_DETAIL_LIMITS = {
   business_name: 200,
+  display_name: 200,
   registration_number: 50,
   address: 500,
   footer: 1000,
@@ -68,8 +75,17 @@ export function businessNameProblem(name: string): string | null {
     : null;
 }
 
+/** Why `name` cannot be a studio's Display name, or null when it can. */
+export function displayNameProblem(name: string): string | null {
+  if (!name.trim()) return "A display name is required.";
+  return name.trim().length > RECEIPT_DETAIL_LIMITS.display_name
+    ? `At most ${RECEIPT_DETAIL_LIMITS.display_name} characters.`
+    : null;
+}
+
 export const emptyReceiptDetailsDraft = (): ReceiptDetailsDraft => ({
   business_name: "",
+  display_name: "",
   prefix: DEFAULT_RECEIPT_PREFIX,
   registration_number: "",
   address: "",
@@ -79,6 +95,7 @@ export const emptyReceiptDetailsDraft = (): ReceiptDetailsDraft => ({
 /** Saved details, as the form shows them. */
 export const receiptDetailsDraft = (details: ReceiptDetails): ReceiptDetailsDraft => ({
   business_name: details.business_name ?? "",
+  display_name: details.display_name ?? "",
   prefix: details.prefix,
   registration_number: details.registration_number ?? "",
   address: details.address ?? "",
@@ -89,11 +106,12 @@ const orNull = (value: string) => value.trim() || null;
 
 /**
  * What the form sends: trimmed, a blank detail as none, a blank prefix as the
- * default. A blank Business name is the create form's "use the Domain name";
- * the Business details page never sends one.
+ * default. A blank Business name or Display name is the create form's "use
+ * the Domain name"; the Business details page never sends one.
  */
 export const receiptDetailsPayload = (draft: ReceiptDetailsDraft): ReceiptDetails => ({
   business_name: orNull(draft.business_name),
+  display_name: orNull(draft.display_name),
   prefix: prefixOf(draft.prefix),
   registration_number: orNull(draft.registration_number),
   address: orNull(draft.address),
@@ -108,7 +126,9 @@ export function hasReceiptDetails(draft: ReceiptDetailsDraft): boolean {
   const payload = receiptDetailsPayload(draft);
   return (
     payload.prefix !== DEFAULT_RECEIPT_PREFIX ||
-    [payload.business_name, payload.registration_number, payload.address, payload.footer].some(Boolean)
+    [payload.business_name, payload.display_name, payload.registration_number, payload.address, payload.footer].some(
+      Boolean,
+    )
   );
 }
 

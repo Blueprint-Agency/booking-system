@@ -8,6 +8,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 import {
   RECEIPT_DETAIL_LIMITS,
   businessNameProblem,
+  displayNameProblem,
   emptyReceiptDetailsDraft,
   getReceiptDetails,
   receiptDetailsDraft,
@@ -67,13 +68,14 @@ export default function BusinessDetailsPage() {
 
   const prefixError = receiptPrefixProblem(draft.prefix);
   const nameError = businessNameProblem(draft.business_name);
+  const displayError = displayNameProblem(draft.display_name);
   const dirty = (Object.keys(draft) as Array<keyof ReceiptDetailsDraft>).some(
     (key) => draft[key] !== saved[key],
   );
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!api || prefixError || nameError || !dirty) return;
+    if (!api || prefixError || nameError || displayError || !dirty) return;
     setSaving(true);
     try {
       show(await saveReceiptDetails(api, receiptDetailsPayload(draft)));
@@ -127,8 +129,8 @@ export default function BusinessDetailsPage() {
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Your business</h2>
             <p className="mt-0.5 text-xs text-muted">
-              The Business name is the name your studio trades under. The rest are printed beside it; leave any
-              you don’t need blank.
+              The Business name is the formal name your studio trades under, on its Receipts; the Display name
+              is what members know it as. The rest are printed on Receipts; leave any you don’t need blank.
             </p>
           </header>
           <div className="space-y-4">
@@ -143,7 +145,29 @@ export default function BusinessDetailsPage() {
                 aria-describedby="business-name-help"
               />
               <p id="business-name-help" className="text-xs text-muted">
-                {nameError ? <span className="text-error">{nameError}</span> : "Shown as the seller on every Receipt."}
+                {nameError ? (
+                  <span className="text-error">{nameError}</span>
+                ) : (
+                  "Your formal name, shown as the seller on every Receipt."
+                )}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="display-name">Display name</Label>
+              <Input
+                id="display-name"
+                {...field("display_name")}
+                maxLength={RECEIPT_DETAIL_LIMITS.display_name}
+                required
+                aria-invalid={Boolean(displayError)}
+                aria-describedby="display-name-help"
+              />
+              <p id="display-name-help" className="text-xs text-muted">
+                {displayError ? (
+                  <span className="text-error">{displayError}</span>
+                ) : (
+                  "The everyday name members see in your apps and emails."
+                )}
               </p>
             </div>
             <div className="space-y-1.5">
@@ -212,7 +236,7 @@ export default function BusinessDetailsPage() {
           <Button type="button" variant="ghost" disabled={!dirty || saving} onClick={() => setDraft(saved)}>
             Reset
           </Button>
-          <Button type="submit" disabled={!dirty || saving || Boolean(prefixError) || Boolean(nameError)}>
+          <Button type="submit" disabled={!dirty || saving || Boolean(prefixError) || Boolean(nameError) || Boolean(displayError)}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save
           </Button>
         </div>

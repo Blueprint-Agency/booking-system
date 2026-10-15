@@ -1,7 +1,9 @@
 /**
  * A studio's Business details (#391, #398): the Business name it trades under,
  * and what its Receipts print beside it — registration number, address, a
- * footer note — with the prefix its Receipt numbers carry.
+ * footer note — with the prefix its Receipt numbers carry. Beside them its
+ * Display name, the everyday name its apps and emails call it by, where the
+ * Business name is the formal one its Receipts and card charges carry.
  *
  * Rows the studio owns, in `tenant_settings`, set by its admin in the portal or
  * by the super portal when the studio is created. `issueReceipt` copies them
@@ -15,17 +17,27 @@ import { tenants, tenantSettings } from '../../db/schema/tenancy'
 import { BadRequestError } from '../../shared/errors'
 import { DEFAULT_RECEIPT_PREFIX, displayNumber } from '../receipts/snapshot'
 import { forgetCachedMailIdentity } from './mail-identity'
+import { forgetCachedTenants } from './tenants'
 
 export interface BusinessDetails {
   businessName: string
+  displayName: string
   prefix: string
   registrationNumber: string | null
   address: string | null
   footer: string | null
 }
 
-/** What an admin or the operator sends. Absent or blank is "none"; a blank prefix is the default. */
+/**
+ * What an admin or the operator sends. Absent or blank is "none"; a blank
+ * prefix is the default. The Display name alone is different: blank is refused,
+ * and absent leaves the one the studio has, so a client from before it existed
+ * does not have to know it.
+ */
 export type BusinessDetailsInput = { [K in keyof BusinessDetails]?: string | null }
+
+/** Cleaned details, the Display name left out when none was sent. */
+type CleanBusinessDetails = Omit<BusinessDetails, 'displayName'> & { displayName?: string }
 
 /** The details with the number the studio's next Receipt will take under them. */
 export interface BusinessDetailsView {
@@ -70,11 +82,20 @@ export function cleanBusinessName(input: string | null | undefined): string {
   return name
 }
 
+/** A Display name as it is stored: the same rule as the Business name, in its own words. */
+export function cleanDisplayName(input: string | null | undefined): string {
+  const name = tidy(input)
+  if (!name) refuse('A display name is required.')
+  if (name.length > BUSINESS_NAME_MAX) refuse(`The display name is at most ${BUSINESS_NAME_MAX} characters.`)
+  return name
+}
+
 /**
  * The details as they are stored: trimmed, blanks as null, the Business name
- * required and the prefix checked. Refuses with one sentence an admin can read.
+ * required, a Display name when one was sent, and the prefix checked. Refuses
+ * with one sentence an admin can read.
  */
-export function cleanBusinessDetails(input: BusinessDetailsInput): BusinessDetails {
+export function cleanBusinessDetails(input: BusinessDetailsInput): CleanBusinessDetails {
   const prefix = input.prefix?.trim() || DEFAULT_RECEIPT_PREFIX
   if (!PREFIX.test(prefix)) {
     refuse('A receipt prefix is up to 10 letters or digits, with hyphens only between them.')
@@ -89,12 +110,20 @@ export function cleanBusinessDetails(input: BusinessDetailsInput): BusinessDetai
   const registrationNumber = text('registrationNumber')
   const address = text('address')
   const footer = text('footer')
-  return { businessName: cleanBusinessName(input.businessName), prefix, registrationNumber, address, footer }
+  return {
+    businessName: cleanBusinessName(input.businessName),
+    ...(input.displayName !== undefined ? { displayName: cleanDisplayName(input.displayName) } : {}),
+    prefix,
+    registrationNumber,
+    address,
+    footer,
+  }
 }
 
 /** The columns `cleanBusinessDetails` fills, ready to write to `tenant_settings`. */
-export const businessDetailColumns = (details: BusinessDetails) => ({
+export const businessDetailColumns = (details: CleanBusinessDetails) => ({
   businessName: details.businessName,
+  ...(details.displayName !== undefined ? { displayName: details.displayName } : {}),
   receiptPrefix: details.prefix,
   receiptRegistrationNumber: details.registrationNumber,
   receiptAddress: details.address,
@@ -107,6 +136,7 @@ export async function readBusinessDetails(tenantId: string): Promise<BusinessDet
     .select({
       domainName: tenants.name,
       businessName: tenantSettings.businessName,
+      displayName: tenantSettings.displayName,
       prefix: tenantSettings.receiptPrefix,
       registrationNumber: tenantSettings.receiptRegistrationNumber,
       address: tenantSettings.receiptAddress,
@@ -120,6 +150,8 @@ export async function readBusinessDetails(tenantId: string): Promise<BusinessDet
   // row the first save writes would say.
   const details: BusinessDetails = {
     businessName: row?.businessName ?? row?.domainName ?? '',
+    // Its apps fall back the same way (fe-*/src/lib/brand.ts).
+    displayName: row?.displayName?.trim() || row?.domainName || '',
     prefix: row?.prefix ?? DEFAULT_RECEIPT_PREFIX,
     registrationNumber: row?.registrationNumber ?? null,
     address: row?.address ?? null,
@@ -142,10 +174,14 @@ export async function saveBusinessDetails(tenantId: string, input: BusinessDetai
     .insert(tenantSettings)
     .values({ tenantId, ...columns })
     .onConflictDoUpdate({ target: tenantSettings.tenantId, set: columns })
-  // The Business name signs every email and names the studio on each card
-  // charge (#400), so the next one must not wait out the identity's cache.
-  // Once committed: forgotten any sooner, a send racing this save could read
-  // the old name and cache it again for another minute.
-  afterCommit(() => forgetCachedMailIdentity(tenantId))
+  // The Display name signs every email and the Business name names the studio
+  // on each card charge (#400), so the next one must not wait out the
+  // identity's cache; nor must the apps, which read the Display name through
+  // the tenant lookup. Once committed: forgotten any sooner, a send racing this
+  // save could read the old name and cache it again for another minute.
+  afterCommit(() => {
+    forgetCachedMailIdentity(tenantId)
+    forgetCachedTenants()
+  })
   return readBusinessDetails(tenantId)
 }

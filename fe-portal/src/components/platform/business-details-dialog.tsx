@@ -8,6 +8,7 @@ import type { PlatformTenant } from "@/lib/platform";
 import {
   RECEIPT_DETAIL_LIMITS,
   businessNameProblem,
+  displayNameProblem,
   getStudioReceiptDetails,
   receiptDetailsDraft,
   receiptDetailsPayload,
@@ -63,6 +64,7 @@ export function BusinessDetailsDialog({ api, tenant, onOpenChange }: BusinessDet
 
   const nameError = draft ? businessNameProblem(draft.business_name) : null;
   const prefixError = draft ? receiptPrefixProblem(draft.prefix) : null;
+  const displayError = draft ? displayNameProblem(draft.display_name) : null;
   const dirty =
     draft !== null &&
     saved !== null &&
@@ -70,7 +72,7 @@ export function BusinessDetailsDialog({ api, tenant, onOpenChange }: BusinessDet
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!tenant || !draft || !dirty || nameError || prefixError) return;
+    if (!tenant || !draft || !dirty || nameError || displayError || prefixError) return;
     setSubmitting(true);
     try {
       await saveStudioReceiptDetails(api, tenant.id, receiptDetailsPayload(draft));
@@ -143,7 +145,25 @@ export function BusinessDetailsDialog({ api, tenant, onOpenChange }: BusinessDet
               {nameError ? (
                 <span className="text-error">{nameError}</span>
               ) : (
-                "The name the studio trades under: the seller on its Receipts, and the sender of its emails."
+                "The formal name the studio trades under: the seller on its Receipts."
+              )}
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="bd-display-name">Display name</Label>
+            <Input
+              id="bd-display-name"
+              {...field("display_name")}
+              maxLength={RECEIPT_DETAIL_LIMITS.display_name}
+              required
+              aria-invalid={Boolean(displayError)}
+              aria-describedby="bd-display-name-help"
+            />
+            <p id="bd-display-name-help" className="text-xs text-muted">
+              {displayError ? (
+                <span className="text-error">{displayError}</span>
+              ) : (
+                "The everyday name members see in the studio’s apps and emails."
               )}
             </p>
           </div>
@@ -185,7 +205,7 @@ export function BusinessDetailsDialog({ api, tenant, onOpenChange }: BusinessDet
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!dirty || submitting || Boolean(nameError) || Boolean(prefixError)}>
+            <Button type="submit" disabled={!dirty || submitting || Boolean(nameError) || Boolean(displayError) || Boolean(prefixError)}>
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
               Save
             </Button>

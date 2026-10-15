@@ -118,6 +118,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     assert.deepEqual(fresh, {
       business_details: {
         business_name: `Receipt details ${studio.slug}`,
+        display_name: `Receipt details ${studio.slug}`,
         prefix: 'R',
         registration_number: null,
         address: null,
@@ -135,7 +136,11 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
       footer: 'Thank you for practising with us.',
     }
     const saved = await expectStatus(await saveDetails(studio, details), 200)
-    assert.deepEqual(saved, { business_details: details, next_number: 'R-000001', next_sequence: 1 })
+    assert.deepEqual(saved, {
+      business_details: { ...details, display_name: `Receipt details ${studio.slug}` },
+      next_number: 'R-000001',
+      next_sequence: 1,
+    })
     assert.deepEqual(await expectStatus(await readDetails(studio), 200), saved, 'what was saved is what is read')
   })
 
@@ -221,7 +226,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     }
     const studio = await newStudio({ business_details: details })
     assert.deepEqual(await expectStatus(await readDetails(studio), 200), {
-      business_details: details,
+      business_details: { ...details, display_name: `Receipt details ${studio.slug}` },
       next_number: 'AC-000001',
       next_sequence: 1,
     })
@@ -285,7 +290,7 @@ describe('a studio’s receipt details', { skip: integrationTestsEnabled ? false
     }
     assert.deepEqual(
       (await expectStatus(await readDetails(studio), 200)).business_details,
-      details,
+      { ...details, display_name: `Receipt details ${studio.slug}` },
       'nothing refused changed what the studio has',
     )
   })

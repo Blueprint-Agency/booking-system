@@ -28,7 +28,7 @@ import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '.
 import { toCents } from '../../shared/money'
 import { reportError } from '../../shared/logger'
 import { requireProviderAccount, stripeForTenant } from '../../lib/stripe'
-import { tenantDisplayName } from '../tenants/mail-identity'
+import { tenantBusinessName } from '../tenants/mail-identity'
 import { requireTenantUrl } from '../tenants/urls'
 import { partPaymentEnabled } from '../policy/update'
 import { amountPaidCents, outstandingCents, type RefundProgress } from './balance'
@@ -377,7 +377,7 @@ export async function resumePurchaseCheckout(args: {
 
   const metadata = purchase.metadata as Record<string, string>
   const clientUrl = await requireTenantUrl('client', args.tenantId)
-  const studioName = await tenantDisplayName(args.tenantId)
+  const studioName = await tenantBusinessName(args.tenantId)
   // The lines describe what is STILL owed, so the difference between them and
   // the charge is what will be owed after this card — which is the sentence
   // `partPaymentLine` puts under it.

@@ -841,6 +841,13 @@
       "when": 1792033417153,
       "tag": "0119_receipt_seller_email",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1792084379152,
+      "tag": "0120_display_name_mail",
+      "breakpoints": true
     }
   ]
 }

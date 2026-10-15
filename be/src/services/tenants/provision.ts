@@ -177,6 +177,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
     cleanBusinessDetails({
       ...input.businessDetails,
       businessName: input.businessDetails?.businessName?.trim() || name,
+      displayName: input.businessDetails?.displayName?.trim() || name,
     }),
   )
 
@@ -215,7 +216,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       // pooled connection into the next request.
       await tx.execute(sql`select set_config('app.tenant_id', ${tenant.id}, true)`)
 
-      await tx.insert(tenantSettings).values({ tenantId: tenant.id, displayName: name, ...businessDetails })
+      await tx.insert(tenantSettings).values({ tenantId: tenant.id, ...businessDetails })
 
       // The studio's own words, in its own voice, pointing at its own
       // hostnames. `sendTemplatedEmail` throws when the (tenant, slug) row is

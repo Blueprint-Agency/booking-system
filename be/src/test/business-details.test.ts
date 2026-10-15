@@ -125,6 +125,7 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     assert.deepEqual(await expectStatus(await readDetails(studio), 200), {
       business_details: {
         business_name: studio.domainName,
+        display_name: studio.domainName,
         prefix: 'R',
         registration_number: null,
         address: null,
@@ -142,7 +143,12 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
       footer: 'Thank you for practising with us.',
     }
     const saved = await expectStatus(await saveDetails(studio, { ...details, business_name: `  ${details.business_name}  ` }), 200)
-    assert.deepEqual(saved, { business_details: details, next_number: 'NW-000001', next_sequence: 1 }, 'saved trimmed')
+    // Sent without a Display name, which leaves the one the studio has.
+    assert.deepEqual(
+      saved,
+      { business_details: { ...details, display_name: studio.domainName }, next_number: 'NW-000001', next_sequence: 1 },
+      'saved trimmed',
+    )
     assert.deepEqual(await expectStatus(await readDetails(studio), 200), saved, 'what was saved is what is read')
 
     for (const [business_name, sentence] of [
@@ -164,6 +170,7 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     })
     assert.deepEqual((await expectStatus(await readDetails(named), 200)).business_details, {
       business_name: `Acme ${run} Wellness`,
+      display_name: named.domainName,
       prefix: 'AC',
       registration_number: `REG ${run}`,
       address: null,
@@ -189,7 +196,7 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     assert.deepEqual(await harness.db.select().from(schema.tenants).where(eq(schema.tenants.slug, slug)), [])
   })
 
-  test('TEN-41 the super portal reads a studio’s Business details and saves new ones, which its admin then reads and its next email is signed with; a blank Business name is refused in a sentence, the route is the operator’s alone, and an archived studio’s are not reached', async () => {
+  test('TEN-41 the super portal reads a studio’s Business details and saves new ones, which its admin then reads and its next email is signed with by Display name; a blank Business name is refused in a sentence, the route is the operator’s alone, and an archived studio’s are not reached', async () => {
     const studio = await newStudio()
     const path = `/api/v1/platform/tenants/${studio.id}/business-details`
     const put = (headers: Record<string, string>, body: unknown) =>
@@ -200,9 +207,11 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     assert.equal(read.next_number, 'R-000001')
 
     const businessName = `Northwind ${run} Holdings`
+    const displayName = `Northwind ${run} Yoga`
     const saved = await expectStatus(
       await put(operator, {
         business_name: `  ${businessName}  `,
+        display_name: ` ${displayName} `,
         prefix: 'NW',
         registration_number: `UEN ${run}`,
         address: '1 Harbour Road\nSingapore 000001',
@@ -212,6 +221,7 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     )
     const expected = {
       business_name: businessName,
+      display_name: displayName,
       prefix: 'NW',
       registration_number: `UEN ${run}`,
       address: '1 Harbour Road\nSingapore 000001',
@@ -221,7 +231,7 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     assert.equal(saved.next_number, 'NW-000001')
     assert.deepEqual((await expectStatus(await readDetails(studio), 200)).business_details, expected)
     const mail = await signInCodeMail(studio, `visitor-operator@${DOMAIN}`)
-    assert.match(mail.from, new RegExp(`^"${businessName}" <`), 'the next email is signed with the new Business name')
+    assert.match(mail.from, new RegExp(`^"${displayName}" <`), 'the next email is signed with the new Display name')
 
     const refused = await expectStatus(await put(operator, { business_name: '   ' }), 400)
     assert.equal(refused.error, 'invalid_request')
@@ -260,6 +270,44 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     )
   })
 
+  test('TEN-42 a studio’s Display name is set when it is created (its Domain name when left blank) and changed on Business details; it names the studio in its apps and emails, while its Receipts carry the Business name; a blank one is refused and an absent one left as it is', async () => {
+    const created = await newStudio({ business_details: { business_name: `Acme ${run} Pte. Ltd.`, display_name: ` Acme ${run} ` } })
+    assert.equal((await expectStatus(await readDetails(created), 200)).business_details.display_name, `Acme ${run}`)
+    const blank = await newStudio({ business_details: { display_name: '  ' } })
+    assert.equal((await expectStatus(await readDetails(blank), 200)).business_details.display_name, blank.domainName)
+
+    const studio = await newStudio()
+    const [businessName, displayName] = [`Northwind ${run} Studios Pte. Ltd.`, `Northwind ${run} Studio`]
+    const saved = await expectStatus(await saveDetails(studio, { business_name: businessName, display_name: displayName }), 200)
+    assert.equal(saved.business_details.display_name, displayName)
+    assert.equal(saved.business_details.business_name, businessName)
+
+    const lookup = await expectStatus(
+      await harness.app.request(`/api/v1/public/tenants/by-slug/${studio.slug}`, {
+        headers: { 'X-Tenant-Slug': studio.slug, Origin: frontendOrigin('client', studio) },
+      }),
+      200,
+    )
+    assert.equal(lookup.settings.display_name, displayName, 'the studio’s apps call it by its Display name')
+
+    const mia = await member(studio)
+    const receipt = await receipts.issueFor(studio.id, mia.clientId, { kind: 'merch', item: 'Yoga mat' })
+    const read = await expectStatus(await harness.app.request(`/api/v1/me/receipts/${receipt.id}`, { headers: mia.headers }), 200)
+    assert.equal(read.seller.business_name, businessName, 'the Receipt is the Business name’s')
+    const mail = await signInCodeMail(studio, `visitor-display@${DOMAIN}`)
+    assert.match(mail.from, new RegExp(`^"${displayName}" <`))
+
+    for (const display_name of ['', '   ', null]) {
+      const refused = await expectStatus(await saveDetails(studio, { business_name: businessName, display_name }), 400)
+      assert.equal(refused.error, 'invalid_request')
+      assert.equal(refused.message, 'A display name is required.')
+    }
+    const tooLong = await expectStatus(await saveDetails(studio, { business_name: businessName, display_name: 'x'.repeat(201) }), 400)
+    assert.equal(tooLong.message, 'The display name is at most 200 characters.')
+    await expectStatus(await saveDetails(studio, { business_name: `${businessName} Renamed` }), 200)
+    assert.equal((await expectStatus(await readDetails(studio), 200)).business_details.display_name, displayName)
+  })
+
   /** A visitor asks the studio's member app for a sign-in code: the studio's `sign_in_code` email. */
   async function signInCodeMail(at: Studio, email: string) {
     const sentBefore = mailer.discardedMail.length
@@ -281,11 +329,12 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     return { from: mail.from, subject: mail.subject, html: mail.html, text: mail.text ?? '' }
   }
 
-  test('NTF-24 an email sent after the Admin sets a Business name comes from it, and names it in its subject and body; after a rename the next email says the new name and never the old', async () => {
+  test('NTF-24 an email sent after the Admin sets a Display name comes from it, and names it in its subject and body, never the formal Business name; after a rename the next email says the new name and never the old', async () => {
     const studio = await newStudio()
     const [firstName, secondName] = [`Northwind ${run} & Co`, `Northwind ${run} Renamed & Sons`]
+    const formal = `Northwind ${run} Holdings Pte. Ltd.`
 
-    await expectStatus(await saveDetails(studio, { business_name: firstName }), 200)
+    await expectStatus(await saveDetails(studio, { business_name: formal, display_name: firstName }), 200)
     const first = await signInCodeMail(studio, `visitor-first@${DOMAIN}`)
     assert.match(first.from, new RegExp(`^"${firstName}" <`), 'the From name is the Business name')
     assert.equal(first.subject, `Your ${firstName} sign-in code`)
@@ -293,9 +342,10 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     assert.ok(first.html.includes(`sign in to your ${firstName.replace('&', '&amp;')} account`), 'escaped in the HTML')
     for (const surface of ['from', 'subject', 'html', 'text'] as const) {
       assert.ok(!first[surface].includes(studio.domainName), `the ${surface} never names the Domain name`)
+      assert.ok(!first[surface].includes(formal), `the ${surface} never names the Business name`)
     }
 
-    await expectStatus(await saveDetails(studio, { business_name: secondName }), 200)
+    await expectStatus(await saveDetails(studio, { business_name: formal, display_name: secondName }), 200)
     const second = await signInCodeMail(studio, `visitor-second@${DOMAIN}`)
     assert.match(second.from, new RegExp(`^"${secondName}" <`))
     assert.equal(second.subject, `Your ${secondName} sign-in code`)

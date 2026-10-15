@@ -16,7 +16,7 @@ import { grantsWithoutPaying, saleDescription, type CheckoutQuote } from '../bil
 import { openSettledPurchase } from '../billing/purchases'
 import type { BillingAddress } from '../billing-details/billing-details'
 import { saleLine } from '../billing/purchase-lines'
-import { tenantDisplayName } from '../tenants/mail-identity'
+import { tenantBusinessName } from '../tenants/mail-identity'
 import { sendCorporatePurchaseEmail } from '../notifications/send-purchase-email'
 import { createCorporateRequest } from './requests'
 
@@ -74,7 +74,7 @@ export async function beginCorporateCheckout(
     lines: [
       {
         name: pkg.name,
-        description: saleDescription(await tenantDisplayName(tenantId)),
+        description: saleDescription(await tenantBusinessName(tenantId)),
         amountCents: cents,
       },
     ],

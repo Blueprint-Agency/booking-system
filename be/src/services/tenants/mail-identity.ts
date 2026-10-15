@@ -21,7 +21,10 @@ import { PLATFORM_MAIL_FROM_NAME } from '../../lib/mailer'
  * domain's records, step 2 of the upgrade path in docs/md/mail-identity.md.
  */
 export type TenantMailIdentity = {
+  /** The studio's Display name: what its emails are signed with and call it. */
   fromName: string
+  /** The studio's formal Business name: what its card charges carry. */
+  businessName: string
   replyTo: string | null
 }
 
@@ -29,6 +32,8 @@ type IdentityRow = {
   tenant_name: string
   /** Null only where the studio has no settings row yet: the column is NOT NULL (migration 0115). */
   business_name: string | null
+  /** Null where no settings row, or none was ever set (an old archive). */
+  display_name: string | null
   reply_to: string | null
 }
 
@@ -69,16 +74,19 @@ export async function tenantMailIdentity(tenantId: string): Promise<TenantMailId
   // blank wherever a settings row exists (NOT NULL, trimmed when saved, and a
   // blank one filled by migration 0115's trigger), so it would never be reached.
   const rows = (await db.execute(
-    sql`SELECT tenant_name, business_name, reply_to FROM current_tenant_mail_identity()`,
+    sql`SELECT tenant_name, business_name, display_name, reply_to FROM current_tenant_mail_identity()`,
   )) as unknown as IdentityRow[]
 
-  // The Business name (#400): the name the studio trades under, which its
-  // admin sets on Business details. A studio with no settings row yet has
-  // none, and is named as it would be once one is written: by its Domain name.
-  // No row at all (no Tenant context open) is the platform's name.
+  // The Display name (migration 0120): the everyday name the studio's apps
+  // call it by, which its admin sets on Business details. Without one, its
+  // Business name (#400), the formal name it trades under; a studio with no
+  // settings row yet has neither, and is named by its Domain name. No row at
+  // all (no Tenant context open) is the platform's name.
   const row = rows[0]
+  const businessName = (row?.business_name ?? row?.tenant_name) || PLATFORM_MAIL_FROM_NAME
   const value: TenantMailIdentity = {
-    fromName: (row?.business_name ?? row?.tenant_name) || PLATFORM_MAIL_FROM_NAME,
+    fromName: row?.display_name?.trim() || businessName,
+    businessName,
     replyTo: row?.reply_to || null,
   }
 
@@ -87,15 +95,21 @@ export async function tenantMailIdentity(tenantId: string): Promise<TenantMailId
 }
 
 /**
- * The studio's own name, its Business name, wherever the platform speaks on
- * its behalf — the line copy on a Stripe charge (and so the member's card
- * statement), the inviter shown on an invitation, an email variable.
- *
- * Same lookup and the same fallback as the envelope, deliberately: a member
- * reading a bank statement and a member reading a booking confirmation should
- * see one studio, not two spellings of it. A name that renders empty is worse
- * than one that renders the platform's.
+ * The studio's everyday name, its Display name, wherever the platform speaks
+ * on its behalf in words — the inviter shown on an invitation, an email.
+ * Same lookup and the same fallback as the envelope, so the From name and the
+ * words under it agree. A name that renders empty is worse than one that
+ * renders the platform's.
  */
 export async function tenantDisplayName(tenantId: string): Promise<string> {
   return (await tenantMailIdentity(tenantId)).fromName
+}
+
+/**
+ * The studio's formal name, its Business name, wherever money is described:
+ * the line copy on a Stripe charge, and so the member's card statement, which
+ * should name the same business as the Receipt for it.
+ */
+export async function tenantBusinessName(tenantId: string): Promise<string> {
+  return (await tenantMailIdentity(tenantId)).businessName
 }

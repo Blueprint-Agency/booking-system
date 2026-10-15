@@ -31,7 +31,8 @@ export interface CheckoutLine {
  * The studio's name, not the platform's: this is what a member reads on the
  * checkout page and later on a card statement, and a charge from a name they
  * have never heard of is a chargeback. The caller passes the name because it
- * already knows its tenant — see `tenantDisplayName`.
+ * already knows its tenant — see `tenantBusinessName`, the formal name its
+ * Receipt for the charge carries too.
  */
 export const saleDescription = (studioName: string, promoCode?: string | null): string =>
   `${studioName}${promoCode ? ` · promo ${promoCode} applied` : ''}`

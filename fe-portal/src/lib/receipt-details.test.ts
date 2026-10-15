@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  displayNameProblem,
   emptyReceiptDetailsDraft,
   hasReceiptDetails,
   receiptDetailsDraft,
@@ -30,6 +31,7 @@ test("INV-46 the form sends trimmed details with blanks as none, and reads saved
   assert.deepEqual(
     receiptDetailsPayload({
       business_name: " Example Pte. Ltd. ",
+      display_name: " Example ",
       prefix: " NW ",
       registration_number: "",
       address: "1 Example Street\n#02-03",
@@ -37,6 +39,7 @@ test("INV-46 the form sends trimmed details with blanks as none, and reads saved
     }),
     {
       business_name: "Example Pte. Ltd.",
+      display_name: "Example",
       prefix: "NW",
       registration_number: null,
       address: "1 Example Street\n#02-03",
@@ -45,8 +48,15 @@ test("INV-46 the form sends trimmed details with blanks as none, and reads saved
   );
   assert.deepEqual(receiptDetailsPayload(emptyReceiptDetailsDraft()).prefix, "R");
   assert.deepEqual(
-    receiptDetailsDraft({ business_name: "Example", prefix: "R", registration_number: "REG 1", address: null, footer: null }),
-    { business_name: "Example", prefix: "R", registration_number: "REG 1", address: "", footer: "" },
+    receiptDetailsDraft({
+      business_name: "Example",
+      display_name: "Ex",
+      prefix: "R",
+      registration_number: "REG 1",
+      address: null,
+      footer: null,
+    }),
+    { business_name: "Example", display_name: "Ex", prefix: "R", registration_number: "REG 1", address: "", footer: "" },
   );
 });
 
@@ -55,4 +65,11 @@ test("INV-46 the create form sends receipt details only when the operator filled
   assert.equal(hasReceiptDetails({ ...emptyReceiptDetailsDraft(), prefix: " " }), false);
   assert.equal(hasReceiptDetails({ ...emptyReceiptDetailsDraft(), prefix: "NW" }), true);
   assert.equal(hasReceiptDetails({ ...emptyReceiptDetailsDraft(), footer: "Thanks" }), true);
+  assert.equal(hasReceiptDetails({ ...emptyReceiptDetailsDraft(), display_name: "Acme" }), true);
+});
+
+test("TEN-42 a blank or overlong Display name is caught as it is typed, in the backend's words", () => {
+  assert.equal(displayNameProblem("Acme Yoga"), null);
+  assert.equal(displayNameProblem("   "), "A display name is required.");
+  assert.equal(displayNameProblem("x".repeat(201)), "At most 200 characters.");
 });

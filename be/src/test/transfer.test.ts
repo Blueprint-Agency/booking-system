@@ -519,22 +519,24 @@ describe('moving a studio between deployments', () => {
     )
   })
 
-  test('NTF-26 a studio restored from an archive sends its next email under the Business name the archive carried, though it had just sent one under the name it had before', options, async () => {
+  test('NTF-26 a studio restored from an archive sends its next email under the Display name the archive carried, though it had just sent one under the name it had before', options, async () => {
     const { withTenant } = await import('../db')
     const { tenantMailIdentity } = await import('../services/tenants/mail-identity')
     const fromName = (tenantId: string) => withTenant(tenantId, async () => (await tenantMailIdentity(tenantId)).fromName)
 
     const source = await studioWithData(`mailname-${Date.now()}`)
-    await harness.db.execute(sql`UPDATE tenant_settings SET business_name = 'Archived Studio Pte. Ltd.' WHERE tenant_id = ${source}`)
+    await harness.db.execute(
+      sql`UPDATE tenant_settings SET display_name = 'Archived Studio', business_name = 'Archived Studio Pte. Ltd.' WHERE tenant_id = ${source}`,
+    )
     const archive = await transfer.exportTenant(source)
 
     const target = await emptyTenant(`mailname-dst-${Date.now()}`)
     await harness.db.execute(sql`
     INSERT INTO tenant_settings (tenant_id, display_name, business_name) VALUES (${target}, 'Waiting', 'Waiting Studio')
   `)
-    assert.equal(await fromName(target), 'Waiting Studio', 'an email sent while it waited goes out under the name it was given')
+    assert.equal(await fromName(target), 'Waiting', 'an email sent while it waited goes out under the name it was given')
     await transfer.importTenant(target, archive)
-    assert.equal(await fromName(target), 'Archived Studio Pte. Ltd.', 'the next one, under the restored Business name')
+    assert.equal(await fromName(target), 'Archived Studio', 'the next one, under the restored Display name')
   })
 
   test('a studio restored from an archive gets its branding too', options, async () => {

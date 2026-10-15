@@ -21,7 +21,7 @@ import {
 import { openSettledPurchase } from '../billing/purchases'
 import type { BillingAddress } from '../billing-details/billing-details'
 import { saleLine } from '../billing/purchase-lines'
-import { tenantDisplayName } from '../tenants/mail-identity'
+import { tenantBusinessName } from '../tenants/mail-identity'
 
 export type MerchOrderRow = typeof merchOrders.$inferSelect
 export type MerchCheckout = CheckoutQuote<{ orderId: string }>
@@ -85,7 +85,7 @@ export async function beginMerchCheckout(input: {
     lines: [
       {
         name: item.title,
-        description: saleDescription(await tenantDisplayName(input.tenantId)),
+        description: saleDescription(await tenantBusinessName(input.tenantId)),
         amountCents: totalCents,
       },
     ],

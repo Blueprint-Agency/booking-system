@@ -26,7 +26,7 @@ import {
   type LineReduction,
   type PurchaseLine,
 } from '../billing/purchase-lines'
-import { tenantDisplayName } from '../tenants/mail-identity'
+import { tenantBusinessName } from '../tenants/mail-identity'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import { applyPromoCode, type AppliedPromoCode } from './promo-redemption'
 import {
@@ -265,7 +265,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   const crossLocationSgd = crossLocation?.priceSgd ?? null
   const charge = purchaseLines({
     planName: packageName,
-    studioName: await tenantDisplayName(tenantId),
+    studioName: await tenantBusinessName(tenantId),
     planSgd: applied?.effectivePriceSgd ?? effectivePriceSgd,
     crossLocationSgd,
     promoCode: applied?.code,

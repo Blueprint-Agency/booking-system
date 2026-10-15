@@ -15,7 +15,7 @@ import {
   type CheckoutQuote,
 } from '../billing/checkout-session'
 import { promoCodeReduction, promotionReduction, saleLine, type LineReduction } from '../billing/purchase-lines'
-import { tenantDisplayName } from '../tenants/mail-identity'
+import { tenantBusinessName } from '../tenants/mail-identity'
 import { listActivePromotionsFor } from '../packages/promotions'
 import { applyPromoCode, type AppliedPromoCode } from '../packages/promo-redemption'
 import type { BillingAddress } from '../billing-details/billing-details'
@@ -139,7 +139,7 @@ export async function beginWorkshopCheckout(
     lines: [
       {
         name,
-        description: saleDescription(await tenantDisplayName(tenantId), applied?.code),
+        description: saleDescription(await tenantBusinessName(tenantId), applied?.code),
         amountCents: totalCents,
       },
     ],

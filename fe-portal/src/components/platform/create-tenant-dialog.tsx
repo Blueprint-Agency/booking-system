@@ -209,8 +209,21 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
             maxLength={RECEIPT_DETAIL_LIMITS.business_name}
           />
           <p className="text-xs text-muted">
-            The name the studio trades under, on its Receipts. Left blank, it is the Domain name. Its
-            admin can change it later under Business details.
+            The formal name the studio trades under, on its Receipts. Left blank, it is the Domain name.
+            Its admin can change it later under Business details.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="tenant-display-name">Display name (optional)</Label>
+          <Input
+            id="tenant-display-name"
+            {...receiptField("display_name")}
+            placeholder={name.trim() || "Acme Yoga"}
+            maxLength={RECEIPT_DETAIL_LIMITS.display_name}
+          />
+          <p className="text-xs text-muted">
+            The everyday name members see in the studio’s apps and emails. Left blank, it is the Domain name.
           </p>
         </div>
 

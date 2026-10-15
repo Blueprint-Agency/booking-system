@@ -7,6 +7,8 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 
 const run = Date.now().toString(36)
 const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0117_business_name_mail.sql')
+/** The latest migration to define `current_tenant_mail_identity()`. */
+const LATEST_MAIL_IDENTITY = path.resolve(process.cwd(), 'src/db/migrations/0120_display_name_mail.sql')
 
 /**
  * Migration 0117 (#400): templates name the studio by `{{studio_name}}`,
@@ -92,6 +94,15 @@ describe('migration 0117: provisioned templates follow the Business name', { ski
   after(async () => {
     if (!harness) return
     try {
+      // Re-running 0117 put `current_tenant_mail_identity()` back in 0117's
+      // shape, in the database every later test file shares; the migration
+      // that redefined it since brings it back to today's. Its EXECUTE grant
+      // is restored by the next startTestApp (db/roles.ts).
+      await harness.db.transaction(async tx => {
+        for (const statement of readFileSync(LATEST_MAIL_IDENTITY, 'utf8').split('--> statement-breakpoint')) {
+          await tx.execute(sql.raw(statement))
+        }
+      })
       const { deleteTenant } = await import('../services/tenants/delete')
       for (const { id, slug } of studios) {
         await harness.db.execute(sql`UPDATE tenants SET status = 'suspended' WHERE id = ${id}`)
