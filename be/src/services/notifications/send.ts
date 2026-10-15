@@ -6,6 +6,7 @@ import { emailTemplates, emailLog } from '../../db/schema/content'
 import { staffUsers } from '../../db/schema/identity'
 import { and, eq, ne } from 'drizzle-orm'
 import { reportError } from '../../shared/logger'
+import { STUDIO_NAME_VARIABLE } from './variables'
 
 export type TemplateSlug =
   | 'welcome'
@@ -114,15 +115,18 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
   // Invariant: every studio is seeded every template slug it can be asked to send — see the note above.
   if (!tpl) throw new Error(`unknown_template:${slug}`)
 
-  const logged = { ...variables }
-  for (const name of secretVariables) if (name in logged) logged[name] = REDACTED
-
   // The studio's identity, not the platform's: the envelope address is shared
   // and authenticated, the display name and Reply-To are this tenant's own. The
   // name also heads the email itself (the shared design, `services/mail/
-  // layout.ts`), so it is read before the log row is written — the row keeps
-  // what was actually sent, secrets redacted.
+  // layout.ts`) and is the template's `{{studio_name}}`, so the From name, the
+  // frame and the words agree — read before the log row is written, so the row
+  // keeps what was actually sent, secrets redacted.
   const identity = await tenantMailIdentity(tenantId)
+  const filled: Record<string, string> = { ...variables, [STUDIO_NAME_VARIABLE]: identity.fromName }
+
+  const logged = { ...filled }
+  for (const name of secretVariables) if (name in logged) logged[name] = REDACTED
+
   const frame = (vars: Record<string, string>) =>
     frameTemplatedEmail({
       slug,
@@ -132,7 +136,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       variables: vars,
       appendixHtml,
     })
-  await deliver({ tenantId, slug, recipient, identity, email: frame(variables), loggedEmail: frame(logged), attachments })
+  await deliver({ tenantId, slug, recipient, identity, email: frame(filled), loggedEmail: frame(logged), attachments })
 }
 
 /** Mail worded by the platform rather than a studio template, sent in the studio's name. */

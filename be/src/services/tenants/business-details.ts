@@ -14,6 +14,7 @@ import { receiptCounters } from '../../db/schema/ledger'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
 import { BadRequestError } from '../../shared/errors'
 import { DEFAULT_RECEIPT_PREFIX, displayNumber } from '../receipts/snapshot'
+import { forgetCachedMailIdentity } from './mail-identity'
 
 export interface BusinessDetails {
   businessName: string
@@ -141,5 +142,8 @@ export async function saveBusinessDetails(tenantId: string, input: BusinessDetai
     .insert(tenantSettings)
     .values({ tenantId, ...columns })
     .onConflictDoUpdate({ target: tenantSettings.tenantId, set: columns })
+  // The Business name signs every email and names the studio on each card
+  // charge (#400), so the next one must not wait out the identity's cache.
+  forgetCachedMailIdentity(tenantId)
   return readBusinessDetails(tenantId)
 }

@@ -27,6 +27,7 @@ export type TenantMailIdentity = {
 
 type IdentityRow = {
   tenant_name: string | null
+  business_name: string | null
   from_name: string | null
   reply_to: string | null
 }
@@ -65,12 +66,15 @@ export async function tenantMailIdentity(tenantId: string): Promise<TenantMailId
   // on `TenantMailIdentity`. The column is not honourable until a domain can be
   // verified, and reading it would make a tenant look configured when it isn't.
   const rows = (await db.execute(
-    sql`SELECT tenant_name, from_name, reply_to FROM current_tenant_mail_identity()`,
+    sql`SELECT tenant_name, business_name, from_name, reply_to FROM current_tenant_mail_identity()`,
   )) as unknown as IdentityRow[]
 
+  // The Business name first (#400): the name the studio trades under, which
+  // its admin sets on Business details. Then as before it: the mail-from name,
+  // the Domain name, the platform's.
   const row = rows[0]
   const value: TenantMailIdentity = {
-    fromName: row?.from_name || row?.tenant_name || PLATFORM_MAIL_FROM_NAME,
+    fromName: row?.business_name?.trim() || row?.from_name || row?.tenant_name || PLATFORM_MAIL_FROM_NAME,
     replyTo: row?.reply_to || null,
   }
 
@@ -79,9 +83,9 @@ export async function tenantMailIdentity(tenantId: string): Promise<TenantMailId
 }
 
 /**
- * The studio's own name, wherever the platform speaks on its behalf — the line
- * copy on a Stripe charge, the inviter shown on an invitation, an email
- * variable.
+ * The studio's own name, its Business name, wherever the platform speaks on
+ * its behalf — the line copy on a Stripe charge (and so the member's card
+ * statement), the inviter shown on an invitation, an email variable.
  *
  * Same lookup and the same fallback as the envelope, deliberately: a member
  * reading a bank statement and a member reading a booking confirmation should
