@@ -170,13 +170,13 @@ describe('a Receipt laid out as a business receipt', { skip: integrationTestsEna
     )
   }
 
-  /** Buy the studio's ten pack, billed to `billingDetailsId` when given, and have the provider say it was paid. */
-  async function buys(who: Member, at: Studio, billingDetailsId?: string): Promise<void> {
+  /** Buy the studio's ten pack, billed to `billingDetailsId`, and have the provider say it was paid. */
+  async function buys(who: Member, at: Studio, billingDetailsId: string): Promise<void> {
     await expectStatus(
       await post(who.headers, '/api/v1/me/checkout/package', {
         package_kind: 'class',
         package_id: at.packageId,
-        ...(billingDetailsId ? { billing_details_id: billingDetailsId } : {}),
+        billing_details_id: billingDetailsId,
       }),
       200,
     )
@@ -330,16 +330,6 @@ describe('a Receipt laid out as a business receipt', { skip: integrationTestsEna
       assert.ok(text.includes(`S$150.00 paid on ${second}`), `${where} leads with the whole, paid on the day it was settled: ${text}`)
       inOrder(text, ['Amount paid', 'S$150.00', 'Payment history', 'Visa •••• 4242', first, 'S$50.00', 'Visa •••• 4242', second, 'S$100.00'], where)
     }
-  })
-
-  test("INV-100 a Receipt whose Purchase chose no Billing details bills the member by their name and email", async () => {
-    const studio = await newStudio(null)
-    const lee = await member(studio)
-    await buys(lee, studio)
-
-    const { receipt, read } = await surfaces(lee)
-    assert.equal(receipt.bill_to, null)
-    for (const [where, text] of read) inOrder(text, ['Mia Tan', lee.email], where, /b\s*i\s*l\s*l\s*t\s*o/i)
   })
 
   /** A Receipt as stored, for the renderer: `overrides` on a paid one at `at`. */

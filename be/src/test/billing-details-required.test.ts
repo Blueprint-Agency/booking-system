@@ -301,16 +301,14 @@ describe('every member purchase is billed to Billing details', { skip: integrati
     readsBillTo(sent[0]!.text ?? '', COMPANY_LINES, who.email, "the email's plain text")
   }
 
-  /** The member's one Receipt has no Bill to: issued to their name and email, in its JSON and its `html`. */
-  async function issuedToMember(who: Member): Promise<void> {
+  /** The member's one Receipt names no Billing details: its `bill_to` is null and its `html` bills the member by their name and email, not their saved set. */
+  async function billsMember(who: Member): Promise<void> {
     const receipt = await onlyReceipt(who)
     assert.equal(receipt.bill_to, null)
     assert.deepEqual(receipt.buyer, { name: 'Mia Tan', email: who.email })
     const html = receipt.html as string
-    const issuedTo = html.search(/i\s*s\s*s\s*u\s*e\s*d\s*t\s*o/i)
-    assert.ok(issuedTo >= 0, `the html says Issued to: ${html}`)
-    assert.ok(html.indexOf('Mia Tan', issuedTo) > issuedTo && html.indexOf(who.email, issuedTo) > issuedTo, 'the html names the member and their email')
-    assert.ok(!/b\s*i\s*l\s*l\s*t\s*o/i.test(html), `the html has no Bill to: ${html}`)
+    readsBillTo(html, ['Mia Tan'], who.email, 'the html')
+    assert.ok(!html.includes(COMPANY.name) && !html.includes(COMPANY.line1), `the html does not show the saved set: ${html}`)
   }
 
   before(async () => {
@@ -487,14 +485,14 @@ describe('every member purchase is billed to Billing details', { skip: integrati
     await billsCompany(ada, '0.00')
   })
 
-  test('INV-108 a sale with no member checkout behind it, a payment from before Purchases or a sale the Receipt backfill reaches, issues a Receipt with no Bill to, issued to the member\'s name and email', async () => {
+  test('INV-108 a sale with no member checkout behind it, a payment from before Purchases or a sale the Receipt backfill reaches, issues a Receipt with no Billing details, billed to the member\'s name and email', async () => {
     // The provider delivers a payment for a session from before Purchases
     // existed: its metadata names no Purchase, and the webhook opens one for it.
     const lee = await member()
     await saves(lee, COMPANY)
     const bundle = await classPackage({ kind: 'credit_bundle', priceSgd: '150.00' })
     await deliverPaid(studio, { kind: 'class_package', package_id: bundle, client_id: lee.clientId, amount_sgd: '150.00' }, 15000)
-    await issuedToMember(lee)
+    await billsMember(lee)
 
     // A sale recorded before Receipts, in a studio of its own, reached by the backfill.
     const slug = `billing-required-${run}`
@@ -517,6 +515,6 @@ describe('every member purchase is billed to Billing details', { skip: integrati
               'card', 'visa', '4242', '2025-03-06T02:00:00Z')`)
     const { backfillReceipts } = await import('../services/receipts/backfill-cli')
     await backfillReceipts(slug)
-    await issuedToMember(mia)
+    await billsMember(mia)
   })
 })
