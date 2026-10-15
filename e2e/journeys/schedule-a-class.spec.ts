@@ -11,7 +11,9 @@ import { signInStaff, studio } from '../src/studio'
  */
 test('an admin creates a class and the instructor sees it on their schedule', async ({ browser }) => {
   const { urls, staff, catalogue } = studio()
-  const day = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+  // Two weeks out: past every class the e2e studio seeds into E2E Room (days 2
+  // to 7, on the hour), so the room is free at 10:00 whatever time the run starts.
+  const day = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
   const date = day.toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' }) // YYYY-MM-DD
 
   const adminContext = await browser.newContext()
