@@ -27,12 +27,15 @@ test('PAY-16 INV-11 a member buys a plan with a test card, opens its Receipt and
   await expect(page.getByText(`${catalogue.packageCredits} class credits added`)).toBeVisible()
 
   // The studio's Receipt for the sale, straight from the confirmation (#384):
-  // its number, and the total the member just paid.
+  // its number, and the total the member just paid. The page titles itself
+  // "Receipt R-…" and shows the Receipt's own html in a frame (#396), so what
+  // the Receipt says is read inside that frame.
   await page.getByRole('link', { name: /^View receipt R-\d{6}$/ }).click()
   await expect(page).toHaveURL(new RegExp(`${urls.client}/account/receipts/[0-9a-f-]{36}$`))
-  await expect(page.getByRole('heading', { name: /^R-\d{6}$/ })).toBeVisible()
-  await expect(page.getByText(`S$${Number(catalogue.packagePriceSgd).toFixed(2)}`).first()).toBeVisible()
-  await expect(page.getByText(catalogue.packageName, { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^Receipt R-\d{6}$/ })).toBeVisible()
+  const receipt = page.getByTitle(/^Receipt R-\d{6}$/).contentFrame()
+  await expect(receipt.getByText(`S$${Number(catalogue.packagePriceSgd).toFixed(2)}`).first()).toBeVisible()
+  await expect(receipt.getByText(catalogue.packageName, { exact: true })).toBeVisible()
 
   await page.goto(urls.client)
   await openDayOf(page, catalogue.buyClassType)
