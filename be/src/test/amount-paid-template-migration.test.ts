@@ -15,15 +15,17 @@ const SLUGS = ['package_purchase_confirmed', 'trial_pass_purchase_confirmed', 'w
  * only in a template still exactly as it was written for them.
  *
  * Two throwaway studios, provisioned with today's templates. Each template is
- * put back to the default as it was before #370 — today's with its Amount paid
- * row taken out — and studio two's are then edited. The migration's own SQL is
+ * put back to the default as it was before #370 — today's with the studio's
+ * name written in where #400 put `{{studio_name}}`, and its Amount paid row
+ * taken out — and studio two's are then edited. The migration's own SQL is
  * run against them, twice.
  */
 describe('migration 0105: the amount paid reaches unedited purchase confirmations', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let emailFooterNote!: typeof import('../services/mail/layout').emailFooterNote
-  const studios: Array<{ id: string; slug: string }> = []
+  let escapeHtml!: typeof import('../services/mail/layout').escapeHtml
+  const studios: Array<{ id: string; slug: string; name: string }> = []
 
   type Row = { slug: string; subject: string; bodyHtml: string; updatedAt: Date }
 
@@ -43,6 +45,25 @@ describe('migration 0105: the amount paid reaches unedited purchase confirmation
     return Object.fromEntries(rows.map(r => [r.slug, r]))
   }
 
+  /**
+   * A studio's templates as 0105 saw them. A studio provisioned today is given
+   * `{{studio_name}}` (#400); one provisioned before had its name written in,
+   * raw in a subject and HTML-escaped in a body, and that is the text 0105 ran
+   * against.
+   */
+  function withNameWrittenIn(rows: Record<string, Row>, name: string): Record<string, Row> {
+    return Object.fromEntries(
+      Object.entries(rows).map(([slug, r]) => [
+        slug,
+        {
+          ...r,
+          subject: r.subject.replaceAll('{{studio_name}}', name),
+          bodyHtml: r.bodyHtml.replaceAll('{{studio_name}}', escapeHtml(name)),
+        },
+      ]),
+    )
+  }
+
   async function store(tenantId: string, slug: string, values: { subject?: string; bodyHtml: string }) {
     await harness.db
       .update(schema.emailTemplates)
@@ -60,7 +81,7 @@ describe('migration 0105: the amount paid reaches unedited purchase confirmation
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
-    ;({ emailFooterNote } = await import('../services/mail/layout'))
+    ;({ emailFooterNote, escapeHtml } = await import('../services/mail/layout'))
     const provision = await import('../services/tenants/provision')
     // A name with every character escapeHtml rewrites, so the trial pass's
     // heading holds it escaped and its subject holds it raw.
@@ -70,7 +91,7 @@ describe('migration 0105: the amount paid reaches unedited purchase confirmation
     ] as const) {
       // With a first Admin, which is when a studio is given the default copy.
       const { tenant } = await provision.provisionTenant({ slug, name, adminEmail: `owner@${slug}.test` })
-      studios.push({ id: tenant.id, slug })
+      studios.push({ id: tenant.id, slug, name })
     }
   })
 
@@ -89,7 +110,12 @@ describe('migration 0105: the amount paid reaches unedited purchase confirmation
 
   test('NTF-03 an unedited confirmation gains the Amount paid row, an edited one is untouched, and a second run changes nothing', async () => {
     const [unedited, edited] = [studios[0]!, studios[1]!]
-    const today = { unedited: await templatesOf(unedited.id), edited: await templatesOf(edited.id) }
+    // Today's defaults, with each studio's name back where #400 put the
+    // placeholder: the text a studio created before #400 was given.
+    const today = {
+      unedited: withNameWrittenIn(await templatesOf(unedited.id), unedited.name),
+      edited: withNameWrittenIn(await templatesOf(edited.id), edited.name),
+    }
     const before370 = (row: Row) => {
       const body = row.bodyHtml.replace(AMOUNT_ROW, '')
       assert.notEqual(body, row.bodyHtml, `${row.slug} carries an Amount paid row today`)
@@ -101,10 +127,14 @@ describe('migration 0105: the amount paid reaches unedited purchase confirmation
     // also carries a footer note, as a fixture's do.
     for (const slug of SLUGS) {
       const old = before370(today.unedited[slug]!)
-      await store(unedited.id, slug, { bodyHtml: slug === 'workshop_purchase_confirmed' ? `${old}\n${FOOTER}` : old })
+      await store(unedited.id, slug, {
+        subject: today.unedited[slug]!.subject,
+        bodyHtml: slug === 'workshop_purchase_confirmed' ? `${old}\n${FOOTER}` : old,
+      })
     }
     // Studio two: the same, then edited, in the body or in the subject.
     await store(edited.id, 'package_purchase_confirmed', {
+      subject: today.edited.package_purchase_confirmed!.subject,
       bodyHtml: before370(today.edited.package_purchase_confirmed!).replace('Your package is confirmed', 'Thanks for your order'),
     })
     await store(edited.id, 'trial_pass_purchase_confirmed', {
@@ -112,6 +142,7 @@ describe('migration 0105: the amount paid reaches unedited purchase confirmation
       bodyHtml: before370(today.edited.trial_pass_purchase_confirmed!),
     })
     await store(edited.id, 'workshop_purchase_confirmed', {
+      subject: today.edited.workshop_purchase_confirmed!.subject,
       bodyHtml: before370(today.edited.workshop_purchase_confirmed!).replace('Your check-in code is', 'Show this code at the door:'),
     })
     const editedBefore = await templatesOf(edited.id)
