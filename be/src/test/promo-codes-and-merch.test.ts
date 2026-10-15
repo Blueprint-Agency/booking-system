@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { eq, inArray, like, or, sql } from 'drizzle-orm'
 import { frontendOrigin, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { stripeWebhookPath, type StripeFake } from './stripe-fake'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.promo-merch.test`
@@ -133,8 +134,8 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
       package_id: packageId,
     })
 
-  const checkout = (who: Member, body: Record<string, unknown>) =>
-    send('POST', '/api/v1/me/checkout/package', who.headers, { package_kind: 'class', ...body })
+  const checkout = async (who: Member, body: Record<string, unknown>) =>
+    send('POST', '/api/v1/me/checkout/package', who.headers, await billed(harness.app, who.headers, { package_kind: 'class', ...body }))
 
   /** The last payment session the fake was asked for. */
   const lastSession = () => {
@@ -287,6 +288,7 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
     }
     if (staffIds.length) await db.delete(schema.auditLog).where(inArray(schema.auditLog.actorStaffId, staffIds))
     await db.delete(schema.emailLog).where(like(schema.emailLog.recipientEmail, `%@${DOMAIN}`))
+    if (clientIds.length) await db.delete(schema.clientBillingDetails).where(inArray(schema.clientBillingDetails.clientId, clientIds))
     if (clientIds.length) await db.delete(schema.clients).where(inArray(schema.clients.id, clientIds))
     if (staffIds.length) await db.delete(schema.staffUsers).where(inArray(schema.staffUsers.id, staffIds))
     await db.delete(schema.clientAuthUsers).where(like(schema.clientAuthUsers.email, `%@${DOMAIN}`))
@@ -600,7 +602,7 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
     const who = await member(one)
     const before = fake.callsTo('checkout.sessions.create').length
 
-    const res = await send('POST', '/api/v1/me/checkout/merch', who.headers, { merch_id: sticker.id })
+    const res = await send('POST', '/api/v1/me/checkout/merch', who.headers, await billed(harness.app, who.headers, { merch_id: sticker.id }))
     assert.equal(res.status, 201, JSON.stringify(res.body))
     assert.equal(res.body.outcome, 'granted')
     assert.equal(fake.callsTo('checkout.sessions.create').length, before, 'the provider is never asked')
@@ -617,7 +619,7 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
     const who = await member(one)
 
     for (const item of [hoodie, bottle]) {
-      const res = await send('POST', '/api/v1/me/checkout/merch', who.headers, { merch_id: item.id })
+      const res = await send('POST', '/api/v1/me/checkout/merch', who.headers, await billed(harness.app, who.headers, { merch_id: item.id }))
       assert.equal(res.status, 200, JSON.stringify(res.body))
       assert.ok(res.body.url, 'sent to pay')
       await payLastSession()
@@ -642,7 +644,7 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
   test('MRC-06 an admin deletes a merch item a member bought, and the purchase history keeps it', async () => {
     const towel = await merchItem(one, `${NAME} Towel`, '0')
     const who = await member(one)
-    await send('POST', '/api/v1/me/checkout/merch', who.headers, { merch_id: towel.id })
+    await send('POST', '/api/v1/me/checkout/merch', who.headers, await billed(harness.app, who.headers, { merch_id: towel.id }))
 
     const res = await send('DELETE', `/api/v1/portal/admin/merch/${towel.id}`, one.admin)
     assert.equal(res.status, 204)
@@ -662,7 +664,7 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
 
     const shop = await send('GET', '/api/v1/public/merch', who.headers)
     assert.ok(!shop.body.merch.some((m: { id: string }) => m.id === block.id), 'not listed')
-    const res = await send('POST', '/api/v1/me/checkout/merch', who.headers, { merch_id: block.id })
+    const res = await send('POST', '/api/v1/me/checkout/merch', who.headers, await billed(harness.app, who.headers, { merch_id: block.id }))
     assert.equal(res.status, 400, JSON.stringify(res.body))
     assert.equal(res.body.error, 'merch_not_available')
     assert.deepEqual(await purchasesOf(who.clientId), [])
@@ -672,7 +674,7 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
     const theirs = await merchItem(two, `${NAME} Their strap`, '0')
     const who = await member(one)
 
-    const res = await send('POST', '/api/v1/me/checkout/merch', who.headers, { merch_id: theirs.id })
+    const res = await send('POST', '/api/v1/me/checkout/merch', who.headers, await billed(harness.app, who.headers, { merch_id: theirs.id }))
     assert.equal(res.status, 404, JSON.stringify(res.body))
     const [orders] = await harness.db
       .select({ n: sql<number>`count(*)::int` })

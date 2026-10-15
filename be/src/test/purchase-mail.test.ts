@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { stripeWebhookPath, type StripeFake } from './stripe-fake'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.purchase-mail.test`
@@ -63,11 +64,11 @@ describe('purchase confirmation email over HTTP', { skip: integrationTestsEnable
     return { clientId: client!.id, email, headers }
   }
 
-  const buy = (who: Member, packageId: string) =>
+  const buy = async (who: Member, packageId: string) =>
     harness.app.request('/api/v1/me/checkout/package', {
       method: 'POST',
       headers: { ...who.headers, ...json },
-      body: JSON.stringify({ package_kind: 'class', package_id: packageId }),
+      body: JSON.stringify(await billed(harness.app, who.headers, { package_kind: 'class', package_id: packageId })),
     })
 
   /** The provider's delivery for the last checkout session, paid in full. */
@@ -137,6 +138,7 @@ describe('purchase confirmation email over HTTP', { skip: integrationTestsEnable
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
+    await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM client_auth_users WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM class_packages WHERE name LIKE ${`${NAME}%`}`)

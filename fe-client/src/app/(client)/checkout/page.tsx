@@ -133,10 +133,10 @@ function CheckoutContent() {
   const needsInstructor = isBoundPt && !instructorId;
 
   // Who the purchase is billed to (#401): one of the member's Billing details,
-  // printed on the Receipt as Bill to. The picker selects the default. A
-  // corporate package does not take one yet (#402).
+  // printed on the Receipt as Bill to. The picker selects the default. Every
+  // purchase takes one, a corporate package included (#402).
   const [billingDetailsId, setBillingDetailsId] = useState<string | null>(null);
-  const needsBillTo = !isCorporate && !billingDetailsId;
+  const needsBillTo = !billingDetailsId;
 
   // Fetch package or workshop details from the catalogue
   useEffect(() => {
@@ -260,9 +260,10 @@ function CheckoutContent() {
             ...part,
           }
         : isCorporate
-          // The package and nothing else: the server refuses a code or a part
-          // payment on a corporate package rather than ignoring it.
-          ? { package_kind: packageKind, package_id: packageId }
+          // The package and who it is billed to, nothing else: the server
+          // refuses a code or a part payment on a corporate package rather
+          // than ignoring it.
+          ? { package_kind: packageKind, package_id: packageId, billing_details_id: billingDetailsId ?? undefined }
           : {
             ...part,
             package_kind: packageKind,
@@ -594,7 +595,7 @@ function CheckoutContent() {
             )}
 
             {/* Bill to (#401) — the member's Billing details, the default selected. */}
-            {!isCorporate && <BillingDetailsPicker value={billingDetailsId} onChange={setBillingDetailsId} />}
+            <BillingDetailsPicker value={billingDetailsId} onChange={setBillingDetailsId} />
 
             {/* Promo code — never on a corporate package (§6.2). */}
             {!isCorporate && (

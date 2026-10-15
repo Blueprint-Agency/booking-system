@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import type { StripeFake } from './stripe-fake'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.workshops.test`
@@ -163,10 +164,10 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     return { id, dayIds, tierIds }
   }
 
-  const checkout = (who: Member, w: Workshop, tier = 0) =>
+  const checkout = async (who: Member, w: Workshop, tier = 0) =>
     call('/api/v1/me/checkout/workshop', who.headers, {
       method: 'POST',
-      body: { workshop_id: w.id, workshop_tier_id: w.tierIds[tier] },
+      body: await billed(harness.app, who.headers, { workshop_id: w.id, workshop_tier_id: w.tierIds[tier] }),
     })
 
   const bookingsOf = (who: Member, w: Workshop) =>
@@ -223,6 +224,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     await harness.db.execute(sql`DELETE FROM rooms WHERE location_id IN (${locations})`)
     await harness.db.execute(sql`DELETE FROM locations WHERE id IN (${locations})`)
     await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
+    await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)

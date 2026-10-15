@@ -28,6 +28,7 @@ export const ERROR_CODES = {
   balance_unchanged: 'balance_unchanged',
   billing_details_limit: 'billing_details_limit',
   billing_details_not_found: 'billing_details_not_found',
+  billing_details_required: 'billing_details_required',
   booking_attended: 'booking_attended',
   booking_cancelled: 'booking_cancelled',
   booking_not_found: 'booking_not_found',

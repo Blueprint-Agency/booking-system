@@ -11,6 +11,7 @@ import { reportError } from "@/lib/report-error";
 import { checkoutErrorMessage } from "@/lib/checkout-messages";
 import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { corporateRequestSentHref } from "@/lib/corporate-return";
+import { BillToSheet } from "./bill-to-sheet";
 
 type BuyTarget =
   | { kind: "package"; packageKind: "class" | "pt" | "corporate"; packageId: string }
@@ -30,6 +31,10 @@ type AuthGateContext = "buy a package" | "book a workshop" | "buy merch";
  * review page when the purchase has one, or back to `gateHref` (the page they
  * were on) when it does not: merch, and a $0 item.
  *
+ * Every purchase is billed to the member's Billing details, free ones included
+ * (#402). The review page asks for them itself; the direct path asks first, in
+ * a sheet over the page (`BillToSheet`), and buys once the member confirms.
+ *
  * A studio that takes no online payments (#293) gets a sentence in place of a
  * paid button — a button that can only be refused is worse than being told.
  * A $0 purchase keeps its button: it never reaches the payment provider.
@@ -43,6 +48,7 @@ export function BuyButton({
   className,
   children,
   loadingLabel = "Redirecting…",
+  itemName,
 }: {
   target: BuyTarget;
   context: AuthGateContext;
@@ -59,6 +65,8 @@ export function BuyButton({
   className?: string;
   children: React.ReactNode;
   loadingLabel?: string;
+  /** What is being bought, named in the Billing details sheet. */
+  itemName?: string;
 }) {
   const router = useRouter();
   const getToken = getMemberToken;
@@ -66,20 +74,24 @@ export function BuyButton({
   const { requireAuth, gate } = useAuthGate(context);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The direct path asks who the purchase is billed to before it buys.
+  const [askingBillTo, setAskingBillTo] = useState(false);
   const onlinePayments = useOnlinePayments();
+  const free = Number(priceSgd) <= 0;
 
-  async function start() {
+  async function start(billingDetailsId: string) {
     setBusy(true);
     setError(null);
     try {
       const token = await getToken();
       const endpoint = `/me/checkout/${target.kind}`;
-      const body =
+      const item =
         target.kind === "workshop"
           ? { workshop_id: target.workshopId, workshop_tier_id: target.tierId }
           : target.kind === "merch"
             ? { merch_id: target.merchId }
             : { package_kind: target.packageKind, package_id: target.packageId };
+      const body = { ...item, billing_details_id: billingDetailsId };
 
       const res = await fetchApi(endpoint, {
         method: "POST",
@@ -100,6 +112,7 @@ export function BuyButton({
         });
         setError(checkoutErrorMessage(data, "Could not start checkout. Please try again."));
         setBusy(false);
+        setAskingBillTo(false);
         return;
       }
 
@@ -127,6 +140,7 @@ export function BuyButton({
       if (!data.url) {
         setError("Could not start checkout. Please try again.");
         setBusy(false);
+        setAskingBillTo(false);
         return;
       }
       window.location.href = data.url;
@@ -134,6 +148,7 @@ export function BuyButton({
       reportError(err, { scope: "checkout", kind: target.kind });
       setError("Network error. Please try again.");
       setBusy(false);
+      setAskingBillTo(false);
     }
   }
 
@@ -170,7 +185,8 @@ export function BuyButton({
             router.push(review);
             return;
           }
-          void start();
+          setError(null);
+          setAskingBillTo(true);
         }}
         className={cn(
           className,
@@ -183,6 +199,15 @@ export function BuyButton({
       </button>
       {error && (
         <p className="text-xs text-error mt-2 text-center">{error}</p>
+      )}
+      {askingBillTo && (
+        <BillToSheet
+          item={itemName}
+          confirmLabel={free ? "Confirm your free purchase" : "Continue to payment"}
+          busy={busy}
+          onConfirm={(id) => void start(id)}
+          onClose={() => setAskingBillTo(false)}
+        />
       )}
       {gate}
     </>

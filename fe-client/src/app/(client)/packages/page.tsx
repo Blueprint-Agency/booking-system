@@ -5,6 +5,7 @@ import { Check, Loader2, MessageCircle } from "lucide-react";
 import { useMemberSession } from "@/lib/member-auth";
 import { useAuthGate } from "@/components/auth/auth-gate";
 import { BuyButton } from "@/components/checkout/buy-button";
+import { BillToSheet } from "@/components/checkout/bill-to-sheet";
 import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { cn, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
@@ -75,14 +76,22 @@ export default function PackagesPage() {
   const [privateSubTab, setPrivateSubTab] = useState<PrivateSubTab>("1on1");
   const [claimingTrialId, setClaimingTrialId] = useState<string | null>(null);
   const [pendingTrial, setPendingTrial] = useState<ApiClassPackage | null>(null);
+  // The trial whose Billing details are being asked for (#402), after its terms.
+  const [billingTrial, setBillingTrial] = useState<ApiClassPackage | null>(null);
   const [trialMessage, setTrialMessage] = useState<
     { kind: "ok" | "err"; text: string } | null
   >(null);
   const trialTerms = useBrandCopy(TRIAL_TERMS_COPY_KEY, "");
   const trialAck = useBrandCopy(TRIAL_ACK_COPY_KEY, "I have read and accept these terms.");
-  // Terms to accept → the acknowledgement step first; none → straight on.
+  // Terms to accept → the acknowledgement step first; none → straight on to
+  // who it is billed to. A trial is a purchase, so it is billed to the
+  // member's Billing details like any other, free or not (#402).
+  const askBillTo = (pkg: ApiClassPackage) => {
+    setPendingTrial(null);
+    setBillingTrial(pkg);
+  };
   const requestTrial = (pkg: ApiClassPackage) =>
-    trialTerms ? setPendingTrial(pkg) : purchaseTrial(pkg);
+    trialTerms ? setPendingTrial(pkg) : askBillTo(pkg);
 
   useEffect(() => {
     function fromHash(): {
@@ -173,8 +182,8 @@ export default function PackagesPage() {
   // Runs after the member accepts the studio's trial terms, when it has any.
   // A $0 trial is granted immediately; a priced trial returns a Stripe Checkout
   // URL we redirect to.
-  async function purchaseTrial(pkg: ApiClassPackage) {
-    setPendingTrial(null);
+  async function purchaseTrial(pkg: ApiClassPackage, billingDetailsId: string) {
+    setBillingTrial(null);
     setClaimingTrialId(pkg.id);
     setTrialMessage(null);
     try {
@@ -185,6 +194,7 @@ export default function PackagesPage() {
       }>("/me/checkout/package", {
         package_kind: "class",
         package_id: pkg.id,
+        billing_details_id: billingDetailsId,
       });
       // Priced trial → off to Stripe Checkout.
       if (res?.url) {
@@ -284,11 +294,19 @@ export default function PackagesPage() {
 
       {pendingTrial && (
         <TrialTermsModal
-          pkg={pendingTrial}
           terms={trialTerms}
           acknowledgement={trialAck}
           onCancel={() => setPendingTrial(null)}
-          onConfirm={() => purchaseTrial(pendingTrial)}
+          onConfirm={() => askBillTo(pendingTrial)}
+        />
+      )}
+
+      {billingTrial && (
+        <BillToSheet
+          item={billingTrial.name}
+          confirmLabel={Number(billingTrial.effective_price_sgd) === 0 ? "Claim trial pass" : "Continue to payment"}
+          onConfirm={(id) => void purchaseTrial(billingTrial, id)}
+          onClose={() => setBillingTrial(null)}
         />
       )}
     </>
@@ -660,6 +678,7 @@ function BundleCard({
         <BuyButton
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
+          itemName={pkg.name}
           gateHref="/packages"
           priceSgd={pkg.effective_price_sgd}
           className={CARD_BUTTON}
@@ -700,6 +719,7 @@ function UnlimitedCard({
         <BuyButton
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
+          itemName={pkg.name}
           gateHref="/packages"
           priceSgd={pkg.effective_price_sgd}
           // A plan has a Home studio to pick, at every price — including one a
@@ -777,13 +797,11 @@ function TrialCard({
 // The studio's trial terms, accepted AFTER the member clicks purchase and BEFORE
 // checkout. Only shown when the studio has written terms (`trial.terms`).
 function TrialTermsModal({
-  pkg,
   terms,
   acknowledgement,
   onCancel,
   onConfirm,
 }: {
-  pkg: ApiClassPackage;
   terms: string;
   acknowledgement: string;
   onCancel: () => void;
@@ -792,7 +810,6 @@ function TrialTermsModal({
   const [ack, setAck] = useState(false);
   useBodyScrollLock(true);
   const trapRef = useFocusTrap<HTMLDivElement>(true);
-  const isFree = Number(pkg.effective_price_sgd) === 0;
   return (
     <Portal>
     <div className={SHEET_BACKDROP} onClick={onCancel}>
@@ -829,7 +846,8 @@ function TrialTermsModal({
             Cancel
           </button>
           <button type="button" disabled={!ack} onClick={onConfirm} className={BTN_PRIMARY}>
-            {isFree ? "Claim trial pass" : "Continue to payment"}
+            {/* On to who the pass is billed to, which buys it (#402). */}
+            Continue
           </button>
         </div>
       </div>
@@ -864,6 +882,7 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
       <BuyButton
         target={{ kind: "package", packageKind: "pt", packageId: pkg.id }}
         context="buy a package"
+        itemName={pkg.name}
         gateHref="/packages"
         priceSgd={pkg.effective_price_sgd}
         className={CARD_BUTTON}
@@ -934,6 +953,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
       <BuyButton
         target={{ kind: "package", packageKind: "corporate", packageId: pkg.id }}
         context="buy a package"
+        itemName={pkg.name}
         gateHref="/packages#corporate"
         priceSgd={pkg.price_sgd}
         className={CARD_BUTTON}

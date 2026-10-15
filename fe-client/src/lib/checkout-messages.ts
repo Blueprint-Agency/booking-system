@@ -37,6 +37,8 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   [ERROR_CODES.instructor_required]: "Choose your instructor to continue.",
   [ERROR_CODES.merch_not_available]: "This item isn't on sale any more.",
   [ERROR_CODES.merch_not_found]: "This item isn't on sale any more.",
+  [ERROR_CODES.billing_details_required]: "Choose the billing details this purchase is billed to.",
+  [ERROR_CODES.billing_details_not_found]: "Those billing details aren't saved any more. Choose another set.",
   [ERROR_CODES.checkout_session_busy]:
     "A payment for this is already in progress. Give it a minute, then try again.",
   [ERROR_CODES.purchase_not_open]: "This purchase isn't waiting on a payment any more.",

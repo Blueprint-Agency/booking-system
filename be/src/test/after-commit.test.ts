@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { billed } from './billing-details-fixture'
 import type { MailTransport, OutboundMessage, SendMailResult } from '../lib/mailer'
 
 const run = Date.now().toString(36)
@@ -156,6 +157,7 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
       await harness.db.execute(sql`DELETE FROM workshops WHERE created_by_staff_id IN (${staff})`)
       await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staff})`)
       await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
+      await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM client_auth_users WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (SELECT id FROM staff_users WHERE email LIKE ${ours})`)
@@ -364,7 +366,7 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
       const res = await harness.app.request('/api/v1/me/checkout/package', {
         method: 'POST',
         headers: { ...headers, ...json },
-        body: JSON.stringify({ package_kind: 'class', package_id: trial!.id }),
+        body: JSON.stringify(await billed(harness.app, headers, { package_kind: 'class', package_id: trial!.id })),
       })
       assert.equal(res.status, 201, await res.text())
     })

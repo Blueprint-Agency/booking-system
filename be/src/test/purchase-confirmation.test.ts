@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { stripeWebhookPath, type StripeFake } from './stripe-fake'
+import { billed } from './billing-details-fixture'
 import type { OutboundMessage } from '../lib/mailer'
 
 const run = Date.now().toString(36)
@@ -175,7 +176,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
 
   /** Check out and pay: the checkout answers with the provider's page, then the provider delivers. */
   async function pay(who: Member, body: Record<string, unknown>, path = '/api/v1/me/checkout/package'): Promise<void> {
-    const started = await expectStatus(await post(who.headers, path, body), 200)
+    const started = await expectStatus(await post(who.headers, path, await billed(harness.app, who.headers, body)), 200)
     assert.match(started.url, /^https:\/\/pay\.example\.test\//)
     assert.equal(mailTo(who.email).length, 0, 'nothing is confirmed before the money arrives')
     await expectStatus(await deliver(), 200)
@@ -264,6 +265,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
       await harness.db.execute(sql`DELETE FROM rooms WHERE location_id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM locations WHERE id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
+      await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
       await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
@@ -341,7 +343,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     for (const at of [one, two]) {
       const ivy = await member(at)
       const before = fake.callsTo('checkout.sessions.create').length
-      const granted = await expectStatus(await checkout(ivy, { package_kind: 'class', package_id: at.freeTrialId }), 201)
+      const granted = await expectStatus(await checkout(ivy, await billed(harness.app, ivy.headers, { package_kind: 'class', package_id: at.freeTrialId })), 201)
       assert.equal(granted.outcome, 'granted')
       assert.equal(fake.callsTo('checkout.sessions.create').length, before, 'no payment step')
 
@@ -408,7 +410,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     const sam = await member(two)
     const before = fake.callsTo('checkout.sessions.create').length
     const granted = await expectStatus(
-      await post(sam.headers, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }),
+      await post(sam.headers, '/api/v1/me/checkout/workshop', await billed(harness.app, sam.headers, { workshop_id: w.id, workshop_tier_id: w.tierId })),
       201,
     )
     assert.equal(granted.outcome, 'granted')
@@ -436,7 +438,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
   test('NTF-03 a paid corporate package is confirmed once with the amount paid, however often its payment is delivered', async () => {
     const eve = await member(one)
     const intent = `pi_${randomUUID()}`
-    await expectStatus(await checkout(eve, { package_kind: 'corporate', package_id: one.corporateId }), 200)
+    await expectStatus(await checkout(eve, await billed(harness.app, eve.headers, { package_kind: 'corporate', package_id: one.corporateId })), 200)
     assert.equal(mailTo(eve.email).length, 0, 'nothing is confirmed before the money arrives')
 
     await expectStatus(await deliver(intent), 200)
@@ -459,7 +461,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
       .returning({ id: schema.corporatePackages.id })
     const ana = await member(two)
     const before = fake.callsTo('checkout.sessions.create').length
-    const granted = await expectStatus(await checkout(ana, { package_kind: 'corporate', package_id: free!.id }), 201)
+    const granted = await expectStatus(await checkout(ana, await billed(harness.app, ana.headers, { package_kind: 'corporate', package_id: free!.id })), 201)
     assert.equal(granted.outcome, 'granted')
     assert.equal(fake.callsTo('checkout.sessions.create').length, before, 'no payment step')
 
@@ -474,7 +476,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
   test('NTF-03 a corporate delivery that fails to commit mails no one, and the provider\'s retry sends the one confirmation', async () => {
     const kim = await member(one)
     const intent = `pi_${randomUUID()}`
-    await expectStatus(await checkout(kim, { package_kind: 'corporate', package_id: one.corporateId }), 200)
+    await expectStatus(await checkout(kim, await billed(harness.app, kim.headers, { package_kind: 'corporate', package_id: one.corporateId })), 200)
 
     // A check Postgres runs at COMMIT, refusing this member's Corporate Request:
     // the delivery does all its work, then its transaction fails at the end.
@@ -606,10 +608,10 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     const sessionsBefore = fake.callsTo('checkout.sessions.create').length
 
     // Studio one's catalogue is not for sale at studio two.
-    await expectStatus(await checkout(outsider, { package_kind: 'class', package_id: one.freeTrialId }), 404, 'class_package_not_found')
+    await expectStatus(await checkout(outsider, await billed(harness.app, outsider.headers, { package_kind: 'class', package_id: one.freeTrialId })), 404, 'class_package_not_found')
     // The tier is looked up first, and studio two has no such tier.
     await expectStatus(
-      await post(outsider.headers, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }),
+      await post(outsider.headers, '/api/v1/me/checkout/workshop', await billed(harness.app, outsider.headers, { workshop_id: w.id, workshop_tier_id: w.tierId })),
       404,
       'workshop_tier_not_found',
     )
@@ -635,7 +637,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
 
   test('NTF-03 a delivery at another studio\'s endpoint, or unsigned, confirms nothing and grants nothing', async () => {
     const ned = await member(one)
-    await expectStatus(await checkout(ned, { package_kind: 'class', package_id: one.bundleId }), 200)
+    await expectStatus(await checkout(ned, await billed(harness.app, ned.headers, { package_kind: 'class', package_id: one.bundleId })), 200)
 
     const elsewhere = await deliver(`pi_${randomUUID()}`, stripeWebhookPath(two.slug))
     assert.notEqual(elsewhere.status, 200, `another studio's endpoint accepted it: ${await elsewhere.text()}`)

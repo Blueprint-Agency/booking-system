@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { eq, inArray, like, or } from 'drizzle-orm'
 import { inTenantContext, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.admin-catalogue.test`
@@ -246,6 +247,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
       await db.delete(schema.instructors).where(inArray(schema.instructors.staffUserId, staffIds))
     }
     await db.delete(schema.emailLog).where(like(schema.emailLog.recipientEmail, `%@${DOMAIN}`))
+    await db.delete(schema.clientBillingDetails).where(eq(schema.clientBillingDetails.clientId, memberId))
     await db.delete(schema.clients).where(eq(schema.clients.id, memberId))
     if (staffIds.length) await db.delete(schema.staffUsers).where(inArray(schema.staffUsers.id, staffIds))
     await db.delete(schema.clientAuthUsers).where(like(schema.clientAuthUsers.email, `%@${DOMAIN}`))
@@ -385,7 +387,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
       await harness.app.request('/api/v1/me/checkout/package', {
         method: 'POST',
         headers: { ...memberHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ package_kind: 'class', package_id: pass.id, promo_code: code.code }),
+        body: JSON.stringify(await billed(harness.app, memberHeaders, { package_kind: 'class', package_id: pass.id, promo_code: code.code })),
       }),
     )
     assert.equal(used.status, 201, JSON.stringify(used.body))
@@ -647,7 +649,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
         await harness.app.request('/api/v1/me/checkout/package', {
           method: 'POST',
           headers: { ...memberHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ package_kind: kind, package_id: id }),
+          body: JSON.stringify(await billed(harness.app, memberHeaders, { package_kind: kind, package_id: id })),
         }),
       )
       assert.equal(res.status, 400, JSON.stringify(res.body))

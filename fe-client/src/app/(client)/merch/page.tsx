@@ -94,6 +94,7 @@ export default function MerchPage() {
                 <BuyButton
                   target={{ kind: "merch", merchId: item.id }}
                   context="buy merch"
+                  itemName={item.title}
                   gateHref="/merch"
                   priceSgd={item.price_sgd}
                   className={cn(BTN_PRIMARY, "mt-3 sm:mt-4 w-full min-h-[44px]")}

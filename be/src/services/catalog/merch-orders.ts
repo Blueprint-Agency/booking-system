@@ -19,6 +19,7 @@ import {
   type CheckoutQuote,
 } from '../billing/checkout-session'
 import { openSettledPurchase } from '../billing/purchases'
+import type { BillingAddress } from '../billing-details/billing-details'
 import { saleLine } from '../billing/purchase-lines'
 import { tenantDisplayName } from '../tenants/mail-identity'
 
@@ -29,6 +30,8 @@ export async function beginMerchCheckout(input: {
   tenantId: string
   clientId: string
   merchId: string
+  /** The member's chosen Billing details (#402): a free item is billed to them here. */
+  billTo: BillingAddress
 }): Promise<MerchCheckout> {
   const [item] = await db
     .select()
@@ -66,6 +69,7 @@ export async function beginMerchCheckout(input: {
         merch_title: item.title,
       },
       lines,
+      billTo: input.billTo,
     })
     // Its S$0.00 Receipt, which that Purchase was issued, is the member's
     // email (#388), once the order's transaction has committed. The sender

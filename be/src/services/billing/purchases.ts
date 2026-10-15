@@ -39,7 +39,9 @@ export interface OpenPurchaseInput {
   lines: PurchaseLine[]
   /**
    * Who the sale is billed to (#401): the member's chosen Billing details,
-   * copied, or null where the checkout chose none.
+   * copied. Every member checkout names a set, free ones included (#402); null
+   * only where no member checkout opened the sale, as the webhook's fallback
+   * for a session from before Purchases existed.
    */
   billTo?: BillingAddress | null
 }
@@ -113,6 +115,7 @@ export async function openSettledPurchase(
       status: 'paid',
       metadata: input.metadata,
       lines: input.lines,
+      billTo: input.billTo ?? null,
       settledAt: new Date(),
     })
     .returning()

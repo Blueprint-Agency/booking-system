@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { ownAccountId, stripeWebhookPath, type StripeFake } from './stripe-fake'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.package-purchase.test`
@@ -201,11 +202,11 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
 
   /* ── requests ───────────────────────────────────────────────────────── */
 
-  const checkout = (who: Member, body: Record<string, unknown>) =>
+  const checkout = async (who: Member, body: Record<string, unknown>) =>
     harness.app.request('/api/v1/me/checkout/package', {
       method: 'POST',
       headers: { ...who.headers, ...json },
-      body: JSON.stringify(body),
+      body: JSON.stringify(await billed(harness.app, who.headers, body)),
     })
 
   const buyClass = (who: Member, packageId: string, extra: Record<string, unknown> = {}) =>
@@ -342,6 +343,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
+    await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM promo_code_products WHERE promo_code_id IN (SELECT id FROM promo_codes WHERE created_by_staff_id IN (${staff}))`)
     await harness.db.execute(sql`DELETE FROM promo_codes WHERE created_by_staff_id IN (${staff})`)
@@ -756,8 +758,8 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
 
   const quote = (who: Member, clientPackageId: string) =>
     post(who, '/api/v1/me/checkout/cross-location/quote', { client_package_id: clientPackageId })
-  const buyAddOn = (who: Member, clientPackageId: string) =>
-    post(who, '/api/v1/me/checkout/cross-location', { client_package_id: clientPackageId })
+  const buyAddOn = async (who: Member, clientPackageId: string) =>
+    post(who, '/api/v1/me/checkout/cross-location', await billed(harness.app, who.headers, { client_package_id: clientPackageId }))
 
   const addMonths = (d: Date, months: number) => {
     const next = new Date(d)
@@ -911,10 +913,12 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     const asked = sessionsAsked()
     // Mia's session, presented on studio two's hostname.
     const elsewhere = { ...mia, headers: { ...mia.headers, 'X-Tenant-Slug': two.slug, Origin: `http://${two.slug}.localhost:3000` } }
-    await expectStatus(await buyClass(elsewhere, two.bundleId), 401)
+    // Neither session is a member's here, so neither has Billing details to name:
+    // the request is refused before its body is read.
+    await expectStatus(await post(elsewhere, '/api/v1/me/checkout/package', { package_kind: 'class', package_id: two.bundleId }), 401)
     // A staff member's session is not a member's.
     const staff = { ...mia, headers: one.admin.headers }
-    await expectStatus(await buyClass(staff, one.bundleId), 401)
+    await expectStatus(await post(staff, '/api/v1/me/checkout/package', { package_kind: 'class', package_id: one.bundleId }), 401)
     assert.equal(sessionsAsked(), asked)
     assert.equal((await purchasesOf(mia)).length, 0)
   })
