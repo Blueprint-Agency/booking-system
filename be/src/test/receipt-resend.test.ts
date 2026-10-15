@@ -254,8 +254,9 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
     for (const body of [mail.html, mail.text ?? '']) {
       assert.ok(body.includes(receipt.number), `the receipt number ${receipt.number} is in the email: ${body}`)
       for (const line of receipt.lines) assert.ok(body.includes(line.description), `the line ${line.description} is listed`)
-      assert.ok(body.includes('Total paid') && body.includes(total), `the total ${total} is in the block`)
+      assert.ok(body.includes('Amount paid') && body.includes(total), `the total ${total} is in the block`)
     }
+    assert.ok((mail.text ?? '').includes(`Total: ${total}`), `the plain text reads the total by its label: ${mail.text}`)
     assert.ok(
       linksOf(mail).some(l => new URL(l).pathname === `/account/receipts/${receipt.id}`),
       `the member's Receipt is linked: ${linksOf(mail).join(', ')}`,

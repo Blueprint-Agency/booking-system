@@ -302,7 +302,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
     // discount under its line, and S$120.00 as what was paid; the list price
     // is never what it says was paid.
     const text = textOf(sent)
-    assert.ok(text.includes('Total paid: S$120.00'), `the total paid is the amount paid: ${text}`)
+    assert.ok(text.includes('Total: S$120.00'), `the total is the amount paid: ${text}`)
     assert.ok(text.includes('Subtotal: S$150.00') && text.includes('Discount: -S$30.00'), `the list price is the subtotal: ${text}`)
     assert.doesNotMatch(text, /paid\W{0,12}S\$150\.00/i, 'the list price is not what the receipt says was paid')
   })

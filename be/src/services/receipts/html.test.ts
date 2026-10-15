@@ -26,6 +26,7 @@ const paid: ReceiptRow = {
   sellerRegistrationNumber: null,
   sellerAddress: '12 Example Road\nSingapore 000000',
   sellerFooter: null,
+  sellerEmail: null,
   buyerName: 'Mia Tan',
   buyerEmail: 'mia@example.test',
   billTo: null,
@@ -50,14 +51,15 @@ const paid: ReceiptRow = {
 test('INV-88 the Receipt as HTML: paid, refunded and free each read as the PDF does, every value escaped, credited to the platform', () => {
   const text = htmlToText(receiptHtml(receiptDocument(paid, STUDIO)))
   for (const said of [
-    'Northwind Yoga',
+    'Receipt number: R-000042',
     'Northwind Wellness Pte. Ltd.',
     'R-000042',
     'Amount paid',
     'S$19.00',
     'PAID',
-    'Paid by Apple Pay · Visa •••• 4242 on 2 Oct 2026',
-    'Issued to',
+    'S$19.00 paid on 2 Oct 2026',
+    'Apple Pay · Visa •••• 4242 2 Oct 2026 S$19.00',
+    'Bill to',
     'Mia Tan',
     'mia@example.test',
     'Grip socks 2 S$12.00 S$24.00',
@@ -65,7 +67,8 @@ test('INV-88 the Receipt as HTML: paid, refunded and free each read as the PDF d
     '-S$5.00',
     'Subtotal: S$24.00',
     'Discount: -S$5.00',
-    'Total paid: S$19.00',
+    'Total: S$19.00',
+    'Amount paid: S$19.00',
     'Powered by ReserveToday · reservetoday.app',
   ]) {
     assert.ok(text.includes(said), `"${said}" in:\n${text}`)
@@ -80,7 +83,7 @@ test('INV-88 the Receipt as HTML: paid, refunded and free each read as the PDF d
     receiptHtml(receiptDocument({ ...paid, lines: [], subtotalSgd: '0.00', discountSgd: '0.00', totalSgd: '0.00', payments: [] }, STUDIO)),
   )
   assert.ok(free.includes('No payment: nothing was due.'), free)
-  assert.doesNotMatch(free, /\bPAID\b|Paid with|Discount/)
+  assert.doesNotMatch(free, /\bPAID\b|Payment history|paid on|Discount/)
 
   const hostile = receiptHtmlPage(
     receiptDocument(

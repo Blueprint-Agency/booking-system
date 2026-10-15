@@ -31,7 +31,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
   let schema!: typeof import('../db/schema')
   let fake!: StripeFake
 
-  type Studio = { id: string; slug: string; packageId: string; packageName: string; displayName: string }
+  type Studio = { id: string; slug: string; packageId: string; packageName: string; displayName: string; businessName: string }
   type Member = { clientId: string; email: string; headers: Record<string, string> }
   let one!: Studio
   let two!: Studio
@@ -65,7 +65,12 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
       .insert(schema.classPackages)
       .values({ tenantId: tenant.id, name: packageName, kind: 'credit_bundle', credits: 10, validityDays: 90, priceSgd: '150.00' })
       .returning({ id: schema.classPackages.id })
-    return { ...tenant, packageId: paid!.id, packageName, displayName }
+    // The name a Receipt names the studio by (#403): its Business name, as issued.
+    const [named] = await harness.db
+      .select({ businessName: schema.tenantSettings.businessName })
+      .from(schema.tenantSettings)
+      .where(eq(schema.tenantSettings.tenantId, tenant.id))
+    return { ...tenant, packageId: paid!.id, packageName, displayName, businessName: named!.businessName }
   }
 
   let members = 0
@@ -187,7 +192,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
 
     const text = await pdfText(bytes)
     assert.ok(text.includes(receipt.number), `the receipt number in: ${text}`)
-    assert.ok(text.includes(one.displayName), 'the studio')
+    assert.ok(text.includes(one.businessName), 'the studio')
     assert.ok(text.includes('Mia Tan') && text.includes(mia.email), 'the member')
     assert.ok(text.includes(one.packageName), 'the line')
     assert.ok(text.includes('S$150.00'), 'the total')
@@ -245,7 +250,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
         assert.equal(res.status, 200, 'the PDF is always there')
         const bytes = Buffer.from(await res.arrayBuffer())
         const text = await pdfText(new Uint8Array(bytes))
-        assert.ok(text.includes(one.displayName), 'the studio is named either way')
+        assert.ok(text.includes(one.businessName), 'the studio is named either way')
         assert.ok(text.includes(receipt.number))
         return bytes.includes('/Subtype /Image')
       }
@@ -290,6 +295,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
       sellerRegistrationNumber: null,
       sellerAddress: null,
       sellerFooter: null,
+      sellerEmail: null,
       buyerName: 'Mia Tan',
       buyerEmail: `free@${DOMAIN}`,
       billTo: null,
@@ -332,6 +338,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
       sellerRegistrationNumber: null,
       sellerAddress: null,
       sellerFooter: null,
+      sellerEmail: null,
       buyerName: 'Mia Tan',
       buyerEmail: `long@${DOMAIN}`,
       billTo: null,

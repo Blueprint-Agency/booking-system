@@ -284,8 +284,9 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     for (const body of [mail.html, mail.text ?? '']) {
       assert.ok(body.includes(receipt.number), `the receipt number ${receipt.number} is in the email: ${body}`)
       for (const line of receipt.lines) assert.ok(body.includes(line.description), `the line ${line.description} is listed`)
-      assert.ok(body.includes(`Total paid`) && body.includes(total), `the total ${total} is in the block`)
+      assert.ok(body.includes('Amount paid') && body.includes(total), `the total ${total} is in the block`)
     }
+    assert.ok(mail.text!.includes(`Total: ${total}`), `the plain text reads the total by its label: ${mail.text}`)
 
     const links = linksOf(mail)
     const link = links.find(l => new URL(l).pathname === `/account/receipts/${receipt.id}`)
@@ -391,7 +392,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     // The studio's copy is as it was, above the block: no template was edited for it.
     const copy = mail.text!.indexOf('Your package is confirmed')
     assert.ok(copy >= 0, `the studio's copy is there: ${mail.text}`)
-    assert.ok(mail.text!.indexOf('Total paid') > copy, 'the Receipt comes under it')
+    assert.ok(mail.text!.indexOf('Receipt number') > copy, 'the Receipt comes under it')
   })
 
   test('INV-87 the Receipt in the email is the very Receipt the member\'s page shows: one design, drawn once', async () => {
@@ -423,7 +424,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     await pay(zoe, WORKSHOP, { workshop_id: paid.id, workshop_tier_id: paid.tierId })
     const { mail, receipt } = await carriesReceipt(zoe, one, 'workshop_purchase_confirmed')
     assert.equal(receipt.total_sgd, '85.50')
-    assert.ok(mail.text!.includes('Paid by Visa •••• 4242'), `it says how it was paid: ${mail.text}`)
+    assert.match(mail.text!, /Payment history[\s\S]*Visa •••• 4242/, `it says how it was paid: ${mail.text}`)
     assert.ok(linksOf(mail).some(l => new URL(l).pathname === '/account/workshops'), 'the QR code is still linked')
 
     const free = await workshop(two, '0.00')
@@ -466,7 +467,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
 
     const { mail, receipt } = await carriesReceipt(kai, one, 'purchase_receipt')
     assert.equal(receipt.total_sgd, '42.00')
-    assert.ok(mail.text!.includes('Paid by Visa •••• 4242'), `it says how it was paid: ${mail.text}`)
+    assert.match(mail.text!, /Payment history[\s\S]*Visa •••• 4242/, `it says how it was paid: ${mail.text}`)
     assert.ok(mail.text!.includes('Hi Mia'), `the member is greeted: ${mail.text}`)
   })
 
