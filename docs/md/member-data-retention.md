@@ -15,6 +15,7 @@ The tables and what deletion does to each are one list, `MEMBER_TABLES` in `be/s
 | What | Tables |
 |---|---|
 | The member's profile at this studio | `clients` |
+| Their Billing details — names and addresses to bill; a Purchase keeps its own copy | `client_billing_details` |
 | Bookings, cancellations, check-ins | `bookings`, `cancellations`, `check_ins` |
 | Manual credit adjustments (credit movements with a staff member's free-text reason — no money, and the reason may name the member) | `manual_adjustments` |
 | Credit history (which of their bookings spent or returned which credits — no money) | `credit_movements` |
@@ -39,7 +40,7 @@ A provider that cannot be reached does **not** stop the deletion — the member 
 | Package sales — list price, amount paid, the Cross-Location Add-On | `client_packages` | `client_id`; the package is marked inactive |
 | Promo Code uses — the money taken off, and a use against the code's limit | `promo_code_redemptions` | `client_id` |
 | Merch sales | `merch_orders` | `client_id` |
-| Receipts — the studio's record of each sale, its lines, totals and payments | `receipts` | `client_id`; the buyer's name and email copied onto it |
+| Receipts — the studio's record of each sale, its lines, totals and payments | `receipts` | `client_id`; the buyer's name and email copied onto it; the Bill to (the name and address of the Billing details the member chose), here and on the Purchase (`purchases.bill_to`) |
 
 **Why:** these are the studio's financial records. A studio has to be able to account for money it took and gave back, and to reconcile against the payment provider — which is why `payment_intent_id` stays: it matches a row to the provider's own record without naming anyone here. Nothing kept holds a name, email or phone.
 

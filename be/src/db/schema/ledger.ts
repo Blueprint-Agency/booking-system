@@ -16,6 +16,7 @@ import {
 } from '../enums'
 import type { PurchaseLine } from '../../services/billing/purchase-lines'
 import type { ReceiptPayment } from '../../services/receipts/snapshot'
+import type { BillingAddress } from '../../services/billing-details/address'
 
 /**
  * A Purchase owns the money; a payment is evidence of part of it.
@@ -80,6 +81,17 @@ export const purchases = pgTable(
      * backfills them.
      */
     lines: jsonb('lines').$type<PurchaseLine[]>().notNull().default(sql`'[]'::jsonb`),
+    /**
+     * Who the sale is billed to (#401): the name and address of the member's
+     * Billing details chosen at checkout, copied when the Purchase opens and
+     * copied again onto its Receipt. A copy, not a reference, so editing or
+     * deleting the set afterwards changes nothing already bought, and a part
+     * payment resumed later bills the set it was opened with.
+     *
+     * Null where no set was chosen: every Purchase opened before #401, and
+     * those with no member checkout (the legacy webhook fallback, imports).
+     */
+    billTo: jsonb('bill_to').$type<BillingAddress>(),
     /**
      * The one live checkout session, if a payment is in flight. Singular on
      * purpose: two open sessions against one Purchase is two members' worth of
@@ -479,16 +491,29 @@ export const receipts = pgTable(
     /** The number as issued, prefix and all (`R-000123`), so a later prefix change renumbers nothing. */
     displayNumber: text('display_number').notNull(),
     issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
-    // The seller, as of issue. Only the name is ever known today; the rest are
-    // the studio's receipt details, which the studio sets (#391).
+    // The seller, as of issue. The rest are the studio's Business details,
+    // which the studio sets (#391, #398). The Business name is null on a
+    // Receipt issued before #398 that carried no Legal name.
     sellerName: text('seller_name').notNull(),
-    sellerLegalName: text('seller_legal_name'),
+    sellerBusinessName: text('seller_business_name'),
     sellerRegistrationNumber: text('seller_registration_number'),
     sellerAddress: text('seller_address'),
     sellerFooter: text('seller_footer'),
+    /**
+     * The studio's contact email (#403): its reply-to address as of issue.
+     * Null where it had none, and on every Receipt issued before #403.
+     */
+    sellerEmail: text('seller_email'),
     // The buyer, as of issue.
     buyerName: text('buyer_name'),
     buyerEmail: text('buyer_email'),
+    /**
+     * Bill to (#401): the Purchase's `bill_to`, as of issue. Null on a Receipt
+     * whose Purchase chose no Billing details — one issued before #401, a
+     * backfilled one, the legacy webhook fallback's — which names the buyer
+     * by their name and email alone.
+     */
+    billTo: jsonb('bill_to').$type<BillingAddress>(),
     kind: purchaseKindEnum('kind').notNull(),
     lines: jsonb('lines').$type<PurchaseLine[]>().notNull(),
     /** What the lines cost before anything was taken off: the sum of quantity × List Price. */

@@ -116,10 +116,22 @@ record was mistyped is a worse failure than a shared envelope address.
 
 ## Where the identity lives
 
-`tenant_settings.mail_from_name`, `mail_from_email` and `mail_reply_to`, per
-tenant. `mail_from_name` falls back to the tenant's own `name`, so a studio is
-correctly branded from the moment its row exists and before anyone configures
-anything.
+`tenant_settings.business_name`, `mail_from_name`, `mail_from_email` and
+`mail_reply_to`, per tenant. The display name is the studio's **Business name**
+(`tenant_settings.business_name`, #400). It is `NOT NULL` and never blank
+(migration 0115 fills one from the display name, else the Domain name, for any
+writer that names none), so a studio is correctly branded from the moment its
+row exists and before anyone configures anything; a studio with no settings row
+yet is named by its Domain name (`tenants.name`), as the row would name it.
+
+The Business name **supersedes `mail_from_name`**, which is no longer read. The
+column stays: the super portal's restore writes it, and archives carry it, but
+nothing a member receives depends on it. The same name
+heads the email's frame, fills `{{studio_name}}` wherever a template names the
+studio (the seeded copy does in its subjects and bodies; migration 0117 swapped
+it in for the name the studios created before were given), and is the charge
+description on a member's card statement. Saving Business details forgets the
+cached identity, so a rename reaches the next email.
 
 `mail_from_email` is a *delegated* address, and today it is **not read at all**.
 That is deliberate rather than unfinished: honouring it would put an address on

@@ -19,6 +19,8 @@ import { CrossLocationBlock } from "@/components/checkout/cross-location-block";
 import { AddOnCheckout } from "@/components/checkout/add-on-checkout";
 import { PayButton, StripeFootnote } from "@/components/checkout/pay-button";
 import { PartPaymentBlock } from "@/components/checkout/part-payment-block";
+import { BillingDetailsPicker } from "@/components/checkout/billing-details-picker";
+import { billToPayLabel, type BillToStatus } from "@/lib/bill-to-status";
 import { usePartPaymentOptions } from "@/lib/open-purchases";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { tierEffectivePrice, type ApiWorkshopDetail, type ApiWorkshopTier } from "@/lib/workshops";
@@ -130,6 +132,13 @@ function CheckoutContent() {
   const isBoundPt = pkg?._kind === "pt" && pkg.instructor_bound;
   const { data: instructors, loading: instructorsLoading } = useInstructors();
   const needsInstructor = isBoundPt && !instructorId;
+
+  // Who the purchase is billed to (#401): one of the member's Billing details,
+  // printed on the Receipt as Bill to. The picker selects the default. Every
+  // purchase takes one, a corporate package included (#402).
+  const [billingDetailsId, setBillingDetailsId] = useState<string | null>(null);
+  const [billToStatus, setBillToStatus] = useState<BillToStatus>("loading");
+  const needsBillTo = !billingDetailsId;
 
   // Fetch package or workshop details from the catalogue
   useEffect(() => {
@@ -249,12 +258,14 @@ function CheckoutContent() {
             workshop_id: workshopId,
             workshop_tier_id: selectedTier?.id,
             promo_code: promoApplied?.code,
+            billing_details_id: billingDetailsId ?? undefined,
             ...part,
           }
         : isCorporate
-          // The package and nothing else: the server refuses a code or a part
-          // payment on a corporate package rather than ignoring it.
-          ? { package_kind: packageKind, package_id: packageId }
+          // The package and who it is billed to, nothing else: the server
+          // refuses a code or a part payment on a corporate package rather
+          // than ignoring it.
+          ? { package_kind: packageKind, package_id: packageId, billing_details_id: billingDetailsId ?? undefined }
           : {
             ...part,
             package_kind: packageKind,
@@ -265,6 +276,7 @@ function CheckoutContent() {
             // on anything else rather than ignoring it.
             instructor_id: isBoundPt ? instructorId ?? undefined : undefined,
             cross_location_add_on: isUnlimited && addOn,
+            billing_details_id: billingDetailsId ?? undefined,
           };
       const res = await fetchApi(endpoint, {
         method: "POST",
@@ -584,6 +596,9 @@ function CheckoutContent() {
               />
             )}
 
+            {/* Bill to (#401) — the member's Billing details, the default selected. */}
+            <BillingDetailsPicker value={billingDetailsId} onChange={setBillingDetailsId} onStatus={setBillToStatus} />
+
             {/* Promo code — never on a corporate package (§6.2). */}
             {!isCorporate && (
             <div className="mt-4">
@@ -736,13 +751,15 @@ function CheckoutContent() {
             <PayButton
               onClick={() => handleProceed(payingNow)}
               busy={redirecting}
-              disabled={needsHomeStudio || needsInstructor || partBlocked}
+              disabled={needsHomeStudio || needsInstructor || needsBillTo || partBlocked}
               label={
                 needsHomeStudio
                   ? "Choose your home studio to continue"
                   : needsInstructor
                     ? "Choose your instructor to continue"
-                    : partBlocked
+                    : needsBillTo
+                      ? billToPayLabel(billToStatus, false)!
+                      : partBlocked
                       ? "Enter an amount to pay now"
                       : // A discount that clears the total skips Stripe entirely, so the
                         // button names the confirmation rather than a charge of nothing.

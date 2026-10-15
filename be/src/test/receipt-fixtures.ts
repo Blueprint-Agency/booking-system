@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { inArray, sql } from 'drizzle-orm'
+import type { BillingAddress } from '../services/billing-details/billing-details'
 import type { PurchaseLine } from '../services/billing/purchase-lines'
 import type { ReceiptRow } from '../services/receipts/issue'
 import type { TestApp } from './harness'
@@ -21,12 +22,13 @@ export function receiptFixtures(harness: TestApp) {
   /**
    * A ten pack at S$150.00 less a S$15.00 code, paid by a Visa ending 4242;
    * or, with `kind` and `item`, another kind of sale under another name at the
-   * same price.
+   * same price; with `billTo`, billed to that name and address, as a checkout
+   * naming the member's Billing details opens its Purchase (#401).
    */
   const issueFor = async (
     tenantId: string,
     clientId: string,
-    sale: { kind?: ReceiptRow['kind']; item?: string } = {},
+    sale: { kind?: ReceiptRow['kind']; item?: string; billTo?: BillingAddress } = {},
   ): Promise<ReceiptRow> => {
     const kind = sale.kind ?? 'class_package'
     const item = sale.item ?? 'Ten pack'
@@ -43,9 +45,9 @@ export function receiptFixtures(harness: TestApp) {
       },
     ]
     const [purchase] = await harness.db.execute<{ id: string }>(sql`
-      INSERT INTO purchases (tenant_id, client_id, kind, total_sgd, amount_paid_sgd, status, lines, metadata, settled_at)
+      INSERT INTO purchases (tenant_id, client_id, kind, total_sgd, amount_paid_sgd, status, lines, metadata, bill_to, settled_at)
       VALUES (${tenantId}, ${clientId}, ${kind}, '135.00', '135.00', 'paid', ${JSON.stringify(lines)}::jsonb,
-              ${JSON.stringify({ item_name: item })}::jsonb, now())
+              ${JSON.stringify({ item_name: item })}::jsonb, ${sale.billTo ? JSON.stringify(sale.billTo) : null}::jsonb, now())
       RETURNING id`)
     purchaseIds.push(purchase!.id)
     await harness.db.execute(sql`

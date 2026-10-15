@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { stripeWebhookPath, type StripeFake } from './stripe-fake'
+import { billed } from './billing-details-fixture'
 import type { OutboundMessage } from '../lib/mailer'
 
 const run = Date.now().toString(36)
@@ -218,13 +219,13 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
 
   /** Check out and have the provider say it was paid. */
   async function pay(who: Member, path: string, body: Record<string, unknown>): Promise<void> {
-    await expectStatus(await post(who.headers, path, body), 200)
+    await expectStatus(await post(who.headers, path, await billed(harness.app, who.headers, body)), 200)
     await deliver(`pi_${randomUUID()}`)
   }
 
   /** A checkout with nothing to pay, granted on the spot. */
   async function take(who: Member, path: string, body: Record<string, unknown>): Promise<void> {
-    const granted = await expectStatus(await post(who.headers, path, body), 201)
+    const granted = await expectStatus(await post(who.headers, path, await billed(harness.app, who.headers, body)), 201)
     assert.equal(granted.outcome, 'granted')
   }
 
@@ -254,8 +255,9 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
     for (const body of [mail.html, mail.text ?? '']) {
       assert.ok(body.includes(receipt.number), `the receipt number ${receipt.number} is in the email: ${body}`)
       for (const line of receipt.lines) assert.ok(body.includes(line.description), `the line ${line.description} is listed`)
-      assert.ok(body.includes('Total paid') && body.includes(total), `the total ${total} is in the block`)
+      assert.ok(body.includes('Amount paid') && body.includes(total), `the total ${total} is in the block`)
     }
+    assert.ok((mail.text ?? '').includes(`Total: ${total}`), `the plain text reads the total by its label: ${mail.text}`)
     assert.ok(
       linksOf(mail).some(l => new URL(l).pathname === `/account/receipts/${receipt.id}`),
       `the member's Receipt is linked: ${linksOf(mail).join(', ')}`,
@@ -353,6 +355,7 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
       await harness.db.execute(sql`DELETE FROM rooms WHERE location_id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM locations WHERE id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
+      await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
       await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)

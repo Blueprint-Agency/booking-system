@@ -95,6 +95,10 @@ const ACCOUNTS =
 
 export const MEMBER_TABLES: readonly MemberTable[] = [
   { table: 'clients', columns: ['id'], where: m => sql`id = ${m.clientId}` },
+  // Their Billing details (#399): names and addresses they gave the studio to
+  // bill. Nothing sold points at them — a Purchase keeps its own copy — so
+  // they go with the member.
+  byClientId('client_billing_details'),
   byClientId('bookings'),
   // Their places in class waitlists. After `bookings`, which a promoted entry
   // points at, so deletion reaches it first.
@@ -119,17 +123,18 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
   // sale itself, so it is kept for the same reason every other accounts row is —
   // including one still open, whose money the studio is holding and may yet have
   // to return. The metadata is dropped with the member: it carries the ids the
-  // webhook granted from, and one of them is theirs.
+  // webhook granted from, and one of them is theirs. So is the Bill to (#401):
+  // the name and address of the Billing details they chose.
   byClientId('purchases', [
-    { keptBecause: ACCOUNTS, set: sql`client_id = NULL, metadata = '{}'::jsonb`, where: clientIdIs },
+    { keptBecause: ACCOUNTS, set: sql`client_id = NULL, metadata = '{}'::jsonb, bill_to = NULL`, where: clientIdIs },
   ]),
   // The studio's Receipt for each sale (#380): its record of what was sold and
   // for how much, so it stays with the Purchase it is for. Who it was issued to
-  // goes — the member's id and the name and email copied onto it.
+  // goes — the member's id, and the name, email and Bill to copied onto it.
   byClientId('receipts', [
     {
       keptBecause: ACCOUNTS,
-      set: sql`client_id = NULL, buyer_name = NULL, buyer_email = NULL`,
+      set: sql`client_id = NULL, buyer_name = NULL, buyer_email = NULL, bill_to = NULL`,
       where: clientIdIs,
     },
   ]),

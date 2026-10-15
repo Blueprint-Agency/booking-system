@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { stripeWebhookPath, type StripeFake } from './stripe-fake'
+import { billed } from './billing-details-fixture'
 import type { MailTransport, OutboundMessage } from '../lib/mailer'
 
 const run = Date.now().toString(36)
@@ -222,7 +223,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
 
   /** Check out and have the provider say it was paid, twice over, as it may. */
   async function pay(who: Member, path: string, body: Record<string, unknown>): Promise<void> {
-    await expectStatus(await post(who.headers, path, body), 200)
+    await expectStatus(await post(who.headers, path, await billed(harness.app, who.headers, body)), 200)
     const intent = `pi_${randomUUID()}`
     await deliver(intent)
     await deliver(intent)
@@ -230,7 +231,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
 
   /** A checkout with nothing to pay, granted on the spot. */
   async function take(who: Member, path: string, body: Record<string, unknown>): Promise<void> {
-    const granted = await expectStatus(await post(who.headers, path, body), 201)
+    const granted = await expectStatus(await post(who.headers, path, await billed(harness.app, who.headers, body)), 201)
     assert.equal(granted.outcome, 'granted')
   }
 
@@ -284,8 +285,9 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     for (const body of [mail.html, mail.text ?? '']) {
       assert.ok(body.includes(receipt.number), `the receipt number ${receipt.number} is in the email: ${body}`)
       for (const line of receipt.lines) assert.ok(body.includes(line.description), `the line ${line.description} is listed`)
-      assert.ok(body.includes(`Total paid`) && body.includes(total), `the total ${total} is in the block`)
+      assert.ok(body.includes('Amount paid') && body.includes(total), `the total ${total} is in the block`)
     }
+    assert.ok(mail.text!.includes(`Total: ${total}`), `the plain text reads the total by its label: ${mail.text}`)
 
     const links = linksOf(mail)
     const link = links.find(l => new URL(l).pathname === `/account/receipts/${receipt.id}`)
@@ -373,6 +375,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
       await harness.db.execute(sql`DELETE FROM rooms WHERE location_id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM locations WHERE id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
+      await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
       await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
@@ -391,7 +394,19 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     // The studio's copy is as it was, above the block: no template was edited for it.
     const copy = mail.text!.indexOf('Your package is confirmed')
     assert.ok(copy >= 0, `the studio's copy is there: ${mail.text}`)
-    assert.ok(mail.text!.indexOf('Total paid') > copy, 'the Receipt comes under it')
+    assert.ok(mail.text!.indexOf('Receipt number') > copy, 'the Receipt comes under it')
+  })
+
+  test('INV-87 the Receipt in the email is the very Receipt the member\'s page shows: one design, drawn once', async () => {
+    const lee = await member(one)
+    await pay(lee, PACKAGE, { package_kind: 'class', package_id: one.bundleId })
+
+    const { mail, receipt } = await carriesReceipt(lee, one, 'package_purchase_confirmed')
+    const page: string = receipt.html
+    const body = page.slice(page.indexOf('>', page.indexOf('<body')) + 1, page.lastIndexOf('</body>')).trim()
+    assert.ok(body.includes('data-receipt-block'), `the page is the Receipt: ${page}`)
+    assert.ok(mail.html.includes(body), 'the email carries the same markup the member\'s page frames')
+    assert.ok(mail.text!.includes('Powered by ReserveToday · reservetoday.app'), `credited to the platform: ${mail.text}`)
   })
 
   test('INV-57 a free Trial Pass\'s confirmation carries its S$0.00 Receipt, linked in the member\'s account', async () => {
@@ -411,7 +426,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     await pay(zoe, WORKSHOP, { workshop_id: paid.id, workshop_tier_id: paid.tierId })
     const { mail, receipt } = await carriesReceipt(zoe, one, 'workshop_purchase_confirmed')
     assert.equal(receipt.total_sgd, '85.50')
-    assert.ok(mail.text!.includes('Paid by Visa •••• 4242'), `it says how it was paid: ${mail.text}`)
+    assert.match(mail.text!, /Payment history[\s\S]*Visa •••• 4242/, `it says how it was paid: ${mail.text}`)
     assert.ok(linksOf(mail).some(l => new URL(l).pathname === '/account/workshops'), 'the QR code is still linked')
 
     const free = await workshop(two, '0.00')
@@ -454,7 +469,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
 
     const { mail, receipt } = await carriesReceipt(kai, one, 'purchase_receipt')
     assert.equal(receipt.total_sgd, '42.00')
-    assert.ok(mail.text!.includes('Paid by Visa •••• 4242'), `it says how it was paid: ${mail.text}`)
+    assert.match(mail.text!, /Payment history[\s\S]*Visa •••• 4242/, `it says how it was paid: ${mail.text}`)
     assert.ok(mail.text!.includes('Hi Mia'), `the member is greeted: ${mail.text}`)
   })
 
@@ -498,7 +513,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
     const ben = await member(one)
     let intent!: string
     try {
-      await expectStatus(await post(ben.headers, '/api/v1/me/checkout/merch', { merch_id: one.merchId }), 200)
+      await expectStatus(await post(ben.headers, '/api/v1/me/checkout/merch', await billed(harness.app, ben.headers, { merch_id: one.merchId })), 200)
       intent = `pi_${randomUUID()}`
       await deliver(intent)
     } finally {

@@ -18,6 +18,7 @@ import { promoCodeReduction, promotionReduction, saleLine, type LineReduction } 
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { listActivePromotionsFor } from '../packages/promotions'
 import { applyPromoCode, type AppliedPromoCode } from '../packages/promo-redemption'
+import type { BillingAddress } from '../billing-details/billing-details'
 import { assertWorkshopBookable, assertWorkshopOnSale, bookWorkshopFree, tierDaysClash, tierEffectivePrice } from './book'
 
 export type WorkshopCheckout = CheckoutQuote<{ bookingId: string }>
@@ -40,6 +41,8 @@ export async function beginWorkshopCheckout(
     workshopId: string
     workshopTierId: string
     promoCode?: string
+    /** The member's chosen Billing details (#402): a free place is billed to them here. */
+    billTo: BillingAddress
   },
 ): Promise<WorkshopCheckout> {
   const { clientId, workshopId, workshopTierId } = input
@@ -125,6 +128,7 @@ export async function beginWorkshopCheckout(
       workshopTierId,
       appliedPromoCodeId: applied?.promoCodeId ?? null,
       lines,
+      billTo: input.billTo,
     })
     return { outcome: 'granted', bookingId: result.bookingId }
   }

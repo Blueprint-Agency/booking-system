@@ -14,6 +14,7 @@ import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import { grantsWithoutPaying, saleDescription, type CheckoutQuote } from '../billing/checkout-session'
 import { openSettledPurchase } from '../billing/purchases'
+import type { BillingAddress } from '../billing-details/billing-details'
 import { saleLine } from '../billing/purchase-lines'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { sendCorporatePurchaseEmail } from '../notifications/send-purchase-email'
@@ -25,6 +26,8 @@ export async function beginCorporateCheckout(
   tenantId: string,
   clientId: string,
   packageId: string,
+  /** The member's chosen Billing details (#402): a S$0 package is billed to them here. */
+  billTo: BillingAddress,
 ): Promise<CorporateCheckout> {
   const [pkg] = await db
     .select()
@@ -53,7 +56,7 @@ export async function beginCorporateCheckout(
   // No Promotion and no Promo Code: the one line is the package at its price (#382).
   const lines = [saleLine({ description: pkg.name, listPriceSgd: pkg.priceSgd })]
   if (grantsWithoutPaying(cents)) {
-    const purchase = await openSettledPurchase({ tenantId, clientId, kind: 'corporate_package', metadata, lines })
+    const purchase = await openSettledPurchase({ tenantId, clientId, kind: 'corporate_package', metadata, lines, billTo })
     const { corporateRequestId } = await createCorporateRequest(tenantId, {
       clientId,
       corporatePackageId: pkg.id,

@@ -4,6 +4,7 @@ import { and, eq, sql, type SQL } from 'drizzle-orm'
 import type * as Schema from '../db/schema'
 import { inTenantContext, type TestApp } from './harness'
 import { stripeWebhookPath, type StripeFake } from './stripe-fake'
+import { TEST_ADDRESS } from './billing-details-fixture'
 
 /**
  * A Corporate Request, made the only way a member can make one (#374): by paying
@@ -136,7 +137,17 @@ export async function buyCorporatePackage(
     const before = await requestsOf()
 
     const checkout = inTenantContext(await import('../services/corporate/checkout'))
-    const quote = await checkout.beginCorporateCheckout(tenant.id, who.clientId, packageId)
+    // Every member purchase is billed to Billing details (#402); the route
+    // resolves the member's set, and the service is handed its address.
+    const quote = await checkout.beginCorporateCheckout(tenant.id, who.clientId, packageId, {
+      name: 'Test Member',
+      line1: TEST_ADDRESS.line1,
+      line2: null,
+      city: TEST_ADDRESS.city,
+      state: null,
+      postcode: TEST_ADDRESS.postcode,
+      country: 'SG',
+    })
     assert.equal(quote.outcome, 'checkout', 'the corporate package has a price to pay')
     if (quote.outcome !== 'checkout') throw new Error('unreachable')
     const params = {

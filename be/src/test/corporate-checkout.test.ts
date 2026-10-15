@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { frontendOrigin, inTenantContext, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { ownAccountId, type StripeFake } from './stripe-fake'
+import { billed } from './billing-details-fixture'
 import {
   completedEvent,
   deliverTo,
@@ -97,8 +98,8 @@ describe('buying a corporate package over HTTP', { skip: integrationTestsEnabled
       body: JSON.stringify(body),
     })
 
-  const buyCorporate = (who: { headers: Record<string, string> }, packageId = packageAtOne, extra: Record<string, unknown> = {}) =>
-    checkout(who.headers, { package_kind: 'corporate', package_id: packageId, ...extra })
+  const buyCorporate = async (who: { headers: Record<string, string> }, packageId = packageAtOne, extra: Record<string, unknown> = {}) =>
+    checkout(who.headers, await billed(harness.app, who.headers, { package_kind: 'corporate', package_id: packageId, ...extra }))
 
   const requestsOf = (who: Member) =>
     harness.db.select().from(schema.corporateRequests).where(eq(schema.corporateRequests.clientId, who.clientId))
@@ -145,6 +146,7 @@ describe('buying a corporate package over HTTP', { skip: integrationTestsEnabled
       await harness.db.execute(sql`DELETE FROM corporate_requests WHERE client_id IN (${clientIds})`)
       await forgetPurchases(harness, clientIds)
       await harness.db.execute(sql`DELETE FROM corporate_packages WHERE created_by_staff_id IN (${staffIds})`)
+      await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
       await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)

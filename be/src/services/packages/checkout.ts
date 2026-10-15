@@ -18,6 +18,7 @@ import {
   type CheckoutQuote,
 } from '../billing/checkout-session'
 import { openSettledPurchase } from '../billing/purchases'
+import type { BillingAddress } from '../billing-details/billing-details'
 import {
   promoCodeReduction,
   promotionReduction,
@@ -121,6 +122,12 @@ export interface PackageCheckoutInput {
   instructorId?: string
   /** Buy the Cross-Location Add-On with the plan — one session, two line items (§5). */
   crossLocationAddOn?: boolean
+  /**
+   * The member's chosen Billing details, resolved as theirs (#402). A sale
+   * granted on the spot is billed to them here; a paid one carries them to the
+   * Purchase its checkout session opens.
+   */
+  billTo: BillingAddress
 }
 
 export type PackageCheckout = CheckoutQuote<{ clientPackageId: string }>
@@ -193,6 +200,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
           kind: 'class_package',
           metadata: { kind: 'class_package', client_id: clientId, package_id: pkg.id },
           lines: [saleLine({ description: pkg.name, listPriceSgd: pkg.priceSgd, reductions: [promotion] })],
+          billTo: input.billTo,
         })
         const result = await purchaseFreeTrial(tenantId, clientId, pkg.id, sale.id)
         return { outcome: 'granted', clientPackageId: result.clientPackageId }
@@ -288,6 +296,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
         location_id: locationId ?? '',
       },
       lines,
+      billTo: input.billTo,
     })
     const granted = await grantFreePurchase(tenantId, sale.id, {
       clientId,

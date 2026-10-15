@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { stripeWebhookPath, type StripeFake } from './stripe-fake'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.receipts-every-kind.test`
@@ -185,7 +186,11 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
   const post = (headers: Record<string, string>, path: string, body: unknown) =>
     harness.app.request(path, { method: 'POST', headers: { ...headers, ...json }, body: JSON.stringify(body) })
 
-  const buyPackage = (who: Member, body: Record<string, unknown>) => post(who.headers, '/api/v1/me/checkout/package', body)
+  /** A member's checkout at `path`, naming their Billing details as every member purchase does (#402). */
+  const checkout = async (who: Member, path: string, body: Record<string, unknown>) =>
+    post(who.headers, path, await billed(harness.app, who.headers, body))
+
+  const buyPackage = (who: Member, body: Record<string, unknown>) => checkout(who, '/api/v1/me/checkout/package', body)
 
   /** How each intent was paid, as the provider will say when it is retrieved. A Visa ending 4242 unless named. */
   const cards = new Map<string, { brand: string; last4: string }>()
@@ -396,6 +401,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
       await harness.db.execute(sql`DELETE FROM merch WHERE title LIKE ${`${NAME}%`}`)
       await harness.db.execute(sql`DELETE FROM rooms WHERE location_id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM locations WHERE id IN (${locations})`)
+      await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
       await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
@@ -462,7 +468,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
   test('INV-23 a paid workshop place gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
     const w = await workshop('85.50')
     const zoe = await member()
-    const event = await pay(await post(zoe.headers, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }))
+    const event = await pay(await checkout(zoe, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }))
     const receipt = await assertPaidReceipt(zoe, {
       kind: 'workshop',
       lines: [line(w.name, '85.50')],
@@ -474,7 +480,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
   test('INV-24 paid Merch gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
     const mat = await merchItem('42.00')
     const kai = await member()
-    const event = await pay(await post(kai.headers, '/api/v1/me/checkout/merch', { merch_id: mat.id }))
+    const event = await pay(await checkout(kai, '/api/v1/me/checkout/merch', { merch_id: mat.id }))
     const receipt = await assertPaidReceipt(kai, {
       kind: 'merch',
       lines: [line(mat.name, '42.00')],
@@ -486,7 +492,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
   test('INV-25 a standalone Cross-Location Add-On gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
     const eli = await member()
     const held = await holdsUnlimited(eli, 3)
-    const event = await pay(await post(eli.headers, '/api/v1/me/checkout/cross-location', { client_package_id: held }))
+    const event = await pay(await checkout(eli, '/api/v1/me/checkout/cross-location', { client_package_id: held }))
     const receipt = await assertPaidReceipt(eli, {
       kind: 'cross_location_add_on',
       lines: [line('Cross-Location Add-On', RATE, { quantity: 3, amountSgd: '60.00' })],
@@ -532,7 +538,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
   test('INV-29 a free workshop place gives the member one S$0.00 Receipt with no payments', async () => {
     const w = await workshop('0.00')
     const sam = await member()
-    await assertFreeReceipt(sam, await post(sam.headers, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }), {
+    await assertFreeReceipt(sam, await checkout(sam, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }), {
       kind: 'workshop',
       lines: [line(w.name, '0.00')],
     })
@@ -541,7 +547,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
   test('INV-30 free Merch gives the member one S$0.00 Receipt with no payments', async () => {
     const sticker = await merchItem('0.00')
     const kai = await member()
-    await assertFreeReceipt(kai, await post(kai.headers, '/api/v1/me/checkout/merch', { merch_id: sticker.id }), {
+    await assertFreeReceipt(kai, await checkout(kai, '/api/v1/me/checkout/merch', { merch_id: sticker.id }), {
       kind: 'merch',
       lines: [line(sticker.name, '0.00')],
     })

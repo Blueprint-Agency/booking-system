@@ -26,8 +26,9 @@ export type TenantMailIdentity = {
 }
 
 type IdentityRow = {
-  tenant_name: string | null
-  from_name: string | null
+  tenant_name: string
+  /** Null only where the studio has no settings row yet: the column is NOT NULL (migration 0115). */
+  business_name: string | null
   reply_to: string | null
 }
 
@@ -64,13 +65,20 @@ export async function tenantMailIdentity(tenantId: string): Promise<TenantMailId
   // `from_email` is in the function's result and is not selected — see the note
   // on `TenantMailIdentity`. The column is not honourable until a domain can be
   // verified, and reading it would make a tenant look configured when it isn't.
+  // Nor is `from_name`: the Business name supersedes it (#400), and is never
+  // blank wherever a settings row exists (NOT NULL, trimmed when saved, and a
+  // blank one filled by migration 0115's trigger), so it would never be reached.
   const rows = (await db.execute(
-    sql`SELECT tenant_name, from_name, reply_to FROM current_tenant_mail_identity()`,
+    sql`SELECT tenant_name, business_name, reply_to FROM current_tenant_mail_identity()`,
   )) as unknown as IdentityRow[]
 
+  // The Business name (#400): the name the studio trades under, which its
+  // admin sets on Business details. A studio with no settings row yet has
+  // none, and is named as it would be once one is written: by its Domain name.
+  // No row at all (no Tenant context open) is the platform's name.
   const row = rows[0]
   const value: TenantMailIdentity = {
-    fromName: row?.from_name || row?.tenant_name || PLATFORM_MAIL_FROM_NAME,
+    fromName: (row?.business_name ?? row?.tenant_name) || PLATFORM_MAIL_FROM_NAME,
     replyTo: row?.reply_to || null,
   }
 
@@ -79,9 +87,9 @@ export async function tenantMailIdentity(tenantId: string): Promise<TenantMailId
 }
 
 /**
- * The studio's own name, wherever the platform speaks on its behalf — the line
- * copy on a Stripe charge, the inviter shown on an invitation, an email
- * variable.
+ * The studio's own name, its Business name, wherever the platform speaks on
+ * its behalf — the line copy on a Stripe charge (and so the member's card
+ * statement), the inviter shown on an invitation, an email variable.
  *
  * Same lookup and the same fallback as the envelope, deliberately: a member
  * reading a bank statement and a member reading a booking confirmation should

@@ -1,4 +1,5 @@
 import {
+  Building2,
   CalendarCheck,
   ReceiptText,
   Settings,
@@ -30,6 +31,7 @@ export const ACCOUNT_SECTIONS: AccountNavItem[] = [
   { href: "/account/packages", label: "My packages", hint: "Active, not started and ended", icon: Ticket, isActive: prefix("/account/packages") },
   { href: "/account/merch", label: "Merch", hint: "Items to collect at the studio", icon: ShoppingBag, isActive: prefix("/account/merch") },
   { href: "/account/receipts", label: "Receipts", hint: "The studio's receipt for each purchase", icon: ReceiptText, isActive: prefix("/account/receipts") },
+  { href: "/account/billing-details", label: "Billing details", hint: "Names and addresses on your receipts", icon: Building2, isActive: prefix("/account/billing-details") },
   { href: "/account/profile", label: "Profile & security", hint: "Details, saved cards, password", icon: UserCircle, isActive: prefix("/account/profile") },
   { href: "/account/settings", label: "General settings", hint: "Theme and text size", icon: Settings, isActive: prefix("/account/settings") },
 ];

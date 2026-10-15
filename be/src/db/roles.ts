@@ -81,15 +81,15 @@ export async function ensureAppRole(sql: Sql, password: string): Promise<void> {
   // answers only for the tenant whose context is open, so the one read the app
   // genuinely needs cannot become a read of every studio's identity.
   //
-  // The receipt details (#391) are published too: the prefix, legal name,
-  // registration number, address and footer are printed on every Receipt the
-  // studio hands a member, so the app reads them directly to copy them onto
-  // one. They are not served to visitors, so they are not in
+  // The Business details (#391, #398) are published too: the Business name,
+  // prefix, registration number, address and footer are printed on every
+  // Receipt the studio hands a member, so the app reads them directly to copy
+  // them onto one. They are not served to visitors, so they are not in
   // `TenantDisplaySettings`.
   await sql.unsafe(`REVOKE SELECT ON tenant_settings FROM ${role}`)
   await sql.unsafe(`
-    GRANT SELECT (tenant_id, display_name, logo_url, favicon_url, og_image_url, tagline, theme, copy,
-                  receipt_prefix, receipt_legal_name, receipt_registration_number, receipt_address, receipt_footer)
+    GRANT SELECT (tenant_id, display_name, logo_url, favicon_url, og_image_url, tagline, theme, copy, business_name,
+                  receipt_prefix, receipt_registration_number, receipt_address, receipt_footer)
     ON tenant_settings TO ${role}
   `)
   await sql.unsafe(

@@ -82,6 +82,8 @@ export interface StudioReceiptSummary extends ReceiptSummary {
   /** The buyer as the Receipt names them; emptied by a permanent deletion. */
   buyerName: string | null
   buyerEmail: string | null
+  /** Who the sale is billed to (#401), or null where no Billing details were chosen; emptied by a permanent deletion. */
+  billTo: ReceiptRow['billTo']
 }
 
 /** What narrows the studio's Receipts: the admin's search and filters. */
@@ -140,6 +142,7 @@ const studioSummary = (r: ReceiptRow): StudioReceiptSummary => ({
   clientId: r.clientId,
   buyerName: r.buyerName,
   buyerEmail: r.buyerEmail,
+  billTo: r.billTo,
 })
 
 /**

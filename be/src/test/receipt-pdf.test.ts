@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { stripeWebhookPath, type StripeFake } from './stripe-fake'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.receipt-pdf.test`
@@ -31,7 +32,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
   let schema!: typeof import('../db/schema')
   let fake!: StripeFake
 
-  type Studio = { id: string; slug: string; packageId: string; packageName: string; displayName: string }
+  type Studio = { id: string; slug: string; packageId: string; packageName: string; displayName: string; businessName: string }
   type Member = { clientId: string; email: string; headers: Record<string, string> }
   let one!: Studio
   let two!: Studio
@@ -65,7 +66,12 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
       .insert(schema.classPackages)
       .values({ tenantId: tenant.id, name: packageName, kind: 'credit_bundle', credits: 10, validityDays: 90, priceSgd: '150.00' })
       .returning({ id: schema.classPackages.id })
-    return { ...tenant, packageId: paid!.id, packageName, displayName }
+    // The name a Receipt names the studio by (#403): its Business name, as issued.
+    const [named] = await harness.db
+      .select({ businessName: schema.tenantSettings.businessName })
+      .from(schema.tenantSettings)
+      .where(eq(schema.tenantSettings.tenantId, tenant.id))
+    return { ...tenant, packageId: paid!.id, packageName, displayName, businessName: named!.businessName }
   }
 
   let members = 0
@@ -86,7 +92,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
       await harness.app.request('/api/v1/me/checkout/package', {
         method: 'POST',
         headers: { ...who.headers, ...json },
-        body: JSON.stringify({ package_kind: 'class', package_id: at.packageId }),
+        body: JSON.stringify(await billed(harness.app, who.headers, { package_kind: 'class', package_id: at.packageId })),
       }),
       200,
     )
@@ -168,6 +174,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
+    await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM client_auth_users WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM class_packages WHERE name LIKE ${`${NAME}%`}`)
@@ -187,7 +194,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
 
     const text = await pdfText(bytes)
     assert.ok(text.includes(receipt.number), `the receipt number in: ${text}`)
-    assert.ok(text.includes(one.displayName), 'the studio')
+    assert.ok(text.includes(one.businessName), 'the studio')
     assert.ok(text.includes('Mia Tan') && text.includes(mia.email), 'the member')
     assert.ok(text.includes(one.packageName), 'the line')
     assert.ok(text.includes('S$150.00'), 'the total')
@@ -245,7 +252,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
         assert.equal(res.status, 200, 'the PDF is always there')
         const bytes = Buffer.from(await res.arrayBuffer())
         const text = await pdfText(new Uint8Array(bytes))
-        assert.ok(text.includes(one.displayName), 'the studio is named either way')
+        assert.ok(text.includes(one.businessName), 'the studio is named either way')
         assert.ok(text.includes(receipt.number))
         return bytes.includes('/Subtype /Image')
       }
@@ -286,12 +293,14 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
       displayNumber: 'R-000042',
       issuedAt: new Date('2026-10-01T02:00:00Z'),
       sellerName: one.displayName,
-      sellerLegalName: null,
+      sellerBusinessName: null,
       sellerRegistrationNumber: null,
       sellerAddress: null,
       sellerFooter: null,
+      sellerEmail: null,
       buyerName: 'Mia Tan',
       buyerEmail: `free@${DOMAIN}`,
+      billTo: null,
       kind: 'class_package',
       lines: [{ description: 'Trial class', quantity: 1, listPriceSgd: '0.00', discountSgd: '0.00', discounts: [], amountSgd: '0.00' }],
       subtotalSgd: '0.00',
@@ -313,5 +322,59 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
 
     const refunded = await pdfText(await receiptPdf({ ...free, refundedAt: new Date('2026-10-05T03:00:00Z') }))
     assert.ok(refunded.includes('Refunded on 5 Oct 2026'), refunded)
+  })
+
+  test('INV-86 every page of a Receipt credits ReserveToday and names its Receipt and page, and a promo code reads as one', async () => {
+    const { receiptPdf } = await import('../services/receipts/pdf')
+    const line = { description: 'Workshop seat', quantity: 1, listPriceSgd: '45.00', discountSgd: '0.00', discounts: [], amountSgd: '45.00' }
+    const long: import('../services/receipts/issue').ReceiptRow = {
+      tenantId: one.id,
+      id: randomUUID(),
+      purchaseId: randomUUID(),
+      clientId: null,
+      number: 77,
+      displayNumber: 'R-000077',
+      issuedAt: new Date('2026-10-01T02:00:00Z'),
+      sellerName: one.displayName,
+      sellerBusinessName: null,
+      sellerRegistrationNumber: null,
+      sellerAddress: null,
+      sellerFooter: null,
+      sellerEmail: null,
+      buyerName: 'Mia Tan',
+      buyerEmail: `long@${DOMAIN}`,
+      billTo: null,
+      kind: 'workshop',
+      lines: [
+        {
+          description: 'Grip socks',
+          quantity: 2,
+          listPriceSgd: '12.00',
+          discountSgd: '5.00',
+          discounts: [{ source: 'promo_code', id: randomUUID(), label: 'WELCOME5', amountSgd: '5.00' }],
+          amountSgd: '19.00',
+        },
+        ...Array.from({ length: 30 }, () => line),
+      ],
+      subtotalSgd: '1374.00',
+      discountSgd: '5.00',
+      totalSgd: '1369.00',
+      payments: [{ method: 'paynow', cardBrand: null, cardLast4: null, wallet: null, amountSgd: '1369.00', paidAt: '2026-10-01T02:00:00Z' }],
+      refundedAt: null,
+    }
+
+    const bytes = await receiptPdf(long)
+    const { extractText, getDocumentProxy } = await import('unpdf')
+    const { text: pages } = await extractText(await getDocumentProxy(new Uint8Array(bytes)), { mergePages: false })
+    assert.ok(pages.length >= 2, `thirty-one lines run onto a second page, not ${pages.length}`)
+    pages.forEach((page, i) => {
+      assert.ok(page.includes('Powered by ReserveToday · reservetoday.app'), `page ${i + 1} credits the platform: ${page}`)
+      assert.ok(page.includes(`R-000077 · Page ${i + 1} of ${pages.length}`), `page ${i + 1} names its Receipt and page: ${page}`)
+    })
+    const all = pages.join('\n')
+    assert.ok(all.includes('Promo code WELCOME5'), 'a code is named as a promo code')
+    assert.ok(all.includes('S$24.00'), "the line at its List Price times its quantity, before the code's discount")
+    assert.ok(all.includes('S$1369.00'), 'the total paid')
+    assert.equal(Buffer.from(bytes).includes('/Subtype /Image'), false, 'the mark is drawn, so a studio without a logo embeds no image')
   })
 })

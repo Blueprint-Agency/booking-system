@@ -13,6 +13,7 @@ import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
 import { lockMemberTime, memberClash, type HeldWindow } from '../bookings/member-time'
 import { openSettledPurchase } from '../billing/purchases'
+import type { BillingAddress } from '../billing-details/billing-details'
 import type { PurchaseLine } from '../billing/purchase-lines'
 import { bestPrice, listActivePromotionsFor } from '../packages/promotions'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -279,6 +280,8 @@ export async function bookWorkshopFree(
     appliedPromoCodeId?: string | null
     /** The place as its Purchase records it (#382), adding up to S$0.00. */
     lines: PurchaseLine[]
+    /** The member's chosen Billing details (#402), copied onto the Purchase. */
+    billTo?: BillingAddress | null
   },
 ): Promise<{ bookingId: string; qrToken: string; code: string }> {
   const [tier] = await db
@@ -337,6 +340,7 @@ export async function bookWorkshopFree(
         applied_promotion_id: eff.appliedPromotionId ?? '',
       },
       lines: args.lines,
+      billTo: args.billTo ?? null,
     })
 
     return insertWorkshopBooking(tenantId, {

@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 import {
   RECEIPT_DETAIL_LIMITS,
+  businessNameProblem,
   emptyReceiptDetailsDraft,
   getReceiptDetails,
   receiptDetailsDraft,
@@ -18,12 +19,13 @@ import {
 } from "@/lib/receipt-details";
 
 /**
- * Receipt details (#391): the studio's settings for what its Receipts carry.
- * The number prefix, with a live preview of the number the next Receipt will
- * take, and the business details printed under the studio's name and at the
- * foot. Studio admins only; the backend refuses instructors.
+ * Business details (#391, #398): what the studio's business documents say
+ * about it. The Business name it trades under, the registration number,
+ * address and footer note its Receipts print, and the Receipt number prefix,
+ * with a live preview of the number the next Receipt will take. Studio admins
+ * only; the backend refuses instructors.
  */
-export default function ReceiptDetailsPage() {
+export default function BusinessDetailsPage() {
   const { api } = useWorkspace();
   const [saved, setSaved] = useState<ReceiptDetailsDraft>(emptyReceiptDetailsDraft);
   const [draft, setDraft] = useState<ReceiptDetailsDraft>(emptyReceiptDetailsDraft);
@@ -36,7 +38,7 @@ export default function ReceiptDetailsPage() {
   const loading = answered !== attempt;
 
   const show = useCallback((view: Awaited<ReturnType<typeof getReceiptDetails>>) => {
-    const next = receiptDetailsDraft(view.receipt_details);
+    const next = receiptDetailsDraft(view.business_details);
     setSaved(next);
     setDraft(next);
     setNextSequence(view.next_sequence);
@@ -64,17 +66,18 @@ export default function ReceiptDetailsPage() {
   }, [api, show, attempt]);
 
   const prefixError = receiptPrefixProblem(draft.prefix);
+  const nameError = businessNameProblem(draft.business_name);
   const dirty = (Object.keys(draft) as Array<keyof ReceiptDetailsDraft>).some(
     (key) => draft[key] !== saved[key],
   );
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!api || prefixError || !dirty) return;
+    if (!api || prefixError || nameError || !dirty) return;
     setSaving(true);
     try {
       show(await saveReceiptDetails(api, receiptDetailsPayload(draft)));
-      toast.success("Receipt details saved. Receipts issued from now on carry them.");
+      toast.success("Business details saved. Receipts issued from now on carry them.");
     } catch (err) {
       // A refused save carries its own sentence ({ error, message }).
       toast.error(
@@ -90,7 +93,7 @@ export default function ReceiptDetailsPage() {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading receipt details…
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading business details…
       </div>
     );
   }
@@ -115,11 +118,64 @@ export default function ReceiptDetailsPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
-        title="Receipt details"
-        description="What your studio’s Receipts carry. Changes apply to Receipts issued after you save; Receipts already issued keep what they were issued with."
+        title="Business details"
+        description="What your studio’s Receipts say about your business. Changes apply to Receipts issued after you save; Receipts already issued keep what they were issued with."
       />
 
       <form onSubmit={handleSave} className="space-y-6">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
+          <header className="mb-4">
+            <h2 className="text-base font-semibold text-ink">Your business</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              The Business name is the name your studio trades under. The rest are printed beside it; leave any
+              you don’t need blank.
+            </p>
+          </header>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="business-name">Business name</Label>
+              <Input
+                id="business-name"
+                {...field("business_name")}
+                maxLength={RECEIPT_DETAIL_LIMITS.business_name}
+                required
+                aria-invalid={Boolean(nameError)}
+                aria-describedby="business-name-help"
+              />
+              <p id="business-name-help" className="text-xs text-muted">
+                {nameError ? <span className="text-error">{nameError}</span> : "Shown as the seller on every Receipt."}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="receipt-registration">Registration number</Label>
+              <Input
+                id="receipt-registration"
+                {...field("registration_number")}
+                maxLength={RECEIPT_DETAIL_LIMITS.registration_number}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="receipt-address">Address</Label>
+              <Textarea
+                id="receipt-address"
+                {...field("address")}
+                rows={3}
+                maxLength={RECEIPT_DETAIL_LIMITS.address}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="receipt-footer">Footer note</Label>
+              <Textarea
+                id="receipt-footer"
+                {...field("footer")}
+                rows={3}
+                maxLength={RECEIPT_DETAIL_LIMITS.footer}
+              />
+              <p className="text-xs text-muted">Printed at the foot of every Receipt.</p>
+            </div>
+          </div>
+        </section>
+
         <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Receipt number</h2>
@@ -152,53 +208,11 @@ export default function ReceiptDetailsPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
-          <header className="mb-4">
-            <h2 className="text-base font-semibold text-ink">Business details</h2>
-            <p className="mt-0.5 text-xs text-muted">
-              Printed under your studio’s name. Leave any you don’t need blank.
-            </p>
-          </header>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="receipt-legal-name">Legal name</Label>
-              <Input id="receipt-legal-name" {...field("legal_name")} maxLength={RECEIPT_DETAIL_LIMITS.legal_name} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="receipt-registration">Registration number</Label>
-              <Input
-                id="receipt-registration"
-                {...field("registration_number")}
-                maxLength={RECEIPT_DETAIL_LIMITS.registration_number}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="receipt-address">Address</Label>
-              <Textarea
-                id="receipt-address"
-                {...field("address")}
-                rows={3}
-                maxLength={RECEIPT_DETAIL_LIMITS.address}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="receipt-footer">Footer note</Label>
-              <Textarea
-                id="receipt-footer"
-                {...field("footer")}
-                rows={3}
-                maxLength={RECEIPT_DETAIL_LIMITS.footer}
-              />
-              <p className="text-xs text-muted">Printed at the foot of every Receipt.</p>
-            </div>
-          </div>
-        </section>
-
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" disabled={!dirty || saving} onClick={() => setDraft(saved)}>
             Reset
           </Button>
-          <Button type="submit" disabled={!dirty || saving || Boolean(prefixError)}>
+          <Button type="submit" disabled={!dirty || saving || Boolean(prefixError) || Boolean(nameError)}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save
           </Button>
         </div>

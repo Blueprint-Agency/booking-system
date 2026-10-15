@@ -472,21 +472,21 @@ describe('moving a studio between deployments', () => {
     // restore that dropped them would number it R- and print none of them.
     const detailsAt = async (tenantId: string) => {
       const [row] = await harness.db.execute<Record<string, string | null>>(sql`
-      SELECT receipt_prefix, receipt_legal_name, receipt_registration_number, receipt_address, receipt_footer
+      SELECT receipt_prefix, business_name, receipt_registration_number, receipt_address, receipt_footer
       FROM tenant_settings WHERE tenant_id = ${tenantId}
     `)
       return row
     }
     const details = {
       receipt_prefix: 'RS',
-      receipt_legal_name: 'Restored Studio Pte. Ltd.',
+      business_name: 'Restored Studio Pte. Ltd.',
       receipt_registration_number: 'REG-0001',
       receipt_address: '3 Example Lane, Singapore 000003',
       receipt_footer: 'Restored with care.',
     }
     const source = await studioWithData(`receiptdetails-${Date.now()}`)
     await harness.db.execute(sql`
-    UPDATE tenant_settings SET receipt_prefix = ${details.receipt_prefix}, receipt_legal_name = ${details.receipt_legal_name},
+    UPDATE tenant_settings SET receipt_prefix = ${details.receipt_prefix}, business_name = ${details.business_name},
       receipt_registration_number = ${details.receipt_registration_number}, receipt_address = ${details.receipt_address},
       receipt_footer = ${details.receipt_footer}
     WHERE tenant_id = ${source}
@@ -503,7 +503,7 @@ describe('moving a studio between deployments', () => {
     for (const column of Object.keys(details)) delete older.rows.tenant_settings![0]![column]
     const given = await emptyTenant(`receiptdetails-old-${Date.now()}`)
     await harness.db.execute(sql`
-    INSERT INTO tenant_settings (tenant_id, display_name, receipt_prefix, receipt_legal_name)
+    INSERT INTO tenant_settings (tenant_id, display_name, receipt_prefix, business_name)
     VALUES (${given}, 'Given', 'GV', 'Given Studio Pte. Ltd.')
   `)
     await transfer.importTenant(given, older)
@@ -511,12 +511,30 @@ describe('moving a studio between deployments', () => {
       { ...(await detailsAt(given)) },
       {
         receipt_prefix: 'GV',
-        receipt_legal_name: 'Given Studio Pte. Ltd.',
+        business_name: 'Given Studio Pte. Ltd.',
         receipt_registration_number: null,
         receipt_address: null,
         receipt_footer: null,
       },
     )
+  })
+
+  test('NTF-26 a studio restored from an archive sends its next email under the Business name the archive carried, though it had just sent one under the name it had before', options, async () => {
+    const { withTenant } = await import('../db')
+    const { tenantMailIdentity } = await import('../services/tenants/mail-identity')
+    const fromName = (tenantId: string) => withTenant(tenantId, async () => (await tenantMailIdentity(tenantId)).fromName)
+
+    const source = await studioWithData(`mailname-${Date.now()}`)
+    await harness.db.execute(sql`UPDATE tenant_settings SET business_name = 'Archived Studio Pte. Ltd.' WHERE tenant_id = ${source}`)
+    const archive = await transfer.exportTenant(source)
+
+    const target = await emptyTenant(`mailname-dst-${Date.now()}`)
+    await harness.db.execute(sql`
+    INSERT INTO tenant_settings (tenant_id, display_name, business_name) VALUES (${target}, 'Waiting', 'Waiting Studio')
+  `)
+    assert.equal(await fromName(target), 'Waiting Studio', 'an email sent while it waited goes out under the name it was given')
+    await transfer.importTenant(target, archive)
+    assert.equal(await fromName(target), 'Archived Studio Pte. Ltd.', 'the next one, under the restored Business name')
   })
 
   test('a studio restored from an archive gets its branding too', options, async () => {

@@ -74,9 +74,10 @@ export interface CreateTenantInput {
    *  import refuses a studio that already holds any staff rows. */
   admin_email?: string;
   admin_name?: string;
-  /** What the studio's Receipts carry from its first one (#391). Omitted
-   *  leaves the default prefix and no details, for its admin to set. */
-  receipt_details?: ReceiptDetails;
+  /** The studio's Business details from its first Receipt (#391, #398).
+   *  Omitted, or a null Business name, trades under the Domain name (`name`);
+   *  the rest omitted leaves the default prefix and no details. */
+  business_details?: ReceiptDetails;
 }
 
 export interface CreatedTenant {

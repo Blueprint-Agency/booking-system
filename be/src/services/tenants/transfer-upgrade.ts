@@ -19,8 +19,11 @@ const ASSIGNED_DAYS = ['annual_leave_days', 'medical_leave_days', 'study_leave_d
  * `leave_pools` renamed `instructor_id` to `staff_user_id` — the same value,
  * since an instructor's key is its staff user id — and the Assigned Days moved
  * from `instructors` onto `staff_users`, where 0089 gave everyone else 14/14/7.
+ *
+ * `archived.tenantName` is the studio's name as the archive's manifest records
+ * it, for a step that names the studio as its migration did.
  */
-export function upgradeArchiveRows(rows: Readonly<Rows>): Rows {
+export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?: string } = {}): Rows {
   const out: Rows = { ...rows }
 
   for (const table of ['leave_requests', 'leave_pools']) {
@@ -49,6 +52,26 @@ export function upgradeArchiveRows(rows: Readonly<Rows>): Rows {
     if (rows.staff_users) {
       out.staff_users = rows.staff_users.map(row => ({ ...row, ...days.get(row.id) }))
     }
+  }
+
+  // Migration 0115 (#398): the Legal name became the Business name, and a
+  // studio named as 0115 named it: its Legal name, else its display name, else
+  // the studio's name as the archive recorded it (`tenants.name`). A Receipt's
+  // copy is renamed as it is.
+  const settings = rows.tenant_settings
+  if (settings?.some(r => 'receipt_legal_name' in r)) {
+    const named = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null)
+    out.tenant_settings = settings.map(({ receipt_legal_name, ...rest }) => {
+      if ('business_name' in rest) return rest
+      const business = named(receipt_legal_name) ?? named(rest.display_name) ?? named(archived.tenantName)
+      return business ? { ...rest, business_name: business } : rest
+    })
+  }
+  const receipts = rows.receipts
+  if (receipts?.some(r => 'seller_legal_name' in r)) {
+    out.receipts = receipts.map(({ seller_legal_name, ...rest }) =>
+      seller_legal_name === undefined ? rest : { ...rest, seller_business_name: seller_legal_name },
+    )
   }
 
   return out

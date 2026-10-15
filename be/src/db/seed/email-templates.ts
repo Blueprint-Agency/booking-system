@@ -2,6 +2,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { sql } from 'drizzle-orm'
 import * as schema from '../schema'
 import { tenantOrigin } from '../../lib/allowed-origins'
+import { STUDIO_NAME_VARIABLE } from '../../services/notifications/variables'
 import { buildEmailTemplates } from './email-copy'
 import { provisioningFor } from './provisioning'
 import type { SeededTenant } from './tenants'
@@ -70,9 +71,11 @@ export async function seedEmailTemplates(db: TemplateWriter, tenant: SeededTenan
   const templates = buildEmailTemplates({
     clientUrl,
     portalUrl,
-    // Whose words these are. The name is the tenant's own, so a studio's
-    // members never read another studio's name in their inbox; the footer is
-    // provisioning data (`./provisioning.ts`) and is omitted for a tenant that
+    // Whose words these are. The name is not written in at all (#400): the
+    // copy says `{{studio_name}}`, which `sendTemplatedEmail` fills with the
+    // studio's Business name as it is when each email is sent, so a rename
+    // reaches the next email and a studio's members never read another
+    // studio's name in their inbox. The footer is provisioning data (`./provisioning.ts`) and is omitted for a tenant that
     // has none, because naming no premises beats naming the wrong ones.
     //
     // Looked up **by id, never by slug**. `provisioningFor` prefers the slug,
@@ -82,7 +85,7 @@ export async function seedEmailTemplates(db: TemplateWriter, tenant: SeededTenan
     // fixture's slug would otherwise get the fixture's premises printed in the
     // footer of all thirty of its emails. An id is generated and cannot be
     // typed in.
-    studio: { name: tenant.name, footer: provisioningFor({ id: tenant.id })?.emailFooter },
+    studio: { name: `{{${STUDIO_NAME_VARIABLE}}}`, footer: provisioningFor({ id: tenant.id })?.emailFooter },
   })
   for (const t of templates) {
     await db.execute(sql`

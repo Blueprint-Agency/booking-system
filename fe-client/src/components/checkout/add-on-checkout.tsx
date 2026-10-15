@@ -16,6 +16,8 @@ import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
 import { roundsUpAPartMonth } from "@/lib/add-on-months";
 import { CrossLocationBlock, type AddOnDisabledReason } from "./cross-location-block";
 import { PayButton, StripeFootnote } from "./pay-button";
+import { BillingDetailsPicker } from "./billing-details-picker";
+import { billToPayLabel, type BillToStatus } from "@/lib/bill-to-status";
 
 /**
  * The part-months sentence, shown before the arithmetic so the surprising part
@@ -65,6 +67,9 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
   const [loadingQuote, setLoadingQuote] = useState(Boolean(planId));
   const [error, setError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
+  // Who the Add-On is billed to (#401): one of the member's Billing details.
+  const [billingDetailsId, setBillingDetailsId] = useState<string | null>(null);
+  const [billToStatus, setBillToStatus] = useState<BillToStatus>("loading");
 
   useEffect(() => {
     if (!planId) return;
@@ -114,7 +119,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
       const res = await fetchApi("/me/checkout/cross-location", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ client_package_id: planId }),
+        body: JSON.stringify({ client_package_id: planId, billing_details_id: billingDetailsId ?? undefined }),
       });
       const data = await res.json();
       if (!res.ok || !data.url) {
@@ -178,6 +183,11 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
                 totalSgd={quote?.price_sgd}
               />
             )}
+
+            {/* Bill to (#401) — only once there is something to pay for. */}
+            {quote && (
+              <BillingDetailsPicker value={billingDetailsId} onChange={setBillingDetailsId} onStatus={setBillToStatus} />
+            )}
           </div>
 
           {error && (
@@ -195,8 +205,11 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
               <PayButton
                 onClick={handleProceed}
                 busy={redirecting}
-                disabled={false}
-                label={`Pay ${formatCurrency(Number(quote.price_sgd))}`}
+                disabled={!billingDetailsId}
+                label={
+                  billToPayLabel(billToStatus, Boolean(billingDetailsId)) ??
+                  `Pay ${formatCurrency(Number(quote.price_sgd))}`
+                }
               />
               <StripeFootnote />
             </>

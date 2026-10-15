@@ -51,7 +51,12 @@ export interface EmailTemplateSeed {
  * default.
  */
 export interface EmailStudio {
-  /** The studio's own name, as its members know it. */
+  /**
+   * How the copy names the studio. A studio's stored templates are given
+   * `{{studio_name}}` (#400), filled with its Business name at send time; a
+   * literal name is what studios created before #400 were given, and what the
+   * previews and the copy's own checks build with.
+   */
   name: string
   /**
    * The footer line: where the studio is. Stored with the copy (as an

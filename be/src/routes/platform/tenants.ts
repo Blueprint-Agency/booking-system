@@ -31,7 +31,7 @@ import {
 import { expectedKeyPrefix } from '../../services/billing/provider-setup'
 import { env } from '../../env'
 import { logger } from '../../shared/logger'
-import { receiptDetailsBody, receiptDetailsInput } from '../receipt-details'
+import { businessDetailsBody, businessDetailsInput } from '../business-details'
 
 /**
  * The super portal's route surface: create a studio, list them, change one's
@@ -121,10 +121,11 @@ const createBody = z.object({
   admin_name: z.string().max(200).optional(),
   // How long the first Term runs from today. Omitted leaves it open-ended.
   term_months: z.union([z.literal(3), z.literal(6), z.literal(12)]).optional(),
-  // What the studio's Receipts carry from its first one (#391): the number
-  // prefix (default `R`), legal name, registration number, address and footer.
-  // Its admin can change them later in the portal's studio settings.
-  receipt_details: receiptDetailsBody.optional(),
+  // The studio's Business details (#391, #398): the Business name it trades
+  // under (the Domain name, `name`, when blank or omitted), and the Receipt
+  // prefix (default `R`), registration number, address and footer. Its admin
+  // can change them later on the portal's Business details page.
+  business_details: businessDetailsBody.optional(),
 })
 
 /** A calendar date, `YYYY-MM-DD`, that exists. */
@@ -222,7 +223,7 @@ const app = new Hono()
       adminEmail: body.admin_email,
       adminName: body.admin_name,
       termMonths: body.term_months,
-      ...(body.receipt_details ? { receiptDetails: receiptDetailsInput(body.receipt_details) } : {}),
+      ...(body.business_details ? { businessDetails: businessDetailsInput(body.business_details) } : {}),
     })
 
     logger.info(

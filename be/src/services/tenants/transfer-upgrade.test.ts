@@ -40,6 +40,40 @@ test('an archive already in the current shape is returned as it was', () => {
   assert.deepEqual(upgradeArchiveRows(current), current)
 })
 
+test('TEN-39 an archive from before #398 restores its Legal name as the Business name, and its Receipts’ Legal name as their Business name', () => {
+  const rows = upgradeArchiveRows({
+    tenant_settings: [{ tenant_id: ADA, display_name: 'Shown', receipt_prefix: 'NW', receipt_legal_name: 'Northwind Pte. Ltd.' }],
+    receipts: [
+      { id: 'r1', seller_name: 'Shown', seller_legal_name: 'Northwind Pte. Ltd.' },
+      { id: 'r2', seller_name: 'Shown', seller_legal_name: null },
+    ],
+  })
+  assert.deepEqual(rows.tenant_settings, [
+    { tenant_id: ADA, display_name: 'Shown', receipt_prefix: 'NW', business_name: 'Northwind Pte. Ltd.' },
+  ])
+  assert.deepEqual(rows.receipts, [
+    { id: 'r1', seller_name: 'Shown', seller_business_name: 'Northwind Pte. Ltd.' },
+    { id: 'r2', seller_name: 'Shown', seller_business_name: null },
+  ])
+})
+
+test("TEN-40 an archive from before #398 with no Legal name trades under its display name, else the studio's name, as migration 0115 named it", () => {
+  const shown = upgradeArchiveRows(
+    { tenant_settings: [{ tenant_id: ADA, display_name: ' Shown ', receipt_legal_name: null }] },
+    { tenantName: 'Northwind' },
+  )
+  assert.deepEqual(shown.tenant_settings, [{ tenant_id: ADA, display_name: ' Shown ', business_name: 'Shown' }])
+
+  const blank = upgradeArchiveRows(
+    { tenant_settings: [{ tenant_id: ADA, display_name: '  ', receipt_legal_name: '  ' }] },
+    { tenantName: 'Northwind' },
+  )
+  assert.deepEqual(blank.tenant_settings, [{ tenant_id: ADA, display_name: '  ', business_name: 'Northwind' }])
+
+  const unnamed = upgradeArchiveRows({ tenant_settings: [{ tenant_id: ADA, receipt_legal_name: null }] }, { tenantName: 'Northwind' })
+  assert.deepEqual(unnamed.tenant_settings, [{ tenant_id: ADA, business_name: 'Northwind' }])
+})
+
 test("the caller's archive is not changed", () => {
   const archive = { leave_pools: [{ instructor_id: ADA }] }
   upgradeArchiveRows(archive)

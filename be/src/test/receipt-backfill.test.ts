@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.receipt-backfill.test`
@@ -122,7 +123,7 @@ describe('the Receipt backfill', { skip: integrationTestsEnabled ? false : SKIP_
     const res = await harness.app.request('/api/v1/me/checkout/package', {
       method: 'POST',
       headers: { ...who.headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ package_kind: 'class', package_id: packageId }),
+      body: JSON.stringify(await billed(harness.app, who.headers, { package_kind: 'class', package_id: packageId })),
     })
     assert.equal((await expectStatus(res, 201)).outcome, 'granted')
   }

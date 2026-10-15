@@ -12,14 +12,15 @@ import { orderTables, type ForeignKey } from './transfer-order'
 import { studioTables } from './transfer-tables'
 import { upgradeArchiveRows } from './transfer-upgrade'
 import { ARCHIVE_VERSION, type ArchivedPasswords, type TenantArchive, type TenantManifest } from './transfer-shape'
+import { forgetCachedMailIdentity } from './mail-identity'
 import { loadTenantById } from './tenants'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { DEFAULT_RECEIPT_PREFIX } from '../receipts/snapshot'
 
-/** The `tenant_settings` columns that hold the studio's receipt details (#391). */
+/** The `tenant_settings` columns that hold the studio's Business details (#391, #398). */
 const RECEIPT_DETAIL_COLUMNS = [
+  'business_name',
   'receipt_prefix',
-  'receipt_legal_name',
   'receipt_registration_number',
   'receipt_address',
   'receipt_footer',
@@ -465,7 +466,7 @@ export async function importTenant(
   // A shallow copy, so ensuring accounts below replaces tables in this import's
   // view of the archive rather than in the caller's object — brought up to the
   // current schema first, for an archive taken before a column moved.
-  const rows = upgradeArchiveRows(archive.rows)
+  const rows = upgradeArchiveRows(archive.rows, { tenantName: archive.manifest.tenant.name })
   // A replace keeps the studio's own branding, copy and mail identity.
   const settings = replace ? undefined : rows.tenant_settings?.[0]
   const columnKinds = await columnKindsByTable()
@@ -677,9 +678,11 @@ export async function importTenant(
           ${kept('waiver_text')}
         )
       `)
-      // The receipt details (#391), written directly: the app role may. An
-      // archive exported before they existed does not carry the columns at
+      // The Business details (#391, #398), written directly: the app role may.
+      // An archive exported before they existed does not carry the columns at
       // all, and leaves the details the super portal gave the studio standing.
+      // A Business name the archive leaves null is the trigger's to fill
+      // (migration 0115): the display name, else the Domain name.
       const carried = RECEIPT_DETAIL_COLUMNS.filter(column => column in settings)
       if (carried.length > 0) {
         const value = (column: string) =>
@@ -751,6 +754,9 @@ export async function importTenant(
   // The switches arrived as rows, and are read from this process's cache: load
   // them now, or an imported studio's waitlist would stay off until a restart.
   await withTenant(targetTenantId, loadFeatureFlags)
+  // So is the mail identity, and the archive may have written the Business
+  // name that signs the studio's email (#400): forget it now it has committed.
+  if (settings) forgetCachedMailIdentity(targetTenantId)
 
   return {
     mode: replace ? 'replace' : 'restore',

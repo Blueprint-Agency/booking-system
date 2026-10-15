@@ -99,10 +99,14 @@ export async function issueReceipt(
       name: tenants.name,
       displayName: tenantSettings.displayName,
       prefix: tenantSettings.receiptPrefix,
-      legalName: tenantSettings.receiptLegalName,
+      businessName: tenantSettings.businessName,
       registrationNumber: tenantSettings.receiptRegistrationNumber,
       address: tenantSettings.receiptAddress,
       footer: tenantSettings.receiptFooter,
+      // Its contact email (#403): the reply-to address. Read through the mail
+      // identity function, which answers for the tenant whose context is open:
+      // the application role has no SELECT on the mail columns themselves.
+      email: sql<string | null>`(SELECT reply_to FROM current_tenant_mail_identity())`,
     })
     .from(tenants)
     .leftJoin(tenantSettings, eq(tenantSettings.tenantId, tenants.id))
@@ -164,12 +168,16 @@ export async function issueReceipt(
       displayNumber: displayNumber(seller!.prefix || DEFAULT_RECEIPT_PREFIX, number),
       // What the studio calls itself to members, as of now.
       sellerName: seller!.displayName || seller!.name,
-      sellerLegalName: seller!.legalName,
+      // The name it trades under (#398), as of now.
+      sellerBusinessName: seller!.businessName ?? seller!.name,
       sellerRegistrationNumber: seller!.registrationNumber,
       sellerAddress: seller!.address,
       sellerFooter: seller!.footer,
+      sellerEmail: seller!.email?.trim() || null,
       buyerName: buyer?.name ?? null,
       buyerEmail: buyer?.email ?? null,
+      // Bill to (#401), as the Purchase copied it when it opened.
+      billTo: purchase.billTo,
       kind: purchase.kind,
       lines,
       ...receiptTotals(lines, purchase.totalSgd),

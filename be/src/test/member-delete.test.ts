@@ -28,6 +28,15 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
 
   const DOMAIN = `member-delete-${Date.now().toString(36)}.test`
   const PHONE = '+6591234567'
+  const ADA_BILL_TO = {
+    name: 'Ada Lovelace',
+    line1: '12 Analytical Lane',
+    line2: null,
+    city: 'Singapore',
+    state: null,
+    postcode: '238801',
+    country: 'SG',
+  }
 
   type Member = MemberKey & { headers: Record<string, string>; email: string }
 
@@ -163,11 +172,12 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
     assert.ok(memberTrail.length >= 6, `the member has an audit trail to keep: ${JSON.stringify(memberTrail)}`)
 
     receiptsMade = receiptFixtures(harness)
-    memberReceipt = await receiptsMade.issueFor(one.id, member.clientId)
+    // Billed to the member's own Billing details (#401): her name and her home.
+    memberReceipt = await receiptsMade.issueFor(one.id, member.clientId, { billTo: ADA_BILL_TO })
     assert.deepEqual(
-      [memberReceipt.clientId, memberReceipt.buyerName, memberReceipt.buyerEmail],
-      [member.clientId, 'Ada Lovelace', member.email],
-      'the Receipt was issued naming the member',
+      [memberReceipt.clientId, memberReceipt.buyerName, memberReceipt.buyerEmail, memberReceipt.billTo],
+      [member.clientId, 'Ada Lovelace', member.email, ADA_BILL_TO],
+      'the Receipt was issued naming the member, and billed to her',
     )
   })
 
@@ -292,12 +302,16 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
     test('INV-12 their Receipt stays the studio’s, with its number, lines and amounts, and no longer names who it was issued to', async () => {
       const [kept] = await harness.db.select().from(schema.receipts).where(eq(schema.receipts.id, memberReceipt.id))
       assert.ok(kept, 'the Receipt was deleted, not kept')
-      const buyer = (r: ReceiptRow) => ({ clientId: r.clientId, buyerName: r.buyerName, buyerEmail: r.buyerEmail })
-      assert.deepEqual(buyer(kept), { clientId: null, buyerName: null, buyerEmail: null })
+      const buyer = (r: ReceiptRow) => ({ clientId: r.clientId, buyerName: r.buyerName, buyerEmail: r.buyerEmail, billTo: r.billTo })
+      assert.deepEqual(buyer(kept), { clientId: null, buyerName: null, buyerEmail: null, billTo: null })
       // Everything else reads exactly as it was issued.
       assert.deepEqual({ ...kept, ...buyer(memberReceipt) }, memberReceipt)
       assert.equal(kept.lines[0]!.description, 'Ten pack')
       assert.deepEqual([kept.subtotalSgd, kept.discountSgd, kept.totalSgd], ['150.00', '15.00', '135.00'])
+      // The Purchase it was for is kept too, with no Bill to either.
+      const [purchase] = await harness.db.select().from(schema.purchases).where(eq(schema.purchases.id, memberReceipt.purchaseId))
+      assert.ok(purchase, 'the Purchase was deleted, not kept')
+      assert.deepEqual([purchase.clientId, purchase.billTo], [null, null])
     })
 
     test('what is someone else’s stays theirs: a partner’s request, and a session scheduled from the member’s request', async () => {

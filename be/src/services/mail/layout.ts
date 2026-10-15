@@ -39,7 +39,8 @@ export const EMAIL_COLORS = {
 export const EMAIL_LAYOUT_MARKER = 'data-email-layout="v1"'
 
 const C = EMAIL_COLORS
-const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+export const EMAIL_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+const FONT = EMAIL_FONT
 
 const ESCAPES: Record<string, string> = {
   '&': '&amp;',
