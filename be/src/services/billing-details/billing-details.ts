@@ -23,6 +23,9 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientBillingDetails, clients } from '../../db/schema/identity'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { COUNTRY_CODES, type BillingAddress } from './address'
+
+export type { BillingAddress } from './address'
 
 /** The most sets a member may keep at a studio. */
 export const BILLING_DETAILS_LIMIT = 3
@@ -31,18 +34,6 @@ export const BILLING_DETAILS_LIMIT = 3
 export const DEFAULT_BILLING_COUNTRY = 'SG'
 
 export type BillingDetails = typeof clientBillingDetails.$inferSelect
-
-/** The address fields of a set, as stored and as a Purchase copies them. */
-export interface BillingAddress {
-  name: string
-  line1: string
-  line2: string | null
-  city: string
-  state: string | null
-  postcode: string
-  /** ISO 3166-1 alpha-2. */
-  country: string
-}
 
 /**
  * What a member sends. On add, the required fields must be there; on edit, a
@@ -77,15 +68,10 @@ const refuse = (message: string): never => {
 
 const notFound = () => new NotFoundError('billing_details_not_found')
 
-const REGIONS = new Intl.DisplayNames(['en'], { type: 'region', fallback: 'none' })
-
-/** The codes ISO 3166 leaves to private use (`ZZ` is CLDR's "Unknown Region"): never a country. */
-const PRIVATE_USE = /^(AA|Q[M-Z]|X[A-Z]|ZZ)$/
-
-/** The country as stored: two letters, upper case, and one ISO 3166 names. */
+/** The country as stored: two letters, upper case, and a code ISO 3166-1 assigns (`COUNTRY_CODES`). */
 function cleanCountry(value: string): string {
   const code = value.trim().toUpperCase()
-  if (!/^[A-Z]{2}$/.test(code) || PRIVATE_USE.test(code) || !REGIONS.of(code)) {
+  if (!COUNTRY_CODES.has(code)) {
     refuse('A country is its two-letter code, such as SG for Singapore.')
   }
   return code
@@ -214,7 +200,11 @@ export async function addBillingDetails(
   })
 }
 
-/** Change a set's fields. Fields left out keep their values. */
+/**
+ * Change a set's fields. Fields left out keep their values. Under the member's
+ * lock, as a delete is, so an edit racing a delete of the same set either
+ * lands first or finds it gone: `404 billing_details_not_found`.
+ */
 export async function editBillingDetails(
   tenantId: string,
   clientId: string,
@@ -222,14 +212,18 @@ export async function editBillingDetails(
   input: BillingDetailsInput,
 ): Promise<BillingDetails> {
   const fields = cleaned(input, false)
-  const current = await ownBillingDetails(tenantId, clientId, id)
-  if (Object.keys(fields).length === 0) return current
-  const [row] = await db
-    .update(clientBillingDetails)
-    .set({ ...fields, updatedAt: new Date() })
-    .where(and(eq(clientBillingDetails.tenantId, tenantId), eq(clientBillingDetails.id, current.id)))
-    .returning()
-  return row!
+  return db.transaction(async () => {
+    await lockMember(tenantId, clientId)
+    const current = await ownBillingDetails(tenantId, clientId, id)
+    if (Object.keys(fields).length === 0) return current
+    const [row] = await db
+      .update(clientBillingDetails)
+      .set({ ...fields, updatedAt: new Date() })
+      .where(and(eq(clientBillingDetails.tenantId, tenantId), eq(clientBillingDetails.id, current.id)))
+      .returning()
+    if (!row) throw notFound()
+    return row
+  })
 }
 
 /**

@@ -5,7 +5,7 @@
  * (`services/finance/csv.ts`). Pure.
  */
 import { sgFormat } from '../../lib/time'
-import { billToAddressLines } from './document'
+import { billToAddressLines } from '../billing-details/address'
 import type { StudioReceiptSummary } from './read'
 
 // The studio's own calendar day, sortable as text in a spreadsheet.

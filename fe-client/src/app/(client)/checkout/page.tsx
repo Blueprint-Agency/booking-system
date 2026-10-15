@@ -20,6 +20,7 @@ import { AddOnCheckout } from "@/components/checkout/add-on-checkout";
 import { PayButton, StripeFootnote } from "@/components/checkout/pay-button";
 import { PartPaymentBlock } from "@/components/checkout/part-payment-block";
 import { BillingDetailsPicker } from "@/components/checkout/billing-details-picker";
+import { billToPayLabel, type BillToStatus } from "@/lib/bill-to-status";
 import { usePartPaymentOptions } from "@/lib/open-purchases";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { tierEffectivePrice, type ApiWorkshopDetail, type ApiWorkshopTier } from "@/lib/workshops";
@@ -136,6 +137,7 @@ function CheckoutContent() {
   // printed on the Receipt as Bill to. The picker selects the default. Every
   // purchase takes one, a corporate package included (#402).
   const [billingDetailsId, setBillingDetailsId] = useState<string | null>(null);
+  const [billToStatus, setBillToStatus] = useState<BillToStatus>("loading");
   const needsBillTo = !billingDetailsId;
 
   // Fetch package or workshop details from the catalogue
@@ -595,7 +597,7 @@ function CheckoutContent() {
             )}
 
             {/* Bill to (#401) — the member's Billing details, the default selected. */}
-            <BillingDetailsPicker value={billingDetailsId} onChange={setBillingDetailsId} />
+            <BillingDetailsPicker value={billingDetailsId} onChange={setBillingDetailsId} onStatus={setBillToStatus} />
 
             {/* Promo code — never on a corporate package (§6.2). */}
             {!isCorporate && (
@@ -756,7 +758,7 @@ function CheckoutContent() {
                   : needsInstructor
                     ? "Choose your instructor to continue"
                     : needsBillTo
-                      ? "Add your billing details to continue"
+                      ? billToPayLabel(billToStatus, false)!
                       : partBlocked
                       ? "Enter an amount to pay now"
                       : // A discount that clears the total skips Stripe entirely, so the

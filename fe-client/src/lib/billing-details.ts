@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, useApi, type Api } from "@/lib/api";
+import { countryName } from "@/lib/countries";
 import { reportError } from "@/lib/report-error";
 
 /** The most sets a member may keep; the backend refuses a fourth. */
@@ -76,42 +77,8 @@ const bodyOf = (fields: BillingDetailsFields) => ({
   country: fields.country,
 });
 
-const regionNames = (() => {
-  try {
-    return new Intl.DisplayNames(["en"], { type: "region", fallback: "none" });
-  } catch {
-    return null;
-  }
-})();
-
-/** A country's English name from its code, or the code when the browser cannot say. */
-export function countryName(code: string): string {
-  return regionNames?.of(code) ?? code;
-}
-
-/** The codes ISO 3166 leaves to private use: never a country. */
-const PRIVATE_USE = /^(AA|Q[M-Z]|X[A-Z]|ZZ)$/;
-
-let countries: { value: string; label: string }[] | null = null;
-
-/** Every country the browser can name, by name — the same set the backend accepts. */
-export function countryOptions(): { value: string; label: string }[] {
-  if (countries) return countries;
-  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const found: { value: string; label: string }[] = [];
-  for (const a of letters) {
-    for (const b of letters) {
-      const code = a + b;
-      if (PRIVATE_USE.test(code)) continue;
-      const name = regionNames?.of(code);
-      if (name) found.push({ value: code, label: name });
-    }
-  }
-  // A browser with no region names still offers the default.
-  if (found.length === 0) found.push({ value: DEFAULT_COUNTRY, label: "Singapore" });
-  countries = found.sort((x, y) => x.label.localeCompare(y.label));
-  return countries;
-}
+// The country list and names live in `countries.ts`, pure; re-exported for the pages that read them here.
+export { countryName, countryOptions } from "@/lib/countries";
 
 /** The address one component per line, the country by name: how a set reads back to the member. */
 export function addressLines(set: BillingDetails): string[] {
@@ -190,5 +157,11 @@ export function useBillingDetails() {
     void refetch();
   }, [refetch]);
 
-  return { sets, loading, failed, refetch };
+  /** Read the list again after it failed, showing it as loading meanwhile. */
+  const retry = useCallback(async () => {
+    setLoading(true);
+    await refetch();
+  }, [refetch]);
+
+  return { sets, loading, failed, refetch, retry };
 }

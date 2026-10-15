@@ -56,10 +56,10 @@ const blockLine = (line: ReceiptBlockLine) =>
 function parties(doc: ReceiptDocument): string {
   const column = (html: string) =>
     `<div style="display:inline-block;vertical-align:top;width:47%;min-width:220px;max-width:100%;margin:0 0 14px;">${html}</div>`
-  const billTo = `<div style="font-family:${FONT};font-size:13px;line-height:1.55;font-weight:700;color:${C.ink};">${escapeHtml(doc.billTo.label)}</div>${doc.billTo.lines
-    .map(line => blockLine({ ...line, strong: false }))
-    .join('')}`
-  return `${column(doc.seller.map(blockLine).join(''))} ${column(billTo)}`
+  const seller = column(doc.seller.map(blockLine).join(''))
+  if (!doc.billTo) return seller
+  const label = `<div style="font-family:${FONT};font-size:13px;line-height:1.55;font-weight:700;color:${C.ink};">${escapeHtml(doc.billTo.label)}</div>`
+  return `${seller} ${column(label + doc.billTo.lines.map(blockLine).join(''))}`
 }
 
 /** What was paid and when, with its marker, and the Refund where there was one. */

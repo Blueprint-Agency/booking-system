@@ -16,7 +16,7 @@ import {
 } from '../enums'
 import type { PurchaseLine } from '../../services/billing/purchase-lines'
 import type { ReceiptPayment } from '../../services/receipts/snapshot'
-import type { BillingAddress } from '../../services/billing-details/billing-details'
+import type { BillingAddress } from '../../services/billing-details/address'
 
 /**
  * A Purchase owns the money; a payment is evidence of part of it.

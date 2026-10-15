@@ -9,7 +9,7 @@
  * Receipts issued afterwards: nothing already issued is ever rewritten.
  */
 import { eq } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { receiptCounters } from '../../db/schema/ledger'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
 import { BadRequestError } from '../../shared/errors'
@@ -144,6 +144,8 @@ export async function saveBusinessDetails(tenantId: string, input: BusinessDetai
     .onConflictDoUpdate({ target: tenantSettings.tenantId, set: columns })
   // The Business name signs every email and names the studio on each card
   // charge (#400), so the next one must not wait out the identity's cache.
-  forgetCachedMailIdentity(tenantId)
+  // Once committed: forgotten any sooner, a send racing this save could read
+  // the old name and cache it again for another minute.
+  afterCommit(() => forgetCachedMailIdentity(tenantId))
   return readBusinessDetails(tenantId)
 }

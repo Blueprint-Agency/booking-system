@@ -102,6 +102,22 @@ function drawReceipt(
     font(bold, fits, color).text(text, x, y + (size - fits) / 2, { width: w, align, lineBreak: false })
     return y + size * 1.45
   }
+  /**
+   * Text a reader typed, which may run long: a Business name, a Bill to's name
+   * or an address line, each up to 200 characters. One line where it fits
+   * `w` at `size`; otherwise wrapped within `w` (a word too long for a line
+   * broken where it must), as the HTML's `word-break` does, and what follows
+   * starts below all of it. Returns where that is.
+   */
+  const wrapped = (text: string, x: number, y: number, w: number, bold: boolean, size: number, color: string, align: 'left' | 'right' = 'left') => {
+    font(bold, size, color)
+    // The same slack as `oneLine`: PDFKit wraps a line that measures its width to the hair.
+    if (pdf.widthOfString(text) <= w * 0.97) return oneLine(text, x, y, w, bold, size, color, align)
+    const options = { width: w, align, lineGap: size * 0.3 }
+    const height = pdf.heightOfString(text, options)
+    pdf.text(text, x, y, options)
+    return y + height + size * 0.15
+  }
 
   // The title, and the studio's logo or its Business name on the right.
   const top = pdf.page.margins.top
@@ -123,7 +139,7 @@ function drawReceipt(
       logger.warn({ err, tenantId: receipt.tenantId }, 'studio logo could not be drawn on a receipt')
     }
   }
-  if (!drawn) brandBottom = oneLine(doc.sellerName, right - 260, top + 4, 260, true, 13, C.ink, 'right')
+  if (!drawn) brandBottom = wrapped(doc.sellerName, right - 260, top + 4, 260, true, 13, C.ink, 'right')
 
   // The facts: a label and its value a row.
   let y = Math.max(titleBottom, brandBottom) + 14
@@ -138,16 +154,14 @@ function drawReceipt(
   const columnWidth = (width - gutter) / 2
   const block = (lines: ReceiptBlockLine[], x: number, from: number): number => {
     let at = from
-    for (const line of lines) at = oneLine(line.text, x, at, columnWidth, line.strong, 9.5, line.strong ? C.ink : C.muted) - 1.5
+    for (const line of lines) at = wrapped(line.text, x, at, columnWidth, line.strong, 9.5, line.strong ? C.ink : C.muted) - 1.5
     return at
   }
   const partiesTop = y + 18
   const sellerBottom = block(doc.seller, left, partiesTop)
-  const billBottom = block(
-    [{ text: doc.billTo.label, strong: true }, ...doc.billTo.lines.map(line => ({ ...line, strong: false }))],
-    left + columnWidth + gutter,
-    partiesTop,
-  )
+  const billBottom = doc.billTo
+    ? block([{ text: doc.billTo.label, strong: true }, ...doc.billTo.lines], left + columnWidth + gutter, partiesTop)
+    : partiesTop
 
   // What was paid and when, its marker beside it, and the Refund.
   y = Math.max(sellerBottom, billBottom) + 22

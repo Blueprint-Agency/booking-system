@@ -14,7 +14,7 @@
  * - two columns: the studio (Business name, address, contact email) and
  *   **Bill to** (the Billing details the Purchase chose, its address a line
  *   each, and the member's email; or, where it chose none, the member's name
- *   and email);
+ *   and email; left out where the Receipt names nobody);
  * - the headline, `S$150.00 paid on 2 Oct 2026`, with a PAID or REFUNDED
  *   marker and `Refunded on …`; or "No payment: nothing was due.";
  * - the lines as a table, each at List Price × quantity, each discount under
@@ -34,7 +34,7 @@ import { db } from '../../db'
 import { tenantSettings } from '../../db/schema/tenancy'
 import { sgFormat } from '../../lib/time'
 import { sgdText, toCents } from '../../shared/money'
-import type { BillingAddress } from '../billing-details/billing-details'
+import { billToAddressLines } from '../billing-details/address'
 import type { LineDiscount, PurchaseLine } from '../billing/purchase-lines'
 import { cardBrandName, methodName } from '../finance/methods'
 import type { ReceiptRow } from './issue'
@@ -71,8 +71,12 @@ export interface ReceiptDocument {
   facts: { label: string; value: string }[]
   /** The studio: Business name (strong), address a line each, contact email. */
   seller: ReceiptBlockLine[]
-  /** Bill to: the name (strong), the address a line each, the member's email. */
-  billTo: { label: string; lines: ReceiptBlockLine[] }
+  /**
+   * Bill to: the name (strong), the address a line each, the member's email.
+   * Null where the Receipt names nobody (its member permanently deleted): the
+   * block is left out rather than drawn empty.
+   */
+  billTo: { label: string; lines: ReceiptBlockLine[] } | null
   /** `S$150.00 paid on 2 Oct 2026`, or `No payment: nothing was due.` */
   headline: string
   /** PAID once paid, REFUNDED once refunded; none on a Receipt where nothing was due. */
@@ -120,18 +124,6 @@ export const paymentLabel = (p: ReceiptPayment): string => {
   }
   return p.method ? methodName(p.method) : 'Online payment'
 }
-
-const REGIONS = new Intl.DisplayNames(['en'], { type: 'region', fallback: 'code' })
-
-/**
- * A Bill to's address as it prints, a line each: the two address lines, then
- * city, state and postcode together, then the country by its name. The same
- * reading as the member's Billing details page (fe-client `addressLines`).
- */
-export const billToAddressLines = (bill: BillingAddress): string[] =>
-  [bill.line1, bill.line2, [bill.city, bill.state, bill.postcode].filter(Boolean).join(' '), REGIONS.of(bill.country) ?? bill.country].filter(
-    (line): line is string => Boolean(line && line.trim()),
-  )
 
 /** A block of text a studio typed (its address), a line each. */
 const textLines = (value: string | null): string[] =>
@@ -194,7 +186,7 @@ export function receiptDocument(receipt: ReceiptRow, studio: ReceiptStudio): Rec
     sellerName,
     facts,
     seller,
-    billTo: { label: 'Bill to', lines: billed },
+    billTo: billed.length > 0 ? { label: 'Bill to', lines: billed } : null,
     headline: paidOn ? `${money(receipt.totalSgd)} paid on ${paidOn}` : 'No payment: nothing was due.',
     chip: receipt.refundedAt ? { text: 'REFUNDED', tone: 'refunded' } : paid ? { text: 'PAID', tone: 'paid' } : null,
     refunded: receipt.refundedAt ? `Refunded on ${day.format(receipt.refundedAt)}` : null,

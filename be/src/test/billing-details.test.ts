@@ -304,4 +304,44 @@ describe('billing details', { skip: integrationTestsEnabled ? false : SKIP_REASO
       ],
     )
   })
+
+  test('ACC-48 a country is one ISO 3166-1 assigns: EU, UN, EZ, SU, YU, XK and other codes that name no country are refused, and real ones like AX, BQ, CW, SS and GB are kept', async () => {
+    const member = await newMember()
+    const set = await addOk(member, home)
+    for (const country of ['EU', 'UN', 'EZ', 'SU', 'YU', 'XK', 'QO', 'AC', 'TA', 'IC', 'DG', 'EA', 'CP', 'UK', 'FX']) {
+      const res = await call('PATCH', `/me/billing-details/${set.id}`, member.headers, { country })
+      assert.equal(res.status, 400, `${country}: ${res.text}`)
+      assert.equal(res.body.error, 'invalid_request')
+      assert.match(String(res.body.message), /two-letter code/i, country)
+    }
+    assert.equal((await list(member))[0]!.country, 'SG', 'nothing refused was saved')
+    for (const country of ['AX', 'BQ', 'CW', 'SS', 'GB', 'MY', 'sg']) {
+      const res = await call('PATCH', `/me/billing-details/${set.id}`, member.headers, { country })
+      assert.equal(res.status, 200, `${country}: ${res.text}`)
+      assert.equal((await list(member))[0]!.country, country.toUpperCase())
+    }
+  })
+
+  test('ACC-49 a set edited while it is being deleted is either edited first or 404 billing_details_not_found, never a server error', async () => {
+    for (let round = 0; round < 12; round++) {
+      const member = await newMember()
+      const set = await addOk(member, home)
+      // Edits on either side of the delete, so some land in its window.
+      const edit = (k: number) => call('PATCH', `/me/billing-details/${set.id}`, member.headers, { name: `Edited ${round}.${k}` })
+      const [first, deleted, ...rest] = await Promise.all([
+        edit(0),
+        call('DELETE', `/me/billing-details/${set.id}`, member.headers),
+        edit(1),
+        edit(2),
+        edit(3),
+      ])
+      assert.equal(deleted.status, 200, deleted.text)
+      for (const edited of [first!, ...rest]) {
+        assert.ok([200, 404].includes(edited.status), `round ${round}: ${edited.status} ${edited.text}`)
+        if (edited.status === 404) assert.equal(edited.body.error, 'billing_details_not_found')
+        else assert.match(String((edited.body.billing_details as Set).name), /^Edited /)
+      }
+      assert.deepEqual(await list(member), [], 'the set is gone')
+    }
+  })
 })

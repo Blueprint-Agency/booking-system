@@ -55,17 +55,8 @@ export const receiptView = (r: ReceiptRow) => ({
   },
   buyer: { name: r.buyerName, email: r.buyerEmail },
   // Who the Purchase was billed to (#401), or null where it chose no Billing details.
-  bill_to: r.billTo
-    ? {
-        name: r.billTo.name,
-        line1: r.billTo.line1,
-        line2: r.billTo.line2,
-        city: r.billTo.city,
-        state: r.billTo.state,
-        postcode: r.billTo.postcode,
-        country: r.billTo.country,
-      }
-    : null,
+  // Its fields are already the wire's: name, line1, line2, city, state, postcode, country.
+  bill_to: r.billTo,
   lines: r.lines.map(l => ({
     description: l.description,
     quantity: l.quantity,

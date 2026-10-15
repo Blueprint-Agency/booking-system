@@ -131,3 +131,25 @@ test('INV-103 nothing typed into a Bill to, the studio\'s Business details or it
     assert.ok(page.includes(escaped), `"${escaped}" is shown as text`)
   }
 })
+
+test('INV-111 the Bill to name is set strong, as the studio\'s Business name is, and its address and the member\'s email are not', () => {
+  const page = receiptHtmlPage(
+    receiptDocument(
+      {
+        ...paid,
+        billTo: { name: 'Harbour Analytics Sdn Bhd', line1: '12 Jalan Ampang', line2: null, city: 'Kuala Lumpur', state: null, postcode: '50450', country: 'MY' },
+      },
+      STUDIO,
+    ),
+  )
+  /** Whether the element holding exactly `text` is set bold. */
+  const strong = (text: string): boolean => {
+    const match = new RegExp(`<div style="([^"]*)">${text}</div>`).exec(page)
+    assert.ok(match, `"${text}" is a line of its own: ${page}`)
+    return /font-weight:700/.test(match[1]!)
+  }
+  assert.equal(strong('Northwind Wellness Pte. Ltd.'), true, 'the studio\'s Business name')
+  assert.equal(strong('Harbour Analytics Sdn Bhd'), true, 'the Bill to name')
+  assert.equal(strong('12 Jalan Ampang'), false)
+  assert.equal(strong('mia@example.test'), false)
+})
