@@ -5,6 +5,7 @@
  * (`services/finance/csv.ts`). Pure.
  */
 import { sgFormat } from '../../lib/time'
+import { billToAddressLines } from './document'
 import type { StudioReceiptSummary } from './read'
 
 // The studio's own calendar day, sortable as text in a spreadsheet.
@@ -20,7 +21,21 @@ const KIND_LABELS: Record<StudioReceiptSummary['kind'], string> = {
   corporate_package: 'Corporate package',
 }
 
-export const RECEIPTS_CSV_HEADER = ['number', 'date', 'member', 'email', 'kind', 'item', 'total_sgd', 'status'] as const
+export const RECEIPTS_CSV_HEADER = [
+  'number',
+  'date',
+  'member',
+  'email',
+  'kind',
+  'item',
+  'total_sgd',
+  'status',
+  'bill_to_name',
+  'bill_to_address',
+] as const
+
+/** A Bill to's address on one line, the lines the Receipt prints joined by commas. */
+const oneLine = (bill: StudioReceiptSummary['billTo']): string | null => (bill ? billToAddressLines(bill).join(', ') : null)
 
 /**
  * One cell. A value a spreadsheet would run as a formula (`=`, `+`, `-`, `@`,
@@ -36,7 +51,8 @@ function cell(value: string | null): string {
 
 /**
  * The file. A permanently deleted member's Receipt keeps its row, with the
- * member and email empty as the Receipt now has them.
+ * member, email and Bill to empty as the Receipt now has them. A Receipt whose
+ * Purchase chose no Billing details (#401) has the Bill to columns empty.
  */
 export function receiptsCsv(rows: readonly StudioReceiptSummary[]): string {
   const lines = rows.map(r =>
@@ -49,6 +65,8 @@ export function receiptsCsv(rows: readonly StudioReceiptSummary[]): string {
       r.item,
       r.totalSgd,
       r.status,
+      r.billTo?.name ?? null,
+      oneLine(r.billTo),
     ]
       .map(cell)
       .join(','),

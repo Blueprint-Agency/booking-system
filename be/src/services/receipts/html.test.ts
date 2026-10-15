@@ -28,6 +28,7 @@ const paid: ReceiptRow = {
   sellerFooter: null,
   buyerName: 'Mia Tan',
   buyerEmail: 'mia@example.test',
+  billTo: null,
   kind: 'class_package',
   lines: [
     {

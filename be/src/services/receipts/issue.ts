@@ -171,6 +171,8 @@ export async function issueReceipt(
       sellerFooter: seller!.footer,
       buyerName: buyer?.name ?? null,
       buyerEmail: buyer?.email ?? null,
+      // Bill to (#401), as the Purchase copied it when it opened.
+      billTo: purchase.billTo,
       kind: purchase.kind,
       lines,
       ...receiptTotals(lines, purchase.totalSgd),

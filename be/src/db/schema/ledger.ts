@@ -16,6 +16,7 @@ import {
 } from '../enums'
 import type { PurchaseLine } from '../../services/billing/purchase-lines'
 import type { ReceiptPayment } from '../../services/receipts/snapshot'
+import type { BillingAddress } from '../../services/billing-details/billing-details'
 
 /**
  * A Purchase owns the money; a payment is evidence of part of it.
@@ -80,6 +81,17 @@ export const purchases = pgTable(
      * backfills them.
      */
     lines: jsonb('lines').$type<PurchaseLine[]>().notNull().default(sql`'[]'::jsonb`),
+    /**
+     * Who the sale is billed to (#401): the name and address of the member's
+     * Billing details chosen at checkout, copied when the Purchase opens and
+     * copied again onto its Receipt. A copy, not a reference, so editing or
+     * deleting the set afterwards changes nothing already bought, and a part
+     * payment resumed later bills the set it was opened with.
+     *
+     * Null where no set was chosen: every Purchase opened before #401, and
+     * those with no member checkout (the legacy webhook fallback, imports).
+     */
+    billTo: jsonb('bill_to').$type<BillingAddress>(),
     /**
      * The one live checkout session, if a payment is in flight. Singular on
      * purpose: two open sessions against one Purchase is two members' worth of
@@ -490,6 +502,13 @@ export const receipts = pgTable(
     // The buyer, as of issue.
     buyerName: text('buyer_name'),
     buyerEmail: text('buyer_email'),
+    /**
+     * Bill to (#401): the Purchase's `bill_to`, as of issue. Null on a Receipt
+     * whose Purchase chose no Billing details — one issued before #401, a
+     * backfilled one, the legacy webhook fallback's — which names the buyer
+     * by their name and email alone.
+     */
+    billTo: jsonb('bill_to').$type<BillingAddress>(),
     kind: purchaseKindEnum('kind').notNull(),
     lines: jsonb('lines').$type<PurchaseLine[]>().notNull(),
     /** What the lines cost before anything was taken off: the sum of quantity × List Price. */

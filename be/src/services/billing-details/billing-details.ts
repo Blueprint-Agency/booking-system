@@ -156,6 +156,21 @@ export const billingAddressOf = (row: BillingDetails): BillingAddress => ({
   country: row.country,
 })
 
+/**
+ * What a checkout bills (#401): the address of the member's chosen set, ready
+ * to copy onto the Purchase, or null when the checkout named none. A set that
+ * is not the member's own is `404 billing_details_not_found`, before anything
+ * is opened or claimed.
+ */
+export async function billToFor(
+  tenantId: string,
+  clientId: string,
+  billingDetailsId: string | undefined,
+): Promise<BillingAddress | null> {
+  if (!billingDetailsId) return null
+  return billingAddressOf(await ownBillingDetails(tenantId, clientId, billingDetailsId))
+}
+
 /** Hold the member's row until the transaction ends, so their sets change one request at a time. */
 async function lockMember(tenantId: string, clientId: string): Promise<void> {
   const [member] = await db

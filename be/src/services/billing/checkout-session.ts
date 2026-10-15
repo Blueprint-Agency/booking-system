@@ -17,6 +17,7 @@ import { partPaymentEnabled } from '../policy/update'
 import { chargeableCents, refusePartPaymentWhenDisabled } from './part-payment'
 import { createSessionSurvivingStaleCustomer, providerCustomerFor } from './payment-customers'
 import type { PurchaseLine } from './purchase-lines'
+import type { BillingAddress } from '../billing-details/billing-details'
 
 export interface CheckoutLine {
   name: string
@@ -334,6 +335,12 @@ export async function createCheckoutSession(
      * Purchase refuses them if they add up to anything else.
      */
     purchaseLines: PurchaseLine[]
+    /**
+     * Who the sale is billed to (#401): the member's chosen Billing details,
+     * already resolved as theirs (`billToFor`), copied onto the Purchase. Null
+     * or absent where the checkout chose none.
+     */
+    billTo?: BillingAddress | null
   },
 ): Promise<string | null> {
   // First, before a Purchase is opened: a studio with no account of its own
@@ -359,6 +366,7 @@ export async function createCheckoutSession(
     // looking at a debt for something with no name (#93).
     metadata: { ...input.metadata, item_name: itemName(input.lines) },
     lines: input.purchaseLines,
+    billTo: input.billTo ?? null,
   })
 
   const [stripe, customerId] = await Promise.all([

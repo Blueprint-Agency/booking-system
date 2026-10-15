@@ -743,6 +743,7 @@ The names and addresses the member's Receipts are made out to: up to **three** s
 - **Add** opens a sheet (`BillingDetailsSheet`, the same one checkout uses, #401); on the first set the name starts as the member's own. With three saved, Add is gone and the page says to edit or delete one. A refusal shows the backend's own sentence.
 - The first set becomes the default; deleting the default hands it to the most recently added set left — the page reads the list back after every change rather than deciding.
 - Endpoints: be-client §3 `/me/billing-details`.
+- **At checkout (#401):** the review page (package and workshop) and the standalone Add-On page show a **Bill to** picker (`BillingDetailsPicker`): the sets as radio rows with the default selected, **Edit** on each and **Add another** while under three, both in the same sheet. A member with none gets the add sheet at once; on save the set is selected and the page, with every choice on it, is as they left it. Pay stays disabled ("Add your billing details to continue") until a set is chosen, and the checkout sends it as `billing_details_id`. A corporate package, the trial button, Merch and the free Buy buttons take none yet (#402).
 
 ### 8.7 Referral `/account/referral`
 

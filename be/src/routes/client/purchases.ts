@@ -28,6 +28,7 @@ import {
 } from '../../services/billing/open-purchases'
 import { describeProduct, previewPromoCode } from '../../services/packages/promo-redemption'
 import { receiptForPurchase } from '../../services/receipts/read'
+import { billToFor } from '../../services/billing-details/billing-details'
 import { requireTenantUrl } from '../../services/tenants/urls'
 import { tenantId } from '../../middleware/tenant'
 
@@ -63,6 +64,12 @@ const requestedCents = (sgd: number | undefined): number | null =>
 const saveCard = z.boolean().optional()
 
 /**
+ * The member's Billing details this Purchase is billed to (#401): one of their
+ * own sets, copied onto the Purchase and so onto its Receipt as Bill to.
+ */
+const billingDetailsId = z.string().uuid().optional()
+
+/**
  * Where Stripe sends the member back to.
  *
  * A whole-price sale lands on its own confirmation — the plan it granted, the
@@ -89,6 +96,7 @@ const planCheckoutSchema = z.object({
   /** Buy the Cross-Location Add-On with the plan — one session, two line items (§5). */
   cross_location_add_on: z.boolean().optional(),
   save_card: saveCard,
+  billing_details_id: billingDetailsId,
 })
 
 /**
@@ -109,6 +117,7 @@ const checkoutPackageSchema = z.discriminatedUnion('package_kind', [planCheckout
 const crossLocationSchema = z.object({
   /** The plan the Add-On attaches to. It belongs to one plan, never to a member. */
   client_package_id: z.string().uuid(),
+  billing_details_id: billingDetailsId,
 })
 
 // The product travels with the code (§11) — without it the endpoint cannot
@@ -133,6 +142,7 @@ const checkoutWorkshopSchema = z.object({
   promo_code: z.string().optional(),
   part_payment_sgd: partPaymentSgd,
   save_card: saveCard,
+  billing_details_id: billingDetailsId,
 })
 
 /** Resuming an unfinished Purchase. No amount pays whatever is still owed. */
@@ -217,6 +227,7 @@ const app = new Hono()
       })
       return c.json({ url })
     }
+    const billTo = await billToFor(tenantId(c), c.get('clientId'), body.billing_details_id)
     const quote = await beginPackageCheckout({
       tenantId: tenantId(c),
       clientId: c.get('clientId'),
@@ -253,6 +264,7 @@ const app = new Hono()
       cancelUrl: `${clientUrl}/checkout?package=${body.package_id}&kind=${body.package_kind}&cancelled=1`,
       requestedPartPaymentCents: requestedCents(body.part_payment_sgd),
       saveCard: body.save_card,
+      billTo,
     })
     return c.json({ url })
   })
@@ -274,11 +286,9 @@ const app = new Hono()
     })
   })
   .post('/checkout/cross-location', zValidator('json', crossLocationSchema), async c => {
-    const quote = await beginCrossLocationCheckout(
-      tenantId(c),
-      c.get('clientId'),
-      c.req.valid('json').client_package_id,
-    )
+    const body = c.req.valid('json')
+    const billTo = await billToFor(tenantId(c), c.get('clientId'), body.billing_details_id)
+    const quote = await beginCrossLocationCheckout(tenantId(c), c.get('clientId'), body.client_package_id)
     const clientUrl = await requireTenantUrl('client', tenantId(c))
     const url = await createCheckoutSession({
       tenantId: tenantId(c),
@@ -289,6 +299,7 @@ const app = new Hono()
       metadata: quote.metadata,
       successUrl: `${clientUrl}/booking/confirmation?type=cross_location&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${clientUrl}/account?cancelled=1`,
+      billTo,
     })
     return c.json({ url })
   })
@@ -364,6 +375,7 @@ const app = new Hono()
   })
   .post('/checkout/workshop', zValidator('json', checkoutWorkshopSchema), async c => {
     const body = c.req.valid('json')
+    const billTo = await billToFor(tenantId(c), c.get('clientId'), body.billing_details_id)
     const quote = await beginWorkshopCheckout(tenantId(c), {
       clientId: c.get('clientId'),
       workshopId: body.workshop_id,
@@ -389,6 +401,7 @@ const app = new Hono()
       cancelUrl: `${clientUrl}/checkout?workshop=${body.workshop_id}&tier=${body.workshop_tier_id}&cancelled=1`,
       requestedPartPaymentCents: requestedCents(body.part_payment_sgd),
       saveCard: body.save_card,
+      billTo,
     })
     return c.json({ url })
   })
