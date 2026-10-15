@@ -189,6 +189,77 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     assert.deepEqual(await harness.db.select().from(schema.tenants).where(eq(schema.tenants.slug, slug)), [])
   })
 
+  test('TEN-41 the super portal reads a studio’s Business details and saves new ones, which its admin then reads and its next email is signed with; a blank Business name is refused in a sentence, the route is the operator’s alone, and an archived studio’s are not reached', async () => {
+    const studio = await newStudio()
+    const path = `/api/v1/platform/tenants/${studio.id}/business-details`
+    const put = (headers: Record<string, string>, body: unknown) =>
+      harness.app.request(path, { method: 'PUT', headers: { ...headers, ...json }, body: JSON.stringify(body) })
+
+    const read = await expectStatus(await harness.app.request(path, { headers: operator }), 200)
+    assert.equal(read.business_details.business_name, studio.domainName)
+    assert.equal(read.next_number, 'R-000001')
+
+    const businessName = `Northwind ${run} Holdings`
+    const saved = await expectStatus(
+      await put(operator, {
+        business_name: `  ${businessName}  `,
+        prefix: 'NW',
+        registration_number: `UEN ${run}`,
+        address: '1 Harbour Road\nSingapore 000001',
+        footer: 'Thank you.',
+      }),
+      200,
+    )
+    const expected = {
+      business_name: businessName,
+      prefix: 'NW',
+      registration_number: `UEN ${run}`,
+      address: '1 Harbour Road\nSingapore 000001',
+      footer: 'Thank you.',
+    }
+    assert.deepEqual(saved.business_details, expected)
+    assert.equal(saved.next_number, 'NW-000001')
+    assert.deepEqual((await expectStatus(await readDetails(studio), 200)).business_details, expected)
+    const mail = await signInCodeMail(studio, `visitor-operator@${DOMAIN}`)
+    assert.match(mail.from, new RegExp(`^"${businessName}" <`), 'the next email is signed with the new Business name')
+
+    const refused = await expectStatus(await put(operator, { business_name: '   ' }), 400)
+    assert.equal(refused.error, 'invalid_request')
+    assert.equal(refused.message, 'A business name is required.')
+    assert.deepEqual((await expectStatus(await readDetails(studio), 200)).business_details, expected)
+
+    await expectStatus(await harness.app.request(path, { headers: studio.admin }), 404)
+    await expectStatus(await put(studio.admin, { business_name: 'Not the operator' }), 404)
+    await expectStatus(
+      await harness.app.request('/api/v1/platform/tenants/00000000-0000-4000-8000-000000000000/business-details', {
+        headers: operator,
+      }),
+      404,
+    )
+    await expectStatus(await put(operator, null), 400)
+
+    // An archived studio is frozen: its details are neither read nor changed.
+    const archived = await newStudio()
+    await expectStatus(
+      await harness.app.request(`/api/v1/platform/tenants/${archived.id}/status`, {
+        method: 'PATCH',
+        headers: { ...operator, ...json },
+        body: JSON.stringify({ status: 'archived' }),
+      }),
+      200,
+    )
+    const archivedPath = `/api/v1/platform/tenants/${archived.id}/business-details`
+    await expectStatus(await harness.app.request(archivedPath, { headers: operator }), 404)
+    await expectStatus(
+      await harness.app.request(archivedPath, {
+        method: 'PUT',
+        headers: { ...operator, ...json },
+        body: JSON.stringify({ business_name: 'After archiving' }),
+      }),
+      404,
+    )
+  })
+
   /** A visitor asks the studio's member app for a sign-in code: the studio's `sign_in_code` email. */
   async function signInCodeMail(at: Studio, email: string) {
     const sentBefore = mailer.discardedMail.length

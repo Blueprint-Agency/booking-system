@@ -31,7 +31,9 @@ import {
 import { expectedKeyPrefix } from '../../services/billing/provider-setup'
 import { env } from '../../env'
 import { logger } from '../../shared/logger'
-import { businessDetailsBody, businessDetailsInput } from '../business-details'
+import { businessDetailsBody, businessDetailsInput, serializeBusinessDetails } from '../business-details'
+import { readBusinessDetails, saveBusinessDetails } from '../../services/tenants/business-details'
+import { withTenant } from '../../db'
 
 /**
  * The super portal's route surface: create a studio, list them, change one's
@@ -181,6 +183,14 @@ const statusBody = z.object({
 // reason, not a validation error the form has no words for.
 const renameBody = z.object({ slug: z.string() })
 
+/** The id of a studio that exists and is not archived, or null. */
+async function editableTenantId(raw: string): Promise<string | null> {
+  const id = z.string().uuid().safeParse(raw)
+  if (!id.success) return null
+  const tenant = await loadTenantById(id.data)
+  return tenant && tenant.status !== 'archived' ? tenant.id : null
+}
+
 const app = new Hono()
   .get('/tenants', async c => {
     const [rows, payments] = await Promise.all([listTenants(), providerAccountStatuses()])
@@ -261,6 +271,30 @@ const app = new Hono()
     return c.json({
       tenant: serialize(updated, await staffCountFor(id.data), await providerAccountStatus(id.data)),
     })
+  })
+
+  /**
+   * A studio's Business details (#391, #398), as its admin reads them on the
+   * portal's Business details page, for the operator to correct from outside
+   * it. The same service as that page, inside the studio's context, so both
+   * surfaces refuse the same things in the same words. An archived studio is
+   * frozen, as the list treats it, so its details are `404` like an unknown one.
+   */
+  .get('/tenants/:id/business-details', async c => {
+    const id = await editableTenantId(c.req.param('id'))
+    if (!id) return c.json({ error: ERROR_CODES.not_found }, 404)
+    return c.json(serializeBusinessDetails(await withTenant(id, () => readBusinessDetails(id))))
+  })
+  .put('/tenants/:id/business-details', zValidator('json', businessDetailsBody), async c => {
+    const id = await editableTenantId(c.req.param('id'))
+    if (!id) return c.json({ error: ERROR_CODES.not_found }, 404)
+    const input = businessDetailsInput(c.req.valid('json'))
+    const view = await withTenant(id, () => saveBusinessDetails(id, input))
+    logger.warn(
+      { tenantId: id, businessName: view.details.businessName, by: c.get('platformAdminEmail') },
+      'platform: tenant business details saved',
+    )
+    return c.json(serializeBusinessDetails(view))
   })
 
   /**

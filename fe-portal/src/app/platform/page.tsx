@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Building2,
   CalendarClock,
   CreditCard,
   Download,
@@ -27,8 +28,8 @@ import { RenameTenantDialog } from "@/components/platform/rename-tenant-dialog";
 import { ReplaceTenantDialog } from "@/components/platform/replace-tenant-dialog";
 import { PaymentCredentialsDialog } from "@/components/platform/payment-credentials-dialog";
 import { TenantTermDialog } from "@/components/platform/tenant-term-dialog";
+import { BusinessDetailsDialog } from "@/components/platform/business-details-dialog";
 import { ImportProgress } from "@/components/platform/import-progress";
-import { MaintenanceCard } from "@/components/platform/maintenance-card";
 import { ApiError, makeApi } from "@/lib/api";
 import {
   TENANT_REFUSALS,
@@ -88,6 +89,8 @@ export default function PlatformPage() {
   const [renaming, setRenaming] = useState<PlatformTenant | null>(null);
   /** The studio whose payment account is being set, or null. */
   const [payingFor, setPayingFor] = useState<PlatformTenant | null>(null);
+  /** The studio whose Business details are being edited, or null. */
+  const [businessFor, setBusinessFor] = useState<PlatformTenant | null>(null);
   /** The studio whose Term is being set, or null. */
   const [termFor, setTermFor] = useState<PlatformTenant | null>(null);
   /** The studio the delete dialog is open for, or null. */
@@ -379,8 +382,6 @@ export default function PlatformPage() {
         }
       />
 
-      <MaintenanceCard api={api} />
-
       {tenants.length === 0 ? (
         <EmptyState
           title="No studios yet"
@@ -501,6 +502,7 @@ export default function PlatformPage() {
                     tenant.status !== "archived"
                       ? [
                           { icon: PenLine, label: "Rename", onSelect: () => setRenaming(tenant) },
+                          { icon: Building2, label: "Business details", onSelect: () => setBusinessFor(tenant) },
                           { icon: CalendarClock, label: "Set term", onSelect: () => setTermFor(tenant) },
                           { icon: CreditCard, label: "Payments", onSelect: () => setPayingFor(tenant) },
                         ]
@@ -593,6 +595,16 @@ export default function PlatformPage() {
         onRenamed={updated => {
           setRenaming(null);
           setTenants(rows => (rows ?? []).map(row => (row.id === updated.id ? updated : row)));
+        }}
+      />
+
+      <BusinessDetailsDialog
+        // Keyed on the studio, so each opening reads that studio's details afresh.
+        key={`business:${businessFor?.id ?? "none"}`}
+        api={api}
+        tenant={businessFor}
+        onOpenChange={open => {
+          if (!open) setBusinessFor(null);
         }}
       />
 

@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, Label, StatusBadge, Textarea } from "@/components/ui";
-import type { Api } from "@/lib/api";
+import { Button, EmptyState, Label, StatusBadge, Textarea } from "@/components/ui";
+import { ApiError, type Api } from "@/lib/api";
 import { getMaintenance, setMaintenance, type PlatformMaintenance } from "@/lib/platform";
 
 /**
@@ -17,6 +17,7 @@ export function MaintenanceCard({ api }: { api: Api }) {
   const [state, setState] = useState<PlatformMaintenance | null>(null);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [refused, setRefused] = useState(false);
 
   useEffect(() => {
     getMaintenance(api).then(
@@ -24,7 +25,12 @@ export function MaintenanceCard({ api }: { api: Api }) {
         setState(m);
         setMessage(m.message);
       },
-      () => toast.error("Could not read maintenance mode."),
+      err => {
+        // A 404 is the backend refusing this account the super portal, which
+        // it does not confirm exists: say so as /platform does, not as a fault.
+        if (err instanceof ApiError && err.status === 404) setRefused(true);
+        else toast.error("Could not read maintenance mode.");
+      },
     );
   }, [api]);
 
@@ -45,7 +51,17 @@ export function MaintenanceCard({ api }: { api: Api }) {
     }
   }
 
-  if (!state) return null;
+  if (refused) {
+    return <EmptyState title="Not available" description="This address isn’t available for your account." />;
+  }
+  if (!state) {
+    return (
+      <div className="flex items-center gap-2 py-16 text-sm text-muted">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading…
+      </div>
+    );
+  }
   const blank = message.trim() === "";
 
   return (

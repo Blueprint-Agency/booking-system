@@ -494,7 +494,7 @@ a dedicated "paused" page on the frontends is still to do; today they surface th
 `403 tenant_suspended` as a load failure.
 
 **Maintenance mode** (`be/src/services/platform/maintenance.ts`,
-`GET|PUT /api/v1/platform/maintenance`). A card at the top of the super portal's Studios page:
+`GET|PUT /api/v1/platform/maintenance`). The super portal's own Maintenance page (`/platform/maintenance`, beside Studios in its header):
 On/Off, the message (default "Maintenance in progress. We'll be back shortly."), who last changed
 it and when; turning it on asks for confirmation. While on, the backend answers every
 tenant-facing request `503 { error: "maintenance", message }` with `Retry-After` — no bypass for

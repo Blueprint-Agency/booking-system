@@ -18,7 +18,10 @@ export interface ReceiptDetails {
   footer: string | null;
 }
 
-/** `GET` / `PUT /portal/admin/settings/business-details`. */
+/**
+ * `GET` / `PUT /portal/admin/settings/business-details`, and the super
+ * portal's `/platform/tenants/:id/business-details`, which answer alike.
+ */
 export interface ReceiptDetailsView {
   business_details: ReceiptDetails;
   /** `R-000124`: the number the studio's next Receipt takes under the saved prefix. */
@@ -115,3 +118,12 @@ export const getReceiptDetails = (api: Api) => api.get<ReceiptDetailsView>(PATH)
 
 export const saveReceiptDetails = (api: Api, details: ReceiptDetails) =>
   api.put<ReceiptDetailsView>(PATH, details);
+
+/** The same details for any studio, as the super portal reads and saves them. */
+const platformPath = (tenantId: string) => `/platform/tenants/${tenantId}/business-details`;
+
+export const getStudioReceiptDetails = (api: Api, tenantId: string) =>
+  api.get<ReceiptDetailsView>(platformPath(tenantId));
+
+export const saveStudioReceiptDetails = (api: Api, tenantId: string, details: ReceiptDetails) =>
+  api.put<ReceiptDetailsView>(platformPath(tenantId), details);

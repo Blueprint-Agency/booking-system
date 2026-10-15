@@ -1,5 +1,6 @@
 "use client";
 import { useEffect } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui";
@@ -8,8 +9,8 @@ import { signOutPortal, usePortalSession } from "@/lib/portal-auth";
 /**
  * Chrome for the super portal, and its sign-in gate.
  *
- * One bar, no navigation: there is exactly one page here, and a sidebar of one
- * item is furniture. It looks deliberately unlike a studio's portal — this is
+ * One bar, with links to its two pages: the studio list, and the platform-wide
+ * Maintenance switch. It looks deliberately unlike a studio's portal — this is
  * the surface where a studio can be suspended, and the operator should never be
  * a moment's confusion away from thinking they are inside one.
  *
@@ -19,6 +20,11 @@ import { signOutPortal, usePortalSession } from "@/lib/portal-auth";
  * going. Whether a session may *use* the super portal is the backend's call
  * (`PLATFORM_ADMIN_EMAIL`), and the page renders its refusal.
  */
+const NAV = [
+  { href: "/platform", label: "Studios" },
+  { href: "/platform/maintenance", label: "Maintenance" },
+];
+
 export function PlatformShell({ children }: { children: React.ReactNode }) {
   const { isLoaded, session } = usePortalSession();
   const router = useRouter();
@@ -36,9 +42,32 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-paper">
       <header className="flex items-center justify-between gap-4 border-b border-border bg-ink px-4 py-3 text-paper sm:px-6">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold tracking-tight">ReserveToday</p>
-          <p className="text-xs text-paper/70">Super portal — platform administration</p>
+        <div className="flex min-w-0 items-center gap-6">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold tracking-tight">ReserveToday</p>
+            <p className="text-xs text-paper/70">Super portal — platform administration</p>
+          </div>
+          {session && (
+            <nav className="flex items-center gap-1 text-sm" aria-label="Super portal">
+              {NAV.map(item => {
+                const active = item.href === "/platform" ? pathname === item.href : pathname?.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    className={
+                      active
+                        ? "rounded-md bg-paper/15 px-2.5 py-1 font-medium text-paper"
+                        : "rounded-md px-2.5 py-1 text-paper/70 hover:bg-paper/10 hover:text-paper"
+                    }
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
         </div>
         {session && (
           <div className="flex shrink-0 items-center gap-3">
