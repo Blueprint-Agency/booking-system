@@ -296,7 +296,7 @@ One of a member's saved name-and-address sets that a Purchase is billed to (`cli
 _Avoid_: billing address (it is a name too), billing profile, address book, invoice details
 
 **Bill to**:
-The Billing details a Purchase was opened with, as copied onto it (`purchases.bill_to`, #401) and from it onto its Receipt (`receipts.bill_to`): the name and the address, never a reference to the set, so editing or deleting the set afterwards changes nothing already bought or issued. The member picks the set at checkout; a part-paid Purchase resumed later keeps the Bill to it was opened with. A Receipt shows it under "Bill to" with the member's email. A Purchase opened with none — every one before #401, a backfilled Receipt's, the legacy webhook fallback's — has no Bill to, and its Receipt is issued to the member's name and email alone.
+The Billing details a Purchase was opened with, as copied onto it (`purchases.bill_to`, #401) and from it onto its Receipt (`receipts.bill_to`): the name and the address, never a reference to the set, so editing or deleting the set afterwards changes nothing already bought or issued. The member picks the set at checkout, and every member purchase needs one, free ones included (#402); a part-paid Purchase resumed later keeps the Bill to it was opened with. A Receipt shows it under "Bill to" with the member's email. A Purchase no member checkout opened — every one before #401, a backfilled Receipt's, the legacy webhook fallback's, an import's — has no Bill to, and its Receipt is issued to the member's name and email alone.
 _Avoid_: billing address, invoice to, sold to, customer
 
 **Payment Account**:

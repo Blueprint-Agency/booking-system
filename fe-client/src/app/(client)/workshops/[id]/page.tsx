@@ -333,6 +333,7 @@ export default function WorkshopDetailPage() {
                   tierId: selectedTier?.id ?? null,
                 }}
                 context="book a workshop"
+                itemName={workshop.name}
                 gateHref={`/workshops/${workshop.id}`}
                 // NaN, not 0: an absent price must fall to the paid branch.
                 // Coercing it to 0 would post-and-grant the workshop for free.

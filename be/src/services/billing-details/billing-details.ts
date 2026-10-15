@@ -158,16 +158,21 @@ export const billingAddressOf = (row: BillingDetails): BillingAddress => ({
 
 /**
  * What a checkout bills (#401): the address of the member's chosen set, ready
- * to copy onto the Purchase, or null when the checkout named none. A set that
- * is not the member's own is `404 billing_details_not_found`, before anything
- * is opened or claimed.
+ * to copy onto the Purchase. Every member purchase names one, free ones
+ * included (#402), so a checkout that names none is
+ * `400 billing_details_required`, and a set that is not the member's own is
+ * `404 billing_details_not_found`: both before anything is opened or claimed.
  */
 export async function billToFor(
   tenantId: string,
   clientId: string,
   billingDetailsId: string | undefined,
-): Promise<BillingAddress | null> {
-  if (!billingDetailsId) return null
+): Promise<BillingAddress> {
+  if (!billingDetailsId) {
+    throw new BadRequestError('billing_details_required', {
+      message: 'Choose the billing details this purchase is billed to.',
+    })
+  }
   return billingAddressOf(await ownBillingDetails(tenantId, clientId, billingDetailsId))
 }
 

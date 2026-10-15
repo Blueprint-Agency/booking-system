@@ -66,6 +66,10 @@ const saveCard = z.boolean().optional()
 /**
  * The member's Billing details this Purchase is billed to (#401): one of their
  * own sets, copied onto the Purchase and so onto its Receipt as Bill to.
+ *
+ * Every member purchase names one, free ones included (#402). Optional to the
+ * parser only so that a request naming none is refused with its own code,
+ * `billing_details_required` (`billToFor`), rather than as a malformed body.
  */
 const billingDetailsId = z.string().uuid().optional()
 
@@ -109,16 +113,18 @@ const corporateCheckoutSchema = z
     package_kind: z.literal('corporate'),
     package_id: z.string().uuid(),
     save_card: saveCard,
+    billing_details_id: billingDetailsId,
   })
   .strict()
 
 const checkoutPackageSchema = z.discriminatedUnion('package_kind', [planCheckoutSchema, corporateCheckoutSchema])
 
-const crossLocationSchema = z.object({
-  /** The plan the Add-On attaches to. It belongs to one plan, never to a member. */
-  client_package_id: z.string().uuid(),
-  billing_details_id: billingDetailsId,
-})
+/** The plan the Add-On attaches to. It belongs to one plan, never to a member. */
+const crossLocationQuoteSchema = z.object({ client_package_id: z.string().uuid() })
+
+const crossLocationSchema = crossLocationQuoteSchema.extend({ billing_details_id: billingDetailsId })
+
+const merchCheckoutSchema = z.object({ merch_id: z.string().uuid(), billing_details_id: billingDetailsId })
 
 // The product travels with the code (§11) — without it the endpoint cannot
 // answer the scope case. Either a package or a workshop tier, never both.
@@ -202,8 +208,11 @@ const app = new Hono()
   })
   .post('/checkout/package', zValidator('json', checkoutPackageSchema), async c => {
     const body = c.req.valid('json')
+    // Who the sale is billed to, resolved before anything is opened or claimed:
+    // a request naming no set of the member's own goes no further (#402).
+    const billTo = await billToFor(tenantId(c), c.get('clientId'), body.billing_details_id)
     if (body.package_kind === 'corporate') {
-      const corporate = await beginCorporateCheckout(tenantId(c), c.get('clientId'), body.package_id)
+      const corporate = await beginCorporateCheckout(tenantId(c), c.get('clientId'), body.package_id, billTo)
       if (corporate.outcome === 'granted') {
         return c.json(
           { outcome: 'granted', corporate_request_id: corporate.corporateRequestId, free: true },
@@ -224,10 +233,10 @@ const app = new Hono()
         cancelUrl: `${clientUrl}/checkout?package=${body.package_id}&kind=corporate&cancelled=1`,
         cardsOnly: true,
         saveCard: body.save_card,
+        billTo,
       })
       return c.json({ url })
     }
-    const billTo = await billToFor(tenantId(c), c.get('clientId'), body.billing_details_id)
     const quote = await beginPackageCheckout({
       tenantId: tenantId(c),
       clientId: c.get('clientId'),
@@ -237,6 +246,7 @@ const app = new Hono()
       locationId: body.location_id,
       instructorId: body.instructor_id,
       crossLocationAddOn: body.cross_location_add_on,
+      billTo,
     })
     if (quote.outcome === 'granted') {
       return c.json({ outcome: 'granted', client_package_id: quote.clientPackageId, free: true }, 201)
@@ -272,7 +282,7 @@ const app = new Hono()
   // own session, told apart by the `kind` metadata, which names the plan the
   // webhook must fill the column on. A quote first, so the member sees the
   // months-times-rate arithmetic before they are asked to pay it.
-  .post('/checkout/cross-location/quote', zValidator('json', crossLocationSchema), async c => {
+  .post('/checkout/cross-location/quote', zValidator('json', crossLocationQuoteSchema), async c => {
     const q = await quoteCrossLocationAddOn(
       tenantId(c),
       c.get('clientId'),
@@ -305,12 +315,14 @@ const app = new Hono()
   })
   // Merch: one item, no Promo Code, no review page. Paid for online and handed
   // over at the studio, which is what the client app's notice says.
-  .post('/checkout/merch', zValidator('json', z.object({ merch_id: z.string().uuid() })), async c => {
-    const { merch_id } = c.req.valid('json')
+  .post('/checkout/merch', zValidator('json', merchCheckoutSchema), async c => {
+    const { merch_id, billing_details_id } = c.req.valid('json')
+    const billTo = await billToFor(tenantId(c), c.get('clientId'), billing_details_id)
     const quote = await beginMerchCheckout({
       tenantId: tenantId(c),
       clientId: c.get('clientId'),
       merchId: merch_id,
+      billTo,
     })
     if (quote.outcome === 'granted') {
       return c.json({ outcome: 'granted', order_id: quote.orderId, free: true }, 201)
@@ -325,6 +337,7 @@ const app = new Hono()
       metadata: quote.metadata,
       successUrl: `${clientUrl}/booking/confirmation?type=merch&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${clientUrl}/merch?cancelled=1`,
+      billTo,
     })
     return c.json({ url })
   })
@@ -381,6 +394,7 @@ const app = new Hono()
       workshopId: body.workshop_id,
       workshopTierId: body.workshop_tier_id,
       promoCode: body.promo_code,
+      billTo,
     })
     if (quote.outcome === 'granted') {
       return c.json({ outcome: 'granted', booking_id: quote.bookingId, free: true }, 201)
