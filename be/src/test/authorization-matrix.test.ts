@@ -264,6 +264,8 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'DELETE /api/v1/platform/tenants/:id': { gate: PLATFORM_ADMIN_ONLY },
   'PATCH /api/v1/platform/tenants/:id/status': { gate: PLATFORM_ADMIN_ONLY },
   'PUT /api/v1/platform/tenants/:id/term': { gate: PLATFORM_ADMIN_ONLY },
+  'GET /api/v1/platform/tenants/:id/business-details': { gate: PLATFORM_ADMIN_ONLY },
+  'PUT /api/v1/platform/tenants/:id/business-details': { gate: PLATFORM_ADMIN_ONLY },
   'POST /api/v1/platform/tenants/:id/slug': { gate: PLATFORM_ADMIN_ONLY },
   'POST /api/v1/platform/tenants/:id/admin': { gate: PLATFORM_ADMIN_ONLY },
   'GET /api/v1/platform/tenants/:id/export': { gate: PLATFORM_ADMIN_ONLY, probe: { query: 'include=everything' } },
