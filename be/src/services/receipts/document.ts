@@ -5,16 +5,29 @@
  * the member's and the admin's Receipt pages) only lay this out; neither
  * words, formats or orders anything of its own, so they cannot drift apart.
  *
- * Top to bottom: the studio beside the number; the amount paid, with a PAID
- * or REFUNDED chip and one sentence on how it was paid; Bill to (or, on a
- * Receipt whose Purchase chose no Billing details, Issued to), Issued on and
- * Paid with; the lines as a table (each at List Price × quantity, each
- * discount under the line it came off); Subtotal, Discount, Total paid; the
- * studio's note; the platform's credit.
+ * Laid out as a business receipt (#403), top to bottom:
+ *
+ * - the title, "Receipt", with the studio's logo on the right, or its
+ *   Business name in the logo's place;
+ * - the facts: Receipt number, Date paid (Issued on, where nothing was due),
+ *   and Registration where the studio has a registration number;
+ * - two columns: the studio (Business name, address, contact email) and
+ *   **Bill to** (the Billing details the Purchase chose, its address a line
+ *   each, and the member's email; or, where it chose none, the member's name
+ *   and email);
+ * - the headline, `S$150.00 paid on 2 Oct 2026`, with a PAID or REFUNDED
+ *   marker and `Refunded on …`; or "No payment: nothing was due.";
+ * - the lines as a table, each at List Price × quantity, each discount under
+ *   the line it came off;
+ * - Subtotal, Discount when there was one, Total, and Amount paid;
+ * - the Payment history: each payment's method, date and amount;
+ * - the studio's note; the platform's credit.
+ *
+ * No tax and no invoice number: a Receipt has neither.
  *
  * `receiptDocument` is pure. Everything comes off the Receipt's own snapshot,
- * except the studio's display name and logo, which `receiptStudio` reads as of
- * now (`tenant_settings`).
+ * except the studio's logo (and the name its image stands for), which
+ * `receiptStudio` reads as of now (`tenant_settings`).
  */
 import { eq } from 'drizzle-orm'
 import { db } from '../../db'
@@ -30,37 +43,42 @@ import { PLATFORM_CREDIT } from './theme'
 
 /** How the studio presents itself on its Receipts today. */
 export interface ReceiptStudio {
+  /** The name it shows members today: what its logo stands for, to a reader who cannot see it. */
   name: string
-  /** The address of its logo, or null for the name alone. */
+  /** The address of its logo, or null for the Business name alone. */
   logoUrl: string | null
 }
 
-/** A value under a label: the first of a group is set strong, the rest muted. */
-export interface ReceiptFactLine {
+/** A line in a block: the first of a block is set strong, the rest muted. */
+export interface ReceiptBlockLine {
   text: string
   strong: boolean
 }
 
 export interface ReceiptDocument {
+  /** "Receipt". */
+  title: string
   /** `R-000123`. */
   number: string
-  studio: ReceiptStudio & {
-    /** Business name as issued, registration number and address, those the studio has set. */
-    details: string[]
-  }
-  /** `S$150.00`: the total paid, the figure the panel leads with. */
-  amountPaid: string
+  /**
+   * Top right: the studio's logo, as of now, or its Business name, as issued,
+   * in the logo's place. `name` is what the logo stands for.
+   */
+  brand: { logoUrl: string | null; name: string }
+  /** The studio's Business name as issued: the seller. */
+  sellerName: string
+  /** Receipt number, Date paid or Issued on, and Registration when the studio has one. */
+  facts: { label: string; value: string }[]
+  /** The studio: Business name (strong), address a line each, contact email. */
+  seller: ReceiptBlockLine[]
+  /** Bill to: the name (strong), the address a line each, the member's email. */
+  billTo: { label: string; lines: ReceiptBlockLine[] }
+  /** `S$150.00 paid on 2 Oct 2026`, or `No payment: nothing was due.` */
+  headline: string
   /** PAID once paid, REFUNDED once refunded; none on a Receipt where nothing was due. */
   chip: { text: string; tone: 'paid' | 'refunded' } | null
-  /** One sentence on how it was paid: `Paid by Visa •••• 4242 on 1 Oct 2026`. */
-  status: string
   /** `Refunded on 5 Oct 2026`, or null. */
   refunded: string | null
-  /**
-   * Bill to (#401) where the Purchase chose Billing details, else Issued to
-   * with the member's name and email; then Issued on and Paid with.
-   */
-  facts: { key: 'billTo' | 'issuedTo' | 'issuedOn' | 'paidWith'; label: string; lines: ReceiptFactLine[] }[]
   columns: { description: string; quantity: string; unitPrice: string; amount: string }
   lines: {
     description: string
@@ -70,8 +88,14 @@ export interface ReceiptDocument {
     amount: string
     discounts: { label: string; amount: string }[]
   }[]
-  /** Subtotal, Discount when there was one, and Total paid, which is `grand`. */
-  totals: { label: string; amount: string; grand: boolean }[]
+  /** Subtotal, Discount when there was one, Total, and Amount paid, which is `strong`. */
+  totals: { label: string; amount: string; strong: boolean }[]
+  /** Every payment that paid it, or null where nothing was paid. */
+  payments: {
+    title: string
+    columns: { method: string; date: string; amount: string }
+    rows: { method: string; date: string; amount: string }[]
+  } | null
   /** The studio's own footer note, as it wrote it. */
   note: string | null
   credit: typeof PLATFORM_CREDIT
@@ -109,17 +133,18 @@ export const billToAddressLines = (bill: BillingAddress): string[] =>
     (line): line is string => Boolean(line && line.trim()),
   )
 
+/** A block of text a studio typed (its address), a line each. */
+const textLines = (value: string | null): string[] =>
+  (value ?? '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+
 /** How a discount reads under its line: a code alone would mean nothing on paper. */
 const discountLabel = (d: LineDiscount): string => (d.source === 'promo_code' ? `Promo code ${d.label}` : d.label)
 
 /** What a line came to before anything was taken off: its List Price times its quantity. */
 const lineListTotal = (line: PurchaseLine): string => sgdText(toCents(line.listPriceSgd) * line.quantity)
-
-function statusSentence(payments: ReceiptPayment[]): string {
-  if (payments.length === 0) return 'No payment: nothing was due.'
-  if (payments.length === 1) return `Paid by ${paymentLabel(payments[0]!)} on ${day.format(new Date(payments[0]!.paidAt))}`
-  return `Paid in ${payments.length} payments`
-}
 
 /** The studio as it presents itself today: its display name (else the name on the Receipt) and its logo. */
 export async function receiptStudio(receipt: Pick<ReceiptRow, 'tenantId' | 'sellerName'>): Promise<ReceiptStudio> {
@@ -133,57 +158,46 @@ export async function receiptStudio(receipt: Pick<ReceiptRow, 'tenantId' | 'sell
 
 /** The Receipt, worded and ordered, ready to lay out. Pure. */
 export function receiptDocument(receipt: ReceiptRow, studio: ReceiptStudio): ReceiptDocument {
-  const refunded = receipt.refundedAt !== null
-  const facts: ReceiptDocument['facts'] = []
-  if (receipt.billTo) {
-    facts.push({
-      key: 'billTo',
-      label: 'Bill to',
-      lines: [
-        { text: receipt.billTo.name, strong: true },
-        ...billToAddressLines(receipt.billTo).map(text => ({ text, strong: false })),
-        ...(receipt.buyerEmail ? [{ text: receipt.buyerEmail, strong: false }] : []),
-      ],
-    })
-  } else if (receipt.buyerName || receipt.buyerEmail) {
-    facts.push({
-      key: 'issuedTo',
-      label: 'Issued to',
-      lines: [
-        ...(receipt.buyerName ? [{ text: receipt.buyerName, strong: true }] : []),
-        ...(receipt.buyerEmail ? [{ text: receipt.buyerEmail, strong: !receipt.buyerName }] : []),
-      ],
-    })
-  }
-  facts.push({ key: 'issuedOn', label: 'Issued on', lines: [{ text: day.format(receipt.issuedAt), strong: true }] })
-  if (receipt.payments.length > 0) {
-    facts.push({
-      key: 'paidWith',
-      label: 'Paid with',
-      lines: receipt.payments.flatMap(p => [
-        { text: paymentLabel(p), strong: true },
-        { text: `${day.format(new Date(p.paidAt))} · ${money(p.amountSgd)}`, strong: false },
-      ]),
-    })
-  }
+  const paid = receipt.payments.length > 0
+  // The day the last payment, the one that settled it, was made; the day it
+  // was issued where none was.
+  const paidOn = paid ? day.format(new Date(receipt.payments.at(-1)!.paidAt)) : null
+  // The name it trades under, as issued; a Receipt from before #398 that
+  // carried none names the studio as it then called itself.
+  const sellerName = receipt.sellerBusinessName?.trim() || receipt.sellerName
+
+  const facts: ReceiptDocument['facts'] = [
+    { label: 'Receipt number', value: receipt.displayNumber },
+    paidOn ? { label: 'Date paid', value: paidOn } : { label: 'Issued on', value: day.format(receipt.issuedAt) },
+  ]
+  if (receipt.sellerRegistrationNumber?.trim()) facts.push({ label: 'Registration', value: receipt.sellerRegistrationNumber.trim() })
+
+  const muted = (text: string): ReceiptBlockLine => ({ text, strong: false })
+  const seller: ReceiptBlockLine[] = [
+    { text: sellerName, strong: true },
+    ...textLines(receipt.sellerAddress).map(muted),
+    ...(receipt.sellerEmail ? [muted(receipt.sellerEmail)] : []),
+  ]
+  // Bill to the Billing details the Purchase chose (#401); where it chose
+  // none, the member by their name and email.
+  const billed: ReceiptBlockLine[] = receipt.billTo
+    ? [{ text: receipt.billTo.name, strong: true }, ...billToAddressLines(receipt.billTo).map(muted)]
+    : receipt.buyerName
+      ? [{ text: receipt.buyerName, strong: true }]
+      : []
+  if (receipt.buyerEmail) billed.push({ text: receipt.buyerEmail, strong: billed.length === 0 })
 
   return {
+    title: 'Receipt',
     number: receipt.displayNumber,
-    studio: {
-      ...studio,
-      details: [receipt.sellerBusinessName, receipt.sellerRegistrationNumber, receipt.sellerAddress].filter(
-        (d): d is string => Boolean(d),
-      ),
-    },
-    amountPaid: money(receipt.totalSgd),
-    chip: refunded
-      ? { text: 'REFUNDED', tone: 'refunded' }
-      : receipt.payments.length > 0
-        ? { text: 'PAID', tone: 'paid' }
-        : null,
-    status: statusSentence(receipt.payments),
-    refunded: receipt.refundedAt ? `Refunded on ${day.format(receipt.refundedAt)}` : null,
+    brand: { logoUrl: studio.logoUrl, name: studio.logoUrl ? studio.name : sellerName },
+    sellerName,
     facts,
+    seller,
+    billTo: { label: 'Bill to', lines: billed },
+    headline: paidOn ? `${money(receipt.totalSgd)} paid on ${paidOn}` : 'No payment: nothing was due.',
+    chip: receipt.refundedAt ? { text: 'REFUNDED', tone: 'refunded' } : paid ? { text: 'PAID', tone: 'paid' } : null,
+    refunded: receipt.refundedAt ? `Refunded on ${day.format(receipt.refundedAt)}` : null,
     columns: { description: 'Description', quantity: 'Qty', unitPrice: 'Unit price', amount: 'Amount' },
     lines: receipt.lines.map(line => ({
       description: line.description,
@@ -193,10 +207,18 @@ export function receiptDocument(receipt: ReceiptRow, studio: ReceiptStudio): Rec
       discounts: line.discounts.map(d => ({ label: discountLabel(d), amount: off(d.amountSgd) })),
     })),
     totals: [
-      { label: 'Subtotal', amount: money(receipt.subtotalSgd), grand: false },
-      ...(toCents(receipt.discountSgd) > 0 ? [{ label: 'Discount', amount: off(receipt.discountSgd), grand: false }] : []),
-      { label: 'Total paid', amount: money(receipt.totalSgd), grand: true },
+      { label: 'Subtotal', amount: money(receipt.subtotalSgd), strong: false },
+      ...(toCents(receipt.discountSgd) > 0 ? [{ label: 'Discount', amount: off(receipt.discountSgd), strong: false }] : []),
+      { label: 'Total', amount: money(receipt.totalSgd), strong: false },
+      { label: 'Amount paid', amount: money(receipt.totalSgd), strong: true },
     ],
+    payments: paid
+      ? {
+          title: 'Payment history',
+          columns: { method: 'Payment method', date: 'Date', amount: 'Amount paid' },
+          rows: receipt.payments.map(p => ({ method: paymentLabel(p), date: day.format(new Date(p.paidAt)), amount: money(p.amountSgd) })),
+        }
+      : null,
     note: receipt.sellerFooter,
     credit: PLATFORM_CREDIT,
   }

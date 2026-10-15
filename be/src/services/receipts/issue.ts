@@ -103,6 +103,10 @@ export async function issueReceipt(
       registrationNumber: tenantSettings.receiptRegistrationNumber,
       address: tenantSettings.receiptAddress,
       footer: tenantSettings.receiptFooter,
+      // Its contact email (#403): the reply-to address. Read through the mail
+      // identity function, which answers for the tenant whose context is open:
+      // the application role has no SELECT on the mail columns themselves.
+      email: sql<string | null>`(SELECT reply_to FROM current_tenant_mail_identity())`,
     })
     .from(tenants)
     .leftJoin(tenantSettings, eq(tenantSettings.tenantId, tenants.id))
@@ -169,6 +173,7 @@ export async function issueReceipt(
       sellerRegistrationNumber: seller!.registrationNumber,
       sellerAddress: seller!.address,
       sellerFooter: seller!.footer,
+      sellerEmail: seller!.email?.trim() || null,
       buyerName: buyer?.name ?? null,
       buyerEmail: buyer?.email ?? null,
       // Bill to (#401), as the Purchase copied it when it opened.

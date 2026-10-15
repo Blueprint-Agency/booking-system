@@ -92,3 +92,39 @@ test('INV-88 the Receipt as HTML: paid, refunded and free each read as the PDF d
   assert.ok(hostile.includes('&lt;script&gt;alert(1)&lt;/script&gt;'))
   assert.ok(hostile.startsWith('<!doctype html>') && hostile.includes('<title>Receipt R-000042</title>'))
 })
+
+test('INV-103 nothing typed into a Bill to, the studio\'s Business details or its contact email becomes markup in the Receipt\'s HTML', () => {
+  const page = receiptHtmlPage(
+    receiptDocument(
+      {
+        ...paid,
+        sellerBusinessName: 'Northwind <b>Wellness</b>',
+        sellerAddress: '<i>12 Example Road</i>',
+        sellerRegistrationNumber: '<u>2026</u>',
+        sellerEmail: '"><script>alert(1)</script>@example.test',
+        billTo: {
+          name: '<img src=x onerror=alert(1)>',
+          line1: '<a href="javascript:alert(1)">1 Example Street</a>',
+          line2: '<svg onload=alert(1)>',
+          city: '<em>Singapore</em>',
+          state: null,
+          postcode: '<s>000001</s>',
+          country: 'SG',
+        },
+      },
+      { name: 'Northwind <script>', logoUrl: 'https://cdn.example.test/logo.png" onerror="alert(1)' },
+    ),
+  )
+  assert.doesNotMatch(page, /<(b|i|u|em|s|svg|script|a)\b|<img src=x|onerror="|href="javascript/, page)
+  for (const escaped of [
+    'Northwind &lt;b&gt;Wellness&lt;/b&gt;',
+    '&lt;i&gt;12 Example Road&lt;/i&gt;',
+    '&lt;u&gt;2026&lt;/u&gt;',
+    '&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;@example.test',
+    '&lt;img src=x onerror=alert(1)&gt;',
+    '&lt;svg onload=alert(1)&gt;',
+    '&lt;em&gt;Singapore&lt;/em&gt;',
+  ]) {
+    assert.ok(page.includes(escaped), `"${escaped}" is shown as text`)
+  }
+})

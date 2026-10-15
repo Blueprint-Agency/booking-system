@@ -13,12 +13,8 @@ export const RECEIPT_COLORS = {
   ink: EMAIL_COLORS.ink,
   muted: EMAIL_COLORS.muted,
   rule: EMAIL_COLORS.border,
-  /** The amount-paid panel. */
-  panel: EMAIL_COLORS.panel,
-  /** The RECEIPT label and the rule under the table's headings. */
-  accent: EMAIL_COLORS.primary,
   paper: '#ffffff',
-  /** The band across the top, and the ground of the platform's mark (fe-client `public/brand/platform-mark.svg`). */
+  /** The ground of the platform's mark in the footer (fe-client `public/brand/platform-mark.svg`). */
   navy: '#0f172a',
   markLight: '#f8fafc',
   paid: '#1d6b45',
