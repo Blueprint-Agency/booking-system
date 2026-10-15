@@ -50,6 +50,8 @@ export const receiptView = (r: ReceiptRow) => ({
     registration_number: r.sellerRegistrationNumber,
     address: r.sellerAddress,
     footer: r.sellerFooter,
+    // The studio's contact email as of issue (#403), or null.
+    email: r.sellerEmail,
   },
   buyer: { name: r.buyerName, email: r.buyerEmail },
   // Who the Purchase was billed to (#401), or null where it chose no Billing details.

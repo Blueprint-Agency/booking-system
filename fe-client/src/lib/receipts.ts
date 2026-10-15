@@ -54,6 +54,8 @@ export interface Receipt {
     registration_number: string | null;
     address: string | null;
     footer: string | null;
+    /** The studio's contact email as of issue, or null. */
+    email: string | null;
   };
   buyer: { name: string | null; email: string | null };
   lines: ReceiptLine[];

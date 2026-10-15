@@ -26,6 +26,7 @@ const paid: ReceiptRow = {
   sellerRegistrationNumber: null,
   sellerAddress: '12 Example Road\nSingapore 000000',
   sellerFooter: null,
+  sellerEmail: null,
   buyerName: 'Mia Tan',
   buyerEmail: 'mia@example.test',
   billTo: null,
@@ -50,14 +51,15 @@ const paid: ReceiptRow = {
 test('INV-88 the Receipt as HTML: paid, refunded and free each read as the PDF does, every value escaped, credited to the platform', () => {
   const text = htmlToText(receiptHtml(receiptDocument(paid, STUDIO)))
   for (const said of [
-    'Northwind Yoga',
+    'Receipt number: R-000042',
     'Northwind Wellness Pte. Ltd.',
     'R-000042',
     'Amount paid',
     'S$19.00',
     'PAID',
-    'Paid by Apple Pay · Visa •••• 4242 on 2 Oct 2026',
-    'Issued to',
+    'S$19.00 paid on 2 Oct 2026',
+    'Apple Pay · Visa •••• 4242 2 Oct 2026 S$19.00',
+    'Bill to',
     'Mia Tan',
     'mia@example.test',
     'Grip socks 2 S$12.00 S$24.00',
@@ -65,7 +67,8 @@ test('INV-88 the Receipt as HTML: paid, refunded and free each read as the PDF d
     '-S$5.00',
     'Subtotal: S$24.00',
     'Discount: -S$5.00',
-    'Total paid: S$19.00',
+    'Total: S$19.00',
+    'Amount paid: S$19.00',
     'Powered by ReserveToday · reservetoday.app',
   ]) {
     assert.ok(text.includes(said), `"${said}" in:\n${text}`)
@@ -80,7 +83,7 @@ test('INV-88 the Receipt as HTML: paid, refunded and free each read as the PDF d
     receiptHtml(receiptDocument({ ...paid, lines: [], subtotalSgd: '0.00', discountSgd: '0.00', totalSgd: '0.00', payments: [] }, STUDIO)),
   )
   assert.ok(free.includes('No payment: nothing was due.'), free)
-  assert.doesNotMatch(free, /\bPAID\b|Paid with|Discount/)
+  assert.doesNotMatch(free, /\bPAID\b|Payment history|paid on|Discount/)
 
   const hostile = receiptHtmlPage(
     receiptDocument(
@@ -91,4 +94,40 @@ test('INV-88 the Receipt as HTML: paid, refunded and free each read as the PDF d
   assert.doesNotMatch(hostile, /<script>|<b>|<img>|javascript:/, 'nothing a studio or a member typed becomes markup')
   assert.ok(hostile.includes('&lt;script&gt;alert(1)&lt;/script&gt;'))
   assert.ok(hostile.startsWith('<!doctype html>') && hostile.includes('<title>Receipt R-000042</title>'))
+})
+
+test('INV-103 nothing typed into a Bill to, the studio\'s Business details or its contact email becomes markup in the Receipt\'s HTML', () => {
+  const page = receiptHtmlPage(
+    receiptDocument(
+      {
+        ...paid,
+        sellerBusinessName: 'Northwind <b>Wellness</b>',
+        sellerAddress: '<i>12 Example Road</i>',
+        sellerRegistrationNumber: '<u>2026</u>',
+        sellerEmail: '"><script>alert(1)</script>@example.test',
+        billTo: {
+          name: '<img src=x onerror=alert(1)>',
+          line1: '<a href="javascript:alert(1)">1 Example Street</a>',
+          line2: '<svg onload=alert(1)>',
+          city: '<em>Singapore</em>',
+          state: null,
+          postcode: '<s>000001</s>',
+          country: 'SG',
+        },
+      },
+      { name: 'Northwind <script>', logoUrl: 'https://cdn.example.test/logo.png" onerror="alert(1)' },
+    ),
+  )
+  assert.doesNotMatch(page, /<(b|i|u|em|s|svg|script|a)\b|<img src=x|onerror="|href="javascript/, page)
+  for (const escaped of [
+    'Northwind &lt;b&gt;Wellness&lt;/b&gt;',
+    '&lt;i&gt;12 Example Road&lt;/i&gt;',
+    '&lt;u&gt;2026&lt;/u&gt;',
+    '&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;@example.test',
+    '&lt;img src=x onerror=alert(1)&gt;',
+    '&lt;svg onload=alert(1)&gt;',
+    '&lt;em&gt;Singapore&lt;/em&gt;',
+  ]) {
+    assert.ok(page.includes(escaped), `"${escaped}" is shown as text`)
+  }
 })

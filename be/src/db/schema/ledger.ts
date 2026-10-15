@@ -499,6 +499,11 @@ export const receipts = pgTable(
     sellerRegistrationNumber: text('seller_registration_number'),
     sellerAddress: text('seller_address'),
     sellerFooter: text('seller_footer'),
+    /**
+     * The studio's contact email (#403): its reply-to address as of issue.
+     * Null where it had none, and on every Receipt issued before #403.
+     */
+    sellerEmail: text('seller_email'),
     // The buyer, as of issue.
     buyerName: text('buyer_name'),
     buyerEmail: text('buyer_email'),

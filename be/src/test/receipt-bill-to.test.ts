@@ -454,7 +454,7 @@ describe('a Receipt bills the Billing details chosen at checkout', { skip: integ
     assert.deepEqual(open, [], 'no Purchase was opened')
   })
 
-  test('INV-95 a paid checkout that names no Billing details issues a Receipt with no Bill to, issued to the member\'s name and email as before', async () => {
+  test('INV-95 a paid checkout that names no Billing details issues a Receipt with no Bill to of its own, billed to the member\'s name and email', async () => {
     const lee = await member()
     await saves(lee, COMPANY)
     await pay(lee, PACKAGE, { package_kind: 'class', package_id: studio.bundleId })
@@ -469,11 +469,11 @@ describe('a Receipt bills the Billing details chosen at checkout', { skip: integ
       ['the PDF', await receiptPdfText(lee, receipt)],
       ["the email's plain text", mail.text ?? ''],
     ] as const) {
-      const issuedTo = text.search(/i\s*s\s*s\s*u\s*e\s*d\s*t\s*o/i)
-      assert.ok(issuedTo >= 0, `${where} says Issued to: ${text}`)
-      assert.ok(text.indexOf('Mia Tan', issuedTo) > issuedTo && text.indexOf(lee.email, issuedTo) > issuedTo, `${where} names the member and their email`)
-      assert.ok(!/b\s*i\s*l\s*l\s*t\s*o/i.test(text), `${where} has no Bill to: ${text}`)
+      const billTo = text.search(/b\s*i\s*l\s*l\s*t\s*o/i)
+      assert.ok(billTo >= 0, `${where} says Bill to: ${text}`)
+      assert.ok(text.indexOf('Mia Tan', billTo) > billTo && text.indexOf(lee.email, billTo) > billTo, `${where} names the member and their email`)
       assert.ok(!text.includes(COMPANY.name), `${where} does not bill the member's saved set`)
+      for (const line of COMPANY_LINES.slice(1)) assert.ok(!text.includes(line), `${where} prints none of the saved set's address: ${text}`)
     }
   })
 })

@@ -834,6 +834,13 @@
       "when": 1792005600000,
       "tag": "0118_bill_to",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1792033417153,
+      "tag": "0119_receipt_seller_email",
+      "breakpoints": true
     }
   ]
 }
