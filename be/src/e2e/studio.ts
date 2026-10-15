@@ -416,6 +416,16 @@ export async function createE2eStudio({
       throw new Error(`registering ${email} failed (${registered.status}): ${await registered.text()}`)
     }
     const { token } = (await registered.json()) as { token: string }
+    // Every member purchase is billed to Billing details (#402): each member
+    // keeps one set, their default, so a journey's checkout has it selected.
+    const billing = await app.request('/api/v1/me/billing-details', {
+      method: 'POST',
+      headers: { ...headers, Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: `E2E ${lastName}`, line1: '1 Test Street', city: 'Singapore', postcode: '000001' }),
+    })
+    if (billing.status !== 201) {
+      throw new Error(`saving Billing details for ${email} failed (${billing.status}): ${await billing.text()}`)
+    }
     return { email, token }
   }
   const buyer = await register('buyer', 'Buyer')

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.package-validity.test`
@@ -274,6 +275,7 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
+    await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM workshop_tiers WHERE workshop_id IN (${workshops})`)
     await harness.db.execute(sql`DELETE FROM workshops WHERE name LIKE ${`${NAME}%`}`)
@@ -393,7 +395,7 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
       .values({ tenantId: one.id, workshopId: workshop!.id, name: 'Free', regularPriceSgd: '0.00', ord: 1 })
       .returning({ id: schema.workshopTiers.id })
     const booked = await expectStatus(
-      await post(gus.headers, '/api/v1/me/checkout/workshop', { workshop_id: workshop!.id, workshop_tier_id: tier!.id }),
+      await post(gus.headers, '/api/v1/me/checkout/workshop', await billed(harness.app, gus.headers, { workshop_id: workshop!.id, workshop_tier_id: tier!.id })),
       201,
     )
     assert.equal(booked.outcome, 'granted')

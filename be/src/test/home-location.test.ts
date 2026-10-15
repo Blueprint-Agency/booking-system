@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.home-location.test`
@@ -226,6 +227,7 @@ describe('home location and member cancellations over HTTP', { skip: integration
     await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
+    await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM classes WHERE created_by_staff_id IN (${staff})`)
     await harness.db.execute(sql`DELETE FROM class_packages WHERE name LIKE ${named}`)
@@ -318,7 +320,7 @@ describe('home location and member cancellations over HTTP', { skip: integration
       await harness.app.request('/api/v1/me/checkout/package', {
         method: 'POST',
         headers: { ...eve.headers, ...json },
-        body: JSON.stringify({ package_kind: 'class', package_id: one.renewalPackageId, location_id: one.home.id }),
+        body: JSON.stringify(await billed(harness.app, eve.headers, { package_kind: 'class', package_id: one.renewalPackageId, location_id: one.home.id })),
       }),
       201,
     )

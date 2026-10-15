@@ -99,6 +99,8 @@ test('MRC-03 Buy on merch goes straight to the payment provider for one item, wi
   await page.goto(`${urls.client}/merch`)
   await expect(page.getByText('Pay online, collect at the front desk on your next visit.')).toBeVisible()
   await merchCard(page, catalogue.merchName).getByRole('button', { name: 'Buy' }).click()
+  // Who the purchase is billed to (#402): the member's saved set, selected.
+  await page.getByRole('dialog', { name: 'Billing details' }).getByRole('button', { name: 'Continue to payment' }).click()
 
   await page.waitForURL(/checkout\.stripe\.com/, { timeout: 60_000 })
   // One item at its own price: no quantity was asked, no code taken off.

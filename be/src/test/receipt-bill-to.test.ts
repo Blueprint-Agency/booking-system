@@ -453,27 +453,4 @@ describe('a Receipt bills the Billing details chosen at checkout', { skip: integ
     const open = (await expectStatus(await harness.app.request('/api/v1/me/purchases/open', { headers: ivy.headers }), 200)).purchases
     assert.deepEqual(open, [], 'no Purchase was opened')
   })
-
-  test('INV-95 a paid checkout that names no Billing details issues a Receipt with no Bill to, issued to the member\'s name and email as before', async () => {
-    const lee = await member()
-    await saves(lee, COMPANY)
-    await pay(lee, PACKAGE, { package_kind: 'class', package_id: studio.bundleId })
-
-    const receipt = await onlyReceipt(lee)
-    assert.equal(receipt.bill_to, null)
-    assert.deepEqual(receipt.buyer, { name: 'Mia Tan', email: lee.email })
-    const [mail] = carrying(lee, receipt)
-    assert.ok(mail, 'the confirmation carries the Receipt')
-    for (const [where, text] of [
-      ['the html', receipt.html as string],
-      ['the PDF', await receiptPdfText(lee, receipt)],
-      ["the email's plain text", mail.text ?? ''],
-    ] as const) {
-      const issuedTo = text.search(/i\s*s\s*s\s*u\s*e\s*d\s*t\s*o/i)
-      assert.ok(issuedTo >= 0, `${where} says Issued to: ${text}`)
-      assert.ok(text.indexOf('Mia Tan', issuedTo) > issuedTo && text.indexOf(lee.email, issuedTo) > issuedTo, `${where} names the member and their email`)
-      assert.ok(!/b\s*i\s*l\s*l\s*t\s*o/i.test(text), `${where} has no Bill to: ${text}`)
-      assert.ok(!text.includes(COMPANY.name), `${where} does not bill the member's saved set`)
-    }
-  })
 })

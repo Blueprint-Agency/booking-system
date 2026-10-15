@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import type { StripeFake } from './stripe-fake'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.purchase-lines.test`
@@ -207,7 +208,11 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
   const post = (headers: Record<string, string>, path: string, body: unknown) =>
     harness.app.request(path, { method: 'POST', headers: { ...headers, ...json }, body: JSON.stringify(body) })
 
-  const buyPackage = (who: Member, body: Record<string, unknown>) => post(who.headers, '/api/v1/me/checkout/package', body)
+  /** A member's checkout at `path`, naming their Billing details as every member purchase does (#402). */
+  const checkout = async (who: Member, path: string, body: Record<string, unknown>) =>
+    post(who.headers, path, await billed(harness.app, who.headers, body))
+
+  const buyPackage = (who: Member, body: Record<string, unknown>) => checkout(who, '/api/v1/me/checkout/package', body)
 
   /** The one Purchase the member's sale opened. */
   async function purchaseOf(who: Member) {
@@ -335,6 +340,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
       await harness.db.execute(sql`DELETE FROM merch WHERE title LIKE ${`${NAME}%`}`)
       await harness.db.execute(sql`DELETE FROM rooms WHERE location_id IN (${locations})`)
       await harness.db.execute(sql`DELETE FROM locations WHERE id IN (${locations})`)
+      await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
       await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
@@ -376,7 +382,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
     const zoe = await member()
     await assertPaidSale(
       zoe,
-      await post(zoe.headers, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }),
+      await checkout(zoe, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }),
       'workshop',
       [plain(w.name, '85.50')],
       '85.50',
@@ -384,7 +390,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
 
     const mat = await merchItem('42.00')
     const kai = await member()
-    await assertPaidSale(kai, await post(kai.headers, '/api/v1/me/checkout/merch', { merch_id: mat.id }), 'merch', [plain(mat.name, '42.00')], '42.00')
+    await assertPaidSale(kai, await checkout(kai, '/api/v1/me/checkout/merch', { merch_id: mat.id }), 'merch', [plain(mat.name, '42.00')], '42.00')
 
     // A Dormant plan of 3 months: the Add-On is 3 months at the studio's rate.
     const eli = await member()
@@ -392,7 +398,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
     // The plan the member already holds was bought before this file: only the Add-On is a sale here.
     await assertPaidSale(
       eli,
-      await post(eli.headers, '/api/v1/me/checkout/cross-location', { client_package_id: held }),
+      await checkout(eli, '/api/v1/me/checkout/cross-location', { client_package_id: held }),
       'cross_location_add_on',
       [plain('Cross-Location Add-On', RATE, 3, '60.00')],
       '60.00',
@@ -484,7 +490,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
     const zoe = await member()
     await assertPaidSale(
       zoe,
-      await post(zoe.headers, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }),
+      await checkout(zoe, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }),
       'workshop',
       [
         {
@@ -507,7 +513,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
     const sam = await member()
     await assertPaidSale(
       sam,
-      await post(sam.headers, '/api/v1/me/checkout/workshop', { workshop_id: early.id, workshop_tier_id: early.tierId }),
+      await checkout(sam, '/api/v1/me/checkout/workshop', { workshop_id: early.id, workshop_tier_id: early.tierId }),
       'workshop',
       [
         {
@@ -563,7 +569,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
   test('PAY-55 free Merch, a free corporate package and a free workshop place settle with their lines at S$0.00', async () => {
     const sticker = await merchItem('0.00')
     const kai = await member()
-    await assertFreeSale(kai, await post(kai.headers, '/api/v1/me/checkout/merch', { merch_id: sticker.id }), 'merch', [plain(sticker.name, '0.00')])
+    await assertFreeSale(kai, await checkout(kai, '/api/v1/me/checkout/merch', { merch_id: sticker.id }), 'merch', [plain(sticker.name, '0.00')])
 
     const offsite = await corporatePackage('0.00')
     const eve = await member()
@@ -573,7 +579,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
     const sam = await member()
     await assertFreeSale(
       sam,
-      await post(sam.headers, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }),
+      await checkout(sam, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId }),
       'workshop',
       [plain(w.name, '0.00')],
     )
@@ -585,7 +591,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
     const lea = await member()
     await assertFreeSale(
       lea,
-      await post(lea.headers, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId, promo_code: code.code }),
+      await checkout(lea, '/api/v1/me/checkout/workshop', { workshop_id: w.id, workshop_tier_id: w.tierId, promo_code: code.code }),
       'workshop',
       [
         {

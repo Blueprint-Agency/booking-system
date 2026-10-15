@@ -4,6 +4,7 @@ import { eq, sql } from 'drizzle-orm'
 import { frontendOrigin, harnessAddress, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { receiptFixtures } from './receipt-fixtures'
 import { withEnv } from './with-env'
+import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.business-details.test`
@@ -112,6 +113,7 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     const buyers = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
     await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${buyers})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${buyers})`)
+    await harness.db.execute(sql`DELETE FROM client_billing_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE ${ours})`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM client_auth_users WHERE email LIKE ${ours}`)
     await harness.close()
@@ -256,7 +258,7 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
           await harness.app.request('/api/v1/me/checkout/merch', {
             method: 'POST',
             headers: { ...buyer.headers, ...json },
-            body: JSON.stringify({ merch_id: mat.id }),
+            body: JSON.stringify(await billed(harness.app, buyer.headers, { merch_id: mat.id })),
           }),
           200,
         )
