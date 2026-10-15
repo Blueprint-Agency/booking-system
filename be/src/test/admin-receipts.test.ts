@@ -267,9 +267,9 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
 
     const all = await exported(`?q=${encodeURIComponent(tag)}`)
     assert.deepEqual(all, [
-      'number,date,member,email,kind,item,total_sgd,status',
-      `${tee.displayNumber},${sgToday},Ray ${tag},${ray.email},Merch,"Studio tee, black",135.00,refunded`,
-      `${pack.displayNumber},${sgToday},Una ${tag},${una.email},Class package,Ten pack,135.00,issued`,
+      'number,date,member,email,kind,item,total_sgd,status,bill_to_name,bill_to_address',
+      `${tee.displayNumber},${sgToday},Ray ${tag},${ray.email},Merch,"Studio tee, black",135.00,refunded,,`,
+      `${pack.displayNumber},${sgToday},Una ${tag},${una.email},Class package,Ten pack,135.00,issued,,`,
     ], "both of this studio's, newest first, and not the other studio's")
 
     assert.deepEqual(
@@ -283,7 +283,7 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
       'the kind filter',
     )
     const tomorrow = new Date(Date.now() + 8 * 3_600_000 + 86_400_000).toISOString().slice(0, 10)
-    assert.deepEqual(await exported(`?q=${encodeURIComponent(tag)}&from=${tomorrow}`), ['number,date,member,email,kind,item,total_sgd,status'], 'the date filter')
+    assert.deepEqual(await exported(`?q=${encodeURIComponent(tag)}&from=${tomorrow}`), ['number,date,member,email,kind,item,total_sgd,status,bill_to_name,bill_to_address'], 'the date filter')
     await expectStatus(await harness.app.request('/api/v1/portal/admin/receipts/export.csv?kind=gift_card', { headers: adminOfOne }), 400)
   })
 
@@ -296,5 +296,29 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
       row!.startsWith(`${receipt.displayNumber},`) && row!.includes(`,"'=HYPERLINK(""http://x.test"",""Eve ${run}"")",`),
       `the name is quoted and cannot run: ${row}`,
     )
+  })
+
+  test('INV-96 a Receipt billed to a member\'s Billing details exports its Bill to name and its address on one line', async () => {
+    const tag = `Billed ${run}`
+    const kai = await member(one, `Kai ${tag}`)
+    const receipt = await made.issueFor(one.id, kai.clientId, {
+      billTo: {
+        name: `Harbour Works ${run} Pte Ltd`,
+        line1: '1 Harbour Road',
+        line2: '#04-05',
+        city: 'Singapore',
+        state: null,
+        postcode: '098632',
+        country: 'SG',
+      },
+    })
+    const sgToday = new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10)
+
+    const res = await harness.app.request(`/api/v1/portal/admin/receipts/export.csv?q=${encodeURIComponent(tag)}`, { headers: adminOfOne })
+    assert.equal(res.status, 200)
+    assert.deepEqual((await res.text()).split('\r\n'), [
+      'number,date,member,email,kind,item,total_sgd,status,bill_to_name,bill_to_address',
+      `${receipt.displayNumber},${sgToday},Kai ${tag},${kai.email},Class package,Ten pack,135.00,issued,Harbour Works ${run} Pte Ltd,"1 Harbour Road, #04-05, Singapore 098632, Singapore"`,
+    ])
   })
 })
