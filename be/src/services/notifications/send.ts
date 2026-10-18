@@ -1,5 +1,5 @@
 import { frameTemplatedEmail, type FramedEmail } from './frame'
-import { sendMail, type MailAttachment } from '../../lib/mailer'
+import { sendMail, PLATFORM_MAIL_FROM_NAME, type MailAttachment } from '../../lib/mailer'
 import { tenantMailIdentity } from '../tenants/mail-identity'
 import { db } from '../../db'
 import { emailTemplates, emailLog } from '../../db/schema/content'
@@ -139,7 +139,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
   await deliver({ tenantId, slug, recipient, identity, email: frame(filled), loggedEmail: frame(logged), attachments })
 }
 
-/** Mail worded by the platform rather than a studio template, sent in the studio's name. */
+/** Mail worded by the platform rather than a studio template, sent on a studio's behalf. */
 export type SystemMailSlug = 'staff_email_change_link' | 'staff_email_changed_notice'
 
 /**
@@ -150,9 +150,10 @@ export type SystemMailSlug = 'staff_email_change_link' | 'staff_email_changed_no
  * They are the platform's copy, like the super portal's own mail, because a
  * template row would have to exist before they could be sent: a studio is
  * seeded its templates once, when it is created, and nothing refreshes an
- * existing studio's (`db/seed/email-templates.ts`). They still wear the
- * studio's name and `Reply-To`, pass the same send gate and file the same
- * `email_log` row, secrets redacted — only the words are fixed.
+ * existing studio's (`db/seed/email-templates.ts`). They still name the studio
+ * in the frame, carry its `Reply-To`, pass the same send gate and file the same
+ * `email_log` row, secrets redacted — only the words are fixed. Their From name
+ * is the platform's, as on all staff mail (see `deliver`).
  *
  * `render` is called twice: once for the message sent, and once with `redact`
  * set for the copy the log keeps.
@@ -215,7 +216,9 @@ async function deliver(input: {
       slug,
       tenantId,
       idempotencyKey: logRow.id,
-      fromName: identity.fromName,
+      // A member's inbox lists the studio; a staff member's lists the platform
+      // whose portal they work in. The words and Reply-To stay the studio's.
+      fromName: recipient.userKind === 'staff' ? PLATFORM_MAIL_FROM_NAME : identity.fromName,
       replyTo: identity.replyTo,
       attachments,
     })

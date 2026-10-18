@@ -90,6 +90,30 @@ describe('mail through the send gate', { skip: integrationTestsEnabled ? false :
     ])
   })
 
+  test("NTF-27 a studio's message to its staff leaves wearing the platform's name, its words and Reply-To still the studio's", async () => {
+    const { one } = harness.tenants
+    const email = at('staff')
+    await withTenant(one.id, () =>
+      send.sendTemplatedEmail({
+        tenantId: one.id,
+        slug: 'checkin_nag',
+        recipient: { email, userKind: 'staff' },
+        variables: { session_label: 'Probe' },
+      }),
+    )
+
+    const identity = await withTenant(one.id, async () => {
+      const { tenantMailIdentity } = await import('../services/tenants/mail-identity')
+      return tenantMailIdentity(one.id)
+    })
+    const call = calls.find(c => c.payload.to === email)
+    assert.ok(call, `no message reached the gate for ${email}`)
+    assert.equal(call.payload.from, '"ReserveToday" <noreply@reservetoday.app>')
+    assert.equal(call.payload.replyTo ?? null, identity.replyTo, "replies still reach the studio's Reply-To")
+    assert.ok(call.payload.html.includes(identity.fromName), 'the email itself still names the studio')
+    assert.equal((await logRow(one.id, email))?.status, 'sent')
+  })
+
   test('a sign-in code is tagged as credential mail', async () => {
     const { two } = harness.tenants
     const email = at('code')

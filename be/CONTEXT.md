@@ -24,7 +24,7 @@ The formal name a studio trades under: `tenant_settings.business_name`, a row th
 _Avoid_: legal name, company name, studio name
 
 **Display name**:
-The everyday name a studio is known by: `tenant_settings.display_name`. Its member app and portal show it, and every email the studio sends goes out under it: the From name, the studio named in the email's frame, and in its subject and body, where templates say `{{studio_name}}` and the name is filled in when the email is sent, so a rename reaches the next email (#400, migration 0120). Set when the studio is created (the Domain name when left blank) and changed beside the Business name on **Business details**. Never blank once saved, at most 200 characters; a studio with none (an old archive) is called by its Domain name.
+The everyday name a studio is known by: `tenant_settings.display_name`. Its member app and portal show it, and every email the studio sends goes out under it: the From name (on mail to members; mail to the studio's own staff is From **ReserveToday**, the platform whose portal they work in), the studio named in the email's frame, and in its subject and body, where templates say `{{studio_name}}` and the name is filled in when the email is sent, so a rename reaches the next email (#400, migration 0120). Set when the studio is created (the Domain name when left blank) and changed beside the Business name on **Business details**. Never blank once saved, at most 200 characters; a studio with none (an old archive) is called by its Domain name.
 _Avoid_: brand name, studio name
 
 **Business details**:

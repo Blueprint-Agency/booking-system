@@ -6,5 +6,5 @@
  * which parses the whole backend env at import.
  */
 export const PLATFORM_MAIL_FROM_EMAIL = 'noreply@reservetoday.app'
-/** Shown only when no studio name applies — and on super portal mail. */
+/** Shown when no studio name applies, on super portal mail, and on a studio's mail to its staff. */
 export const PLATFORM_MAIL_FROM_NAME = 'ReserveToday'

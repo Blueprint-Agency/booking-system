@@ -53,7 +53,8 @@ carried no mail records at all.
 ## The decision
 
 **v1 sends from the platform's authenticated envelope, wearing the tenant's
-display name, with the tenant's address as `Reply-To`.**
+display name, with the tenant's address as `Reply-To`.** Mail to the studio's
+own staff is the one exception to the name: it wears `ReserveToday` (below).
 
 ```
 From:     "A Studio" <noreply@reservetoday.app>
@@ -64,7 +65,10 @@ The platform sends from **one** envelope address, for members and staff alike,
 never chosen by which studio is speaking:
 
 `noreply@reservetoday.app`, with the name `ReserveToday` where no studio speaks
-(super portal mail). Both are constants in `be/src/lib/mailer.ts`
+(super portal mail) and on every studio's mail to its own staff: a member's
+inbox lists the studio, while an admin or instructor reads mail from the
+platform whose portal they work in. Staff mail keeps the studio's words and its
+`Reply-To`; only the From name changes. Both are constants in `be/src/lib/mailer-identity.ts`
 (`PLATFORM_MAIL_FROM_EMAIL`, `PLATFORM_MAIL_FROM_NAME`) — not env, and not
 tenant data, because they belong to the platform's domain and are the same for
 every studio and every reader.
