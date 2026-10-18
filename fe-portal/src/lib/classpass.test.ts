@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mappableLocations, outcomeRows, overbookedHeadline } from "./classpass";
+import { mappableLocations, outcomeRows, overbookedHeadline, ROSTER_DIFFERENCE_LABELS } from "./classpass";
 
 test("CPS-28 the mapping editor offers the studio's live Locations by name, never an archived one", () => {
   const offered = mappableLocations([
@@ -36,4 +36,9 @@ test("CPS-36 the ClassPass page flags ClassPass bookings that took an Overbook s
     overbookedHeadline([one, { ...one, booking_id: "b2" }]),
     "2 ClassPass bookings took an Overbook seat on upcoming classes.",
   );
+});
+
+test("CPS-81, CPS-82 the ClassPass page names each roster difference by where the member is and isn't", () => {
+  assert.equal(ROSTER_DIFFERENCE_LABELS.on_classpass_not_on_roster, "On ClassPass, not on roster");
+  assert.equal(ROSTER_DIFFERENCE_LABELS.on_roster_not_on_classpass, "On roster, not on ClassPass");
 });

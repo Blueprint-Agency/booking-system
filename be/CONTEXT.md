@@ -451,6 +451,10 @@ _Avoid_: location alias, ClassPass venue
 The ClassPass booking emails the import could not place, listed on the ClassPass page until an Admin closes each one (#413). An item is open while its kept email's outcome is `review` or `unparsed` and it has no `resolved_at`; it carries its reason (`unparsed`, `unmapped_location`, `no_class`, `ambiguous_class`, `class_cancelled`, `client_deleted`, `already_booked`), what was read from the email, and the email itself. An Admin closes it by **booking it into a class** they pick — the same ClassPass booking path the import takes (`placeClassPassBooking`), the member found by email or created, the reservation ID kept, a reservation already booked refused — by **dismissing** it, which books nothing, or, for an unmapped location, by mapping that location from the item, which saves the ClassPass location mapping and runs the import again on every open item from that location: those that now place are booked and closed, the rest stay open with their new reason. Closing records who and when (`resolved_by_staff_id`, `resolved_at`).
 _Avoid_: ClassPass inbox, failed imports, exceptions queue
 
+**ClassPass roster check**:
+The comparison of ClassPass's `ClassPass Daily Roster` email — per listing, each upcoming class with the names of the members coming, with no year, emails or reservation IDs — against the ClassPass bookings held on those classes at the mapped Location (#415, `services/classpass/roster.ts`). It shows each difference on the ClassPass page, "On ClassPass, not on roster" or "On roster, not on ClassPass", and changes nothing: a roster never books or cancels. Worked out whenever the page is read, from the last week's rosters, so a booking email that arrives after the roster settles its difference.
+_Avoid_: roster sync, roster import
+
 ### Check-in
 
 **Check-in**:

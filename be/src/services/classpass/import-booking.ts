@@ -41,8 +41,8 @@ export type PlacedBooking = {
 
 type ClassMatch = { classId: string } | { reason: ClassPassReviewReason }
 
-/** The class at `locationId` starting at `startsAt` that ClassPass means. */
-async function matchClass(tenantId: string, locationId: string, startsAt: Date, className: string): Promise<ClassMatch> {
+/** The class at `locationId` starting at `startsAt` that ClassPass means. The roster check (#415) matches with it too. */
+export async function matchClass(tenantId: string, locationId: string, startsAt: Date, className: string): Promise<ClassMatch> {
   const found = await db
     .select({ id: classes.id, lifecycle: classes.lifecycle, typeName: classTypes.name })
     .from(classes)

@@ -5,6 +5,7 @@ import { bookings, classes, classpassInboundEmails, classpassSettings, classType
 import { now as clockNow } from '../../lib/clock'
 import { classpassEmailOutcomeEnum, type ClassPassEmailOutcome } from '../../db/enums'
 import { currentEnv } from '../../env'
+import { checkClassPassRosters, type RosterCheck } from './roster'
 
 /**
  * A studio's ClassPass address and switch (#409), and what has arrived at it.
@@ -31,6 +32,8 @@ export type ClassPassStatus = {
    * ends or the booking is cancelled. Soonest first.
    */
   overbooked: OverbookedClassPassBooking[]
+  /** What the ClassPass Daily Rosters of the last week say we hold wrongly (#415). */
+  rosterCheck: RosterCheck
 }
 
 export type OverbookedClassPassBooking = {
@@ -90,6 +93,7 @@ export async function readClassPass(tenantId: string): Promise<ClassPassStatus> 
     lastReceivedAt,
     counts,
     overbooked: await overbookedClassPassBookings(tenantId),
+    rosterCheck: await checkClassPassRosters(tenantId),
   }
 }
 

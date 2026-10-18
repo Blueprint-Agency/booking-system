@@ -23,7 +23,38 @@ export interface ClassPassStatus {
   counts: Record<ClassPassOutcome, number>;
   /** ClassPass bookings in an Overbook seat on a class that hasn't ended, soonest first. */
   overbooked: ClassPassOverbooked[];
+  /** The ClassPass Daily Roster check (#415) over the last week's rosters. */
+  roster_check: ClassPassRosterCheck;
 }
+
+export type RosterDifferenceKind = "on_classpass_not_on_roster" | "on_roster_not_on_classpass";
+
+export interface ClassPassRosterDifference {
+  difference: RosterDifferenceKind;
+  /** Null when no class at the Location and time is the one the roster lists. */
+  class_id: string | null;
+  class_name: string;
+  starts_at: string;
+  member_name: string;
+  /** The ClassPass booking ClassPass doesn't list; null for a member we don't hold. */
+  booking_id: string | null;
+  roster_received_at: string;
+}
+
+export interface ClassPassRosterCheck {
+  differences: ClassPassRosterDifference[];
+  /** Rosters whose listing has no ClassPass location mapping, newest first. */
+  unchecked: { location_name: string | null; received_at: string }[];
+}
+
+/**
+ * What a roster difference means, in the page's words. "Roster" is our class
+ * roster: ClassPass's Daily Roster is "ClassPass".
+ */
+export const ROSTER_DIFFERENCE_LABELS: Record<RosterDifferenceKind, string> = {
+  on_classpass_not_on_roster: "On ClassPass, not on roster",
+  on_roster_not_on_classpass: "On roster, not on ClassPass",
+};
 
 export interface ClassPassOverbooked {
   booking_id: string;

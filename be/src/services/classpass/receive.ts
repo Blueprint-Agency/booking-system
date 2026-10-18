@@ -16,8 +16,9 @@ import { ensureClassPassSettings } from './settings'
  * gives up its code to the ClassPass page (#409). With the import on, a
  * booking email books the member (#411, `import-booking.ts`): `imported`, or
  * `noop` for a reservation already booked, or `review` / `unparsed` with the
- * reason it could not be placed. Every other ClassPass email is `ignored`.
- * Later tickets add what a cancellation and a roster do, behind this entry.
+ * reason it could not be placed. Every other ClassPass email is `ignored`;
+ * a roster is kept so, and read when the ClassPass page is (#415, `roster.ts`).
+ * Later tickets add what a cancellation does, behind this entry.
  */
 
 /** A received email, as Resend's receiving API returns it. */
