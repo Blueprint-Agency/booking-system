@@ -26,6 +26,7 @@ dropped scenario stays, marked `wont-test`, with the reason in its cell.
   `PKR` package rules: which packages a class or series accepts ·
   `WTL` waitlist ·
   `SEAT` class seats: online, buffer, overbook, attendance capacity ·
+  `CPS` ClassPass import ·
   `CXL` class cancellation & cancellation policy ·
   `CHK` check-in & per-booking QR ·
   `ROS` roster & session detail ·
@@ -240,6 +241,25 @@ same order for "Add member" and the waitlist's "Add to class" (`spec-waitlist.md
 | SEAT-03 | SEAT | system | **Given** a class with a waiting member **When** a buffer or overbook booking on it is cancelled **Then** nobody is promoted from the waitlist _(spec-waitlist §2)_ | UX | integration | `be/src/test/waitlist.test.ts` | covered |
 | SEAT-04 | SEAT | admin | **Given** a class with online, buffer and overbook bookings **When** its session detail, the portal timetable and the member catalogue are read **Then** they agree: booked reads attending over attendance capacity, and the member catalogue offers a seat exactly while online seats taken are fewer than online capacity, whatever the buffer holds _(spec-waitlist §2, §10)_ | UX | integration | `be/src/test/class-seats.test.ts` | covered |
 | SEAT-05 | SEAT | admin | **Given** two studios with bookings on their own classes **When** one studio reads a class's seats, or its staff book a member **Then** the other studio's bookings never count toward its seats, its waiting entries never count toward or get promoted into this studio's line, and neither the other studio's class nor its member can be booked _(spec-waitlist §2, §5)_ | tenancy | integration | `be/src/test/class-seats.test.ts`, `be/src/test/waitlist.test.ts` | covered |
+
+## CPS — ClassPass import
+
+A studio forwards ClassPass's emails to its ClassPass address; each booking email becomes a ClassPass
+booking on the matching class, each cancellation cancels it, and what can't be placed goes to ClassPass
+review (#407, `research-classpass-integration.md`). A ClassPass booking is made by the booking path's
+ClassPass payer: ClassPass paid, so no package pays and no credit is spent.
+
+| ID | area | role | scenario | risk | level | covered by | status |
+|---|---|---|---|---|---|---|---|
+| CPS-01 | CPS | member | **Given** a class **When** a member books themselves onto it, or staff book a member **Then** the booking's source is `direct` on the roster and the member's profile, as every booking made before ClassPass bookings existed is _(#408)_ | UX | integration | `be/src/test/classpass-booking.test.ts` | covered |
+| CPS-02 | CPS | system | **Given** a member holding a Credit Bundle **When** a ClassPass booking is made for them on a class that costs credits **Then** their balance is unchanged, no package is on the booking, no Credit movement or Purchase is written, and the finance totals and rows for the period are unchanged _(#408)_ | money | integration | `be/src/test/classpass-booking.test.ts` | covered |
+| CPS-03 | CPS | system | **Given** a class with one Online Seat and one Buffer Seat **When** three ClassPass bookings are made on it **Then** they take Online, then Buffer, then an Overbook seat, none is refused for capacity, and the roster shows each as ClassPass in its seat _(#408)_ | money | integration | `be/src/test/classpass-booking.test.ts` | covered |
+| CPS-04 | CPS | system | **Given** a ClassPass booking with a reservation ID **When** another ClassPass booking with the same reservation ID is made in the same studio **Then** it is refused `classpass_reservation_taken` by the unique index and only one booking holds the ID; the same ID in another studio books _(#408)_ | tenancy | integration | `be/src/test/classpass-booking.test.ts` | covered |
+| CPS-05 | CPS | admin | **Given** a ClassPass booking **When** the class roster is read by an Admin and by the class's Instructor, and the member's profile by an Admin **Then** each shows its source `classpass` (and no package), and the portal badges it ClassPass _(#408)_ | UX | integration | `be/src/test/classpass-booking.test.ts`, `fe-portal/src/lib/class-seats.test.ts` | covered |
+| CPS-06 | CPS | admin | **Given** a ClassPass booking in a class's only Online Seat **When** an Admin cancels it from the roster **Then** the cancel preview offers no credit (nothing spent, no package), the outcome is `n_a`, it is on the member's Cancelled list as ClassPass, and the freed seat can be booked by a member _(#408)_ | money | integration | `be/src/test/classpass-booking.test.ts` | covered |
+| CPS-07 | CPS | system | **Given** a class that has already started **When** a ClassPass booking is made on it **Then** it is recorded on the roster _(#408)_ | UX | integration | `be/src/test/classpass-booking.test.ts` | covered |
+| CPS-08 | CPS | system | **Given** a member waiting on a class's Waitlist and holding a booking at an overlapping time **When** a ClassPass booking is made for them on that class **Then** it books, and their Waitlist entry is still waiting _(#408)_ | UX | integration | `be/src/test/classpass-booking.test.ts` | covered |
+| CPS-09 | CPS | system | **Given** a member **When** a ClassPass booking is made for them **Then** ReserveToday sends them no email _(#408)_ | UX | integration | `be/src/test/classpass-booking.test.ts` | covered |
 
 ## CXL — Class cancellation
 

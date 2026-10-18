@@ -805,6 +805,8 @@ The previously-specified `instructor_availability_recurring` and `instructor_ava
 | qr_token | text | unique, not null — encoded into QR |
 | code | text | unique, not null — `RT-` + 6 Crockford-base32 chars (e.g. `RT-A4F2K9`); see §7 Per-booking codes for alphabet + lookup rules |
 | purchase_id | uuid | FK → `purchases`, unique where not null — set only on a workshop booking, whose booking IS the purchase. Null for class and PT bookings, which a plan paid for (#92) |
+| source | enum `booking_source` | `direct` (default, every booking made through ReserveToday) or `classpass` — a **ClassPass booking**: a class seat ClassPass paid for, with no package and 0 credits used (#408) |
+| classpass_reservation_id | text | nullable — ClassPass's reservation ID, set exactly when `source` = `classpass`; unique per Tenant where not null (`bookings_classpass_reservation_unique`), so one reservation books once. CHECK `bookings_classpass_shape`: a ClassPass booking is a class booking with no `client_package_id` |
 | booked_at | timestamptz | not null |
 | cancelled_at | timestamptz | nullable |
 

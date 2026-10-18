@@ -433,6 +433,10 @@ _Avoid_: queue entry as a booking, waitlisted booking, standby
 Booking the head of a class's Waitlist into a freed Online Seat, automatically, inside the cancel that freed it — only outside the Cancellation Window, so the promoted member can always still cancel free. The **Default payer** is chosen at that moment, exactly as for a booking nobody picked a package for; a member with nothing **Eligible** is skipped and stays in line. The promoted booking is an ordinary booking. A freed Buffer or Overbook seat never promotes. Not to be confused with a **Promotion** in § Discounts (a price offer).
 _Avoid_: offer, claim, auto-book
 
+**ClassPass booking**:
+A class booking ClassPass sold and paid for (`bookings.source` `classpass`, #407), recorded on the studio's own class so the door works from one roster. Every other booking is `direct`. It carries ClassPass's reservation ID, unique within the Tenant, so one reservation books once. It is made by the booking path's ClassPass payer (`classPassBookClass`, `services/bookings/book.ts`): no package pays, no credit is spent, no Credit movement or Purchase is written and no finance figure moves. It takes seats in the staff order — Online, then Buffer, then Overbook — and is never refused: past both it takes an Overbook seat, which is the record that it overbooked. It is recorded on a class that has already started, booked over a clashing booking of the member's, settles no Waitlist entry, and sends the member nothing. Staff cancel it like any other, with no credit to choose about (`n_a`). Admins and Instructors see a ClassPass badge on it on the roster, and Admins on the member's profile.
+_Avoid_: aggregator booking, external booking, partner booking
+
 ### Check-in
 
 **Check-in**:

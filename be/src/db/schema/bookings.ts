@@ -11,6 +11,7 @@ import {
   bookingKindEnum,
   bookingStateEnum,
   bookingSeatEnum,
+  bookingSourceEnum,
   refundOutcomeEnum,
   checkinStateEnum,
   cancellationKindEnum,
@@ -51,6 +52,12 @@ export const bookings = pgTable(
     // `services/bookings/seats.ts`. The default is the backfill: every class
     // booking before this column came through the member route.
     seat: bookingSeatEnum('seat').notNull().default('online'),
+    // How the booking reached the studio (#408). A ClassPass booking was paid
+    // for by ClassPass: no package, no credits, no money here.
+    source: bookingSourceEnum('source').notNull().default('direct'),
+    // ClassPass's own reservation ID, on a ClassPass booking only. Unique within
+    // the Tenant, so the same ClassPass reservation books once.
+    classpassReservationId: text('classpass_reservation_id'),
     // Workshop money, frozen at purchase (§15). Required for kind = 'workshop',
     // null for every other kind — class and PT bookings are paid for by a package
     // and their money stays on the client_packages row. A free workshop records a
@@ -107,6 +114,18 @@ export const bookings = pgTable(
     purchaseUnique: uniqueIndex('bookings_purchase_unique')
       .on(table.tenantId, table.purchaseId)
       .where(sql`${table.purchaseId} IS NOT NULL`),
+    // One booking per ClassPass reservation in a studio: what settles the same
+    // reservation arriving twice. Another studio's reservations are its own.
+    classpassReservationUnique: uniqueIndex('bookings_classpass_reservation_unique')
+      .on(table.tenantId, table.classpassReservationId)
+      .where(sql`${table.classpassReservationId} IS NOT NULL`),
+    // A ClassPass booking is a class seat ClassPass paid for: it carries its
+    // reservation ID and no package. Only a ClassPass booking carries one.
+    classpassShape: check(
+      'bookings_classpass_shape',
+      sql`(${table.source} = 'classpass') = (${table.classpassReservationId} IS NOT NULL)
+        AND (${table.source} <> 'classpass' OR (${table.kind} = 'class' AND ${table.clientPackageId} IS NULL))`,
+    ),
     kindFkClass: check(
       'bookings_kind_class_fk',
       sql`${table.kind} <> 'class' OR (${table.classId} IS NOT NULL AND ${table.workshopId} IS NULL AND ${table.ptSessionId} IS NULL)`,

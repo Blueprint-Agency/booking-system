@@ -46,6 +46,7 @@ import { RemovePackageDialog } from "@/components/clients/remove-package-dialog"
 import { CreditHistoryPanel } from "@/components/clients/credit-history-panel";
 import { CancelBookingDialog } from "@/components/bookings/cancel-booking-dialog";
 import type { StaffCancelPreview } from "@/lib/staff-cancel";
+import { sourceBadge, type BookingSource } from "@/lib/class-seats";
 import { creditKept, type StaffCancellation } from "@/lib/cancellations";
 import { ChangeEmailDialog } from "@/components/clients/change-email-dialog";
 import { EditProfileDialog } from "@/components/clients/edit-profile-dialog";
@@ -160,6 +161,8 @@ interface ApiBooking {
   credits_used: number | null;
   package_name: string | null;
   code: string;
+  /** `classpass` on a ClassPass booking, which ClassPass paid for (#408). */
+  source: BookingSource;
   booked_at: string;
   cancelled_at: string | null;
   /**
@@ -1900,7 +1903,10 @@ function BookingRow({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-ink">{bookingTitle(b)}</div>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="truncate text-sm font-medium text-ink">{bookingTitle(b)}</div>
+            <SourceBadge source={b.source} />
+          </div>
           {detail && (
             <div className="truncate text-xs text-muted" title={detail}>
               {detail}
@@ -1923,6 +1929,12 @@ function BookingRow({
       </div>
     </li>
   );
+}
+
+/** The ClassPass badge on a ClassPass booking (#408); nothing on a direct one. */
+function SourceBadge({ source }: { source: BookingSource }) {
+  const label = sourceBadge(source);
+  return label ? <Badge tone="accent">{label}</Badge> : null;
 }
 
 const atTime = (iso: string, pattern: string) =>
@@ -1959,7 +1971,10 @@ function CancelledRow({ b }: { b: ApiCancelledBooking }) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-ink">{title}</div>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="truncate text-sm font-medium text-ink">{title}</div>
+            <SourceBadge source={b.source} />
+          </div>
           <div className="truncate text-xs text-muted" title={cancelled}>
             {cancelled}
           </div>

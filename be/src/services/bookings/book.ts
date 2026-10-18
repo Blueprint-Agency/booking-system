@@ -35,6 +35,7 @@ import { readClassRule } from '../schedule/package-rules'
 import type { PackageRuleMode } from '../../db/enums'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
+import { isUniqueViolation } from '../../db/unique-violation'
 import { sendClassBookingEmail } from '../notifications/send-booking-email'
 
 export interface BookClassInput {
@@ -59,7 +60,8 @@ export interface BookClassResult {
   qrToken: string
   code: string
   seat: BookingSeat
-  paidWith: PaidWith
+  /** The package that paid; null on a ClassPass booking, which ClassPass paid for. */
+  paidWith: PaidWith | null
 }
 
 /** A member booking themselves: an online seat or nothing. */
@@ -184,6 +186,64 @@ async function bookIntoClass(
   return booking
 }
 
+export interface ClassPassBookClassInput {
+  clientId: string
+  classId: string
+  /** ClassPass's reservation ID: one booking per reservation in a studio. */
+  reservationId: string
+}
+
+/**
+ * A ClassPass booking (#408): a seat ClassPass already sold the member, so it
+ * is recorded rather than asked for. The same booking as any other — the class
+ * lock, the seat count, the roster — with the ClassPass payer in `payAndBook`:
+ *
+ * - no package pays and no credit is spent;
+ * - seats go in the staff order, Online → Buffer → Overbook, and it never
+ *   refuses: past both it takes an Overbook seat, which is the record that it
+ *   overbooked (`seat` on the result);
+ * - a class that has started still takes it (the email can arrive late), and a
+ *   clashing booking of the member's does not stop it;
+ * - it settles no Waitlist entry and sends the member nothing.
+ *
+ * A reservation ID the studio already holds is `classpass_reservation_taken`,
+ * decided by the unique index. Inside a Tenant context `db.transaction` is a
+ * savepoint, so that refusal leaves the caller's transaction usable.
+ */
+export async function classPassBookClass(tenantId: string, input: ClassPassBookClassInput): Promise<BookClassResult> {
+  const now = clockNow()
+  try {
+    return await db.transaction(async tx => {
+      const cls = await lockClass(tx, tenantId, input.classId)
+      if (!cls || cls.lifecycle !== 'active') throw new NotFoundError('class_not_found')
+      await assertStudioMember(tx, tenantId, input.clientId)
+      if (await holdsSeat(tx, tenantId, input.clientId, input.classId)) throw new ConflictError('already_booked')
+
+      // An admin asking to overbook takes exactly the ClassPass order, and is
+      // never refused.
+      const decision = seatFor(await countSeats(tx, tenantId, input.classId), cls, 'admin', true)
+      if (!decision.ok) throw new Error('invariant: an overbooking admin is always seated')
+
+      const paid = await payAndBook(tx, tenantId, cls, {
+        clientId: input.clientId,
+        seat: decision.seat,
+        clientPackageId: null,
+        classPass: { reservationId: input.reservationId },
+        allowClash: true,
+        now,
+        by: 'system',
+      })
+      if (!paid.ok) throw new Error('invariant: the ClassPass payer never refuses')
+      return paid.booking
+    })
+  } catch (err) {
+    if (isUniqueViolation(err, 'bookings_classpass_reservation_unique')) {
+      throw new ConflictError('classpass_reservation_taken')
+    }
+    throw err
+  }
+}
+
 /** An instructor reaches their own classes only — the same rule as check-in. */
 function assertStaffReaches(cls: { mainInstructorId: string }, role: SeatRole, actorStaffId?: string) {
   if (role === 'instructor' && cls.mainInstructorId !== actorStaffId) {
@@ -276,8 +336,8 @@ export function packageDisplayName(kind: CandidateKind, catalogueName: string | 
 }
 
 /** `paid_with` as the member's and the staff booking responses both carry it. */
-export function serializePaidWith(p: PaidWith) {
-  return { client_package_id: p.id, name: p.name, kind: p.kind }
+export function serializePaidWith(p: PaidWith | null) {
+  return p && { client_package_id: p.id, name: p.name, kind: p.kind }
 }
 
 /**
@@ -352,6 +412,12 @@ export async function payAndBook(
     seat: BookingSeat
     /** The member's or staff's pick; null where nobody picked, and the Default payer pays. */
     clientPackageId: string | null
+    /**
+     * The ClassPass payer (#408): ClassPass paid for this seat. No package is
+     * chosen, nothing is debited, and the booking records its source and
+     * ClassPass's reservation ID. `clientPackageId` is ignored.
+     */
+    classPass?: { reservationId: string }
     /** Staff were shown the member's clash and booked anyway. */
     allowClash?: boolean
     now: Date
@@ -373,6 +439,29 @@ export async function payAndBook(
       { kind: 'class', id: cls.id },
     )
     if (clash) return { ok: false, refusal: 'time_clash', clash }
+  }
+
+  if (input.classPass) {
+    const { qrToken, code } = generateBookingCodes()
+    const [row] = await tx
+      .insert(bookings)
+      .values({
+        tenantId,
+        clientId,
+        kind: 'class',
+        classId: cls.id,
+        clientPackageId: null,
+        state: 'confirmed',
+        seat: input.seat,
+        // Zero, not null: the roster and the cancel preview read "nothing spent".
+        creditsOrSessionsUsed: 0,
+        source: 'classpass',
+        classpassReservationId: input.classPass.reservationId,
+        qrToken,
+        code,
+      })
+      .returning({ id: bookings.id })
+    return { ok: true, booking: { bookingId: row!.id, qrToken, code, seat: input.seat, paidWith: null } }
   }
 
   // Pick a package to pay with (lock the client's rows).
