@@ -3,6 +3,7 @@ import { db } from '../../db'
 import { classpassInboundEmails, classpassSettings } from '../../db/schema'
 import type { ClassPassEmailKind, ClassPassEmailOutcome, ClassPassReviewReason } from '../../db/enums'
 import { placeClassPassBooking } from './import-booking'
+import { parseClassPassCancellation, placeClassPassCancellation } from './import-cancellation'
 import { parseClassPassBooking } from './parse'
 import { ensureClassPassSettings } from './settings'
 
@@ -16,9 +17,10 @@ import { ensureClassPassSettings } from './settings'
  * gives up its code to the ClassPass page (#409). With the import on, a
  * booking email books the member (#411, `import-booking.ts`): `imported`, or
  * `noop` for a reservation already booked, or `review` / `unparsed` with the
- * reason it could not be placed. Every other ClassPass email is `ignored`;
+ * reason it could not be placed. A cancellation cancels the ClassPass booking
+ * it names (#412, `import-cancellation.ts`): `cancelled`, or `noop` when
+ * there is no live booking for it. Every other ClassPass email is `ignored`;
  * a roster is kept so, and read when the ClassPass page is (#415, `roster.ts`).
- * Later tickets add what a cancellation does, behind this entry.
  */
 
 /** A received email, as Resend's receiving API returns it. */
@@ -116,6 +118,8 @@ export async function receiveClassPassEmail(tenantId: string, message: InboundEm
   // it says is kept with it; it is placed only when it is on.
   const booking = decision.kind === 'booking' && decision.outcome !== 'refused'
   const fields = booking ? parseClassPassBooking(message) : null
+  const cancellation = decision.kind === 'cancellation' && decision.outcome !== 'refused'
+  const cancelledKey = cancellation ? parseClassPassCancellation(message) : null
 
   const [inserted] = await db
     .insert(classpassInboundEmails)
@@ -131,7 +135,7 @@ export async function receiveClassPassEmail(tenantId: string, message: InboundEm
       headers: message.headers,
       text: message.text,
       html: message.html,
-      reservationId: fields?.reservationId,
+      reservationId: fields?.reservationId ?? cancelledKey,
       className: fields?.className,
       locationName: fields?.locationName,
       memberName: fields?.memberName,
@@ -180,6 +184,23 @@ export async function receiveClassPassEmail(tenantId: string, message: InboundEm
       kind: decision.kind,
       outcome: placed.outcome,
       reason: placed.reason,
+      bookingId: placed.bookingId,
+      duplicate: false,
+    }
+  }
+
+  if (cancellation && settings.enabled) {
+    const placed = await placeClassPassCancellation(tenantId, cancelledKey)
+    const reason = placed.outcome === 'unparsed' ? ('unparsed' as const) : null
+    await db
+      .update(classpassInboundEmails)
+      .set({ outcome: placed.outcome, reviewReason: reason, clientId: placed.clientId, bookingId: placed.bookingId })
+      .where(and(eq(classpassInboundEmails.tenantId, tenantId), eq(classpassInboundEmails.id, inserted.id)))
+    return {
+      id: inserted.id,
+      kind: decision.kind,
+      outcome: placed.outcome,
+      reason,
       bookingId: placed.bookingId,
       duplicate: false,
     }

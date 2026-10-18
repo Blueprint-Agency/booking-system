@@ -98,6 +98,15 @@ export type CancelInput =
       actorStaffId: string
       credit: StaffCredit
     })
+  | (CancelBase & {
+      /**
+       * The member cancelled on ClassPass, and ClassPass's email said so
+       * (#412). A ClassPass booking spent nothing, so there is nothing to
+       * return or keep: `n_a`. Not the member's own cancel here, so never a
+       * Late cancel and never toward the Cancellation Cap.
+       */
+      source: 'classpass'
+    })
 
 export interface CancelResult {
   refundOutcome: RefundOutcome
@@ -130,8 +139,8 @@ export async function cancelBookingInTx(
 ): Promise<{ result: CancelResult; promotions: Promotion[] }> {
   const { bookingId, source, packageVoided, studioReason } = input
   const clientId = input.source === 'client' ? input.clientId : undefined
-  const actorStaffId = input.source === 'client' ? undefined : input.actorStaffId
-  const credit = input.source === 'client' ? undefined : input.credit
+  const actorStaffId = 'actorStaffId' in input ? input.actorStaffId : undefined
+  const credit = 'credit' in input ? input.credit : undefined
 
   // 1. Lock the booking row.
   const [bk] = await tx
