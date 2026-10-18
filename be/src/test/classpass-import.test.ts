@@ -694,4 +694,79 @@ describe('importing a ClassPass booking email', { skip: integrationTestsEnabled 
     assert.deepEqual(await roster(two, theirs), [])
     assert.deepEqual(await roster(one, ours), [])
   })
+
+  /* ── the 2025 plain-text layout (#414) ──────────────────────────────── */
+
+  test('CPS-70 a 2025-layout booking email books the member as the 2026 layout does: the same class, member, source and reservation ID', async () => {
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt)
+    const kit = await member(one, 'kit-2025')
+    const reservationId = newReservationId()
+
+    const result = await receive(
+      one,
+      bookingEmail(one, startsAt, { layout: '2025-text', reservationId, memberName: kit.name, memberEmail: kit.email }),
+    )
+
+    assert.equal(result.outcome, 'imported')
+    const [a] = await roster(one, classId)
+    assert.equal(a?.client.id, kit.clientId)
+    assert.equal(a?.source, 'classpass')
+    const [row] = await harness.db.select().from(schema.bookings).where(eq(schema.bookings.id, a!.booking_id))
+    assert.equal(row!.classpassReservationId, reservationId)
+  })
+
+  test('CPS-71 a 2025-layout booking email missing a field it needs is kept as unparsed, with its content, and books nothing', async () => {
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt)
+    const before = (await status(one)).counts.unparsed
+
+    const missing: ClassPassEmailOptions[] = [
+      { reservationId: '' },
+      { reservationId: 'not-a-reservation-id' },
+      { memberEmail: '' },
+      { memberEmail: 'not-an-email' },
+      { location: '' },
+      { time: '' },
+      { date: 'Smarch 40, 2026' },
+    ]
+    for (const options of missing) {
+      const email = bookingEmail(one, startsAt, { layout: '2025-text', ...options })
+      const result = await receive(one, email)
+      assert.deepEqual([result.outcome, result.reason], ['unparsed', 'unparsed'], JSON.stringify(options))
+      const [kept] = await harness.db.select().from(schema.classpassInboundEmails).where(eq(schema.classpassInboundEmails.id, result.id))
+      assert.equal(kept!.text, email.text, 'the original content is kept')
+    }
+
+    assert.equal((await status(one)).counts.unparsed, before + missing.length)
+    assert.deepEqual(await roster(one, classId), [])
+  })
+
+  test("CPS-72 an email with the booking subject but neither layout's labels is kept as unparsed, and nothing is booked", async () => {
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt)
+    const { date, time } = classPassWhen(startsAt, one.timezone)
+    const layouts: { text: string | null; html: string | null }[] = [
+      // A layout ClassPass has not sent yet: the same facts under labels neither parser knows.
+      {
+        text: [
+          'New booking',
+          `Booking reference: ${newReservationId()}`,
+          `Class: ${STRETCH}`,
+          `Venue: ${CLASSPASS_LOCATION}`,
+          `When: ${date} @ ${time}`,
+          `Guest: Placeholder Member <${emailFor('unlabelled')}>`,
+        ].join('\n'),
+        html: null,
+      },
+      { text: null, html: `<html><body><p>${STRETCH}</p><p>${CLASSPASS_LOCATION}</p><p>${date} @ ${time}</p></body></html>` },
+      { text: '', html: null },
+    ]
+    for (const body of layouts) {
+      const result = await receive(one, { ...bookingEmail(one, startsAt), ...body })
+      assert.deepEqual([result.outcome, result.reason], ['unparsed', 'unparsed'], JSON.stringify(body))
+    }
+    assert.deepEqual(await roster(one, classId), [])
+    assert.equal(await clientByEmail(one, emailFor('unlabelled')), undefined)
+  })
 })
