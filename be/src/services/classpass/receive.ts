@@ -1,7 +1,9 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { classpassInboundEmails, classpassSettings } from '../../db/schema'
-import type { ClassPassEmailKind, ClassPassEmailOutcome } from '../../db/enums'
+import type { ClassPassEmailKind, ClassPassEmailOutcome, ClassPassReviewReason } from '../../db/enums'
+import { placeClassPassBooking } from './import-booking'
+import { parseClassPassBooking } from './parse'
 import { ensureClassPassSettings } from './settings'
 
 /**
@@ -10,10 +12,12 @@ import { ensureClassPassSettings } from './settings'
  * Resend webhook delivered it or a test built it. It decides what the email is,
  * and records it with its outcome, in the caller's Tenant transaction.
  *
- * So far (#409) it records and nothing more: a ClassPass email is `ignored`,
- * one that can't be trusted is `refused`, and Gmail's forwarding confirmation
- * gives up its code to the ClassPass page. Later tickets add what a booking,
- * a cancellation and a roster do, behind this same entry.
+ * One that can't be trusted is `refused`, and Gmail's forwarding confirmation
+ * gives up its code to the ClassPass page (#409). With the import on, a
+ * booking email books the member (#411, `import-booking.ts`): `imported`, or
+ * `noop` for a reservation already booked, or `review` / `unparsed` with the
+ * reason it could not be placed. Every other ClassPass email is `ignored`.
+ * Later tickets add what a cancellation and a roster do, behind this entry.
  */
 
 /** A received email, as Resend's receiving API returns it. */
@@ -40,6 +44,10 @@ export type ReceivedClassPassEmail = {
   id: string
   kind: ClassPassEmailKind
   outcome: ClassPassEmailOutcome
+  /** Why it was not placed, for ClassPass review; null when it was, or was never meant to be. */
+  reason: ClassPassReviewReason | null
+  /** The ClassPass booking it made, or the one it found already made. */
+  bookingId: string | null
   /** The same Message-ID was already kept for this studio; nothing was done again. */
   duplicate: boolean
 }
@@ -78,8 +86,8 @@ function decide(message: InboundEmail): Decision {
   if (from === CLASSPASS_SENDER) {
     const kind = KIND_BY_SUBJECT[message.subject.trim().toLowerCase()] ?? 'marketing'
     if (!signed) return { kind, outcome: 'refused' }
-    // Nothing is imported yet: every trusted ClassPass email is kept, whether
-    // the studio's switch is on or off.
+    // A booking is placed (#411) when the switch is on; anything else trusted
+    // is kept as it came.
     return { kind, outcome: 'ignored' }
   }
 
@@ -101,8 +109,12 @@ function gmailCode(message: InboundEmail): string | undefined {
 
 /** Runs inside the studio's Tenant context (`withTenant`), as every service does. */
 export async function receiveClassPassEmail(tenantId: string, message: InboundEmail): Promise<ReceivedClassPassEmail> {
-  await ensureClassPassSettings(tenantId)
+  const settings = await ensureClassPassSettings(tenantId)
   const decision = decide(message)
+  // A trusted booking email is read whether or not the import is on, so what
+  // it says is kept with it; it is placed only when it is on.
+  const booking = decision.kind === 'booking' && decision.outcome !== 'refused'
+  const fields = booking ? parseClassPassBooking(message) : null
 
   const [inserted] = await db
     .insert(classpassInboundEmails)
@@ -118,13 +130,24 @@ export async function receiveClassPassEmail(tenantId: string, message: InboundEm
       headers: message.headers,
       text: message.text,
       html: message.html,
+      reservationId: fields?.reservationId,
+      className: fields?.className,
+      locationName: fields?.locationName,
+      memberName: fields?.memberName,
+      memberEmail: fields?.memberEmail,
     })
     .onConflictDoNothing({ target: [classpassInboundEmails.tenantId, classpassInboundEmails.messageId] })
     .returning({ id: classpassInboundEmails.id })
 
   if (!inserted) {
     const [kept] = await db
-      .select({ id: classpassInboundEmails.id, kind: classpassInboundEmails.kind, outcome: classpassInboundEmails.outcome })
+      .select({
+        id: classpassInboundEmails.id,
+        kind: classpassInboundEmails.kind,
+        outcome: classpassInboundEmails.outcome,
+        reason: classpassInboundEmails.reviewReason,
+        bookingId: classpassInboundEmails.bookingId,
+      })
       .from(classpassInboundEmails)
       .where(and(eq(classpassInboundEmails.tenantId, tenantId), eq(classpassInboundEmails.messageId, message.messageId)))
     // Invariant: the conflict that skipped the insert is this row.
@@ -139,5 +162,27 @@ export async function receiveClassPassEmail(tenantId: string, message: InboundEm
       .where(eq(classpassSettings.tenantId, tenantId))
   }
 
-  return { id: inserted.id, kind: decision.kind, outcome: decision.outcome, duplicate: false }
+  if (fields && settings.enabled) {
+    const placed = await placeClassPassBooking(tenantId, fields)
+    await db
+      .update(classpassInboundEmails)
+      .set({
+        outcome: placed.outcome,
+        reviewReason: placed.reason,
+        startsAt: placed.startsAt,
+        clientId: placed.clientId,
+        bookingId: placed.bookingId,
+      })
+      .where(and(eq(classpassInboundEmails.tenantId, tenantId), eq(classpassInboundEmails.id, inserted.id)))
+    return {
+      id: inserted.id,
+      kind: decision.kind,
+      outcome: placed.outcome,
+      reason: placed.reason,
+      bookingId: placed.bookingId,
+      duplicate: false,
+    }
+  }
+
+  return { id: inserted.id, kind: decision.kind, outcome: decision.outcome, reason: null, bookingId: null, duplicate: false }
 }

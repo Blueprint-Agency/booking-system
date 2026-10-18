@@ -72,6 +72,7 @@ function dayView(d: CheckInDay) {
         checked_in_at: r.checkedInAt?.toISOString() ?? null,
         seat: r.seat,
         promoted_from_waitlist: r.promotedFromWaitlist,
+        source: r.bookingSource,
       })),
       waitlist: s.waitlist.map(w => ({
         entry_id: w.entryId,

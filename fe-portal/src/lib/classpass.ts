@@ -21,6 +21,24 @@ export interface ClassPassStatus {
   gmail_confirmation_at: string | null;
   last_received_at: string | null;
   counts: Record<ClassPassOutcome, number>;
+  /** ClassPass bookings in an Overbook seat on a class that hasn't ended, soonest first. */
+  overbooked: ClassPassOverbooked[];
+}
+
+export interface ClassPassOverbooked {
+  booking_id: string;
+  class_id: string;
+  class_name: string;
+  starts_at: string;
+  client_name: string;
+}
+
+/** The flag over the list of ClassPass bookings that took an Overbook seat. */
+export function overbookedHeadline(overbooked: ClassPassOverbooked[]): string {
+  const n = overbooked.length;
+  return n === 1
+    ? "1 ClassPass booking took an Overbook seat on an upcoming class."
+    : `${n} ClassPass bookings took an Overbook seat on upcoming classes.`;
 }
 
 /** The sender a studio's Gmail filter forwards. */

@@ -17,6 +17,7 @@
  */
 import { and, asc, eq, gte, inArray, lt, lte, ne, or } from 'drizzle-orm'
 import { db } from '../../db'
+import type { BookingSource } from '../../db/enums'
 import { bookings, checkIns, waitlistEntries } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { classTypes, locations, rooms } from '../../db/schema/catalog'
@@ -364,6 +365,8 @@ export interface CheckInRosterEntry {
   seat: 'online' | 'buffer' | 'overbook' | null
   /** The booking came from the class's waitlist. */
   promotedFromWaitlist: boolean
+  /** `classpass` for a ClassPass booking, which ClassPass paid for (#408). */
+  bookingSource: BookingSource
 }
 
 /** A member still waiting for a seat on a class, in queue order (spec-waitlist.md §10). */
@@ -496,6 +499,7 @@ export async function listCheckInDay(
             method: checkIns.method,
             checkedInAt: checkIns.checkedInAt,
             seat: bookings.seat,
+            bookingSource: bookings.source,
             promotedEntryId: waitlistEntries.id,
           })
           .from(bookings)
@@ -531,6 +535,7 @@ export async function listCheckInDay(
         checkedInAt: r.checkedInAt,
         seat: r.classId ? r.seat : null,
         promotedFromWaitlist: r.promotedEntryId !== null,
+        bookingSource: r.bookingSource,
       }))
 
   // A line on a class that has started is expired (spec-waitlist.md §6), so a

@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { eq, max, count } from 'drizzle-orm'
+import { and, asc, count, eq, gt, max } from 'drizzle-orm'
 import { db } from '../../db'
-import { classpassInboundEmails, classpassSettings } from '../../db/schema'
+import { bookings, classes, classpassInboundEmails, classpassSettings, classTypes, clients } from '../../db/schema'
+import { now as clockNow } from '../../lib/clock'
 import { classpassEmailOutcomeEnum, type ClassPassEmailOutcome } from '../../db/enums'
 import { currentEnv } from '../../env'
 
@@ -24,6 +25,20 @@ export type ClassPassStatus = {
   /** When the last email of any outcome arrived; null before the first. */
   lastReceivedAt: Date | null
   counts: Record<ClassPassEmailOutcome, number>
+  /**
+   * ClassPass bookings holding an Overbook seat on a class that hasn't ended
+   * (#411): ClassPass sold a seat the class did not have. Gone once the class
+   * ends or the booking is cancelled. Soonest first.
+   */
+  overbooked: OverbookedClassPassBooking[]
+}
+
+export type OverbookedClassPassBooking = {
+  bookingId: string
+  classId: string
+  className: string
+  startsAt: Date
+  clientName: string
 }
 
 /** 128 random bits, lower-case hex: safe as an email local part. */
@@ -74,7 +89,34 @@ export async function readClassPass(tenantId: string): Promise<ClassPassStatus> 
     gmailConfirmationAt: settings.gmailConfirmationAt,
     lastReceivedAt,
     counts,
+    overbooked: await overbookedClassPassBookings(tenantId),
   }
+}
+
+async function overbookedClassPassBookings(tenantId: string): Promise<OverbookedClassPassBooking[]> {
+  return db
+    .select({
+      bookingId: bookings.id,
+      classId: classes.id,
+      className: classTypes.name,
+      startsAt: classes.startsAt,
+      clientName: clients.name,
+    })
+    .from(bookings)
+    .innerJoin(classes, eq(classes.id, bookings.classId))
+    .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
+    .innerJoin(clients, eq(clients.id, bookings.clientId))
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        eq(bookings.source, 'classpass'),
+        eq(bookings.state, 'confirmed'),
+        eq(bookings.seat, 'overbook'),
+        eq(classes.lifecycle, 'active'),
+        gt(classes.endsAt, clockNow()),
+      ),
+    )
+    .orderBy(asc(classes.startsAt), asc(clients.name))
 }
 
 export async function setClassPassEnabled(tenantId: string, enabled: boolean): Promise<ClassPassStatus> {

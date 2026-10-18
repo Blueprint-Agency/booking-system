@@ -589,6 +589,18 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     { cta: { href: '{{checkin_url}}', label: 'Open the check-in desk' } },
   )
 
+  // #411. To every active Admin: ClassPass sold a seat the class did not have,
+  // so the member took an Overbook seat. The link is the studio's own
+  // ClassPass page (`classpass_url`), so the copy carries no origin.
+  const CLASSPASS_OVERBOOKED_BODY = body(
+    'A ClassPass booking overbooked a class',
+    [
+      '<strong>{{client_name}}</strong> booked <strong>{{class_name}}</strong> on <strong>{{date}}</strong> through ClassPass, after its online and buffer seats were all taken, so they hold an Overbook seat.',
+      'ClassPass has already confirmed the booking with them. If the room cannot take one more, contact them through ClassPass.',
+    ],
+    { cta: { href: '{{classpass_url}}', label: 'Open the ClassPass page' } },
+  )
+
   /** `{{cap_warning}}` is the §17 sentence: this request breaches a declared
    *  Leave Conflict or the study Leave Cap, and medical is never refused by
    *  either, so this is the admins' only warning in time to arrange cover. It
@@ -772,6 +784,11 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       slug: 'checkin_nag',
       subject: 'Check-in is still open for {{session_label}}',
       bodyHtml: CHECKIN_NAG_BODY,
+    },
+    {
+      slug: 'classpass_overbooked',
+      subject: 'A ClassPass booking overbooked {{class_name}}',
+      bodyHtml: CLASSPASS_OVERBOOKED_BODY,
     },
     {
       slug: 'referral_credited',

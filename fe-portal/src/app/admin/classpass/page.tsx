@@ -11,6 +11,7 @@ import {
   CLASSPASS_SENDER,
   getClassPass,
   outcomeRows,
+  overbookedHeadline,
   regenerateClassPassAddress,
   setClassPassEnabled,
   type ClassPassStatus,
@@ -251,6 +252,18 @@ export default function ClassPassPage() {
             </div>
           ))}
         </dl>
+        {status.overbooked.length > 0 && (
+          <div role="status" className="mt-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-ink">
+            <p className="font-medium">{overbookedHeadline(status.overbooked)}</p>
+            <ul className="mt-1 space-y-0.5 text-xs text-muted">
+              {status.overbooked.map((o) => (
+                <li key={o.booking_id}>
+                  {o.client_name} · {o.class_name} · {formatDateTime(o.starts_at)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
     </div>
   );

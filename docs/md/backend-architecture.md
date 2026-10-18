@@ -979,6 +979,7 @@ credit_expiry_reminder                 # also fires for trial pass expiry — `r
 instructor_invite
 admin_invite
 checkin_nag
+classpass_overbooked                   # to every Admin when a ClassPass booking takes an Overbook seat (#411, migration 0124 for older studios)
 referral_credited
 trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_confirmed; trial copy is friendlier ("welcome to your first 3 classes")
 corporate_purchase_confirmed           # a paid corporate package: no credits, the studio arranges the session (be-client § Corporate branch)
@@ -1007,6 +1008,7 @@ purchase_receipt                       # Merch (paid or free) and a standalone C
 | `admin_cancel_workshop` | `services/workshops/cancel.ts` | every attendee | `amount_paid` in `sgdText` form; nothing is refunded automatically (#272), so it says the refund is being arranged |
 | `pt_request_cancelled` | `services/pt-sessions/cancel.ts`, a member's request cancelled before or after scheduling by the member, an admin or the instructor (not an expiry or a Remove) | the requester, and a 2-on-1 partner | `session_line`, and `refund_line` only when sessions came back |
 | `checkin_nag` | the `sendCheckInNags` job (§5) | the Instructor, each active Admin copied | the session, its date and the members still unmarked |
+| `classpass_overbooked` | `services/classpass/import-booking.ts`, a ClassPass booking that took an Overbook seat (#411; migration 0124 for older studios) | every active Admin | the ClassPass member, the class and its time; links the ClassPass page (`classpass_url`) |
 | `credit_expiry_reminder` | `services/packages/expire.ts:sendLapsingAlerts` | the member | `remaining_line`, composed with `notifications/purchase-email.ts:contentsLine` |
 
 A staff cancel of one booking (`/bookings/:id/cancel`) sends nothing (#320).

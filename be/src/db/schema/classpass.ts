@@ -2,7 +2,9 @@ import { sql } from 'drizzle-orm'
 import { pgTable, uuid, text, boolean, timestamp, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { tenantIdColumn } from './tenancy'
 import { locations } from './catalog'
-import { classpassEmailKindEnum, classpassEmailOutcomeEnum } from '../enums'
+import { clients } from './identity'
+import { bookings } from './bookings'
+import { classpassEmailKindEnum, classpassEmailOutcomeEnum, classpassReviewReasonEnum } from '../enums'
 
 /**
  * A studio's ClassPass import (#407): the private address it forwards
@@ -61,11 +63,31 @@ export const classpassInboundEmails = pgTable(
     headers: jsonb('headers'),
     text: text('text'),
     html: text('html'),
+    // Why it was not placed (#411), with an outcome of `review` or `unparsed`;
+    // null otherwise.
+    reviewReason: classpassReviewReasonEnum('review_reason'),
+    // What the parser read (#411), each null when it could not. The location
+    // is as ClassPass wrote it; `starts_at` is its date and time read in the
+    // studio's timezone.
+    reservationId: text('reservation_id'),
+    className: text('class_name'),
+    locationName: text('location_name'),
+    startsAt: timestamp('starts_at', { withTimezone: true }),
+    memberName: text('member_name'),
+    memberEmail: text('member_email'),
+    // The member it was placed for, and the booking it made or matched.
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+    bookingId: uuid('booking_id').references(() => bookings.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
     messageUnique: uniqueIndex('classpass_inbound_emails_message_unique').on(table.tenantId, table.messageId),
     receivedIdx: index('classpass_inbound_emails_received_idx').on(table.tenantId, table.receivedAt),
+    reviewIdx: index('classpass_inbound_emails_review_idx')
+      .on(table.tenantId, table.reviewReason)
+      .where(sql`${table.reviewReason} IS NOT NULL`),
+    clientIdFkIdx: index('classpass_inbound_emails_client_id_fk_idx').on(table.clientId),
+    bookingIdFkIdx: index('classpass_inbound_emails_booking_id_fk_idx').on(table.bookingId),
   }),
 )
 

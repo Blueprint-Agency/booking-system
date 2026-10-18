@@ -1007,6 +1007,7 @@ function RosterRow({
           </div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
             <span className="font-mono">{row.code}</span>
+            {row.source === "classpass" && <Badge tone="accent">ClassPass</Badge>}
             {row.promoted_from_waitlist && <Badge tone="cyan">Promoted from waitlist</Badge>}
             {row.seat === "buffer" && <Badge>Buffer</Badge>}
             {row.seat === "overbook" && <Badge tone="warning">Overbook</Badge>}

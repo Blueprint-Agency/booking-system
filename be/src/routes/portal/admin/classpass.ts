@@ -39,6 +39,13 @@ function serialize(status: svc.ClassPassStatus) {
     gmail_confirmation_at: status.gmailConfirmationAt,
     last_received_at: status.lastReceivedAt,
     counts: status.counts,
+    overbooked: status.overbooked.map(o => ({
+      booking_id: o.bookingId,
+      class_id: o.classId,
+      class_name: o.className,
+      starts_at: o.startsAt,
+      client_name: o.clientName,
+    })),
   }
 }
 

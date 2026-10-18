@@ -100,6 +100,15 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
   // they go with the member.
   byClientId('client_billing_details'),
   byClientId('bookings'),
+  // The ClassPass emails about them (#411): the email as it arrived, with the
+  // name and address ClassPass gave for them. One the importer could not place
+  // names them only by that address. After `bookings`, which a placed one
+  // points at, so deletion reaches it first.
+  {
+    table: 'classpass_inbound_emails',
+    columns: ['client_id', 'member_email', 'member_name'],
+    where: m => sql`(client_id = ${m.clientId} OR lower(member_email) = lower(${m.email}))`,
+  },
   // Their places in class waitlists. After `bookings`, which a promoted entry
   // points at, so deletion reaches it first.
   byClientId('waitlist_entries'),

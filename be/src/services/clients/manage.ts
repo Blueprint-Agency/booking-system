@@ -333,6 +333,12 @@ export interface CreateClientInput {
   name: string
   email: string
   phone: string
+  /**
+   * Allow an empty `phone`: for a member who arrives from somewhere that gives
+   * none (a ClassPass booking, #411), rather than inventing one. Staff adding a
+   * member must still give one.
+   */
+  phoneUnknown?: boolean
   /** As the member's own sign-up asks it; left unset when the admin gave none. */
   gender?: ClientGender
   /**
@@ -341,7 +347,8 @@ export interface CreateClientInput {
    * and their first sign-in mails them the set-password link (ADR 0005).
    */
   sendInvite?: boolean
-  invitedByStaffId: string
+  /** Unset when no staff member is behind it (the ClassPass import). */
+  invitedByStaffId?: string
 }
 
 /**
@@ -371,7 +378,7 @@ export async function createClient(input: CreateClientInput): Promise<ClientRow>
   const sendInvite = input.sendInvite ?? true
   if (!name) throw new BadRequestError('name_required')
   if (!email) throw new BadRequestError('email_required')
-  if (!phone) throw new BadRequestError('phone_required')
+  if (!phone && !input.phoneUnknown) throw new BadRequestError('phone_required')
 
   // Resolved before anything is written: an invite email nobody can act on is
   // not worth an account and a member row to go with it.

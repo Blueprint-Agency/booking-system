@@ -31,6 +31,8 @@ export interface CheckInRosterRow {
   seat?: "online" | "buffer" | "overbook" | null;
   /** The booking came from the class's waitlist. */
   promoted_from_waitlist?: boolean;
+  /** `classpass` for a booking ClassPass paid for. */
+  source?: "direct" | "classpass";
 }
 
 /** A member still waiting for a seat on a class, in queue order. */

@@ -438,7 +438,7 @@ The ClassPass page (#409): the studio's **ClassPass address**, the switch for it
 
 | Method | Path | Body / params | Effect |
 |---|---|---|---|
-| GET | `/classpass` | — | `{ address, enabled, gmail_confirmation_code, gmail_confirmation_at, last_received_at, counts: { imported, cancelled, noop, ignored, refused, unparsed, review } }`. `address` is `<token>@<CLASSPASS_INBOUND_DOMAIN>`, or null where the deployment has no inbound domain. `counts` is every email kept for the studio, by outcome. |
+| GET | `/classpass` | — | `{ address, enabled, gmail_confirmation_code, gmail_confirmation_at, last_received_at, counts: { imported, cancelled, noop, ignored, refused, unparsed, review }, overbooked: [{ booking_id, class_id, class_name, starts_at, client_name }] }`. `address` is `<token>@<CLASSPASS_INBOUND_DOMAIN>`, or null where the deployment has no inbound domain. `counts` is every email kept for the studio, by outcome. `overbooked` is the ClassPass bookings holding an Overbook seat on a class that hasn't ended (#411), soonest first. |
 | PATCH | `/classpass` | `{ enabled: boolean }` | Switches the import on or off; answers as GET. |
 | POST | `/classpass/address/regenerate` | — | A new random token, and the Gmail code cleared; answers as GET. The old address belongs to no studio from then on, and mail to it is dropped. |
 | GET | `/classpass/locations` | — | `{ mappings: [{ id, location_name, location_id, location: { name, archived_at }, created_at, updated_at }] }`, by name: the studio's ClassPass location mappings (#410). `location_name` is stored normalised (`normaliseClassPassLocation`, `services/classpass/location-name.ts`: lower case, single spaces, every dash `-` with a space either side). |

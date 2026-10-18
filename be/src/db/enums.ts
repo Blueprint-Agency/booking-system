@@ -304,6 +304,23 @@ export const classpassEmailOutcomeEnum = pgEnum('classpass_email_outcome', [
   'review',
 ])
 
+// Why a ClassPass email was not placed (#411): kept with an outcome of
+// `review` (or `unparsed`) so ClassPass review (#413) can list and filter it.
+// `unparsed`: a required field could not be read. `unmapped_location`: no
+// ClassPass location mapping for the email's location. `no_class` /
+// `ambiguous_class` / `class_cancelled`: the class at that Location and time.
+// `client_deleted`: the member's record here was removed. `already_booked`:
+// the member already holds a seat on that class.
+export const classpassReviewReasonEnum = pgEnum('classpass_review_reason', [
+  'unparsed',
+  'unmapped_location',
+  'no_class',
+  'ambiguous_class',
+  'class_cancelled',
+  'client_deleted',
+  'already_booked',
+])
+
 // TS type aliases (handy for service layer)
 export type TenantStatus = (typeof tenantStatusEnum.enumValues)[number]
 export type StaffRole = (typeof staffRoleEnum.enumValues)[number]
@@ -330,3 +347,4 @@ export type LeaveHalfDay = (typeof leaveHalfDayEnum.enumValues)[number]
 export type ClassDifficulty = (typeof classDifficultyEnum.enumValues)[number]
 export type ClassPassEmailKind = (typeof classpassEmailKindEnum.enumValues)[number]
 export type ClassPassEmailOutcome = (typeof classpassEmailOutcomeEnum.enumValues)[number]
+export type ClassPassReviewReason = (typeof classpassReviewReasonEnum.enumValues)[number]
