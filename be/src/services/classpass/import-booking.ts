@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
 import { bookings, classes, classpassLocationMappings, classTypes, clients } from '../../db/schema'
 import type { ClassPassEmailOutcome, ClassPassReviewReason } from '../../db/enums'
-import { AppError, ConflictError } from '../../shared/errors'
+import { AppError, ConflictError, NotFoundError } from '../../shared/errors'
 import { classPassBookClass } from '../bookings/book'
 import { createClient } from '../clients/manage'
 import { emailEveryAdmin } from '../notifications/send'
@@ -75,6 +75,16 @@ async function memberFor(
   return { clientId: created.id }
 }
 
+/** When the Admin's picked class starts: this studio's active class, or `class_not_found`. */
+async function activeClassStart(tenantId: string, classId: string): Promise<Date> {
+  const [cls] = await db
+    .select({ startsAt: classes.startsAt })
+    .from(classes)
+    .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId), eq(classes.lifecycle, 'active')))
+  if (!cls) throw new NotFoundError('class_not_found')
+  return cls.startsAt
+}
+
 /** The class at the email's mapped Location and time, or why there is none. */
 async function classFor(tenantId: string, fields: { locationName: string; className: string }, startsAt: Date): Promise<ClassMatch> {
   const [mapping] = await db
@@ -97,7 +107,8 @@ async function classFor(tenantId: string, fields: { locationName: string; classN
  * place of the one the email's Location and time would match. Then a
  * reservation already booked here is refused `classpass_reservation_taken`
  * rather than taken as the same email again, and a class that is not this
- * studio's active one is refused `class_not_found`.
+ * studio's active one is refused `class_not_found`. The class gives the time
+ * and place, so the email need only name the reservation and the member.
  */
 export async function placeClassPassBooking(
   tenantId: string,
@@ -106,24 +117,32 @@ export async function placeClassPassBooking(
 ): Promise<PlacedBooking> {
   const placed = { fields, startsAt: null as Date | null, clientId: null as string | null, bookingId: null as string | null }
   const review = (reason: ClassPassReviewReason) => ({ ...placed, outcome: 'review' as const, reason })
+  const unparsed = { ...placed, outcome: 'unparsed' as const, reason: 'unparsed' as const }
 
-  if (!isComplete(fields)) return { ...placed, outcome: 'unparsed', reason: 'unparsed' }
-
-  const tenant = await loadTenantById(tenantId)
-  placed.startsAt = zonedInstant(fields.localDate, fields.localTime, tenant?.timezone ?? 'UTC')
+  const { reservationId, memberName, memberEmail } = fields
+  if (!reservationId || !memberName || !memberEmail) return unparsed
 
   // This reservation is already a booking here: the same booking forwarded twice.
   const [held] = await db
     .select({ id: bookings.id, clientId: bookings.clientId })
     .from(bookings)
-    .where(and(eq(bookings.tenantId, tenantId), eq(bookings.classpassReservationId, fields.reservationId)))
+    .where(and(eq(bookings.tenantId, tenantId), eq(bookings.classpassReservationId, reservationId)))
   if (held && options.classId) throw new ConflictError('classpass_reservation_taken', { booking_id: held.id })
-  if (held) return { ...placed, clientId: held.clientId, bookingId: held.id, outcome: 'noop', reason: null }
 
-  const match = options.classId ? { classId: options.classId } : await classFor(tenantId, fields, placed.startsAt)
+  let match: ClassMatch
+  if (options.classId) {
+    placed.startsAt = await activeClassStart(tenantId, options.classId)
+    match = { classId: options.classId }
+  } else {
+    if (!isComplete(fields)) return unparsed
+    const tenant = await loadTenantById(tenantId)
+    placed.startsAt = zonedInstant(fields.localDate, fields.localTime, tenant?.timezone ?? 'UTC')
+    if (held) return { ...placed, clientId: held.clientId, bookingId: held.id, outcome: 'noop', reason: null }
+    match = await classFor(tenantId, fields, placed.startsAt)
+  }
   if ('reason' in match) return review(match.reason)
 
-  const who = await memberFor(tenantId, fields.memberName, fields.memberEmail)
+  const who = await memberFor(tenantId, memberName, memberEmail)
   if ('reason' in who) return review(who.reason)
   placed.clientId = who.clientId
 
@@ -132,7 +151,7 @@ export async function placeClassPassBooking(
     booked = await classPassBookClass(tenantId, {
       clientId: who.clientId,
       classId: match.classId,
-      reservationId: fields.reservationId,
+      reservationId,
     })
   } catch (err) {
     if (err instanceof AppError && err.code === 'already_booked') return review('already_booked')
@@ -142,7 +161,8 @@ export async function placeClassPassBooking(
 
   if (booked.seat === 'overbook') {
     const classId = match.classId
-    const startsAt = placed.startsAt
+    // Invariant: set above from the class or the email before anything is booked.
+    const startsAt = placed.startsAt!
     afterCommit(() =>
       emailEveryAdmin(
         tenantId,
@@ -154,8 +174,8 @@ export async function placeClassPassBooking(
             .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
             .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
           return {
-            client_name: fields.memberName,
-            class_name: cls?.name ?? fields.className,
+            client_name: memberName,
+            class_name: cls?.name ?? fields.className ?? '',
             date: (await sessionTimeFormat(tenantId)).format(startsAt),
             classpass_url: `${await requireTenantUrl('portal', tenantId)}/admin/classpass`,
           }

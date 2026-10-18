@@ -313,7 +313,10 @@ export const classpassEmailOutcomeEnum = pgEnum('classpass_email_outcome', [
 // ClassPass location mapping for the email's location. `no_class` /
 // `ambiguous_class` / `class_cancelled`: the class at that Location and time.
 // `client_deleted`: the member's record here was removed. `already_booked`:
-// the member already holds a seat on that class.
+// the member already holds a seat on that class. `import_off`: a trusted
+// booking or cancellation that arrived while the import was switched off, kept
+// for an Admin to decide on. `import_error`: placing it failed unexpectedly;
+// the email is kept and the error logged.
 export const classpassReviewReasonEnum = pgEnum('classpass_review_reason', [
   'unparsed',
   'unmapped_location',
@@ -322,6 +325,8 @@ export const classpassReviewReasonEnum = pgEnum('classpass_review_reason', [
   'class_cancelled',
   'client_deleted',
   'already_booked',
+  'import_off',
+  'import_error',
 ])
 
 // TS type aliases (handy for service layer)

@@ -74,16 +74,16 @@ describe('the ClassPass address', { skip: integrationTestsEnabled ? false : SKIP
     await harness?.close()
   })
 
-  test('CPS-10 a ClassPass email that passes DKIM is kept as ignored, and the status counts it', async () => {
+  test('CPS-10 a ClassPass booking email that passes DKIM, with the import off, is kept for review, and the status counts it', async () => {
     const { one } = harness.tenants
     const before = await settings.readClassPass(one.id)
 
     const email = classPassEmail({ kind: 'booking' })
     const result = await receive.receiveClassPassEmail(one.id, email)
-    assert.equal(result.outcome, 'ignored')
+    assert.deepEqual([result.outcome, result.reason], ['review', 'import_off'])
 
     const after = await settings.readClassPass(one.id)
-    assert.equal(after.counts.ignored, before.counts.ignored + 1)
+    assert.equal(after.counts.review, before.counts.review + 1)
     assert.equal(after.counts.imported, 0)
     assert.equal(after.lastReceivedAt?.toISOString(), email.receivedAt.toISOString())
   })
@@ -119,15 +119,17 @@ describe('the ClassPass address', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(second.id, first.id)
 
     const after = await settings.readClassPass(one.id)
-    assert.equal(after.counts.ignored, before.counts.ignored + 1)
+    assert.equal(after.counts.review, before.counts.review + 1)
   })
 
-  test('CPS-13 the switch starts off, and a ClassPass email is kept as ignored whether it is on or off', async () => {
+  test('CPS-13 the switch starts off: a booking email is kept for review while it is off, and a marketing email is kept as ignored whether it is on or off', async () => {
     const { two } = harness.tenants
     assert.equal((await settings.readClassPass(two.id)).enabled, false)
 
     const off = await receive.receiveClassPassEmail(two.id, classPassEmail({ kind: 'booking' }))
-    assert.equal(off.outcome, 'ignored')
+    assert.deepEqual([off.outcome, off.reason], ['review', 'import_off'])
+    const offMarketing = await receive.receiveClassPassEmail(two.id, classPassEmail({ kind: 'marketing' }))
+    assert.equal(offMarketing.outcome, 'ignored')
 
     assert.equal((await settings.setClassPassEnabled(two.id, true)).enabled, true)
     const on = await receive.receiveClassPassEmail(two.id, classPassEmail({ kind: 'marketing' }))

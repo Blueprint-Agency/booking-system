@@ -586,14 +586,55 @@ describe('importing a ClassPass booking email', { skip: integrationTestsEnabled 
     assert.deepEqual(await roster(one, classId), [])
   })
 
-  test('CPS-44 with the import switched off, a booking email is kept as ignored and books nothing', async () => {
+  test('CPS-44 with the import switched off, a booking email is kept for review as import_off and books nothing', async () => {
     const startsAt = nextStart()
     const classId = await addClass(one, startsAt)
     await settingsSvc.setClassPassEnabled(one.id, false)
     try {
       const result = await receive(one, bookingEmail(one, startsAt))
-      assert.equal(result.outcome, 'ignored')
+      assert.deepEqual([result.outcome, result.reason], ['review', 'import_off'])
       assert.deepEqual(await roster(one, classId), [])
+    } finally {
+      await settingsSvc.setClassPassEnabled(one.id, true)
+    }
+  })
+
+  test('CPS-92 a booking kept while the import was off is not placed when it is switched on: it stays open until an Admin books it', async () => {
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt)
+    await settingsSvc.setClassPassEnabled(one.id, false)
+    let result
+    try {
+      result = await receive(one, bookingEmail(one, startsAt))
+    } finally {
+      await settingsSvc.setClassPassEnabled(one.id, true)
+    }
+    assert.deepEqual(await roster(one, classId), [], 'switching on places nothing')
+    const review = await expectStatus(
+      await harness.app.request('/api/v1/portal/admin/classpass/review', { headers: one.admin.headers }),
+      200,
+    )
+    const item = (review.items as Record<string, any>[]).find(i => i.id === result.id)
+    assert.equal(item?.reason, 'import_off')
+
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/classpass/review/${result.id}/book`, {
+        method: 'POST',
+        headers: { ...one.admin.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ class_id: classId }),
+      }),
+      200,
+    )
+    assert.deepEqual((await roster(one, classId)).map(a => a.source), ['classpass'])
+  })
+
+  test('CPS-93 with the import switched off, a roster or a marketing email is still kept as ignored', async () => {
+    await settingsSvc.setClassPassEnabled(one.id, false)
+    try {
+      for (const kind of ['roster', 'marketing'] as const) {
+        const result = await receive(one, classPassEmail({ kind }))
+        assert.deepEqual([result.outcome, result.reason], ['ignored', null], kind)
+      }
     } finally {
       await settingsSvc.setClassPassEnabled(one.id, true)
     }
@@ -768,5 +809,60 @@ describe('importing a ClassPass booking email', { skip: integrationTestsEnabled 
     }
     assert.deepEqual(await roster(one, classId), [])
     assert.equal(await clientByEmail(one, emailFor('unlabelled')), undefined)
+  })
+
+  test('CPS-90 a numeric character reference no character has is read as written, and the booking still imports', async () => {
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt)
+    const email = emailFor('entity')
+    const name = 'Placeholder &#99999999; &#xFFFFFFFF; Member'
+
+    const result = await receive(one, bookingEmail(one, startsAt, { memberName: name, memberEmail: email }))
+
+    assert.deepEqual([result.outcome, result.reason], ['imported', null])
+    assert.equal((await roster(one, classId)).length, 1)
+    assert.equal((await clientByEmail(one, email))?.name, name)
+  })
+
+  test('CPS-91 a booking whose placing fails unexpectedly is still kept, for review as import_error, with nothing it half-made, and the webhook answers 200', async () => {
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt)
+    const reservationId = newReservationId()
+    const email = emailFor('placing-fails')
+    // A database failure on the booking's own insert, for this reservation only.
+    const fn = `classpass_test_refuse_${run}`
+    await harness.db.execute(sql.raw(`
+      CREATE FUNCTION ${fn}() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.classpass_reservation_id = '${reservationId}' THEN RAISE EXCEPTION 'refused for CPS-91'; END IF;
+        RETURN NEW;
+      END $$`))
+    await harness.db.execute(sql.raw(`CREATE TRIGGER ${fn} BEFORE INSERT ON bookings FOR EACH ROW EXECUTE FUNCTION ${fn}()`))
+    try {
+      const { address } = await settingsSvc.readClassPass(one.id)
+      const message = bookingEmail(one, startsAt, { reservationId, memberEmail: email })
+
+      const res = await deliver(address!, message)
+
+      assert.equal(res.status, 200, await res.text())
+      const [kept] = await harness.db
+        .select()
+        .from(schema.classpassInboundEmails)
+        .where(sql`${schema.classpassInboundEmails.tenantId} = ${one.id} AND ${schema.classpassInboundEmails.messageId} = ${message.messageId}`)
+      assert.ok(kept, 'the email is kept')
+      keptIds.push(kept.id)
+      assert.deepEqual([kept.outcome, kept.reviewReason], ['review', 'import_error'])
+      assert.equal(kept.reservationId, reservationId)
+      assert.deepEqual(await roster(one, classId), [])
+      assert.equal(await clientByEmail(one, email), undefined, 'the member placing made is undone with it')
+      const listed = await expectStatus(
+        await harness.app.request('/api/v1/portal/admin/classpass/review', { headers: one.admin.headers }),
+        200,
+      )
+      assert.ok((listed.items as { id: string }[]).some(i => i.id === kept.id), 'it is open for review')
+    } finally {
+      await harness.db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${fn} ON bookings`))
+      await harness.db.execute(sql.raw(`DROP FUNCTION IF EXISTS ${fn}()`))
+    }
   })
 })

@@ -277,7 +277,8 @@ describe('resend delivery webhook', { skip: integrationTestsEnabled ? false : SK
 
       const rows = (await kept(two.id)).filter(r => r.messageId === email.messageId)
       assert.equal(rows.length, 1)
-      assert.equal(rows[0]!.outcome, 'ignored')
+      // The import is off there: kept for an Admin to decide on.
+      assert.deepEqual([rows[0]!.outcome, rows[0]!.reviewReason], ['review', 'import_off'])
       assert.equal((await kept(one.id)).length, northwindBefore)
 
       // Redelivered: acknowledged, and still kept once.

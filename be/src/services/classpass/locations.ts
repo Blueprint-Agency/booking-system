@@ -4,12 +4,18 @@ import { classpassLocationMappings, locations } from '../../db/schema'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { normaliseClassPassLocation } from './location-name'
+import { rerunOpenReviewAt } from './review-items'
 
 /**
  * ClassPass location mappings (#410): which of the studio's Locations each
  * name ClassPass writes in its emails means. Names are stored normalised
  * (`normaliseClassPassLocation`), so the import (#411) finds a mapping by
  * normalising the email's name the same way.
+ *
+ * Adding or changing a mapping runs the import again on the open ClassPass
+ * review items (#413) from the names it touches, so a booking waiting on it is
+ * placed however the Admin mapped it: from the Locations panel or from the
+ * item. `staffId` is who closes the ones that now place.
  */
 
 export { normaliseClassPassLocation } from './location-name'
@@ -88,16 +94,23 @@ async function readMapping(tenantId: string, id: string): Promise<ClassPassLocat
 export async function addClassPassLocationMapping(
   tenantId: string,
   input: { locationName: string; locationId: string },
+  staffId: string | null = null,
 ): Promise<ClassPassLocationMapping> {
   const locationName = normalisedName(input.locationName)
-  await assertMappableLocation(tenantId, input.locationId)
+  const id = await insertMapping(tenantId, locationName, input.locationId)
+  await rerunOpenReviewAt(tenantId, [locationName], staffId)
+  return readMapping(tenantId, id)
+}
+
+async function insertMapping(tenantId: string, locationName: string, locationId: string): Promise<string> {
+  await assertMappableLocation(tenantId, locationId)
   await assertNameFree(tenantId, locationName)
   try {
     const [row] = await db
       .insert(classpassLocationMappings)
-      .values({ tenantId, locationName, locationId: input.locationId })
+      .values({ tenantId, locationName, locationId })
       .returning({ id: classpassLocationMappings.id })
-    return readMapping(tenantId, row!.id)
+    return row!.id
   } catch (err) {
     // Lost a race with an Admin adding the same name.
     if (isUniqueViolation(err, NAME_UNIQUE)) throw new ConflictError('classpass_mapping_exists')
@@ -105,12 +118,37 @@ export async function addClassPassLocationMapping(
   }
 }
 
+/**
+ * Maps a name to a Location, as a review item's "Map location" does: a
+ * mapping of that name to that same Location already there is used as it is,
+ * not refused. Then the open items from that name run again. Returns the
+ * mapping, and the review items it re-ran.
+ */
+export async function mapClassPassLocationName(
+  tenantId: string,
+  input: { locationName: string; locationId: string },
+  staffId: string | null,
+): Promise<{ mapping: ClassPassLocationMapping; rerun: string[] }> {
+  const locationName = normalisedName(input.locationName)
+  const [existing] = await db
+    .select({ id: classpassLocationMappings.id, locationId: classpassLocationMappings.locationId })
+    .from(classpassLocationMappings)
+    .where(and(eq(classpassLocationMappings.tenantId, tenantId), eq(classpassLocationMappings.locationName, locationName)))
+  const id =
+    existing && existing.locationId === input.locationId
+      ? existing.id
+      : await insertMapping(tenantId, locationName, input.locationId)
+  const rerun = await rerunOpenReviewAt(tenantId, [locationName], staffId)
+  return { mapping: await readMapping(tenantId, id), rerun }
+}
+
 export async function changeClassPassLocationMapping(
   tenantId: string,
   id: string,
   patch: { locationName?: string; locationId?: string },
+  staffId: string | null = null,
 ): Promise<ClassPassLocationMapping> {
-  await readMapping(tenantId, id)
+  const before = await readMapping(tenantId, id)
   const set: { locationName?: string; locationId?: string; updatedAt: Date } = { updatedAt: new Date() }
   if (patch.locationName !== undefined) {
     set.locationName = normalisedName(patch.locationName)
@@ -129,6 +167,8 @@ export async function changeClassPassLocationMapping(
     if (isUniqueViolation(err, NAME_UNIQUE)) throw new ConflictError('classpass_mapping_exists')
     throw err
   }
+  // The name it had too: what waited on it now reads as unmapped.
+  await rerunOpenReviewAt(tenantId, [...new Set([before.locationName, set.locationName ?? before.locationName])], staffId)
   return readMapping(tenantId, id)
 }
 

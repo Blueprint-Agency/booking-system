@@ -231,6 +231,17 @@ describe('ClassPass review', { skip: integrationTestsEnabled ? false : SKIP_REAS
     return body.attendees as Record<string, any>[]
   }
 
+  async function setImport(at: Studio, enabled: boolean) {
+    await expectStatus(
+      await harness.app.request('/api/v1/portal/admin/classpass', {
+        method: 'PATCH',
+        headers: { ...at.admin.headers, ...json },
+        body: JSON.stringify({ enabled }),
+      }),
+      200,
+    )
+  }
+
   async function resolution(id: string) {
     const [row] = await harness.db
       .select({ resolvedAt: schema.classpassInboundEmails.resolvedAt, by: schema.classpassInboundEmails.resolvedByStaffId })
@@ -479,5 +490,130 @@ describe('ClassPass review', { skip: integrationTestsEnabled ? false : SKIP_REAS
     await expectStatus(await act(one, item.id, 'book', { class_id: cancelled }), 404, 'class_not_found')
     assert.deepEqual(await roster(two, theirs), [])
     assert.ok(await itemOf(one, item.id))
+  })
+
+  test('CPS-94 an item whose time or location could not be read is booked into the class the Admin picks, as it names the reservation and the member', async () => {
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt)
+    const lee = await member(one, 'lee-review')
+    const reservationId = newReservationId()
+    const noTime = await receive(one, bookingEmail(one, startsAt, { date: 'sometime', reservationId, memberName: lee.name, memberEmail: lee.email }))
+    const noPlace = await receive(one, bookingEmail(one, startsAt, { location: '' }))
+    assert.deepEqual([noTime.outcome, noPlace.outcome], ['unparsed', 'unparsed'])
+
+    const booked = await expectStatus(await act(one, noTime.id, 'book', { class_id: classId }), 200)
+    await expectStatus(await act(one, noPlace.id, 'book', { class_id: classId }), 200)
+
+    assert.equal(booked.outcome, 'imported')
+    assert.equal(new Date(booked.starts_at).getTime(), startsAt.getTime(), 'the item takes the class\'s start')
+    const attendees = await roster(one, classId)
+    assert.equal(attendees.length, 2)
+    const ours = attendees.find(a => a.client.id === lee.clientId)
+    const [row] = await harness.db.select().from(schema.bookings).where(eq(schema.bookings.id, ours!.booking_id))
+    assert.equal(row!.classpassReservationId, reservationId)
+    assert.equal(await itemOf(one, noTime.id), undefined)
+  })
+
+  test('CPS-95 an item for a removed member, or a cancellation, cannot be booked: each is refused with its reason and books nothing', async () => {
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt)
+    const gone = await member(one, 'gone-review')
+    await harness.db.update(schema.clients).set({ deletedAt: new Date() }).where(eq(schema.clients.id, gone.clientId))
+    const removed = await receive(one, bookingEmail(one, startsAt, { memberName: gone.name, memberEmail: gone.email }))
+    assert.equal(removed.reason, 'client_deleted')
+    await setImport(one, false)
+    let cancellation
+    try {
+      cancellation = await receive(one, classPassEmail({ kind: 'cancellation', memberEmail: emailFor('cancelled-review') }))
+    } finally {
+      await setImport(one, true)
+    }
+    assert.deepEqual([cancellation.outcome, cancellation.reason], ['review', 'import_off'])
+    assert.equal((await itemOf(one, cancellation.id))?.kind, 'cancellation')
+
+    await expectStatus(await act(one, removed.id, 'book', { class_id: classId }), 409, 'classpass_client_deleted')
+    await expectStatus(await act(one, cancellation.id, 'book', { class_id: classId }), 400, 'classpass_review_not_booking')
+
+    assert.deepEqual(await roster(one, classId), [])
+    assert.ok(await itemOf(one, removed.id))
+    await expectStatus(await act(one, cancellation.id, 'dismiss'), 200)
+  })
+
+  test('CPS-96 adding or changing a mapping on the Locations panel imports the open items from that ClassPass location that now match', async () => {
+    const added = `Northwind - Panel ${run}`
+    const changed = `Northwind - Moved ${run}`
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt, { locationId: one.otherLocationId })
+    const first = await receive(one, bookingEmail(one, startsAt, { location: added }))
+    const second = await receive(one, bookingEmail(one, startsAt, { location: changed }))
+
+    await expectStatus(
+      await harness.app.request('/api/v1/portal/admin/classpass/locations', {
+        method: 'POST',
+        headers: { ...one.admin.headers, ...json },
+        body: JSON.stringify({ location_name: added, location_id: one.otherLocationId }),
+      }),
+      201,
+    )
+    assert.equal(await itemOf(one, first.id), undefined)
+    assert.equal((await resolution(first.id)).by, one.admin.id)
+
+    // Mapped to the wrong Location first: still no class there.
+    const wrong = await expectStatus(
+      await harness.app.request('/api/v1/portal/admin/classpass/locations', {
+        method: 'POST',
+        headers: { ...one.admin.headers, ...json },
+        body: JSON.stringify({ location_name: changed, location_id: one.locationId }),
+      }),
+      201,
+    )
+    assert.equal((await itemOf(one, second.id))?.reason, 'no_class')
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/classpass/locations/${wrong.id}`, {
+        method: 'PATCH',
+        headers: { ...one.admin.headers, ...json },
+        body: JSON.stringify({ location_id: one.otherLocationId }),
+      }),
+      200,
+    )
+    assert.equal(await itemOf(one, second.id), undefined)
+    assert.equal((await roster(one, classId)).length, 2)
+  })
+
+  test('CPS-97 mapping from a review item a location already mapped to the same Location reuses that mapping and imports the item', async () => {
+    const name = `Northwind - Already ${run}`
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt, { locationId: one.otherLocationId })
+    const item = await receive(one, bookingEmail(one, startsAt, { location: name }))
+    assert.equal(item.reason, 'unmapped_location')
+    // Mapped since the item was read, behind the page's back.
+    await harness.db
+      .insert(schema.classpassLocationMappings)
+      .values({ tenantId: one.id, locationName: `northwind - already ${run}`, locationId: one.otherLocationId })
+
+    const body = await expectStatus(await act(one, item.id, 'location', { location_id: one.otherLocationId }), 200)
+
+    assert.equal(body.mapping.location_id, one.otherLocationId)
+    assert.equal(await itemOf(one, item.id), undefined)
+    assert.equal((await roster(one, classId)).length, 1)
+  })
+
+  test('CPS-98 mapping a location does not place a booking kept while the import was off: the Admin decides on it', async () => {
+    const name = `Northwind - Held ${run}`
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt, { locationId: one.otherLocationId })
+    await setImport(one, false)
+    let held
+    try {
+      held = await receive(one, bookingEmail(one, startsAt, { location: name }))
+    } finally {
+      await setImport(one, true)
+    }
+    const unmapped = await receive(one, bookingEmail(one, startsAt, { location: name }))
+
+    await expectStatus(await act(one, unmapped.id, 'location', { location_id: one.otherLocationId }), 200)
+
+    assert.equal((await itemOf(one, held.id))?.reason, 'import_off')
+    assert.equal((await roster(one, classId)).length, 1)
   })
 })

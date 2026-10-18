@@ -428,7 +428,7 @@ describe('importing a ClassPass cancellation email', { skip: integrationTestsEna
     )
   })
 
-  test('CPS-57 with the import switched off, a cancellation is kept as ignored and cancels nothing', async () => {
+  test('CPS-57 with the import switched off, a cancellation is kept for review as import_off and cancels nothing', async () => {
     const startsAt = nextStart()
     await addClass(one, startsAt)
     const { reservationId, bookingId } = await imported(one, startsAt)
@@ -436,7 +436,7 @@ describe('importing a ClassPass cancellation email', { skip: integrationTestsEna
     try {
       const result = await receive(one, cancellationEmail(one, startsAt, reservationId))
 
-      assert.equal(result.outcome, 'ignored')
+      assert.deepEqual([result.outcome, result.reason], ['review', 'import_off'])
       assert.equal((await bookingRow(bookingId)).state, 'confirmed')
       assert.equal((await inboundRow(result.id)).reservationId, reservationId)
     } finally {

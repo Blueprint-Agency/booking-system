@@ -1,27 +1,29 @@
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { classpassInboundEmails } from '../../db/schema'
-import type { ClassPassEmailOutcome, ClassPassReviewReason } from '../../db/enums'
+import type { ClassPassEmailKind, ClassPassEmailOutcome, ClassPassReviewReason } from '../../db/enums'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
-import { placeClassPassBooking, type PlacedBooking } from './import-booking'
-import { addClassPassLocationMapping, normaliseClassPassLocation, type ClassPassLocationMapping } from './locations'
-import { isComplete, parseClassPassBooking } from './parse'
+import { placeClassPassBooking } from './import-booking'
+import { mapClassPassLocationName, type ClassPassLocationMapping } from './locations'
+import { parseClassPassBooking } from './parse'
+import { isOpen, OPEN_OUTCOMES, recordPlaced } from './review-items'
 
 /**
- * ClassPass review (#413): the ClassPass booking emails the importer could not
- * place, open until an Admin closes each one.
+ * ClassPass review (#413): the ClassPass emails the importer could not place,
+ * open until an Admin closes each one.
  *
  * An open item is a kept email with an outcome of `review` or `unparsed` and
- * no `resolved_at`. An Admin closes it by booking it into a class they pick
- * (through the same ClassPass booking path as the importer), by dismissing it,
- * or by mapping its location, which re-runs the import on every open item
- * from that location. Closing records who and when.
+ * no `resolved_at`: a booking it could not place, one kept while the import
+ * was off (`import_off`, a cancellation too), or one whose placing failed. An
+ * Admin closes it by booking it into a class they pick (through the same
+ * ClassPass booking path as the importer), by dismissing it, or by mapping its
+ * location, which re-runs the import on every open item from that location.
+ * Closing records who and when.
  */
-
-const OPEN_OUTCOMES: ClassPassEmailOutcome[] = ['review', 'unparsed']
 
 export type ClassPassReviewItem = {
   id: string
+  kind: ClassPassEmailKind
   receivedAt: Date
   subject: string
   outcome: ClassPassEmailOutcome
@@ -41,6 +43,7 @@ export type ClassPassReviewItem = {
 
 const columns = {
   id: classpassInboundEmails.id,
+  kind: classpassInboundEmails.kind,
   receivedAt: classpassInboundEmails.receivedAt,
   subject: classpassInboundEmails.subject,
   outcome: classpassInboundEmails.outcome,
@@ -57,8 +60,6 @@ const columns = {
   resolvedAt: classpassInboundEmails.resolvedAt,
   resolvedByStaffId: classpassInboundEmails.resolvedByStaffId,
 }
-
-const isOpen = and(inArray(classpassInboundEmails.outcome, OPEN_OUTCOMES), isNull(classpassInboundEmails.resolvedAt))
 
 /** Every open item, oldest first. */
 export async function listClassPassReview(tenantId: string): Promise<ClassPassReviewItem[]> {
@@ -83,6 +84,7 @@ async function lockOpenItem(tenantId: string, id: string) {
   const [row] = await db
     .select({
       id: classpassInboundEmails.id,
+      kind: classpassInboundEmails.kind,
       outcome: classpassInboundEmails.outcome,
       resolvedAt: classpassInboundEmails.resolvedAt,
       text: classpassInboundEmails.text,
@@ -98,32 +100,17 @@ async function lockOpenItem(tenantId: string, id: string) {
 }
 
 /**
- * Writes what placing it did. An item that is no longer for review (imported,
- * or found already booked) is closed in the Admin's name.
- */
-async function recordPlaced(tenantId: string, id: string, placed: PlacedBooking, staffId: string): Promise<void> {
-  const closed = !OPEN_OUTCOMES.includes(placed.outcome)
-  await db
-    .update(classpassInboundEmails)
-    .set({
-      outcome: placed.outcome,
-      reviewReason: placed.reason,
-      startsAt: placed.startsAt,
-      clientId: placed.clientId,
-      bookingId: placed.bookingId,
-      ...(closed ? { resolvedAt: new Date(), resolvedByStaffId: staffId } : {}),
-    })
-    .where(and(eq(classpassInboundEmails.tenantId, tenantId), eq(classpassInboundEmails.id, id)))
-}
-
-/**
  * Books the item's member into the class the Admin picked, as a ClassPass
- * booking with the email's reservation ID. The member is found by email or
- * created, as the importer does. Refused when the email could not be read
- * (`classpass_review_incomplete`), the reservation is already a booking here
- * (`classpass_reservation_taken`), the member is already on the class
- * (`already_booked`), their record was removed (`client_deleted`), or the class
- * is not this studio's active one (`class_not_found`).
+ * booking with the email's reservation ID. Booking needs only what the class
+ * does not give: the reservation ID and the member's name and email; the time
+ * and location are the class's. The member is found by email or created, as
+ * the importer does. Refused when the item is not a booking
+ * (`classpass_review_not_booking`), the email did not name the reservation and
+ * the member (`classpass_review_incomplete`), the reservation is already a
+ * booking here (`classpass_reservation_taken`), the member is already on the
+ * class (`already_booked`), their record was removed
+ * (`classpass_client_deleted`), or the class is not this studio's active one
+ * (`class_not_found`).
  */
 export async function bookClassPassReviewItem(
   tenantId: string,
@@ -132,9 +119,9 @@ export async function bookClassPassReviewItem(
   staffId: string,
 ): Promise<ClassPassReviewItem> {
   const item = await lockOpenItem(tenantId, id)
-  const fields = parseClassPassBooking(item)
-  if (!isComplete(fields)) throw new BadRequestError('classpass_review_incomplete')
-  const placed = await placeClassPassBooking(tenantId, fields, { classId })
+  if (item.kind !== 'booking') throw new BadRequestError('classpass_review_not_booking')
+  const placed = await placeClassPassBooking(tenantId, parseClassPassBooking(item), { classId })
+  if (placed.outcome === 'unparsed') throw new BadRequestError('classpass_review_incomplete')
   if (placed.outcome === 'review') {
     throw placed.reason === 'already_booked'
       ? new ConflictError('already_booked')
@@ -156,10 +143,10 @@ export async function dismissClassPassReviewItem(tenantId: string, id: string, s
 
 /**
  * Maps the item's location, as ClassPass wrote it, to one of the studio's
- * Locations, then runs the import again on every open item from that location
- * (spellings that normalise alike included). Each one that now places is
- * booked and closed in the Admin's name; the rest stay open with their new
- * reason. Returns the mapping and what became of each item it re-ran.
+ * Locations (`mapClassPassLocationName`: a mapping already there to that same
+ * Location is used as it is), which runs the import again on every open item
+ * from that location. Returns the mapping and what became of each item it
+ * re-ran.
  */
 export async function mapClassPassReviewLocation(
   tenantId: string,
@@ -169,26 +156,13 @@ export async function mapClassPassReviewLocation(
 ): Promise<{ mapping: ClassPassLocationMapping; items: ClassPassReviewItem[] }> {
   const item = await lockOpenItem(tenantId, id)
   if (!item.locationName) throw new BadRequestError('classpass_review_incomplete')
-  const mapping = await addClassPassLocationMapping(tenantId, { locationName: item.locationName, locationId })
-
-  const open = await db
-    .select({
-      id: classpassInboundEmails.id,
-      text: classpassInboundEmails.text,
-      html: classpassInboundEmails.html,
-      locationName: classpassInboundEmails.locationName,
-    })
-    .from(classpassInboundEmails)
-    .where(and(eq(classpassInboundEmails.tenantId, tenantId), isOpen))
-    .orderBy(asc(classpassInboundEmails.receivedAt), asc(classpassInboundEmails.id))
-    .for('update')
-  const fromThere = open.filter(o => o.locationName && normaliseClassPassLocation(o.locationName) === mapping.locationName)
-
-  const items: ClassPassReviewItem[] = []
-  for (const o of fromThere) {
-    const placed = await placeClassPassBooking(tenantId, parseClassPassBooking(o))
-    await recordPlaced(tenantId, o.id, placed, staffId)
-    items.push(await readItem(tenantId, o.id))
-  }
+  const { mapping, rerun } = await mapClassPassLocationName(tenantId, { locationName: item.locationName, locationId }, staffId)
+  const items = rerun.length
+    ? await db
+        .select(columns)
+        .from(classpassInboundEmails)
+        .where(and(eq(classpassInboundEmails.tenantId, tenantId), inArray(classpassInboundEmails.id, rerun)))
+        .orderBy(asc(classpassInboundEmails.receivedAt), asc(classpassInboundEmails.id))
+    : []
   return { mapping, items }
 }

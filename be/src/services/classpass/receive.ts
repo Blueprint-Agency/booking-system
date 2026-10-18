@@ -4,7 +4,8 @@ import { classpassInboundEmails, classpassSettings } from '../../db/schema'
 import type { ClassPassEmailKind, ClassPassEmailOutcome, ClassPassReviewReason } from '../../db/enums'
 import { placeClassPassBooking } from './import-booking'
 import { parseClassPassCancellation, placeClassPassCancellation } from './import-cancellation'
-import { parseClassPassBooking } from './parse'
+import { parseClassPassBooking, type ClassPassBookingFields } from './parse'
+import { placeIsolated, recordPlaced, type Placed } from './review-items'
 import { ensureClassPassSettings } from './settings'
 
 /**
@@ -19,8 +20,15 @@ import { ensureClassPassSettings } from './settings'
  * `noop` for a reservation already booked, or `review` / `unparsed` with the
  * reason it could not be placed. A cancellation cancels the ClassPass booking
  * it names (#412, `import-cancellation.ts`): `cancelled`, or `noop` when
- * there is no live booking for it. Every other ClassPass email is `ignored`;
- * a roster is kept so, and read when the ClassPass page is (#415, `roster.ts`).
+ * there is no live booking for it. With the import off, a trusted booking or
+ * cancellation is kept for ClassPass review as `import_off`, for an Admin to
+ * decide on; switching the import on later does not place it. Every other
+ * ClassPass email is `ignored`; a roster is kept so, and read when the
+ * ClassPass page is (#415, `roster.ts`).
+ *
+ * Keeping the email never depends on placing it: placing runs in a savepoint,
+ * and one that throws is undone, logged, and the email kept for review as
+ * `import_error`.
  */
 
 /** A received email, as Resend's receiving API returns it. */
@@ -114,12 +122,17 @@ function gmailCode(message: InboundEmail): string | undefined {
 export async function receiveClassPassEmail(tenantId: string, message: InboundEmail): Promise<ReceivedClassPassEmail> {
   const settings = await ensureClassPassSettings(tenantId)
   const decision = decide(message)
-  // A trusted booking email is read whether or not the import is on, so what
-  // it says is kept with it; it is placed only when it is on.
   const booking = decision.kind === 'booking' && decision.outcome !== 'refused'
-  const fields = booking ? parseClassPassBooking(message) : null
   const cancellation = decision.kind === 'cancellation' && decision.outcome !== 'refused'
-  const cancelledKey = cancellation ? parseClassPassCancellation(message) : null
+  // A trusted booking or cancellation is read whether or not the import is on,
+  // so what it says is kept with it. With the import off it waits in ClassPass
+  // review for an Admin.
+  const read = readEmail(message, booking, cancellation)
+  const fields = read.fields
+  const cancelledKey = read.cancelledKey
+  const held = (booking || cancellation) && !settings.enabled
+  const outcome: ClassPassEmailOutcome = held ? 'review' : decision.outcome
+  const reason: ClassPassReviewReason | null = held ? 'import_off' : null
 
   const [inserted] = await db
     .insert(classpassInboundEmails)
@@ -130,7 +143,8 @@ export async function receiveClassPassEmail(tenantId: string, message: InboundEm
       fromAddress: message.from,
       subject: message.subject,
       kind: decision.kind,
-      outcome: decision.outcome,
+      outcome,
+      reviewReason: reason,
       authentication: message.authentication,
       headers: message.headers,
       text: message.text,
@@ -167,44 +181,38 @@ export async function receiveClassPassEmail(tenantId: string, message: InboundEm
       .where(eq(classpassSettings.tenantId, tenantId))
   }
 
-  if (fields && settings.enabled) {
-    const placed = await placeClassPassBooking(tenantId, fields)
-    await db
-      .update(classpassInboundEmails)
-      .set({
-        outcome: placed.outcome,
-        reviewReason: placed.reason,
-        startsAt: placed.startsAt,
-        clientId: placed.clientId,
-        bookingId: placed.bookingId,
-      })
-      .where(and(eq(classpassInboundEmails.tenantId, tenantId), eq(classpassInboundEmails.id, inserted.id)))
-    return {
-      id: inserted.id,
-      kind: decision.kind,
-      outcome: placed.outcome,
-      reason: placed.reason,
-      bookingId: placed.bookingId,
-      duplicate: false,
-    }
-  }
+  const kept = { id: inserted.id, kind: decision.kind, duplicate: false }
+  if (!(booking || cancellation) || held) return { ...kept, outcome, reason, bookingId: null }
 
-  if (cancellation && settings.enabled) {
-    const placed = await placeClassPassCancellation(tenantId, cancelledKey)
-    const reason = placed.outcome === 'unparsed' ? ('unparsed' as const) : null
-    await db
-      .update(classpassInboundEmails)
-      .set({ outcome: placed.outcome, reviewReason: reason, clientId: placed.clientId, bookingId: placed.bookingId })
-      .where(and(eq(classpassInboundEmails.tenantId, tenantId), eq(classpassInboundEmails.id, inserted.id)))
-    return {
-      id: inserted.id,
-      kind: decision.kind,
-      outcome: placed.outcome,
-      reason,
-      bookingId: placed.bookingId,
-      duplicate: false,
-    }
-  }
+  const placed = await placeIsolated(
+    async () => {
+      if (read.error) throw read.error
+      return fields ? placeClassPassBooking(tenantId, fields) : placeCancellation(tenantId, cancelledKey)
+    },
+    { tenantId, inboundEmailId: inserted.id },
+  )
+  await recordPlaced(tenantId, inserted.id, placed)
+  return { ...kept, outcome: placed.outcome, reason: placed.reason, bookingId: placed.bookingId }
+}
 
-  return { id: inserted.id, kind: decision.kind, outcome: decision.outcome, reason: null, bookingId: null, duplicate: false }
+async function placeCancellation(tenantId: string, cancelledKey: string | null): Promise<Placed> {
+  const placed = await placeClassPassCancellation(tenantId, cancelledKey)
+  const reason = placed.outcome === 'unparsed' ? ('unparsed' as const) : null
+  return { outcome: placed.outcome, reason, startsAt: null, clientId: placed.clientId, bookingId: placed.bookingId }
+}
+
+/** What a booking or cancellation says; reading one that throws keeps the error for placing to report. */
+function readEmail(
+  message: InboundEmail,
+  booking: boolean,
+  cancellation: boolean,
+): { fields: ClassPassBookingFields | null; cancelledKey: string | null; error?: unknown } {
+  try {
+    return {
+      fields: booking ? parseClassPassBooking(message) : null,
+      cancelledKey: cancellation ? parseClassPassCancellation(message) : null,
+    }
+  } catch (error) {
+    return { fields: null, cancelledKey: null, error }
+  }
 }

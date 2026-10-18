@@ -26,6 +26,7 @@ const locationSchema = z.object({ location_id: z.string().uuid() })
 function serializeReviewItem(item: reviewSvc.ClassPassReviewItem) {
   return {
     id: item.id,
+    kind: item.kind,
     received_at: item.receivedAt,
     subject: item.subject,
     outcome: item.outcome,
@@ -98,20 +99,23 @@ const app = new Hono()
   )
   .post('/locations', zValidator('json', mappingSchema), async c => {
     const body = c.req.valid('json')
-    const row = await locationSvc.addClassPassLocationMapping(tenantId(c), {
-      locationName: body.location_name,
-      locationId: body.location_id,
-    })
+    const row = await locationSvc.addClassPassLocationMapping(
+      tenantId(c),
+      { locationName: body.location_name, locationId: body.location_id },
+      c.get('staffUserId'),
+    )
     c.set('auditTarget' as any, { table: 'classpass_location_mappings', id: row.id })
     return c.json(serializeMapping(row), 201)
   })
   .patch('/locations/:id', zValidator('param', idParam), zValidator('json', mappingPatchSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    const row = await locationSvc.changeClassPassLocationMapping(tenantId(c), id, {
-      locationName: body.location_name,
-      locationId: body.location_id,
-    })
+    const row = await locationSvc.changeClassPassLocationMapping(
+      tenantId(c),
+      id,
+      { locationName: body.location_name, locationId: body.location_id },
+      c.get('staffUserId'),
+    )
     c.set('auditTarget' as any, { table: 'classpass_location_mappings', id })
     return c.json(serializeMapping(row))
   })
