@@ -294,6 +294,17 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'POST /api/v1/portal/admin/classpass/locations': { gate: STUDIO_ADMIN },
   'PATCH /api/v1/portal/admin/classpass/locations/:id': { gate: STUDIO_ADMIN },
   'DELETE /api/v1/portal/admin/classpass/locations/:id': { gate: STUDIO_ADMIN },
+  // ClassPass review (#413): the emails the importer could not place, admins only.
+  'GET /api/v1/portal/admin/classpass/review': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/classpass/review/:id/book': {
+    gate: STUDIO_ADMIN,
+    probe: { body: { class_id: '00000000-0000-4000-8000-000000000000' } },
+  },
+  'POST /api/v1/portal/admin/classpass/review/:id/dismiss': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/classpass/review/:id/location': {
+    gate: STUDIO_ADMIN,
+    probe: { body: { location_id: '00000000-0000-4000-8000-000000000000' } },
+  },
 }
 
 /** The prefixes the matrix speaks for: every route under them needs a line above. */

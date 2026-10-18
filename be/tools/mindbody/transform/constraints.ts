@@ -89,6 +89,11 @@ export const CHECKS: Record<string, Record<string, Rule>> = {
       r.kind === 'workshop'
         ? set(r.list_price_sgd) && set(r.amount_paid_sgd)
         : isNull(r.list_price_sgd) && isNull(r.amount_paid_sgd),
+    // A ClassPass booking (#411) carries its reservation ID, and only it does; it is
+    // a class booking no package pays for. A row leaving `source` out is `direct`.
+    bookings_classpass_shape: r =>
+      (r.source === 'classpass') === set(r.classpass_reservation_id) &&
+      (r.source !== 'classpass' || (r.kind === 'class' && isNull(r.client_package_id))),
   },
   rooms: {
     rooms_capacity_positive: r => num(r.capacity, n => n > 0),

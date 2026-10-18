@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
 import { bookings, classes, classpassLocationMappings, classTypes, clients } from '../../db/schema'
 import type { ClassPassEmailOutcome, ClassPassReviewReason } from '../../db/enums'
-import { AppError } from '../../shared/errors'
+import { AppError, ConflictError } from '../../shared/errors'
 import { classPassBookClass } from '../bookings/book'
 import { createClient } from '../clients/manage'
 import { emailEveryAdmin } from '../notifications/send'
@@ -75,8 +75,35 @@ async function memberFor(
   return { clientId: created.id }
 }
 
-/** `fields` is what `parseClassPassBooking` read from the email. */
-export async function placeClassPassBooking(tenantId: string, fields: ClassPassBookingFields): Promise<PlacedBooking> {
+/** The class at the email's mapped Location and time, or why there is none. */
+async function classFor(tenantId: string, fields: { locationName: string; className: string }, startsAt: Date): Promise<ClassMatch> {
+  const [mapping] = await db
+    .select({ locationId: classpassLocationMappings.locationId })
+    .from(classpassLocationMappings)
+    .where(
+      and(
+        eq(classpassLocationMappings.tenantId, tenantId),
+        eq(classpassLocationMappings.locationName, normaliseClassPassLocation(fields.locationName)),
+      ),
+    )
+  if (!mapping) return { reason: 'unmapped_location' }
+  return matchClass(tenantId, mapping.locationId, startsAt, fields.className)
+}
+
+/**
+ * `fields` is what `parseClassPassBooking` read from the email.
+ *
+ * `classId` is a class an Admin picked in ClassPass review (#413), booked in
+ * place of the one the email's Location and time would match. Then a
+ * reservation already booked here is refused `classpass_reservation_taken`
+ * rather than taken as the same email again, and a class that is not this
+ * studio's active one is refused `class_not_found`.
+ */
+export async function placeClassPassBooking(
+  tenantId: string,
+  fields: ClassPassBookingFields,
+  options: { classId?: string } = {},
+): Promise<PlacedBooking> {
   const placed = { fields, startsAt: null as Date | null, clientId: null as string | null, bookingId: null as string | null }
   const review = (reason: ClassPassReviewReason) => ({ ...placed, outcome: 'review' as const, reason })
 
@@ -90,20 +117,10 @@ export async function placeClassPassBooking(tenantId: string, fields: ClassPassB
     .select({ id: bookings.id, clientId: bookings.clientId })
     .from(bookings)
     .where(and(eq(bookings.tenantId, tenantId), eq(bookings.classpassReservationId, fields.reservationId)))
+  if (held && options.classId) throw new ConflictError('classpass_reservation_taken', { booking_id: held.id })
   if (held) return { ...placed, clientId: held.clientId, bookingId: held.id, outcome: 'noop', reason: null }
 
-  const [mapping] = await db
-    .select({ locationId: classpassLocationMappings.locationId })
-    .from(classpassLocationMappings)
-    .where(
-      and(
-        eq(classpassLocationMappings.tenantId, tenantId),
-        eq(classpassLocationMappings.locationName, normaliseClassPassLocation(fields.locationName)),
-      ),
-    )
-  if (!mapping) return review('unmapped_location')
-
-  const match = await matchClass(tenantId, mapping.locationId, placed.startsAt, fields.className)
+  const match = options.classId ? { classId: options.classId } : await classFor(tenantId, fields, placed.startsAt)
   if ('reason' in match) return review(match.reason)
 
   const who = await memberFor(tenantId, fields.memberName, fields.memberEmail)
