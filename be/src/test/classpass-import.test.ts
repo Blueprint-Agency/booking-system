@@ -702,6 +702,34 @@ describe('importing a ClassPass booking email', { skip: integrationTestsEnabled 
     assert.deepEqual(left, [])
   })
 
+  test("CPS-100 the ClassPass Daily Rosters naming a member, whatever the case, are in their export and go when they are permanently deleted; other rosters stay", async () => {
+    const wren = await member(one, 'wren-roster')
+    const name = `Wren Rosterperson ${run}`
+    await harness.db.update(schema.clients).set({ name }).where(eq(schema.clients.id, wren.clientId))
+    const naming = await receive(one, classPassEmail({ kind: 'roster', memberName: name.toUpperCase() }))
+    const other = await receive(one, classPassEmail({ kind: 'roster', memberName: `Someone Else ${run}` }))
+    assert.deepEqual([naming.outcome, other.outcome], ['ignored', 'ignored'])
+
+    const res = await harness.app.request(`/api/v1/portal/admin/clients/${wren.clientId}/export`, { headers: one.admin.headers })
+    assert.equal(res.status, 200)
+    const zip = await JSZip.loadAsync(await res.arrayBuffer())
+    const exported = JSON.parse(await zip.file('tables/classpass_inbound_emails.json')!.async('string')) as { id: string }[]
+    assert.deepEqual(exported.map(r => r.id), [naming.id])
+
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/clients/${wren.clientId}/permanently`, {
+        method: 'DELETE',
+        headers: one.admin.headers,
+      }),
+      200,
+    )
+    const left = await harness.db
+      .select({ id: schema.classpassInboundEmails.id })
+      .from(schema.classpassInboundEmails)
+      .where(sql`${schema.classpassInboundEmails.id} IN (${naming.id}, ${other.id})`)
+    assert.deepEqual(left.map(r => r.id), [other.id])
+  })
+
   test('CPS-48 the check-in desk shows a ClassPass booking as ClassPass', async () => {
     harness.clock.reset()
     const startsAt = new Date(Math.ceil((Date.now() + 2 * MINUTE) / MINUTE) * MINUTE)
