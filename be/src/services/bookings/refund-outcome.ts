@@ -7,9 +7,10 @@ import type { RefundOutcome } from '../../db/enums'
 /**
  * Who cancelled: the member, a staff member from the portal (#320), or the
  * studio's machinery — a Void, a Remove, a Package rule change (#350). A
- * `system` cancel settles as a staff one does.
+ * `system` cancel settles as a staff one does, and so does a `classpass` one
+ * (#412): ClassPass's email saying the member cancelled there.
  */
-export type StaffCancelSource = Exclude<CancellationSource, 'client' | 'system'>
+export type StaffCancelSource = Exclude<CancellationSource, 'client' | 'system' | 'classpass'>
 export type CancelSource = CancellationSource
 
 /**

@@ -166,7 +166,10 @@ export const checkinStateEnum = pgEnum('checkin_state', ['pending', 'attended', 
 export const cancellationKindEnum = pgEnum('cancellation_kind', ['class', 'pt'])
 // `system`: the studio's machinery, not a person — a Refund's Void, a
 // Complimentary Package's Remove, a Package rule change (#350).
-export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor', 'system'])
+// `classpass`: the member cancelled on ClassPass, and ClassPass's email said so
+// (#412). Settles as a staff cancel does, with nothing to return; never a Late
+// cancel, never toward the Cancellation Cap.
+export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor', 'system', 'classpass'])
 export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual'])
 export type RefundOutcome = (typeof refundOutcomeEnum.enumValues)[number]
 export type CancellationSource = (typeof cancellationSourceEnum.enumValues)[number]

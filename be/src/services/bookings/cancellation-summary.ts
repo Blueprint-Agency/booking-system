@@ -106,6 +106,8 @@ function actorOf(f: CancellationFacts): { actor: CancelActor; staffName: string 
   const staffName = f.record?.staffName ?? null
   switch (f.record?.source) {
     case 'client':
+    // Cancelled by the member on ClassPass (#412): theirs, not the studio's.
+    case 'classpass':
       return { actor: 'member', staffName: null }
     case 'system':
       return { actor: 'automatic', staffName: null }
