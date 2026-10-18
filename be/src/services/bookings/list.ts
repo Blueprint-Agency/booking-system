@@ -16,7 +16,7 @@ import { classes } from '../../db/schema/schedule'
 import { classTypes, locations, rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
-import type { ClientPackageKind } from '../../db/enums'
+import type { BookingSource, ClientPackageKind } from '../../db/enums'
 import { now as clockNow } from '../../lib/clock'
 import { NotFoundError } from '../../shared/errors'
 import { classCancelWindow } from '../policy/cancel-window'
@@ -51,6 +51,8 @@ export interface ClassBookingRow {
   cancelDeadline: Date
   /** The package that paid; null when none did. */
   clientPackageId: string | null
+  /** `classpass`: made on ClassPass, so cancelled there, not here (#407). */
+  source: BookingSource
 }
 
 const baseSelect = {
@@ -73,6 +75,7 @@ const baseSelect = {
   state: bookings.state,
   qrToken: bookings.qrToken,
   code: bookings.code,
+  source: bookings.source,
 }
 
 type Raw = {
@@ -95,6 +98,7 @@ type Raw = {
   state: string
   qrToken: string
   code: string
+  source: BookingSource
 }
 
 const HOUR_MS = 3_600_000
@@ -120,6 +124,7 @@ function toRow(r: Raw, windowHours: number): ClassBookingRow {
     code: r.code,
     cancelDeadline: new Date(r.startsAt.getTime() - windowHours * HOUR_MS),
     clientPackageId: r.clientPackageId,
+    source: r.source,
   }
 }
 

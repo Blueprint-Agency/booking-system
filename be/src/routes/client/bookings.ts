@@ -35,6 +35,7 @@ function bookingRow(b: ClassBookingRow) {
     qr_token: b.qrToken,
     code: b.code,
     cancel_deadline: b.cancelDeadline.toISOString(),
+    source: b.source,
   }
 }
 

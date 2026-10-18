@@ -6,6 +6,8 @@ import {
   canStillCancel,
   classBookingPolicy,
   classCancelNotice,
+  CLASSPASS_CANCEL_LINE,
+  memberCanCancel,
   ptCancelPrompt,
   ptCancelResult,
   ptPolicyNote,
@@ -109,4 +111,14 @@ test("no sentence calls a returned credit or session a refund", () => {
 test("ACC-33 a cancelled class's overlay says who cancelled it", () => {
   assert.equal(cancelledStanding("member"), "You cancelled this booking");
   assert.equal(cancelledStanding("studio"), "The studio cancelled this booking");
+});
+
+test("CPS-99 a ClassPass booking offers the member no cancel here, and says to cancel it on ClassPass", () => {
+  const now = Date.parse("2026-09-18T00:00:00Z");
+  const upcoming = { state: "confirmed" as const, starts_at: "2026-09-18T05:30:00Z" };
+  assert.equal(memberCanCancel({ ...upcoming, source: "direct" }, now), true);
+  assert.equal(memberCanCancel({ ...upcoming, source: "classpass" }, now), false);
+  assert.equal(memberCanCancel({ ...upcoming, state: "cancelled", source: "direct" }, now), false);
+  assert.equal(memberCanCancel({ ...upcoming, starts_at: "2026-09-17T23:00:00Z", source: "direct" }, now), false);
+  assert.match(CLASSPASS_CANCEL_LINE, /ClassPass app/);
 });

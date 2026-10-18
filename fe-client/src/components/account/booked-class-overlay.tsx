@@ -18,7 +18,9 @@ import {
   canCancelClass,
   cancelDeadlineLine,
   cancelledStanding,
+  CLASSPASS_CANCEL_LINE,
   isLate,
+  memberCanCancel,
 } from "@/lib/cancellation-copy";
 import { classLength } from "@/lib/class-detail";
 import { fetchPublicClass, formatClassTime, type ApiClassDetail } from "@/lib/classes";
@@ -87,6 +89,8 @@ export function BookedClassOverlay({
 
   const cancelled = b.state === "cancelled";
   const open = !cancelled && canCancelClass(b.starts_at);
+  // One booked on ClassPass is cancelled on ClassPass, not here.
+  const cancellable = memberCanCancel(b);
   const live = !cancelled && (open || ongoing);
   const state = standing(b, ongoing);
   const location = detail?.location ?? null;
@@ -197,7 +201,7 @@ export function BookedClassOverlay({
               </Fact>
               {open && (
                 <Fact icon={<Hourglass />} label="Cancellation">
-                  {cancelDeadlineLine(isLate(b.cancel_deadline), deadline)}
+                  {cancellable ? cancelDeadlineLine(isLate(b.cancel_deadline), deadline) : CLASSPASS_CANCEL_LINE}
                 </Fact>
               )}
               {cancelled && b.outcome_line && (
@@ -222,7 +226,7 @@ export function BookedClassOverlay({
             <button type="button" onClick={onClose} className={BTN_SECONDARY}>
               Close
             </button>
-            {open && (
+            {cancellable && (
               <button type="button" onClick={() => onCancel(b)} className={cn(BTN_CANCEL, "justify-center")}>
                 <X className="h-4 w-4" aria-hidden />
                 Cancel booking

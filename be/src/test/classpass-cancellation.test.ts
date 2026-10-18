@@ -482,4 +482,34 @@ describe('importing a ClassPass cancellation email', { skip: integrationTestsEna
     assert.equal((await bookingRow(booked.bookingId!)).state, 'cancelled')
     assert.equal((await inboundRow(result.id)).reservationId, reservationId)
   })
+
+  test('CPS-99 a member cannot cancel a ClassPass booking themselves: it is refused, shown to them as ClassPass, and staff can still cancel it', async () => {
+    const startsAt = nextStart()
+    await addClass(one, startsAt)
+    const dee = await member(one, 'dee-own-cancel')
+    const { bookingId } = await imported(one, startsAt, dee)
+    const headers = await harness.signInAs('client', dee.email, one)
+
+    const upcoming = await expectStatus(await harness.app.request('/api/v1/me/bookings/upcoming', { headers }), 200)
+    const listed = upcoming.bookings as Record<string, any>[]
+    assert.equal(listed.find(b => b.booking_id === bookingId)?.source, 'classpass')
+
+    const refused = await expectStatus(
+      await harness.app.request(`/api/v1/me/bookings/${bookingId}`, { method: 'DELETE', headers }),
+      409,
+    )
+    assert.equal(refused.error, 'classpass_booking_cancel_on_classpass')
+    assert.equal((await bookingRow(bookingId)).state, 'confirmed')
+    assert.deepEqual(await cancellationsOf(bookingId), [])
+
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/bookings/${bookingId}/cancel`, {
+        method: 'POST',
+        headers: { ...one.admin.headers, ...json },
+        body: JSON.stringify({ credit: 'return' }),
+      }),
+      200,
+    )
+    assert.equal((await bookingRow(bookingId)).state, 'cancelled')
+  })
 })

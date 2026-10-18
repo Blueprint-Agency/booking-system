@@ -72,6 +72,21 @@ export function canCancelClass(startsAt: string | Date, now: number = Date.now()
   return now < new Date(startsAt).getTime();
 }
 
+/**
+ * Can the member cancel this class booking here? Not one made on ClassPass:
+ * that is cancelled in the ClassPass app, whose cancellation reaches the
+ * studio, and the server refuses it here. Otherwise until it starts.
+ */
+export function memberCanCancel(
+  b: { state: string; starts_at: string | Date; source?: "direct" | "classpass" },
+  now: number = Date.now(),
+): boolean {
+  return b.state !== "cancelled" && b.source !== "classpass" && canCancelClass(b.starts_at, now);
+}
+
+/** Shown on an upcoming ClassPass booking in place of Cancel. */
+export const CLASSPASS_CANCEL_LINE = "Booked on ClassPass. To cancel, cancel it in the ClassPass app.";
+
 /** Is a cancel now inside the class's window — a late cancellation? */
 export function isLate(cancelDeadline: string | Date, now: number = Date.now()): boolean {
   return now > new Date(cancelDeadline).getTime();

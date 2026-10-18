@@ -344,6 +344,7 @@ one entry point, `receiveClassPassEmail`, driven in tests with fixture emails fr
 | CPS-96 | CPS | admin | **Given** open review items from a ClassPass location **When** an Admin adds or changes its mapping on the Locations panel **Then** the items that now match are imported and closed in the Admin's name _(#407 review)_ | UX | integration | `be/src/test/classpass-review.test.ts` | covered |
 | CPS-97 | CPS | admin | **Given** a review item whose ClassPass location has since been mapped to a Location **When** the Admin maps it to that same Location from the item **Then** the mapping is used as it is, not refused, and the item imports _(#407 review)_ | UX | integration | `be/src/test/classpass-review.test.ts` | covered |
 | CPS-98 | CPS | admin | **Given** a booking kept while the import was off **When** its location is mapped **Then** it is not placed, and stays open as `import_off` for the Admin _(#407 review)_ | UX | integration | `be/src/test/classpass-review.test.ts` | covered |
+| CPS-99 | CPS | member | **Given** a member's ClassPass booking **When** they look at it or try to cancel it themselves **Then** it shows as ClassPass with no Cancel and a line to cancel it on ClassPass, a cancel is refused `classpass_booking_cancel_on_classpass` and the booking stands, and staff can still cancel it _(#407 review)_ | money | integration | `be/src/test/classpass-cancellation.test.ts`, `fe-client/src/lib/cancellation-copy.test.ts` | covered |
 
 ## CXL — Class cancellation
 
