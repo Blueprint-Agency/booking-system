@@ -467,4 +467,19 @@ describe('importing a ClassPass cancellation email', { skip: integrationTestsEna
     assert.equal((await bookingRow(bookingId)).state, 'confirmed')
     assert.match((await inboundRow(result.id)).text ?? '', /not-a-reservation-key/)
   })
+
+  test('CPS-73 a booking imported from a 2025-layout email is cancelled by its cancellation, which ClassPass wrote the same in both eras', async () => {
+    const startsAt = nextStart()
+    await addClass(one, startsAt)
+    const reservationId = newReservationId()
+    const booked = await receive(one, bookingEmail(one, startsAt, { layout: '2025-text', reservationId }))
+    assert.equal(booked.outcome, 'imported')
+
+    const result = await receive(one, cancellationEmail(one, startsAt, reservationId, { layout: '2025-text' }))
+
+    assert.equal(result.outcome, 'cancelled')
+    assert.equal(result.bookingId, booked.bookingId)
+    assert.equal((await bookingRow(booked.bookingId!)).state, 'cancelled')
+    assert.equal((await inboundRow(result.id)).reservationId, reservationId)
+  })
 })
