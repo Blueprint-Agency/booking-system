@@ -46,6 +46,19 @@ function serialize(status: svc.ClassPassStatus) {
       starts_at: o.startsAt,
       client_name: o.clientName,
     })),
+    // The ClassPass Daily Roster check (#415): every difference, and every roster that couldn't be checked.
+    roster_check: {
+      differences: status.rosterCheck.differences.map(d => ({
+        difference: d.difference,
+        class_id: d.classId,
+        class_name: d.className,
+        starts_at: d.startsAt,
+        member_name: d.memberName,
+        booking_id: d.bookingId,
+        roster_received_at: d.rosterReceivedAt,
+      })),
+      unchecked: status.rosterCheck.unchecked.map(u => ({ location_name: u.locationName, received_at: u.receivedAt })),
+    },
   }
 }
 

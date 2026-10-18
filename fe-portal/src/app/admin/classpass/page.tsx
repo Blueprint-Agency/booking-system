@@ -13,6 +13,7 @@ import {
   outcomeRows,
   overbookedHeadline,
   regenerateClassPassAddress,
+  ROSTER_DIFFERENCE_LABELS,
   setClassPassEnabled,
   type ClassPassStatus,
 } from "@/lib/classpass";
@@ -259,6 +260,57 @@ export default function ClassPassPage() {
               {status.overbooked.map((o) => (
                 <li key={o.booking_id}>
                   {o.client_name} · {o.class_name} · {formatDateTime(o.starts_at)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
+        <header className="mb-4">
+          <h2 className="text-base font-semibold text-ink">Roster check</h2>
+          <p className="mt-0.5 text-xs text-muted">
+            ClassPass’s Daily Roster from the last week, compared with the ClassPass bookings on your rosters.
+            Nothing is changed for you: book or cancel by hand where it’s needed.
+          </p>
+        </header>
+        {status.roster_check.differences.length === 0 ? (
+          <p className="text-sm text-muted">No differences.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="w-full min-w-[560px]">
+              <thead className="bg-paper">
+                <tr className="text-left text-xs uppercase tracking-wider text-muted">
+                  <th className="px-4 py-2 font-medium">Member</th>
+                  <th className="px-4 py-2 font-medium">Class</th>
+                  <th className="px-4 py-2 font-medium">Difference</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {status.roster_check.differences.map((d) => (
+                  <tr key={`${d.difference}-${d.class_id ?? d.class_name}-${d.starts_at}-${d.member_name}-${d.booking_id ?? ""}`}>
+                    <td className="px-4 py-2 text-sm text-ink">{d.member_name}</td>
+                    <td className="whitespace-nowrap px-4 py-2 text-sm text-ink">
+                      {d.class_name} · {formatDateTime(d.starts_at)}
+                      {!d.class_id && <span className="ml-1 text-xs text-muted">(no matching class)</span>}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2 text-sm text-ink">
+                      {ROSTER_DIFFERENCE_LABELS[d.difference]}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {status.roster_check.unchecked.length > 0 && (
+          <div role="status" className="mt-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-ink">
+            <p className="font-medium">Some rosters couldn’t be checked: their location isn’t mapped.</p>
+            <ul className="mt-1 space-y-0.5 text-xs text-muted">
+              {status.roster_check.unchecked.map((u) => (
+                <li key={`${u.location_name ?? ""}-${u.received_at}`}>
+                  {u.location_name ?? "No location named"} · received {formatDateTime(u.received_at)}
                 </li>
               ))}
             </ul>

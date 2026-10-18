@@ -160,6 +160,77 @@ function body(o: Filled): { text: string | null; html: string | null } {
   return { text: null, html }
 }
 
+export type RosterClass = {
+  /** As ClassPass prints it: in capitals, `YOGA STRETCH`. */
+  className: string
+  /** `01:30pm`. */
+  time: string
+  /** `Fri, Sep 18`: no year. */
+  day: string
+  members: string[]
+}
+
+export type ClassPassRosterOptions = {
+  /** The listing's header, `NORTHWIND - HARBOUR`, or cut short as `NORTHWIND -`. */
+  location?: string
+  classes?: RosterClass[]
+  dkim?: Verdict | null
+  messageId?: string
+  receivedAt?: Date
+  /** The roster as ClassPass's HTML, rather than plain text. */
+  html?: boolean
+}
+
+/**
+ * A `ClassPass Daily Roster` email for one ClassPass listing, laid out as the
+ * redacted sample in `research-classpass-integration.md`: the listing's name,
+ * then each class with its time, its day (no year) and the names of the
+ * members coming. Names only: no emails, no reservation IDs.
+ */
+export function classPassRoster(options: ClassPassRosterOptions = {}): InboundEmail {
+  const location = options.location ?? 'NORTHWIND - HARBOUR'
+  const classes = options.classes ?? []
+  const receivedAt = options.receivedAt ?? new Date()
+  const dkim = options.dkim === undefined ? 'pass' : options.dkim
+  const from = `ClassPass <${CLASSPASS_SENDER}>`
+  const subject = SUBJECTS.roster
+  const today = `${String(receivedAt.getUTCMonth() + 1).padStart(2, '0')}/${String(receivedAt.getUTCDate()).padStart(2, '0')}`
+  const lines = [
+    'Your Roster Recap',
+    location,
+    `Below are your ClassPass reservations for today, ${today}.*`,
+    ...classes.flatMap(c => [`  ${c.className}`, `  ${c.time}`, `  ${c.day}`, ...c.members.map(m => `  ${m}`)]),
+    '*Reservations are accurate as of the time this email was sent.',
+  ]
+  const html = options.html
+    ? [
+        '<html><body>',
+        '<h1>Your Roster Recap</h1>',
+        `<h2>${location}</h2>`,
+        `<p>Below are your ClassPass reservations for today, ${today}.*</p>`,
+        ...classes.map(
+          c =>
+            `<table><tr><td><strong>${c.className}</strong></td></tr><tr><td>${c.time}</td></tr><tr><td>${c.day}</td></tr>` +
+            c.members.map(m => `<tr><td>${m}</td></tr>`).join('') +
+            '</table>',
+        ),
+        '<p>*Reservations are accurate as of the time this email was sent.</p>',
+        '</body></html>',
+      ].join('\n')
+    : null
+  return {
+    messageId: options.messageId ?? `<${randomUUID()}@info.classpass.com>`,
+    from,
+    to: ['frontdesk@northwind.test'],
+    subject,
+    text: options.html ? null : lines.join('\n'),
+    html,
+    headers: { from, subject },
+    authentication: dkim === null ? null : { dkim, spf: 'fail', dmarc: dkim === 'pass' ? 'pass' : 'fail' },
+    receivedAt,
+  }
+}
+
 /**
  * The email Gmail sends a new forwarding address, asking the mailbox's owner
  * to confirm it. Its code is what the Admin types back into Gmail.

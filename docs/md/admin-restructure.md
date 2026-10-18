@@ -1043,6 +1043,8 @@ Admins only (Settings group); an Instructor never sees it. The studio forwards C
 - **Locations** (#410). The ClassPass location mapping editor: each name ClassPass writes for a location in its emails, as stored (lower case, single spaces, every dash `-`), with a Location picker that changes it at once and a Remove button; below, a form to add a name and choose its Location. Only live Locations are offered; a mapping whose Location has since been archived says so. Adding a second spelling of a mapped name is refused with "already mapped".
 - **Import status.** When the last email arrived, and how many have been kept by outcome (imported, cancelled, no change, ignored, refused, unreadable, for review).
 
-Still to come behind the same page: the ClassPass review list, the Daily Roster check, and the ClassPass badge on the roster (§10) and the member's profile (§15b).
+- **Roster check** (#415). ClassPass's `ClassPass Daily Roster` emails from the last week, compared with the ClassPass bookings on the classes they list, at the mapped Location: each difference is a row naming the member, the class and its start, and either **On ClassPass, not on roster** (ClassPass lists them; the class roster has no ClassPass booking for them) or **On roster, not on ClassPass** (a ClassPass booking ClassPass doesn't list). Names are compared ignoring case. A roster whose listing isn't mapped is listed as couldn't be checked. Nothing is booked or cancelled for the Admin; they act by hand.
+
+Still to come behind the same page: the ClassPass review list, and the ClassPass badge on the roster (§10) and the member's profile (§15b).
 
 ---

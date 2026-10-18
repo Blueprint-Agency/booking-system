@@ -447,6 +447,10 @@ _Avoid_: inbound address, forwarding email, ClassPass inbox
 A studio's own row saying which of its Locations a name ClassPass writes in its emails means (`classpass_location_mappings`, #410), written by an Admin on the ClassPass page; nothing is seeded. ClassPass spells one location more than one way (`<Studio>-<Location>`, `<Studio> - <Location>`, an en dash, a name cut short to `<Studio> -`), so the name is stored normalised — lower case, single spaces, every dash `-` with a space either side (`normaliseClassPassLocation`, `services/classpass/location-name.ts`) — and is unique per studio in that form; the import normalises an email's name the same way to find it. A mapping names a live Location of the studio's own: an archived, deleted or other studio's Location is refused.
 _Avoid_: location alias, ClassPass venue
 
+**ClassPass roster check**:
+The comparison of ClassPass's `ClassPass Daily Roster` email — per listing, each upcoming class with the names of the members coming, with no year, emails or reservation IDs — against the ClassPass bookings held on those classes at the mapped Location (#415, `services/classpass/roster.ts`). It shows each difference on the ClassPass page, "On ClassPass, not on roster" or "On roster, not on ClassPass", and changes nothing: a roster never books or cancels. Worked out whenever the page is read, from the last week's rosters, so a booking email that arrives after the roster settles its difference.
+_Avoid_: roster sync, roster import
+
 ### Check-in
 
 **Check-in**:
