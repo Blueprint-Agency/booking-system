@@ -4,6 +4,7 @@ import { Copy, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, PageHeader } from "@/components/ui";
 import { ClassPassLocationMappings } from "@/components/classpass/location-mappings";
+import { ClassPassReview } from "@/components/classpass/review-list";
 import { ApiError } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatDateTime } from "@/lib/formatters";
@@ -234,6 +235,12 @@ export default function ClassPassPage() {
       </section>
 
       <ClassPassLocationMappings api={api} locations={locations} />
+
+      <ClassPassReview
+        api={api}
+        locations={locations}
+        onChanged={() => void getClassPass(api).then(setStatus, () => undefined)}
+      />
 
       <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
         <header className="mb-4">

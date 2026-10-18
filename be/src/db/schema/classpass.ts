@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm'
 import { pgTable, uuid, text, boolean, timestamp, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { tenantIdColumn } from './tenancy'
 import { locations } from './catalog'
-import { clients } from './identity'
+import { clients, staffUsers } from './identity'
 import { bookings } from './bookings'
 import { classpassEmailKindEnum, classpassEmailOutcomeEnum, classpassReviewReasonEnum } from '../enums'
 
@@ -78,6 +78,11 @@ export const classpassInboundEmails = pgTable(
     // The member it was placed for, and the booking it made or matched.
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
     bookingId: uuid('booking_id').references(() => bookings.id, { onDelete: 'set null' }),
+    // ClassPass review (#413): when an open item (outcome `review` or
+    // `unparsed`) was closed, and the Admin who closed it, by booking it into a
+    // class, dismissing it, or mapping its location. Null while it is open.
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolvedByStaffId: uuid('resolved_by_staff_id').references(() => staffUsers.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
@@ -88,6 +93,7 @@ export const classpassInboundEmails = pgTable(
       .where(sql`${table.reviewReason} IS NOT NULL`),
     clientIdFkIdx: index('classpass_inbound_emails_client_id_fk_idx').on(table.clientId),
     bookingIdFkIdx: index('classpass_inbound_emails_booking_id_fk_idx').on(table.bookingId),
+    resolvedByStaffIdFkIdx: index('classpass_inbound_emails_resolved_by_staff_id_fk_idx').on(table.resolvedByStaffId),
   }),
 )
 
