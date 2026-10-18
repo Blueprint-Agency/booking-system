@@ -39,9 +39,15 @@ function refusal(err: unknown): string {
 export function ClassPassLocationMappings({
   api,
   locations,
+  revision,
+  onChanged,
 }: {
   api: Api;
   locations: { id: string; name: string; archivedAt: string | null }[];
+  /** Bumped by the page when something elsewhere on it (mapping from a review item) may have changed the list. */
+  revision: number;
+  /** A mapping was added, changed or removed: the review items it re-ran, and the page's counts, are stale. */
+  onChanged?: () => void;
 }) {
   const [mappings, setMappings] = useState<ClassPassLocationMapping[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -69,7 +75,7 @@ export function ClassPassLocationMappings({
     return () => {
       cancelled = true;
     };
-  }, [api, version]);
+  }, [api, version, revision]);
 
   async function run(work: () => Promise<unknown>, done: string): Promise<boolean> {
     if (busy) return false;
@@ -77,6 +83,7 @@ export function ClassPassLocationMappings({
     try {
       await work();
       toast.success(done);
+      onChanged?.();
       return true;
     } catch (err) {
       toast.error(refusal(err));

@@ -34,6 +34,8 @@ export default function ClassPassPage() {
   const [attempt, setAttempt] = useState(0);
   const [answered, setAnswered] = useState<number | null>(null);
   const loading = answered !== attempt;
+  const [mappingsRevision, setMappingsRevision] = useState(0);
+  const [reviewRevision, setReviewRevision] = useState(0);
 
   useEffect(() => {
     if (!api) return;
@@ -92,6 +94,7 @@ export default function ClassPassPage() {
   }
 
   const { rows, total } = outcomeRows(status.counts);
+  const refreshStatus = () => void getClassPass(api).then(setStatus, () => undefined);
 
   async function copyAddress() {
     if (!status?.address) return;
@@ -235,12 +238,26 @@ export default function ClassPassPage() {
         </ol>
       </section>
 
-      <ClassPassLocationMappings api={api} locations={locations} />
+      {/* A mapping re-runs the review items from its location, and mapping from an item adds a mapping: each
+          panel's change refreshes the other, and the status. */}
+      <ClassPassLocationMappings
+        api={api}
+        locations={locations}
+        revision={mappingsRevision}
+        onChanged={() => {
+          setReviewRevision((n) => n + 1);
+          refreshStatus();
+        }}
+      />
 
       <ClassPassReview
         api={api}
         locations={locations}
-        onChanged={() => void getClassPass(api).then(setStatus, () => undefined)}
+        revision={reviewRevision}
+        onChanged={() => {
+          setMappingsRevision((n) => n + 1);
+          refreshStatus();
+        }}
       />
 
       <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">

@@ -1,5 +1,6 @@
-// ClassPass review (be-portal.md §classpass.ts, #413): the ClassPass booking
-// emails the importer could not place, and the three ways an Admin closes one.
+// ClassPass review (be-portal.md §classpass.ts, #413): the ClassPass emails
+// the importer could not place, or kept while it was off, and the three ways
+// an Admin closes one.
 // Shapes mirror be/src/routes/portal/admin/classpass.ts.
 
 import type { Api } from "@/lib/api";
@@ -13,10 +14,14 @@ export type ClassPassReviewReason =
   | "ambiguous_class"
   | "class_cancelled"
   | "client_deleted"
-  | "already_booked";
+  | "already_booked"
+  | "import_off"
+  | "import_error";
 
 export interface ClassPassReviewItem {
   id: string;
+  /** A booking, or a cancellation kept while the import was off. */
+  kind: "booking" | "cancellation";
   received_at: string;
   subject: string;
   outcome: ClassPassOutcome;
@@ -52,14 +57,26 @@ export function reviewReasonLabel(reason: ClassPassReviewReason | null): string 
       return "Member was removed";
     case "already_booked":
       return "Member already on the class";
+    case "import_off":
+      return "Arrived while the import was off";
+    case "import_error":
+      return "Couldn’t be imported";
     default:
       return "For review";
   }
 }
 
-/** Whether "Book into a class" can be offered: the email named the reservation and the member. */
+/**
+ * Whether "Book into a class" can be offered, as the backend books it: a
+ * booking whose email named the reservation and the member (the picked class
+ * gives the time and place), for a member the studio has not removed.
+ */
 export function canBook(item: ClassPassReviewItem): boolean {
-  return Boolean(item.reservation_id && item.member_email && item.member_name);
+  return (
+    item.kind === "booking" &&
+    item.reason !== "client_deleted" &&
+    Boolean(item.reservation_id && item.member_email && item.member_name)
+  );
 }
 
 /** The day around the email's time (or its arrival) to look for classes in. */

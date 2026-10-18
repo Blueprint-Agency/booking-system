@@ -5,6 +5,7 @@ import type { ApiScheduleEntry } from "./use-schedule";
 
 const item: ClassPassReviewItem = {
   id: "i1",
+  kind: "booking",
   received_at: "2026-09-10T02:00:00Z",
   subject: "ClassPass user reservation",
   outcome: "review",
@@ -57,6 +58,21 @@ test("an item can be booked only when its email named the reservation and the me
   assert.equal(canBook(item), true);
   assert.equal(canBook({ ...item, reservation_id: null }), false);
   assert.equal(canBook({ ...item, member_email: null }), false);
+});
+
+test("CPS-94 an item missing only its time, class or location can be booked: the picked class gives those", () => {
+  assert.equal(canBook({ ...item, reason: "unparsed", outcome: "unparsed", starts_at: null, class_name: null, location_name: null }), true);
+  assert.equal(canBook({ ...item, reason: "import_off" }), true);
+});
+
+test("CPS-95 an item for a removed member, or a cancellation, offers no booking", () => {
+  assert.equal(canBook({ ...item, reason: "client_deleted" }), false);
+  assert.equal(canBook({ ...item, kind: "cancellation", reason: "import_off" }), false);
+});
+
+test("an item kept while the import was off, or whose placing failed, reads as words", () => {
+  assert.equal(reviewReasonLabel("import_off"), "Arrived while the import was off");
+  assert.equal(reviewReasonLabel("import_error"), "Couldn’t be imported");
 });
 
 test("the class picker looks a day around the email's time, or its arrival when it has none", () => {

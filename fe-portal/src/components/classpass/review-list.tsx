@@ -33,6 +33,8 @@ function refusal(err: unknown): string {
       return "Someone has already dealt with this one.";
     case ERROR_CODES.classpass_review_incomplete:
       return "The email didn’t say enough to book it. Dismiss it instead.";
+    case ERROR_CODES.classpass_review_not_booking:
+      return "This is a cancellation, not a booking. Cancel the booking on its class, then dismiss this.";
     case ERROR_CODES.classpass_review_not_found:
       return "That item no longer exists.";
     case ERROR_CODES.class_not_found:
@@ -47,19 +49,22 @@ function refusal(err: unknown): string {
 }
 
 /**
- * ClassPass review (#413): every ClassPass booking email the importer couldn't
- * place, until an Admin books it into a class, dismisses it, or (for an
- * unmapped location) maps the location, which imports every open item from it
- * that now matches.
+ * ClassPass review (#413): every ClassPass email the importer couldn't place
+ * (or kept while it was off), until an Admin books it into a class, dismisses
+ * it, or (for an unmapped location) maps the location, which imports every open
+ * item from it that now matches.
  */
 export function ClassPassReview({
   api,
   locations,
+  revision,
   onChanged,
 }: {
   api: Api;
   locations: { id: string; name: string; archivedAt: string | null }[];
-  /** Something was booked or closed: the page's counts are stale. */
+  /** Bumped by the page when something elsewhere on it (a location mapping) may have changed the list. */
+  revision: number;
+  /** Something was booked, closed or mapped: the page's counts and mappings are stale. */
   onChanged?: () => void;
 }) {
   const [items, setItems] = useState<ClassPassReviewItem[] | null>(null);
@@ -83,7 +88,7 @@ export function ClassPassReview({
     return () => {
       cancelled = true;
     };
-  }, [api, version]);
+  }, [api, version, revision]);
 
   async function run<T>(work: () => Promise<T>, done: (result: T) => string): Promise<void> {
     if (busy) return;
@@ -192,7 +197,10 @@ function ReviewItem({
   return (
     <li className="rounded-md border border-border p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={item.reason === "unparsed" ? "error" : "warning"}>{reviewReasonLabel(item.reason)}</Badge>
+        <Badge tone={item.reason === "unparsed" || item.reason === "import_error" ? "error" : "warning"}>
+          {reviewReasonLabel(item.reason)}
+        </Badge>
+        {item.kind === "cancellation" && <Badge tone="neutral">Cancellation</Badge>}
         <span className="text-xs text-muted">Received {formatDateTime(item.received_at)}</span>
       </div>
       <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[8rem_1fr]">
