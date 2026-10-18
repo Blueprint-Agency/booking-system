@@ -62,7 +62,7 @@ _Avoid_: credentials export, login migration
 _Avoid_: re-import, overwrite, reset
 
 **`tenant_id`**:
-The column on all 64 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**. The nine `staff` and `client` auth pool tables carry one too (migration 0076, `docs/adr/0006-per-studio-logins.md`): `NOT NULL`, but **defaulting to the Tenant context**, because Better Auth writes those rows itself and cannot be told a Tenant; outside a context the default is null and the insert still fails.
+The column on all 66 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**. The nine `staff` and `client` auth pool tables carry one too (migration 0076, `docs/adr/0006-per-studio-logins.md`): `NOT NULL`, but **defaulting to the Tenant context**, because Better Auth writes those rows itself and cannot be told a Tenant; outside a context the default is null and the insert still fails.
 
 **Tenant context**:
 The Tenant a request is about — held in two places at once, and they are set together.
@@ -432,6 +432,12 @@ _Avoid_: queue entry as a booking, waitlisted booking, standby
 **Promotion** (waitlist):
 Booking the head of a class's Waitlist into a freed Online Seat, automatically, inside the cancel that freed it — only outside the Cancellation Window, so the promoted member can always still cancel free. The **Default payer** is chosen at that moment, exactly as for a booking nobody picked a package for; a member with nothing **Eligible** is skipped and stays in line. The promoted booking is an ordinary booking. A freed Buffer or Overbook seat never promotes. Not to be confused with a **Promotion** in § Discounts (a price offer).
 _Avoid_: offer, claim, auto-book
+
+### ClassPass import
+
+**ClassPass address**:
+A studio's private inbound email address, `<token>@<CLASSPASS_INBOUND_DOMAIN>`, that the studio's Gmail forwards ClassPass's emails to (#409). The token is random, never the Slug, and is the only thing that names the studio: the Resend webhook finds the Tenant from it (`tenant_for_classpass_token`, migration 0121), so it is unique across the platform. An Admin can regenerate it, after which the old address belongs to no studio and mail to it is dropped; a studio restored from an archive gets a new one. Every email that reaches it is kept with its outcome (`classpass_inbound_emails`), once per Message-ID. Only mail From `noreply@info.classpass.com` with a passing DKIM verdict is trusted; anything else is kept as `refused`. Gmail's own forwarding confirmation is not imported: its code is shown on the ClassPass page.
+_Avoid_: inbound address, forwarding email, ClassPass inbox
 
 ### Check-in
 

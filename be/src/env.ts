@@ -122,6 +122,11 @@ const fields = z.object({
   // Signing secret (`whsec_…`) of the Resend webhook that reports delivery,
   // bounce and complaint outcomes. Unset, that route answers "not configured".
   RESEND_WEBHOOK_SECRET: z.string().optional(),
+  // The domain Resend receives studios' forwarded ClassPass email on (#409): a
+  // studio's ClassPass address is `<token>@` this domain, and the same Resend
+  // webhook hears `email.received` for it. Unset, no studio is shown an address
+  // and inbound mail is acknowledged and dropped. Read through `currentEnv`.
+  CLASSPASS_INBOUND_DOMAIN: z.string().optional(),
   R2_ACCOUNT_ID: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),

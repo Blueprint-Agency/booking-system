@@ -26,6 +26,7 @@ dropped scenario stays, marked `wont-test`, with the reason in its cell.
   `PKR` package rules: which packages a class or series accepts ·
   `WTL` waitlist ·
   `SEAT` class seats: online, buffer, overbook, attendance capacity ·
+  `CPS` ClassPass import ·
   `CXL` class cancellation & cancellation policy ·
   `CHK` check-in & per-booking QR ·
   `ROS` roster & session detail ·
@@ -225,6 +226,23 @@ dropped scenario stays, marked `wont-test`, with the reason in its cell.
 | WTL-30 | WTL | admin | **Given** a waiting member holding several class packages **When** staff Add them to the class from the waitlist **Then** their Default payer pays and the response's `paid_with` names it _(spec-waitlist §7; be-portal §schedule waitlist; be/docs/adr/0010)_ | money | integration | `be/src/test/several-packages.test.ts` | covered |
 | WTL-31 | WTL | system | **Given** a full class whose first waiting member has since booked an overlapping class **When** a seat frees **Then** the second in line is booked, and the first is skipped and stays `waiting` _(spec-waitlist §5)_ | UX | integration | `be/src/test/member-time.test.ts` | covered |
 | WTL-32 | WTL | member | **Given** a member booked into a class **When** they try to join the line of a full class that overlaps it **Then** it is refused `time_clash`; staff putting them in line are refused the same, and with `allow_clash` the join succeeds _(spec-waitlist §4, §7)_ | UX | integration | `be/src/test/member-time.test.ts` | covered |
+
+## CPS — ClassPass import
+
+A studio forwards ClassPass's emails to its ClassPass address; each booking email becomes a ClassPass booking on the matching class, each cancellation cancels it, and what can't be placed goes to ClassPass review (#407, `research-classpass-integration.md`). Every email enters through one entry point, `receiveClassPassEmail`, driven in tests with fixture emails from `be/src/test/classpass-email.ts`.
+
+| ID | area | role | scenario | risk | level | covered by | status |
+|---|---|---|---|---|---|---|---|
+| CPS-10 | CPS | system | **Given** a studio's ClassPass address **When** an email From `noreply@info.classpass.com` with a passing DKIM verdict arrives **Then** it is kept with outcome `ignored`, and the ClassPass page counts it and shows when it arrived _(#409)_ | UX | integration | `be/src/test/classpass-address.test.ts` | covered |
+| CPS-11 | CPS | system | **Given** a studio's ClassPass address **When** an email arrives whose DKIM verdict fails, is missing or is unaligned, or that is signed but not From ClassPass **Then** it is kept as `refused` and changes nothing _(#409; research-classpass-integration)_ | tenancy | integration | `be/src/test/classpass-address.test.ts` | covered |
+| CPS-12 | CPS | system | **Given** an email already kept for a studio **When** the same Message-ID arrives again **Then** it is kept once and nothing is done a second time _(#409)_ | data-loss | integration | `be/src/test/classpass-address.test.ts` | covered |
+| CPS-13 | CPS | admin | **Given** a studio that has never opened the ClassPass page **When** it is read, switched on and off, and ClassPass emails arrive either way **Then** the switch starts off and reads back as set, and each email is kept as `ignored` _(#409)_ | UX | integration | `be/src/test/classpass-address.test.ts` | covered |
+| CPS-14 | CPS | admin | **Given** an Admin adding the ClassPass address as a Gmail forwarding address **When** Gmail's forwarding confirmation reaches it **Then** its code shows on the ClassPass page; a forged confirmation is refused and shows nothing _(#409)_ | UX | integration | `be/src/test/classpass-address.test.ts` | covered |
+| CPS-15 | CPS | admin | **Given** a studio's ClassPass address **When** an Admin regenerates it, or the studio is copied from its archive beside its source **Then** the new address differs, and the Gmail code of the old one is gone _(#409)_ | tenancy | integration | `be/src/test/classpass-address.test.ts`, `be/src/test/transfer.test.ts` | covered |
+| CPS-16 | CPS | system | **Given** the Resend webhook **When** an `email.received` arrives unsigned, wrongly signed or tampered with **Then** it is refused `400`, and nothing is fetched or kept _(#409)_ | tenancy | integration | `be/src/test/resend-webhook.test.ts` | covered |
+| CPS-17 | CPS | system | **Given** a signed `email.received` forwarded by Gmail **When** its envelope names a studio's ClassPass address **Then** that studio, and no other, keeps it, once even if redelivered; mail to an unknown or regenerated address, or to no ClassPass address, is acknowledged and dropped _(#409)_ | tenancy | integration | `be/src/test/resend-webhook.test.ts` | covered |
+| CPS-18 | CPS | system | **Given** `northwind` and `acme` **When** mail reaches `acme`'s ClassPass address, and the same email is also forwarded to `northwind` **Then** `northwind`'s page never counts `acme`'s, each studio keeps its own copy, and `northwind`'s context cannot read `acme`'s settings _(#409)_ | tenancy | integration | `be/src/test/isolation.test.ts` | covered |
+| CPS-19 | CPS | admin | **Given** the ClassPass page **When** an Admin reads, switches and regenerates it, and an Instructor tries the same **Then** the Admin succeeds and the Instructor is refused `403`; the sidebar offers ClassPass under Settings to an Admin only _(#409)_ | tenancy | integration | `be/src/test/classpass-address.test.ts`, `fe-portal/src/components/layout/nav-items.test.ts` | covered |
 
 ## SEAT — Class seats
 

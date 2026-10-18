@@ -1,11 +1,14 @@
 import { Hono } from 'hono'
 import { Resend } from 'resend'
 import { env } from '../../env'
+import { handleInboundEmail } from '../../services/classpass/inbound'
 import { handleResendEvent } from '../../services/notifications/delivery-outcomes'
 import { ERROR_CODES } from '../../shared/error-codes'
 import { logger, setLogContext } from '../../shared/logger'
 
 // Only for its `webhooks.verify` (Svix signatures); nothing is sent from here.
+// One endpoint hears both what became of mail we sent and mail a studio
+// forwarded to its ClassPass address (`email.received`).
 const resend = new Resend(env.RESEND_API_KEY)
 
 const app = new Hono().post('/resend', async c => {
@@ -32,7 +35,10 @@ const app = new Hono().post('/resend', async c => {
   }
 
   try {
-    await handleResendEvent(event)
+    // Mail a studio forwarded to its ClassPass address (#409); every other
+    // event is an outcome of mail we sent.
+    if (event?.type === 'email.received') await handleInboundEmail(event.data ?? {})
+    else await handleResendEvent(event)
   } catch (err) {
     logger.error({ err, eventType: event?.type }, 'resend-webhook handler error')
     return c.json({ error: ERROR_CODES.handler_failed }, 500)

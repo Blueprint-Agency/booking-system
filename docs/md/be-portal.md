@@ -433,6 +433,17 @@ The studio's own settings (studio admins; instructors `403 forbidden_role`). Tod
 
 The super portal sets the same fields when it creates a studio: `POST /api/v1/platform/tenants` takes an optional `business_details` object of this shape, refused by the same rule before anything is written, except that a blank or absent Business name or Display name is the studio's Domain name (`name`). A studio restored from an archive takes the archive's details; an archive exported before they existed leaves the studio's own. Afterwards the operator reads and saves them for any studio at `GET` / `PUT /api/v1/platform/tenants/:id/business-details`, with the same shape, answer and refusals as the studio's own routes; an unknown studio is `404 not_found`.
 
+### `classpass.ts` (gated `requireRole('admin')` — #407)
+The ClassPass page (#409): the studio's **ClassPass address**, the switch for its ClassPass import, the code Gmail sends a new forwarding address, and what has arrived at the address. Instructors are refused `403 forbidden_role` (`authorization-matrix.test.ts`). The settings row is made, with a random token and the import off, the first time the page is read.
+
+| Method | Path | Body / params | Effect |
+|---|---|---|---|
+| GET | `/classpass` | — | `{ address, enabled, gmail_confirmation_code, gmail_confirmation_at, last_received_at, counts: { imported, cancelled, noop, ignored, refused, unparsed, review } }`. `address` is `<token>@<CLASSPASS_INBOUND_DOMAIN>`, or null where the deployment has no inbound domain. `counts` is every email kept for the studio, by outcome. |
+| PATCH | `/classpass` | `{ enabled: boolean }` | Switches the import on or off; answers as GET. |
+| POST | `/classpass/address/regenerate` | — | A new random token, and the Gmail code cleared; answers as GET. The old address belongs to no studio from then on, and mail to it is dropped. |
+
+The mail itself arrives at `POST /api/v1/webhooks/resend` as Resend's `email.received`, behind the same Svix signature check as the delivery outcomes. The handler reads the token from the envelope recipient (`received_for`, then `to`) on the inbound domain, finds the studio through `tenant_for_classpass_token` (migration 0121), fetches the message from Resend, and hands it to `receiveClassPassEmail` (`services/classpass/receive.ts`) in that studio's Tenant context. Mail to no studio's address is acknowledged and dropped.
+
 ---
 
 ## 3. Portal-driven business flows

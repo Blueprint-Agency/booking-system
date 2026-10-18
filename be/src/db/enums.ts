@@ -277,6 +277,27 @@ export const inboxItemTypeEnum = pgEnum('inbox_item_type', [
 // `inbox_action` enum is no longer used — action_taken/action_at/action_by_staff_id columns
 // were removed from inbox_items per §4l. Enum left undeclared (drop in migration SQL).
 
+// ClassPass import (#407). What a forwarded email turned out to be, and what
+// became of it. `gmail_confirmation` is Gmail's own email asking the studio to
+// confirm the forwarding address; `other` is anything that is neither.
+export const classpassEmailKindEnum = pgEnum('classpass_email_kind', [
+  'booking',
+  'cancellation',
+  'roster',
+  'marketing',
+  'gmail_confirmation',
+  'other',
+])
+export const classpassEmailOutcomeEnum = pgEnum('classpass_email_outcome', [
+  'imported',
+  'cancelled',
+  'noop',
+  'ignored',
+  'refused',
+  'unparsed',
+  'review',
+])
+
 // TS type aliases (handy for service layer)
 export type TenantStatus = (typeof tenantStatusEnum.enumValues)[number]
 export type StaffRole = (typeof staffRoleEnum.enumValues)[number]
@@ -301,3 +322,5 @@ export type LeaveType = (typeof leaveTypeEnum.enumValues)[number]
 export type LeaveStatus = (typeof leaveStatusEnum.enumValues)[number]
 export type LeaveHalfDay = (typeof leaveHalfDayEnum.enumValues)[number]
 export type ClassDifficulty = (typeof classDifficultyEnum.enumValues)[number]
+export type ClassPassEmailKind = (typeof classpassEmailKindEnum.enumValues)[number]
+export type ClassPassEmailOutcome = (typeof classpassEmailOutcomeEnum.enumValues)[number]

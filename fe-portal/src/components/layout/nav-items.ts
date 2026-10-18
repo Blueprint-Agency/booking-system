@@ -21,6 +21,7 @@ import {
   HandCoins,
   ShoppingBag,
   ReceiptText,
+  Mail,
 } from "lucide-react";
 
 export type NavScope = "global" | "workspace" | "both";
@@ -107,6 +108,8 @@ export const NAV_ITEMS: NavItem[] = [
   // the details its Receipts print and their number prefix.
   { group: "Settings", label: "Business details", href: "/admin/business-details", icon: ReceiptText, scope: "global" },
   { group: "Settings", label: "Features", href: "/admin/feature-flags", icon: ToggleRight, scope: "global" },
+  // The studio's ClassPass address and the import of its ClassPass bookings (#407, #409).
+  { group: "Settings", label: "ClassPass", href: "/admin/classpass", icon: Mail, scope: "global" },
 ];
 
 export const NAV_GROUP_ORDER: NavGroup[] = ["Finance", "Config", "Packages", "People", "Settings"];

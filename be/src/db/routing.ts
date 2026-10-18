@@ -53,3 +53,11 @@ export async function tenantForClient(clientId: string): Promise<string | null> 
   )
   return rows[0]?.tenant_id ?? null
 }
+
+/** The studio whose ClassPass address has this token (migration 0121), or null. */
+export async function tenantForClassPassToken(token: string): Promise<string | null> {
+  const rows = await db.execute<{ tenant_id: string | null }>(
+    sql`SELECT public.tenant_for_classpass_token(${token}) AS tenant_id`,
+  )
+  return rows[0]?.tenant_id ?? null
+}

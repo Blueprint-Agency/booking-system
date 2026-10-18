@@ -16,6 +16,7 @@ import { forgetCachedMailIdentity } from './mail-identity'
 import { loadTenantById } from './tenants'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { DEFAULT_RECEIPT_PREFIX } from '../receipts/snapshot'
+import { newAddressToken } from '../classpass/settings'
 
 /** The `tenant_settings` columns that hold the studio's Business details (#391, #398). */
 const RECEIPT_DETAIL_COLUMNS = [
@@ -298,9 +299,10 @@ export type ImportOptions =
  * What a replace leaves alone although it has a `tenant_id` and travels in an
  * archive: the studio's own payment account. A build of the studio's rows is
  * no reason to change whose account its money lands in, and a platform export
- * of another studio would otherwise hand this one that studio's keys.
+ * of another studio would otherwise hand this one that studio's keys. Nor is it
+ * a reason to change the ClassPass address the studio's Gmail forwards to.
  */
-const KEPT_ON_REPLACE = new Set(['tenant_payment_credentials'])
+const KEPT_ON_REPLACE = new Set(['tenant_payment_credentials', 'classpass_settings'])
 
 export type ImportSummary = {
   mode: ImportMode
@@ -467,6 +469,18 @@ export async function importTenant(
   // view of the archive rather than in the caller's object — brought up to the
   // current schema first, for an archive taken before a column moved.
   const rows = upgradeArchiveRows(archive.rows, { tenantName: archive.manifest.tenant.name })
+  // A ClassPass address is the inbound webhook's routing key, unique across the
+  // platform (#409). A restored studio gets a fresh one, so it never shares an
+  // address with the studio it came from; Gmail's code belonged to the old
+  // address, so it goes too.
+  if (rows.classpass_settings) {
+    rows.classpass_settings = rows.classpass_settings.map(row => ({
+      ...row,
+      address_token: newAddressToken(),
+      gmail_confirmation_code: null,
+      gmail_confirmation_at: null,
+    }))
+  }
   // A replace keeps the studio's own branding, copy and mail identity.
   const settings = replace ? undefined : rows.tenant_settings?.[0]
   const columnKinds = await columnKindsByTable()

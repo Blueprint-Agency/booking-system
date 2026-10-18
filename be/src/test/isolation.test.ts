@@ -1550,6 +1550,45 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     }
   })
 
+  test("CPS-18 mail to acme's ClassPass address is never visible to northwind, even the same email forwarded to both", async () => {
+    const { withTenant } = await import('../db')
+    const { classPassEmail } = await import('./classpass-email')
+    const receive = await import('../services/classpass/receive')
+    const settings = await import('../services/classpass/settings')
+    const inOne = <T>(fn: () => Promise<T>) => withTenant(one.tenantId, fn)
+    const inTwo = <T>(fn: () => Promise<T>) => withTenant(two.tenantId, fn)
+
+    try {
+      const oneBefore = await inOne(() => settings.readClassPass(one.tenantId))
+      const twoBefore = await inTwo(() => settings.readClassPass(two.tenantId))
+
+      const email = classPassEmail()
+      await inTwo(() => receive.receiveClassPassEmail(two.tenantId, email))
+      const oneAfter = await inOne(() => settings.readClassPass(one.tenantId))
+      assert.deepEqual(oneAfter.counts, oneBefore.counts)
+      assert.equal((await inTwo(() => settings.readClassPass(two.tenantId))).counts.ignored, twoBefore.counts.ignored + 1)
+
+      // Two studios forwarding one email each keep their own copy: the
+      // Message-ID is unique per studio, not across them.
+      const atNorthwind = await inOne(() => receive.receiveClassPassEmail(one.tenantId, email))
+      assert.equal(atNorthwind.duplicate, false)
+
+      // Northwind's context, naming acme: RLS lets it see and change none of acme's rows.
+      const crossRead = await inOne(() => settings.readClassPass(two.tenantId)).catch((err: unknown) => err)
+      assert.ok(crossRead instanceof Error, 'reading another studio\'s ClassPass settings is refused')
+      const rows = await harness.db
+        .select()
+        .from(schema.classpassInboundEmails)
+        .where(eq(schema.classpassInboundEmails.messageId, email.messageId))
+      assert.deepEqual(rows.map(r => r.tenantId).sort(), [one.tenantId, two.tenantId].sort())
+    } finally {
+      for (const tenantId of [one.tenantId, two.tenantId]) {
+        await harness.db.delete(schema.classpassInboundEmails).where(eq(schema.classpassInboundEmails.tenantId, tenantId))
+        await harness.db.delete(schema.classpassSettings).where(eq(schema.classpassSettings.tenantId, tenantId))
+      }
+    }
+  })
+
   test('two tenants can run the same feature flag, each with its own answer', async () => {
     const { withTenant } = await import('../db')
     const key = 'isolation_probe'
