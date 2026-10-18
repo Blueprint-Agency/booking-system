@@ -1567,7 +1567,8 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
       await inTwo(() => receive.receiveClassPassEmail(two.tenantId, email))
       const oneAfter = await inOne(() => settings.readClassPass(one.tenantId))
       assert.deepEqual(oneAfter.counts, oneBefore.counts)
-      assert.equal((await inTwo(() => settings.readClassPass(two.tenantId))).counts.ignored, twoBefore.counts.ignored + 1)
+      // A booking email with acme's import off: kept there for review (`import_off`).
+      assert.equal((await inTwo(() => settings.readClassPass(two.tenantId))).counts.review, twoBefore.counts.review + 1)
 
       // Two studios forwarding one email each keep their own copy: the
       // Message-ID is unique per studio, not across them.
