@@ -32,6 +32,10 @@ export type ClassPassStatus = {
    * ends or the booking is cancelled. Soonest first.
    */
   overbooked: OverbookedClassPassBooking[]
+}
+
+/** The ClassPass page as it is read: its status, and the roster check, which only a read works out. */
+export type ClassPassPage = ClassPassStatus & {
   /** What the ClassPass Daily Rosters of the last week say we hold wrongly (#415). */
   rosterCheck: RosterCheck
 }
@@ -93,8 +97,12 @@ export async function readClassPass(tenantId: string): Promise<ClassPassStatus> 
     lastReceivedAt,
     counts,
     overbooked: await overbookedClassPassBookings(tenantId),
-    rosterCheck: await checkClassPassRosters(tenantId),
   }
+}
+
+/** `readClassPass` with the roster check, for reading the page; a change answers without it. */
+export async function readClassPassPage(tenantId: string): Promise<ClassPassPage> {
+  return { ...(await readClassPass(tenantId)), rosterCheck: await checkClassPassRosters(tenantId) }
 }
 
 async function overbookedClassPassBookings(tenantId: string): Promise<OverbookedClassPassBooking[]> {

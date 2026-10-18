@@ -99,12 +99,15 @@ export function getClassPass(api: Api): Promise<ClassPassStatus> {
   return api.get<ClassPassStatus>("/portal/admin/classpass");
 }
 
-export function setClassPassEnabled(api: Api, enabled: boolean): Promise<ClassPassStatus> {
-  return api.patch<ClassPassStatus>("/portal/admin/classpass", { enabled });
+/** What a change to the page answers: the status without the roster check, which only a read works out. */
+export type ClassPassSettings = Omit<ClassPassStatus, "roster_check">;
+
+export function setClassPassEnabled(api: Api, enabled: boolean): Promise<ClassPassSettings> {
+  return api.patch<ClassPassSettings>("/portal/admin/classpass", { enabled });
 }
 
-export function regenerateClassPassAddress(api: Api): Promise<ClassPassStatus> {
-  return api.post<ClassPassStatus>("/portal/admin/classpass/address/regenerate");
+export function regenerateClassPassAddress(api: Api): Promise<ClassPassSettings> {
+  return api.post<ClassPassSettings>("/portal/admin/classpass/address/regenerate");
 }
 
 // ClassPass location mappings (#410): ClassPass's name for a location -> one

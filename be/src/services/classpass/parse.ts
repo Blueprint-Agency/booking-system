@@ -94,7 +94,30 @@ function after(pieces: string[], name: string): string | null {
 
 const EMAIL = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/
 const RESERVATION_ID = /^[0-9a-f]{32}$/i
+/* ── dates and times as ClassPass writes them (the roster reads them too) ── */
+
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+const pad = (n: number) => String(n).padStart(2, '0')
+
+/** `Sep`, `Sept`, `September` (any case): the month, 0-based; -1 for no month. */
+export function monthOf(name: string): number {
+  return MONTHS.indexOf(name.slice(0, 3).toLowerCase())
+}
+
+/** `1`, `30`, `p` (12-hour, `a`/`p`) as `13:30`; null for a time no clock shows. */
+export function clock24(hour: string, minute: string, half: string): string | null {
+  const h = Number(hour)
+  if (h < 1 || h > 12 || Number(minute) > 59) return null
+  return `${pad((h % 12) + (half.toLowerCase() === 'p' ? 12 : 0))}:${minute}`
+}
+
+/** `YYYY-MM-DD` for day `day` of 0-based `month`; null for a day the month doesn't have (Feb 30). */
+export function calendarDate(year: number, month: number, day: number): string | null {
+  const check = new Date(Date.UTC(year, month, day))
+  if (month < 0 || check.getUTCMonth() !== month || check.getUTCDate() !== day) return null
+  return `${year}-${pad(month + 1)}-${pad(day)}`
+}
+
 /** `Sep 18, 2026 @ 1:30 PM`. */
 const WHEN = /^([a-z]+)\.? (\d{1,2}), (\d{4}) @ (\d{1,2}):(\d{2}) ?([ap])\.?m\.?$/i
 
@@ -102,16 +125,9 @@ function when(value: string | null): { localDate: string; localTime: string } | 
   const m = value ? WHEN.exec(value) : null
   if (!m) return null
   const [, monthName, day, year, hour, minute, half] = m
-  const month = MONTHS.indexOf(monthName!.slice(0, 3).toLowerCase())
-  const d = Number(day)
-  const h = Number(hour)
-  if (month < 0 || h < 1 || h > 12 || Number(minute) > 59) return null
-  // A day the month doesn't have (Feb 30) is not a date.
-  const check = new Date(Date.UTC(Number(year), month, d))
-  if (check.getUTCMonth() !== month || check.getUTCDate() !== d) return null
-  const h24 = (h % 12) + (half!.toLowerCase() === 'p' ? 12 : 0)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return { localDate: `${year}-${pad(month + 1)}-${pad(d)}`, localTime: `${pad(h24)}:${minute}` }
+  const localDate = calendarDate(Number(year), monthOf(monthName!), Number(day))
+  const localTime = clock24(hour!, minute!, half!)
+  return localDate && localTime ? { localDate, localTime } : null
 }
 
 /** Not the member's name: what ClassPass prints under it. */

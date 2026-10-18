@@ -405,4 +405,34 @@ describe('the ClassPass Daily Roster check', { skip: integrationTestsEnabled ? f
     assert.equal(ours.some(d => d.member_name === elsewhere), false)
     assert.deepEqual(await differencesOn(two, theirs), [['on_classpass_not_on_roster', elsewhere]])
   })
+
+  test('CPS-101 a ClassPass booking cancelled after the roster was sent counts as held for that roster; one cancelled before it does not', async () => {
+    const startsAt = nextStart()
+    const classId = await addClass(one, startsAt)
+    const ada = await bookByClassPass(one, startsAt, 'Ada Placeholder')
+    const bo = await bookByClassPass(one, startsAt, 'Bo Placeholder')
+    const cancel = (bookingId: string, at: Date) =>
+      harness.db.update(schema.bookings).set({ state: 'cancelled', cancelledAt: at }).where(eq(schema.bookings.id, bookingId))
+    const sent = new Date((await bookedAt(bo)).getTime() + 2 * MINUTE)
+    await cancel(bo, new Date(sent.getTime() - MINUTE))
+    await receive(one, roster([listed(one, startsAt, ['Ada Placeholder', 'Bo Placeholder'])], { receivedAt: sent }))
+    await cancel(ada, new Date(sent.getTime() + MINUTE))
+
+    assert.deepEqual(await differencesOn(one, classId), [['on_classpass_not_on_roster', 'Bo Placeholder']])
+  })
+
+  test('CPS-102 the roster check is worked out when the ClassPass page is read, not when its switch is changed', async () => {
+    const read = await status(one)
+    assert.ok(read.roster_check)
+    const switched = await expectStatus(
+      await harness.app.request('/api/v1/portal/admin/classpass', {
+        method: 'PATCH',
+        headers: { ...one.adminHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true }),
+      }),
+      200,
+    )
+    assert.equal(switched.enabled, true)
+    assert.equal('roster_check' in switched, false)
+  })
 })

@@ -1,12 +1,12 @@
 import { and, eq, gte, inArray, ne } from 'drizzle-orm'
 import { db } from '../../db'
-import { bookings, classpassInboundEmails, classpassLocationMappings, clients } from '../../db/schema'
+import { bookings, classes, classpassInboundEmails, classpassLocationMappings, classTypes, clients } from '../../db/schema'
 import { now as clockNow } from '../../lib/clock'
-import { zonedInstant } from '../schedule/series-dates'
+import { localDateOf, zonedInstant } from '../schedule/series-dates'
 import { loadTenantById } from '../tenants/tenants'
-import { matchClass } from './import-booking'
+import { pickClass, type ClassAtTime } from './import-booking'
 import { normaliseClassPassLocation } from './location-name'
-import { textPieces } from './parse'
+import { calendarDate, clock24, monthOf, textPieces } from './parse'
 
 /**
  * The ClassPass Daily Roster check (#415).
@@ -49,19 +49,14 @@ export type ParsedRoster = {
   classes: RosterClass[]
 }
 
-const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 /** `01:30pm`. */
 const TIME = /^(\d{1,2}):(\d{2}) ?([ap])\.?m\.?$/i
 /** `Fri, Sep 18`. */
 const DAY = /^[a-z]{3,9}\.?,? ([a-z]{3,9})\.? (\d{1,2})$/i
-const pad = (n: number) => String(n).padStart(2, '0')
 
 function time(piece: string | undefined): string | null {
   const m = piece ? TIME.exec(piece) : null
-  if (!m) return null
-  const h = Number(m[1])
-  if (h < 1 || h > 12 || Number(m[2]) > 59) return null
-  return `${pad((h % 12) + (m[3]!.toLowerCase() === 'p' ? 12 : 0))}:${m[2]}`
+  return m ? clock24(m[1]!, m[2]!, m[3]!) : null
 }
 
 /**
@@ -72,20 +67,18 @@ function time(piece: string | undefined): string | null {
 function day(piece: string | undefined, receivedLocalDate: string): string | null {
   const m = piece ? DAY.exec(piece) : null
   if (!m) return null
-  const month = MONTHS.indexOf(m[1]!.slice(0, 3).toLowerCase())
+  const month = monthOf(m[1]!)
   const d = Number(m[2])
-  if (month < 0) return null
   const received = Date.parse(`${receivedLocalDate}T00:00:00Z`)
   const year = Number(receivedLocalDate.slice(0, 4))
-  let best: { at: number; date: Date } | null = null
+  let best: { at: number; date: string } | null = null
   for (const y of [year - 1, year, year + 1]) {
-    const date = new Date(Date.UTC(y, month, d))
-    if (date.getUTCMonth() !== month) continue
-    const at = Math.abs(date.getTime() - received)
+    const date = calendarDate(y, month, d)
+    if (!date) continue
+    const at = Math.abs(Date.parse(`${date}T00:00:00Z`) - received)
     if (!best || at < best.at) best = { at, date }
   }
-  if (!best) return null
-  return `${best.date.getUTCFullYear()}-${pad(best.date.getUTCMonth() + 1)}-${pad(best.date.getUTCDate())}`
+  return best?.date ?? null
 }
 
 /** A class starts at a piece followed by its time and its day. */
@@ -149,18 +142,11 @@ const WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
 const sameName = (name: string) => name.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase()
 
-function localDateOf(at: Date, timezone: string): string {
-  const p: Record<string, string> = {}
-  for (const part of new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(at)) {
-    p[part.type] = part.value
-  }
-  return `${p.year}-${p.month}-${p.day}`
-}
-
 /**
  * The differences between the rosters received in the last week and the
  * ClassPass bookings held on their classes. Where two rosters list the same
- * class, the later one is ClassPass's word on it.
+ * class, the later one is ClassPass's word on it. A booking cancelled after a
+ * roster was sent still counts as held for that roster.
  */
 export async function checkClassPassRosters(tenantId: string): Promise<RosterCheck> {
   const tenant = await loadTenantById(tenantId)
@@ -205,11 +191,23 @@ export async function checkClassPassRosters(tenantId: string): Promise<RosterChe
     }
   }
 
+  const listed = [...latest.values()]
+  const classesAt = await classesAtTimes(tenantId, listed)
+  const matched = listed.map(l => {
+    const match = pickClass(classesAt.get(`${l.locationId}|${l.startsAt.toISOString()}`) ?? [], l.cls.className)
+    return { ...l, classId: 'classId' in match ? match.classId : null }
+  })
+  const booked = await classPassBookingsOn(
+    tenantId,
+    matched.flatMap(m => (m.classId ? [m.classId] : [])),
+  )
+
   const differences: RosterDifference[] = []
-  for (const { locationId, cls, startsAt, receivedAt } of latest.values()) {
-    const match = await matchClass(tenantId, locationId, startsAt, cls.className)
-    const classId = 'classId' in match ? match.classId : null
-    const held = classId ? await heldOn(tenantId, classId) : []
+  for (const { cls, startsAt, receivedAt, classId } of matched) {
+    // Held for this roster: live now, or cancelled only after ClassPass wrote it.
+    const held = (booked.get(classId ?? '') ?? []).filter(
+      b => b.state !== 'cancelled' || (b.cancelledAt !== null && b.cancelledAt > receivedAt),
+    )
     const base = { classId, className: cls.className, startsAt, rosterReceivedAt: receivedAt }
 
     const unmatched = [...held]
@@ -220,7 +218,8 @@ export async function checkClassPassRosters(tenantId: string): Promise<RosterChe
     }
     for (const b of unmatched) {
       // Booked after ClassPass wrote this roster: it could not have listed them.
-      if (b.bookedAt > receivedAt) continue
+      // Cancelled since: nothing is held to put right.
+      if (b.bookedAt > receivedAt || b.state === 'cancelled') continue
       differences.push({ ...base, difference: 'on_roster_not_on_classpass', memberName: b.name, bookingId: b.id })
     }
   }
@@ -231,25 +230,55 @@ export async function checkClassPassRosters(tenantId: string): Promise<RosterChe
   }
 }
 
-/**
- * The ClassPass bookings held on a class, each with the names it may appear
- * under on a roster: the member's name here, and the name ClassPass gave in
- * the booking email.
- */
-async function heldOn(tenantId: string, classId: string) {
+/** Every class at the listed Locations and starts, in one read, keyed `locationId|startsAt`. */
+async function classesAtTimes(
+  tenantId: string,
+  listed: { locationId: string; startsAt: Date }[],
+): Promise<Map<string, ClassAtTime[]>> {
+  const byKey = new Map<string, ClassAtTime[]>()
+  if (listed.length === 0) return byKey
   const rows = await db
-    .select({ id: bookings.id, bookedAt: bookings.bookedAt, name: clients.name })
-    .from(bookings)
-    .innerJoin(clients, eq(clients.id, bookings.clientId))
+    .select({ id: classes.id, lifecycle: classes.lifecycle, typeName: classTypes.name, locationId: classes.locationId, startsAt: classes.startsAt })
+    .from(classes)
+    .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
     .where(
       and(
-        eq(bookings.tenantId, tenantId),
-        eq(bookings.classId, classId),
-        eq(bookings.source, 'classpass'),
-        ne(bookings.state, 'cancelled'),
+        eq(classes.tenantId, tenantId),
+        inArray(classes.locationId, [...new Set(listed.map(l => l.locationId))]),
+        inArray(classes.startsAt, [...new Map(listed.map(l => [l.startsAt.getTime(), l.startsAt])).values()]),
       ),
     )
-  if (rows.length === 0) return []
+  for (const r of rows) {
+    const key = `${r.locationId}|${r.startsAt.toISOString()}`
+    byKey.set(key, [...(byKey.get(key) ?? []), r])
+  }
+  return byKey
+}
+
+/**
+ * The ClassPass bookings on the classes, cancelled ones too, each with the
+ * names it may appear under on a roster: the member's name here, and the name
+ * ClassPass gave in the booking email. Keyed by class; two reads in all.
+ */
+async function classPassBookingsOn(tenantId: string, classIds: string[]) {
+  const byClass = new Map<
+    string,
+    { id: string; bookedAt: Date; cancelledAt: Date | null; state: string; name: string; names: Set<string> }[]
+  >()
+  if (classIds.length === 0) return byClass
+  const rows = await db
+    .select({
+      id: bookings.id,
+      classId: bookings.classId,
+      bookedAt: bookings.bookedAt,
+      cancelledAt: bookings.cancelledAt,
+      state: bookings.state,
+      name: clients.name,
+    })
+    .from(bookings)
+    .innerJoin(clients, eq(clients.id, bookings.clientId))
+    .where(and(eq(bookings.tenantId, tenantId), inArray(bookings.classId, [...new Set(classIds)]), eq(bookings.source, 'classpass')))
+  if (rows.length === 0) return byClass
   const emailed = await db
     .select({ bookingId: classpassInboundEmails.bookingId, name: classpassInboundEmails.memberName })
     .from(classpassInboundEmails)
@@ -262,8 +291,12 @@ async function heldOn(tenantId: string, classId: string) {
         ),
       ),
     )
-  return rows.map(r => ({
-    ...r,
-    names: new Set([r.name, ...emailed.filter(e => e.bookingId === r.id).map(e => e.name)].filter((n): n is string => !!n).map(sameName)),
-  }))
+  for (const r of rows) {
+    const names = new Set(
+      [r.name, ...emailed.filter(e => e.bookingId === r.id).map(e => e.name)].filter((n): n is string => !!n).map(sameName),
+    )
+    const entry = { id: r.id, bookedAt: r.bookedAt, cancelledAt: r.cancelledAt, state: r.state, name: r.name, names }
+    byClass.set(r.classId!, [...(byClass.get(r.classId!) ?? []), entry])
+  }
+  return byClass
 }

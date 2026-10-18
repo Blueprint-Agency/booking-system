@@ -41,13 +41,25 @@ export type PlacedBooking = {
 
 type ClassMatch = { classId: string } | { reason: ClassPassReviewReason }
 
-/** The class at `locationId` starting at `startsAt` that ClassPass means. The roster check (#415) matches with it too. */
-export async function matchClass(tenantId: string, locationId: string, startsAt: Date, className: string): Promise<ClassMatch> {
+/** A class at a Location and start, as `pickClass` chooses among them. */
+export type ClassAtTime = { id: string; lifecycle: string; typeName: string }
+
+/** The class at `locationId` starting at `startsAt` that ClassPass means. */
+async function matchClass(tenantId: string, locationId: string, startsAt: Date, className: string): Promise<ClassMatch> {
   const found = await db
     .select({ id: classes.id, lifecycle: classes.lifecycle, typeName: classTypes.name })
     .from(classes)
     .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
     .where(and(eq(classes.tenantId, tenantId), eq(classes.locationId, locationId), eq(classes.startsAt, startsAt)))
+  return pickClass(found, className)
+}
+
+/**
+ * Which of the classes at one Location and start ClassPass's `className`
+ * means: the one active class, or of several the one whose Class Type has that
+ * name, ignoring case. The roster check (#415) chooses with it too.
+ */
+export function pickClass(found: ClassAtTime[], className: string): ClassMatch {
   const active = found.filter(c => c.lifecycle === 'active')
   if (active.length === 1) return { classId: active[0]!.id }
   if (active.length > 1) {

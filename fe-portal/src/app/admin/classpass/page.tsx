@@ -16,6 +16,7 @@ import {
   regenerateClassPassAddress,
   ROSTER_DIFFERENCE_LABELS,
   setClassPassEnabled,
+  type ClassPassSettings,
   type ClassPassStatus,
 } from "@/lib/classpass";
 
@@ -59,11 +60,13 @@ export default function ClassPassPage() {
   }, [api, attempt]);
 
   const act = useCallback(
-    async (work: () => Promise<ClassPassStatus>, done: string) => {
+    async (work: () => Promise<ClassPassSettings>, done: string) => {
       if (!api || busy) return;
       setBusy(true);
       try {
-        setStatus(await work());
+        const settings = await work();
+        // A change answers without the roster check, which it doesn't change: keep the one read.
+        setStatus((was) => (was ? { ...was, ...settings } : was));
         toast.success(done);
       } catch (err) {
         toast.error(err instanceof ApiError ? `That didn’t work (HTTP ${err.status}).` : "That didn’t work.");

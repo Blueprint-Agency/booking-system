@@ -71,9 +71,16 @@ function serialize(status: svc.ClassPassStatus) {
       starts_at: o.startsAt,
       client_name: o.clientName,
     })),
-    // The ClassPass Daily Roster check (#415): every difference, and every roster that couldn't be checked.
+  }
+}
+
+/** The page as read: the status, and the ClassPass Daily Roster check (#415), worked out on a read only. */
+function serializePage(page: svc.ClassPassPage) {
+  return {
+    ...serialize(page),
+    // Every difference, and every roster that couldn't be checked.
     roster_check: {
-      differences: status.rosterCheck.differences.map(d => ({
+      differences: page.rosterCheck.differences.map(d => ({
         difference: d.difference,
         class_id: d.classId,
         class_name: d.className,
@@ -82,13 +89,13 @@ function serialize(status: svc.ClassPassStatus) {
         booking_id: d.bookingId,
         roster_received_at: d.rosterReceivedAt,
       })),
-      unchecked: status.rosterCheck.unchecked.map(u => ({ location_name: u.locationName, received_at: u.receivedAt })),
+      unchecked: page.rosterCheck.unchecked.map(u => ({ location_name: u.locationName, received_at: u.receivedAt })),
     },
   }
 }
 
 const app = new Hono()
-  .get('/', async c => c.json(serialize(await svc.readClassPass(tenantId(c)))))
+  .get('/', async c => c.json(serializePage(await svc.readClassPassPage(tenantId(c)))))
   .patch('/', zValidator('json', patchSchema), async c =>
     c.json(serialize(await svc.setClassPassEnabled(tenantId(c), c.req.valid('json').enabled))),
   )
