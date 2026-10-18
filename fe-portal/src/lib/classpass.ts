@@ -57,3 +57,50 @@ export function setClassPassEnabled(api: Api, enabled: boolean): Promise<ClassPa
 export function regenerateClassPassAddress(api: Api): Promise<ClassPassStatus> {
   return api.post<ClassPassStatus>("/portal/admin/classpass/address/regenerate");
 }
+
+// ClassPass location mappings (#410): ClassPass's name for a location -> one
+// of the studio's Locations. The backend stores the name normalised
+// (lower-cased, spaces collapsed, every dash `-`), so the list shows it so.
+
+export interface ClassPassLocationMapping {
+  id: string;
+  location_name: string;
+  location_id: string;
+  location: { name: string; archived_at: string | null };
+  created_at: string;
+  updated_at: string;
+}
+
+/** The Locations a mapping may name: live ones, by name. */
+export function mappableLocations(
+  locations: { id: string; name: string; archivedAt: string | null }[],
+): { id: string; name: string }[] {
+  return locations
+    .filter((l) => !l.archivedAt)
+    .map(({ id, name }) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function listClassPassLocationMappings(api: Api): Promise<ClassPassLocationMapping[]> {
+  const res = await api.get<{ mappings: ClassPassLocationMapping[] }>("/portal/admin/classpass/locations");
+  return res.mappings;
+}
+
+export function addClassPassLocationMapping(
+  api: Api,
+  input: { location_name: string; location_id: string },
+): Promise<ClassPassLocationMapping> {
+  return api.post<ClassPassLocationMapping>("/portal/admin/classpass/locations", input);
+}
+
+export function changeClassPassLocationMapping(
+  api: Api,
+  id: string,
+  patch: { location_name?: string; location_id?: string },
+): Promise<ClassPassLocationMapping> {
+  return api.patch<ClassPassLocationMapping>(`/portal/admin/classpass/locations/${id}`, patch);
+}
+
+export async function removeClassPassLocationMapping(api: Api, id: string): Promise<void> {
+  await api.del(`/portal/admin/classpass/locations/${id}`);
+}

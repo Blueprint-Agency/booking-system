@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { pgTable, uuid, text, boolean, timestamp, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { tenantIdColumn } from './tenancy'
+import { locations } from './catalog'
 import { classpassEmailKindEnum, classpassEmailOutcomeEnum } from '../enums'
 
 /**
@@ -65,5 +66,32 @@ export const classpassInboundEmails = pgTable(
   table => ({
     messageUnique: uniqueIndex('classpass_inbound_emails_message_unique').on(table.tenantId, table.messageId),
     receivedIdx: index('classpass_inbound_emails_received_idx').on(table.tenantId, table.receivedAt),
+  }),
+)
+
+/**
+ * A ClassPass location mapping (#410): the name ClassPass gives one of the
+ * studio's locations in its emails, and the Location it means. Rows the
+ * studio's Admins write on the ClassPass page; nothing is seeded.
+ *
+ * `location_name` is stored normalised (`normaliseClassPassLocation`,
+ * `services/classpass/location-name.ts`), so two spellings that differ only in
+ * case, spacing or dash characters are one row, unique per studio.
+ */
+export const classpassLocationMappings = pgTable(
+  'classpass_location_mappings',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    locationName: text('location_name').notNull(),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'restrict' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    nameUnique: uniqueIndex('classpass_location_mappings_name_unique').on(table.tenantId, table.locationName),
+    locationIdFkIdx: index('classpass_location_mappings_location_id_fk_idx').on(table.locationId),
   }),
 )

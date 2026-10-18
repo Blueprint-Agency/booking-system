@@ -289,6 +289,11 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'GET /api/v1/portal/admin/classpass': { gate: STUDIO_ADMIN },
   'PATCH /api/v1/portal/admin/classpass': { gate: STUDIO_ADMIN, probe: { body: { enabled: false } } },
   'POST /api/v1/portal/admin/classpass/address/regenerate': { gate: STUDIO_ADMIN },
+  // ClassPass location mappings (#410), admins only.
+  'GET /api/v1/portal/admin/classpass/locations': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/classpass/locations': { gate: STUDIO_ADMIN },
+  'PATCH /api/v1/portal/admin/classpass/locations/:id': { gate: STUDIO_ADMIN },
+  'DELETE /api/v1/portal/admin/classpass/locations/:id': { gate: STUDIO_ADMIN },
 }
 
 /** The prefixes the matrix speaks for: every route under them needs a line above. */

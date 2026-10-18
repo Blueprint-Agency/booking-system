@@ -1040,8 +1040,9 @@ Admins only (Settings group); an Instructor never sees it. The studio forwards C
 - **Import switch.** On or off; off to start. Nothing is imported yet: every trusted ClassPass email is kept as ignored.
 - **ClassPass address.** The studio's private address, with a Copy button and a **Regenerate** action that confirms first: the old address stops working at once, and the studio has to change its Gmail forwarding to the new one. Where the deployment has no inbound domain the page says the address isn't available yet.
 - **Gmail setup.** Step by step: add the address as a forwarding address in Gmail; type in the confirmation code Gmail sends it, which the page shows as soon as it arrives; then add a filter on `from:noreply@info.classpass.com` that forwards matching mail to the address.
+- **Locations** (#410). The ClassPass location mapping editor: each name ClassPass writes for a location in its emails, as stored (lower case, single spaces, every dash `-`), with a Location picker that changes it at once and a Remove button; below, a form to add a name and choose its Location. Only live Locations are offered; a mapping whose Location has since been archived says so. Adding a second spelling of a mapped name is refused with "already mapped".
 - **Import status.** When the last email arrived, and how many have been kept by outcome (imported, cancelled, no change, ignored, refused, unreadable, for review).
 
-Still to come behind the same page: the ClassPass location mapping, the ClassPass review list, the Daily Roster check, and the ClassPass badge on the roster (§10) and the member's profile (§15b).
+Still to come behind the same page: the ClassPass review list, the Daily Roster check, and the ClassPass badge on the roster (§10) and the member's profile (§15b).
 
 ---

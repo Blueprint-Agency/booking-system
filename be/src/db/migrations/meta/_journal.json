@@ -862,6 +862,13 @@
       "when": 1792306886618,
       "tag": "0122_classpass_address",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1792307357462,
+      "tag": "0123_classpass_location_mappings",
+      "breakpoints": true
     }
   ]
 }

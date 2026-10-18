@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Copy, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, PageHeader } from "@/components/ui";
+import { ClassPassLocationMappings } from "@/components/classpass/location-mappings";
 import { ApiError } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatDateTime } from "@/lib/formatters";
@@ -21,7 +22,7 @@ import {
  * Admins only; the backend refuses instructors.
  */
 export default function ClassPassPage() {
-  const { api } = useWorkspace();
+  const { api, locations } = useWorkspace();
   const [status, setStatus] = useState<ClassPassStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -230,6 +231,8 @@ export default function ClassPassPage() {
           <li>Turn on <strong>Import ClassPass bookings</strong> above.</li>
         </ol>
       </section>
+
+      <ClassPassLocationMappings api={api} locations={locations} />
 
       <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
         <header className="mb-4">

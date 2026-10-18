@@ -35,8 +35,8 @@ resource) document as the low-complexity path.
 
 ## The shape as built
 
-- **`tenant_id` on all 53 domain tables** (migrations 0026–0032; 66 today, the latest
-  `classpass_settings` and `classpass_inbound_emails`, migration 0122), including pure join tables —
+- **`tenant_id` on all 53 domain tables** (migrations 0026–0032; 67 today, the latest
+  `classpass_location_mappings`, migration 0123), including pure join tables —
   RLS needs a column on every table to key a policy on. `NOT NULL` with **no default**: an insert
   that does not name its Tenant fails loudly rather than filing someone else's row under Tenant
   #1. Every non-unique index leads with it.

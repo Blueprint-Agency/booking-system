@@ -62,7 +62,7 @@ _Avoid_: credentials export, login migration
 _Avoid_: re-import, overwrite, reset
 
 **`tenant_id`**:
-The column on all 66 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**. The nine `staff` and `client` auth pool tables carry one too (migration 0076, `docs/adr/0006-per-studio-logins.md`): `NOT NULL`, but **defaulting to the Tenant context**, because Better Auth writes those rows itself and cannot be told a Tenant; outside a context the default is null and the insert still fails.
+The column on all 67 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**. The nine `staff` and `client` auth pool tables carry one too (migration 0076, `docs/adr/0006-per-studio-logins.md`): `NOT NULL`, but **defaulting to the Tenant context**, because Better Auth writes those rows itself and cannot be told a Tenant; outside a context the default is null and the insert still fails.
 
 **Tenant context**:
 The Tenant a request is about — held in two places at once, and they are set together.
@@ -442,6 +442,10 @@ _Avoid_: aggregator booking, external booking, partner booking
 **ClassPass address**:
 A studio's private inbound email address, `<token>@<CLASSPASS_INBOUND_DOMAIN>`, that the studio's Gmail forwards ClassPass's emails to (#409). The token is random, never the Slug, and is the only thing that names the studio: the Resend webhook finds the Tenant from it (`tenant_for_classpass_token`, migration 0122), so it is unique across the platform. An Admin can regenerate it, after which the old address belongs to no studio and mail to it is dropped; a studio restored from an archive gets a new one. Every email that reaches it is kept with its outcome (`classpass_inbound_emails`), once per Message-ID. Only mail From `noreply@info.classpass.com` with a passing DKIM verdict is trusted; anything else is kept as `refused`. Gmail's own forwarding confirmation is not imported: its code is shown on the ClassPass page.
 _Avoid_: inbound address, forwarding email, ClassPass inbox
+
+**ClassPass location mapping**:
+A studio's own row saying which of its Locations a name ClassPass writes in its emails means (`classpass_location_mappings`, #410), written by an Admin on the ClassPass page; nothing is seeded. ClassPass spells one location more than one way (`<Studio>-<Location>`, `<Studio> - <Location>`, an en dash, a name cut short to `<Studio> -`), so the name is stored normalised — lower case, single spaces, every dash `-` with a space either side (`normaliseClassPassLocation`, `services/classpass/location-name.ts`) — and is unique per studio in that form; the import normalises an email's name the same way to find it. A mapping names a live Location of the studio's own: an archived, deleted or other studio's Location is refused.
+_Avoid_: location alias, ClassPass venue
 
 ### Check-in
 
