@@ -20,6 +20,7 @@ import {
   searchMembers,
   seatTag,
   seatsSummary,
+  sourceBadge,
   staffBookClass,
   type ClassSeats,
   type MemberMatch,
@@ -194,13 +195,19 @@ export function ClassRoster({
                     ) : (
                       <span className="min-w-0 truncate text-ink">{a.client.name}</span>
                     )}
+                    {sourceBadge(a.source) && <Badge tone="accent">{sourceBadge(a.source)}</Badge>}
                     {a.promoted_from_waitlist && <Badge tone="cyan">Promoted from waitlist</Badge>}
                     {tag && (
                       <Badge tone={a.seat === "overbook" ? "warning" : "neutral"}>{tag}</Badge>
                     )}
                   </div>
                   <div className="text-xs text-muted">
-                    {a.package_kind ? PACKAGE_KIND_LABEL[a.package_kind] : "—"} ·{" "}
+                    {a.source === "classpass"
+                      ? "Paid by ClassPass"
+                      : a.package_kind
+                        ? PACKAGE_KIND_LABEL[a.package_kind]
+                        : "—"}{" "}
+                    ·{" "}
                     <span className="font-mono">{a.code}</span>
                   </div>
                 </div>

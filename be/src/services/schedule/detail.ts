@@ -20,7 +20,7 @@ import {
   ptRequests,
   waitlistEntries,
 } from '../../db/schema'
-import type { BookingSeat, ClassDifficulty, ClientPackageKind } from '../../db/enums'
+import type { BookingSeat, BookingSource, ClassDifficulty, ClientPackageKind } from '../../db/enums'
 import { ForbiddenError, NotFoundError } from '../../shared/errors'
 import { ptSeats, sessionCheckInState, type SessionCheckInState } from '../bookings/session-check-in'
 import { attendanceCapacity, countSeats, type SeatCounts } from '../bookings/seats'
@@ -46,6 +46,8 @@ export interface ClassAttendee {
   code: string
   /** Which seat the booking holds; the roster tags `buffer` and `overbook`. */
   seat: BookingSeat
+  /** How the booking reached the studio; the roster badges a ClassPass booking (#408). */
+  source: BookingSource
   /** The booking was made by a waitlist promotion, automatic or by staff. */
   promotedFromWaitlist: boolean
   /** What the staff cancel dialog asks from; null on a row it is not offered on (#320). */
@@ -155,6 +157,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       checkInState: bookings.checkInState,
       code: bookings.code,
       seat: bookings.seat,
+      source: bookings.source,
       promotedEntryId: waitlistEntries.id,
     })
     .from(bookings)
@@ -185,6 +188,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       checkInState,
       code: r.code,
       seat: r.seat,
+      source: r.source,
       promotedFromWaitlist: r.promotedEntryId !== null,
       cancelPreview: staffCancelPreview(
         {

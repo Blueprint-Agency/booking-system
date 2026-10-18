@@ -144,6 +144,12 @@ export const bookingStateEnum = pgEnum('booking_state', ['confirmed', 'cancelled
 // `buffer` is one of `capacity_buffer`, filled only by staff; `overbook` is an
 // admin's booking past both. Workshop and PT bookings stay `online`, unread.
 export const bookingSeatEnum = pgEnum('booking_seat', ['online', 'buffer', 'overbook'])
+// How a booking reached the studio (#408): `direct` through ReserveToday, as
+// every booking before this column did (the default is the backfill), or
+// `classpass`, a ClassPass booking: ClassPass paid for the seat, so no package
+// pays and no credit is spent.
+export const bookingSourceEnum = pgEnum('booking_source', ['direct', 'classpass'])
+export type BookingSource = (typeof bookingSourceEnum.enumValues)[number]
 // A class waitlist entry (spec-waitlist.md §3). Only `waiting` is in the line;
 // every other state is how it left: booked into a seat (`promoted`), left by the
 // member (`withdrawn`), taken out by staff or a class cancel (`removed`), or

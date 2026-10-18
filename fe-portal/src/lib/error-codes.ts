@@ -64,6 +64,7 @@ export const ERROR_CODES = {
   class_type_in_use: "class_type_in_use",
   class_type_not_archived: "class_type_not_archived",
   class_type_not_found: "class_type_not_found",
+  classpass_reservation_taken: "classpass_reservation_taken",
   client_blocked: "client_blocked",
   client_delete_failed: "client_delete_failed",
   client_not_found: "client_not_found",

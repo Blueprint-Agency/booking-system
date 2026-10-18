@@ -295,6 +295,8 @@ function memberBookingView(b: MemberBookingRow | MemberCancelledRow) {
     credits_used: b.creditsUsed,
     package_name: b.packageName,
     code: b.code,
+    // `classpass` on a ClassPass booking, which the profile badges (#408).
+    source: b.source,
     booked_at: b.bookedAt,
     cancelled_at: b.cancelledAt,
     // Null when the portal offers no "Cancel booking" on it; otherwise what the

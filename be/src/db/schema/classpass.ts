@@ -11,7 +11,7 @@ import { classpassEmailKindEnum, classpassEmailOutcomeEnum } from '../enums'
  * `address_token` is the local part of the ClassPass address and the inbound
  * webhook's routing key, so it is unique across the platform, not per studio:
  * the webhook arrives with no Tenant and finds one through
- * `public.tenant_for_classpass_token` (migration 0121), because Row-Level
+ * `public.tenant_for_classpass_token` (migration 0122), because Row-Level
  * Security hides this table from a caller with no Tenant context. Regenerating
  * it replaces the value, so the old address resolves to no studio at all.
  */

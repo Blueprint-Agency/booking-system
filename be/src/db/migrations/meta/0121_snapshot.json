@@ -1,5 +1,5 @@
 {
-  "id": "c54e920c-4219-4356-ae8f-848991148e0a",
+  "id": "9143df5c-7c64-4e97-9818-92dd9ed71bfe",
   "prevId": "056ef563-1d2e-46af-ab0f-453732328511",
   "version": "7",
   "dialect": "postgresql",
@@ -9282,6 +9282,20 @@
           "notNull": true,
           "default": "'online'"
         },
+        "source": {
+          "name": "source",
+          "type": "booking_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'direct'"
+        },
+        "classpass_reservation_id": {
+          "name": "classpass_reservation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "list_price_sgd": {
           "name": "list_price_sgd",
           "type": "numeric(10, 2)",
@@ -9670,6 +9684,28 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "bookings_classpass_reservation_unique": {
+          "name": "bookings_classpass_reservation_unique",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "classpass_reservation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"bookings\".\"classpass_reservation_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -9808,6 +9844,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "bookings_classpass_shape": {
+          "name": "bookings_classpass_shape",
+          "value": "(\"bookings\".\"source\" = 'classpass') = (\"bookings\".\"classpass_reservation_id\" IS NOT NULL)\n        AND (\"bookings\".\"source\" <> 'classpass' OR (\"bookings\".\"kind\" = 'class' AND \"bookings\".\"client_package_id\" IS NULL))"
+        },
         "bookings_kind_class_fk": {
           "name": "bookings_kind_class_fk",
           "value": "\"bookings\".\"kind\" <> 'class' OR (\"bookings\".\"class_id\" IS NOT NULL AND \"bookings\".\"workshop_id\" IS NULL AND \"bookings\".\"pt_session_id\" IS NULL)"
@@ -15288,268 +15328,6 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
-    },
-    "public.classpass_inbound_emails": {
-      "name": "classpass_inbound_emails",
-      "schema": "",
-      "columns": {
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "received_at": {
-          "name": "received_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "message_id": {
-          "name": "message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "from_address": {
-          "name": "from_address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "classpass_email_kind",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "classpass_email_outcome",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "authentication": {
-          "name": "authentication",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "headers": {
-          "name": "headers",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "text": {
-          "name": "text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "html": {
-          "name": "html",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "classpass_inbound_emails_message_unique": {
-          "name": "classpass_inbound_emails_message_unique",
-          "columns": [
-            {
-              "expression": "tenant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "message_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "classpass_inbound_emails_received_idx": {
-          "name": "classpass_inbound_emails_received_idx",
-          "columns": [
-            {
-              "expression": "tenant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "received_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "classpass_inbound_emails_tenant_id_tenants_id_fk": {
-          "name": "classpass_inbound_emails_tenant_id_tenants_id_fk",
-          "tableFrom": "classpass_inbound_emails",
-          "tableTo": "tenants",
-          "columnsFrom": [
-            "tenant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.classpass_settings": {
-      "name": "classpass_settings",
-      "schema": "",
-      "columns": {
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "address_token": {
-          "name": "address_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "gmail_confirmation_code": {
-          "name": "gmail_confirmation_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gmail_confirmation_at": {
-          "name": "gmail_confirmation_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "classpass_settings_tenant_unique": {
-          "name": "classpass_settings_tenant_unique",
-          "columns": [
-            {
-              "expression": "tenant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "classpass_settings_address_token_unique": {
-          "name": "classpass_settings_address_token_unique",
-          "columns": [
-            {
-              "expression": "address_token",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "classpass_settings_tenant_id_tenants_id_fk": {
-          "name": "classpass_settings_tenant_id_tenants_id_fk",
-          "tableFrom": "classpass_settings",
-          "tableTo": "tenants",
-          "columnsFrom": [
-            "tenant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
     }
   },
   "enums": {
@@ -15605,6 +15383,14 @@
         "online",
         "buffer",
         "overbook"
+      ]
+    },
+    "public.booking_source": {
+      "name": "booking_source",
+      "schema": "public",
+      "values": [
+        "direct",
+        "classpass"
       ]
     },
     "public.booking_state": {
@@ -15670,31 +15456,6 @@
         "credit_bundle",
         "unlimited",
         "trial"
-      ]
-    },
-    "public.classpass_email_kind": {
-      "name": "classpass_email_kind",
-      "schema": "public",
-      "values": [
-        "booking",
-        "cancellation",
-        "roster",
-        "marketing",
-        "gmail_confirmation",
-        "other"
-      ]
-    },
-    "public.classpass_email_outcome": {
-      "name": "classpass_email_outcome",
-      "schema": "public",
-      "values": [
-        "imported",
-        "cancelled",
-        "noop",
-        "ignored",
-        "refused",
-        "unparsed",
-        "review"
       ]
     },
     "public.client_font_size": {
