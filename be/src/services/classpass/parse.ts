@@ -127,9 +127,81 @@ function member(pieces: string[]): { memberName: string | null; memberEmail: str
   return { memberName: name, memberEmail: email?.toLowerCase() ?? null }
 }
 
-/** The booking fields of a `ClassPass user reservation` email, each null when it can't be read. */
+/**
+ * The plain-text layout ClassPass sent from late 2025 to early 2026:
+ *
+ * ```
+ * You received a ClassPass reservation
+ * Reservation key: <32 hex>
+ * Reservation details:
+ *   Arm Balance
+ *   at <Studio> - <Location>
+ *   Dec 4, 2025 @ 6:30 PM
+ * Reservation made by:
+ *   Name: <Member Name>
+ *   Email: <member@example.com>
+ * ```
+ *
+ * A label's value is on its own line or after the colon on the label's line.
+ */
+const SECTIONS_2025 = ['reservation key', 'reservation details', 'reservation made by']
+const LABELS_2025 = [...SECTIONS_2025, 'name', 'email']
+
+/** `Label: value` on one line, or `Label:` with the value as the next piece. */
+function labelled(pieces: string[], name: string): string | null {
+  for (let i = 0; i < pieces.length; i++) {
+    const piece = pieces[i]!
+    if (label(piece) === name) {
+      const next = pieces[i + 1]
+      return next === undefined || LABELS_2025.includes(label(next)) ? null : next
+    }
+    const inline = new RegExp(`^${name}\\s*:\\s*(.+)$`, 'i').exec(piece)
+    if (inline) return inline[1]!.trim()
+  }
+  return null
+}
+
+/** The pieces after the label `name` up to the next label of the layout. */
+function section(pieces: string[], name: string): string[] {
+  const at = pieces.findIndex(p => label(p) === name)
+  if (at < 0) return []
+  const end = pieces.findIndex((p, i) => i > at && SECTIONS_2025.some(l => label(p) === l || label(p).startsWith(`${l}:`)))
+  return pieces.slice(at + 1, end < 0 ? undefined : end)
+}
+
+const AT_LOCATION = /^at\s+(.+)$/i
+
+function parse2025(pieces: string[]): ClassPassBookingFields {
+  const reservationId = labelled(pieces, 'reservation key')
+  const details = section(pieces, 'reservation details')
+  const time = when(details.find(p => WHEN.test(p)) ?? null)
+  const location = details.map(p => AT_LOCATION.exec(p)?.[1]?.trim()).find(Boolean) ?? null
+  const first = details[0]
+  const className = first !== undefined && !AT_LOCATION.test(first) && !WHEN.test(first) ? first : null
+  const madeBy = section(pieces, 'reservation made by')
+  const memberName = labelled(madeBy, 'name')
+  const memberEmail = labelled(madeBy, 'email')
+  return {
+    reservationId: reservationId && RESERVATION_ID.test(reservationId) ? reservationId.toLowerCase() : null,
+    className,
+    locationName: location,
+    localDate: time?.localDate ?? null,
+    localTime: time?.localTime ?? null,
+    memberName,
+    memberEmail: memberEmail && EMAIL.test(memberEmail) ? memberEmail.toLowerCase() : null,
+  }
+}
+
+/** Whether the email is in the 2025 plain-text layout, by its `Reservation key` label. */
+const is2025 = (pieces: string[]) => pieces.some(p => /^reservation key\s*:/i.test(p) || label(p) === 'reservation key')
+
+/**
+ * The booking fields of a `ClassPass user reservation` email, in either
+ * layout, each null when it can't be read.
+ */
 export function parseClassPassBooking(message: { html: string | null; text: string | null }): ClassPassBookingFields {
   const pieces = textPieces(message)
+  if (is2025(pieces)) return parse2025(pieces)
   const reservationId = after(pieces, 'Reservation ID')
   const time = when(after(pieces, 'Date and time'))
   return {
