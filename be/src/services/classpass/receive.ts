@@ -15,7 +15,7 @@ import { ensureClassPassSettings } from './settings'
  * and records it with its outcome, in the caller's Tenant transaction.
  *
  * One that can't be trusted is `refused`, and Gmail's forwarding confirmation
- * gives up its code to the ClassPass page (#409). With the import on, a
+ * gives up its code and its confirmation link to the ClassPass page (#409). With the import on, a
  * booking email books the member (#411, `import-booking.ts`): `imported`, or
  * `noop` for a reservation already booked, or `review` / `unparsed` with the
  * reason it could not be placed. A cancellation cancels the ClassPass booking
@@ -78,7 +78,11 @@ export function addressOf(header: string): string {
   return (angled?.[1] ?? header).trim().toLowerCase()
 }
 
-type Decision = { kind: ClassPassEmailKind; outcome: ClassPassEmailOutcome; gmailCode?: string }
+type Decision = {
+  kind: ClassPassEmailKind
+  outcome: ClassPassEmailOutcome
+  gmail?: { code: string | null; link: string | null }
+}
 
 /**
  * What the email is and what becomes of it.
@@ -104,18 +108,39 @@ function decide(message: InboundEmail): Decision {
 
   if (from === GMAIL_FORWARDING_SENDER && /gmail forwarding confirmation/i.test(message.subject)) {
     if (!signed) return { kind: 'gmail_confirmation', outcome: 'refused' }
-    return { kind: 'gmail_confirmation', outcome: 'ignored', gmailCode: gmailCode(message) }
+    return { kind: 'gmail_confirmation', outcome: 'ignored', gmail: { code: gmailCode(message), link: gmailLink(message) } }
   }
 
   return { kind: 'other', outcome: 'refused' }
 }
 
-/** `Confirmation code: 123456789` in the body, or `(#123456789)` in the subject. */
-function gmailCode(message: InboundEmail): string | undefined {
+/** `Confirmation code: 123456789` in the body, or `(#123456789)` in the subject. Gmail's newer confirmation has neither. */
+function gmailCode(message: InboundEmail): string | null {
   const body = `${message.text ?? ''}\n${(message.html ?? '').replace(/<[^>]*>/g, ' ')}`
-  return (
-    /confirmation code:\s*(\d{4,})/i.exec(body)?.[1] ?? /\(#(\d{4,})\)/.exec(message.subject)?.[1] ?? undefined
-  )
+  return /confirmation code:\s*(\d{4,})/i.exec(body)?.[1] ?? /\(#(\d{4,})\)/.exec(message.subject)?.[1] ?? null
+}
+
+const GMAIL_CONFIRMATION_LINK = /https:\/\/mail-settings\.google\.com\/mail\/vf-[^\s"'<>]+/
+
+/**
+ * Gmail's confirmation link, from the text or the html: only a link to
+ * `https://mail-settings.google.com/mail/vf-…`, since the page offers it to
+ * the Admin to open, and anything else in the email is not Gmail's to vouch for.
+ */
+function gmailLink(message: InboundEmail): string | null {
+  for (const body of [message.text ?? '', (message.html ?? '').replace(/&amp;/g, '&')]) {
+    const found = GMAIL_CONFIRMATION_LINK.exec(body)?.[0]
+    if (!found) continue
+    try {
+      const url = new URL(found)
+      if (url.protocol === 'https:' && url.hostname === 'mail-settings.google.com' && url.pathname.startsWith('/mail/vf-')) {
+        return url.href
+      }
+    } catch {
+      // Not a URL after all: look in the other body.
+    }
+  }
+  return null
 }
 
 /** Runs inside the studio's Tenant context (`withTenant`), as every service does. */
@@ -174,10 +199,16 @@ export async function receiveClassPassEmail(tenantId: string, message: InboundEm
     return { ...kept, duplicate: true }
   }
 
-  if (decision.gmailCode) {
+  // A newer confirmation replaces the last one whole: its code and link go together.
+  if (decision.gmail && (decision.gmail.code || decision.gmail.link)) {
     await db
       .update(classpassSettings)
-      .set({ gmailConfirmationCode: decision.gmailCode, gmailConfirmationAt: message.receivedAt, updatedAt: new Date() })
+      .set({
+        gmailConfirmationCode: decision.gmail.code,
+        gmailConfirmationLink: decision.gmail.link,
+        gmailConfirmationAt: message.receivedAt,
+        updatedAt: new Date(),
+      })
       .where(eq(classpassSettings.tenantId, tenantId))
   }
 

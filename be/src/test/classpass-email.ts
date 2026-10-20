@@ -231,31 +231,58 @@ export function classPassRoster(options: ClassPassRosterOptions = {}): InboundEm
   }
 }
 
+/** A confirmation link in the shape Gmail writes it. */
+export const GMAIL_CONFIRMATION_LINK =
+  'https://mail-settings.google.com/mail/vf-%5BANGjdJ8_placeholder-token%5D-placeholderSignature0123456789'
+
 /**
  * The email Gmail sends a new forwarding address, asking the mailbox's owner
- * to confirm it. Its code is what the Admin types back into Gmail.
+ * to confirm it. In the `code` format (Gmail's older one) it carries a code the
+ * Admin types back into Gmail, and a link; in the `link` format (seen from
+ * 2026) only the link, in the text and as the html's anchor.
  */
 export function gmailForwardingConfirmation(
-  options: { code?: string; owner?: string; dkim?: Verdict | null; from?: string; messageId?: string } = {},
+  options: {
+    format?: 'code' | 'link'
+    code?: string
+    link?: string
+    owner?: string
+    dkim?: Verdict | null
+    from?: string
+    messageId?: string
+  } = {},
 ): InboundEmail {
+  const format = options.format ?? 'code'
   const code = options.code ?? '493017286'
+  const link = options.link ?? GMAIL_CONFIRMATION_LINK
   const owner = options.owner ?? 'frontdesk@northwind.test'
   const from = options.from ?? 'Gmail Team <forwarding-noreply@google.com>'
   const dkim = options.dkim === undefined ? 'pass' : options.dkim
-  const subject = `(#${code}) Gmail Forwarding Confirmation - Receive Mail from ${owner}`
+  const subject =
+    format === 'code'
+      ? `(#${code}) Gmail Forwarding Confirmation - Receive Mail from ${owner}`
+      : `(Gmail Forwarding confirmation – Receive mail from ${owner}`
   const text = [
     `${owner} has requested to automatically forward mail to your email address.`,
-    `Confirmation code: ${code}`,
+    ...(format === 'code' ? [`Confirmation code: ${code}`] : []),
     '',
     'To allow this, please click the link below to confirm the request.',
+    '',
+    link,
   ].join('\n')
+  const html =
+    format === 'code'
+      ? null
+      : `<p>${owner} has requested to automatically forward mail to your email address.</p>` +
+        `<p>To allow ${owner} to automatically forward mail to your address, please click the link below to confirm the request:</p>` +
+        `<p><a href="${link.replace(/&/g, '&amp;')}">${link.replace(/&/g, '&amp;')}</a></p>`
   return {
     messageId: options.messageId ?? `<${randomUUID()}@google.com>`,
     from,
     to: [owner],
     subject,
     text,
-    html: null,
+    html,
     headers: { from, subject },
     authentication: dkim === null ? null : { dkim, spf: 'pass', dmarc: dkim === 'pass' ? 'pass' : 'fail' },
     receivedAt: new Date(),

@@ -127,6 +127,23 @@ export function mapClassPassReviewLocation(
   return api.post(`/portal/admin/classpass/review/${id}/location`, { location_id: locationId });
 }
 
+/**
+ * The ClassPass location names open review items wait on, each once (as the
+ * backend matches them: case and spacing aside), with the oldest item that
+ * names it: mapping from that item maps the name for every item.
+ */
+export function unmappedLocations(items: ClassPassReviewItem[]): { name: string; itemId: string; count: number }[] {
+  const byName = new Map<string, { name: string; itemId: string; count: number }>();
+  for (const item of items) {
+    if (item.reason !== "unmapped_location" || !item.location_name || item.resolved_at) continue;
+    const key = item.location_name.trim().replace(/\s+/g, " ").toLowerCase();
+    const seen = byName.get(key);
+    if (seen) seen.count += 1;
+    else byName.set(key, { name: item.location_name.trim(), itemId: item.id, count: 1 });
+  }
+  return [...byName.values()];
+}
+
 /** The toast after mapping a location from a review item. */
 export function mappedSummary(items: ClassPassReviewItem[]): string {
   const imported = items.filter((i) => i.resolved_at).length;

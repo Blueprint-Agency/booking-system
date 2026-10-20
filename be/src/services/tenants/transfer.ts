@@ -471,13 +471,14 @@ export async function importTenant(
   const rows = upgradeArchiveRows(archive.rows, { tenantName: archive.manifest.tenant.name })
   // A ClassPass address is the inbound webhook's routing key, unique across the
   // platform (#409). A restored studio gets a fresh one, so it never shares an
-  // address with the studio it came from; Gmail's code belonged to the old
-  // address, so it goes too.
+  // address with the studio it came from; Gmail's code and confirmation link
+  // belonged to the old address, so they go too.
   if (rows.classpass_settings) {
     rows.classpass_settings = rows.classpass_settings.map(row => ({
       ...row,
       address_token: newAddressToken(),
       gmail_confirmation_code: null,
+      gmail_confirmation_link: null,
       gmail_confirmation_at: null,
     }))
   }

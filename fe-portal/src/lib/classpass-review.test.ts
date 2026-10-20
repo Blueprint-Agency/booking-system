@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canBook, classChoices, classSearchWindow, mappedSummary, reviewReasonLabel, type ClassPassReviewItem } from "./classpass-review";
+import {
+  canBook,
+  classChoices,
+  classSearchWindow,
+  mappedSummary,
+  reviewReasonLabel,
+  unmappedLocations,
+  type ClassPassReviewItem,
+} from "./classpass-review";
 import type { ApiScheduleEntry } from "./use-schedule";
 
 const item: ClassPassReviewItem = {
@@ -103,4 +111,26 @@ test("mapping a location from a review item says how many it imported and how ma
   const done = { ...item, resolved_at: "2026-09-10T03:00:00Z" };
   assert.equal(mappedSummary([done]), "Location mapped. 1 booking imported.");
   assert.equal(mappedSummary([done, done, item]), "Location mapped. 2 bookings imported, 1 still for review.");
+});
+
+test("CPS-110 the setup guide lists each unmapped ClassPass location name once, with how many items wait on it", () => {
+  const unmapped = (id: string, location_name: string | null): ClassPassReviewItem => ({
+    ...item,
+    id,
+    reason: "unmapped_location",
+    location_name,
+  });
+  assert.deepEqual(
+    unmappedLocations([
+      unmapped("a", "Northwind - Harbour"),
+      { ...item, id: "b" },
+      unmapped("c", "northwind  -  harbour"),
+      unmapped("d", "Northwind - Annex"),
+      unmapped("e", null),
+    ]),
+    [
+      { name: "Northwind - Harbour", itemId: "a", count: 2 },
+      { name: "Northwind - Annex", itemId: "d", count: 1 },
+    ],
+  );
 });

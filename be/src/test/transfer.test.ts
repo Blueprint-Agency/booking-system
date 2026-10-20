@@ -393,8 +393,8 @@ describe('moving a studio between deployments', () => {
   test('CPS-15 a studio copied beside its source gets a ClassPass address of its own, with no Gmail code', options, async () => {
     const source = await studioWithData(`cpsrc-${Date.now()}`)
     await harness.db.execute(sql`
-    INSERT INTO classpass_settings (tenant_id, address_token, enabled, gmail_confirmation_code, gmail_confirmation_at)
-    VALUES (${source}, ${randomUUID().replace(/-/g, '')}, true, '493017286', now())
+    INSERT INTO classpass_settings (tenant_id, address_token, enabled, gmail_confirmation_code, gmail_confirmation_link, gmail_confirmation_at)
+    VALUES (${source}, ${randomUUID().replace(/-/g, '')}, true, '493017286', 'https://mail-settings.google.com/mail/vf-%5Bx%5D-y', now())
   `)
     const archive = await transfer.exportTenant(source)
     assert.equal(archive.rows.classpass_settings?.length, 1, 'the settings travel with the studio')
@@ -402,8 +402,14 @@ describe('moving a studio between deployments', () => {
     const target = await emptyTenant(`cpdst-${Date.now()}`)
     await transfer.importTenant(target, archive)
 
-    const rows = await harness.db.execute<{ tenant_id: string; address_token: string; enabled: boolean; gmail_confirmation_code: string | null }>(
-      sql`SELECT tenant_id, address_token, enabled, gmail_confirmation_code FROM classpass_settings WHERE tenant_id IN (${source}, ${target})`,
+    const rows = await harness.db.execute<{
+      tenant_id: string
+      address_token: string
+      enabled: boolean
+      gmail_confirmation_code: string | null
+      gmail_confirmation_link: string | null
+    }>(
+      sql`SELECT tenant_id, address_token, enabled, gmail_confirmation_code, gmail_confirmation_link FROM classpass_settings WHERE tenant_id IN (${source}, ${target})`,
     )
     const copy = rows.find(r => r.tenant_id === target)
     const original = rows.find(r => r.tenant_id === source)
@@ -411,6 +417,7 @@ describe('moving a studio between deployments', () => {
     assert.notEqual(copy.address_token, original.address_token, 'the copy never shares an address with its source')
     assert.equal(copy.enabled, true)
     assert.equal(copy.gmail_confirmation_code, null)
+    assert.equal(copy.gmail_confirmation_link, null)
     assert.equal(original.gmail_confirmation_code, '493017286', 'the source is untouched')
   })
 

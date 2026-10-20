@@ -1,0 +1,1 @@
+ALTER TABLE "classpass_settings" ADD COLUMN "gmail_confirmation_link" text;
