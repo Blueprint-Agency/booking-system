@@ -49,6 +49,17 @@ export function seatTag(seat: BookingSeat): string | null {
   return null;
 }
 
+/**
+ * How a booking reached the studio (#408): `classpass` is a ClassPass booking,
+ * which ClassPass paid for — no package, no credits.
+ */
+export type BookingSource = "direct" | "classpass";
+
+/** The badge a booking's source earns on the roster and the member's profile. Direct carries none. */
+export function sourceBadge(source: BookingSource): string | null {
+  return source === "classpass" ? "ClassPass" : null;
+}
+
 /* ------------------------------ Staff booking ------------------------------ */
 
 /** Add member's confirmation, naming the seat the booking actually took. */

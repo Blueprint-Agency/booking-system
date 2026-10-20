@@ -23,7 +23,7 @@ import { db } from '../../db'
 import { now as clockNow } from '../../lib/clock'
 import { classCancelWindow } from '../policy/cancel-window'
 import { staffCancelPreview, type StaffCancelPreview } from './staff-cancel-preview'
-import type { CancellationSource } from '../../db/enums'
+import type { BookingSource, CancellationSource } from '../../db/enums'
 import {
   cancellationRecord,
   pendingRequestEnd,
@@ -61,6 +61,8 @@ export interface MemberBookingRow {
   /** What the staff cancel dialog asks from; null where no cancel is offered (#320). */
   cancelPreview: StaffCancelPreview | null
   code: string
+  /** How the booking reached the studio; the profile badges a ClassPass booking (#408). */
+  source: BookingSource
   bookedAt: Date
   cancelledAt: Date | null
 }
@@ -82,6 +84,7 @@ type Raw = {
   package_name: string | null
   package_kind: string | null
   code: string
+  source: BookingSource
   booked_at: string | Date
   cancelled_at: string | Date | null
   record_source: CancellationSource | null
@@ -242,6 +245,8 @@ async function withdrawnPtRequests(tenantId: string, clientId: string, limit: nu
       packageKind: r.package_kind,
       cancelPreview: null,
       code: null,
+      // A private-session request: only ever made through ReserveToday.
+      source: 'direct',
       bookedAt: new Date(r.created_at),
       cancelledAt: resolvedAt,
       cancellation: summarizeCancellation({
@@ -304,6 +309,7 @@ async function readBookings(
       coalesce(cpk.name, ppk.name) as package_name,
       cp.kind as package_kind,
       b.code,
+      b.source,
       b.booked_at,
       b.cancelled_at,
       x.source as record_source,
@@ -363,6 +369,7 @@ async function readBookings(
       packageName: r.package_name,
       packageKind: r.package_kind,
       code: r.code,
+      source: r.source,
       bookedAt: new Date(r.booked_at),
       cancelledAt: toDate(r.cancelled_at),
     }

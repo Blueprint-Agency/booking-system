@@ -98,6 +98,15 @@ export type CancelInput =
       actorStaffId: string
       credit: StaffCredit
     })
+  | (CancelBase & {
+      /**
+       * The member cancelled on ClassPass, and ClassPass's email said so
+       * (#412). A ClassPass booking spent nothing, so there is nothing to
+       * return or keep: `n_a`. Not the member's own cancel here, so never a
+       * Late cancel and never toward the Cancellation Cap.
+       */
+      source: 'classpass'
+    })
 
 export interface CancelResult {
   refundOutcome: RefundOutcome
@@ -130,8 +139,8 @@ export async function cancelBookingInTx(
 ): Promise<{ result: CancelResult; promotions: Promotion[] }> {
   const { bookingId, source, packageVoided, studioReason } = input
   const clientId = input.source === 'client' ? input.clientId : undefined
-  const actorStaffId = input.source === 'client' ? undefined : input.actorStaffId
-  const credit = input.source === 'client' ? undefined : input.credit
+  const actorStaffId = 'actorStaffId' in input ? input.actorStaffId : undefined
+  const credit = 'credit' in input ? input.credit : undefined
 
   // 1. Lock the booking row.
   const [bk] = await tx
@@ -146,6 +155,7 @@ export async function cancelBookingInTx(
       checkInState: bookings.checkInState,
       seat: bookings.seat,
       used: bookings.creditsOrSessionsUsed,
+      bookedVia: bookings.source,
     })
     .from(bookings)
     .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bookingId)))
@@ -155,6 +165,13 @@ export async function cancelBookingInTx(
   if (!bk) throw new NotFoundError('booking_not_found')
   if (source === 'client' && clientId && bk.clientId !== clientId) {
     throw new ForbiddenError('not_your_booking')
+  }
+  // A ClassPass booking is the member's to cancel on ClassPass, whose
+  // cancellation email cancels it here (#412); staff can still cancel it.
+  if (source === 'client' && bk.bookedVia === 'classpass') {
+    throw new ConflictError('classpass_booking_cancel_on_classpass', {
+      message: 'This booking was made on ClassPass. Cancel it in the ClassPass app.',
+    })
   }
   // An instructor cancels on the classes they lead; a private session's
   // booking is cancelled as a PT request, not here.

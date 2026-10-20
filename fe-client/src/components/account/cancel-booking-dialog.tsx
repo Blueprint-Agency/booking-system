@@ -15,6 +15,7 @@ import type { CancellationPolicy } from "@/lib/cancellation-policy";
 import {
   classCancelNotice,
   classCancelResult,
+  CLASSPASS_CANCEL_LINE,
   isLate,
   type CancelPreview,
 } from "@/lib/cancellation-copy";
@@ -93,6 +94,8 @@ export function CancelBookingDialog({
         outcome = { ...refused, text: "This class has already started, so it can no longer be cancelled." };
       } else if (code === ERROR_CODES.not_cancellable) {
         outcome = { ...refused, text: "This booking can no longer be cancelled." };
+      } else if (code === ERROR_CODES.classpass_booking_cancel_on_classpass) {
+        outcome = { ...refused, stale: false, text: CLASSPASS_CANCEL_LINE };
       } else {
         outcome = { ...refused, stale: false, text: "Couldn't cancel this booking. Please try again." };
       }

@@ -805,6 +805,8 @@ The previously-specified `instructor_availability_recurring` and `instructor_ava
 | qr_token | text | unique, not null — encoded into QR |
 | code | text | unique, not null — `RT-` + 6 Crockford-base32 chars (e.g. `RT-A4F2K9`); see §7 Per-booking codes for alphabet + lookup rules |
 | purchase_id | uuid | FK → `purchases`, unique where not null — set only on a workshop booking, whose booking IS the purchase. Null for class and PT bookings, which a plan paid for (#92) |
+| source | enum `booking_source` | `direct` (default, every booking made through ReserveToday) or `classpass` — a **ClassPass booking**: a class seat ClassPass paid for, with no package and 0 credits used (#408) |
+| classpass_reservation_id | text | nullable — ClassPass's reservation ID, set exactly when `source` = `classpass`; unique per Tenant where not null (`bookings_classpass_reservation_unique`), so one reservation books once. CHECK `bookings_classpass_shape`: a ClassPass booking is a class booking with no `client_package_id` |
 | booked_at | timestamptz | not null |
 | cancelled_at | timestamptz | nullable |
 
@@ -832,7 +834,7 @@ Workshop bookings cover **the tier**, not individual days. Per-day attendance / 
 | booking_id | uuid | FK → bookings.id |
 | client_id | uuid | FK → clients.id (denormalised for query) |
 | kind | enum | `class`, `pt` (workshops not represented; admin-cancel still logged but excluded) |
-| source | enum | `client`, `admin`, `instructor`, `system` (a Void, a Remove, a Package rule change; #350) — only `client` counts toward the cap |
+| source | enum | `client`, `admin`, `instructor`, `system` (a Void, a Remove, a Package rule change; #350), `classpass` (ClassPass's cancellation email for a ClassPass booking, refund outcome `n_a`; #412, migration 0125) — only `client` counts toward the cap |
 | cancelled_by_staff_id | uuid | FK → staff_users.id; the staff member behind an `admin` / `instructor` cancel, null for `client`, `system` and rows before #350 |
 | was_within_window, was_within_cap, refund_fired | boolean | not null |
 | cancelled_at | timestamptz | not null |
@@ -977,6 +979,7 @@ credit_expiry_reminder                 # also fires for trial pass expiry — `r
 instructor_invite
 admin_invite
 checkin_nag
+classpass_overbooked                   # to every Admin when a ClassPass booking takes an Overbook seat (#411, migration 0124 for older studios)
 referral_credited
 trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_confirmed; trial copy is friendlier ("welcome to your first 3 classes")
 corporate_purchase_confirmed           # a paid corporate package: no credits, the studio arranges the session (be-client § Corporate branch)
@@ -1005,6 +1008,7 @@ purchase_receipt                       # Merch (paid or free) and a standalone C
 | `admin_cancel_workshop` | `services/workshops/cancel.ts` | every attendee | `amount_paid` in `sgdText` form; nothing is refunded automatically (#272), so it says the refund is being arranged |
 | `pt_request_cancelled` | `services/pt-sessions/cancel.ts`, a member's request cancelled before or after scheduling by the member, an admin or the instructor (not an expiry or a Remove) | the requester, and a 2-on-1 partner | `session_line`, and `refund_line` only when sessions came back |
 | `checkin_nag` | the `sendCheckInNags` job (§5) | the Instructor, each active Admin copied | the session, its date and the members still unmarked |
+| `classpass_overbooked` | `services/classpass/import-booking.ts`, a ClassPass booking that took an Overbook seat (#411; migration 0124 for older studios) | every active Admin | the ClassPass member, the class and its time; links the ClassPass page (`classpass_url`) |
 | `credit_expiry_reminder` | `services/packages/expire.ts:sendLapsingAlerts` | the member | `remaining_line`, composed with `notifications/purchase-email.ts:contentsLine` |
 
 A staff cancel of one booking (`/bookings/:id/cancel`) sends nothing (#320).

@@ -31,6 +31,7 @@ import impersonate from './impersonate'
 import purchases from './purchases'
 import receipts from './receipts'
 import settings from './settings'
+import classpass from './classpass'
 
 /**
  * Role gating for the portal /admin subtree: a studio's admins run the whole
@@ -75,5 +76,7 @@ const app = new Hono()
   .route('/feature-flags', featureFlags)
   // The studio's own settings: the receipt details (#391).
   .route('/settings', settings)
+  // ClassPass import (#407): the studio's ClassPass address and what arrives at it.
+  .route('/classpass', classpass)
 
 export default app

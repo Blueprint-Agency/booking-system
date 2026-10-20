@@ -24,6 +24,7 @@ const STAFF_SLUGS: ReadonlySet<string> = new Set([
   'leave_rejected',
   'leave_revoked',
   'checkin_nag',
+  'classpass_overbooked',
   'staff_two_factor_code',
   'staff_password_reset',
 ])

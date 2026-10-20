@@ -1,0 +1,1 @@
+ALTER TYPE "public"."cancellation_source" ADD VALUE 'classpass';

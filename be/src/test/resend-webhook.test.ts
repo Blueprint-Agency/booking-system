@@ -2,8 +2,11 @@ import assert from 'node:assert/strict'
 import { createHmac, randomBytes, randomUUID } from 'node:crypto'
 import { after, afterEach, before, describe, test } from 'node:test'
 import { eq } from 'drizzle-orm'
-import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import type { OutcomeAlert } from '../services/notifications/delivery-outcomes'
+import type { InboundEmail } from '../services/classpass/receive'
+import { classPassEmail } from './classpass-email'
+import { withEnv } from './with-env'
 
 /**
  * Resend's delivery webhook, through the real app: a signed event lands on
@@ -191,6 +194,115 @@ describe('resend delivery webhook', { skip: integrationTestsEnabled ? false : SK
     assert.equal(row.status, 'sent')
     assert.equal(row.outcomeAt, null)
     assert.deepEqual(alerts, [])
+  })
+
+  describe('inbound mail to a ClassPass address', () => {
+    withEnv({ CLASSPASS_INBOUND_DOMAIN: 'classpass-inbound.test' })
+    let settings!: typeof import('../services/classpass/settings')
+    let undoFetcher: () => void = () => {}
+    /** What the fetcher hands back, by Resend email id. */
+    const messages = new Map<string, InboundEmail>()
+    const fetched: string[] = []
+
+    before(async () => {
+      settings = inTenantContext(await import('../services/classpass/settings'))
+      const inbound = await import('../services/classpass/inbound')
+      undoFetcher = inbound.useInboundFetcher(async emailId => {
+        fetched.push(emailId)
+        const message = messages.get(emailId)
+        if (!message) throw new Error(`no message ${emailId}`)
+        return message
+      })
+    })
+
+    after(async () => {
+      undoFetcher()
+      for (const tenant of [harness.tenants.one, harness.tenants.two]) {
+        await harness.db.delete(schema.classpassInboundEmails).where(eq(schema.classpassInboundEmails.tenantId, tenant.id))
+        await harness.db.delete(schema.classpassSettings).where(eq(schema.classpassSettings.tenantId, tenant.id))
+      }
+    })
+
+    /** Resend's `email.received` for a forwarded message: To: is the studio's own mailbox, the envelope names the address. */
+    function received(address: string, message: InboundEmail) {
+      const emailId = randomUUID()
+      messages.set(emailId, message)
+      return JSON.stringify({
+        type: 'email.received',
+        created_at: new Date().toISOString(),
+        data: {
+          email_id: emailId,
+          created_at: new Date().toISOString(),
+          from: message.from,
+          to: message.to,
+          received_for: [address],
+          bcc: [],
+          cc: [],
+          message_id: message.messageId,
+          subject: message.subject,
+          attachments: [],
+        },
+      })
+    }
+
+    async function kept(tenantId: string) {
+      return harness.db
+        .select()
+        .from(schema.classpassInboundEmails)
+        .where(eq(schema.classpassInboundEmails.tenantId, tenantId))
+    }
+
+    test('CPS-16 an unsigned or badly signed email.received is refused, and nothing is fetched or kept', async () => {
+      const { one } = harness.tenants
+      const { address } = await settings.readClassPass(one.id)
+      const before = (await kept(one.id)).length
+      const body = received(address!, classPassEmail())
+
+      assert.equal((await post(body, {})).status, 400)
+      assert.equal((await post(body, sign(body, `whsec_${randomBytes(24).toString('base64')}`))).status, 400)
+      assert.equal((await post(body.replace('email.received', 'email.receivedx'), sign(body))).status, 400)
+
+      assert.deepEqual(fetched, [])
+      assert.equal((await kept(one.id)).length, before)
+    })
+
+    test("CPS-17 a signed email.received is kept by the studio whose address it names, and only that studio", async () => {
+      const { one, two } = harness.tenants
+      const { address } = await settings.readClassPass(two.id)
+      const email = classPassEmail({ location: 'Acme - Riverside' })
+      const northwindBefore = (await kept(one.id)).length
+
+      const res = await sendSigned(received(address!, email))
+      assert.equal(res.status, 200)
+
+      const rows = (await kept(two.id)).filter(r => r.messageId === email.messageId)
+      assert.equal(rows.length, 1)
+      // The import is off there: kept for an Admin to decide on.
+      assert.deepEqual([rows[0]!.outcome, rows[0]!.reviewReason], ['review', 'import_off'])
+      assert.equal((await kept(one.id)).length, northwindBefore)
+
+      // Redelivered: acknowledged, and still kept once.
+      assert.equal((await sendSigned(received(address!, email))).status, 200)
+      assert.equal((await kept(two.id)).filter(r => r.messageId === email.messageId).length, 1)
+    })
+
+    test('CPS-17 mail to an unknown or regenerated token is acknowledged and dropped', async () => {
+      const { one } = harness.tenants
+      const old = (await settings.readClassPass(one.id)).address!
+      await settings.regenerateClassPassAddress(one.id)
+      const before = (await kept(one.id)).length
+      fetched.length = 0
+
+      const toOld = await sendSigned(received(old, classPassEmail()))
+      assert.equal(toOld.status, 200)
+      const toNobody = await sendSigned(received('0123456789abcdef0123456789abcdef@classpass-inbound.test', classPassEmail()))
+      assert.equal(toNobody.status, 200)
+      const elsewhere = await sendSigned(received('frontdesk@northwind.test', classPassEmail()))
+      assert.equal(elsewhere.status, 200)
+
+      assert.deepEqual(fetched, [])
+      assert.equal((await kept(one.id)).length, before)
+    })
   })
 
   test('a suppressed send is filed and alerts; a complaint after delivery still lands', async () => {

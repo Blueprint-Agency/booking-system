@@ -31,6 +31,8 @@ export interface ApiBooking {
   code: string;
   /** When the studio's class window opens: a cancel after it is a late cancellation. */
   cancel_deadline: string;
+  /** `classpass`: booked on ClassPass, and cancelled there, not here. */
+  source?: "direct" | "classpass";
   /**
    * Only on `GET /me/bookings/cancelled`: the cancellation's summary (#349) —
    * when, who, and its two lines as the server words them.

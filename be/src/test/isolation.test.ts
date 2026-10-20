@@ -1,4 +1,5 @@
 import assert from 'node:assert'
+import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq } from 'drizzle-orm'
 import {
@@ -1547,6 +1548,93 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
       assert.ok(afterOwn?.readAt)
     } finally {
       await harness.db.delete(schema.inboxItems).where(eq(schema.inboxItems.id, id))
+    }
+  })
+
+  test("CPS-18 mail to acme's ClassPass address is never visible to northwind, even the same email forwarded to both", async () => {
+    const { withTenant } = await import('../db')
+    const { classPassEmail } = await import('./classpass-email')
+    const receive = await import('../services/classpass/receive')
+    const settings = await import('../services/classpass/settings')
+    const inOne = <T>(fn: () => Promise<T>) => withTenant(one.tenantId, fn)
+    const inTwo = <T>(fn: () => Promise<T>) => withTenant(two.tenantId, fn)
+
+    try {
+      const oneBefore = await inOne(() => settings.readClassPass(one.tenantId))
+      const twoBefore = await inTwo(() => settings.readClassPass(two.tenantId))
+
+      const email = classPassEmail()
+      await inTwo(() => receive.receiveClassPassEmail(two.tenantId, email))
+      const oneAfter = await inOne(() => settings.readClassPass(one.tenantId))
+      assert.deepEqual(oneAfter.counts, oneBefore.counts)
+      // A booking email with acme's import off: kept there for review (`import_off`).
+      assert.equal((await inTwo(() => settings.readClassPass(two.tenantId))).counts.review, twoBefore.counts.review + 1)
+
+      // Two studios forwarding one email each keep their own copy: the
+      // Message-ID is unique per studio, not across them.
+      const atNorthwind = await inOne(() => receive.receiveClassPassEmail(one.tenantId, email))
+      assert.equal(atNorthwind.duplicate, false)
+
+      // Northwind's context, naming acme: RLS lets it see and change none of acme's rows.
+      const crossRead = await inOne(() => settings.readClassPass(two.tenantId)).catch((err: unknown) => err)
+      assert.ok(crossRead instanceof Error, 'reading another studio\'s ClassPass settings is refused')
+      const rows = await harness.db
+        .select()
+        .from(schema.classpassInboundEmails)
+        .where(eq(schema.classpassInboundEmails.messageId, email.messageId))
+      assert.deepEqual(rows.map(r => r.tenantId).sort(), [one.tenantId, two.tenantId].sort())
+    } finally {
+      for (const tenantId of [one.tenantId, two.tenantId]) {
+        await harness.db.delete(schema.classpassInboundEmails).where(eq(schema.classpassInboundEmails.tenantId, tenantId))
+        await harness.db.delete(schema.classpassSettings).where(eq(schema.classpassSettings.tenantId, tenantId))
+      }
+    }
+  })
+
+  test("CPS-26 northwind and acme each map the same ClassPass location name to their own Location, and neither sees, changes or maps to the other's", async () => {
+    const { withTenant } = await import('../db')
+    const mappings = await import('../services/classpass/locations')
+    const inOne = <T>(fn: () => Promise<T>) => withTenant(one.tenantId, fn)
+    const inTwo = <T>(fn: () => Promise<T>) => withTenant(two.tenantId, fn)
+    const name = `isolation ${randomUUID().slice(0, 8)} - harbour`
+
+    try {
+      const atOne = await inOne(() => mappings.addClassPassLocationMapping(one.tenantId, { locationName: name, locationId: one.locationId }))
+      // The same name is unique per studio, not across them.
+      const atTwo = await inTwo(() => mappings.addClassPassLocationMapping(two.tenantId, { locationName: name, locationId: two.locationId }))
+
+      const listedAtOne = await inOne(() => mappings.listClassPassLocationMappings(one.tenantId))
+      assert.ok(listedAtOne.some(m => m.id === atOne.id))
+      assert.equal(listedAtOne.some(m => m.id === atTwo.id), false)
+
+      // Northwind, naming acme's mapping or acme's Location, finds nothing.
+      await assert.rejects(
+        inOne(() => mappings.changeClassPassLocationMapping(one.tenantId, atTwo.id, { locationId: one.locationId })),
+        (err: any) => err.code === 'classpass_mapping_not_found',
+      )
+      await assert.rejects(
+        inOne(() => mappings.removeClassPassLocationMapping(one.tenantId, atTwo.id)),
+        (err: any) => err.code === 'classpass_mapping_not_found',
+      )
+      await assert.rejects(
+        inOne(() => mappings.changeClassPassLocationMapping(one.tenantId, atOne.id, { locationId: two.locationId })),
+        (err: any) => err.code === 'location_not_found',
+      )
+      // Northwind's context, naming acme: RLS shows it none of acme's rows.
+      assert.deepEqual(await inOne(() => mappings.listClassPassLocationMappings(two.tenantId)).catch(() => []), [])
+
+      const rows = await harness.db
+        .select()
+        .from(schema.classpassLocationMappings)
+        .where(eq(schema.classpassLocationMappings.locationName, name))
+      assert.deepEqual(
+        rows.map(r => [r.tenantId, r.locationId]).sort(),
+        [[one.tenantId, one.locationId], [two.tenantId, two.locationId]].sort(),
+      )
+    } finally {
+      await harness.db
+        .delete(schema.classpassLocationMappings)
+        .where(eq(schema.classpassLocationMappings.locationName, name))
     }
   })
 

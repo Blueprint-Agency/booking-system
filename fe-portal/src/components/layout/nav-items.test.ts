@@ -21,3 +21,13 @@ test("INV-54 the sidebar offers Receipts under Finance to an admin, and never to
   assert.equal(visibleToRole(receipts, "admin"), true);
   assert.equal(visibleToRole(receipts, "instructor"), false);
 });
+
+// The ClassPass page holds the studio's private forwarding address (#409).
+test("CPS-19 the sidebar offers ClassPass under Settings to an admin, and never to an instructor", () => {
+  const classpass = NAV_ITEMS.find((item) => item.href === "/admin/classpass");
+  assert.ok(classpass, "ClassPass is in the nav");
+  assert.equal(classpass.label, "ClassPass");
+  assert.equal(classpass.group, "Settings");
+  assert.equal(visibleToRole(classpass, "admin"), true);
+  assert.equal(visibleToRole(classpass, "instructor"), false);
+});

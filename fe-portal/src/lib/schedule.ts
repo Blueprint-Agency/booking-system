@@ -55,7 +55,7 @@ export function slotFromParams(params: URLSearchParams): Slot | null {
 
 import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError, type Api } from "@/lib/api";
-import type { BookingSeat, ClassSeats } from "@/lib/class-seats";
+import type { BookingSeat, BookingSource, ClassSeats } from "@/lib/class-seats";
 import type { ClassWaitlist } from "@/lib/class-waitlist";
 import type { StaffCancelPreview } from "@/lib/staff-cancel";
 import type { StaffCancellation } from "@/lib/cancellations";
@@ -81,6 +81,8 @@ export interface ScheduleClassAttendee {
   check_in_state: "pending" | "attended" | "no_show" | "n_a";
   code: string;
   seat: BookingSeat;
+  /** `classpass` on a ClassPass booking: ClassPass paid, no package did (#408). */
+  source: BookingSource;
   /** Booked by a waitlist promotion, automatic or by staff. */
   promoted_from_waitlist: boolean;
   /** What the cancel dialog asks from; null on a row Cancel is not offered on (#320). */

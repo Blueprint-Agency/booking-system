@@ -144,6 +144,12 @@ export const bookingStateEnum = pgEnum('booking_state', ['confirmed', 'cancelled
 // `buffer` is one of `capacity_buffer`, filled only by staff; `overbook` is an
 // admin's booking past both. Workshop and PT bookings stay `online`, unread.
 export const bookingSeatEnum = pgEnum('booking_seat', ['online', 'buffer', 'overbook'])
+// How a booking reached the studio (#408): `direct` through ReserveToday, as
+// every booking before this column did (the default is the backfill), or
+// `classpass`, a ClassPass booking: ClassPass paid for the seat, so no package
+// pays and no credit is spent.
+export const bookingSourceEnum = pgEnum('booking_source', ['direct', 'classpass'])
+export type BookingSource = (typeof bookingSourceEnum.enumValues)[number]
 // A class waitlist entry (spec-waitlist.md §3). Only `waiting` is in the line;
 // every other state is how it left: booked into a seat (`promoted`), left by the
 // member (`withdrawn`), taken out by staff or a class cancel (`removed`), or
@@ -160,7 +166,10 @@ export const checkinStateEnum = pgEnum('checkin_state', ['pending', 'attended', 
 export const cancellationKindEnum = pgEnum('cancellation_kind', ['class', 'pt'])
 // `system`: the studio's machinery, not a person — a Refund's Void, a
 // Complimentary Package's Remove, a Package rule change (#350).
-export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor', 'system'])
+// `classpass`: the member cancelled on ClassPass, and ClassPass's email said so
+// (#412). Settles as a staff cancel does, with nothing to return; never a Late
+// cancel, never toward the Cancellation Cap.
+export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor', 'system', 'classpass'])
 export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual'])
 export type RefundOutcome = (typeof refundOutcomeEnum.enumValues)[number]
 export type CancellationSource = (typeof cancellationSourceEnum.enumValues)[number]
@@ -277,6 +286,49 @@ export const inboxItemTypeEnum = pgEnum('inbox_item_type', [
 // `inbox_action` enum is no longer used — action_taken/action_at/action_by_staff_id columns
 // were removed from inbox_items per §4l. Enum left undeclared (drop in migration SQL).
 
+// ClassPass import (#407). What a forwarded email turned out to be, and what
+// became of it. `gmail_confirmation` is Gmail's own email asking the studio to
+// confirm the forwarding address; `other` is anything that is neither.
+export const classpassEmailKindEnum = pgEnum('classpass_email_kind', [
+  'booking',
+  'cancellation',
+  'roster',
+  'marketing',
+  'gmail_confirmation',
+  'other',
+])
+export const classpassEmailOutcomeEnum = pgEnum('classpass_email_outcome', [
+  'imported',
+  'cancelled',
+  'noop',
+  'ignored',
+  'refused',
+  'unparsed',
+  'review',
+])
+
+// Why a ClassPass email was not placed (#411): kept with an outcome of
+// `review` (or `unparsed`) so ClassPass review (#413) can list and filter it.
+// `unparsed`: a required field could not be read. `unmapped_location`: no
+// ClassPass location mapping for the email's location. `no_class` /
+// `ambiguous_class` / `class_cancelled`: the class at that Location and time.
+// `client_deleted`: the member's record here was removed. `already_booked`:
+// the member already holds a seat on that class. `import_off`: a trusted
+// booking or cancellation that arrived while the import was switched off, kept
+// for an Admin to decide on. `import_error`: placing it failed unexpectedly;
+// the email is kept and the error logged.
+export const classpassReviewReasonEnum = pgEnum('classpass_review_reason', [
+  'unparsed',
+  'unmapped_location',
+  'no_class',
+  'ambiguous_class',
+  'class_cancelled',
+  'client_deleted',
+  'already_booked',
+  'import_off',
+  'import_error',
+])
+
 // TS type aliases (handy for service layer)
 export type TenantStatus = (typeof tenantStatusEnum.enumValues)[number]
 export type StaffRole = (typeof staffRoleEnum.enumValues)[number]
@@ -301,3 +353,6 @@ export type LeaveType = (typeof leaveTypeEnum.enumValues)[number]
 export type LeaveStatus = (typeof leaveStatusEnum.enumValues)[number]
 export type LeaveHalfDay = (typeof leaveHalfDayEnum.enumValues)[number]
 export type ClassDifficulty = (typeof classDifficultyEnum.enumValues)[number]
+export type ClassPassEmailKind = (typeof classpassEmailKindEnum.enumValues)[number]
+export type ClassPassEmailOutcome = (typeof classpassEmailOutcomeEnum.enumValues)[number]
+export type ClassPassReviewReason = (typeof classpassReviewReasonEnum.enumValues)[number]

@@ -53,6 +53,7 @@ export type TemplateSlug =
   | 'admin_invite'
   | 'client_invite'
   | 'checkin_nag'
+  | 'classpass_overbooked'
   | 'referral_credited'
   | 'sign_in_code'
   | 'staff_two_factor_code'

@@ -80,6 +80,8 @@ export function classSeatsJson(d: ClassDetail) {
       check_in_state: a.checkInState,
       code: a.code,
       seat: a.seat,
+      // `classpass` on a ClassPass booking, which the roster badges (#408).
+      source: a.source,
       promoted_from_waitlist: a.promotedFromWaitlist,
       // Null on a row "Cancel booking" is not offered on (#320).
       cancel_preview: staffCancelPreviewJson(a.cancelPreview),

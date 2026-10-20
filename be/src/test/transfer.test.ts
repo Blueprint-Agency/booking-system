@@ -390,6 +390,52 @@ describe('moving a studio between deployments', () => {
     assert.equal(before?.n, originals.size)
   })
 
+  test('CPS-15 a studio copied beside its source gets a ClassPass address of its own, with no Gmail code', options, async () => {
+    const source = await studioWithData(`cpsrc-${Date.now()}`)
+    await harness.db.execute(sql`
+    INSERT INTO classpass_settings (tenant_id, address_token, enabled, gmail_confirmation_code, gmail_confirmation_at)
+    VALUES (${source}, ${randomUUID().replace(/-/g, '')}, true, '493017286', now())
+  `)
+    const archive = await transfer.exportTenant(source)
+    assert.equal(archive.rows.classpass_settings?.length, 1, 'the settings travel with the studio')
+
+    const target = await emptyTenant(`cpdst-${Date.now()}`)
+    await transfer.importTenant(target, archive)
+
+    const rows = await harness.db.execute<{ tenant_id: string; address_token: string; enabled: boolean; gmail_confirmation_code: string | null }>(
+      sql`SELECT tenant_id, address_token, enabled, gmail_confirmation_code FROM classpass_settings WHERE tenant_id IN (${source}, ${target})`,
+    )
+    const copy = rows.find(r => r.tenant_id === target)
+    const original = rows.find(r => r.tenant_id === source)
+    assert.ok(copy && original)
+    assert.notEqual(copy.address_token, original.address_token, 'the copy never shares an address with its source')
+    assert.equal(copy.enabled, true)
+    assert.equal(copy.gmail_confirmation_code, null)
+    assert.equal(original.gmail_confirmation_code, '493017286', 'the source is untouched')
+  })
+
+  test("CPS-27 a studio's ClassPass location mappings travel with it, each still naming its own copy of the Location", options, async () => {
+    const source = await studioWithData(`cplsrc-${Date.now()}`)
+    await harness.db.execute(sql`
+    INSERT INTO classpass_location_mappings (tenant_id, location_name, location_id)
+    SELECT tenant_id, 'northwind - harbour', id FROM locations WHERE tenant_id = ${source}
+  `)
+    const archive = await transfer.exportTenant(source)
+    const target = await emptyTenant(`cpldst-${Date.now()}`)
+    await transfer.importTenant(target, archive)
+
+    const rows = await harness.db.execute<{ tenant_id: string; location_name: string; location_tenant: string }>(sql`
+    SELECT m.tenant_id, m.location_name, l.tenant_id AS location_tenant
+    FROM classpass_location_mappings m JOIN locations l ON l.id = m.location_id
+    WHERE m.tenant_id IN (${source}, ${target})
+  `)
+    const copy = rows.find(r => r.tenant_id === target)
+    assert.ok(copy, 'the mapping is restored')
+    assert.equal(copy.location_name, 'northwind - harbour')
+    assert.equal(copy.location_tenant, target, "the copy's mapping names the copy's Location, not the source's")
+    assert.equal(rows.filter(r => r.tenant_id === source).length, 1, 'the source keeps its own')
+  })
+
   test('one archive restores into two studios, even with the source gone', options, async () => {
     // The case that broke the cleverer rule this replaced. Asking "are the
     // archive's rows still in the database" answers no for the *second* import as

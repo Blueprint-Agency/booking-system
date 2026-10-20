@@ -62,7 +62,7 @@ _Avoid_: credentials export, login migration
 _Avoid_: re-import, overwrite, reset
 
 **`tenant_id`**:
-The column on all 64 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**. The nine `staff` and `client` auth pool tables carry one too (migration 0076, `docs/adr/0006-per-studio-logins.md`): `NOT NULL`, but **defaulting to the Tenant context**, because Better Auth writes those rows itself and cannot be told a Tenant; outside a context the default is null and the insert still fails.
+The column on all 67 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**. The nine `staff` and `client` auth pool tables carry one too (migration 0076, `docs/adr/0006-per-studio-logins.md`): `NOT NULL`, but **defaulting to the Tenant context**, because Better Auth writes those rows itself and cannot be told a Tenant; outside a context the default is null and the insert still fails.
 
 **Tenant context**:
 The Tenant a request is about — held in two places at once, and they are set together.
@@ -432,6 +432,28 @@ _Avoid_: queue entry as a booking, waitlisted booking, standby
 **Promotion** (waitlist):
 Booking the head of a class's Waitlist into a freed Online Seat, automatically, inside the cancel that freed it — only outside the Cancellation Window, so the promoted member can always still cancel free. The **Default payer** is chosen at that moment, exactly as for a booking nobody picked a package for; a member with nothing **Eligible** is skipped and stays in line. The promoted booking is an ordinary booking. A freed Buffer or Overbook seat never promotes. Not to be confused with a **Promotion** in § Discounts (a price offer).
 _Avoid_: offer, claim, auto-book
+
+**ClassPass booking**:
+A class booking ClassPass sold and paid for (`bookings.source` `classpass`, #407), recorded on the studio's own class so the door works from one roster. Every other booking is `direct`. It carries ClassPass's reservation ID, unique within the Tenant, so one reservation books once. It is made by the booking path's ClassPass payer (`classPassBookClass`, `services/bookings/book.ts`): no package pays, no credit is spent, no Credit movement or Purchase is written and no finance figure moves. It takes seats in the staff order — Online, then Buffer, then Overbook — and is never refused: past both it takes an Overbook seat, which is the record that it overbooked. It is recorded on a class that has already started, booked over a clashing booking of the member's, settles no Waitlist entry, and sends the member nothing. Staff cancel it like any other, with no credit to choose about (`n_a`). Admins and Instructors see a ClassPass badge on it on the roster, and Admins on the member's profile.
+_Avoid_: aggregator booking, external booking, partner booking
+
+### ClassPass import
+
+**ClassPass address**:
+A studio's private inbound email address, `<token>@<CLASSPASS_INBOUND_DOMAIN>`, that the studio's Gmail forwards ClassPass's emails to (#409). The token is random, never the Slug, and is the only thing that names the studio: the Resend webhook finds the Tenant from it (`tenant_for_classpass_token`, migration 0122), so it is unique across the platform. An Admin can regenerate it, after which the old address belongs to no studio and mail to it is dropped; a studio restored from an archive gets a new one. Every email that reaches it is kept with its outcome (`classpass_inbound_emails`), once per Message-ID. Only mail From `noreply@info.classpass.com` with a passing DKIM verdict is trusted; anything else is kept as `refused`. Gmail's own forwarding confirmation is not imported: its code is shown on the ClassPass page.
+_Avoid_: inbound address, forwarding email, ClassPass inbox
+
+**ClassPass location mapping**:
+A studio's own row saying which of its Locations a name ClassPass writes in its emails means (`classpass_location_mappings`, #410), written by an Admin on the ClassPass page; nothing is seeded. ClassPass spells one location more than one way (`<Studio>-<Location>`, `<Studio> - <Location>`, an en dash, a name cut short to `<Studio> -`), so the name is stored normalised — lower case, single spaces, every dash `-` with a space either side (`normaliseClassPassLocation`, `services/classpass/location-name.ts`) — and is unique per studio in that form; the import normalises an email's name the same way to find it. A mapping names a live Location of the studio's own: an archived, deleted or other studio's Location is refused.
+_Avoid_: location alias, ClassPass venue
+
+**ClassPass review**:
+The ClassPass booking emails the import could not place, listed on the ClassPass page until an Admin closes each one (#413). An item is open while its kept email's outcome is `review` or `unparsed` and it has no `resolved_at`; it carries its reason (`unparsed`, `unmapped_location`, `no_class`, `ambiguous_class`, `class_cancelled`, `client_deleted`, `already_booked`), what was read from the email, and the email itself. An Admin closes it by **booking it into a class** they pick — the same ClassPass booking path the import takes (`placeClassPassBooking`), the member found by email or created, the reservation ID kept, a reservation already booked refused — by **dismissing** it, which books nothing, or, for an unmapped location, by mapping that location from the item, which saves the ClassPass location mapping and runs the import again on every open item from that location: those that now place are booked and closed, the rest stay open with their new reason. Closing records who and when (`resolved_by_staff_id`, `resolved_at`).
+_Avoid_: ClassPass inbox, failed imports, exceptions queue
+
+**ClassPass roster check**:
+The comparison of ClassPass's `ClassPass Daily Roster` email — per listing, each upcoming class with the names of the members coming, with no year, emails or reservation IDs — against the ClassPass bookings held on those classes at the mapped Location (#415, `services/classpass/roster.ts`). It shows each difference on the ClassPass page, "On ClassPass, not on roster" or "On roster, not on ClassPass", and changes nothing: a roster never books or cancels. Worked out whenever the page is read, from the last week's rosters, so a booking email that arrives after the roster settles its difference.
+_Avoid_: roster sync, roster import
 
 ### Check-in
 

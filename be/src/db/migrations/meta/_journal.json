@@ -848,6 +848,55 @@
       "when": 1792084379152,
       "tag": "0120_display_name_mail",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1792305841688,
+      "tag": "0121_booking_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1792306886618,
+      "tag": "0122_classpass_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1792307357462,
+      "tag": "0123_classpass_location_mappings",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1792308498757,
+      "tag": "0124_classpass_bookings",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1792309619440,
+      "tag": "0125_classpass_cancellations",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1792311029520,
+      "tag": "0126_classpass_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1792313180721,
+      "tag": "0127_classpass_review_import_off",
+      "breakpoints": true
     }
   ]
 }

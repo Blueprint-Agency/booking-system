@@ -7,6 +7,7 @@ import {
   packagePick,
   seatTag,
   seatsSummary,
+  sourceBadge,
   staffBookingRefusal,
   type StaffMemberPackage,
 } from "./class-seats";
@@ -31,6 +32,11 @@ test("the session stats read people over attendance capacity, and the seats by k
 
 test("an overbooked class says how many", () => {
   assert.strictEqual(seatsSummary({ ...CLASS, overbook_used: 2, attending: 10 }).overbooked, "2 overbooked");
+});
+
+test("CPS-05 a ClassPass booking carries a ClassPass badge; a direct booking carries none", () => {
+  assert.strictEqual(sourceBadge("classpass"), "ClassPass");
+  assert.strictEqual(sourceBadge("direct"), null);
 });
 
 test("roster rows tag buffer and overbook seats; an online seat carries no tag", () => {

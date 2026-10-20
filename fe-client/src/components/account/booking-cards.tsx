@@ -45,7 +45,9 @@ import {
   cancelClosed,
   cancelDeadlineLine,
   canStillCancel,
+  CLASSPASS_CANCEL_LINE,
   isLate,
+  memberCanCancel,
   ptCancelPrompt,
 } from "@/lib/cancellation-copy";
 
@@ -238,8 +240,10 @@ export function ClassBookingCard({
   const attended = b.check_in_state === "attended";
   // Only staff marking the member absent makes a No-show (#349).
   const noShow = b.check_in_state === "no_show";
-  // Cancellable until it starts; inside its window it is a late cancel.
-  const open = !cancelled && canCancelClass(b.starts_at);
+  // Cancellable until it starts; inside its window it is a late cancel. One
+  // booked on ClassPass is cancelled on ClassPass.
+  const open = memberCanCancel(b);
+  const onClassPass = !cancelled && b.source === "classpass" && canCancelClass(b.starts_at);
   const deadline = `${formatDate(b.cancel_deadline)} · ${formatClassTime(b.cancel_deadline)}`;
 
   const status: Status | null = cancelled
@@ -291,6 +295,7 @@ export function ClassBookingCard({
       {open && (
         <p className="mt-2 text-xs text-muted">{cancelDeadlineLine(isLate(b.cancel_deadline), deadline)}</p>
       )}
+      {onClassPass && <p className="mt-2 text-xs text-muted">{CLASSPASS_CANCEL_LINE}</p>}
       {cancelled && <Cancelled c={b} />}
     </BookingCard>
   );

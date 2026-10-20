@@ -1,0 +1,4 @@
+ALTER TABLE "classpass_inbound_emails" ADD COLUMN "resolved_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "classpass_inbound_emails" ADD COLUMN "resolved_by_staff_id" uuid;--> statement-breakpoint
+ALTER TABLE "classpass_inbound_emails" ADD CONSTRAINT "classpass_inbound_emails_resolved_by_staff_id_staff_users_id_fk" FOREIGN KEY ("resolved_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "classpass_inbound_emails_resolved_by_staff_id_fk_idx" ON "classpass_inbound_emails" USING btree ("resolved_by_staff_id");

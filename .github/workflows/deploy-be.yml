@@ -641,7 +641,7 @@ jobs:
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
             #   env vars:    PORT, FRONTEND_URLS,
             #            PLATFORM_ADMIN_EMAIL,
-            #            (optional) LOG_LEVEL
+            #            (optional) LOG_LEVEL, CLASSPASS_INBOUND_DOMAIN
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
             #            IMPERSONATION_SECRET, BETTER_AUTH_SECRET, RESEND_API_KEY, RESEND_WEBHOOK_SECRET,
             #            PAYMENT_CREDENTIALS_KEY,
@@ -684,6 +684,9 @@ jobs:
               # which is the safe failure but is almost certainly not what you
               # wanted.
               echo "PLATFORM_ADMIN_EMAIL=${{ vars.PLATFORM_ADMIN_EMAIL }}"
+              # The domain Resend receives studios' forwarded ClassPass email on
+              # (#409). Unset, no studio is shown a ClassPass address.
+              echo "CLASSPASS_INBOUND_DOMAIN=${{ vars.CLASSPASS_INBOUND_DOMAIN }}"
               # Tenant subdomain origins, comma-separated, wildcard leftmost —
               # every studio is a subdomain and a studio is created by inserting
               # a row, so the allowlist has to be a pattern. Backs CORS, the

@@ -182,6 +182,8 @@ export function memberFixtures(harness: TestApp, schema: typeof Schema, domain: 
         return { payload: { clientId: m.clientId } }
       case 'audit_log':
         return { target_table: 'clients', target_id: m.clientId, actor_type: 'staff' }
+      case 'classpass_inbound_emails':
+        return { client_id: m.clientId, member_email: m.email, member_name: 'Fixture Member' }
       case 'auth_events':
         return { pool: 'client', kind: 'sign_in', actor_user_id: m.authUserId }
       default:

@@ -100,6 +100,21 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
   // they go with the member.
   byClientId('client_billing_details'),
   byClientId('bookings'),
+  // The ClassPass emails about them (#411): the email as it arrived, with the
+  // name and address ClassPass gave for them. One the importer could not place
+  // names them only by that address. A ClassPass Daily Roster (#415) names
+  // members by name only, in its text: one whose text or HTML holds the
+  // member's full name, ignoring case, is theirs too (and every other member it
+  // lists goes with it). After `bookings`, which a placed one points at, so
+  // deletion reaches it first.
+  {
+    table: 'classpass_inbound_emails',
+    columns: ['client_id', 'member_email', 'member_name'],
+    where: m => sql`(client_id = ${m.clientId} OR lower(member_email) = lower(${m.email}) OR (kind = 'roster' AND EXISTS (
+      SELECT 1 FROM clients c WHERE c.id = ${m.clientId} AND length(trim(c.name)) > 0
+        AND strpos(lower(coalesce(classpass_inbound_emails.text, '') || ' ' || coalesce(classpass_inbound_emails.html, '')),
+                   lower(trim(c.name))) > 0)))`,
+  },
   // Their places in class waitlists. After `bookings`, which a promoted entry
   // points at, so deletion reaches it first.
   byClientId('waitlist_entries'),

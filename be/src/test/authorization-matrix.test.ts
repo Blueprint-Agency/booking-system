@@ -285,10 +285,30 @@ const EXPECTATIONS: Record<string, Expectation> = {
   // Resending a Receipt and exporting the list (#390).
   'POST /api/v1/portal/admin/receipts/:id/resend': { gate: STUDIO_ADMIN },
   'GET /api/v1/portal/admin/receipts/export.csv': { gate: STUDIO_ADMIN },
+  // The ClassPass page (#409): the studio's ClassPass address and its switch, admins only.
+  'GET /api/v1/portal/admin/classpass': { gate: STUDIO_ADMIN },
+  'PATCH /api/v1/portal/admin/classpass': { gate: STUDIO_ADMIN, probe: { body: { enabled: false } } },
+  'POST /api/v1/portal/admin/classpass/address/regenerate': { gate: STUDIO_ADMIN },
+  // ClassPass location mappings (#410), admins only.
+  'GET /api/v1/portal/admin/classpass/locations': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/classpass/locations': { gate: STUDIO_ADMIN },
+  'PATCH /api/v1/portal/admin/classpass/locations/:id': { gate: STUDIO_ADMIN },
+  'DELETE /api/v1/portal/admin/classpass/locations/:id': { gate: STUDIO_ADMIN },
+  // ClassPass review (#413): the emails the importer could not place, admins only.
+  'GET /api/v1/portal/admin/classpass/review': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/classpass/review/:id/book': {
+    gate: STUDIO_ADMIN,
+    probe: { body: { class_id: '00000000-0000-4000-8000-000000000000' } },
+  },
+  'POST /api/v1/portal/admin/classpass/review/:id/dismiss': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/classpass/review/:id/location': {
+    gate: STUDIO_ADMIN,
+    probe: { body: { location_id: '00000000-0000-4000-8000-000000000000' } },
+  },
 }
 
 /** The prefixes the matrix speaks for: every route under them needs a line above. */
-const UNDER_THE_MATRIX = /^\/api\/v1\/(me|public|platform|portal\/admin\/receipts)(\/|$)/
+const UNDER_THE_MATRIX = /^\/api\/v1\/(me|public|platform|portal\/admin\/receipts|portal\/admin\/classpass)(\/|$)/
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH'])
 
 describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
@@ -494,6 +514,12 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
         await status.setTenantStatus(throwaway.id, 'suspended')
         await tenants.deleteTenant({ tenantId: throwaway.id, confirmSlug: throwaway.slug })
       }
+      // An admitted admin write is audited (the ClassPass switch, #409), and the
+      // ClassPass page makes the studio's settings row on first read.
+      await harness.db.execute(
+        sql`DELETE FROM audit_log WHERE actor_staff_id IN (SELECT id FROM staff_users WHERE email LIKE ${ours})`,
+      )
+      await harness.db.execute(sql`DELETE FROM classpass_settings WHERE tenant_id = ${one.id}`)
       await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM client_auth_users WHERE email LIKE ${ours}`)

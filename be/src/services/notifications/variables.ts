@@ -128,6 +128,10 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // NTF-18: sent to the Instructor and copied to each active Admin, so the copy
   // greets nobody by name; `checkin_url` is the recipient's own check-in desk.
   checkin_nag: ['instructor_name', 'session_label', 'date', 'pending_count', 'checkin_url'],
+  // #411: to every active Admin, when a ClassPass booking took an Overbook
+  // seat. `client_name` is the ClassPass member; `classpass_url` the
+  // studio's ClassPass page.
+  classpass_overbooked: ['client_name', 'class_name', 'date', 'classpass_url'],
   referral_credited: ['referrer_name', 'referee_name', 'credits_granted'],
   // Sign-in (services/auth/better-auth.ts). `code` and `reset_url` are credentials and
   // are sent as `secretVariables`, so `email_log` keeps them redacted.
