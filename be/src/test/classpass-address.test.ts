@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, inArray, like, or } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
-import { classPassEmail, gmailForwardingConfirmation } from './classpass-email'
+import { classPassEmail, GMAIL_CONFIRMATION_LINK, gmailForwardingConfirmation } from './classpass-email'
 import { withEnv } from './with-env'
 
 /**
@@ -149,6 +149,27 @@ describe('the ClassPass address', { skip: integrationTestsEnabled ? false : SKIP
     const status = await settings.readClassPass(one.id)
     assert.equal(status.gmailConfirmationCode, '493017286')
     assert.equal(status.gmailConfirmationAt?.toISOString(), real.receivedAt.toISOString())
+  })
+
+  test("CPS-112 Gmail's link-only forwarding confirmation shows its confirmation link on the ClassPass page; a link anywhere but Gmail's settings is not taken", async () => {
+    const { two } = harness.tenants
+    const forged = await receive.receiveClassPassEmail(two.id, gmailForwardingConfirmation({ format: 'link', dkim: 'fail' }))
+    assert.equal(forged.outcome, 'refused')
+    assert.equal((await settings.readClassPass(two.id)).gmailConfirmationLink, null)
+
+    const elsewhere = gmailForwardingConfirmation({ format: 'link', link: 'https://mail-settings.google.com.example/mail/vf-%5Bx%5D-y' })
+    await receive.receiveClassPassEmail(two.id, elsewhere)
+    assert.equal((await settings.readClassPass(two.id)).gmailConfirmationLink, null)
+
+    const real = gmailForwardingConfirmation({ format: 'link' })
+    await receive.receiveClassPassEmail(two.id, real)
+    const status = await settings.readClassPass(two.id)
+    assert.equal(status.gmailConfirmationLink, GMAIL_CONFIRMATION_LINK)
+    assert.equal(status.gmailConfirmationCode, null)
+    assert.equal(status.gmailConfirmationAt?.toISOString(), real.receivedAt.toISOString())
+
+    // Regenerating the address clears the link with the code: it confirmed the old address.
+    assert.equal((await settings.regenerateClassPassAddress(two.id)).gmailConfirmationLink, null)
   })
 
   test('CPS-15 regenerating the address gives a new one and clears the old Gmail code', async () => {

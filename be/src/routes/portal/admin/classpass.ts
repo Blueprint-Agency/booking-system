@@ -61,6 +61,7 @@ function serialize(status: svc.ClassPassStatus) {
     address: status.address,
     enabled: status.enabled,
     gmail_confirmation_code: status.gmailConfirmationCode,
+    gmail_confirmation_link: status.gmailConfirmationLink,
     gmail_confirmation_at: status.gmailConfirmationAt,
     last_received_at: status.lastReceivedAt,
     counts: status.counts,
@@ -71,6 +72,16 @@ function serialize(status: svc.ClassPassStatus) {
       starts_at: o.startsAt,
       client_name: o.clientName,
     })),
+    // The setup guide's facts, one per step.
+    setup: {
+      enabled: status.setup.enabled,
+      gmail_confirmation_received: status.setup.gmailConfirmationReceived,
+      gmail_confirmation_at: status.setup.gmailConfirmationAt,
+      first_classpass_email_at: status.setup.firstClassPassEmailAt,
+      location_mappings: status.setup.locationMappings,
+      unmapped_location_reviews: status.setup.unmappedLocationReviews,
+      first_classpass_booking_at: status.setup.firstClassPassBookingAt,
+    },
   }
 }
 

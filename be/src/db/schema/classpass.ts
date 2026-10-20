@@ -28,6 +28,10 @@ export const classpassSettings = pgTable(
     // The code Gmail mails a new forwarding address, shown to the Admin so
     // they can finish Gmail's verification without reading that mailbox.
     gmailConfirmationCode: text('gmail_confirmation_code'),
+    // Gmail's confirmation link (`https://mail-settings.google.com/mail/vf-…`),
+    // which confirms the address when the Gmail account's owner opens it.
+    // Gmail's newer confirmation carries only this, and no code.
+    gmailConfirmationLink: text('gmail_confirmation_link'),
     gmailConfirmationAt: timestamp('gmail_confirmation_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

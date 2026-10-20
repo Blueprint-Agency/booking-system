@@ -17,7 +17,10 @@ export interface ClassPassStatus {
   /** Null where the deployment has no inbound domain. */
   address: string | null;
   enabled: boolean;
+  /** The code in Gmail's older forwarding confirmation. */
   gmail_confirmation_code: string | null;
+  /** Gmail's `https://mail-settings.google.com/mail/vf-…` link, which confirms forwarding when opened signed in to that Gmail. */
+  gmail_confirmation_link: string | null;
   gmail_confirmation_at: string | null;
   last_received_at: string | null;
   counts: Record<ClassPassOutcome, number>;
@@ -25,6 +28,78 @@ export interface ClassPassStatus {
   overbooked: ClassPassOverbooked[];
   /** The ClassPass Daily Roster check (#415) over the last week's rosters. */
   roster_check: ClassPassRosterCheck;
+  /** What the setup guide ticks each step on. */
+  setup: ClassPassSetup;
+}
+
+/** The setup guide's facts, worked out by the backend from what the studio has done and what has arrived. */
+export interface ClassPassSetup {
+  enabled: boolean;
+  /** Gmail's forwarding confirmation arrived, with a code or a confirmation link. */
+  gmail_confirmation_received: boolean;
+  gmail_confirmation_at: string | null;
+  /** The first trusted email ClassPass sent (any kind, a Daily Roster included); null before one. */
+  first_classpass_email_at: string | null;
+  location_mappings: number;
+  /** Open review items waiting on a ClassPass location nobody has mapped. */
+  unmapped_location_reviews: number;
+  /** The first ClassPass booking made, cancelled since or not; null before one. */
+  first_classpass_booking_at: string | null;
+}
+
+export type SetupStepKey = "enable" | "forwarding" | "filter" | "locations" | "test_booking";
+
+export interface SetupStep {
+  key: SetupStepKey;
+  done: boolean;
+  /** `current` is the first step not done; the ones after it stay readable, as `upcoming`. */
+  state: "done" | "current" | "upcoming";
+}
+
+/**
+ * Gmail's confirmation link, to open, only when it is a link to Gmail's
+ * forwarding settings (as the backend keeps it); null otherwise.
+ */
+export function gmailConfirmationHref(link: string | null): string | null {
+  if (!link) return null;
+  try {
+    const url = new URL(link);
+    return url.protocol === "https:" && url.hostname === "mail-settings.google.com" && url.pathname.startsWith("/mail/vf-")
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** How often the page asks for news while a step is still to be done. */
+export const SETUP_POLL_MS = 10_000;
+
+/**
+ * The setup guide, step by step, from the facts the status carries: which
+ * steps are done, which is the one to do now, and whether the page should keep
+ * asking until every step has ticked.
+ */
+export function setupGuide(setup: ClassPassSetup): {
+  steps: SetupStep[];
+  current: SetupStepKey | null;
+  complete: boolean;
+  poll: boolean;
+} {
+  const facts: [SetupStepKey, boolean][] = [
+    ["enable", setup.enabled],
+    ["forwarding", setup.gmail_confirmation_received],
+    ["filter", setup.first_classpass_email_at !== null],
+    ["locations", setup.location_mappings > 0 && setup.unmapped_location_reviews === 0],
+    ["test_booking", setup.first_classpass_booking_at !== null],
+  ];
+  const current = facts.find(([, done]) => !done)?.[0] ?? null;
+  const steps = facts.map(([key, done]): SetupStep => ({
+    key,
+    done,
+    state: done ? "done" : key === current ? "current" : "upcoming",
+  }));
+  return { steps, current, complete: current === null, poll: current !== null };
 }
 
 export type RosterDifferenceKind = "on_classpass_not_on_roster" | "on_roster_not_on_classpass";

@@ -1,21 +1,23 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, PageHeader } from "@/components/ui";
 import { ClassPassLocationMappings } from "@/components/classpass/location-mappings";
 import { ClassPassReview } from "@/components/classpass/review-list";
+import { ClassPassSetupGuide } from "@/components/classpass/setup-guide";
 import { ApiError } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatDateTime } from "@/lib/formatters";
 import {
-  CLASSPASS_SENDER,
   getClassPass,
   outcomeRows,
   overbookedHeadline,
   regenerateClassPassAddress,
   ROSTER_DIFFERENCE_LABELS,
   setClassPassEnabled,
+  SETUP_POLL_MS,
+  setupGuide,
   type ClassPassSettings,
   type ClassPassStatus,
 } from "@/lib/classpass";
@@ -59,6 +61,29 @@ export default function ClassPassPage() {
     };
   }, [api, attempt]);
 
+  // While a setup step is still to be done, ask for news every few seconds so its tick appears by itself;
+  // stop once every step is done. New mail may have changed the review list, so it is read again too.
+  const polling = status ? setupGuide(status.setup).poll : false;
+  const lastReceived = useRef<string | null>(null);
+  const statusReceived = status?.last_received_at ?? null;
+  useEffect(() => {
+    lastReceived.current = statusReceived;
+  }, [statusReceived]);
+  useEffect(() => {
+    if (!api || !polling) return;
+    const timer = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      getClassPass(api).then(
+        (view) => {
+          if (view.last_received_at !== lastReceived.current) setReviewRevision((n) => n + 1);
+          setStatus(view);
+        },
+        () => undefined,
+      );
+    }, SETUP_POLL_MS);
+    return () => clearInterval(timer);
+  }, [api, polling]);
+
   const act = useCallback(
     async (work: () => Promise<ClassPassSettings>, done: string) => {
       if (!api || busy) return;
@@ -99,14 +124,17 @@ export default function ClassPassPage() {
   const { rows, total } = outcomeRows(status.counts);
   const refreshStatus = () => void getClassPass(api).then(setStatus, () => undefined);
 
-  async function copyAddress() {
-    if (!status?.address) return;
+  async function copy(text: string, done: string) {
     try {
-      await navigator.clipboard.writeText(status.address);
-      toast.success("Address copied.");
+      await navigator.clipboard.writeText(text);
+      toast.success(done);
     } catch {
-      toast.error("Couldn’t copy. Select the address and copy it instead.");
+      toast.error("Couldn’t copy. Select the text and copy it instead.");
     }
+  }
+
+  function copyAddress() {
+    if (status?.address) void copy(status.address, "Address copied.");
   }
 
   return (
@@ -114,6 +142,21 @@ export default function ClassPassPage() {
       <PageHeader
         title="ClassPass"
         description="Forward ClassPass’s emails to your ClassPass address, and the bookings ClassPass members make land on your own roster."
+      />
+
+      <ClassPassSetupGuide
+        api={api}
+        status={status}
+        locations={locations}
+        busy={busy}
+        onEnable={() => act(() => setClassPassEnabled(api, true), "ClassPass import turned on.")}
+        onCopy={copy}
+        onMapped={() => {
+          setMappingsRevision((n) => n + 1);
+          setReviewRevision((n) => n + 1);
+          refreshStatus();
+        }}
+        reviewRevision={reviewRevision}
       />
 
       <section className="flex items-start justify-between gap-4 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
@@ -199,69 +242,31 @@ export default function ClassPassPage() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
-        <header className="mb-4">
-          <h2 className="text-base font-semibold text-ink">Set up Gmail forwarding</h2>
-          <p className="mt-0.5 text-xs text-muted">In the Gmail account ClassPass emails your studio at.</p>
-        </header>
-        <ol className="list-decimal space-y-3 pl-5 text-sm text-ink">
-          <li>
-            In Gmail, open <strong>Settings → See all settings → Forwarding and POP/IMAP</strong>, choose{" "}
-            <strong>Add a forwarding address</strong>, and enter your ClassPass address.
-          </li>
-          <li>
-            Gmail sends that address a confirmation code. Enter it in Gmail to verify the address.
-            <div className="mt-2 rounded-md border border-border bg-paper px-3 py-2">
-              {status.gmail_confirmation_code ? (
-                <>
-                  <span className="text-xs text-muted">Confirmation code</span>
-                  <div className="font-mono text-lg font-semibold tracking-wider text-ink">
-                    {status.gmail_confirmation_code}
-                  </div>
-                  {status.gmail_confirmation_at && (
-                    <span className="text-xs text-muted">Received {formatDateTime(status.gmail_confirmation_at)}</span>
-                  )}
-                </>
-              ) : (
-                <span className="text-xs text-muted">
-                  The code shows here once Gmail sends it.{" "}
-                  <button type="button" className="underline" onClick={() => setAttempt((n) => n + 1)}>
-                    Check again
-                  </button>
-                </span>
-              )}
-            </div>
-          </li>
-          <li>
-            Don’t forward everything. Instead, <strong>create a filter</strong> with From{" "}
-            <code className="rounded bg-paper px-1">{CLASSPASS_SENDER}</code>, and choose{" "}
-            <strong>Forward it to</strong> your ClassPass address.
-          </li>
-          <li>Turn on <strong>Import ClassPass bookings</strong> above.</li>
-        </ol>
-      </section>
-
       {/* A mapping re-runs the review items from its location, and mapping from an item adds a mapping: each
           panel's change refreshes the other, and the status. */}
-      <ClassPassLocationMappings
-        api={api}
-        locations={locations}
-        revision={mappingsRevision}
-        onChanged={() => {
-          setReviewRevision((n) => n + 1);
-          refreshStatus();
-        }}
-      />
+      <div id="classpass-locations" className="scroll-mt-20">
+        <ClassPassLocationMappings
+          api={api}
+          locations={locations}
+          revision={mappingsRevision}
+          onChanged={() => {
+            setReviewRevision((n) => n + 1);
+            refreshStatus();
+          }}
+        />
+      </div>
 
-      <ClassPassReview
-        api={api}
-        locations={locations}
-        revision={reviewRevision}
-        onChanged={() => {
-          setMappingsRevision((n) => n + 1);
-          refreshStatus();
-        }}
-      />
+      <div id="classpass-review" className="scroll-mt-20">
+        <ClassPassReview
+          api={api}
+          locations={locations}
+          revision={reviewRevision}
+          onChanged={() => {
+            setMappingsRevision((n) => n + 1);
+            refreshStatus();
+          }}
+        />
+      </div>
 
       <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6">
         <header className="mb-4">
