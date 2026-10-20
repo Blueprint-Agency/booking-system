@@ -7,6 +7,7 @@ import { parseClassPassCancellation, placeClassPassCancellation } from './import
 import { parseClassPassBooking, type ClassPassBookingFields } from './parse'
 import { placeIsolated, recordPlaced, type Placed } from './review-items'
 import { ensureClassPassSettings } from './settings'
+import { currentEnv } from '../../env'
 
 /**
  * The one way into the ClassPass import (#407): every email that reaches a
@@ -98,7 +99,7 @@ function decide(message: InboundEmail): Decision {
   const from = addressOf(message.from)
   const signed = message.authentication?.dkim === 'pass'
 
-  if (from === CLASSPASS_SENDER) {
+  if (from === CLASSPASS_SENDER || isTestSender(from)) {
     const kind = KIND_BY_SUBJECT[message.subject.trim().toLowerCase()] ?? 'marketing'
     if (!signed) return { kind, outcome: 'refused' }
     // A booking is placed (#411) when the switch is on; anything else trusted
@@ -112,6 +113,17 @@ function decide(message: InboundEmail): Decision {
   }
 
   return { kind: 'other', outcome: 'refused' }
+}
+
+/**
+ * A tester's address named in `CLASSPASS_TEST_SENDERS`, outside production
+ * only. Its mail is then read as ClassPass's, under the same DKIM rule, so the
+ * import can be tried with a copied email; production never reads the setting.
+ */
+function isTestSender(from: string): boolean {
+  if (currentEnv('APP_ENV') === 'production') return false
+  const senders = (currentEnv('CLASSPASS_TEST_SENDERS') ?? '').split(',').map(s => s.trim().toLowerCase())
+  return from !== '' && senders.includes(from)
 }
 
 /** `Confirmation code: 123456789` in the body, or `(#123456789)` in the subject. Gmail's newer confirmation has neither. */

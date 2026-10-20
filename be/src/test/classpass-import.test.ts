@@ -230,6 +230,11 @@ describe('importing a ClassPass booking email', { skip: integrationTestsEnabled 
     })
   }
 
+  function restoreEnv(name: string, value: string | undefined) {
+    if (value === undefined) delete process.env[name]
+    else process.env[name] = value
+  }
+
   async function receive(at: Studio, email: InboundEmail) {
     const result = await receiveSvc.receiveClassPassEmail(at.id, email)
     keptIds.push(result.id)
@@ -360,6 +365,50 @@ describe('importing a ClassPass booking email', { skip: integrationTestsEnabled 
   })
 
   /* ── tests ──────────────────────────────────────────────────────────── */
+
+  test('CPS-114 outside production, a signed booking email from an address in CLASSPASS_TEST_SENDERS imports as ClassPass\'s own would', async () => {
+    const saved = { app: process.env.APP_ENV, senders: process.env.CLASSPASS_TEST_SENDERS }
+    process.env.APP_ENV = 'staging'
+    process.env.CLASSPASS_TEST_SENDERS = 'Tester@Example.test, other@example.test'
+    try {
+      const startsAt = nextStart()
+      const classId = await addClass(one, startsAt)
+      const ada = await member(one, 'ada-test-sender')
+
+      const result = await receive(
+        one,
+        bookingEmail(one, startsAt, { from: 'A Tester <tester@example.test>', memberName: ada.name, memberEmail: ada.email }),
+      )
+
+      assert.equal(result.outcome, 'imported')
+      const [a] = await roster(one, classId)
+      assert.equal(a?.client.id, ada.clientId)
+    } finally {
+      restoreEnv('APP_ENV', saved.app)
+      restoreEnv('CLASSPASS_TEST_SENDERS', saved.senders)
+    }
+  })
+
+  test('CPS-115 in production, or unsigned anywhere, a booking email from a CLASSPASS_TEST_SENDERS address is refused and books nothing', async () => {
+    const saved = { app: process.env.APP_ENV, senders: process.env.CLASSPASS_TEST_SENDERS }
+    process.env.CLASSPASS_TEST_SENDERS = 'tester@example.test'
+    try {
+      const startsAt = nextStart()
+      const classId = await addClass(one, startsAt)
+
+      process.env.APP_ENV = 'production'
+      const inProduction = await receive(one, bookingEmail(one, startsAt, { from: 'tester@example.test' }))
+      process.env.APP_ENV = 'staging'
+      const unsigned = await receive(one, bookingEmail(one, startsAt, { from: 'tester@example.test', dkim: 'fail' }))
+
+      assert.equal(inProduction.outcome, 'refused')
+      assert.equal(unsigned.outcome, 'refused')
+      assert.deepEqual(await roster(one, classId), [])
+    } finally {
+      restoreEnv('APP_ENV', saved.app)
+      restoreEnv('CLASSPASS_TEST_SENDERS', saved.senders)
+    }
+  })
 
   test('CPS-30 a 2026-layout booking email books the member onto the class at the mapped Location and time, as a ClassPass booking with its reservation ID', async () => {
     const startsAt = nextStart()

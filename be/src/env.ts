@@ -127,6 +127,13 @@ const fields = z.object({
   // webhook hears `email.received` for it. Unset, no studio is shown an address
   // and inbound mail is acknowledged and dropped. Read through `currentEnv`.
   CLASSPASS_INBOUND_DOMAIN: z.string().optional(),
+  // Addresses, comma-separated, whose mail the ClassPass import trusts as if
+  // ClassPass sent it — so a tester can mail a copied ClassPass email to a
+  // studio's address instead of waiting for a real booking. Read only outside
+  // production (`APP_ENV`): production trusts ClassPass's own signature alone,
+  // whatever this says. The tester's mail must still pass DKIM for its own
+  // domain. Read through `currentEnv`.
+  CLASSPASS_TEST_SENDERS: z.string().optional(),
   R2_ACCOUNT_ID: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),
