@@ -59,10 +59,3 @@ export function TabsTrigger({ value, children }: { value: string; children: Reac
     </button>
   );
 }
-
-export function TabsContent({ value, children, className }: { value: string; children: ReactNode; className?: string }) {
-  const ctx = useContext(Ctx);
-  if (!ctx) throw new Error("TabsContent outside Tabs");
-  if (ctx.value !== value) return null;
-  return <div className={cn("mt-4", className)}>{children}</div>;
-}

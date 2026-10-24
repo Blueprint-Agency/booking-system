@@ -16,7 +16,7 @@
 import { useBrand } from "@/components/brand/brand-provider";
 
 /** An initial per word, capped at three — the mark is a square, not a label. */
-export function studioInitials(name: string): string {
+function studioInitials(name: string): string {
   const letters = name
     .split(/\s+/)
     .filter(Boolean)

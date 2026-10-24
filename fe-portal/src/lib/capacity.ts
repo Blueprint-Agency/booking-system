@@ -4,7 +4,7 @@ import type { Capacity } from "@/types";
  * The most people a session holds without an overbook: online plus buffer
  * seats. The waitlist is a line, not a seat (spec-waitlist.md §1).
  */
-export function attendanceCapacity(c: Capacity): number {
+function attendanceCapacity(c: Capacity): number {
   return c.onlineBooking + c.buffer;
 }
 

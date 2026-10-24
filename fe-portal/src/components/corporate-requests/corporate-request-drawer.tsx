@@ -38,8 +38,8 @@ export function CorporateRequestDrawer({
   busy?: boolean;
 }) {
   const { client, package: pkg, session } = request;
-  // As Sheet does: on a phone a swipe on the backdrop or a short panel would
-  // otherwise scroll the list underneath.
+  // On a phone a swipe on the backdrop or a short panel would otherwise scroll
+  // the list underneath.
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
