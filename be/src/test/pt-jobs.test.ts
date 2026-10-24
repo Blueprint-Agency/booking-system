@@ -30,6 +30,9 @@ describe('PT jobs on the app clock', { skip: integrationTestsEnabled ? false : S
   let jobs!: typeof import('../jobs')
   let ptPackagesSvc!: typeof import('../services/packages/pt-packages')
   let purchaseSvc!: typeof import('../services/packages/purchase')
+  let tenantDb!: typeof import('../db')
+  let scheduleSvc!: typeof import('../services/pt-sessions/schedule')
+  let bookingCancelSvc!: typeof import('../services/bookings/cancel')
 
   type SessionType = '1on1' | '2on1'
   type Studio = {
@@ -197,6 +200,53 @@ describe('PT jobs on the app clock', { skip: integrationTestsEnabled ? false : S
   const adjustmentsOf = (clientPackageId: string) =>
     harness.db.select().from(schema.manualAdjustments).where(eq(schema.manualAdjustments.clientPackageId, clientPackageId))
 
+  async function sessionOf(requestId: string) {
+    const [session] = await harness.db.select().from(schema.ptSessions).where(eq(schema.ptSessions.ptRequestId, requestId))
+    assert.ok(session, `no PT session for ${requestId}`)
+    const booked = await harness.db.select().from(schema.bookings).where(eq(schema.bookings.ptSessionId, session.id))
+    assert.equal(booked.length, 1, `one booking on the session for ${requestId}`)
+    return { session, booking: booked[0]! }
+  }
+
+  async function untilBlockedBy(pid: number): Promise<void> {
+    const deadline = Date.now() + 10_000
+    for (;;) {
+      const [blocked] = await harness.db.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted AND ${pid}::int = ANY(pg_blocking_pids(pid))`,
+      )
+      if (blocked!.n > 0) return
+      assert.ok(Date.now() < deadline, 'the tick never queued behind the write')
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+  }
+
+  async function tickBehindUncommittedWrite(
+    at: Studio,
+    write: () => Promise<unknown>,
+    tick: () => Promise<void>,
+  ): Promise<void> {
+    let commit!: () => void
+    const released = new Promise<void>(resolve => (commit = resolve))
+    let holding!: (pid: number) => void
+    const held = new Promise<number>(resolve => (holding = resolve))
+    const writing = tenantDb.withTenant(at.id, async () => {
+      await write()
+      const [row] = await tenantDb.db.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`)
+      holding(row!.pid)
+      await released
+    })
+    const pid = await Promise.race([held, writing.then(() => 0)])
+    let ticking: Promise<void> = Promise.resolve()
+    try {
+      ticking = tick()
+      await untilBlockedBy(pid)
+    } finally {
+      commit()
+      await writing
+      await ticking
+    }
+  }
+
   // ── Setup ────────────────────────────────────────────────────────────────
 
   before(async () => {
@@ -205,6 +255,9 @@ describe('PT jobs on the app clock', { skip: integrationTestsEnabled ? false : S
     jobs = await import('../jobs')
     ptPackagesSvc = inTenantContext(await import('../services/packages/pt-packages'))
     purchaseSvc = inTenantContext(await import('../services/packages/purchase'))
+    tenantDb = await import('../db')
+    scheduleSvc = await import('../services/pt-sessions/schedule')
+    bookingCancelSvc = await import('../services/bookings/cancel')
 
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
@@ -229,6 +282,7 @@ describe('PT jobs on the app clock', { skip: integrationTestsEnabled ? false : S
       await exec(sql`DELETE FROM credit_movements WHERE client_id IN (${clients})`)
       await exec(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)
       await exec(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id IN (${requests})`)
+      await exec(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
       await exec(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
       await exec(sql`DELETE FROM pt_session_clients WHERE pt_session_id IN (${sessions})`)
       await exec(sql`DELETE FROM pt_sessions WHERE id IN (${sessions})`)
@@ -385,6 +439,45 @@ describe('PT jobs on the app clock', { skip: integrationTestsEnabled ? false : S
     }
   })
 
+  test('PT-132 staff schedule a pending request past its expiry while an expiry tick that read it as pending is under way: the schedule stands and no session comes back', async () => {
+    harness.clock.set(new Date())
+    const gus = await member(one)
+    const packageId = await givePt(one, gus, '1on1')
+    const requestId = await request(one, gus, '1on1', packageId)
+    const lapses = (await requestRow(requestId)).expiresAt
+    assert.ok(lapses)
+    harness.clock.set(new Date(lapses.getTime() + MINUTE))
+    const startsAt = new Date(lapses.getTime() + 3 * DAY + 5 * HOUR)
+
+    await tickBehindUncommittedWrite(
+      one,
+      async () => {
+        const scheduled = await scheduleSvc.schedulePtRequest(one.id, {
+          ptRequestId: requestId,
+          instructorId: coachAtOne.staffId,
+          locationId: one.locationId,
+          roomId: one.roomId,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + HOUR),
+          actorStaffId: adminAtOne.staffId,
+          actorIsAdmin: true,
+        })
+        assert.ok(scheduled.ok, JSON.stringify(scheduled))
+      },
+      jobs.scheduledJobs.expireStaleSessions,
+    )
+
+    const row = await requestRow(requestId)
+    assert.equal(row.status, 'scheduled')
+    assert.equal(row.cancelSource, null)
+    const { session, booking } = await sessionOf(requestId)
+    assert.equal(session.lifecycle, 'active')
+    assert.equal(booking.state, 'confirmed')
+    assert.equal((await pkg(packageId)).creditsOrSessionsRemaining, 9, 'the session it cost stays spent')
+    assert.deepEqual((await movementsOf(packageId)).filter(m => m.delta > 0), [])
+    assert.equal((await asMemberSees(gus, requestId)).status, 'scheduled')
+  })
+
   // ── PT session completion ────────────────────────────────────────────────
 
   test('PT-56 a scheduled PT session whose end has passed is moved to attended by the completion job, and leaves the member\'s upcoming list', async () => {
@@ -413,6 +506,66 @@ describe('PT jobs on the app clock', { skip: integrationTestsEnabled ? false : S
     assert.equal(seen.cancelled_at, null)
     // Completing the request moves no session: the one it cost stays spent.
     assert.equal((await pkg(packageId)).creditsOrSessionsRemaining, 9)
+  })
+
+  test('PT-133 an Admin cancels the booking of an ended session, returning its session, while a completion tick that read it as scheduled is under way: the request ends cancelled, not attended', async () => {
+    harness.clock.set(new Date())
+    const hal = await member(one)
+    const packageId = await givePt(one, hal, '1on1')
+    const requestId = await request(one, hal, '1on1', packageId)
+    const startsAt = new Date(harness.clock.now().getTime() + 4 * DAY + 6 * HOUR)
+    await schedule(one, adminAtOne, coachAtOne, requestId, startsAt)
+    const { booking } = await sessionOf(requestId)
+    harness.clock.set(new Date(startsAt.getTime() + HOUR + MINUTE))
+
+    await tickBehindUncommittedWrite(
+      one,
+      () =>
+        bookingCancelSvc.cancelBooking(one.id, {
+          bookingId: booking.id,
+          source: 'admin',
+          actorStaffId: adminAtOne.staffId,
+          credit: 'return',
+        }),
+      jobs.scheduledJobs.completeEndedPtSessions,
+    )
+
+    assert.equal((await requestRow(requestId)).status, 'cancelled_after_scheduled')
+    const after = await sessionOf(requestId)
+    assert.equal(after.session.lifecycle, 'cancelled')
+    assert.equal(after.booking.state, 'cancelled')
+    assert.equal((await pkg(packageId)).creditsOrSessionsRemaining, 10, 'the cancel returned the session')
+    assert.equal((await asMemberSees(hal, requestId)).status, 'cancelled_after_scheduled')
+  })
+
+  test('PT-134 staff move a session that has just ended to later the same day while a completion tick that read it as ended is under way: the request stays scheduled', async () => {
+    harness.clock.set(new Date())
+    const ivy = await member(one)
+    const packageId = await givePt(one, ivy, '1on1')
+    const requestId = await request(one, ivy, '1on1', packageId)
+    const startsAt = new Date(harness.clock.now().getTime() + 4 * DAY + 9 * HOUR)
+    await schedule(one, adminAtOne, coachAtOne, requestId, startsAt)
+    const { session } = await sessionOf(requestId)
+    harness.clock.set(new Date(startsAt.getTime() + HOUR + MINUTE))
+    const movedTo = new Date(startsAt.getTime() + 2 * HOUR)
+
+    await tickBehindUncommittedWrite(
+      one,
+      () =>
+        scheduleSvc.updatePtSession(one.id, session.id, {
+          startsAt: movedTo,
+          endsAt: new Date(movedTo.getTime() + HOUR),
+          actorStaffId: adminAtOne.staffId,
+        }),
+      jobs.scheduledJobs.completeEndedPtSessions,
+    )
+
+    assert.equal((await requestRow(requestId)).status, 'scheduled')
+    const after = await sessionOf(requestId)
+    assert.equal(after.session.lifecycle, 'active')
+    assert.equal(after.session.startsAt.toISOString(), movedTo.toISOString())
+    assert.equal(after.booking.state, 'confirmed')
+    assert.equal((await asMemberSees(ivy, requestId)).status, 'scheduled')
   })
 
   // ── Event state ──────────────────────────────────────────────────────────
