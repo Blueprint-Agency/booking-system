@@ -3,7 +3,7 @@ import assert from "node:assert";
 import { myScheduleRow, type MyScheduleEntry } from "./my-schedule";
 
 const ME = "staff-me";
-const lead = { staffId: ME, canSchedule: true };
+const lead = { staffId: ME, canScheduleClasses: true };
 
 function entry(overrides: Partial<MyScheduleEntry> = {}): MyScheduleEntry {
   return {
@@ -47,7 +47,7 @@ test("SCH-34 a class still to run is not marked cancelled, and its lead may canc
 test("Cancel is offered only on a class the instructor leads, still to finish, with Schedule classes on", () => {
   assert.strictEqual(myScheduleRow(entry({ event_state: "completed" }), lead).canCancel, false);
   assert.strictEqual(myScheduleRow(entry({ main_instructor_id: "staff-other" }), lead).canCancel, false);
-  assert.strictEqual(myScheduleRow(entry(), { staffId: ME, canSchedule: false }).canCancel, false);
+  assert.strictEqual(myScheduleRow(entry(), { staffId: ME, canScheduleClasses: false }).canCancel, false);
   assert.strictEqual(myScheduleRow(entry({ kind: "pt", main_instructor_id: null }), lead).canCancel, false);
 });
 

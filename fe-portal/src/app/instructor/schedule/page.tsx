@@ -120,7 +120,7 @@ export default function InstructorSchedulePage() {
   }, [entries]);
 
   const todayKey = todayIso();
-  const viewer = { staffId: currentStaff?.id ?? null, canSchedule };
+  const viewer = { staffId: currentStaff?.id ?? null, canScheduleClasses: canSchedule };
 
   async function submitCancel() {
     if (!api || !cancelling) return;

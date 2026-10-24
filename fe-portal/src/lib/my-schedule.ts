@@ -1,7 +1,3 @@
-// An Instructor's My schedule: one row per class, workshop, private or
-// corporate session they teach. Shapes mirror the instructor schedule read in
-// be/src/routes/portal/instructor/schedule.ts.
-
 import type { EventState } from "@/types";
 
 export interface MyScheduleEntry {
@@ -10,7 +6,6 @@ export interface MyScheduleEntry {
   label: string;
   subtitle: string | null;
   main_instructor_id: string | null;
-  /** Everyone teaching it; a private session's one instructor is here, not above. */
   instructor_ids: string[];
   location_id: string | null;
   room_id: string | null;
@@ -18,19 +13,16 @@ export interface MyScheduleEntry {
   ends_at: string;
   capacity: number | null;
   booked_count: number | null;
-  /** How many are in a class's waitlist; null for every other kind. */
   waiting: number | null;
   event_state: EventState;
 }
 
 export interface MyScheduleViewer {
   staffId: string | null;
-  /** The Schedule classes permission: New class, Repeat weekly and Cancel. */
-  canSchedule: boolean;
+  canScheduleClasses: boolean;
 }
 
 export interface MyScheduleRow {
-  /** The session page the label opens, or null when it is not theirs to run. */
   href: string | null;
   cancelled: boolean;
   canCancel: boolean;
@@ -38,7 +30,6 @@ export interface MyScheduleRow {
 
 export function myScheduleRow(e: MyScheduleEntry, viewer: MyScheduleViewer): MyScheduleRow {
   const me = viewer.staffId;
-  // Supporting on someone else's class grants neither its page nor its cancel.
   const leadsClass = e.kind === "class" && me !== null && e.main_instructor_id === me;
   const runsPt = e.kind === "pt" && me !== null && e.instructor_ids.includes(me);
   const cancelled = e.event_state === "cancelled";
@@ -49,6 +40,6 @@ export function myScheduleRow(e: MyScheduleEntry, viewer: MyScheduleViewer): MyS
         ? `/instructor/schedule/pt/${e.id}`
         : null,
     cancelled,
-    canCancel: viewer.canSchedule && leadsClass && !cancelled && e.event_state !== "completed",
+    canCancel: viewer.canScheduleClasses && leadsClass && !cancelled && e.event_state !== "completed",
   };
 }
