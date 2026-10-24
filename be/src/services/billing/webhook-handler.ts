@@ -20,7 +20,7 @@ import { type RetryPolicy } from '../../lib/outbound'
 import { latestCharge, methodPatch } from './payment-methods'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
-import { unwindRefund, unwindRefundForTenant } from './refunds'
+import { returnLatePayment, unwindRefund, unwindRefundForTenant } from './refunds'
 import { openPurchase, purchaseById, recomputeBalance, type PurchaseRow } from './purchases'
 import { purchaseKindFor } from './checkout-session'
 import { toCents } from '../../shared/money'
@@ -225,6 +225,16 @@ async function settleAndMayGrant(
   const charge = await latestCharge(tenantId, paymentIntentId, providerAccountId, retry)
   if (charge && isRefundedInFull(charge)) {
     await unwindRefundForTenant(paymentIntentId)
+    return false
+  }
+
+  // A Purchase a Refund has already closed grants nothing more, and money
+  // landing on it — a Resume page paid on while the studio refunded from the
+  // provider's dashboard — goes back with that Refund (RFD-21): recorded, then
+  // returned, rather than banked against a sale no screen lists.
+  if (purchase.status === 'refunded' || purchase.status === 'abandoned') {
+    await bankPayment(tenantId, paymentIntentId, { ...receiptOf(charge), ...methodPatch(charge) })
+    await returnLatePayment(tenantId, purchase.id, paymentIntentId)
     return false
   }
 

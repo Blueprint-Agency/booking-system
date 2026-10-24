@@ -24,6 +24,13 @@ test("RFD-13 every refund refusal has a staff-facing message and none shows an H
   );
 });
 
+test("RFD-22 a Refund held back while the member's payment is still landing tells the admin to wait, not to check Stripe", () => {
+  const msg = refundFailureMessage({ error: "checkout_session_busy" });
+  assert.match(msg, /paying towards this purchase/);
+  assert.match(msg, /try again/i);
+  assert.doesNotMatch(msg, /HTTP|\d{3}/);
+});
+
 test("a refund that failed for no named reason still says where to look, without a status code", () => {
   const msg = refundFailureMessage({ error: "internal_error" });
   assert.doesNotMatch(msg, /HTTP|500/);

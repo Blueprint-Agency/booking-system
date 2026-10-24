@@ -38,7 +38,7 @@ import {
   refusePartPaymentWhenDisabled,
   PART_PAYMENT_FLOOR_CENTS,
 } from './part-payment'
-import { attachCheckoutSession, type PurchaseRow } from './purchases'
+import { attachCheckoutSession, paymentsForPurchase, type PurchaseRow } from './purchases'
 import { heldPaymentsFor, type HeldPayments } from './refunds'
 import { checkoutSessionParams, type CheckoutLine } from './checkout-session'
 import { createSessionSurvivingStaleCustomer, providerCustomerFor } from './payment-customers'
@@ -361,7 +361,30 @@ export async function resumePurchaseCheckout(args: {
     })
   }
 
+  // A Refund of it has begun (RFD-20). The Purchase stays `open` until the
+  // provider confirms every return, and a payment made in that gap would land
+  // on a sale the studio is closing. Asked for at all, not merely recently: an
+  // ask the provider later failed is the admin's to issue again, not an
+  // invitation to start paying again.
+  const payments = await paymentsForPurchase(args.tenantId, purchase.id)
+  if (payments.some(p => p.status === 'refunded' || p.refundRequestedAt != null)) {
+    throw new BadRequestError('purchase_not_open', {
+      message: 'This purchase is being refunded. Everything you paid towards it is on its way back to you.',
+    })
+  }
+
   const outstanding = await outstandingFor(args.tenantId, purchase)
+  // Only a Purchase money has been paid into is resumed (PAY-61) — the ones the
+  // account page lists. One opened at checkout and never paid towards still
+  // carries its checkout's price, a Promo Code's cut included, but not the Hold
+  // that let it: that lapsed with its page, and a fresh session here would
+  // charge the discount without claiming a place, or charge it twice beside a
+  // second checkout that took the Hold over. Such a sale is started again.
+  if (outstanding >= toCents(purchase.totalSgd)) {
+    throw new BadRequestError('purchase_not_open', {
+      message: 'Nothing has been paid towards this purchase yet. Start again from the item you want.',
+    })
+  }
   // Asking for part of the remainder needs the studio's switch on; asking to
   // clear it does not, and never will — see the note above.
   if (args.requestedCents != null && !(await partPaymentEnabled(args.tenantId))) {
