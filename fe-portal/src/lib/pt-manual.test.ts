@@ -302,6 +302,11 @@ test("PT-113 a refused remove, add, type change or cancel is worded from its cod
   assert.strictEqual(says(400, "partner_required"), "Add the partner who joins the 2-on-1.");
   assert.strictEqual(says(409, "session_full"), "This session has no free seat.");
   assert.strictEqual(says(409, "cannot_cancel"), "This session can no longer be cancelled.");
+  // PT-129, PT-130: a cancel once the session has begun (#241).
+  assert.strictEqual(
+    says(422, "session_already_started"),
+    "This session has already started, so it can no longer be cancelled.",
+  );
   // The seat rule's refusals read as they do on create.
   assert.strictEqual(says(409, "insufficient_pt_credit"), "That package has no sessions left.");
   assert.strictEqual(says(500, "boom"), "Couldn't remove them (HTTP 500).");
