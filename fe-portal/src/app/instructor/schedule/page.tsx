@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarPlus, Loader2, UserPlus } from "lucide-react";
+import { toast } from "sonner";
 import {
   Button,
   Dialog,
@@ -9,8 +10,10 @@ import {
   EmptyState,
   Label,
   PageHeader,
+  StatusBadge,
   Textarea,
 } from "@/components/ui";
+import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
 import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
@@ -130,6 +133,7 @@ export default function InstructorSchedulePage() {
       );
       setCancelling(null);
       setReason("");
+      toast.success(`${cancelling.label} cancelled`);
       await load();
     } catch (err) {
       setCancelError(scheduleErrorMessage(err, "Failed to cancel"));
@@ -219,16 +223,21 @@ export default function InstructorSchedulePage() {
                       key={`${e.kind}:${e.id}`}
                       className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3"
                     >
-                      <div className="min-w-0 flex-1">
+                      <div className={cn("min-w-0 flex-1", row.cancelled && "opacity-70")}>
                         {row.href ? (
                           <Link
                             href={row.href}
-                            className="block truncate py-0.5 font-medium text-ink hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            className={cn(
+                              "block truncate py-0.5 font-medium text-ink hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                              row.cancelled && "line-through",
+                            )}
                           >
                             {e.label}
                           </Link>
                         ) : (
-                          <div className="truncate font-medium text-ink">{e.label}</div>
+                          <div className={cn("truncate font-medium text-ink", row.cancelled && "line-through")}>
+                            {e.label}
+                          </div>
                         )}
                         <div className="break-words text-xs text-muted">
                           {formatTime(e.starts_at)}–{formatTime(e.ends_at)}
@@ -239,6 +248,7 @@ export default function InstructorSchedulePage() {
                         </div>
                       </div>
                       <div className="ml-auto flex shrink-0 items-center gap-2">
+                        {row.cancelled && <StatusBadge status="cancelled" />}
                         {e.capacity != null && (
                           <span
                             className="text-xs tabular-nums text-muted"

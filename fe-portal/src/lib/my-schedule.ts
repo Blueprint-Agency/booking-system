@@ -32,6 +32,7 @@ export interface MyScheduleViewer {
 export interface MyScheduleRow {
   /** The session page the label opens, or null when it is not theirs to run. */
   href: string | null;
+  cancelled: boolean;
   canCancel: boolean;
 }
 
@@ -40,16 +41,14 @@ export function myScheduleRow(e: MyScheduleEntry, viewer: MyScheduleViewer): MyS
   // Supporting on someone else's class grants neither its page nor its cancel.
   const leadsClass = e.kind === "class" && me !== null && e.main_instructor_id === me;
   const runsPt = e.kind === "pt" && me !== null && e.instructor_ids.includes(me);
+  const cancelled = e.event_state === "cancelled";
   return {
     href: leadsClass
       ? `/instructor/schedule/class/${e.id}`
       : runsPt
         ? `/instructor/schedule/pt/${e.id}`
         : null,
-    canCancel:
-      viewer.canSchedule &&
-      leadsClass &&
-      e.event_state !== "cancelled" &&
-      e.event_state !== "completed",
+    cancelled,
+    canCancel: viewer.canSchedule && leadsClass && !cancelled && e.event_state !== "completed",
   };
 }
