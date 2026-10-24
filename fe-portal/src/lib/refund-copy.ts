@@ -25,6 +25,10 @@ const REFUND_REFUSALS: Record<string, string> = {
     "This purchase has been paid in full, so refund it from the package or booking it bought instead.",
   refund_processing:
     "A refund for this purchase is already on its way. It lands once Stripe confirms — there is no need to issue it again.",
+  // The member has a payment page open on it, or has just paid on one that has
+  // not reached the studio yet (RFD-22): the Refund waits so it can return it too.
+  checkout_session_busy:
+    "The member is paying towards this purchase right now. Wait a minute for their payment to land, then try again.",
 };
 
 /**

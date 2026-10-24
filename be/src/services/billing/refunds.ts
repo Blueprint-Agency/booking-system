@@ -42,9 +42,10 @@ import { classes, ptSessions, workshops, workshopTiers, workshopTierDays, worksh
 import { classTypes } from '../../db/schema/catalog'
 import { clients } from '../../db/schema/identity'
 import { requireTenantUrl } from '../tenants/urls'
-import { paymentOnPlatformAccount, stripeForProviderAccount } from '../../lib/stripe'
+import type Stripe from 'stripe'
+import { paymentOnPlatformAccount, stripeForProviderAccount, stripeForTenant } from '../../lib/stripe'
 import { outbound } from '../../lib/outbound'
-import { reportError } from '../../shared/logger'
+import { logger, reportError } from '../../shared/logger'
 import { toCents } from '../../shared/money'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { cancelBooking } from '../bookings/cancel'
@@ -781,7 +782,15 @@ export async function issueOpenPurchaseRefund(args: {
   reason: string
   actorStaffId: string
 }): Promise<IssuedRefund & { returnedSgd: string }> {
-  const purchase = await purchaseById(args.tenantId, args.purchaseId)
+  // Held for the rest of the request, as a Resume holds it (`lockPurchase` in
+  // open-purchases.ts): a member minting a new payment page and this ending the
+  // one it finds cannot interleave, so the page ended below is the live one.
+  const [purchase] = await db
+    .select()
+    .from(purchases)
+    .where(and(eq(purchases.tenantId, args.tenantId), eq(purchases.id, args.purchaseId)))
+    .limit(1)
+    .for('update')
   if (!purchase) throw new NotFoundError('purchase_not_found')
   // Only an ungranted Purchase comes through here. A `paid` one delivered
   // something and is refunded through the plan or the booking it bought, so
@@ -798,6 +807,8 @@ export async function issueOpenPurchaseRefund(args: {
   // the studio is holding — the member owes nothing on it and does not remember
   // making it. There is nothing to give back.
   if (held.length === 0) throw new BadRequestError('purchase_not_refundable')
+
+  await endOpenCheckout(args.tenantId, purchase, payments)
 
   const returnedSgd = purchase.amountPaidSgd
   // A part-paid Purchase is exactly the shape that can straddle a studio's move
@@ -835,6 +846,125 @@ export async function issueOpenPurchaseRefund(args: {
   }
 
   return { ...issued, returnedSgd }
+}
+
+/**
+ * End the payment page open against a part-paid Purchase, before any of its
+ * money goes back (RFD-20).
+ *
+ * The member comes back to a part-paid Purchase through Resume, which leaves a
+ * payment page open against it with no expiry. Refunding the Purchase without
+ * ending that page would leave the member able to pay into a sale the studio
+ * has just closed — and that money would land on an Abandoned Purchase that no
+ * screen lists and no Refund button reaches. So the page dies first, under the
+ * row lock the caller holds, which is also what stops a Resume making another
+ * one in the meantime.
+ *
+ * What the provider says decides the rest, as it does for Resume's own
+ * predecessor (`expirePredecessor` in open-purchases.ts):
+ * - ended now: no payment can arrive on it;
+ * - no longer open, and either expired or unknown on this account: nothing to
+ *   wait for;
+ * - complete and paid, on a payment this Purchase already holds: the Refund
+ *   below returns it with the rest;
+ * - complete and paid on a payment not yet recorded: the money is on its way
+ *   to the studio and the Refund cannot see it, so it is refused as
+ *   `checkout_session_busy` until the payment lands and can be returned with
+ *   the rest;
+ * - anything else — a timeout, an outage: the page is alive and unknown, and
+ *   refused the same way.
+ */
+async function endOpenCheckout(
+  tenantId: string,
+  purchase: PurchaseRow,
+  payments: readonly PurchasePayment[],
+): Promise<void> {
+  const sessionId = purchase.checkoutSessionId
+  if (!sessionId) return
+  const busy = (err: unknown): never => {
+    reportError(err, 'refund held back: the purchase’s payment page could not be ended', {
+      scope: 'refunds',
+      purchaseId: purchase.id,
+      checkoutSessionId: sessionId,
+    })
+    throw new ConflictError('checkout_session_busy', {
+      message:
+        'The member is paying towards this purchase right now. Wait a minute for their payment to land, then refund it.',
+    })
+  }
+  // Stripe's answer for a session that is no longer open, or that this account
+  // never had. Anything else is about the call, and says nothing about the page.
+  const noLongerOpen = (err: unknown) =>
+    (err as { type?: unknown } | null)?.type === 'StripeInvalidRequestError'
+
+  const stripe = await stripeForTenant(tenantId)
+  let session: Stripe.Checkout.Session
+  try {
+    session = await outbound('stripe', 'checkout.sessions.expire', () =>
+      stripe.checkout.sessions.expire(sessionId),
+    )
+  } catch (err) {
+    if (!noLongerOpen(err)) return busy(err)
+    // No longer open — which way it closed is the whole question.
+    try {
+      session = await outbound('stripe', 'checkout.sessions.retrieve', () =>
+        stripe.checkout.sessions.retrieve(sessionId),
+      )
+    } catch (retrieveErr) {
+      if (noLongerOpen(retrieveErr)) return
+      return busy(retrieveErr)
+    }
+  }
+  if (session?.status !== 'complete' || session.payment_status === 'unpaid') return
+  const intent =
+    typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id
+  if (intent && !payments.some(p => p.paymentIntentId === intent)) {
+    busy(new Error(`checkout session ${sessionId} was paid on ${intent}, not yet recorded`))
+  }
+}
+
+/**
+ * Give back a payment that landed on a Purchase already closed by a Refund
+ * (RFD-21).
+ *
+ * A Refund is the whole Purchase, so money reaching it after its Refund belongs
+ * to that Refund too. Refunding from the portal ends the member's payment page
+ * first (`endOpenCheckout`), but a Refund issued from the provider's dashboard
+ * cannot, and a page paid on in that gap would leave the studio holding money
+ * against a Purchase that is closed — listed nowhere, refundable from nowhere.
+ * So it is returned here, on the account it was paid on, and its own
+ * `charge.refunded` stamps it back like any other.
+ *
+ * The caller has recorded the payment as `succeeded`, so the money is on the
+ * ledger before it is asked back. A payment already back, or with its return
+ * already asked for, is left alone: a redelivery asks the provider nothing. A
+ * provider that refuses throws, so the delivery fails and is retried rather
+ * than the money being left where nobody can see it.
+ */
+export async function returnLatePayment(
+  tenantId: string,
+  purchaseId: string,
+  paymentIntentId: string,
+): Promise<void> {
+  const [payment] = await db
+    .select({
+      status: stripePayments.status,
+      providerAccountId: stripePayments.providerAccountId,
+      refundRequestedAt: stripePayments.refundRequestedAt,
+    })
+    .from(stripePayments)
+    .where(
+      and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.paymentIntentId, paymentIntentId)),
+    )
+    .limit(1)
+  if (!payment || payment.status === 'refunded' || refundInFlight(payment.refundRequestedAt)) return
+
+  logger.warn(
+    { scope: 'refunds', tenantId, purchaseId, paymentIntentId },
+    'payment landed on a Purchase already refunded — returning it',
+  )
+  await refundAtProvider(tenantId, paymentIntentId, payment.providerAccountId)
+  await stampRefundRequested(tenantId, paymentIntentId)
 }
 
 /**

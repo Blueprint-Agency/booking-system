@@ -228,6 +228,11 @@ export async function startStripeStub(): Promise<StripeStub> {
       if (session.status === 'open') session.status = 'expired'
       return json(res, 200, session)
     }
+    // A Refund the portal issues. Taken and nothing more: no `charge.refunded`
+    // is ever delivered, so a Purchase reads as "refund processing" afterwards.
+    if (route === 'POST /v1/refunds') {
+      return json(res, 200, { id: id('re'), object: 'refund', payment_intent: form.payment_intent ?? null, status: 'pending' })
+    }
     if ((match = route.match(/^GET \/v1\/payment_intents\/([^/]+)$/))) {
       const session = [...sessions.values()].find(s => s.payment_intent === match![1])
       if (session) {
