@@ -145,7 +145,7 @@ The promoted booking is a normal booking: it cancels under the normal policy and
 
 ### 6. Leaving, removal, expiry
 
-- `DELETE /me/waitlist/:entryId` → `204`. Any time before `starts_at`. Sets `withdrawn`. No `cancellations` row, no inbox item, no cap effect (Mindbody: a waitlist cancel is not a cancellation).
+- `DELETE /me/waitlist/:entryId` → `204`. Any time before `starts_at`. Sets `withdrawn`. No `cancellations` row, no inbox item, no cap effect (Mindbody: a waitlist cancel is not a cancellation). It takes the class row lock, as a join does, so a promotion or staff Add to class already booking the member finishes first and the leave is then refused `404 waitlist_entry_not_found`.
 - Staff `DELETE /portal/{admin,instructor}/schedule/classes/:id/waitlist/:entryId` → `removed`, `resolved_by` = staff id.
 - Whole-class cancel (`cancel-class.ts`) sets every `waiting` entry `removed` and includes those members in whatever notification the class cancel sends.
 - The existing cron sweep marks `waiting` entries `expired` once `starts_at` has passed. Reads also treat a `waiting` entry on a started class as expired, so the UI never shows a live position for a class that has begun.
