@@ -1,6 +1,3 @@
-/**
- * How a card's brand reads to the member who paid with it (#185).
- */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
