@@ -22,7 +22,6 @@
  */
 
 import {
-  brandInitials,
   emailButton,
   emailCode,
   emailDetails,
@@ -76,9 +75,6 @@ export interface EmailOrigins {
   /** Whose emails these are. */
   studio: EmailStudio
 }
-
-/** An initial per word, capped at three — the header mark is a square, not a label. */
-export const studioInitials = brandInitials
 
 /**
  * A studio's name goes into HTML that is stored and later mailed, and it is

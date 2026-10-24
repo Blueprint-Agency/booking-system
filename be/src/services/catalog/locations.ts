@@ -1,4 +1,4 @@
-import { and, eq, isNull, or, gt, inArray, sql } from 'drizzle-orm'
+import { and, eq, isNull, gt, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { locations } from '../../db/schema/catalog'
 import { classes, workshops, ptSessions } from '../../db/schema/schedule'
@@ -166,6 +166,3 @@ export async function softDeleteLocation(tenantId: string, id: string): Promise<
     .set({ deletedAt: sql`now()` })
     .where(and(eq(locations.tenantId, tenantId), eq(locations.id, id)))
 }
-
-// re-exports for tests / debugging
-export const _internal = { or, inArray }

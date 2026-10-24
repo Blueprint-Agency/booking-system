@@ -17,7 +17,6 @@ import { ConflictError, NotFoundError, BadRequestError } from '../../shared/erro
 import { getWorkshop as ensureWorkshop } from './publish'
 
 export type WorkshopTierRow = typeof workshopTiers.$inferSelect
-export type WorkshopTierDayRow = typeof workshopTierDays.$inferSelect
 
 export interface TierWithDays extends WorkshopTierRow {
   dayIds: string[]

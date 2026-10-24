@@ -51,7 +51,7 @@ None.
 - `be/src/services/waitlist/`:
   - `join(tenantId, clientId, classId, now)` with the §4 checks in order, under the class row lock. Returns `{ entry_id, position }`.
   - `leave(tenantId, clientId, entryId)` → `withdrawn`; no `cancellations` row, no inbox item.
-  - `positionOf` / `listForClient` / `listForClass` (read-time position by `(joined_at, id)`).
+  - `listForClient` / `listForClass` (read-time position by `(joined_at, id)`).
   - `promoteFromWaitlist(tx, tenantId, classId, now)` per §5: returns immediately inside the window; otherwise walks `waiting` entries in order, re-runs `sweepExpired` + `selectPackage` per entry, books through the same service as the member route with `seat = 'online'`, marks `promoted` with `booking_id`, enqueues the email; skipped entries stay `waiting`.
   - Pure `nextToPromote(entries, outcomes)` for the ordering/skip rule.
 - Hook: `cancelBooking` calls `promoteFromWaitlist` after the booking flips to `cancelled`, inside the same transaction, only when the cancelled booking's `seat = 'online'`. Refund- and complimentary-driven cancels already go through `cancelBooking`, so they promote for free. `cancelClass` sets `waiting` → `removed` for the class.

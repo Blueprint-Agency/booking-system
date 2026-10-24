@@ -263,17 +263,6 @@ export async function listForClass(
   }))
 }
 
-/** One entry's live position, or null when it is no longer in a line. */
-export async function positionOf(tenantId: string, entryId: string, now: Date = clockNow()): Promise<number | null> {
-  const [entry] = await db
-    .select({ classId: waitlistEntries.classId, status: waitlistEntries.status })
-    .from(waitlistEntries)
-    .where(and(eq(waitlistEntries.tenantId, tenantId), eq(waitlistEntries.id, entryId)))
-    .limit(1)
-  if (!entry || entry.status !== 'waiting') return null
-  return positions(await waitingLine(db, tenantId, entry.classId, now)).get(entryId) ?? null
-}
-
 /* ── Status writes other services make ─────────────────────────────── */
 
 /**
