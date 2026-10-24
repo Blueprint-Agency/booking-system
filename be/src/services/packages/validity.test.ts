@@ -188,6 +188,20 @@ assert.strictEqual(
   activationExpiry({ kind: 'credit_bundle', durationMonths: null, validityDays: null }, NOW),
   null,
 )
+
+// A length frozen before the catalogue capped it can be past what a Date holds
+// (#245: a 2,000,000,000-day bundle). It runs the longest length a package may
+// carry instead of yielding an Invalid Date that throws once serialised.
+assert.strictEqual(
+  activationExpiry({ kind: 'credit_bundle', durationMonths: null, validityDays: 2_000_000_000 }, NOW)?.toISOString(),
+  addDays(NOW, 3650).toISOString(),
+  'validity past ten years runs ten years',
+)
+assert.strictEqual(
+  activationExpiry({ kind: 'unlimited', durationMonths: 2_000_000_000, validityDays: null }, NOW)?.toISOString(),
+  addMonths(NOW, 120).toISOString(),
+  'a Duration past ten years runs ten years',
+)
 assert.strictEqual(
   activationExpiry({ kind: 'unlimited', durationMonths: null, validityDays: null }, NOW),
   null,
