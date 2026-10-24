@@ -203,11 +203,12 @@ type Candidate = OccupancyConflict & { rosterId: string }
  */
 export async function findOccupancyConflicts(
   tenantId: string,
-  subject: OccupancySubject,
+  asked: OccupancySubject,
   window: TimeWindow,
   exclude?: EventRef,
   tx?: Tx,
 ): Promise<OccupancyConflict[]> {
+  const subject = canonical(asked)
   const excludeId = (kind: EventKind) => (exclude?.kind === kind ? exclude.id : undefined)
   // SQL-side narrowing only: right time-ish, not itself. The rule is `occupies`.
   const narrow = (kind: EventKind, startsAt: AnyColumn, endsAt: AnyColumn, id: AnyColumn) => {
@@ -411,11 +412,12 @@ export interface SubjectClash {
  */
 export async function findClash(
   tenantId: string,
-  subject: OccupancySubject,
+  asked: OccupancySubject,
   window: TimeWindow,
   exclude?: EventRef,
   tx?: Tx,
 ): Promise<SubjectClash | null> {
+  const subject = canonical(asked)
   const conflicts = await findOccupancyConflicts(tenantId, subject, window, exclude, tx)
   if (conflicts.length === 0) return null
   return {
@@ -433,19 +435,31 @@ export function eventSubjects(roomId: string | null | undefined, instructorIds: 
   ]
 }
 
+function canonical(subject: OccupancySubject): OccupancySubject {
+  return { kind: subject.kind, id: subject.id.toLowerCase() }
+}
+
 /**
  * Hold these rooms and instructors for the rest of the transaction: a second
  * write for one of them waits here until the first commits, then sees it.
  *
  * Take it before any other lock but the event's own row (the class, the PT
- * request and session, the series), and once, every subject at once in one
- * order. So two writes that take it cannot deadlock on each other, nor with
- * what is locked after it: the instructor rows a leave submission locks,
- * member time, packages.
+ * request and session, the series, the workshop), with every subject the
+ * transaction will claim, all at once. The locks are taken in the order of
+ * their lock ids, so two writes cannot deadlock on each other, nor with what
+ * is locked after this: the instructor rows a leave submission locks, member
+ * time, packages. A later call for subjects already held returns at once.
  */
 export async function lockOccupancy(tx: Tx, tenantId: string, subjects: readonly OccupancySubject[]): Promise<void> {
-  const keys = [...new Set(subjects.map(s => `occupancy:${tenantId}:${s.kind}:${s.id}`))].sort()
-  for (const key of keys) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`)
+  if (subjects.length === 0) return
+  const keys = subjects.map(s => {
+    const { kind, id } = canonical(s)
+    return sql`(${`occupancy:${tenantId.toLowerCase()}:${kind}:${id}`})`
+  })
+  const locks = await tx.execute<{ lock: number }>(
+    sql`select distinct hashtext(v.key) as lock from (values ${sql.join(keys, sql`, `)}) as v(key) order by lock`,
+  )
+  for (const { lock } of locks) await tx.execute(sql`select pg_advisory_xact_lock(${lock}::bigint)`)
 }
 
 /**

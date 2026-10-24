@@ -469,73 +469,63 @@ export async function updatePtSession(
   id: string,
   patch: UpdatePtSessionInput,
 ): Promise<PtSessionRow> {
-  const [existing] = await db
-    .select()
-    .from(ptSessions)
-    .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
-    .limit(1)
-  if (!existing) throw new NotFoundError('pt_session_not_found')
-  if (existing.lifecycle !== 'active') throw new ConflictError('session_cancelled')
-
-  const newRoomId = patch.roomId ?? existing.roomId
-  const newLocationId = patch.locationId ?? existing.locationId
-  const newStartsAt = patch.startsAt ?? existing.startsAt
-  const newEndsAt = patch.endsAt ?? existing.endsAt
-
-  if (newEndsAt <= newStartsAt) throw new BadRequestError('bad_time_range')
-
-  const movesRoom =
-    patch.roomId !== undefined ||
-    patch.locationId !== undefined ||
-    patch.startsAt !== undefined ||
-    patch.endsAt !== undefined
-  if (movesRoom && newRoomId) await assertRoomInLocation(tenantId, newRoomId, newLocationId)
-
-  // Who is on the session, and what they're paid, belongs to the roster module —
-  // including instructor_id and instructor_pay_sgd, which live on this row.
-  const touchesMain = patch.instructorId !== undefined || patch.instructorPaySgd !== undefined
-  const touchesRoster = touchesMain || patch.supportingInstructors !== undefined
-
-  const rosterPatch: RosterPatch = {
-    ...(touchesMain
-      ? {
-          main: {
-            ...(patch.instructorId !== undefined ? { instructorId: patch.instructorId } : {}),
-            ...(patch.instructorPaySgd !== undefined ? { paySgd: patch.instructorPaySgd } : {}),
-          },
-        }
-      : {}),
-    ...(patch.supportingInstructors !== undefined
-      ? { supporting: patch.supportingInstructors }
-      : {}),
-  }
-
-  // A new roster, or the same roster at a new time, can put someone in two
-  // places at once. Ask about whoever the session will END UP with.
-  const movesRoster = touchesRoster || patch.startsAt !== undefined || patch.endsAt !== undefined
-
   return db.transaction(async tx => {
-    // A move, or a partner joining, reads everyone's time below. Their locks
-    // are all taken here, in one order, before any is taken one by one — the
-    // partner's seat takes its own — so two such edits cannot deadlock. The
-    // request and the session first, as every PT path takes them (cancelPtRequest,
-    // a manual seat), then the room and instructors, then the members: never a
-    // member before its session.
-    const movesOrGrows = patch.startsAt !== undefined || patch.endsAt !== undefined || patch.sessionType === '2on1'
-    if (movesOrGrows || movesRoom || movesRoster) {
-      if (existing.ptRequestId) {
-        await tx
-          .select({ id: ptRequests.id })
-          .from(ptRequests)
-          .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, existing.ptRequestId)))
-          .for('update')
-      }
+    // Locks in the order every PT path takes them (cancelPtRequest, a manual
+    // seat), so two edits cannot deadlock: the request, the session, then the
+    // room and instructors, then the members, the joining partner among them,
+    // before the partner's seat takes its own. The edit is decided on the
+    // session as read under its lock, so a second edit sees what the first saved.
+    const sessionWhere = and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id))
+    const [peek] = await tx.select({ ptRequestId: ptSessions.ptRequestId }).from(ptSessions).where(sessionWhere).limit(1)
+    if (!peek) throw new NotFoundError('pt_session_not_found')
+    if (peek.ptRequestId) {
       await tx
-        .select({ id: ptSessions.id })
-        .from(ptSessions)
-        .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
+        .select({ id: ptRequests.id })
+        .from(ptRequests)
+        .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, peek.ptRequestId)))
         .for('update')
     }
+    const [existing] = await tx.select().from(ptSessions).where(sessionWhere).for('update').limit(1)
+    if (!existing) throw new NotFoundError('pt_session_not_found')
+    if (existing.lifecycle !== 'active') throw new ConflictError('session_cancelled')
+
+    const newRoomId = patch.roomId ?? existing.roomId
+    const newLocationId = patch.locationId ?? existing.locationId
+    const newStartsAt = patch.startsAt ?? existing.startsAt
+    const newEndsAt = patch.endsAt ?? existing.endsAt
+
+    if (newEndsAt <= newStartsAt) throw new BadRequestError('bad_time_range')
+
+    const movesRoom =
+      patch.roomId !== undefined ||
+      patch.locationId !== undefined ||
+      patch.startsAt !== undefined ||
+      patch.endsAt !== undefined
+    if (movesRoom && newRoomId) await assertRoomInLocation(tenantId, newRoomId, newLocationId)
+
+    // Who is on the session, and what they're paid, belongs to the roster module —
+    // including instructor_id and instructor_pay_sgd, which live on this row.
+    const touchesMain = patch.instructorId !== undefined || patch.instructorPaySgd !== undefined
+    const touchesRoster = touchesMain || patch.supportingInstructors !== undefined
+
+    const rosterPatch: RosterPatch = {
+      ...(touchesMain
+        ? {
+            main: {
+              ...(patch.instructorId !== undefined ? { instructorId: patch.instructorId } : {}),
+              ...(patch.instructorPaySgd !== undefined ? { paySgd: patch.instructorPaySgd } : {}),
+            },
+          }
+        : {}),
+      ...(patch.supportingInstructors !== undefined
+        ? { supporting: patch.supportingInstructors }
+        : {}),
+    }
+
+    // A new roster, or the same roster at a new time, can put someone in two
+    // places at once. Ask about whoever the session will END UP with.
+    const movesRoster = touchesRoster || patch.startsAt !== undefined || patch.endsAt !== undefined
+    const movesOrGrows = patch.startsAt !== undefined || patch.endsAt !== undefined || patch.sessionType === '2on1'
     await assertAvailable(
       tx,
       tenantId,
@@ -558,11 +548,9 @@ export async function updatePtSession(
     }
 
     // Credits, attendees, bookings and the type flip all commit or roll back
-    // together. Re-read under FOR UPDATE so two concurrent retypes can't both
-    // see the old type and debit twice.
+    // together, decided on the session read under its lock above, so two
+    // concurrent retypes can't both see the old type and debit twice.
     if (patch.sessionType !== undefined) {
-      // The request before the session, the order cancelPtRequest locks them
-      // in, so a type change racing a cancel waits rather than deadlocks.
       const [req] = existing.ptRequestId
         ? await tx
             .select({
@@ -574,31 +562,13 @@ export async function updatePtSession(
             })
             .from(ptRequests)
             .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, existing.ptRequestId)))
-            .for('update')
             .limit(1)
         : []
-      const [locked] = await tx
-        .select({
-          sessionType: ptSessions.sessionType,
-          ptRequestId: ptSessions.ptRequestId,
-          instructorId: ptSessions.instructorId,
-          startsAt: ptSessions.startsAt,
-          endsAt: ptSessions.endsAt,
-          lifecycle: ptSessions.lifecycle,
-        })
-        .from(ptSessions)
-        .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
-        .for('update')
-        .limit(1)
-      if (!locked) throw new NotFoundError('pt_session_not_found')
-      // Asked again under the lock: a cancel that committed since the read
-      // above must not be followed by a seat, or a debit, on a dead session.
-      if (locked.lifecycle !== 'active') throw new ConflictError('session_cancelled')
       // Setting the type to what it already is is a no-op, not a second debit.
-      if (locked.sessionType !== patch.sessionType) {
+      if (existing.sessionType !== patch.sessionType) {
         // A session whose requester was permanently deleted (#144) has no request
         // left to reconcile credits against.
-        if (!locked.ptRequestId || !req) throw new ConflictError('pt_requester_deleted')
+        if (!existing.ptRequestId || !req) throw new ConflictError('pt_requester_deleted')
         if (req.origin === 'portal') {
           // A manual session is paid seat by seat, so the partner joins or
           // leaves on their own package (./manual.ts). Its seat rule judges
@@ -606,9 +576,9 @@ export async function updatePtSession(
           await retypeManualSessionInTx(tx, tenantId, {
             session: {
               id,
-              instructorId: patch.instructorId ?? locked.instructorId,
-              startsAt: patch.startsAt ?? locked.startsAt,
-              endsAt: patch.endsAt ?? locked.endsAt,
+              instructorId: patch.instructorId ?? existing.instructorId,
+              startsAt: patch.startsAt ?? existing.startsAt,
+              endsAt: patch.endsAt ?? existing.endsAt,
             },
             req,
             to: patch.sessionType,
@@ -621,8 +591,8 @@ export async function updatePtSession(
         } else {
           await reconcileSessionType(tx, tenantId, {
             sessionId: id,
-            ptRequestId: locked.ptRequestId,
-            from: locked.sessionType,
+            ptRequestId: existing.ptRequestId,
+            from: existing.sessionType,
             to: patch.sessionType,
             ...(patch.partnerClientId !== undefined ? { partnerClientId: patch.partnerClientId } : {}),
             actorStaffId: patch.actorStaffId,
