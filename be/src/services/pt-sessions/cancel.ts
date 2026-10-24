@@ -3,7 +3,7 @@ import { afterCommit, db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
-import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
+import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
 import { actorOfSource, recordMovement, refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import { ptSessionCost } from './cost'
@@ -255,7 +255,7 @@ async function cancelPtRequestInTx(
       // truthfully, and a late one keeps the package Activated (below).
       wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, now)
     } else {
-      const evaluation = await evaluateCancellation({
+      const evaluation = await lockMemberAndEvaluateCancellation({
         tenantId,
         clientId: req.clientId,
         kind: 'pt',

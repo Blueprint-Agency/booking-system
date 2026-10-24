@@ -35,7 +35,7 @@ import { clientPackages, ptPackages } from '../../db/schema/packages'
 import { actorOfSource, debitCredits, recordMovement, refundCredits, type Tx } from '../packages/ledger'
 import { activateOnSchedule, reverseActivationOnCancel, sweepExpired } from '../packages/activation'
 import { activationExpiry } from '../packages/validity'
-import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
+import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
 import type { CancelSource, RefundOutcome as BookingRefundOutcome } from '../bookings/refund-outcome'
 import { now as clockNow } from '../../lib/clock'
 import type { PtCancelMail } from '../notifications/send-booking-email'
@@ -727,7 +727,7 @@ export async function cancelManualSessionInTx(
   if (input.source === 'client') {
     const mine = seats.find(s => s.clientId === input.clientId)
     if (!mine) throw new ForbiddenError('not_your_request')
-    const evaluation = await evaluateCancellation({
+    const evaluation = await lockMemberAndEvaluateCancellation({
       tenantId,
       clientId: mine.clientId,
       kind: 'pt',
