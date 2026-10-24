@@ -659,14 +659,14 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     }
   }
 
-  async function holdPackagesOf(who: Member): Promise<{ release: () => Promise<void> }> {
+  async function holdPackagesOf(...members: Member[]): Promise<{ release: () => Promise<void> }> {
     const holder = postgres(TEST_DATABASE_URL!, { max: 1 })
     let letGo!: () => void
     const released = new Promise<void>(resolve => (letGo = resolve))
     let locked!: () => void
     const held = new Promise<void>(resolve => (locked = resolve))
     const holding = holder.begin(async tx => {
-      await tx`SELECT id FROM client_packages WHERE client_id = ${who.clientId} FOR UPDATE`
+      await tx`SELECT id FROM client_packages WHERE client_id IN ${tx(members.map(m => m.clientId))} FOR UPDATE`
       locked()
       await released
     })
@@ -736,6 +736,74 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     const leftFirst = { add: 404, leave: 204, entry: 'withdrawn', booked: 0, credits: 10, emails: 0 }
     const addedFirst = { add: 201, leave: 404, entry: 'promoted', booked: 1, credits: 9, emails: 1 }
     assert.deepEqual(seen, seen.leave === 204 ? leftFirst : addedFirst, 'the leave and the Add to class took turns')
+  })
+
+  test('WTL-35 two members who each wait on the class the other is cancelling cancel at the same moment: both cancels stand, and each is booked into the seat the other freed', async () => {
+    const early = await addClass(one, { online: 1, waitlist: 3 })
+    const later = await addClass(one, { online: 1, waitlist: 3 }, 3 * DAY + 2 * HOUR)
+    const ann = await member(one)
+    const ben = await member(one)
+    const annSeat = await booked(ann, early)
+    const benSeat = await booked(ben, later)
+    const annEntry = await joined(ann, later)
+    const benEntry = await joined(ben, early)
+
+    const packages = await holdPackagesOf(ann, ben)
+    let answers: Reply[]
+    try {
+      let settled = false
+      const annCancel = cancel(ann, annSeat).finally(() => (settled = true))
+      await untilRowLockWaiters(1, () => settled)
+      const benCancel = cancel(ben, benSeat).finally(() => (settled = true))
+      await untilRowLockWaiters(2, () => settled)
+      await packages.release()
+      answers = await Promise.all([annCancel, benCancel])
+    } finally {
+      await packages.release()
+    }
+
+    for (const answer of answers) {
+      assert.equal(answer.status, 200, JSON.stringify(answer.body))
+      assert.equal(answer.body.refund_outcome, 'credit_returned')
+    }
+    assert.equal((await confirmedOn(ben, early)).length, 1)
+    assert.equal((await confirmedOn(ann, later)).length, 1)
+    assert.equal((await entryStatus(benEntry.entry_id)).status, 'promoted')
+    assert.equal((await entryStatus(annEntry.entry_id)).status, 'promoted')
+    assert.equal(await creditsLeft(ann), 9)
+    assert.equal(await creditsLeft(ben), 9)
+    assert.equal((await promotedMails(ann)).length, 1)
+    assert.equal((await promotedMails(ben)).length, 1)
+  })
+
+  test('WTL-36 the expiry sweep ends a waiting entry while a cancel that would promote it waits on the member’s packages: the expiry stands, and nothing is booked, debited or emailed', async () => {
+    const { classId, seated } = await fullClass(one, { online: 1, waitlist: 3 })
+    const waiter = await member(one)
+    const entry = await joined(waiter, classId)
+
+    const packages = await holdPackagesOf(waiter)
+    let answer: Reply
+    try {
+      let settled = false
+      const cancelling = cancel(seated[0]!.who, seated[0]!.bookingId).finally(() => (settled = true))
+      await untilRowLockWaiters(1, () => settled)
+      harness.clock.set(new Date(Date.now() + 3 * DAY + 5 * 60 * 1000))
+      try {
+        await jobs.scheduledJobs.expireWaitlists()
+      } finally {
+        harness.clock.reset()
+      }
+      await packages.release()
+      answer = await cancelling
+    } finally {
+      await packages.release()
+    }
+
+    assert.equal(answer.status, 200, JSON.stringify(answer.body))
+    assert.equal((await entryStatus(entry.entry_id)).status, 'expired')
+    assert.equal((await confirmedOn(waiter, classId)).length, 0)
+    assert.equal(await creditsLeft(waiter), 10)
+    assert.equal((await promotedMails(waiter)).length, 0)
   })
 
   test('WTL-12 once the class starts the line is over: reads show nothing, and the sweep marks it expired', async () => {

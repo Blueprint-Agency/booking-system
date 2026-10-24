@@ -280,6 +280,9 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
   const ptCancel = (who: Member, requestId: string) =>
     harness.app.request(`/api/v1/me/pt-sessions/${requestId}/cancel`, { method: 'POST', headers: who.headers })
 
+  const adminPtCancel = (as: Record<string, string>, requestId: string) =>
+    harness.app.request(`/api/v1/portal/admin/pt-sessions/${requestId}/cancel`, { method: 'POST', headers: as })
+
   const instructorPtCancel = (as: Record<string, string>, requestId: string) =>
     harness.app.request(`/api/v1/portal/instructor/pt-requests/${requestId}/cancel`, { method: 'POST', headers: as })
 
@@ -375,18 +378,27 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     return ids
   }
 
-  async function bothInFlight(
+  type HarnessTx = Parameters<Parameters<TestApp['db']['transaction']>[0]>[0]
+
+  const bothInFlight = (
     packageIds: string[],
+    first: () => Response | Promise<Response>,
+    second: () => Response | Promise<Response>,
+  ) =>
+    bothQueuedBehind(
+      tx => tx.select({ id: schema.clientPackages.id }).from(schema.clientPackages).where(inArray(schema.clientPackages.id, packageIds)).for('update'),
+      first,
+      second,
+    )
+
+  async function bothQueuedBehind(
+    hold: (tx: HarnessTx) => Promise<unknown>,
     first: () => Response | Promise<Response>,
     second: () => Response | Promise<Response>,
   ): Promise<[Response, Response]> {
     const responses = await harness.db.transaction(async tx => {
       const [holder] = await tx.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`)
-      await tx
-        .select({ id: schema.clientPackages.id })
-        .from(schema.clientPackages)
-        .where(inArray(schema.clientPackages.id, packageIds))
-        .for('update')
+      await hold(tx)
       const queued = async (calls: number) => {
         const deadline = Date.now() + 10_000
         for (;;) {
@@ -398,7 +410,7 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
             )
             SELECT count(*)::int AS n FROM queue`)
           if (waiting!.n >= calls) return
-          assert.ok(Date.now() < deadline, `cancel ${calls} never queued behind the held packages`)
+          assert.ok(Date.now() < deadline, `cancel ${calls} never queued behind the held rows`)
           await new Promise(resolve => setTimeout(resolve, 10))
         }
       }
@@ -779,6 +791,91 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     } finally {
       await restorePolicies()
     }
+  })
+
+  test('PT-136 a member cancels their private session’s booking while an Admin cancels its request: the two take turns, and the session comes back once', async () => {
+    const t0 = aWeekOut()
+    harness.clock.set(t0)
+    const wes = await member(one, 'wes')
+    const pack = await give(one, wes, 'pt', { credits: 3 })
+    const requestId = await ptRequestOk(wes, one, pack)
+    await schedulePt(one, requestId, ptStart(t0, 4))
+    const booking = await ptBookingOf(requestId)
+    assert.equal(await balanceOf(pack), 2)
+
+    const [bookingRes, requestRes] = await bothInFlight(
+      [pack],
+      () => cancel(wes, booking.id),
+      () => adminPtCancel(one.admin.headers, requestId),
+    )
+    assert.equal((await expectStatus(bookingRes, 200)).refund_outcome, 'session_returned')
+    await expectStatus(requestRes, 200)
+
+    assert.equal(await balanceOf(pack), 3)
+    assert.equal((await refundsOn(pack)).length, 1)
+    await assertLedger(pack)
+    assert.equal((await cancellationOf(booking.id))?.refundFired, true)
+    const [request] = await harness.db.select().from(schema.ptRequests).where(eq(schema.ptRequests.id, requestId))
+    assert.equal(request?.status, 'cancelled_after_scheduled')
+    const [session] = await harness.db.select().from(schema.ptSessions).where(eq(schema.ptSessions.id, booking.ptSessionId!))
+    assert.equal(session?.lifecycle, 'cancelled')
+  })
+
+  test('PT-137 a member cancels their private session’s booking while an Admin changes it to two-to-one: the two take turns, the change is refused session_cancelled, and nothing is debited for it', async () => {
+    const t0 = aWeekOut()
+    harness.clock.set(t0)
+    const abe = await member(one, 'abe')
+    const xan = await member(one, 'xan')
+    const pack = await give(one, abe, 'pt', { credits: 3 })
+    const requestId = await ptRequestOk(abe, one, pack)
+    await schedulePt(one, requestId, ptStart(t0, 4))
+    const booking = await ptBookingOf(requestId)
+    assert.equal(await balanceOf(pack), 2)
+
+    const [bookingRes, retypeRes] = await bothInFlight(
+      [pack],
+      () => cancel(abe, booking.id),
+      () =>
+        harness.app.request(`/api/v1/portal/admin/pt-sessions/sessions/${booking.ptSessionId}`, {
+          method: 'PATCH',
+          headers: { ...one.admin.headers, ...json },
+          body: JSON.stringify({ session_type: '2on1', co_client_id: xan.clientId }),
+        }),
+    )
+    assert.equal((await expectStatus(bookingRes, 200)).refund_outcome, 'session_returned')
+    await expectStatus(retypeRes, 409, 'session_cancelled')
+
+    assert.equal(await balanceOf(pack), 3)
+    assert.equal((await refundsOn(pack)).length, 1)
+    await assertLedger(pack)
+    const onSession = await harness.db.select().from(schema.bookings).where(eq(schema.bookings.ptSessionId, booking.ptSessionId!))
+    assert.deepEqual(onSession.map(b => [b.clientId, b.state]), [[abe.clientId, 'cancelled']])
+    const [session] = await harness.db.select().from(schema.ptSessions).where(eq(schema.ptSessions.id, booking.ptSessionId!))
+    assert.equal(session?.lifecycle, 'cancelled')
+    assert.equal(session?.sessionType, '1on1')
+  })
+
+  test('CXL-68 an Admin cancels a whole class while a member cancels their booking on it: the two take turns, and the credit comes back once', async () => {
+    const t0 = aWeekOut()
+    harness.clock.set(t0)
+    const cal = await member(one, 'cal')
+    const bundle = await give(one, cal, 'credit_bundle', { credits: 5 })
+    const classId = await addClass(one, shifted(t0, 3 * DAY))
+    const bookingId = await bookOk(cal, classId)
+    assert.equal(await balanceOf(bundle), 4)
+
+    const [classRes, bookingRes] = await bothQueuedBehind(
+      tx => tx.select({ id: schema.classes.id }).from(schema.classes).where(eq(schema.classes.id, classId)).for('update'),
+      () => adminCancelClass(one.admin.headers, classId),
+      () => cancel(cal, bookingId),
+    )
+    await expectStatus(classRes, 200)
+    await expectStatus(bookingRes, 409, 'not_cancellable')
+
+    assert.equal(await balanceOf(bundle), 5)
+    assert.equal((await refundsOn(bundle)).length, 1)
+    await assertLedger(bundle)
+    assert.equal((await bookingRow(bookingId)).state, 'cancelled')
   })
 
   test('CXL-15 no-shows and admin-made cancellations in the cycle do not count: the member’s early cancel is refunded', async () => {
