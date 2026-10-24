@@ -1306,6 +1306,43 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(packageId), 9)
   })
 
+  /** Move a session's hour so it began `minutesAgo` minutes ago. */
+  async function startedAgo(sessionId: string, minutesAgo: number) {
+    const startsAt = new Date(Date.now() - minutesAgo * MINUTE)
+    await harness.db
+      .update(schema.ptSessions)
+      .set({ startsAt, endsAt: new Date(startsAt.getTime() + HOUR) })
+      .where(eq(schema.ptSessions.id, sessionId))
+  }
+
+  test("PT-129 staff cannot cancel a member's PT session once it has started, or after it has ended unticked: refused, still scheduled, nothing returned", async () => {
+    for (const [by, cancel, source] of [
+      [coachA, instructorCancel, 'instructor'],
+      [adminAtOne, adminCancel, 'admin'],
+    ] as const) {
+      // Ten minutes in, and an hour after it ended, nobody checked in.
+      for (const minutesAgo of [10, 120]) {
+        const who = await member(one, `Ida Over ${source} ${minutesAgo}`)
+        const packageId = await givePt(one, who, '1on1', { sessions: 2 })
+        const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: packageId })
+        const sessionId = await scheduled(requestId, { instructor: coachA })
+        await startedAgo(sessionId, minutesAgo)
+        const movements = (await movementsOn(packageId)).length
+
+        const refused = await expectStatus(await cancel(by, requestId), 422)
+
+        const label = `${source}, ${minutesAgo} minutes after it started`
+        assert.equal(refused.error, 'session_already_started', label)
+        assert.equal((await requestRow(requestId)).status, 'scheduled', label)
+        assert.equal((await sessionRow(sessionId)).lifecycle, 'active', label)
+        assert.ok((await bookingsOn(sessionId)).every(b => b.state === 'confirmed'), label)
+        assert.equal(await sessionsLeft(packageId), 1, label)
+        assert.equal((await movementsOn(packageId)).length, movements, label)
+        assert.equal((await cancellationsOf(who)).length, 0, label)
+      }
+    }
+  })
+
   test('PT-45, PT-47 an admin cancels inside the window: the full amount returns, recorded as an admin cancellation', async () => {
     const zed = await member(one, 'Zed Admin Late')
     const zoe = await member(one, 'Zoe Pal')
@@ -2528,6 +2565,31 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(res.result.refundedSessions, 1)
     assert.equal(await sessionsLeft(firstPackage), 10)
     assert.equal(await sessionsLeft(secondPackage), 10)
+  })
+
+  test('PT-130 staff cannot cancel a manual session once it has started, or after it has ended unticked: refused, still active, no seat paid back', async () => {
+    for (const [by, cancel, source] of [
+      [coachA, instructorCancel, 'instructor'],
+      [adminAtOne, adminCancel, 'admin'],
+    ] as const) {
+      for (const minutesAgo of [10, 120]) {
+        const { first, second, firstPackage, secondPackage, requestId, sessionId } = await fullPair(
+          `Ola Over ${source} ${minutesAgo}`,
+        )
+        await startedAgo(sessionId, minutesAgo)
+
+        const refused = await expectStatus(await cancel(by, requestId), 422)
+
+        const label = `${source}, ${minutesAgo} minutes after it started`
+        assert.equal(refused.error, 'session_already_started', label)
+        assert.equal((await requestRow(requestId)).status, 'scheduled', label)
+        assert.equal((await sessionRow(sessionId)).lifecycle, 'active', label)
+        assert.ok((await bookingsOn(sessionId)).every(b => b.state === 'confirmed'), label)
+        assert.equal(await sessionsLeft(firstPackage), 9, label)
+        assert.equal(await sessionsLeft(secondPackage), 9, label)
+        assert.equal((await cancellationsOf(first)).length + (await cancellationsOf(second)).length, 0, label)
+      }
+    }
   })
 
   test('PT-126 a manual session whose seats are cancelled one booking at a time goes on while one is seated, and is cancelled with its request when the last goes by a cancel that is not staff’s', async () => {
