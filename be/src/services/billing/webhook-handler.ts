@@ -21,7 +21,7 @@ import { latestCharge, methodPatch } from './payment-methods'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
 import { returnLatePayment, unwindRefund, unwindRefundForTenant } from './refunds'
-import { openPurchase, purchaseById, recomputeBalance, type PurchaseRow } from './purchases'
+import { openPurchase, paymentsForPurchase, purchaseById, recomputeBalance, type PurchaseRow } from './purchases'
 import { purchaseKindFor } from './checkout-session'
 import { toCents } from '../../shared/money'
 import { bookWorkshopPaid, tierDaysClash } from '../workshops/book'
@@ -149,17 +149,25 @@ async function tenantForClient(clientId: string): Promise<string> {
  * than a legacy session, and minting a second sale record for money that
  * already has one is worse than failing. It throws, so the provider retries and
  * a human sees it.
+ *
+ * **The Purchase found is held** for the rest of the delivery (`FOR UPDATE`),
+ * before this payment's row is written, and squared with the provider first
+ * (`withReturnsHeard`). A refund unwinding it at the same moment then goes
+ * wholly before this delivery or wholly after it, so the status and the
+ * Balance decided below are never decided on a copy the refund has since
+ * changed (RFD-23).
  */
 async function purchaseForPayment(
   tenantId: string,
   meta: Record<string, string>,
   paymentIntentId: string,
   fallback: { clientId: string; amountSgd: string },
+  retry?: RetryPolicy,
 ): Promise<PurchaseRow> {
   if (meta.purchase_id) {
-    const named = await purchaseById(tenantId, meta.purchase_id)
+    const named = await purchaseById(tenantId, meta.purchase_id, { lock: true })
     if (!named) throw new NotFoundError('purchase_not_found', { purchaseId: meta.purchase_id })
-    return named
+    return withReturnsHeard(tenantId, named, paymentIntentId, retry)
   }
   const [row] = await db
     .select({ purchaseId: stripePayments.purchaseId })
@@ -172,8 +180,8 @@ async function purchaseForPayment(
     )
     .limit(1)
   if (row?.purchaseId) {
-    const recorded = await purchaseById(tenantId, row.purchaseId)
-    if (recorded) return recorded
+    const recorded = await purchaseById(tenantId, row.purchaseId, { lock: true })
+    if (recorded) return withReturnsHeard(tenantId, recorded, paymentIntentId, retry)
   }
   return openPurchase({
     tenantId,
@@ -185,6 +193,47 @@ async function purchaseForPayment(
     // by line, and nothing here can say it now.
     lines: [],
   })
+}
+
+/**
+ * The Purchase as it stands once every return the provider has made on it is
+ * heard — before this payment is counted towards it (RFD-23).
+ *
+ * The lock in `purchaseForPayment` puts this delivery and a refund's in turn,
+ * but not always in the order the money moved: a studio can return a card from
+ * the provider's dashboard and the member pay the rest on their Resume page a
+ * moment later, and the payment's delivery be the one that reaches here first.
+ * Counting the returned card would then settle the Balance and grant against
+ * money the studio no longer holds. So each other payment this open Purchase
+ * still counts is read back from the provider, and one given back in full is
+ * unwound here as its own `charge.refunded` would unwind it — before this
+ * payment's row exists, exactly as it was when the card went back. A Purchase
+ * left holding nothing closes Abandoned, and this payment lands on it late and
+ * is returned (`settleAndMayGrant`); the refund's own delivery, when it comes,
+ * finds it done.
+ *
+ * Only an open Purchase, and only the payments it counts: a settled one has
+ * granted already, and its refund is the unwind's to make. A read that fails
+ * counts the payment as held, as the charge lookup does everywhere here.
+ */
+async function withReturnsHeard(
+  tenantId: string,
+  purchase: PurchaseRow,
+  paymentIntentId: string,
+  retry: RetryPolicy | undefined,
+): Promise<PurchaseRow> {
+  if (purchase.status !== 'open') return purchase
+  const others = (await paymentsForPurchase(tenantId, purchase.id)).filter(
+    p => p.status === 'succeeded' && p.paymentIntentId !== paymentIntentId,
+  )
+  let heard = false
+  for (const payment of others) {
+    const charge = await latestCharge(tenantId, payment.paymentIntentId, payment.providerAccountId, retry)
+    if (!charge || !isRefundedInFull(charge)) continue
+    await unwindRefundForTenant(payment.paymentIntentId)
+    heard = true
+  }
+  return heard ? ((await purchaseById(tenantId, purchase.id)) ?? purchase) : purchase
 }
 
 /**
@@ -507,7 +556,7 @@ async function dispatchStripeEvent(
       const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
         clientId,
         amountSgd: chargedSgd,
-      })
+      }, retry)
 
       // Insert the stripe_payments row (we now have the confirmed PaymentIntent ID)
       if (!existing) {
@@ -610,7 +659,7 @@ async function dispatchStripeEvent(
       const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
         clientId,
         amountSgd,
-      })
+      }, retry)
 
       if (!existing) {
         await db
@@ -685,7 +734,7 @@ async function dispatchStripeEvent(
       const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
         clientId,
         amountSgd,
-      })
+      }, retry)
 
       if (!existing) {
         await db
@@ -744,7 +793,7 @@ async function dispatchStripeEvent(
       const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
         clientId,
         amountSgd,
-      })
+      }, retry)
 
       if (!existing) {
         await db
@@ -820,7 +869,7 @@ async function dispatchStripeEvent(
       const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
         clientId,
         amountSgd,
-      })
+      }, retry)
 
       if (!existing) {
         await db

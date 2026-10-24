@@ -140,16 +140,29 @@ export async function attachCheckoutSession(
     .where(and(eq(purchases.tenantId, tenantId), eq(purchases.id, purchaseId)))
 }
 
-/** The Purchase a webhook's session metadata names, or null when it names none. */
+/**
+ * The Purchase a webhook's session metadata names, or null when it names none.
+ *
+ * `lock` holds its row for the rest of the transaction (`FOR UPDATE`), and is
+ * what a delivery that moves money on it asks for: a payment landing and a
+ * refund unwinding then take turns on the Purchase, and whichever goes second
+ * reads what the first left rather than a copy from before it (RFD-23). Every
+ * path that holds a Purchase — the checkout webhook and the refund unwind
+ * through this, a Resume and an Admin's refund of an Open Purchase through
+ * their own reads — takes it before writing any of its payment rows, so no two
+ * of them can each hold what the other is waiting for.
+ */
 export async function purchaseById(
   tenantId: string,
   purchaseId: string,
+  { lock = false }: { lock?: boolean } = {},
 ): Promise<PurchaseRow | null> {
-  const [row] = await db
+  const query = db
     .select()
     .from(purchases)
     .where(and(eq(purchases.tenantId, tenantId), eq(purchases.id, purchaseId)))
     .limit(1)
+  const [row] = lock ? await query.for('update') : await query
   return row ?? null
 }
 

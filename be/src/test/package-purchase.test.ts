@@ -312,25 +312,28 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
       if (signature !== GOOD_SIGNATURE) throw new Error('No signatures found matching the expected signature for payload')
       return JSON.parse(String(body))
     })
-    installed.reply('paymentIntents.retrieve', (id: unknown) => {
-      const captured = refundedAtProvider.get(String(id))
-      return {
-        id,
-        latest_charge: {
-          id: `ch_${String(id)}`,
-          receipt_url: null,
-          // What the provider says of a charge given back from its dashboard.
-          ...(captured === undefined
-            ? {}
-            : { amount: captured, amount_captured: captured, amount_refunded: captured, refunded: true }),
-        },
-      }
-    })
+    installed.reply('paymentIntents.retrieve', intentAtProvider)
     return installed
   }
 
   /** Intents the provider has given back in full, with what each captured in cents. */
   const refundedAtProvider = new Map<string, number>()
+
+  /** A payment intent as the provider reads it back, with its latest charge. */
+  function intentAtProvider(id: unknown) {
+    const captured = refundedAtProvider.get(String(id))
+    return {
+      id,
+      latest_charge: {
+        id: `ch_${String(id)}`,
+        receipt_url: null,
+        // What the provider says of a charge given back from its dashboard.
+        ...(captured === undefined
+          ? {}
+          : { amount: captured, amount_captured: captured, amount_refunded: captured, refunded: true }),
+      },
+    }
+  }
 
   /**
    * The provider's `charge.refunded` delivery for a whole refund, as its
@@ -799,6 +802,150 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
       fake.reply('checkout.sessions.expire', (id: unknown) => ({ id, status: 'expired' }))
       fake.reply('checkout.sessions.retrieve', (id: unknown) => ({ id, status: 'expired', payment_status: 'unpaid', payment_intent: null }))
     }
+  })
+
+  /**
+   * Hold a delivery part-way: its `nth` read of `intent` at the provider waits
+   * until released. `reached` settles when the read is made.
+   */
+  function holdIntentRead(intent: string, nth: number) {
+    let reach!: () => void
+    let release!: () => void
+    const reached = new Promise<void>(resolve => (reach = resolve))
+    const released = new Promise<void>(resolve => (release = resolve))
+    let reads = 0
+    fake.reply('paymentIntents.retrieve', async (id: unknown) => {
+      if (id === intent && ++reads === nth) {
+        reach()
+        await released
+      }
+      return intentAtProvider(id)
+    })
+    return { reached, release }
+  }
+
+  /**
+   * Settles once some transaction in this database is waiting on another's
+   * row, or once `stop` says nobody needs to know any more.
+   */
+  async function someoneWaitsOnARow(stop: () => boolean): Promise<void> {
+    while (!stop()) {
+      const rows = await harness.db.execute(sql`
+        SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock' AND wait_event IN ('transactionid', 'tuple')`)
+      if (Number((rows as unknown as { n: number }[])[0]?.n ?? 0) > 0) return
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
+  }
+
+  /**
+   * The studio returns the first card from the provider's dashboard and the
+   * member pays the rest on their Resume page a moment later, and the two
+   * deliveries overlap: the payment's is held at its `nth` read of its own
+   * intent, and the refund's runs beside it until it finishes or waits.
+   *
+   * `cardBackFirst: false` turns the money round: the member's payment was
+   * taken first and the card goes back while its delivery is part-way.
+   */
+  async function overlapRefundWithLatePayment(nth: number, { cardBackFirst = true } = {}) {
+    const { who, purchaseId, firstIntent } = await midResume()
+    if (cardBackFirst) refundedAtProvider.set(firstIntent, 5000)
+    const lateIntent = `pi_${randomUUID()}`
+    const asked = fake.callsTo('refunds.create').length
+    const hold = holdIntentRead(lateIntent, nth)
+    try {
+      const paying = deliver({ intent: lateIntent })
+      // A delivery that never needs the read it is held at simply finishes.
+      await Promise.race([hold.reached, paying])
+      let refunded = false
+      const refunding = deliverRefund(firstIntent, 5000).finally(() => (refunded = true))
+      await Promise.race([refunding, someoneWaitsOnARow(() => refunded)])
+      hold.release()
+      await expectStatus(await paying, 200)
+      await expectStatus(await refunding, 200)
+    } finally {
+      hold.release()
+      fake.reply('paymentIntents.retrieve', intentAtProvider)
+    }
+    return { who, purchaseId, firstIntent, lateIntent, asked }
+  }
+
+  /** Abandoned, nothing granted, and the late payment recorded and on its way back. */
+  async function assertLatePaymentGivenBack(o: Awaited<ReturnType<typeof overlapRefundWithLatePayment>>) {
+    assert.equal((await packagesOf(o.who)).length, 0, 'a package was granted on money the studio no longer holds')
+    const [sale] = await purchasesOf(o.who)
+    assert.equal(sale!.status, 'abandoned', 'the Purchase was reopened, or settled, after its Refund')
+    assert.equal(sale!.amountPaidSgd, '0.00')
+    const payments = await paymentsOf(o.who)
+    assert.equal(payments.find(p => p.paymentIntentId === o.firstIntent)!.status, 'refunded')
+    const late = payments.find(p => p.paymentIntentId === o.lateIntent)
+    assert.ok(late, 'the late payment is recorded')
+    assert.equal(late.purchaseId, o.purchaseId)
+    assert.ok(late.refundRequestedAt, 'the late payment is on its way back')
+    const returned = fake.callsTo('refunds.create').slice(o.asked)
+    assert.deepEqual(
+      returned.map(c => (c.args[0] as { payment_intent: string }).payment_intent),
+      [o.lateIntent],
+      'the late payment, and only it, is given back',
+    )
+    assert.equal(returned[0]!.account, ownAccountId(one))
+
+    await expectStatus(await deliverRefund(o.lateIntent, 10000), 200)
+    assert.equal((await paymentsOf(o.who)).find(p => p.paymentIntentId === o.lateIntent)!.status, 'refunded')
+    assert.equal((await purchasesOf(o.who))[0]!.status, 'abandoned')
+  }
+
+  test('RFD-23 a refund delivery that finishes while a late payment’s delivery is part-way leaves the Purchase Abandoned and gives the late payment back', async () => {
+    // Held at its first read of its own intent: it has read the Purchase and
+    // recorded its payment, and has not yet written the Balance.
+    await assertLatePaymentGivenBack(await overlapRefundWithLatePayment(1))
+  })
+
+  test('RFD-23 a late payment whose delivery writes the Balance before an overlapping refund delivery is given back, and grants nothing', async () => {
+    // Held at its second read: the Balance is written and the package granted,
+    // and the refund delivery runs against that before it commits.
+    await assertLatePaymentGivenBack(await overlapRefundWithLatePayment(2))
+  })
+
+  test('RFD-23 a card returned while the payment that settled its Purchase is still landing waits for that payment, and never reopens the Purchase', async () => {
+    // When the payment's delivery read the first card back from the provider it
+    // was still held, so the two together settled the Balance.
+    const o = await overlapRefundWithLatePayment(1, { cardBackFirst: false })
+
+    const [sale] = await purchasesOf(o.who)
+    assert.equal(sale!.status, 'paid', 'the Purchase was left open, or Abandoned, under a payment that settled it')
+    const [granted, ...more] = await packagesOf(o.who)
+    assert.equal(more.length, 0)
+    assert.equal(granted!.purchaseId, o.purchaseId)
+    const payments = await paymentsOf(o.who)
+    assert.equal(payments.find(p => p.paymentIntentId === o.firstIntent)!.status, 'refunded')
+    assert.equal(payments.find(p => p.paymentIntentId === o.lateIntent)!.status, 'succeeded')
+    // One card of a settled Purchase back is not a Refund of it: nothing more
+    // goes back on its own, and the plan is the Admin's to refund.
+    assert.equal(fake.callsTo('refunds.create').length, o.asked)
+    assert.equal((await adminSees(o.who, granted!.id)).refundable, true)
+  })
+
+  test('PAY-62 a part-paid Purchase one of whose payments the studio returned from the provider dashboard can still be resumed for what is owed', async () => {
+    const who = await member(one)
+    await expectStatus(await buyClass(who, one.bundleId), 200)
+    const firstIntent = `pi_${randomUUID()}`
+    await expectStatus(await deliver({ intent: firstIntent, amountTotal: 5000 }), 200)
+    const [open] = await purchasesOf(who)
+    await expectStatus(await resume(who, open!.id), 200)
+    await expectStatus(await deliver({ intent: `pi_${randomUUID()}`, amountTotal: 5000 }), 200)
+    assert.equal((await purchasesOf(who))[0]!.status, 'open')
+
+    // One card goes back from the dashboard; the other S$50 is still held.
+    await expectStatus(await deliverRefund(firstIntent, 5000), 200)
+    assert.equal((await purchasesOf(who))[0]!.status, 'open')
+
+    const sessions = sessionsAsked()
+    const resumed = await expectStatus(await resume(who, open!.id), 200)
+    assert.equal(sessionsAsked(), sessions + 1, 'no payment page was made')
+    assert.equal(resumed.charged_sgd, '100.00', 'the page asks for what is still owed')
+    assert.equal(sessionTotal(lastSession().params), 10000)
+    assert.equal((await packagesOf(who)).length, 0)
   })
 
   test('PAY-61 a Purchase nothing was ever paid towards cannot be resumed, so its frozen price is never charged without a fresh checkout', async () => {
