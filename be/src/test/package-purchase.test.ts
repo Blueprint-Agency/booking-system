@@ -674,6 +674,146 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal((await purchasesOf(ola))[0]!.status, 'abandoned')
   })
 
+  /* ── a Refund while the member is paying ────────────────────────────── */
+
+  const resume = (who: Member, purchaseId: string) => post(who, `/api/v1/me/purchases/${purchaseId}/resume`, {})
+  const refundOpen = (purchaseId: string) => asAdmin('POST', `/purchases/${purchaseId}/refund`, { reason: 'Member asked' })
+
+  /** A member S$50 into a S$150 Credit Bundle, with a Resume page open for the other S$100. */
+  async function midResume(): Promise<{ who: Member; purchaseId: string; firstIntent: string; resumeSessionId: string }> {
+    const who = await member(one)
+    await expectStatus(await buyClass(who, one.bundleId), 200)
+    const firstIntent = `pi_${randomUUID()}`
+    await expectStatus(await deliver({ intent: firstIntent, amountTotal: 5000 }), 200)
+    const [open] = await purchasesOf(who)
+    assert.equal(open!.status, 'open')
+    assert.equal(open!.amountPaidSgd, '50.00')
+    await expectStatus(await resume(who, open!.id), 200)
+    const [resumed] = await purchasesOf(who)
+    assert.ok(resumed!.checkoutSessionId, 'the Resume page is the Purchase’s live session')
+    return { who, purchaseId: open!.id, firstIntent, resumeSessionId: resumed!.checkoutSessionId! }
+  }
+
+  test("RFD-20 refunding a part-paid Purchase ends the member's open Resume page before any money goes back, and the member cannot pay towards it again", async () => {
+    const { who, purchaseId, firstIntent, resumeSessionId } = await midResume()
+    const from = fake.calls.length
+
+    await expectStatus(await refundOpen(purchaseId), 200)
+
+    const made = fake.calls.slice(from)
+    assert.deepEqual(
+      made.filter(c => c.method === 'checkout.sessions.expire').map(c => c.args[0]),
+      [resumeSessionId],
+      'the Resume page was ended at the provider',
+    )
+    const methods = made.map(c => c.method)
+    assert.ok(
+      methods.indexOf('checkout.sessions.expire') < methods.indexOf('refunds.create'),
+      'the page was ended before any money went back',
+    )
+
+    // Asked for, not yet confirmed: the Purchase is still open, and still no
+    // place to put more money.
+    const sessions = sessionsAsked()
+    await expectStatus(await resume(who, purchaseId), 400, 'purchase_not_open')
+    assert.equal(sessionsAsked(), sessions, 'a new payment page was made for a Purchase being refunded')
+
+    await expectStatus(await deliverRefund(firstIntent, 5000), 200)
+    assert.equal((await purchasesOf(who))[0]!.status, 'abandoned')
+    await expectStatus(await resume(who, purchaseId), 400, 'purchase_not_open')
+    assert.equal(sessionsAsked(), sessions)
+    assert.equal((await packagesOf(who)).length, 0)
+  })
+
+  test('RFD-21 a payment that lands on a Purchase already refunded and Abandoned is recorded and given back to the member, and grants nothing', async () => {
+    const { who, purchaseId, firstIntent } = await midResume()
+    // The studio returns the first card from the provider's dashboard while the
+    // member's Resume page is still open, and the member then pays on it.
+    await expectStatus(await deliverRefund(firstIntent, 5000), 200)
+    assert.equal((await purchasesOf(who))[0]!.status, 'abandoned')
+
+    const lateIntent = `pi_${randomUUID()}`
+    const asked = fake.callsTo('refunds.create').length
+    await expectStatus(await deliver({ intent: lateIntent }), 200)
+
+    const late = (await paymentsOf(who)).find(p => p.paymentIntentId === lateIntent)
+    assert.ok(late, 'the payment is recorded')
+    assert.equal(late.purchaseId, purchaseId)
+    assert.equal(late.amountSgd, '100.00')
+    assert.ok(late.refundRequestedAt, 'its return is on its way')
+    const returned = fake.callsTo('refunds.create').slice(asked)
+    assert.deepEqual(
+      returned.map(c => (c.args[0] as { payment_intent: string }).payment_intent),
+      [lateIntent],
+      'the late payment, and only it, is given back',
+    )
+    assert.equal(returned[0]!.account, ownAccountId(one), 'on the account it was paid on')
+    assert.equal((await packagesOf(who)).length, 0, 'a package was granted on a refunded Purchase')
+    assert.equal((await purchasesOf(who))[0]!.status, 'abandoned')
+
+    // A redelivery does not ask for it twice; the provider's confirmation lands it.
+    await expectStatus(await deliver({ intent: lateIntent }), 200)
+    assert.equal(fake.callsTo('refunds.create').length, asked + 1)
+    await expectStatus(await deliverRefund(lateIntent, 10000), 200)
+    assert.equal((await paymentsOf(who)).find(p => p.paymentIntentId === lateIntent)!.status, 'refunded')
+    const [sale] = await purchasesOf(who)
+    assert.equal(sale!.status, 'abandoned')
+    assert.equal(sale!.amountPaidSgd, '0.00')
+  })
+
+  test('RFD-22 a Resume page the member has already paid on, whose payment has not reached the studio, holds the Refund back until it does, and the payment is then counted', async () => {
+    const { who, purchaseId, resumeSessionId } = await midResume()
+    const lateIntent = `pi_${randomUUID()}`
+    // The provider says the page can no longer be ended: it was paid on.
+    fake.reply('checkout.sessions.expire', () => {
+      throw Object.assign(new Error('Only Checkout Sessions with a status in ["open"] can be expired.'), {
+        type: 'StripeInvalidRequestError',
+      })
+    })
+    fake.reply('checkout.sessions.retrieve', (id: unknown) => ({
+      id,
+      status: id === resumeSessionId ? 'complete' : 'expired',
+      payment_status: id === resumeSessionId ? 'paid' : 'unpaid',
+      payment_intent: id === resumeSessionId ? lateIntent : null,
+    }))
+    try {
+      const asked = fake.callsTo('refunds.create').length
+      await expectStatus(await refundOpen(purchaseId), 409, 'checkout_session_busy')
+      assert.equal(fake.callsTo('refunds.create').length, asked, 'money went back while a payment was still landing')
+      assert.equal((await paymentsOf(who)).filter(p => p.refundRequestedAt).length, 0)
+
+      // The payment lands, settling the Balance: the package is granted, and
+      // its own Refund returns both cards.
+      await expectStatus(await deliver({ intent: lateIntent }), 200)
+      const [sale] = await purchasesOf(who)
+      assert.equal(sale!.status, 'paid')
+      const [granted] = await packagesOf(who)
+      assert.ok(granted, 'the settled Purchase granted its package')
+      await expectStatus(await asAdmin('POST', `/clients/${who.clientId}/packages/${granted.id}/refund`, { reason: 'Member asked' }), 200)
+      assert.deepEqual(
+        fake.callsTo('refunds.create').slice(asked).map(c => (c.args[0] as { payment_intent: string }).payment_intent).sort(),
+        (await paymentsOf(who)).map(p => p.paymentIntentId).sort(),
+        'every payment the studio received is returned',
+      )
+    } finally {
+      fake.reply('checkout.sessions.expire', (id: unknown) => ({ id, status: 'expired' }))
+      fake.reply('checkout.sessions.retrieve', (id: unknown) => ({ id, status: 'expired', payment_status: 'unpaid', payment_intent: null }))
+    }
+  })
+
+  test('PAY-61 a Purchase nothing was ever paid towards cannot be resumed, so its frozen price is never charged without a fresh checkout', async () => {
+    const zoe = await member(one)
+    await expectStatus(await buyClass(zoe, one.bundleId), 200)
+    const [open] = await purchasesOf(zoe)
+    assert.equal(open!.status, 'open')
+    assert.equal(open!.amountPaidSgd, '0.00')
+    const sessions = sessionsAsked()
+
+    await expectStatus(await resume(zoe, open!.id), 400, 'purchase_not_open')
+
+    assert.equal(sessionsAsked(), sessions, 'a payment page was made for a Purchase never paid towards')
+  })
+
   test('PAY-17 a webhook whose signature does not verify grants nothing and records no payment', async () => {
     const eli = await member(one)
     await expectStatus(await buyClass(eli, one.bundleId), 200)
