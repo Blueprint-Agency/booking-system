@@ -1019,7 +1019,14 @@ export async function unwindRefundForTenant(paymentIntentId: string): Promise<vo
   if (!payment) return
   const tenantId = payment.tenantId!
 
-  // This payment is back. Stamped before the Purchase is looked at, and NOT as
+  // The Purchase is held before anything is written, so a payment landing on
+  // it at the same moment — a Resume page paid on while this card went back
+  // from the provider's dashboard — waits for this unwind, or this for it, and
+  // neither decides on a copy the other has since changed (RFD-23). Before the
+  // payment row, as every path that holds both takes them.
+  await purchaseById(tenantId, payment.purchaseId, { lock: true })
+
+  // This payment is back. Stamped before the Purchase's status is read, and NOT as
   // the gate for the unwind: the gate is the Purchase's own status, stamped
   // last. A redelivery that arrives after this write still walks the whole
   // unwind, which is what makes a pass that died halfway simply get redone.

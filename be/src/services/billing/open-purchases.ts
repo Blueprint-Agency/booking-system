@@ -366,8 +366,15 @@ export async function resumePurchaseCheckout(args: {
   // on a sale the studio is closing. Asked for at all, not merely recently: an
   // ask the provider later failed is the admin's to issue again, not an
   // invitation to start paying again.
+  //
+  // The ask is what says so, and only an Admin's refund of the Purchase makes
+  // one while it is open (`issueOpenPurchaseRefund`). A card the studio gave
+  // back from the provider's dashboard is not a Refund of the Purchase while
+  // another payment is still held (`unwindPurchase` leaves it open): it counts
+  // for nothing towards the Balance, and the member may still pay what is owed
+  // (PAY-62).
   const payments = await paymentsForPurchase(args.tenantId, purchase.id)
-  if (payments.some(p => p.status === 'refunded' || p.refundRequestedAt != null)) {
+  if (payments.some(p => p.refundRequestedAt != null)) {
     throw new BadRequestError('purchase_not_open', {
       message: 'This purchase is being refunded. Everything you paid towards it is on its way back to you.',
     })
