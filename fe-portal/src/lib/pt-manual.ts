@@ -390,6 +390,7 @@ const SESSION_ACTION_COPY: Partial<Record<ErrorCode, string>> = {
   partner_required: "Add the partner who joins the 2-on-1.",
   session_full: "This session has no free seat.",
   cannot_cancel: "This session can no longer be cancelled.",
+  session_already_started: "This session has already started, so it can no longer be cancelled.",
   not_your_request: "This session is not one you are teaching.",
 };
 

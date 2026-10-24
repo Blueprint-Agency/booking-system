@@ -29,6 +29,8 @@ import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notif
  *               through evaluateCancellation(kind='pt') so a cancel within the
  *               configured PT window + cap returns the session(s), otherwise the
  *               action is rejected outright (hard deadline, mirroring classes).
+ *               Staff cancel only before the session starts
+ *               (`session_already_started` after, #241).
  *               If this session Activated the package and the cancel is not
  *               late, the package returns to Dormant (be/docs/adr/0011).
  *               A manual session (`origin = 'portal'`) is settled seat by
@@ -218,6 +220,15 @@ async function cancelPtRequestInTx(
     }
 
     const now = clockNow()
+
+    // Staff cancel a session only before it starts (pt-session-lifecycle §3.2,
+    // #241). One that has begun is being held, and one that has ended unticked
+    // was held or no-showed: either way its session(s) were used, and a cancel
+    // would hand them back and take the instructor's pay off the session. The
+    // member is refused earlier still, at their PT window.
+    if (byPerson && now >= session.startsAt) {
+      throw new AppError(422, 'session_already_started')
+    }
 
     // A manual session has no debit on its request: each seat was paid on its
     // own booking, so each is settled on its own package (./manual.ts).

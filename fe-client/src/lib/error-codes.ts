@@ -301,6 +301,7 @@ export const ERROR_CODES = {
   self_archive_forbidden: "self_archive_forbidden",
   self_delete_forbidden: "self_delete_forbidden",
   self_role_edit_forbidden: "self_role_edit_forbidden",
+  session_already_started: "session_already_started",
   session_cancelled: "session_cancelled",
   session_ended: "session_ended",
   session_full: "session_full",
