@@ -11,7 +11,7 @@ import { clientPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
-import { recordAdjustment } from './ledger'
+import { isVoided, recordAdjustment } from './ledger'
 import { listActiveInstructors } from '../schedule/client-catalog'
 import { computeActive } from './validity'
 import { boundInstructorChange, homeLocationMove, liveUnlimited } from './purchase'
@@ -80,11 +80,12 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
 
     // Recompute the consumable flag — adding credits to an exhausted bundle must
     // reactivate it, and zeroing one must deactivate it, without waiting for the
-    // nightly expiry sweep.
+    // nightly expiry sweep. A Voided one stays voided.
     const nextActive = computeActive({
       kind: pkg.kind,
       expiresAt: pkg.expiresAt,
       creditsOrSessionsRemaining: next,
+      voided: await isVoided(tx, input.tenantId, pkg.id),
     })
     // Topping up a spent package revives it with its expiry untouched, whatever
     // else of its Family is running (be/docs/adr/0010).
@@ -412,11 +413,13 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
 
     // Extending an expired package's expiry must make its credits usable again
     // (and shortening it past `now` must deactivate it) — recompute, don't wait
-    // for the nightly sweep. `bookClass` filters on `active = true`.
+    // for the nightly sweep. `bookClass` filters on `active = true`. A Voided
+    // package stays voided.
     const nextActive = computeActive({
       kind: pkg.kind,
       expiresAt: input.expiresAt,
       creditsOrSessionsRemaining: pkg.creditsOrSessionsRemaining,
+      voided: await isVoided(tx, input.tenantId, pkg.id),
     })
 
     // Giving a Dormant package a date IS an Activation by hand, allowed while

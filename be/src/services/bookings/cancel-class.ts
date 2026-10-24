@@ -21,7 +21,7 @@ import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
-import { refundCredits } from '../packages/ledger'
+import { isVoided, refundCredits } from '../packages/ledger'
 import { computeEventState } from '../policy/event-state'
 import { staffCancelInTime } from '../policy/evaluate-cancellation'
 import { now as clockNow } from '../../lib/clock'
@@ -125,7 +125,9 @@ export async function cancelClass(
     const notices: StudioCancelNotice[] = []
     for (const bk of confirmed) {
       const used = bk.used ?? 0
-      const refundFired = used > 0 && !!bk.clientPackageId
+      // Nothing goes back to a Voided package: the member has their money.
+      const refundFired =
+        used > 0 && !!bk.clientPackageId && !(await isVoided(tx, tenantId, bk.clientPackageId))
       notices.push({ bookingId: bk.id, returned: refundFired ? used : 0 })
 
       if (refundFired) {

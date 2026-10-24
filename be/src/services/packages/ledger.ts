@@ -32,7 +32,7 @@
 import { and, eq } from 'drizzle-orm'
 import type { db } from '../../db'
 import { clientPackages } from '../../db/schema/packages'
-import { creditMovements, manualAdjustments } from '../../db/schema/ledger'
+import { creditMovements, manualAdjustments, purchases } from '../../db/schema/ledger'
 import type { CancellationSource, creditMovementActorEnum, creditMovementCauseEnum } from '../../db/enums'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { applyMovement } from './validity'
@@ -113,7 +113,12 @@ async function move(tx: Tx, input: CreditMovementInput, sign: 1 | -1): Promise<M
   if (!pkg) throw new NotFoundError('client_package_not_found')
 
   const result = applyMovement(
-    { kind: pkg.kind, expiresAt: pkg.expiresAt, creditsOrSessionsRemaining: pkg.remaining },
+    {
+      kind: pkg.kind,
+      expiresAt: pkg.expiresAt,
+      creditsOrSessionsRemaining: pkg.remaining,
+      voided: await isVoided(tx, input.tenantId, input.clientPackageId),
+    },
     sign * input.amount,
   )
   if (!result.ok) {
@@ -160,6 +165,29 @@ async function move(tx: Tx, input: CreditMovementInput, sign: 1 | -1): Promise<M
   }
 
   return { remaining: result.remaining, active: result.active }
+}
+
+/**
+ * The package was **Voided**: its Purchase was Refunded (be/CONTEXT.md § Void).
+ * The Purchase's status is the record — the unwind's `active = false` alone is
+ * indistinguishable from a package spent to zero, which a returned credit
+ * rightly revives. Every re-derivation of `active` reads this, so nothing
+ * brings a Voided package back.
+ */
+export async function isVoided(tx: Pick<Handle, 'select'>, tenantId: string, clientPackageId: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: clientPackages.id })
+    .from(clientPackages)
+    .innerJoin(purchases, and(eq(purchases.tenantId, tenantId), eq(purchases.id, clientPackages.purchaseId)))
+    .where(
+      and(
+        eq(clientPackages.tenantId, tenantId),
+        eq(clientPackages.id, clientPackageId),
+        eq(purchases.status, 'refunded'),
+      ),
+    )
+    .limit(1)
+  return row !== undefined
 }
 
 /** Spend `amount` credits/sessions. Throws 409 `insufficient_credits` rather than overdrawing. */

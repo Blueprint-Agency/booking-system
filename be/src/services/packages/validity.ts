@@ -6,6 +6,11 @@ export interface PackageValidity {
   kind: PackageKind
   expiresAt: Date | null
   creditsOrSessionsRemaining: number | null
+  /**
+   * Its Purchase was Refunded (be/CONTEXT.md § Void). Read by `isVoided` in
+   * ./ledger.ts; every caller re-deriving `active` for an existing row passes it.
+   */
+  voided?: boolean
 }
 
 /**
@@ -116,8 +121,12 @@ export function isActivated(p: Pick<PackageValidity, 'expiresAt'>, now: Date): b
  *
  * A Dormant package is active: it is bought, paid for and waiting, and its first
  * booking starts its clock. Nothing is expired that has not started.
+ *
+ * A Voided package is never active: the Refund ended it, so no credit returned
+ * to it and no staff edit to its balance or expiry makes it live again.
  */
 export function computeActive(p: PackageValidity, now: Date = clockNow()): boolean {
+  if (p.voided) return false
   const notExpired = p.expiresAt === null || p.expiresAt > now
   if (!notExpired) return false
   if (p.kind === 'unlimited') return true
