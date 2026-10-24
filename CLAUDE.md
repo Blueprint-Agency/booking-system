@@ -6,7 +6,7 @@ A **multi-tenant** booking & management platform for yoga studios. One deploymen
 
 ## Tenancy
 
-- **Shared schema, row scoping, Row-Level Security.** One Postgres database. `tenant_id` on all 67 domain tables, `NOT NULL` with no default. One more table carries it nullable: the sign-in audit log `auth_events`, whose null rows are the super portal's (`PLATFORM_ROWS` in `be/src/db/roles.ts`). The nine `staff` / `client` auth pool tables carry it too, `NOT NULL` but defaulting to the Tenant context, because Better Auth writes them itself: logins are per studio (`docs/adr/0006-per-studio-logins.md`). Postgres policies (migration `0033`) are the fail-closed backstop for a query that forgets to scope. See `docs/adr/0002-shared-schema-row-level-security.md`.
+- **Shared schema, row scoping, Row-Level Security.** One Postgres database. `tenant_id` on all 67 domain tables, `NOT NULL` with no default. One more table carries it nullable: the sign-in audit log `auth_events`, whose null rows are the super portal's (`PLATFORM_ROWS` in `be/src/db/roles.ts`). The nine `staff` / `client` auth pool tables carry it too, `NOT NULL` but defaulting to the Tenant context, because Better Auth writes them itself: logins are per studio (`docs/adr/0006-per-studio-logins.md`). Postgres policies are the fail-closed backstop for a query that forgets to scope: `ensureTenantIsolation` (`be/src/db/roles.ts`) re-applies them to every table with a `tenant_id` on each migrate, so a new table is covered without a policy migration of its own. See `docs/adr/0002-shared-schema-row-level-security.md`.
 - **The app must not connect as the table owner.** Postgres exempts superusers and owners from RLS, so the server connects as the non-owning `booking_app` role via `DATABASE_APP_URL`. `DATABASE_URL` (the owner) is for migrations and seeds only.
 - **Tenant context is transaction-local.** `withTenant` (`be/src/db/index.ts`) sets `app.tenant_id` per transaction — session scope would ride a pooled connection into the next request.
 - **The API's own hostname carries no Tenant.** The frontends read the slug from their hostname and send `X-Tenant-Slug`; the backend corroborates it against the browser `Origin` or the Tenant claim on the caller's session. See `docs/md/spec-tenant-resolution.md`.
@@ -34,7 +34,7 @@ BE layout: routes split by audience (`routes/portal/{admin,instructor}/`, `route
 - No business logic in route files — routes do `auth → zod parse → call service → format response`. Domain rules live in `services/*` so admin and client paths can't drift.
 - Schema changes go through PR review by both backend devs (single `drizzle.config.ts`, single migration history).
 - Do not commit `.env` files or secrets. Adding/renaming a BE env var means updating `.github/workflows/deploy-be.yml`, `be/.env.example`, and `be/src/env.ts` together (see `docs/md/deployment.md`); a new `NEXT_PUBLIC_*` also has to be set in the Vercel dashboard.
-- Docs go in `docs/md/` (markdown) or `docs/html/` (static). Two exceptions: the **domain glossary** for a context lives at `<context>/CONTEXT.md` (indexed by root `CONTEXT-MAP.md`), and **ADRs** live at `<context>/docs/adr/NNNN-slug.md` (root `docs/adr/` if the decision spans all three apps).
+- Docs go in `docs/md/` (markdown) or `docs/html/` (static). `docs/archive/` holds research notes and specs that have shipped or been superseded: history, not the current rules, so read the code or `docs/md/` over it. Two exceptions: the **domain glossary** for a context lives at `<context>/CONTEXT.md` (indexed by root `CONTEXT-MAP.md`), and **ADRs** live at `<context>/docs/adr/NNNN-slug.md` (root `docs/adr/` if the decision spans all three apps).
 - **Commit messages**: no `Co-Authored-By: Claude …` trailers, no `🤖 Generated with Claude Code` lines.
 
 ## Testing
@@ -60,4 +60,4 @@ The five canonical roles, used verbatim: `needs-triage`, `needs-info`, `ready-fo
 
 ### Domain docs
 
-Multi-context — root `CONTEXT-MAP.md` pointing at a `CONTEXT.md` per app (`fe-client/`, `fe-portal/`, `be/`). See `docs/agents/domain.md`.
+Multi-context — root `CONTEXT-MAP.md` indexes the contexts. Only `be/CONTEXT.md` exists so far; the frontends have none. See `docs/agents/domain.md`.

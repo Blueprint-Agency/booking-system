@@ -650,7 +650,7 @@ The file rules do not change: JPG, PNG or PDF, 5MB, validated server-side before
 
 ### 17. Leave Caps and Leave Conflicts
 
-> **Revised 2026-08-17, after shipping.** This section originally specified a **Cover Group** — one flat, studio-wide ticked set of instructors with its own cap counting every Leave Type. It shipped and was replaced the same day by the **Leave Conflict**: explicit pairs. The survey behind that decision, including the option it recommended and the reason pairs were taken instead, is `docs/md/research-cover-group-ux.md` — linked rather than restated. What follows describes what is in the code. The peak rule, the half-day handling, the pending-counts trade and the no-override stance below are unchanged by the swap.
+> **Revised 2026-08-17, after shipping.** This section originally specified a **Cover Group** — one flat, studio-wide ticked set of instructors with its own cap counting every Leave Type. It shipped and was replaced the same day by the **Leave Conflict**: explicit pairs. The survey behind that decision, including the option it recommended and the reason pairs were taken instead, is `docs/archive/research-cover-group-ux.md` — linked rather than restated. What follows describes what is in the code. The peak rule, the half-day handling, the pending-counts trade and the no-override stance below are unchanged by the swap.
 
 **Two rules, one pure measurement.** Neither is "no two instructors on the same day":
 

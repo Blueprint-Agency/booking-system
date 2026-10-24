@@ -1,7 +1,7 @@
 # Multi-Tenancy Productization — Decisions & Implementation Plan
 
-> Recorded 2026-08-31. Companion research (primary-source citations): `docs/md/research-multi-tenancy.md`.
-> Status: **validated, specced, ticketed — not yet implemented.**
+> Recorded 2026-08-31. Companion research (primary-source citations): `docs/archive/research-multi-tenancy.md`.
+> Status: **implemented** (row-level security, `withTenant`, per-studio logins). Read the code over this plan where they differ.
 > Every architectural pillar is confirmed documented best practice (see "Validation record").
 > Spec: **#55**. Tickets: **#56–#72**. Two items remain open; both are cheap spikes, not blockers.
 > A post-publication verification pass against the codebase and the infrastructure repo produced
@@ -38,7 +38,7 @@ the URLs resolve; `tenant_id` scoping makes the data isolate. Never infra-per-te
 | Backend | Stays on Hostinger VPS at `api.reservetoday.app`, as an A record in Vercel DNS. ✅ **No cert work needed** — Traefik on bpvps2 already issues a genuine Let's Encrypt cert via its `le-tls` resolver (TLS-ALPN-01), and `api*` records are already DNS-only *on purpose*, because that challenge cannot complete through a proxied host. Since the resolver needs only an A record, the NS move does not threaten the cert. |
 | Cloudflare for SaaS | Only needed later, if a tenant brings their **own** custom domain (100 free hostnames, then ~$0.10/mo). Not needed for our subdomains. |
 | Per-tenant auth branding | Sign-in screens are our own UI on each studio's hostname, and sign-in mail is worded by the studio whose context is open. |
-| Stripe | Per-tenant via the studio's **own account credentials**, held encrypted by the platform, rather than one shared account. Stripe Connect was the original plan and is unavailable to us — see `be/docs/adr/0004-tenant-supplied-payment-credentials.md`. |
+| Stripe | Per-tenant via the studio's **own account credentials**, held encrypted by the platform, rather than one shared account. Stripe Connect was the original plan and is unavailable to us — see `be/docs/adr/0013-tenant-supplied-payment-credentials.md`. |
 
 ## Validation record (2026-08-31, primary sources)
 
@@ -53,7 +53,7 @@ Every pillar of this plan was re-checked against vendor documentation. All confi
 | `{tenant}.portal.…` ordering is mandatory | ✅ Confirmed — wildcard asterisk must be the leftmost label | RFC 4592 §2.1.1 |
 | Root-domain env var + suffix-strip is the right slug algorithm | ✅ Confirmed — it is Vercel's own reference implementation (`hostname.endsWith('.'+rootDomain)` → `hostname.replace(...)`) | vercel.com/docs/platforms/examples/multi-tenant-template |
 | `{tenant}.localhost:PORT` is the right local-dev shape | ✅ Confirmed — Vercel's template ships exactly this | same |
-| Stripe Connect is the right payments model | ❌ **Overturned (2026-09-07)** — the model fits, but a Malaysian platform may not collect application fees on connected accounts outside Malaysia, and Tenant #1 is Singaporean. Each studio supplies its own account credentials instead. | docs.stripe.com/connect; `be/docs/adr/0004-tenant-supplied-payment-credentials.md` |
+| Stripe Connect is the right payments model | ❌ **Overturned (2026-09-07)** — the model fits, but a Malaysian platform may not collect application fees on connected accounts outside Malaysia, and Tenant #1 is Singaporean. Each studio supplies its own account credentials instead. | docs.stripe.com/connect; `be/docs/adr/0013-tenant-supplied-payment-credentials.md` |
 
 **Three corrections this validation produced:**
 
@@ -238,7 +238,7 @@ isolation bugs surface the day they are written, not the day tenant #2 signs up.
   > The general rule, which the sibling zone learned the hard way too (bpvps2 Stalwart README:
   > `blueprintdigital.my` had no MX for three weeks): **on any zone migration, inventory first,
   > recreate second, switch NS last.**
-- [x] Verify remaining UNVERIFIED items in `research-multi-tenancy.md`. *Vercel wildcard
+- [x] Verify remaining UNVERIFIED items in `docs/archive/research-multi-tenancy.md`. *Vercel wildcard
       plan-gating is resolved — all plans. The auth-vendor items are moot since ADR 0004.*
 
 ### Spike 1 — wildcard precedence across two projects — ✅ **RESOLVED 2026-08-31: precedence holds**
@@ -422,7 +422,7 @@ retired.**
 - [x] Each Tenant supplies its own payment-provider credentials, held encrypted; every provider
       call is made against that studio's own account, and its webhook deliveries arrive on its
       own endpoint and are verified against its own signing secret. See
-      `be/docs/adr/0004-tenant-supplied-payment-credentials.md`.
+      `be/docs/adr/0013-tenant-supplied-payment-credentials.md`.
 - [x] The platform account is no longer used: a Tenant that has supplied no credentials takes
       no online payments, and the shared webhook endpoint and platform Stripe env vars are gone
       (#293). See `be/docs/adr/0007-every-studio-sells-on-its-own-account.md`.

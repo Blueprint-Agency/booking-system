@@ -1,8 +1,8 @@
 # A payment records the account it was taken on
 
-**Status**: accepted (2026-09-07) — completes `0004-tenant-supplied-payment-credentials.md`, which it does not overturn. Since `0007-every-studio-sells-on-its-own-account.md` the app holds no key for the platform account, so a `null`-account payment is refused a Refund in the app (`payment_on_platform_account`) and returned from the Stripe dashboard instead.
+**Status**: accepted (2026-09-07) — completes `0013-tenant-supplied-payment-credentials.md`, which it does not overturn. (Numbered 0005 until 2026-10, when it was renumbered to end a clash with `0005-resend-replaces-gmail-smtp.md`.) Since `0007-every-studio-sells-on-its-own-account.md` the app holds no key for the platform account, so a `null`-account payment is refused a Refund in the app (`payment_on_platform_account`) and returned from the Stripe dashboard instead.
 
-ADR 0004 gave a studio its own payment account and one question with one answer: `providerAccountForTenant` says where a studio's money moves. That answer is correct for a charge, which happens **now**, and wrong for a Refund, which happens **later** — possibly years later, and possibly after the studio has moved.
+ADR 0013 gave a studio its own payment account and one question with one answer: `providerAccountForTenant` says where a studio's money moves. That answer is correct for a charge, which happens **now**, and wrong for a Refund, which happens **later** — possibly years later, and possibly after the studio has moved.
 
 ## A studio's history does not move with it
 
