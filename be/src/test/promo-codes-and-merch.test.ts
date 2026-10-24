@@ -144,16 +144,50 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
     return calls.at(-1)!.args[0] as { metadata: Record<string, string>; line_items: any[] }
   }
 
+  /**
+   * Each session as the provider holds it. A session the platform has expired
+   * can no longer be paid, and one already paid can no longer be expired —
+   * Stripe answers both with an invalid-request error.
+   */
+  const sessionStatus = new Map<string, 'open' | 'complete' | 'expired'>()
+  const sessionId = (n: number) => `cs_promo_merch_${n}`
+  const expireAtProvider = (id: unknown) => {
+    if (sessionStatus.get(String(id)) !== 'open') {
+      throw Object.assign(new Error('Only Checkout Sessions with a status in ["open"] can be expired.'), {
+        type: 'StripeInvalidRequestError',
+      })
+    }
+    sessionStatus.set(String(id), 'expired')
+    return { id, object: 'checkout.session', status: 'expired' }
+  }
+
+  /**
+   * The member pays on the page of the `n`th session — which the provider takes
+   * only while that session is still open. Null when it is not: the page says
+   * the session has expired and no money moves.
+   */
+  async function payInTab(n: number): Promise<string | null> {
+    if (sessionStatus.get(sessionId(n)) !== 'open') return null
+    sessionStatus.set(sessionId(n), 'complete')
+    return deliverPaid(n)
+  }
+
   /** The provider's delivery for the last session, paid in full. */
-  async function payLastSession(): Promise<string> {
-    const params = lastSession()
+  const payLastSession = (): Promise<string> => deliverPaid(sessions)
+
+  /** The provider's `checkout.session.completed` for the `n`th session, paid in full. */
+  async function deliverPaid(n: number): Promise<string> {
+    const params = fake.callsTo('checkout.sessions.create')[n - 1]!.args[0] as {
+      metadata: Record<string, string>
+      line_items: any[]
+    }
     const intent = `pi_promo_merch_${randomUUID().slice(0, 12)}`
     const event = {
       id: `evt_${randomUUID()}`,
       type: 'checkout.session.completed',
       data: {
         object: {
-          id: `cs_promo_merch_${sessions}`,
+          id: sessionId(n),
           payment_intent: intent,
           payment_status: 'paid',
           amount_total: params.line_items.reduce((n, l) => n + l.price_data.unit_amount * (l.quantity ?? 1), 0),
@@ -197,8 +231,15 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
     fake.reply('customers.create', () => ({ id: `cus_promo_merch_${randomUUID().slice(0, 8)}` }))
     fake.reply('checkout.sessions.create', () => {
       sessions++
-      return { id: `cs_promo_merch_${sessions}`, url: `https://pay.example.test/cs_promo_merch_${sessions}` }
+      sessionStatus.set(sessionId(sessions), 'open')
+      return { id: sessionId(sessions), url: `https://pay.example.test/${sessionId(sessions)}` }
     })
+    fake.reply('checkout.sessions.retrieve', (id: unknown) => ({
+      id,
+      object: 'checkout.session',
+      status: sessionStatus.get(String(id)) ?? 'expired',
+    }))
+    fake.reply('checkout.sessions.expire', expireAtProvider)
     fake.reply('webhooks.constructEvent', (body: unknown) => JSON.parse(String(body)))
 
     one = await studio(harness.tenants.one)
@@ -515,6 +556,85 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
     const again = await checkout(who, { package_id: bundle.id, promo_code: code.code })
     assert.equal(again.status, 400, JSON.stringify(again.body))
     assert.equal(again.body.message, "You've already used this code")
+  })
+
+  test('PRM-18 a member who opens checkout with one code in two tabs and pays in both gets the discount on one sale', async () => {
+    // Uncapped, so the first tab's payment page would live for the standard 24
+    // hours — every code is still one use per member.
+    const code = await promoCode(one)
+    const who = await member(one)
+
+    const firstTab = await checkout(who, { package_id: bundle.id, promo_code: code.code })
+    assert.equal(firstTab.status, 200, JSON.stringify(firstTab.body))
+    const first = sessions
+    const secondTab = await checkout(who, { package_id: bundle.id, promo_code: code.code })
+    assert.equal(secondTab.status, 200, 'coming back to checkout is not refused: the retry takes the Hold over')
+    const second = sessions
+
+    // The member pays on both pages, the older one first.
+    const paidFirst = await payInTab(first)
+    const paidSecond = await payInTab(second)
+
+    const paid = (await purchasesOf(who.clientId)).filter(p => p.status === 'paid')
+    assert.deepEqual(
+      paid.map(p => p.totalSgd),
+      ['80.00'],
+      'one sale paid at the discounted price, and no second one',
+    )
+    assert.equal(paidFirst, null, 'the first tab’s page can no longer take the discounted payment')
+    assert.ok(paidSecond, 'the tab the member came back to pays')
+    const granted = await harness.db
+      .select()
+      .from(schema.clientPackages)
+      .where(eq(schema.clientPackages.clientId, who.clientId))
+    assert.deepEqual(granted.map(g => g.appliedPromoCodeId), [code.id], 'one package carries the code')
+    const redemptions = await redemptionsOf(code.id)
+    assert.equal(redemptions.length, 1)
+    assert.equal(redemptions[0]!.status, 'consumed')
+    assert.equal(redemptions[0]!.stripePaymentIntentId, paidSecond, 'Consumed by the payment that used it')
+  })
+
+  test('PRM-19 a member who has paid with a code is refused it in another tab before the payment reaches the studio', async () => {
+    const code = await promoCode(one, { max_redemptions: 5 })
+    const who = await member(one)
+
+    const firstTab = await checkout(who, { package_id: bundle.id, promo_code: code.code })
+    assert.equal(firstTab.status, 200, JSON.stringify(firstTab.body))
+    const first = sessions
+    // Paid at the provider; its `checkout.session.completed` is still on its way.
+    sessionStatus.set(sessionId(first), 'complete')
+
+    const secondTab = await checkout(who, { package_id: bundle.id, promo_code: code.code })
+    assert.equal(secondTab.status, 400, JSON.stringify(secondTab.body))
+    assert.equal(secondTab.body.message, "You've already used this code")
+    assert.equal(sessions, first, 'no second payment session at the discount')
+    assert.equal((await purchasesOf(who.clientId)).length, 1, 'nothing more was opened to charge')
+
+    const intent = await deliverPaid(first)
+    const [consumed] = await redemptionsOf(code.id)
+    assert.equal(consumed?.status, 'consumed')
+    assert.equal(consumed?.stripePaymentIntentId, intent)
+  })
+
+  test('a second checkout with a code is refused while the provider cannot say the first one’s page is closed', async () => {
+    const code = await promoCode(one)
+    const who = await member(one)
+
+    const firstTab = await checkout(who, { package_id: bundle.id, promo_code: code.code })
+    assert.equal(firstTab.status, 200, JSON.stringify(firstTab.body))
+    const first = sessions
+
+    fake.reply('checkout.sessions.expire', () => {
+      throw Object.assign(new Error('Request timed out'), { type: 'StripeConnectionError' })
+    })
+    try {
+      const secondTab = await checkout(who, { package_id: bundle.id, promo_code: code.code })
+      assert.equal(secondTab.status, 409, JSON.stringify(secondTab.body))
+      assert.equal(secondTab.body.error, 'checkout_session_busy')
+      assert.equal(sessions, first, 'no second payment session beside a first that may still be live')
+    } finally {
+      fake.reply('checkout.sessions.expire', expireAtProvider)
+    }
   })
 
   test('PRM-07 a code scoped to other products is refused naming the product being bought', async () => {
