@@ -367,6 +367,43 @@ describe('buying a corporate package over HTTP', { skip: integrationTestsEnabled
     assert.deepEqual(await requestsOf(mia), [after])
   })
 
+  test('CORP-16 a corporate payment confirmed again after its Purchase was refunded makes no new Corporate Request, and the refund stands', async () => {
+    const mia = await member(one)
+    await expectStatus(await buyCorporate(mia), 200)
+    const { params } = lastCheckoutSession(fake)
+    const intent = `pi_${randomUUID()}`
+    const paid = completedEvent(params, intent)
+    await expectStatus(await deliverTo(harness, one.slug, paid), 200)
+    await expectStatus(await deliverTo(harness, one.slug, refundedEvent(intent, sessionTotal(params))), 200)
+
+    const requestsBefore = await requestsOf(mia)
+    const salesBefore = await purchasesOf(mia)
+    const paymentsBefore = await paymentsOf(mia)
+    assert.deepEqual(requestsBefore.map(r => r.status), ['cancelled'])
+    assert.deepEqual(salesBefore.map(p => p.status), ['refunded'])
+    assert.deepEqual(paymentsBefore.map(p => p.status), ['refunded'])
+
+    // The provider redelivers the original confirmation for days, a fresh event
+    // for the same payment can follow it, and the member reloading the
+    // confirmation page replays the session by hand. The session still says paid.
+    await expectStatus(await deliverTo(harness, one.slug, paid), 200)
+    await expectStatus(await deliverTo(harness, one.slug, completedEvent(params, intent)), 200)
+    fake.reply('checkout.sessions.retrieve', () => paid.data.object)
+    await expectStatus(
+      await harness.app.request('/api/v1/me/checkout/sync-session', {
+        method: 'POST',
+        headers: { ...mia.headers, ...json },
+        body: JSON.stringify({ session_id: paid.data.object.id }),
+      }),
+      200,
+    )
+
+    assert.deepEqual(await requestsOf(mia), requestsBefore, 'the money is back, so nothing is owed a request')
+    assert.deepEqual(await purchasesOf(mia), salesBefore, 'the Purchase stays refunded')
+    assert.deepEqual(await paymentsOf(mia), paymentsBefore, 'the payment stays refunded')
+    assert.equal((await packagesOf(mia)).length, 0)
+  })
+
   test('CORP-15 a corporate Purchase refunded at the provider after its request was scheduled leaves the request and its session standing, and is reported for the admin to cancel', async () => {
     const mia = await member(one)
     const { request, sale, intent, cents } = await bought(mia)
