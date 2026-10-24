@@ -383,6 +383,158 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(peek.status, 404, peek.text)
   })
 
+  test('WSP-03 a workshop with no tier is not offered to members, and its last tier cannot be removed', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Unpriced retreat',
+      days: [{ capacity: 10 }],
+      tiers: [],
+    })
+    const ana = await member(one, 'Ana Unpriced')
+    const listed = async () =>
+      ((await call('/api/v1/me/workshops', ana.headers)).body.workshops as { id: string }[]).some(x => x.id === w.id)
+    assert.equal(await listed(), false, 'a workshop no one can buy is not in the catalogue')
+    const peek = await call(`/api/v1/me/workshops/${w.id}`, ana.headers)
+    assert.equal(peek.status, 404, peek.text)
+
+    const tierAt = (name: string) =>
+      call(`/api/v1/portal/admin/workshops/${w.id}/tiers`, adminAtOne.headers, {
+        method: 'POST',
+        body: { name, regular_price_sgd: '80.00', ord: 1, day_ids: [w.dayIds[0]] },
+      })
+    const first = await tierAt('Full')
+    assert.equal(first.status, 201, first.text)
+    assert.equal(await listed(), true, 'priced, it is on sale')
+
+    const tiersPath = `/api/v1/portal/admin/workshops/${w.id}/tiers`
+    const last = await call(`${tiersPath}/${first.body.id}`, adminAtOne.headers, { method: 'DELETE' })
+    assert.equal(last.status, 409, last.text)
+    assert.equal(last.body.error, 'workshop_tier_required')
+    assert.equal((await call(tiersPath, adminAtOne.headers)).body.tiers.length, 1, 'the tier is still there')
+
+    // With another tier in its place, the first one may go.
+    const second = await tierAt('Replacement')
+    assert.equal(second.status, 201, second.text)
+    const gone = await call(`${tiersPath}/${first.body.id}`, adminAtOne.headers, { method: 'DELETE' })
+    assert.equal(gone.status, 200, gone.text)
+    assert.deepEqual(
+      ((await call(tiersPath, adminAtOne.headers)).body.tiers as { id: string }[]).map(t => t.id),
+      [second.body.id],
+    )
+  })
+
+  test('WSP-20 a workshop save the API refuses changes none of its days or tiers, so saving it again adds nothing', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Booked swap',
+      days: [{ capacity: 10 }],
+      tiers: [{ name: 'Free', price: '0.00', days: [0] }],
+    })
+    const ana = await member(one, 'Ana Booked Swap')
+    assert.equal((await checkout(ana, w)).status, 201)
+
+    const detailPath = `/api/v1/portal/admin/workshops/${w.id}`
+    const stored = async () => {
+      const res = await call(detailPath, adminAtOne.headers)
+      assert.equal(res.status, 200, res.text)
+      return {
+        days: (res.body.days as { id: string }[]).map(d => d.id).sort(),
+        tiers: (res.body.tiers as { id: string; name: string }[]).map(t => `${t.id} ${t.name}`).sort(),
+      }
+    }
+    const before = await stored()
+    const [day] = (await call(detailPath, adminAtOne.headers)).body.days as {
+      id: string
+      starts_at: string
+      ends_at: string
+    }[]
+    const added = nextStart()
+    const schedule = (tiers: object[]) =>
+      call(`${detailPath}/schedule`, adminAtOne.headers, {
+        method: 'PUT',
+        body: {
+          days: [
+            { id: day!.id, ref: day!.id, room_id: one.roomId, starts_at: day!.starts_at, ends_at: day!.ends_at, capacity_online: 10 },
+            {
+              ref: 'added',
+              room_id: one.roomId,
+              starts_at: added.toISOString(),
+              ends_at: new Date(added.getTime() + 2 * HOUR).toISOString(),
+              capacity_online: 10,
+            },
+          ],
+          tiers,
+        },
+      })
+    const replacement = { name: 'Replacement', regular_price_sgd: '95.00', day_refs: [day!.id, 'added'] }
+
+    for (const attempt of ['first', 'second']) {
+      const refused = await schedule([replacement])
+      assert.equal(refused.status, 409, refused.text)
+      assert.equal(refused.body.error, 'workshop_tier_has_bookings')
+      assert.deepEqual(await stored(), before, `the ${attempt} refused save wrote nothing`)
+    }
+
+    const none = await schedule([])
+    assert.equal(none.status, 409, none.text)
+    assert.equal(none.body.error, 'workshop_tier_required')
+    assert.deepEqual(await stored(), before, 'a save with no tier wrote nothing')
+
+    const kept = await schedule([{ id: w.tierIds[0], name: 'Free', regular_price_sgd: '0.00', day_refs: [day!.id] }, replacement])
+    assert.equal(kept.status, 200, kept.text)
+    const after = await stored()
+    assert.equal(after.days.length, 2, 'the added day is saved once')
+    assert.deepEqual(
+      ((await call(detailPath, adminAtOne.headers)).body.tiers as { name: string }[]).map(t => t.name),
+      ['Free', 'Replacement'],
+    )
+  })
+
+  test('WSP-21 removing one of two tiers while the other is being removed leaves the workshop one tier', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Two tier race',
+      days: [{ capacity: 10 }],
+      tiers: [
+        { name: 'Morning', price: '50.00', days: [0] },
+        { name: 'Evening', price: '60.00', days: [0] },
+      ],
+    })
+    const { withTenant } = await import('../db')
+    const tiersSvc = await import('../services/workshops/tiers')
+    let letGo!: () => void
+    const released = new Promise<void>(resolve => (letGo = resolve))
+    let removed!: () => void
+    const firstRemoved = new Promise<void>(resolve => (removed = resolve))
+    const first = withTenant(one.id, async () => {
+      await tiersSvc.deleteTier(one.id, w.id, w.tierIds[0]!)
+      removed()
+      await released
+    })
+    await Promise.race([firstRemoved, first])
+
+    const tiersPath = `/api/v1/portal/admin/workshops/${w.id}/tiers`
+    let answered = false
+    const second = call(`${tiersPath}/${w.tierIds[1]}`, adminAtOne.headers, { method: 'DELETE' }).finally(
+      () => (answered = true),
+    )
+    while (!answered) {
+      const [row] = (await harness.db.execute(sql`
+        SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'`)) as unknown as { n: number }[]
+      if (Number(row?.n ?? 0) >= 1) break
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
+    letGo()
+    await first
+
+    const res = await second
+    assert.equal(res.status, 409, res.text)
+    assert.equal(res.body.error, 'workshop_tier_required')
+    assert.deepEqual(
+      ((await call(tiersPath, adminAtOne.headers)).body.tiers as { id: string }[]).map(t => t.id),
+      [w.tierIds[1]],
+      'the tier removed second is still there',
+    )
+  })
+
   test("a member of another studio cannot buy a place in this studio's workshop", async () => {
     const w = await workshop(one, adminAtOne, teacherAtOne, {
       name: 'Members-only retreat',

@@ -207,6 +207,36 @@ describe('member profile edit', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal((await me('GET')).body.gender, null, 'an invalid value changes nothing')
   })
 
+  test('ACC-51 a phone that is not a phone number, or a name past 160 characters, is refused with a reason, from the member app and the customer page alike', async () => {
+    const member = await newMember()
+    const me = (body: unknown) => call('PATCH', '/me', member.headers, body)
+
+    for (const phone of ['not a phone <script>', '+65 9123 4567 <b>', '12345', '+1234567890123456', '++6591234567']) {
+      for (const res of [await me({ phone }), await editProfile(member.clientId, { phone })]) {
+        assert.equal(res.status, 400, `${phone}: ${res.text}`)
+        assert.match(String(res.body.message), /phone/i, `${phone} says why: ${res.text}`)
+      }
+    }
+    const long = await me({ name: 'x'.repeat(161) })
+    assert.equal(long.status, 400, long.text)
+    assert.match(String(long.body.message), /160/, long.text)
+    assert.deepEqual(
+      { name: (await detail(member.clientId)).name, phone: (await detail(member.clientId)).phone },
+      { name: 'Ada Lovelace', phone: '+6591234567' },
+      'a refused save changes nothing',
+    )
+    assert.deepEqual(await edits(member.clientId), [])
+
+    // A number written the ways people write one is still a number.
+    for (const phone of ['+65 9876 5432', '(65) 9123-4567', '91234567']) {
+      const saved = await me({ phone })
+      assert.equal(saved.status, 200, `${phone}: ${saved.text}`)
+      assert.equal(saved.body.phone, phone)
+    }
+    const named = await me({ name: 'y'.repeat(160) })
+    assert.equal(named.status, 200, named.text)
+  })
+
   test('ACC-20 a member saves their theme and text size to their account, one at a time, and an invalid or empty save is refused', async () => {
     const member = await newMember()
     const other = await newMember()

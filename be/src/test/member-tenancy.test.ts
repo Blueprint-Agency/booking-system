@@ -159,16 +159,27 @@ describe('a member sees and touches only their own studio', { skip: integrationT
       .values({ tenantId: tenant.id, name: `${NAME} ${tenant.slug} workshop`, locationId: location!.id, createdByStaffId: admin.id })
       .returning({ id: schema.workshops.id })
     const dayStarts = new Date(startsAt.getTime() + 10 * DAY)
-    await harness.db.insert(schema.workshopDays).values({
-      tenantId: tenant.id,
-      workshopId: workshop!.id,
-      ord: 1,
-      roomId: room!.id,
-      startsAt: dayStarts,
-      endsAt: new Date(dayStarts.getTime() + HOUR),
-      basePriceSgd: '80.00',
-      capacityOnline: 10,
-    })
+    const [day] = await harness.db
+      .insert(schema.workshopDays)
+      .values({
+        tenantId: tenant.id,
+        workshopId: workshop!.id,
+        ord: 1,
+        roomId: room!.id,
+        startsAt: dayStarts,
+        endsAt: new Date(dayStarts.getTime() + HOUR),
+        basePriceSgd: '80.00',
+        capacityOnline: 10,
+      })
+      .returning({ id: schema.workshopDays.id })
+    // A tier, so the workshop is on sale: members are not offered one without (#235).
+    const [tier] = await harness.db
+      .insert(schema.workshopTiers)
+      .values({ tenantId: tenant.id, workshopId: workshop!.id, name: 'Full', regularPriceSgd: '80.00', ord: 1 })
+      .returning({ id: schema.workshopTiers.id })
+    await harness.db
+      .insert(schema.workshopTierDays)
+      .values({ tenantId: tenant.id, workshopTierId: tier!.id, workshopDayId: day!.id })
     return {
       ...tenant,
       locationId: location!.id,

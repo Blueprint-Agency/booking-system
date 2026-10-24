@@ -36,7 +36,10 @@ import { PackageExpiryDialog } from "@/components/clients/package-expiry-dialog"
 import { CrossLocationDialog } from "@/components/clients/cross-location-dialog";
 import { HomeLocationDialog } from "@/components/clients/home-location-dialog";
 import { BoundInstructorDialog } from "@/components/clients/bound-instructor-dialog";
-import { PackageSetBalanceDialog } from "@/components/clients/package-set-balance-dialog";
+import {
+  MAX_PACKAGE_BALANCE,
+  PackageSetBalanceDialog,
+} from "@/components/clients/package-set-balance-dialog";
 import { RefundDialog } from "@/components/clients/refund-dialog";
 import { REFUND_REFUSALS } from "@/lib/refund-refusals";
 import { GivePackageDialog, type GivePackagePayload } from "@/components/clients/give-package-dialog";
@@ -311,6 +314,7 @@ const REFUSALS: Record<string, string> = {
   client_blocked: "This member is blocked. Unblock them first.",
   name_required: "A name is required.",
   phone_required: "A phone number is required.",
+  balance_too_large: `A package can hold at most ${MAX_PACKAGE_BALANCE.toLocaleString("en-SG")} credits or sessions.`,
   booking_attended:
     "They have already been checked in to this class. Untick them on the roster first if that was a mistake.",
   not_cancellable: "This booking is no longer booked — it may already have been cancelled.",
@@ -1809,6 +1813,8 @@ function AdjustmentDialog({
             id="delta"
             required
             type="number"
+            min={-MAX_PACKAGE_BALANCE}
+            max={MAX_PACKAGE_BALANCE}
             value={delta}
             onChange={(e) => setDelta(e.target.value)}
             placeholder="+1, -2, …"

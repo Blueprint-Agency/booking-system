@@ -19,6 +19,9 @@ interface ApiClientProfile {
 
 type Gender = "female" | "male" | "non_binary" | "prefer_not_to_say";
 
+/** The longest name the studio keeps, first and last together, as the backend refuses past it. */
+const NAME_MAX = 160;
+
 // The member's own answer (#281), and theirs to take back: "Not set" clears it.
 const GENDERS: { value: Gender; label: string }[] = [
   { value: "female", label: "Female" },
@@ -105,6 +108,11 @@ export default function ProfilePage() {
       setSaving(false);
       return;
     }
+    if (joinedName.length > NAME_MAX) {
+      setError(`Your first and last name can be at most ${NAME_MAX} characters together.`);
+      setSaving(false);
+      return;
+    }
     try {
       // The member's row at this studio is the one source of truth for their
       // name and gender. Phone/email are not editable here.
@@ -118,10 +126,17 @@ export default function ProfilePage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      setError(
+      // A refused save names its reason ({ error, message }); show that sentence.
+      const message =
         err instanceof ApiError
-          ? `Couldn't save (HTTP ${err.status}).`
-          : "Couldn't save. Please try again.",
+          ? (err.body as { message?: unknown } | null)?.message
+          : undefined;
+      setError(
+        typeof message === "string"
+          ? message
+          : err instanceof ApiError
+            ? `Couldn't save (HTTP ${err.status}).`
+            : "Couldn't save. Please try again.",
       );
     } finally {
       setSaving(false);
@@ -149,6 +164,7 @@ export default function ProfilePage() {
                   id="firstName"
                   type="text"
                   value={firstName}
+                  maxLength={NAME_MAX}
                   onChange={(e) => setFirstName(e.target.value)}
                   disabled={loading}
                   className={inputClass}
@@ -162,6 +178,7 @@ export default function ProfilePage() {
                   id="lastName"
                   type="text"
                   value={lastName}
+                  maxLength={NAME_MAX}
                   onChange={(e) => setLastName(e.target.value)}
                   disabled={loading}
                   className={inputClass}

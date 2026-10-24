@@ -31,6 +31,7 @@ import { issuedRefundView } from './refund-view'
 import { listMemberPayments, type MemberPaymentView } from '../../../services/billing/member-payments'
 import {
   adjustBalance,
+  MAX_PACKAGE_BALANCE,
   setBalance,
   setCrossLocationAddOn,
   setBoundInstructor,
@@ -109,12 +110,13 @@ const createSchema = z.object({
   send_invite: z.boolean().default(true),
 })
 
+// No edit can move a balance further than the most it may hold, either way.
 const adjustSchema = z.object({
-  delta: z.number().int(),
+  delta: z.number().int().min(-MAX_PACKAGE_BALANCE).max(MAX_PACKAGE_BALANCE),
   reason: z.string().min(1).max(2000),
 })
 const balanceSchema = z.object({
-  balance: z.number().int().min(0),
+  balance: z.number().int().min(0).max(MAX_PACKAGE_BALANCE),
   reason: z.string().min(1).max(2000),
 })
 // Attach at an amount, or remove with null. Zero is a legitimate amount — a

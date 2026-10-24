@@ -331,6 +331,7 @@ export default function PolicyPage() {
                 id="cap-count"
                 type="number"
                 min={0}
+                max={999}
                 disabled={!draft.cancelCapEnabled}
                 value={draft.cancelCapCount}
                 onChange={(e) =>
@@ -344,6 +345,7 @@ export default function PolicyPage() {
                 id="cap-cycle"
                 type="number"
                 min={1}
+                max={365}
                 disabled={!draft.cancelCapEnabled}
                 value={draft.cancelCapCycleDays}
                 onChange={(e) =>
@@ -445,6 +447,7 @@ export default function PolicyPage() {
                 id="class-window"
                 type="number"
                 min={0}
+                max={8760}
                 value={draft.classWindowHours}
                 onChange={(e) =>
                   setDraft({ ...draft, classWindowHours: Number(e.target.value) })
@@ -457,6 +460,7 @@ export default function PolicyPage() {
                 id="pt-window"
                 type="number"
                 min={0}
+                max={8760}
                 value={draft.ptWindowHours}
                 onChange={(e) =>
                   setDraft({ ...draft, ptWindowHours: Number(e.target.value) })

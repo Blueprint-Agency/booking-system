@@ -87,32 +87,39 @@ function inferMode(days: WorkshopDay[]): Mode {
   return "range";
 }
 
-function dayToApi(d: WorkshopDay, ord: number) {
-  return {
-    ord,
-    room_id: d.roomId,
-    starts_at: atLocalTime(d.date, d.startTime).toISOString(),
-    ends_at: atLocalTime(d.date, d.endTime).toISOString(),
-    capacity_online: d.capacity.onlineBooking,
-    capacity_waitlist: d.capacity.waitlist,
-    capacity_buffer: d.capacity.buffer,
-  };
-}
-
-function tierToApi(t: WorkshopTier, ord: number, idMap: Map<string, string>) {
-  return {
-    name: t.name,
-    description: t.description || null,
-    regular_price_sgd: String(t.priceSgd),
-    early_bird_price_sgd:
-      t.earlyBirdPriceSgd != null ? String(t.earlyBirdPriceSgd) : null,
-    early_bird_quota: null,
-    early_bird_cutoff_at: t.earlyBirdCutoffAt,
-    ord,
-    day_ids: t.dayIds
-      .map((local) => idMap.get(local) ?? null)
-      .filter((x): x is string => x !== null),
-  };
+async function saveSchedule(
+  api: Api,
+  workshopId: string,
+  stored: { days: WorkshopDay[]; tiers: WorkshopTier[] },
+  days: WorkshopDay[],
+  tiers: WorkshopTier[],
+) {
+  const storedDayIds = new Set(stored.days.map((d) => d.id));
+  const storedTierIds = new Set(stored.tiers.map((t) => t.id));
+  await api.put(`/portal/admin/workshops/${workshopId}/schedule`, {
+    days: [...days]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((d) => ({
+        id: storedDayIds.has(d.id) ? d.id : undefined,
+        ref: d.id,
+        room_id: d.roomId,
+        starts_at: atLocalTime(d.date, d.startTime).toISOString(),
+        ends_at: atLocalTime(d.date, d.endTime).toISOString(),
+        capacity_online: d.capacity.onlineBooking,
+        capacity_waitlist: d.capacity.waitlist,
+        capacity_buffer: d.capacity.buffer,
+      })),
+    tiers: tiers.map((t) => ({
+      id: storedTierIds.has(t.id) ? t.id : undefined,
+      name: t.name,
+      description: t.description || null,
+      regular_price_sgd: String(t.priceSgd),
+      early_bird_price_sgd: t.earlyBirdPriceSgd != null ? String(t.earlyBirdPriceSgd) : null,
+      early_bird_quota: null,
+      early_bird_cutoff_at: t.earlyBirdCutoffAt,
+      day_refs: t.dayIds,
+    })),
+  });
 }
 
 function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
@@ -192,7 +199,6 @@ async function createWorkshopWithChildren(
     tiers: WorkshopTier[];
   },
 ) {
-  // 1. POST basics, pay included — blank pay goes as null (Unpriced).
   const basics = await api.post<{ id: string }>("/portal/admin/workshops", {
     name: args.name,
     location_id: args.locationId,
@@ -202,88 +208,8 @@ async function createWorkshopWithChildren(
     supporting_instructors: args.supportingInstructors,
     image_r2_keys: [],
   });
-
-  // 2. POST each day — track local -> server id mapping so tiers can reference them
-  const dayIdMap = new Map<string, string>();
-  let ord = 1;
-  for (const day of args.days) {
-    const created = await api.post<{ id: string }>(
-      `/portal/admin/workshops/${basics.id}/days`,
-      dayToApi(day, ord++),
-    );
-    dayIdMap.set(day.id, created.id);
-  }
-
-  // 3. POST each tier referencing server-side day ids
-  let tierOrd = 1;
-  for (const tier of args.tiers) {
-    await api.post(
-      `/portal/admin/workshops/${basics.id}/tiers`,
-      tierToApi(tier, tierOrd++, dayIdMap),
-    );
-  }
+  await saveSchedule(api, basics.id, { days: [], tiers: [] }, args.days, args.tiers);
   return basics.id;
-}
-
-/**
- * Reconcile an existing workshop's days/tiers against their originally-loaded
- * state: rows still carrying their original (server) id are PATCHed in place,
- * rows without a matching original id are new and get POSTed, and original
- * rows no longer present get DELETEd. Deletes run first so freed room/time
- * slots and day ids are available to the update/create passes that follow.
- * Order: delete tiers -> delete days -> update/create days -> update/create
- * tiers (tier day_ids are remapped/filtered through the day id map so stale
- * references to a removed day are dropped, same as the create flow).
- */
-async function saveDaysAndTiers(
-  api: Api,
-  workshopId: string,
-  originalDays: WorkshopDay[],
-  currentDaysUnsorted: WorkshopDay[],
-  originalTiers: WorkshopTier[],
-  currentTiers: WorkshopTier[],
-) {
-  const originalDayIds = new Set(originalDays.map((d) => d.id));
-  const currentDays = [...currentDaysUnsorted].sort((a, b) => a.date.localeCompare(b.date));
-  const currentDayIds = new Set(currentDays.map((d) => d.id));
-  const originalTierIds = new Set(originalTiers.map((t) => t.id));
-  const currentTierIds = new Set(currentTiers.map((t) => t.id));
-
-  for (const t of originalTiers) {
-    if (!currentTierIds.has(t.id)) {
-      await api.del(`/portal/admin/workshops/${workshopId}/tiers/${t.id}`);
-    }
-  }
-  for (const d of originalDays) {
-    if (!currentDayIds.has(d.id)) {
-      await api.del(`/portal/admin/workshops/${workshopId}/days/${d.id}`);
-    }
-  }
-
-  const dayIdMap = new Map<string, string>();
-  let dayOrd = 1;
-  for (const d of currentDays) {
-    if (originalDayIds.has(d.id)) {
-      await api.patch(`/portal/admin/workshops/${workshopId}/days/${d.id}`, dayToApi(d, dayOrd++));
-      dayIdMap.set(d.id, d.id);
-    } else {
-      const created = await api.post<{ id: string }>(
-        `/portal/admin/workshops/${workshopId}/days`,
-        dayToApi(d, dayOrd++),
-      );
-      dayIdMap.set(d.id, created.id);
-    }
-  }
-
-  let tierOrd = 1;
-  for (const t of currentTiers) {
-    const payload = tierToApi(t, tierOrd++, dayIdMap);
-    if (originalTierIds.has(t.id)) {
-      await api.patch(`/portal/admin/workshops/${workshopId}/tiers/${t.id}`, payload);
-    } else {
-      await api.post(`/portal/admin/workshops/${workshopId}/tiers`, payload);
-    }
-  }
 }
 
 export function WorkshopEditor({
@@ -439,14 +365,7 @@ export function WorkshopEditor({
             pay_sgd: payOrNull(supportingPay[iid] ?? ""),
           })),
         });
-        await saveDaysAndTiers(
-          api,
-          initial.id,
-          initial.days,
-          days,
-          initial.tiers,
-          prunedTiers,
-        );
+        await saveSchedule(api, initial.id, initial, days, prunedTiers);
         await api.put(`/portal/admin/workshops/${initial.id}/promotions`, {
           promotions: promotions.map(promotionToApiPayload),
         });
@@ -463,7 +382,7 @@ export function WorkshopEditor({
             instructor_id: iid,
             pay_sgd: payOrNull(supportingPay[iid] ?? ""),
           })),
-          days: [...days].sort((a, b) => a.date.localeCompare(b.date)),
+          days,
           tiers: prunedTiers,
         });
         if (promotions.length) {
