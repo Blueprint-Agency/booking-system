@@ -217,8 +217,6 @@ const EXPECTATIONS: Record<string, Expectation> = {
   // Not built yet (they answer 501), and behind the member gate all the same.
   'GET /api/v1/me/dashboard': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/referral': { gate: MEMBER_OF_THE_STUDIO },
-  'GET /api/v1/me/waiver': { gate: MEMBER_OF_THE_STUDIO },
-  'POST /api/v1/me/waiver/sign': { gate: MEMBER_OF_THE_STUDIO },
 
   // ── /public ──────────────────────────────────────────────────────────────
   'GET /api/v1/public/cancellation-policy': { gate: ANYONE_NAMING_A_STUDIO },

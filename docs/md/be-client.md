@@ -117,7 +117,7 @@ All endpoints prefixed with `/api/v1/me`.
 ### `me.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/` | Own profile: `{ name, email, phone, gender, dob, joined_at, status, waiver_signed, display_prefs: { theme, font_size } }`. A null `display_prefs` field is one the member has not chosen. |
+| GET | `/` | Own profile: `{ name, email, phone, gender, dob, joined_at, status, display_prefs: { theme, font_size } }`. A null `display_prefs` field is one the member has not chosen. |
 | PATCH | `/` | Update `name`, `phone`, `gender`, `dob`. The password is changed through the auth pool (§4f), not here, and changing the email is not offered. |
 | PATCH | `/display-prefs` | General settings (fe-client §8.2a): `{ theme?: 'light' \| 'dark', font_size?: 'small' \| 'medium' \| 'large' }`, at least one; a field left out keeps its value. Stored on `clients.theme` / `clients.font_size`, not audited. Returns the profile. |
 | GET | `/dashboard` | Aggregated home payload: next-up booking, package balances (credits + sessions remaining + days to expiry), referral conversions count. One round-trip for the `/account` landing page. |
@@ -206,12 +206,6 @@ The member's own **Receipts**: the studio's record of each completed Purchase, r
 
 Every kind of Purchase gets its Receipt the moment it is paid in full (#385): a class package (bundle, Unlimited Plan with its Add-On as a second line, trial pass), a PT package, a workshop place, Merch, a standalone Cross-Location Add-On and a corporate package, when the settling payment arrives through the webhook or the confirmation fallback; and every free path (a $0 trial, a fully discounted plan, a free workshop place, free Merch, a $0 corporate package) at once, a S$0.00 Receipt with `payments: []`. A Part Payment has none while the Purchase is Open; the payment that settles it issues one listing every payment. A Complimentary Package, an Abandoned Purchase and a migrated Purchase never get one. `POST /checkout/sync-session` answers with `receipt: { id, number }` for the session's Purchase once it has one, else `null`, which is how the confirmation page links to it.
 
-### `waiver.ts`
-| Method | Path | Effect |
-|---|---|---|
-| GET | `/waiver` | Singleton waiver body + own signature timestamp (or null) |
-| POST | `/waiver/sign` | Insert `waiver_signatures` (unique on `client_id` — second call is a 409, sign is one-time). Required during registration; clients without a signature are blocked from booking by a service-layer check on every booking write. |
-
 ### `referral.ts`
 | Method | Path | Effect |
 |---|---|---|
@@ -229,11 +223,10 @@ Every kind of Purchase gets its Receipt the moment it is paid in full (#385): a 
 services/bookings/book.ts:bookClass({ client_id, class_id, client_package_id? })
   ↓
 tx start
-1. Verify waiver_signatures exists for client_id → else 403 waiver_unsigned
-2. SELECT class FOR UPDATE (lock for capacity check)
+1. SELECT class FOR UPDATE (lock for capacity check)
    - lifecycle='active', starts_at > now() + 0  (no past bookings)
-3. SELECT bookings count WHERE class_id=X AND state='confirmed' → if >= class.capacity: 409 class_full
-4. Sweep the member's own expired-but-still-active rows (services/packages/activation.ts),
+2. SELECT bookings count WHERE class_id=X AND state='confirmed' → if >= class.capacity: 409 class_full
+3. Sweep the member's own expired-but-still-active rows (services/packages/activation.ts),
    then SELECT client_packages FOR UPDATE WHERE client_id=me AND active
    → services/packages/selection.ts:selectPackage (pure; be/docs/adr/0010)
    - CLASSIFY every live class package (bundle + Unlimited + trial; any number may
@@ -250,17 +243,17 @@ tx start
      running soonest-ending first, then Dormant with Unlimited before credit
      kinds, each in purchase order. Nothing Eligible → 409 with the reason of the
      first package in default order (none held → insufficient_credits).
-5. Insert bookings row: kind='class', class_id, client_package_id, state='confirmed',
+4. Insert bookings row: kind='class', class_id, client_package_id, state='confirmed',
    credits_or_sessions_used = (credit_bundle ? credit_cost : NULL),
    refund_outcome='n_a', check_in_state='pending'
-6. Generate qr_token + code via services/bookings/qr.ts
-7. If credit_bundle: UPDATE client_packages SET credits_or_sessions_remaining -= credit_cost
-7b. Activation (§3, ADR 0004): if the chosen package was Dormant, UPDATE client_packages
+5. Generate qr_token + code via services/bookings/qr.ts
+6. If credit_bundle: UPDATE client_packages SET credits_or_sessions_remaining -= credit_cost
+6b. Activation (§3, ADR 0004): if the chosen package was Dormant, UPDATE client_packages
    SET expires_at = booking moment + duration_months (Unlimited) or + validity_days
    (every other kind). One-way — no cancellation un-stamps it. Other packages of the
    family may be running beside it (ADR 0010); nothing refuses a second.
 tx commit
-8. 'class_booking_confirmed' email to the member (after commit, best-effort — a failed send is
+7. 'class_booking_confirmed' email to the member (after commit, best-effort — a failed send is
    logged and the booking stands; NTF-08): { client_name, class_name, date, instructor_name,
    location, qr_url, code, credits_line }. credits_line is one composed sentence
    (services/notifications/booking-email.ts): "This booking used 2 credits from Ten Pack, and
@@ -372,7 +365,6 @@ tx start
    - kind='workshop': self-cancel of workshop NOT allowed in v1 (only admin can cancel a workshop and trigger refund). Return 400 workshop_cancel_unsupported.
 6. UPDATE booking: state='cancelled', cancelled_at, refund_outcome
 7. INSERT cancellations: source='client', was_within_window, was_within_cap, refund_fired (boolean per outcome), kind
-8. INSERT inbox_items: type='client_cancellation', payload={ ... }
 9. (no email inside the transaction — see 12)
 10. kind='class' AND booking.seat='online': services/waitlist/promote.ts:promoteFromWaitlist(tx, class_id, now)
     — outside the Cancellation Window only; fills free online seats from the line in (joined_at, id)
@@ -453,7 +445,7 @@ The request becomes a `pt_sessions` row only when admin (or instructor) schedule
 
 Pending requests past `expires_at` are swept by the `pt-request-expiry` cron (every 5 min) — it routes through the same `services/pt-sessions/cancel.ts:cancelPtRequest` `'pending'` branch with `source='system'`, refunding the debit.
 
-**No Inbox row inserted** on submit — admin sees pending requests on `/admin/pt-requests`. Inbox rows are reserved for cancellation notifications per `admin-restructure.md` §13.
+Admin sees pending requests on `/admin/pt-requests`.
 
 ### 4e. Package purchase flow
 

@@ -11,7 +11,6 @@ import ptSessions from './pt-sessions'
 import purchases from './purchases'
 import receipts from './receipts'
 import billingDetails from './billing-details'
-import waiver from './waiver'
 import referral from './referral'
 import waitlist from './waitlist'
 import approvals from './approvals'
@@ -27,7 +26,6 @@ const app = new Hono()
   .route('/', purchases)
   .route('/receipts', receipts)
   .route('/billing-details', billingDetails)
-  .route('/waiver', waiver)
   .route('/referral', referral)
   .route('/waitlist', waitlist)
   .route('/approvals', approvals)

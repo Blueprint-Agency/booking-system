@@ -14,7 +14,6 @@ import {
   QrCode,
   HandHeart,
   Users,
-  FileText,
   ToggleRight,
   UserCog,
   Wallet,
@@ -103,7 +102,6 @@ export const NAV_ITEMS: NavItem[] = [
 
   // --- Settings (location-independent policy + config) ---
   { group: "Settings", label: "Global Policy", href: "/admin/policy", icon: Shield, scope: "global" },
-  { group: "Settings", label: "Waiver", href: "/admin/waiver", icon: FileText, scope: "global" },
   // What the studio's business documents say (#391, #398): its Business name,
   // the details its Receipts print and their number prefix.
   { group: "Settings", label: "Business details", href: "/admin/business-details", icon: ReceiptText, scope: "global" },

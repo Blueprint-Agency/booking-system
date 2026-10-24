@@ -15,7 +15,7 @@ const DAY = 24 * HOUR
  * An Unlimited Plan's **Home Location** as the member meets it, over real HTTP
  * (#226): which Location's classes it pays for, what the Cross-Location Add-On
  * changes, and that a Credit Bundle is never spent in its place without the
- * member asking. Then the Inbox item a member's own cancellation leaves.
+ * member asking. Then the Inbox item a member's own PT session cancel leaves.
  *
  * Written from the LOC and INB rows of the Scenario Inventory
  * (`docs/md/test-scenarios.md`). Fixtures — a class, a package a member holds —
@@ -347,25 +347,6 @@ describe('home location and member cancellations over HTTP', { skip: integration
   })
 
   /* ── a member's own cancellation, in the Inbox ─────────────────────── */
-
-  test('INB-03 a member cancelling a class booking leaves a client-cancellation Inbox item naming them, the booking and its refund', async () => {
-    const gus = await member(one, 'gus')
-    await bundle(one, gus)
-    const { booking_id } = await expectStatus(await book(gus, await addClass(one, 'home')), 201)
-
-    await expectStatus(await harness.app.request(`/api/v1/me/bookings/${booking_id}`, { method: 'DELETE', headers: gus.headers }), 200)
-
-    const items = await inboxFor(one, 'bookingId', booking_id)
-    assert.equal(items.length, 1)
-    const [item] = items
-    assert.equal(item!.type, 'client_cancellation')
-    const payload = item!.payload as Record<string, unknown>
-    assert.equal(payload.clientId, gus.clientId)
-    assert.equal(payload.kind, 'class')
-    assert.equal(payload.refundOutcome, 'credit_returned')
-    assert.equal(payload.refundFired, true)
-    assert.equal((await inboxFor(two, 'bookingId', booking_id)).length, 0, 'written under the member\'s own studio only')
-  })
 
   test('INB-03 a member cancelling a scheduled PT session leaves a client-cancellation Inbox item naming them, the session and its refund', async () => {
     const hal = await member(one, 'hal')

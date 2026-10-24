@@ -486,7 +486,6 @@ const app = new Hono()
     return c.json({
       ...clientRow(contact.client),
       dob: contact.client.dob,
-      waiver_signed_at: contact.waiverSignedAt,
       referred_by: contact.referredBy,
       // What the member can still use: running, or waiting for a first booking.
       packages: current.map(p => packageView(p, refunds[p.id])),

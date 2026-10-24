@@ -20,11 +20,9 @@ import bookings from './bookings'
 import finance from './finance'
 import leave from './leave'
 import checkIn from './check-in'
-import inbox from './inbox'
 import clients from './clients'
 import staff from './staff'
 import notifications from './notifications'
-import waiver from './waiver'
 import marketing from './marketing'
 import featureFlags from './feature-flags'
 import impersonate from './impersonate'
@@ -66,12 +64,10 @@ const app = new Hono()
   .route('/finance', finance)
   .route('/leave', leave)
   .route('/check-in', checkIn)
-  .route('/inbox', inbox)
   .route('/clients', clients)
   .route('/', impersonate)
   .route('/staff', staff)
   .route('/notifications', notifications)
-  .route('/waiver', waiver)
   .route('/marketing', marketing)
   .route('/feature-flags', featureFlags)
   // The studio's own settings: the receipt details (#391).

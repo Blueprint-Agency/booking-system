@@ -26,7 +26,6 @@ import { and, eq } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
-import { inboxItems } from '../../db/schema/inbox'
 import { actorOfSource, isVoided, recordMovement, refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import {
@@ -342,24 +341,7 @@ export async function cancelBookingInTx(
     })
   }
 
-  // 7. A staff single-cancel raises an inbox item (client self-cancel also notifies admins).
-  await tx.insert(inboxItems).values({
-    tenantId,
-    type: source === 'client' ? 'client_cancellation' : 'admin_cancel_class_pt',
-    payload: {
-      bookingId: bk.id,
-      clientId: bk.clientId,
-      kind: cancelKind,
-      refundOutcome,
-      refundFired,
-      ...(source === 'client' ? {} : { source }),
-      ...(actorStaffId ? { actorStaffId } : {}),
-      ...(studioReason ? { reason: studioReason } : {}),
-      at: now.toISOString(),
-    },
-  })
-
-  // 8. A freed online seat goes to the head of the waitlist, in this
+  // 7. A freed online seat goes to the head of the waitlist, in this
   // transaction and under the class lock taken in step 2 (spec-waitlist.md
   // §5). A buffer or overbook seat is staff's, not the line's, and promotes
   // nobody.
