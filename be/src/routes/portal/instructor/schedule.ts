@@ -11,7 +11,7 @@ import { requirePermission } from '../../../middleware/require-permission'
 import { seatFields, staffBookingJson, staffBookingSchema, staffPackagesJson, staffPackagesQuery } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
 import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
-import { hasCapacity, NO_CAPACITY, previewJson, seriesRow, seriesTemplateFields, toSeriesInput } from '../class-series'
+import { previewJson, seriesRow, seriesTemplateFields, toSeriesInput } from '../class-series'
 
 /**
  * Instructor schedule surface.
@@ -77,17 +77,13 @@ const createClassSchema = z
     // Omitted = accepts all. Instructors set it on the classes they schedule.
     package_rule: packageRuleSchema.optional(),
   })
-  .refine(v => v.capacity_online + v.capacity_waitlist + v.capacity_buffer > 0, {
-    message: 'capacity must be positive',
-    path: ['capacity_online'],
-  })
   .refine(v => new Date(v.ends_at) > new Date(v.starts_at), {
     message: 'ends_at must be after starts_at',
     path: ['ends_at'],
   })
 
 // No instructors or pay: an admin's fields sent here are dropped by the parse.
-const seriesSchema = seriesTemplateFields.refine(hasCapacity, NO_CAPACITY)
+const seriesSchema = seriesTemplateFields
 
 const ownSeriesInput = (b: z.infer<typeof seriesSchema>, self: string) =>
   toSeriesInput(b, {

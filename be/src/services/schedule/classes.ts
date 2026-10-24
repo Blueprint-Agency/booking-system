@@ -55,8 +55,18 @@ function assertEndsAfterStart(startsAt: Date, endsAt: Date): void {
   if (endsAt <= startsAt) throw new BadRequestError('ends_at_must_be_after_starts_at')
 }
 
+type Places = Pick<CreateClassInput, 'capacityOnline' | 'capacityWaitlist' | 'capacityBuffer'>
+
+export function assertHasCapacity(p: Places): void {
+  if (p.capacityOnline + p.capacityWaitlist + p.capacityBuffer > 0) return
+  throw new BadRequestError('capacity_required', {
+    message: 'Give the class at least one online, buffer or waitlist place.',
+  })
+}
+
 export async function createClass(tenantId: string, input: CreateClassInput): Promise<ClassRow> {
   assertEndsAfterStart(input.startsAt, input.endsAt)
+  assertHasCapacity(input)
   // The room gate doubles as the location gate: a room only passes if it is this
   // tenant's and sits in the location named, so neither can be borrowed.
   await assertRoomInLocation(tenantId, input.roomId, input.locationId)
@@ -201,6 +211,11 @@ export async function updateClass(
     // the guard above's state reached by a typo, and from it there is no way back —
     // no edit, no class cancel to refund its bookings, and its Instructor Pay owed.
     if (newStartsAt <= now) throw new BadRequestError('starts_at_in_past')
+    assertHasCapacity({
+      capacityOnline: patch.capacityOnline ?? existing.capacityOnline,
+      capacityWaitlist: patch.capacityWaitlist ?? existing.capacityWaitlist,
+      capacityBuffer: patch.capacityBuffer ?? existing.capacityBuffer,
+    })
 
     // Online capacity can't drop below the members already holding an online seat.
     // Buffer and overbook seats are staff's and don't count against it.

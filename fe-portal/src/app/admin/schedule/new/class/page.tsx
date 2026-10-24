@@ -5,6 +5,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Loader2, Repeat, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
+import { capacityProblem } from "@/lib/capacity";
 import { PackageRuleField } from "@/components/schedule/package-rule-field";
 import {
   ACCEPTS_ALL_DRAFT,
@@ -141,8 +142,8 @@ function NewClassForm() {
     }
     if (!date || !lastDate) return "Pick a first and a last date.";
     if (endTime <= startTime) return "End time must be after start time.";
-    const ruleProblem = packageRuleProblem(packageRule);
-    if (ruleProblem) return ruleProblem;
+    const problem = capacityProblem(capacity) ?? packageRuleProblem(packageRule);
+    if (problem) return problem;
     return {
       class_type_id: classTypeId,
       main_instructor_id: mainInstructorId,
@@ -186,9 +187,9 @@ function NewClassForm() {
       setSubmitError("End time must be after start time.");
       return;
     }
-    const ruleProblem = packageRuleProblem(packageRule);
-    if (ruleProblem) {
-      setSubmitError(ruleProblem);
+    const problem = capacityProblem(capacity) ?? packageRuleProblem(packageRule);
+    if (problem) {
+      setSubmitError(problem);
       return;
     }
 

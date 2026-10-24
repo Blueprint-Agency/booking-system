@@ -33,11 +33,6 @@ export const seriesTemplateFields = z.object({
   excluded_dates: z.array(plainDate).default([]),
 })
 
-/** `.refine(hasCapacity, NO_CAPACITY)`: a series must seat someone. */
-export const hasCapacity = (v: { capacity_online: number; capacity_waitlist: number; capacity_buffer: number }) =>
-  v.capacity_online + v.capacity_waitlist + v.capacity_buffer > 0
-export const NO_CAPACITY = { message: 'capacity must be positive', path: ['capacity_online'] }
-
 type TemplateBody = z.infer<typeof seriesTemplateFields>
 type SeriesStaffing = Pick<
   seriesSvc.CreateSeriesInput,

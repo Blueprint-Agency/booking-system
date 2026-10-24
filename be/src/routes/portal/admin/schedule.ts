@@ -23,8 +23,6 @@ import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class
 import { namedRuleJson } from '../../../services/schedule/package-rules'
 import { ptSessionDetailJson } from '../pt-session-detail'
 import {
-  hasCapacity,
-  NO_CAPACITY,
   plainDate,
   previewJson,
   seriesRow,
@@ -89,10 +87,6 @@ const createClassSchema = z
     // Omitted = accepts all.
     package_rule: packageRuleSchema.optional(),
   })
-  .refine(v => v.capacity_online + v.capacity_waitlist + v.capacity_buffer > 0, {
-    message: 'capacity must be positive',
-    path: ['capacity_online'],
-  })
   .refine(v => new Date(v.ends_at) > new Date(v.starts_at), {
     message: 'ends_at must be after starts_at',
     path: ['ends_at'],
@@ -138,7 +132,6 @@ const seriesSchema = seriesTemplateFields
       )
       .default([]),
   })
-  .refine(hasCapacity, NO_CAPACITY)
 
 const extendSchema = z.object({
   last_date: plainDate,

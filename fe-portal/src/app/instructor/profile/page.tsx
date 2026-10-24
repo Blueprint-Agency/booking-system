@@ -5,6 +5,7 @@ import { Button, Input, Label, PageHeader, Textarea } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
+import { BIO_MAX, PHONE_MAX, profileSaveError } from "@/lib/instructor-profile";
 import { toast } from "sonner";
 
 interface InstructorProfile {
@@ -62,10 +63,7 @@ export default function InstructorProfilePage() {
       setProfile(res);
       toast.success("Profile saved");
     } catch (err) {
-      toast.error(
-        permissionRefusal(err) ??
-          (err instanceof ApiError ? `Couldn't save (HTTP ${err.status})` : "Couldn't save"),
-      );
+      toast.error(profileSaveError(err));
     } finally {
       setSaving(false);
     }
@@ -125,16 +123,22 @@ export default function InstructorProfilePage() {
                 <Textarea
                   id="bio"
                   rows={4}
+                  maxLength={BIO_MAX}
+                  aria-describedby="bio-count"
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="A short intro members see next to your classes."
                 />
+                <p id="bio-count" className="text-right text-xs tabular-nums text-muted">
+                  {bio.length} / {BIO_MAX}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="phone">Phone</Label>
                 <Input
                   id="phone"
                   type="tel"
+                  maxLength={PHONE_MAX}
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="Optional contact number"
