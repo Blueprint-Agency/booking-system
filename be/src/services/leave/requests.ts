@@ -754,9 +754,6 @@ export async function transitionOwnLeaveRequest(
   staffUserId: string,
   id: string,
 ): Promise<LeaveRequestRow> {
-  // Held for the rest of the request, which is one transaction
-  // (middleware/tenant.ts): a transition racing this one waits here, then is
-  // checked against what this one wrote rather than overwriting it.
   const [row] = await db
     .select()
     .from(leaveRequests)
@@ -1139,7 +1136,6 @@ export async function decideLeaveRequest(
     })
   }
 
-  // Held for the rest of the request, as `transitionOwnLeaveRequest` holds it.
   const [row] = await db
     .select()
     .from(leaveRequests)

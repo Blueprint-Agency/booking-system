@@ -236,12 +236,6 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     return id
   }
 
-  /**
-   * Two calls on one leave request, made to overlap in a known order. Another
-   * connection holds the request's row; `second` starts only once `first` is
-   * waiting on that row, and the row is let go once both are. Postgres then
-   * lets them through in the order they queued.
-   */
   async function queuedOnRow(
     id: string,
     first: () => Promise<Res>,
