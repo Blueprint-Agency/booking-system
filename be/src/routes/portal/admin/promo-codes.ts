@@ -8,11 +8,19 @@ import { BadRequestError } from '../../../shared/errors'
 const productTypeEnum = z.enum(['class_package', 'pt_package', 'workshop'])
 const statusEnum = z.enum(['active', 'archived'])
 
+// Judged as the cents it is stored as: an amount that rounds to S$0.00 is an
+// amount of zero (PRM-13), whatever was typed.
 const amountField = z.union([z.string(), z.number()]).transform(v => {
   const n = typeof v === 'string' ? Number(v) : v
-  if (!Number.isFinite(n) || n <= 0) throw new BadRequestError('invalid_promo_amount')
-  return n.toFixed(2)
+  const amount = Number.isFinite(n) ? n.toFixed(2) : null
+  if (amount === null || Number(amount) <= 0 || Number(amount) > svc.MAX_AMOUNT_OFF_SGD) {
+    throw new BadRequestError('invalid_promo_amount')
+  }
+  return amount
 })
+
+const labelField = z.string().trim().min(1).max(160)
+const maxRedemptionsField = z.number().int().min(1).max(svc.MAX_REDEMPTIONS)
 
 const idParam = z.object({ id: z.string().uuid() })
 const listQuery = z.object({ status: statusEnum.optional() })
@@ -25,11 +33,11 @@ const productSchema = z.object({
 const createSchema = z.object({
   // Omitted → generated from the unambiguous alphabet.
   code: z.string().min(1).max(64).optional(),
-  label: z.string().min(1).max(160),
+  label: labelField,
   kind: z.enum(['percent', 'amount']),
   percent_off: z.number().int().min(1).max(99).nullish(),
   amount_off_sgd: amountField.nullish(),
-  max_redemptions: z.number().int().min(1).nullish(),
+  max_redemptions: maxRedemptionsField.nullish(),
   expires_at: z.string().datetime({ offset: true }).nullish(),
   applies_to_all: z.boolean(),
   products: z.array(productSchema).default([]),
@@ -39,8 +47,8 @@ const createSchema = z.object({
 // Redemption; the service refuses them after that (409 promo_code_terms_frozen)
 // rather than rewriting terms a member has accepted.
 const updateSchema = z.object({
-  label: z.string().min(1).max(160).optional(),
-  max_redemptions: z.number().int().min(1).nullish(),
+  label: labelField.optional(),
+  max_redemptions: maxRedemptionsField.nullish(),
   expires_at: z.string().datetime({ offset: true }).nullish(),
   applies_to_all: z.boolean().optional(),
   products: z.array(productSchema).optional(),

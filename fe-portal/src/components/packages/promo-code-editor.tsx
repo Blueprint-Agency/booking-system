@@ -365,6 +365,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
               type="number"
               step="0.01"
               min="0.01"
+              max="99999.99"
               value={amountOffSgd}
               onChange={(e) => setAmountOffSgd(e.target.value)}
               placeholder="20.00"
@@ -395,6 +396,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
               id="pc-cap"
               type="number"
               min="1"
+              max="1000000"
               step="1"
               value={maxRedemptions}
               onChange={(e) => setMaxRedemptions(e.target.value)}
