@@ -9,6 +9,7 @@ import {
   serializePromotion,
   type PromotionWriteInput,
 } from '../../../services/packages/promotions'
+import { MAX_DURATION_MONTHS, MAX_VALIDITY_DAYS } from '../../../services/packages/validity'
 import { tenantId } from '../../../middleware/tenant'
 import { BadRequestError } from '../../../shared/errors'
 
@@ -53,23 +54,27 @@ function toPromotionWriteInput(p: z.infer<typeof promotionInputSchema>): Promoti
 
 const idParam = z.object({ id: z.string().uuid() })
 
+const nameField = z.string().trim().min(1).max(160)
+const validityDaysField = z.number().int().min(1).max(MAX_VALIDITY_DAYS)
+const durationMonthsField = z.number().int().min(1).max(MAX_DURATION_MONTHS)
+
 const createSchema = z.object({
-  name: z.string().min(1).max(160),
+  name: nameField,
   description: z.string().max(2000).nullish(),
   kind: kindEnum,
   credits: z.number().int().min(1).nullish(),
-  validity_days: z.number().int().min(1).nullish(),
-  duration_months: z.number().int().min(1).nullish(),
+  validity_days: validityDaysField.nullish(),
+  duration_months: durationMonthsField.nullish(),
   price_sgd: priceField,
   promotions: z.array(promotionInputSchema).optional(),
 })
 
 const updateSchema = z.object({
-  name: z.string().min(1).max(160).optional(),
+  name: nameField.optional(),
   description: z.string().max(2000).nullish().optional(),
   credits: z.number().int().min(1).nullish().optional(),
-  validity_days: z.number().int().min(1).nullish().optional(),
-  duration_months: z.number().int().min(1).nullish().optional(),
+  validity_days: validityDaysField.nullish().optional(),
+  duration_months: durationMonthsField.nullish().optional(),
   price_sgd: priceField.optional(),
   status: statusEnum.optional(),
   promotions: z.array(promotionInputSchema).optional(),

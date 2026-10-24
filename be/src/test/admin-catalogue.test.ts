@@ -704,6 +704,34 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(decade.validity_days, 3650)
   })
 
+  test('PKG-41 a class or PT package with a blank name, or a class package longer than ten years, is refused and never reaches the catalogue', async () => {
+    const refused = [
+      ['POST', '/class-packages', bundleBody('x', { name: '   ' })],
+      ['POST', '/class-packages', bundleBody('Eternal bundle', { validity_days: 3651 })],
+      ['POST', '/class-packages', { ...bundleBody('Eternal trial', { kind: 'trial' }), validity_days: 2_000_000_000 }],
+      ['POST', '/class-packages', bundleBody('Eternal plan', { kind: 'unlimited', credits: null, validity_days: null, duration_months: 121 })],
+      ['POST', '/pt-packages', ptBody('x', { name: '   ' })],
+    ] as const
+    for (const [method, path, body] of refused) {
+      const res = await send(method, path, one.admin, body)
+      assert.equal(res.status, 400, `${JSON.stringify(body)}: ${JSON.stringify(res.body)}`)
+    }
+    const bundle = created(await send('POST', '/class-packages', one.admin, bundleBody('Decade bundle', { validity_days: 3650 })))
+    created(await send('POST', '/class-packages', one.admin, bundleBody('Decade plan', { kind: 'unlimited', credits: null, validity_days: null, duration_months: 120 })))
+    const pt = created(await send('POST', '/pt-packages', one.admin, ptBody('Named')))
+    for (const [path, patch] of [
+      [`/class-packages/${bundle.id}`, { name: ' ' }],
+      [`/class-packages/${bundle.id}`, { validity_days: 2_000_000_000 }],
+      [`/pt-packages/${pt.id}`, { name: ' ' }],
+    ] as const) {
+      const res = await send('PATCH', path, one.admin, patch)
+      assert.equal(res.status, 400, `nor edited to ${JSON.stringify(patch)}: ${JSON.stringify(res.body)}`)
+    }
+    const [eternal] = await harness.db.select().from(schema.classPackages).where(like(schema.classPackages.name, `${NAME} Eternal%`))
+    assert.equal(eternal, undefined)
+    assert.equal((await send('GET', `/class-packages/${bundle.id}`, one.admin)).body.validity_days, 3650)
+  })
+
   test('PKG-24 changing a PT package’s validity days leaves a sold package’s expiry and only moves future sales', async () => {
     const pt = created(await send('POST', '/pt-packages', one.admin, ptBody('Validity', { validity_days: 30 })))
     const sale = () =>

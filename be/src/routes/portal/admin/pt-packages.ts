@@ -9,6 +9,7 @@ import {
   serializePromotion,
   type PromotionWriteInput,
 } from '../../../services/packages/promotions'
+import { MAX_VALIDITY_DAYS } from '../../../services/packages/validity'
 import { tenantId } from '../../../middleware/tenant'
 import { BadRequestError } from '../../../shared/errors'
 
@@ -52,11 +53,12 @@ function toPromotionWriteInput(p: z.infer<typeof promotionInputSchema>): Promoti
 
 // Required on create and never nullable: "never expires" has left the domain,
 // so a blank field cannot be how an admin creates an eternal PT package.
-// 3650 days is ten years — past that the admin means "no expiry" and may not.
-const validityDaysField = z.number().int().min(1).max(3650)
+// Ten years is the most: past that the admin means "no expiry" and may not.
+const validityDaysField = z.number().int().min(1).max(MAX_VALIDITY_DAYS)
+const nameField = z.string().trim().min(1).max(160)
 
 const createSchema = z.object({
-  name: z.string().min(1).max(160),
+  name: nameField,
   session_type: sessionTypeEnum,
   num_sessions: z.number().int().min(1).max(200),
   validity_days: validityDaysField,
@@ -68,7 +70,7 @@ const createSchema = z.object({
 })
 
 const updateSchema = z.object({
-  name: z.string().min(1).max(160).optional(),
+  name: nameField.optional(),
   num_sessions: z.number().int().min(1).max(200).optional(),
   validity_days: validityDaysField.optional(),
   instructor_bound: z.boolean().optional(),

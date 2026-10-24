@@ -132,6 +132,7 @@ export function ClassPackageDialog({
                 required
                 type="number"
                 min={1}
+                max={3650}
                 value={validityDays}
                 onChange={(e) => setValidityDays(e.target.value)}
               />
@@ -147,6 +148,7 @@ export function ClassPackageDialog({
               required
               type="number"
               min={1}
+              max={120}
               value={durationMonths}
               onChange={(e) => setDurationMonths(e.target.value)}
             />
@@ -174,6 +176,7 @@ export function ClassPackageDialog({
                 required
                 type="number"
                 min={1}
+                max={3650}
                 value={validityDays}
                 onChange={(e) => setValidityDays(e.target.value)}
                 placeholder="e.g. 30"

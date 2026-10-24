@@ -154,7 +154,7 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     at: Studio,
     who: Member,
     kind: Kind,
-    options: { credits?: number; expiresAt?: Date | null; locationId?: string } = {},
+    options: { credits?: number; expiresAt?: Date | null; locationId?: string; validityDays?: number } = {},
   ): Promise<string> {
     const unlimited = kind === 'unlimited'
     const [row] = await harness.db
@@ -167,7 +167,7 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
         sourcePtPackageId: kind === 'pt' ? at.ptId : null,
         locationId: unlimited ? (options.locationId ?? at.locationId) : null,
         durationMonths: unlimited ? 1 : null,
-        validityDays: unlimited ? null : 30,
+        validityDays: unlimited ? null : (options.validityDays ?? 30),
         creditsOrSessionsRemaining: unlimited ? null : (options.credits ?? 5),
         expiresAt: options.expiresAt ?? null,
         active: true,
@@ -316,6 +316,17 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     assert.equal(started.expiresAt?.toISOString(), days(30).toISOString(), 'validity_days from the booking, not from the purchase')
     assert.equal(started.creditsOrSessionsRemaining, 2)
     assert.equal((await bookingRow(bookingId)).creditsOrSessionsUsed, 1)
+  })
+
+  test('PKG-40 a Dormant Credit Bundle frozen with a validity past what a date holds lists on the Book sheet, pays, and Activates for ten years', async () => {
+    const eve = await member(one)
+    const bundle = await holds(one, eve, 'credit_bundle', { credits: 3, validityDays: 2_000_000_000 })
+    const classId = await addClass(one)
+    const detail = await expectStatus(await harness.app.request(`/api/v1/me/classes/${classId}`, { headers: eve.headers }), 200)
+    assert.equal(detail.default_client_package_id, bundle)
+    assert.equal(detail.my_packages[0].activation_end_if_picked, days(3650).toISOString())
+    await bookOk(eve, classId)
+    assert.equal((await pkg(bundle)).expiresAt?.toISOString(), days(3650).toISOString())
   })
 
   test('PKG-13 a Dormant plan that would end before the class is not used or Activated, and the booking is refused when nothing else covers it', async () => {
