@@ -5,10 +5,9 @@
  * checks that the member *could* pay, with the same selection a booking runs,
  * and the package is chosen again at promotion — packages change in between.
  */
-import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { waitlistEntries } from '../../db/schema/bookings'
-import { classes } from '../../db/schema/schedule'
 import { clients } from '../../db/schema/identity'
 import { candidatePackages, holdsSeat, lockClass } from '../bookings/book'
 import { countSeats } from '../bookings/seats'
@@ -121,25 +120,32 @@ export async function join(
  * against the cancellation cap.
  */
 export async function leave(tenantId: string, clientId: string, entryId: string, now: Date): Promise<void> {
-  // Only a live entry of the member's own on a class that has not started. The
-  // status guard in the update also loses cleanly to a promotion that got there
-  // first.
-  const live = db
-    .select({ id: classes.id })
-    .from(classes)
-    .where(and(eq(classes.tenantId, tenantId), gt(classes.startsAt, now)))
-  const left = await db
-    .update(waitlistEntries)
-    .set({ status: 'withdrawn', resolvedAt: now, resolvedBy: 'client' })
-    .where(
-      and(
-        eq(waitlistEntries.tenantId, tenantId),
-        eq(waitlistEntries.id, entryId),
-        eq(waitlistEntries.clientId, clientId),
-        eq(waitlistEntries.status, 'waiting'),
-        inArray(waitlistEntries.classId, live),
-      ),
-    )
-    .returning({ id: waitlistEntries.id })
-  if (left.length === 0) throw new NotFoundError('waitlist_entry_not_found')
+  await db.transaction(async tx => {
+    const [entry] = await tx
+      .select({ classId: waitlistEntries.classId })
+      .from(waitlistEntries)
+      .where(
+        and(
+          eq(waitlistEntries.tenantId, tenantId),
+          eq(waitlistEntries.id, entryId),
+          eq(waitlistEntries.clientId, clientId),
+        ),
+      )
+      .limit(1)
+    const cls = entry && (await lockClass(tx, tenantId, entry.classId))
+    if (!cls || cls.startsAt <= now) throw new NotFoundError('waitlist_entry_not_found')
+
+    const left = await tx
+      .update(waitlistEntries)
+      .set({ status: 'withdrawn', resolvedAt: now, resolvedBy: 'client' })
+      .where(
+        and(
+          eq(waitlistEntries.tenantId, tenantId),
+          eq(waitlistEntries.id, entryId),
+          eq(waitlistEntries.status, 'waiting'),
+        ),
+      )
+      .returning({ id: waitlistEntries.id })
+    if (left.length === 0) throw new NotFoundError('waitlist_entry_not_found')
+  })
 }
