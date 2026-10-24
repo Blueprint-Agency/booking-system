@@ -136,7 +136,7 @@ needs is **built but unwired**.
 2. For 2on1: `co_client_id` MUST be non-null → else `409 partner_account_required`.
 3. Conflict check: no class / workshop_day / active `pt_session` for `instructor_id` overlaps
    `[starts_at, ends_at]`; room belongs to location and is clash-free (`assertRoomInLocation`,
-   `assertRoomAvailable`).
+   then `assertAvailable`, which locks the room and instructor first).
 4. Workspace check: `location_id ∈ actor.granted_location_ids` (superadmin bypasses).
 5. Insert `pt_sessions` (`session_type` copied from request, `capacity_online` 1/2, `lifecycle='active'`,
    `scheduled_*`).

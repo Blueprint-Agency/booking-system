@@ -2,7 +2,6 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { rooms } from '../../db/schema/catalog'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
-import { assertAvailable, type EventRef } from './occupancy'
 
 /**
  * Verify the room exists, is active, belongs to this tenant, and sits in
@@ -30,24 +29,4 @@ export async function assertRoomInLocation(
       location_id: locationId,
     })
   }
-}
-
-/**
- * Hard-block clash check: a physical room hosts one session at a time, across
- * classes, workshop days, PT sessions and corporate sessions.
- *
- * A room being taken and an instructor being taken are the same refusal, so this
- * is a thin alias over `assertAvailable` — see ./occupancy.ts for the rule and
- * the `schedule_conflict` payload. Kept as its own name because "is the room
- * free" reads better at the call sites than a subject literal.
- * Pass `exclude` when rescheduling so a row doesn't clash with itself.
- */
-export async function assertRoomAvailable(
-  tenantId: string,
-  roomId: string,
-  startsAt: Date,
-  endsAt: Date,
-  exclude?: EventRef,
-): Promise<void> {
-  await assertAvailable(tenantId, { kind: 'room', id: roomId }, { startsAt, endsAt }, exclude)
 }

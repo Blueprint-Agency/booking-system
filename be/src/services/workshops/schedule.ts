@@ -1,5 +1,6 @@
 import { db } from '../../db'
 import { BadRequestError } from '../../shared/errors'
+import { lockOccupancy } from '../schedule/occupancy'
 import { getWorkshop } from './publish'
 import { createDay, deleteDay, listDays, updateDay, type CreateDayInput, type WorkshopDayRow } from './days'
 import { createTier, deleteTier, listTiers, updateTier, type CreateTierInput, type TierWithDays } from './tiers'
@@ -19,8 +20,16 @@ export async function saveWorkshopSchedule(
   workshopId: string,
   input: { days: ScheduleDayInput[]; tiers: ScheduleTierInput[] },
 ): Promise<{ days: WorkshopDayRow[]; tiers: TierWithDays[] }> {
-  return db.transaction(async () => {
+  return db.transaction(async tx => {
     await getWorkshop(tenantId, workshopId, { lock: true })
+    // Each day claims its own room below. Claimed one by one, two saves naming
+    // the same rooms in opposite order would each hold the room the other
+    // waits for.
+    await lockOccupancy(
+      tx,
+      tenantId,
+      input.days.map(d => ({ kind: 'room', id: d.roomId })),
+    )
     const storedTiers = await listTiers(tenantId, workshopId)
 
     const keptDays = new Set(input.days.map(d => d.id))

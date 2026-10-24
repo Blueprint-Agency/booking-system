@@ -2,8 +2,8 @@ import { and, eq } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
 import { classes } from '../../db/schema'
 import { countSeats } from '../bookings/seats'
-import { assertRoomAvailable, assertRoomInLocation } from './room-conflicts'
-import { assertInstructorsAvailable, plannedInstructorIds } from './occupancy'
+import { assertRoomInLocation } from './room-conflicts'
+import { assertAvailable, eventSubjects, plannedInstructorIds } from './occupancy'
 import { computeEventState } from '../policy/event-state'
 import { now as clockNow } from '../../lib/clock'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -60,21 +60,20 @@ export async function createClass(tenantId: string, input: CreateClassInput): Pr
   // The room gate doubles as the location gate: a room only passes if it is this
   // tenant's and sits in the location named, so neither can be borrowed.
   await assertRoomInLocation(tenantId, input.roomId, input.locationId)
-  await assertRoomAvailable(tenantId, input.roomId, input.startsAt, input.endsAt)
-  // Nobody on the roster may already be teaching then — supporting included.
-  await assertInstructorsAvailable(
-    tenantId,
-    [
-      input.mainInstructorId,
-      ...(input.supportingInstructors?.map(s => s.instructorId) ??
-        input.supportingInstructorIds ??
-        []),
-    ],
-    { startsAt: input.startsAt, endsAt: input.endsAt },
-  )
-  const rule = input.packageRule ? await validateRule(db, tenantId, input.packageRule) : ACCEPTS_ALL
 
   return db.transaction(async tx => {
+    await assertAvailable(
+      tx,
+      tenantId,
+      eventSubjects(input.roomId, [
+        input.mainInstructorId,
+        ...(input.supportingInstructors?.map(s => s.instructorId) ??
+          input.supportingInstructorIds ??
+          []),
+      ]),
+      { startsAt: input.startsAt, endsAt: input.endsAt },
+    )
+    const rule = input.packageRule ? await validateRule(tx, tenantId, input.packageRule) : ACCEPTS_ALL
     // The class row's own main_instructor_id FK points at instructors.staff_user_id,
     // so the profile row has to exist before there is a class to hang a roster on.
     await ensureInstructors(tenantId, [input.mainInstructorId], tx)
@@ -171,97 +170,98 @@ export async function updateClass(
   /** Who made the edit — named on the refunds a rule change makes. */
   actorStaffId?: string,
 ): Promise<ClassRow> {
-  const [existing] = await db
-    .select()
-    .from(classes)
-    .where(and(eq(classes.tenantId, tenantId), eq(classes.id, id)))
-    .limit(1)
-  if (!existing) throw new NotFoundError('class_not_found')
+  const { row, ruleChange } = await db.transaction(async tx => {
+    // The lock booking takes (bookings/book.ts `lockClass`), before anything is
+    // read: a booking made meanwhile is counted below, and one made after
+    // waits and is judged by the edit.
+    const [existing] = await tx
+      .select()
+      .from(classes)
+      .where(and(eq(classes.tenantId, tenantId), eq(classes.id, id)))
+      .for('update')
+      .limit(1)
+    if (!existing) throw new NotFoundError('class_not_found')
 
-  // Once a class has started it is a record of what happened, not a plan — moving,
-  // repricing or resizing it rewrites history under the people who already sat in it.
-  // Same predicate every read path uses (policy/event-state.ts).
-  const now = clockNow()
-  const state = computeEventState({
-    startsAt: existing.startsAt,
-    endsAt: existing.endsAt,
-    lifecycle: existing.lifecycle,
-    now,
-  })
-  if (state !== 'scheduled') throw new ConflictError(`class_${state}`)
+    // Once a class has started it is a record of what happened, not a plan — moving,
+    // repricing or resizing it rewrites history under the people who already sat in it.
+    // Same predicate every read path uses (policy/event-state.ts).
+    const now = clockNow()
+    const state = computeEventState({
+      startsAt: existing.startsAt,
+      endsAt: existing.endsAt,
+      lifecycle: existing.lifecycle,
+      now,
+    })
+    if (state !== 'scheduled') throw new ConflictError(`class_${state}`)
 
-  const newStartsAt = patch.startsAt ?? existing.startsAt
-  const newEndsAt = patch.endsAt ?? existing.endsAt
-  assertEndsAfterStart(newStartsAt, newEndsAt)
-  // Nor may an edit make an upcoming class one that has already started: that is
-  // the guard above's state reached by a typo, and from it there is no way back —
-  // no edit, no class cancel to refund its bookings, and its Instructor Pay owed.
-  if (newStartsAt <= now) throw new BadRequestError('starts_at_in_past')
+    const newStartsAt = patch.startsAt ?? existing.startsAt
+    const newEndsAt = patch.endsAt ?? existing.endsAt
+    assertEndsAfterStart(newStartsAt, newEndsAt)
+    // Nor may an edit make an upcoming class one that has already started: that is
+    // the guard above's state reached by a typo, and from it there is no way back —
+    // no edit, no class cancel to refund its bookings, and its Instructor Pay owed.
+    if (newStartsAt <= now) throw new BadRequestError('starts_at_in_past')
 
-  // Online capacity can't drop below the members already holding an online seat.
-  // Buffer and overbook seats are staff's and don't count against it.
-  if (patch.capacityOnline !== undefined) {
-    const { onlineUsed } = await countSeats(db, tenantId, id)
-    if (patch.capacityOnline < onlineUsed) {
-      throw new ConflictError('capacity_below_bookings', { confirmed: onlineUsed })
+    // Online capacity can't drop below the members already holding an online seat.
+    // Buffer and overbook seats are staff's and don't count against it.
+    if (patch.capacityOnline !== undefined) {
+      const { onlineUsed } = await countSeats(tx, tenantId, id)
+      if (patch.capacityOnline < onlineUsed) {
+        throw new ConflictError('capacity_below_bookings', { confirmed: onlineUsed })
+      }
     }
-  }
 
-  const newRoomId = patch.roomId ?? existing.roomId
-  const newLocationId = patch.locationId ?? existing.locationId
+    const newRoomId = patch.roomId ?? existing.roomId
+    const newLocationId = patch.locationId ?? existing.locationId
+    const movesRoom =
+      patch.roomId !== undefined ||
+      patch.locationId !== undefined ||
+      patch.startsAt !== undefined ||
+      patch.endsAt !== undefined
+    if (movesRoom && newRoomId) await assertRoomInLocation(tenantId, newRoomId, newLocationId)
 
-  if (
-    patch.roomId !== undefined ||
-    patch.locationId !== undefined ||
-    patch.startsAt !== undefined ||
-    patch.endsAt !== undefined
-  ) {
-    if (newRoomId) {
-      await assertRoomInLocation(tenantId, newRoomId, newLocationId)
-      await assertRoomAvailable(tenantId, newRoomId, newStartsAt, newEndsAt, { kind: 'class', id })
+    // Who is on the class, and what they're paid, belongs to the roster module —
+    // including main_instructor_id and instructor_pay_sgd, which live on this row.
+    const touchesMain = patch.mainInstructorId !== undefined || patch.instructorPaySgd !== undefined
+    const touchesRoster =
+      touchesMain ||
+      patch.supportingInstructors !== undefined ||
+      patch.supportingInstructorIds !== undefined
+
+    const rosterPatch: RosterPatch = {
+      ...(touchesMain
+        ? {
+            main: {
+              ...(patch.mainInstructorId !== undefined
+                ? { instructorId: patch.mainInstructorId }
+                : {}),
+              ...(patch.instructorPaySgd !== undefined ? { paySgd: patch.instructorPaySgd } : {}),
+            },
+          }
+        : {}),
+      ...(patch.supportingInstructors !== undefined
+        ? { supporting: patch.supportingInstructors }
+        : {}),
+      ...(patch.supportingInstructorIds !== undefined
+        ? { supportingInstructorIds: patch.supportingInstructorIds }
+        : {}),
     }
-  }
 
-  // Who is on the class, and what they're paid, belongs to the roster module —
-  // including main_instructor_id and instructor_pay_sgd, which live on this row.
-  const touchesMain = patch.mainInstructorId !== undefined || patch.instructorPaySgd !== undefined
-  const touchesRoster =
-    touchesMain ||
-    patch.supportingInstructors !== undefined ||
-    patch.supportingInstructorIds !== undefined
-
-  const rosterPatch: RosterPatch = {
-    ...(touchesMain
-      ? {
-          main: {
-            ...(patch.mainInstructorId !== undefined
-              ? { instructorId: patch.mainInstructorId }
-              : {}),
-            ...(patch.instructorPaySgd !== undefined ? { paySgd: patch.instructorPaySgd } : {}),
-          },
-        }
-      : {}),
-    ...(patch.supportingInstructors !== undefined
-      ? { supporting: patch.supportingInstructors }
-      : {}),
-    ...(patch.supportingInstructorIds !== undefined
-      ? { supportingInstructorIds: patch.supportingInstructorIds }
-      : {}),
-  }
-
-  // A new roster, or the same roster at a new time, can put someone in two
-  // places at once. Ask about whoever the class will END UP with.
-  if (touchesRoster || patch.startsAt !== undefined || patch.endsAt !== undefined) {
-    await assertInstructorsAvailable(
+    // A new roster, or the same roster at a new time, can put someone in two
+    // places at once. Ask about whoever the class will END UP with.
+    const movesRoster = touchesRoster || patch.startsAt !== undefined || patch.endsAt !== undefined
+    await assertAvailable(
+      tx,
       tenantId,
-      await plannedInstructorIds(tenantId, { kind: 'class', id }, rosterPatch),
+      eventSubjects(
+        movesRoom ? newRoomId : null,
+        movesRoster ? await plannedInstructorIds(tenantId, { kind: 'class', id }, rosterPatch) : [],
+      ),
       { startsAt: newStartsAt, endsAt: newEndsAt },
       { kind: 'class', id },
     )
-  }
-  const rule = patch.packageRule ? await validateRule(db, tenantId, patch.packageRule) : undefined
+    const rule = patch.packageRule ? await validateRule(tx, tenantId, patch.packageRule) : undefined
 
-  const { row, ruleChange } = await db.transaction(async tx => {
     const set: Partial<typeof classes.$inferInsert> = {}
     if (patch.classTypeId !== undefined) set.classTypeId = patch.classTypeId
     if (patch.locationId !== undefined) set.locationId = patch.locationId
@@ -280,9 +280,7 @@ export async function updateClass(
         .set(set)
         .where(and(eq(classes.tenantId, tenantId), eq(classes.id, id)))
         .returning()
-      // Read above, outside this transaction — so deleted since, by someone else.
-      if (!rows[0]) throw new NotFoundError('class_not_found')
-      row = rows[0]
+      row = rows[0]!
     }
 
     if (touchesRoster) {
@@ -296,8 +294,8 @@ export async function updateClass(
       if (fresh) row = fresh
     }
 
-    // Last, once the class row is locked by the writes above or by the rule's
-    // own: a booking made meanwhile waits on it and is then judged by the new rule.
+    // Last: a booking made meanwhile is waiting on the class row locked above,
+    // and is then judged by the new rule.
     let ruleChange: Awaited<ReturnType<typeof applyRuleChange>> | null = null
     if (rule) {
       ruleChange = await applyRuleChange(tx, tenantId, id, rule, actorStaffId ?? null)

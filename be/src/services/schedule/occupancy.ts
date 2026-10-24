@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, lt, ne, type AnyColumn } from 'drizzle-orm'
+import { and, eq, gt, inArray, lt, ne, sql, type AnyColumn } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   classes,
@@ -203,11 +203,12 @@ type Candidate = OccupancyConflict & { rosterId: string }
  */
 export async function findOccupancyConflicts(
   tenantId: string,
-  subject: OccupancySubject,
+  asked: OccupancySubject,
   window: TimeWindow,
   exclude?: EventRef,
   tx?: Tx,
 ): Promise<OccupancyConflict[]> {
+  const subject = canonical(asked)
   const excludeId = (kind: EventKind) => (exclude?.kind === kind ? exclude.id : undefined)
   // SQL-side narrowing only: right time-ish, not itself. The rule is `occupies`.
   const narrow = (kind: EventKind, startsAt: AnyColumn, endsAt: AnyColumn, id: AnyColumn) => {
@@ -411,11 +412,12 @@ export interface SubjectClash {
  */
 export async function findClash(
   tenantId: string,
-  subject: OccupancySubject,
+  asked: OccupancySubject,
   window: TimeWindow,
   exclude?: EventRef,
   tx?: Tx,
 ): Promise<SubjectClash | null> {
+  const subject = canonical(asked)
   const conflicts = await findOccupancyConflicts(tenantId, subject, window, exclude, tx)
   if (conflicts.length === 0) return null
   return {
@@ -426,34 +428,59 @@ export async function findClash(
   }
 }
 
+export function eventSubjects(roomId: string | null | undefined, instructorIds: readonly string[]): OccupancySubject[] {
+  return [
+    ...(roomId ? [{ kind: 'room' as const, id: roomId }] : []),
+    ...[...new Set(instructorIds)].map(id => ({ kind: 'instructor' as const, id })),
+  ]
+}
+
+function canonical(subject: OccupancySubject): OccupancySubject {
+  return { kind: subject.kind, id: subject.id.toLowerCase() }
+}
+
 /**
- * Refuse the write if the subject is busy. One error identity — `schedule_conflict`
- * — for rooms and instructors alike, carrying which subject was taken, a
- * ready-made sentence, and the conflicting events.
+ * Hold these rooms and instructors for the rest of the transaction: a second
+ * write for one of them waits here until the first commits, then sees it.
+ *
+ * Take it before any other lock but the event's own row (the class, the PT
+ * request and session, the series, the workshop), with every subject the
+ * transaction will claim, all at once. The locks are taken in the order of
+ * their lock ids, so two writes cannot deadlock on each other, nor with what
+ * is locked after this: the instructor rows a leave submission locks, member
+ * time, packages. A later call for subjects already held returns at once.
+ */
+export async function lockOccupancy(tx: Tx, tenantId: string, subjects: readonly OccupancySubject[]): Promise<void> {
+  if (subjects.length === 0) return
+  const keys = subjects.map(s => {
+    const { kind, id } = canonical(s)
+    return sql`(${`occupancy:${tenantId.toLowerCase()}:${kind}:${id}`})`
+  })
+  const locks = await tx.execute<{ lock: number }>(
+    sql`select distinct hashtext(v.key) as lock from (values ${sql.join(keys, sql`, `)}) as v(key) order by lock`,
+  )
+  for (const { lock } of locks) await tx.execute(sql`select pg_advisory_xact_lock(${lock}::bigint)`)
+}
+
+/**
+ * Refuse the write if any subject is busy, holding them all first
+ * (`lockOccupancy`). One error identity — `schedule_conflict` — for rooms and
+ * instructors alike, carrying which subject was taken, a ready-made sentence,
+ * and the conflicting events.
  *
  * Pass `exclude` when rescheduling so a row doesn't clash with itself.
  */
 export async function assertAvailable(
+  tx: Tx,
   tenantId: string,
-  subject: OccupancySubject,
+  subjects: readonly OccupancySubject[],
   window: TimeWindow,
   exclude?: EventRef,
 ): Promise<void> {
-  const clash = await findClash(tenantId, subject, window, exclude)
-  if (clash) throw new ConflictError('schedule_conflict', { ...clash })
-}
-
-/** Everyone being put on the event has to be free, not just whoever leads it. */
-export async function assertInstructorsAvailable(
-  tenantId: string,
-  instructorIds: string[],
-  window: TimeWindow,
-  exclude?: EventRef,
-): Promise<void> {
-  // ponytail: one scan per instructor — a roster is one to three people. Batch
-  // by instructor id if a roster ever gets long.
-  for (const id of new Set(instructorIds)) {
-    await assertAvailable(tenantId, { kind: 'instructor', id }, window, exclude)
+  await lockOccupancy(tx, tenantId, subjects)
+  for (const subject of subjects) {
+    const clash = await findClash(tenantId, subject, window, exclude, tx)
+    if (clash) throw new ConflictError('schedule_conflict', { ...clash })
   }
 }
 

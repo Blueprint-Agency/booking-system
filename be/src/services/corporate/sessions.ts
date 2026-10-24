@@ -2,8 +2,8 @@ import { and, asc, eq, gte, isNull, lt, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { corporateRequests, corporateSessions } from '../../db/schema/schedule'
 import { corporatePackages } from '../../db/schema/packages'
-import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
-import { assertInstructorsAvailable, plannedInstructorIds } from '../schedule/occupancy'
+import { assertRoomInLocation } from '../schedule/room-conflicts'
+import { assertAvailable, eventSubjects, plannedInstructorIds } from '../schedule/occupancy'
 import { ensureInstructors, readRoster, replaceRoster } from '../schedule/roster'
 import { NotFoundError } from '../../shared/errors'
 
@@ -84,24 +84,21 @@ export async function createCorporateSession(
   }
 
   // 4. Room (optional). A room only makes sense inside a studio location; validate
-  //    it belongs to that location and is free. Off-site venues carry no room.
+  //    it belongs to that location. Off-site venues carry no room.
   if (input.roomId) {
     if (!input.locationId) return { ok: false, error: 'location_required' }
     // Room must belong to location (throws on mismatch — let the AppError propagate
     // so misconfigured requests still surface 400, consistent with sister-services).
     await assertRoomInLocation(tenantId, input.roomId, input.locationId)
-    await assertRoomAvailable(tenantId, input.roomId, input.startsAt, input.endsAt)
   }
 
-  // 5. Nobody on the session may already be booked then — supporting included.
-  await assertInstructorsAvailable(
-    tenantId,
-    [input.mainInstructorId, ...input.supportingInstructorIds],
-    { startsAt: input.startsAt, endsAt: input.endsAt },
-  )
-
-  // 6. Insert in a transaction
   const session = await db.transaction(async tx => {
+    await assertAvailable(
+      tx,
+      tenantId,
+      eventSubjects(input.roomId, [input.mainInstructorId, ...input.supportingInstructorIds]),
+      { startsAt: input.startsAt, endsAt: input.endsAt },
+    )
     // The session row's own main_instructor_id FK points at
     // instructors.staff_user_id, so the profile row has to exist first.
     await ensureInstructors(tenantId, [input.mainInstructorId], tx)
@@ -290,39 +287,33 @@ export async function rescheduleCorporateSession(
     return { ok: false, error: 'location_required' }
   }
 
-  // Room (optional) is only valid inside a studio location — validate coherence
-  // and availability only when both are present.
   if (nextRoomId) {
     if (!nextLocationId) return { ok: false, error: 'location_required' }
     await assertRoomInLocation(tenantId, nextRoomId, nextLocationId)
-    await assertRoomAvailable(tenantId, nextRoomId, nextStartsAt, nextEndsAt, {
-      kind: 'corporate_session',
-      id,
-    })
   }
 
-  // 4. Whoever the session will END UP with has to be free then — the merge
-  //    below is the same one the write performs, so the two can't disagree.
-  await assertInstructorsAvailable(
-    tenantId,
-    await plannedInstructorIds(
-      tenantId,
-      { kind: 'corporate_session', id },
-      {
-        ...(patch.mainInstructorId !== undefined
-          ? { main: { instructorId: patch.mainInstructorId } }
-          : {}),
-        ...(patch.supportingInstructorIds !== undefined
-          ? { supportingInstructorIds: patch.supportingInstructorIds }
-          : {}),
-      },
-    ),
-    { startsAt: nextStartsAt, endsAt: nextEndsAt },
-    { kind: 'corporate_session', id },
-  )
-
-  // 5. Apply in a transaction
   const session = await db.transaction(async tx => {
+    await assertAvailable(
+      tx,
+      tenantId,
+      eventSubjects(
+        nextRoomId,
+        await plannedInstructorIds(
+          tenantId,
+          { kind: 'corporate_session', id },
+          {
+            ...(patch.mainInstructorId !== undefined
+              ? { main: { instructorId: patch.mainInstructorId } }
+              : {}),
+            ...(patch.supportingInstructorIds !== undefined
+              ? { supportingInstructorIds: patch.supportingInstructorIds }
+              : {}),
+          },
+        ),
+      ),
+      { startsAt: nextStartsAt, endsAt: nextEndsAt },
+      { kind: 'corporate_session', id },
+    )
     const set: Partial<typeof corporateSessions.$inferInsert> = {}
     if (patch.corporatePackageId !== undefined) set.corporatePackageId = nextCorporatePackageId
     if (patch.clientName !== undefined) set.clientName = nextClientName

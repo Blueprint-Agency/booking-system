@@ -7,7 +7,8 @@ import {
 } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { ConflictError, NotFoundError, BadRequestError } from '../../shared/errors'
-import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
+import { assertRoomInLocation } from '../schedule/room-conflicts'
+import { assertAvailable, eventSubjects } from '../schedule/occupancy'
 // The tenant gate every entry point here starts with: the workshop exists AND
 // is this tenant's, so an id borrowed from another studio is
 // `workshop_not_found` before any day is read, written or deleted. One
@@ -44,23 +45,28 @@ export async function createDay(
   const w = await ensureWorkshop(tenantId, workshopId)
   if (input.endsAt <= input.startsAt) throw new BadRequestError('ends_at_must_be_after_starts_at')
   await assertRoomInLocation(tenantId, input.roomId, w.locationId)
-  await assertRoomAvailable(tenantId, input.roomId, input.startsAt, input.endsAt)
-  const [row] = await db
-    .insert(workshopDays)
-    .values({
-      tenantId,
-      workshopId,
-      ord: input.ord,
-      roomId: input.roomId,
+  return db.transaction(async tx => {
+    await assertAvailable(tx, tenantId, eventSubjects(input.roomId, []), {
       startsAt: input.startsAt,
       endsAt: input.endsAt,
-      basePriceSgd: input.basePriceSgd,
-      capacityOnline: input.capacityOnline,
-      capacityWaitlist: input.capacityWaitlist ?? 0,
-      capacityBuffer: input.capacityBuffer ?? 0,
     })
-    .returning()
-  return row!
+    const [row] = await tx
+      .insert(workshopDays)
+      .values({
+        tenantId,
+        workshopId,
+        ord: input.ord,
+        roomId: input.roomId,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        basePriceSgd: input.basePriceSgd,
+        capacityOnline: input.capacityOnline,
+        capacityWaitlist: input.capacityWaitlist ?? 0,
+        capacityBuffer: input.capacityBuffer ?? 0,
+      })
+      .returning()
+    return row!
+  })
 }
 
 export async function updateDay(
@@ -93,29 +99,33 @@ export async function updateDay(
   const nextRoomId = patch.roomId ?? existing.roomId
   const roomChanged = patch.roomId !== undefined && patch.roomId !== existing.roomId
   const timeChanged = patch.startsAt !== undefined || patch.endsAt !== undefined
-  if (nextRoomId && (roomChanged || timeChanged)) {
-    await assertRoomInLocation(tenantId, nextRoomId, w.locationId)
-    await assertRoomAvailable(tenantId, nextRoomId, nextStarts, nextEnds, {
-      kind: 'workshop_day',
-      id: dayId,
-    })
-  }
+  const movedRoom = roomChanged || timeChanged ? nextRoomId : null
+  if (movedRoom) await assertRoomInLocation(tenantId, movedRoom, w.locationId)
 
-  const [row] = await db
-    .update(workshopDays)
-    .set({
-      ...(patch.ord !== undefined ? { ord: patch.ord } : {}),
-      ...(patch.roomId !== undefined ? { roomId: patch.roomId } : {}),
-      ...(patch.startsAt !== undefined ? { startsAt: patch.startsAt } : {}),
-      ...(patch.endsAt !== undefined ? { endsAt: patch.endsAt } : {}),
-      ...(patch.basePriceSgd !== undefined ? { basePriceSgd: patch.basePriceSgd } : {}),
-      ...(patch.capacityOnline !== undefined ? { capacityOnline: patch.capacityOnline } : {}),
-      ...(patch.capacityWaitlist !== undefined ? { capacityWaitlist: patch.capacityWaitlist } : {}),
-      ...(patch.capacityBuffer !== undefined ? { capacityBuffer: patch.capacityBuffer } : {}),
-    })
-    .where(and(eq(workshopDays.tenantId, tenantId), eq(workshopDays.id, dayId)))
-    .returning()
-  return row!
+  return db.transaction(async tx => {
+    await assertAvailable(
+      tx,
+      tenantId,
+      eventSubjects(movedRoom, []),
+      { startsAt: nextStarts, endsAt: nextEnds },
+      { kind: 'workshop_day', id: dayId },
+    )
+    const [row] = await tx
+      .update(workshopDays)
+      .set({
+        ...(patch.ord !== undefined ? { ord: patch.ord } : {}),
+        ...(patch.roomId !== undefined ? { roomId: patch.roomId } : {}),
+        ...(patch.startsAt !== undefined ? { startsAt: patch.startsAt } : {}),
+        ...(patch.endsAt !== undefined ? { endsAt: patch.endsAt } : {}),
+        ...(patch.basePriceSgd !== undefined ? { basePriceSgd: patch.basePriceSgd } : {}),
+        ...(patch.capacityOnline !== undefined ? { capacityOnline: patch.capacityOnline } : {}),
+        ...(patch.capacityWaitlist !== undefined ? { capacityWaitlist: patch.capacityWaitlist } : {}),
+        ...(patch.capacityBuffer !== undefined ? { capacityBuffer: patch.capacityBuffer } : {}),
+      })
+      .where(and(eq(workshopDays.tenantId, tenantId), eq(workshopDays.id, dayId)))
+      .returning()
+    return row!
+  })
 }
 
 /**
