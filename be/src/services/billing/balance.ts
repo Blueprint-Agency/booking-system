@@ -32,7 +32,12 @@ export interface PaymentEvidence {
  * arrives after the flip: it is already in the `succeeded` set, and a set is
  * what this is.
  *
- * A `refunded` or `failed` row counts for nothing.
+ * A `refunded` or `failed` row counts for nothing — **the crediting intent
+ * included**. Only its `pending` row is lifted: a session whose charge was
+ * refunded still reports itself paid, so the provider's redelivery and the
+ * confirmation page's replay both name a refunded payment as the one being
+ * processed, and counting it would settle the Purchase again on money already
+ * back with the member, and grant again what the Refund took away.
  */
 export function amountPaidCents(
   payments: PaymentEvidence[],
@@ -42,7 +47,9 @@ export function amountPaidCents(
   for (const payment of payments) {
     const credited =
       payment.status === 'succeeded' ||
-      (Boolean(creditingIntentId) && payment.paymentIntentId === creditingIntentId)
+      (payment.status === 'pending' &&
+        Boolean(creditingIntentId) &&
+        payment.paymentIntentId === creditingIntentId)
     if (!credited) continue
     counted.set(payment.paymentIntentId, toCents(payment.amountSgd))
   }
