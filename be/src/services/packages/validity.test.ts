@@ -117,6 +117,19 @@ assert.strictEqual(
   computeActive({ kind: 'unlimited', expiresAt: EARLIER, creditsOrSessionsRemaining: null }, NOW),
   false,
 )
+// A Voided package is never active, whatever its balance and expiry say: a
+// Refund ended it, and no later movement or edit may make it live again.
+assert.strictEqual(computeActive({ ...bundle(5), voided: true }, NOW), false)
+assert.strictEqual(computeActive({ ...bundle(5, null), voided: true }, NOW), false)
+assert.strictEqual(
+  computeActive({ kind: 'unlimited', expiresAt: LATER, creditsOrSessionsRemaining: null, voided: true }, NOW),
+  false,
+)
+{
+  const r = ok(applyMovement({ ...bundle(0), voided: true }, +1, NOW))
+  assert.strictEqual(r.remaining, 1)
+  assert.strictEqual(r.active, false, 'a credit landing on a voided package does not revive it')
+}
 
 // --- calendar-month Duration ------------------------------------------------
 // The defect this arithmetic exists to prevent: a naive `setMonth` rolls 31 August

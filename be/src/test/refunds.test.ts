@@ -858,6 +858,103 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(requests.length, 0)
   })
 
+  /**
+   * A Credit Bundle refunded while a class it paid for was already running: the
+   * Void cancels only bookings still ahead, so that one is left standing on the
+   * voided package — the booking a later cancel can return a credit for.
+   */
+  async function refundedWithRunningBooking(name: string) {
+    const who = await member(one, name)
+    const paid = await buy(one, who, 'bundle')
+    const classId = await addClass(one, 3 * DAY)
+    const booked = await book(who, classId)
+    assert.equal(booked.status, 201, JSON.stringify(booked.body))
+    // The class has since started, and is still running when the Refund lands.
+    await harness.db
+      .update(schema.classes)
+      .set({ startsAt: new Date(Date.now() - 10 * 60 * 1000), endsAt: new Date(Date.now() + 50 * 60 * 1000) })
+      .where(eq(schema.classes.id, classId))
+    const from = refundCalls().length
+    assert.equal((await refundPackage(adminAtOne, who, paid)).status, 200)
+    await settle(from)
+    await assertRefunded(paid.purchaseId)
+    const left = await bookingRow(booked.body.booking_id)
+    assert.equal(left.state, 'confirmed', 'the Void leaves a class already running alone')
+    const voided = await packageRow(paid.clientPackageId)
+    assert.equal(voided.active, false)
+    assert.equal(voided.creditsOrSessionsRemaining, 9)
+    return { who, paid, classId, bookingId: booked.body.booking_id as string }
+  }
+
+  const returnedMovements = (clientPackageId: string) =>
+    harness.db
+      .select({ delta: schema.creditMovements.delta })
+      .from(schema.creditMovements)
+      .where(sql`${schema.creditMovements.clientPackageId} = ${clientPackageId} AND ${schema.creditMovements.cause} = 'returned'`)
+
+  /** The voided package is still off, still holds what the Void left it, and pays for no class. */
+  async function assertStillVoided(who: Member, paid: Paid, remaining: number) {
+    const pkg = await packageRow(paid.clientPackageId)
+    assert.equal(pkg.active, false, 'a voided package stays voided')
+    assert.equal(pkg.creditsOrSessionsRemaining, remaining)
+    const attempt = await book(who, await addClass(one, 5 * DAY))
+    assert.equal(attempt.status, 409, JSON.stringify(attempt.body))
+    assert.equal(attempt.body.error, 'insufficient_credits')
+  }
+
+  test('RFD-18 the studio cancelling a class a refunded package still held returns no credit to it, and it pays for no later class', async () => {
+    const { who, paid, classId, bookingId } = await refundedWithRunningBooking('Ola Running')
+
+    const res = await post(`/api/v1/portal/admin/schedule/classes/${classId}/cancel`, adminAtOne.headers, {})
+
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    await assertStillVoided(who, paid, 9)
+    const cancelled = await bookingRow(bookingId)
+    assert.equal(cancelled.state, 'cancelled')
+    assert.equal(cancelled.refundOutcome, 'n_a', 'no credit goes back to a voided package')
+    assert.deepEqual(await returnedMovements(paid.clientPackageId), [])
+  })
+
+  test('RFD-18 staff cancelling a refunded package\'s booking with Return credit returns no credit to it, and it pays for no later class', async () => {
+    const { who, paid, bookingId } = await refundedWithRunningBooking('Pia Returned')
+
+    const res = await post(`/api/v1/portal/admin/bookings/${bookingId}/cancel`, adminAtOne.headers, { credit: 'return' })
+
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    await assertStillVoided(who, paid, 9)
+    assert.equal(res.body.refund_outcome, 'n_a', JSON.stringify(res.body))
+    assert.equal(res.body.refund_fired, false)
+    const cancelled = await bookingRow(bookingId)
+    assert.equal(cancelled.state, 'cancelled')
+    assert.equal(cancelled.refundOutcome, 'n_a')
+    assert.deepEqual(await returnedMovements(paid.clientPackageId), [])
+  })
+
+  test('RFD-19 an admin setting a refunded package\'s credit balance or expiry leaves it voided: it pays for no later class', async () => {
+    const quin = await member(one, 'Quin Edited')
+    const paid = await buy(one, quin, 'bundle')
+    const from = refundCalls().length
+    assert.equal((await refundPackage(adminAtOne, quin, paid)).status, 200)
+    await settle(from)
+    await assertRefunded(paid.purchaseId)
+
+    const balance = await post(
+      `/api/v1/portal/admin/clients/${quin.clientId}/packages/${paid.clientPackageId}/balance`,
+      adminAtOne.headers,
+      { balance: 12, reason: 'Goodwill' },
+    )
+    assert.equal(balance.status, 200, JSON.stringify(balance.body))
+    await assertStillVoided(quin, paid, 12)
+
+    const expiry = await post(
+      `/api/v1/portal/admin/clients/${quin.clientId}/packages/${paid.clientPackageId}/expiry`,
+      adminAtOne.headers,
+      { expires_at: new Date(Date.now() + 30 * DAY).toISOString(), reason: 'Extended' },
+    )
+    assert.equal(expiry.status, 200, JSON.stringify(expiry.body))
+    await assertStillVoided(quin, paid, 12)
+  })
+
   test("another studio's admin cannot refund a studio's package or workshop place, and no money moves", async () => {
     const mo = await member(one, 'Mo Guarded')
     const paid = await buy(one, mo, 'bundle')

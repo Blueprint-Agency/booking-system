@@ -27,7 +27,7 @@ import { afterCommit, db } from '../../db'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { inboxItems } from '../../db/schema/inbox'
-import { actorOfSource, recordMovement, refundCredits } from '../packages/ledger'
+import { actorOfSource, isVoided, recordMovement, refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import {
   settleCancel,
@@ -237,6 +237,10 @@ export async function cancelBookingInTx(
   }
 
   const used = bk.used ?? 0
+  // A Refund's own unwind says so; a booking the Void left standing (its class
+  // already running) and cancelled later is read off the package.
+  const voided =
+    packageVoided || (bk.clientPackageId !== null && (await isVoided(tx, tenantId, bk.clientPackageId)))
 
   // Unlimited bookings used 0 credits → nothing to return; record n_a, not
   // credit_returned. A Voided package takes the same arm for the same reason:
@@ -251,7 +255,7 @@ export async function cancelBookingInTx(
     evaluation,
     credit,
     used,
-    returnable: bk.clientPackageId !== null && !packageVoided,
+    returnable: bk.clientPackageId !== null && !voided,
   })
 
   // Whether the cancel came in time, judged against the same window a
@@ -292,7 +296,7 @@ export async function cancelBookingInTx(
   // 4b. The private session that Activated the package, its paying seat
   // cancelled in time, returns the package to Dormant (be/docs/adr/0011). Not
   // a Voided package: it has ended, and nothing may make it live again.
-  if (bk.kind === 'pt' && bk.clientPackageId && !packageVoided) {
+  if (bk.kind === 'pt' && bk.clientPackageId && !voided) {
     await reverseActivationOnCancel(tx, {
       tenantId,
       clientId: bk.clientId,
