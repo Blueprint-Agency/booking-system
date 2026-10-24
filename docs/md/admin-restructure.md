@@ -525,7 +525,7 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 
 **Common shape (all three types):**
 - Header: title, type badge (Class / Workshop / PT), date/time, location, instructor(s)
-- Event state chip: `scheduled` / `ongoing` / `completed` (auto-flipped by system based on time)
+- Event state chip: `scheduled` / `ongoing` / `completed` (auto-flipped by system based on time), or `cancelled` once the event is cancelled. A cancelled class or workshop also reads Cancelled on the Instructor's My schedule, with no Cancel (#251).
 - Summary: capacity, booked count, full booking details
 - Attendees list (roster)
 - Per-row booking actions where applicable
