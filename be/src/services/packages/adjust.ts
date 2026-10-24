@@ -46,6 +46,14 @@ async function loadOwnedPackage(
   return row
 }
 
+/**
+ * The most credits or sessions a package may hold after a staff edit: more than
+ * a member could use in the ten years a package may run (`MAX_VALIDITY_DAYS`),
+ * and far inside the `integer` balance column, which a larger figure overflowed
+ * as a 500 (#240).
+ */
+export const MAX_PACKAGE_BALANCE = 10_000
+
 export interface AdjustInput {
   tenantId: string
   clientId: string
@@ -77,6 +85,10 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
     }
     const next = pkg.creditsOrSessionsRemaining + input.delta
     if (next < 0) throw new BadRequestError('balance_cannot_go_negative')
+    // Only a top-up is held to the most: a balance already above it may still come down.
+    if (input.delta > 0 && next > MAX_PACKAGE_BALANCE) {
+      throw new BadRequestError('balance_too_large', { max: MAX_PACKAGE_BALANCE })
+    }
 
     // Recompute the consumable flag — adding credits to an exhausted bundle must
     // reactivate it, and zeroing one must deactivate it, without waiting for the

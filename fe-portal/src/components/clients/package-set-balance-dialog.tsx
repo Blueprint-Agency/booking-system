@@ -3,6 +3,9 @@ import { useState } from "react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import type { ClientPackage } from "@/types";
 
+/** The most a package may hold after a staff edit, as the backend refuses past it (#240). */
+export const MAX_PACKAGE_BALANCE = 10_000;
+
 export function PackageSetBalanceDialog({
   pkg,
   onSave,
@@ -42,6 +45,7 @@ export function PackageSetBalanceDialog({
             id="bal"
             type="number"
             min={0}
+            max={MAX_PACKAGE_BALANCE}
             value={balance}
             onChange={(e) => setBalance(e.target.value)}
           />

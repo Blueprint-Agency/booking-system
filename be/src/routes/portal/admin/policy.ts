@@ -10,14 +10,15 @@ import { tenantId } from '../../../middleware/tenant'
 // which is more instructors than the studio will ever have.
 const LEAVE_CAP_MESSAGE = 'A Leave Cap must be between 1 and 99 instructors.'
 /** A whole number in a range, refused with one sentence whichever bound it broke. */
-const bounded = (message: string, min: number, max?: number) => {
-  const n = z.number({ message }).int(message).min(min, message)
-  return (max === undefined ? n : n.max(max, message)).optional()
-}
+const bounded = (message: string, min: number, max: number) =>
+  z.number({ message }).int(message).min(min, message).max(max, message).optional()
 
 const leaveCap = z.number().int(LEAVE_CAP_MESSAGE).min(1, LEAVE_CAP_MESSAGE).max(99, LEAVE_CAP_MESSAGE)
 
-const LEAVE_CONFLICT_MESSAGE = 'A leave conflict must be a pair of instructors.'
+/** A year in hours: the longest a Cancellation Window may run. */
+const MAX_WINDOW_HOURS = 365 * 24
+
+const LEAVE_CONFLICT_MESSAGE ='A leave conflict must be a pair of instructors.'
 
 /** A rejected body answers with a reason an admin can read, not a raw zod dump. */
 const explainInvalid = (result: { success: boolean; error?: unknown }) => {
@@ -37,10 +38,13 @@ const globalPatch = z.object({
   cancel_cap_enabled: z
     .boolean({ message: 'The cancellation cap is either on or off.' })
     .optional(),
-  cancel_cap_count: bounded('A cancellation cap must be 0 or more.', 0),
-  cancel_cap_cycle_days: bounded('A cancellation cycle must be at least 1 day.', 1),
-  class_window_hours: bounded('A class booking window must be 0 hours or more.', 0),
-  pt_window_hours: bounded('A PT booking window must be 0 hours or more.', 0),
+  // Each has a most, as every integer column does: past it the save overflowed
+  // as a 500 (#240). A cycle or window of a year, or 999 cancellations in one,
+  // already means "no limit" to every member.
+  cancel_cap_count: bounded('A cancellation cap must be between 0 and 999.', 0, 999),
+  cancel_cap_cycle_days: bounded('A cancellation cycle must be between 1 and 365 days.', 1, 365),
+  class_window_hours: bounded('A class booking window must be between 0 and 8760 hours (a year).', 0, MAX_WINDOW_HOURS),
+  pt_window_hours: bounded('A PT booking window must be between 0 and 8760 hours (a year).', 0, MAX_WINDOW_HOURS),
   leave_carry_over_cap_days: bounded('Carry-over must be between 0 and 365 days.', 0, 365),
   study_leave_cap: leaveCap.optional(),
   // The Cross-Location Add-On rate, per month. Repricing moves future purchases

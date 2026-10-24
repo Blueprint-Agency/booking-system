@@ -24,6 +24,7 @@ export const ERROR_CODES = {
   bad_time_range: "bad_time_range",
   balance_cannot_go_negative: "balance_cannot_go_negative",
   balance_must_be_nonnegative_integer: "balance_must_be_nonnegative_integer",
+  balance_too_large: "balance_too_large",
   balance_unchanged: "balance_unchanged",
   billing_details_limit: "billing_details_limit",
   billing_details_not_found: "billing_details_not_found",
