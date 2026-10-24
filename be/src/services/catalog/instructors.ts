@@ -175,6 +175,15 @@ export async function createInstructor(
   return view
 }
 
+const BIO_MAX = 2000
+const PHONE_MAX = 40
+
+function assertWithin(value: string | null | undefined, what: string, max: number): void {
+  if (value != null && value.length > max) {
+    throw new BadRequestError('invalid_request', { message: `${what} is at most ${max} characters.` })
+  }
+}
+
 interface UpdateInstructorInput {
   name?: string
   bio?: string | null
@@ -189,6 +198,8 @@ export async function updateInstructor(
 ): Promise<InstructorView> {
   await loadById(tenantId, id) // 404 if missing
   assertOwnObjectKeys(tenantId, [patch.photoR2Key])
+  assertWithin(patch.bio, 'A bio', BIO_MAX)
+  assertWithin(patch.phone, 'A phone number', PHONE_MAX)
 
   await db.transaction(async tx => {
     const staffPatch: Partial<StaffRow> = {}

@@ -43,6 +43,7 @@ export const ERROR_CODES = {
   cannot_demote_last_admin: 'cannot_demote_last_admin',
   cannot_set_balance_on_unlimited_package: 'cannot_set_balance_on_unlimited_package',
   capacity_below_bookings: 'capacity_below_bookings',
+  capacity_required: 'capacity_required',
   card_not_found: 'card_not_found',
   check_in_closed: 'check_in_closed',
   check_in_not_open: 'check_in_not_open',

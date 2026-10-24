@@ -15,8 +15,8 @@ import { tenantId } from '../../../middleware/tenant'
  */
 
 const patchSchema = z.object({
-  bio: z.string().max(2000).nullable().optional(),
-  phone: z.string().max(40).nullable().optional(),
+  bio: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
 })
 
 function serialize(v: InstructorView, role: string, email: string) {

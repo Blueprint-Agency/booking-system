@@ -8,6 +8,7 @@ import { SeriesPanel } from "@/components/schedule/series-panel";
 import { ClassRoster, SeatStats, Stat } from "@/components/schedule/class-roster";
 import { WaitlistPanel } from "@/components/schedule/waitlist-panel";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
+import { capacityProblem } from "@/lib/capacity";
 import { PackageRuleField } from "@/components/schedule/package-rule-field";
 import {
   EDIT_RULE_HINT,
@@ -349,19 +350,9 @@ function ClassEditor({
       setErr("End time must be after start time.");
       return;
     }
-    // Creating a class refuses all-zero capacity; the update route doesn't, so
-    // hold the same line here rather than save a class nobody can get into.
-    const capacityChanged =
-      capacity.onlineBooking !== data.capacity_online ||
-      capacity.waitlist !== data.capacity_waitlist ||
-      capacity.buffer !== data.capacity_buffer;
-    if (capacityChanged && capacity.onlineBooking + capacity.waitlist + capacity.buffer === 0) {
-      setErr("Give the class at least one online, buffer or waitlist place.");
-      return;
-    }
-    const ruleProblem = packageRuleProblem(packageRule);
-    if (ruleProblem) {
-      setErr(ruleProblem);
+    const problem = capacityProblem(capacity) ?? packageRuleProblem(packageRule);
+    if (problem) {
+      setErr(problem);
       return;
     }
     const ruleChanged = !sameRule(packageRule, draftFromRule(data.package_rule));

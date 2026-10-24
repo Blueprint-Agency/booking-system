@@ -286,6 +286,64 @@ describe('instructor scheduling for themselves', { skip: integrationTestsEnabled
     assert.deepEqual(listedFor(await needsPay(), session.id), [[tara.id, null, true]])
   })
 
+  test('SCH-35 a class or series with no online, waitlist or buffer place is refused with a reason, from the instructor and the admin routes alike, and nothing is written', async () => {
+    const startsAt = at(40)
+    const classBody = (capacity: Record<string, number>) => ({
+      class_type_id: classTypeId,
+      main_instructor_id: tara.id,
+      location_id: locationId,
+      room_id: roomId,
+      starts_at: startsAt.toISOString(),
+      ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+      credit_cost: 1,
+      ...capacity,
+    })
+    const none = { capacity_online: 0, capacity_waitlist: 0, capacity_buffer: 0 }
+    const first = mondayFrom(42)
+    const seriesNone = { ...seriesBody(first, 2), ...none }
+
+    const refusals = [
+      await call('/instructor/schedule/classes', tara.headers, 'POST', classBody(none)),
+      await call('/instructor/schedule/series/preview', tara.headers, 'POST', seriesNone),
+      await call('/instructor/schedule/series', tara.headers, 'POST', seriesNone),
+      await call('/admin/schedule/classes', admin.headers, 'POST', classBody(none)),
+      await call('/admin/schedule/series/preview', admin.headers, 'POST', seriesNone),
+      await call('/admin/schedule/series', admin.headers, 'POST', seriesNone),
+    ]
+    for (const res of refusals) {
+      const body = await json(res, 400)
+      assert.equal(body.error, 'capacity_required', JSON.stringify(body))
+      assert.match(String(body.message), /at least one/i, `says why: ${JSON.stringify(body)}`)
+    }
+    const written = await harness.db
+      .select({ id: schema.classes.id })
+      .from(schema.classes)
+      .where(and(eq(schema.classes.classTypeId, classTypeId), eq(schema.classes.startsAt, startsAt)))
+    assert.deepEqual(written, [], 'a refused class is not created')
+    const seriesWritten = await harness.db
+      .select({ id: schema.classSeries.id })
+      .from(schema.classSeries)
+      .where(and(eq(schema.classSeries.classTypeId, classTypeId), eq(schema.classSeries.firstDate, first)))
+    assert.deepEqual(seriesWritten, [], 'a refused series is not created')
+
+    const bufferOnly = await json(
+      await call('/admin/schedule/classes', admin.headers, 'POST', classBody({ ...none, capacity_buffer: 1 })),
+      201,
+    )
+    const emptied = await json(
+      await call(`/admin/schedule/classes/${bufferOnly.id}`, admin.headers, 'PATCH', none),
+      400,
+    )
+    assert.equal(emptied.error, 'capacity_required', JSON.stringify(emptied))
+    assert.match(String(emptied.message), /at least one/i, `says why: ${JSON.stringify(emptied)}`)
+    const [kept] = await harness.db.select().from(schema.classes).where(eq(schema.classes.id, bufferOnly.id))
+    assert.deepEqual(
+      [kept?.capacityOnline, kept?.capacityWaitlist, kept?.capacityBuffer],
+      [0, 0, 1],
+      'a refused edit changes nothing',
+    )
+  })
+
   test('SCH-28 an instructor cannot extend or end a series, even one they created', async () => {
     const first = mondayFrom(35)
     const created = await json(

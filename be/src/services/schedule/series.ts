@@ -33,6 +33,7 @@ import { bookings } from '../../db/schema/bookings'
 import { loadTenantById } from '../tenants/tenants'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { assertRoomInLocation } from './room-conflicts'
+import { assertHasCapacity } from './classes'
 import { eventSubjects, findClash, lockOccupancy, type SubjectClash } from './occupancy'
 import { ensureInstructors, exec, replaceRoster, type Tx } from './roster'
 import {
@@ -592,6 +593,7 @@ function assertTemplate(t: SeriesTemplate): void {
   // Same-day only: a class that runs past midnight is not something a weekly
   // timetable has, and allowing it would make "the date" of an occurrence ambiguous.
   if (t.endTime <= t.startTime) throw new BadRequestError('end_time_before_start_time')
+  assertHasCapacity(t)
   const supporting = t.supportingInstructors.map(s => s.instructorId)
   if (supporting.includes(t.mainInstructorId)) {
     throw new BadRequestError('supporting_instructor_duplicates_main')
