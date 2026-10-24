@@ -236,6 +236,39 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     return id
   }
 
+  async function queuedOnRow(
+    id: string,
+    first: () => Promise<Res>,
+    second: () => Promise<Res>,
+  ): Promise<[Res, Res]> {
+    const responses = await harness.db.transaction(async tx => {
+      const [holder] = await tx.execute<{ pid: number }>(
+        sql`SELECT pg_backend_pid() AS pid FROM leave_requests WHERE id = ${id} FOR UPDATE`,
+      )
+      const queuedBehind = async (calls: number) => {
+        const deadline = Date.now() + 10_000
+        for (;;) {
+          const [waiting] = await tx.execute<{ n: number }>(sql`
+            WITH RECURSIVE queue(pid) AS (
+              SELECT pid FROM pg_locks WHERE NOT granted AND ${holder!.pid}::int = ANY(pg_blocking_pids(pid))
+              UNION
+              SELECT l.pid FROM pg_locks l, queue q WHERE NOT l.granted AND q.pid = ANY(pg_blocking_pids(l.pid))
+            )
+            SELECT count(*)::int AS n FROM queue`)
+          if (waiting!.n >= calls) return
+          assert.ok(Date.now() < deadline, `call ${calls} never queued on the leave request's row`)
+          await new Promise(resolve => setTimeout(resolve, 10))
+        }
+      }
+      const firstResponse = first()
+      await queuedBehind(1)
+      const secondResponse = second()
+      await queuedBehind(2)
+      return [firstResponse, secondResponse] as const
+    })
+    return Promise.all(responses)
+  }
+
   before(async () => {
     // A bucket name and signing credentials, for a machine whose `.env` has
     // none — the fake below answers every call, so no real R2 is ever reached,
@@ -550,6 +583,99 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
 
     assert.equal((await row(pending.id)).status, 'pending')
     assert.equal((await row(approvedReq.id)).status, 'approved')
+  })
+
+  // ── Two transitions at once ────────────────────────────────────────────────
+
+  test('LEV-134 an instructor withdrawing a pending request as an admin approves it: the first to reach it stands, and the second is refused leave_not_pending', async () => {
+    const gil = await staff(harness.tenants.one, 'gil', 'instructor')
+
+    const first = await file(gil, 'annual')
+    const [withdrawn, approveLate] = await queuedOnRow(
+      first.id,
+      () => withdraw(gil, first.id),
+      () => approve(adminOne, first.id),
+    )
+    assert.equal(withdrawn.status, 200, withdrawn.text)
+    refused(approveLate, 409, 'leave_not_pending', 'approve after withdraw')
+    const afterWithdraw = await row(first.id)
+    assert.equal(afterWithdraw.status, 'withdrawn')
+    assert.equal(afterWithdraw.decidedByStaffId, null, 'no decision recorded')
+    assert.equal(mailTo(gil.email, 'leave_approved').length, 0, 'no approval is mailed for withdrawn leave')
+
+    const second = await file(gil, 'annual')
+    const [approved, withdrawLate] = await queuedOnRow(
+      second.id,
+      () => approve(adminOne, second.id),
+      () => withdraw(gil, second.id),
+    )
+    assert.equal(approved.status, 200, approved.text)
+    refused(withdrawLate, 409, 'leave_not_pending', 'withdraw after approve')
+    assert.equal((await row(second.id)).status, 'approved')
+    assert.equal(mailTo(gil.email, 'leave_approved').length, 1, 'the approval that stood is mailed')
+  })
+
+  test('LEV-135 two admins approving and rejecting one pending request at once: the first decision stands, the second is refused leave_not_pending, and only the first is mailed', async () => {
+    const hal = await staff(harness.tenants.one, 'hal', 'instructor')
+    const why = `Short staffed ${run}`
+
+    const first = await file(hal, 'annual')
+    const [approved, rejectLate] = await queuedOnRow(
+      first.id,
+      () => approve(adminOne, first.id),
+      () => reject(secondAdminOne, first.id, why),
+    )
+    assert.equal(approved.status, 200, approved.text)
+    refused(rejectLate, 409, 'leave_not_pending', 'reject after approve')
+    const afterApprove = await row(first.id)
+    assert.equal(afterApprove.status, 'approved')
+    assert.equal(afterApprove.decidedByStaffId, adminOne.staffId)
+    assert.equal(afterApprove.decisionReason, null)
+    assert.equal(mailTo(hal.email, 'leave_approved').length, 1)
+    assert.equal(mailTo(hal.email, 'leave_rejected').length, 0, 'no rejection is mailed for approved leave')
+
+    const second = await file(hal, 'annual')
+    const [rejected, approveLate] = await queuedOnRow(
+      second.id,
+      () => reject(secondAdminOne, second.id, why),
+      () => approve(adminOne, second.id),
+    )
+    assert.equal(rejected.status, 200, rejected.text)
+    refused(approveLate, 409, 'leave_not_pending', 'approve after reject')
+    const afterReject = await row(second.id)
+    assert.equal(afterReject.status, 'rejected')
+    assert.equal(afterReject.decidedByStaffId, secondAdminOne.staffId)
+    assert.equal(afterReject.decisionReason, why)
+    assert.equal(mailTo(hal.email, 'leave_rejected').length, 1)
+    assert.equal(mailTo(hal.email, 'leave_approved').length, 1, 'no approval is mailed for rejected leave')
+  })
+
+  test('LEV-136 an instructor cancelling approved leave as an admin revokes it: the first to reach it stands, the second is refused leave_not_approved, and a revocation is mailed only when it stood', async () => {
+    const ivy = await staff(harness.tenants.one, 'ivy', 'instructor')
+
+    const first = await file(ivy, 'annual')
+    assert.equal((await approve(adminOne, first.id)).status, 200)
+    const [cancelled, revokeLate] = await queuedOnRow(
+      first.id,
+      () => cancel(ivy, first.id),
+      () => revoke(adminOne, first.id),
+    )
+    assert.equal(cancelled.status, 200, cancelled.text)
+    refused(revokeLate, 409, 'leave_not_approved', 'revoke after cancel')
+    assert.equal((await row(first.id)).status, 'cancelled')
+    assert.equal(mailTo(ivy.email, 'leave_revoked').length, 0, 'no revocation is mailed for cancelled leave')
+
+    const second = await file(ivy, 'annual')
+    assert.equal((await approve(adminOne, second.id)).status, 200)
+    const [revoked, cancelLate] = await queuedOnRow(
+      second.id,
+      () => revoke(adminOne, second.id),
+      () => cancel(ivy, second.id),
+    )
+    assert.equal(revoked.status, 200, revoked.text)
+    refused(cancelLate, 409, 'leave_not_approved', 'cancel after revoke')
+    assert.equal((await row(second.id)).status, 'revoked')
+    assert.equal(mailTo(ivy.email, 'leave_revoked').length, 1, 'the revocation that stood is mailed')
   })
 
   // ── Supporting Documents ───────────────────────────────────────────────────

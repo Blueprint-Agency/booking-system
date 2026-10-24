@@ -765,6 +765,7 @@ export async function transitionOwnLeaveRequest(
       ),
     )
     .limit(1)
+    .for('no key update')
   if (!row) throw new NotFoundError('leave_request_not_found')
 
   const check = rules.checkOwnLeaveTransition(action, row, rules.sgToday(new Date()))
@@ -1140,6 +1141,7 @@ export async function decideLeaveRequest(
     .from(leaveRequests)
     .where(and(eq(leaveRequests.tenantId, tenantId), eq(leaveRequests.id, input.id)))
     .limit(1)
+    .for('no key update')
   if (!row) throw new NotFoundError('leave_request_not_found')
 
   const check = rules.checkAdminLeaveDecision(input.action, row, rules.sgToday(new Date()))
