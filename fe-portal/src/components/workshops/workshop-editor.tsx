@@ -229,9 +229,10 @@ async function createWorkshopWithChildren(
  * Reconcile an existing workshop's days/tiers against their originally-loaded
  * state: rows still carrying their original (server) id are PATCHed in place,
  * rows without a matching original id are new and get POSTed, and original
- * rows no longer present get DELETEd. Deletes run first so freed room/time
- * slots and day ids are available to the update/create passes that follow.
- * Order: delete tiers -> delete days -> update/create days -> update/create
+ * rows no longer present get DELETEd. Day deletes run first so freed room/time
+ * slots are available to the update/create passes that follow; tier deletes run
+ * last, since a workshop may never be left with no tier.
+ * Order: delete days -> update/create days -> update/create tiers -> delete
  * tiers (tier day_ids are remapped/filtered through the day id map so stale
  * references to a removed day are dropped, same as the create flow).
  */
@@ -249,11 +250,6 @@ async function saveDaysAndTiers(
   const originalTierIds = new Set(originalTiers.map((t) => t.id));
   const currentTierIds = new Set(currentTiers.map((t) => t.id));
 
-  for (const t of originalTiers) {
-    if (!currentTierIds.has(t.id)) {
-      await api.del(`/portal/admin/workshops/${workshopId}/tiers/${t.id}`);
-    }
-  }
   for (const d of originalDays) {
     if (!currentDayIds.has(d.id)) {
       await api.del(`/portal/admin/workshops/${workshopId}/days/${d.id}`);
@@ -282,6 +278,13 @@ async function saveDaysAndTiers(
       await api.patch(`/portal/admin/workshops/${workshopId}/tiers/${t.id}`, payload);
     } else {
       await api.post(`/portal/admin/workshops/${workshopId}/tiers`, payload);
+    }
+  }
+  // Last: the backend refuses to remove a workshop's only tier, so the tiers
+  // replacing it are saved first.
+  for (const t of originalTiers) {
+    if (!currentTierIds.has(t.id)) {
+      await api.del(`/portal/admin/workshops/${workshopId}/tiers/${t.id}`);
     }
   }
 }

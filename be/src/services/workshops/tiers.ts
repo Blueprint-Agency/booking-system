@@ -227,6 +227,15 @@ export async function deleteTier(
     throw new ConflictError('workshop_tier_has_bookings', { bookings: n })
   }
 
+  // A workshop is sold by its tiers, so the editor refuses to save one with
+  // none (admin-restructure §18b), and the API refuses to take a priced
+  // workshop back to that: add the replacement first, then remove this (#235).
+  const [{ tiers } = { tiers: 0 }] = await db
+    .select({ tiers: count() })
+    .from(workshopTiers)
+    .where(and(eq(workshopTiers.tenantId, tenantId), eq(workshopTiers.workshopId, workshopId)))
+  if (Number(tiers) <= 1) throw new ConflictError('workshop_tier_required')
+
   await db.transaction(async tx => {
     await tx
       .delete(workshopTierDays)
