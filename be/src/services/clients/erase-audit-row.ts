@@ -25,7 +25,7 @@ import type { ErasedMember } from './member-tables'
  */
 
 /** What stands where the member was named. */
-export const ERASED_MEMBER = '[erased member]'
+const ERASED_MEMBER = '[erased member]'
 
 /** A uuid column cannot hold the placeholder; this is "no one" there, as `audit.ts` uses it. */
 const NIL_ID = '00000000-0000-0000-0000-000000000000'

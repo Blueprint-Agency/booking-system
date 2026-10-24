@@ -51,7 +51,7 @@ export interface PayrollSummary {
 /** Money is numeric(10,2); accumulate in cents so 0.1 + 0.2 stays 0.30. */
 const toCents = (v: string | number) => Math.round(Number(v) * 100)
 
-export function serializePayrollRow(r: PayrollRow): PayrollLine {
+function serializePayrollRow(r: PayrollRow): PayrollLine {
   return {
     kind: r.kind,
     id: r.id,

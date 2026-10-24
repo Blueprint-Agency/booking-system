@@ -40,7 +40,7 @@ import { now as clockNow } from '../../lib/clock'
 import { pendingCheckIns, ptSeats, type RowCheckInState } from './session-check-in'
 
 /** How long after a session ends its check-in may stay open before the nag. */
-export const NAG_AFTER_MS = 24 * 60 * 60 * 1000
+const NAG_AFTER_MS = 24 * 60 * 60 * 1000
 /** How far back an ended session is still nagged about — see the module note. */
 const LOOK_BACK_MS = 3 * NAG_AFTER_MS
 

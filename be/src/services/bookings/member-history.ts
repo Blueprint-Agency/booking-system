@@ -106,7 +106,7 @@ export interface MemberCancelledRow extends Omit<MemberBookingRow, 'bookingId' |
 
 const toDate = (v: string | Date | null): Date | null => (v === null ? null : new Date(v))
 
-export const PAST_BOOKINGS_LIMIT = 50
+const PAST_BOOKINGS_LIMIT = 50
 
 /**
  * One read per scope. The when-is-it column is a coalesce across the three
@@ -388,7 +388,7 @@ async function readBookings(
  * cancelled late, over every booking they have ever had here. Counted in the
  * database so the numbers do not depend on how much history the page lists.
  */
-export interface AttendanceSummary {
+interface AttendanceSummary {
   attended: number
   noShows: number
   lateCancels: number

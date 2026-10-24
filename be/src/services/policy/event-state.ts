@@ -4,7 +4,7 @@
  */
 export type EventState = 'scheduled' | 'ongoing' | 'completed' | 'cancelled'
 
-export interface EventStateInput {
+interface EventStateInput {
   startsAt: Date
   endsAt: Date
   lifecycle: 'active' | 'cancelled'

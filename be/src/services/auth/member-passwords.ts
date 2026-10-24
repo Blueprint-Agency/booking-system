@@ -25,7 +25,7 @@ import { spendSignInStepBudget } from './rate-limit'
  */
 
 /** What the sign-in form shows after the email: a password box, or "check your email". */
-export type SignInStep = { next: 'password' } | { next: 'link_sent' }
+type SignInStep = { next: 'password' } | { next: 'link_sent' }
 
 type FromCaller = { tenantId: string; email: string; from: Headers }
 

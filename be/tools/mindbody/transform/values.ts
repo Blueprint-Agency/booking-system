@@ -20,7 +20,7 @@ export type LocalDateTime = {
  * Expiration" M/D), and a guess is right for every date whose day is 12 or less
  * and silently wrong for the others. Each reader states the order per column.
  */
-export type DateOrder = 'DM' | 'MD'
+type DateOrder = 'DM' | 'MD'
 
 const DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]m)?)?$/i
 

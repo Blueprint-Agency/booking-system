@@ -14,7 +14,7 @@ export interface PackageValidity {
  * classes, so they queue behind one another; a PT package pays for private
  * sessions and queues only behind other PT packages.
  */
-export type PackageFamily = 'class' | 'pt'
+type PackageFamily = 'class' | 'pt'
 
 export function familyOf(kind: PackageKind): PackageFamily {
   return kind === 'pt' ? 'pt' : 'class'
@@ -58,7 +58,7 @@ export function addDays(from: Date, days: number): Date {
  * copied off the catalogue row because the catalogue is admin-editable and
  * Activation reads them later.
  */
-export interface PackageLength {
+interface PackageLength {
   kind: PackageKind
   durationMonths: number | null
   validityDays: number | null
@@ -177,9 +177,9 @@ export function crossLocationPriceSgd(months: number, rateSgd: string | number):
   return (cents / 100).toFixed(2)
 }
 
-export type MovementRefusal = 'overdraw' | 'unlimited_has_no_balance' | 'invalid_amount'
+type MovementRefusal = 'overdraw' | 'unlimited_has_no_balance' | 'invalid_amount'
 
-export type MovementResult =
+type MovementResult =
   | { ok: true; remaining: number; active: boolean }
   | { ok: false; refusal: MovementRefusal }
 

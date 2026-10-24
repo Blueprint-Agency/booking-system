@@ -11,7 +11,7 @@ import { evaluateCancellation } from '../policy/evaluate-cancellation'
 import type { ClassBookingRow } from './list'
 import { settleCancel } from './refund-outcome'
 
-export interface CancelPreview {
+interface CancelPreview {
   /** Inside the class's window: a Late cancel, the credit kept. */
   late: boolean
   /** Whether the credits spent come back to the package. */

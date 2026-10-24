@@ -30,7 +30,7 @@ export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 export const GENERATED_CODE_LENGTH = 8
 
 /** Custom codes: 3–24 of [A-Z0-9-]. Mirrors the promo_codes_code_format check. */
-export const CODE_FORMAT = /^[A-Z0-9-]{3,24}$/
+const CODE_FORMAT = /^[A-Z0-9-]{3,24}$/
 
 /** Entry is case- and whitespace-insensitive; the normalised form is stored and compared. */
 export function normaliseCode(input: string): string {
@@ -64,7 +64,7 @@ export interface ProductRef {
  * both an unknown code and an archived one — separating them would turn the
  * validation endpoint into a code-guessing oracle.
  */
-export type PromoCodeRefusal =
+type PromoCodeRefusal =
   | 'expired'
   | 'fully_claimed'
   | 'already_redeemed'
@@ -86,7 +86,7 @@ export const HOLD_MINUTES = 30
  * added to the Hold as well as the session, so the two still end at the same
  * instant — which is the property that matters.
  */
-export const HOLD_CUSHION_SECONDS = 60
+const HOLD_CUSHION_SECONDS = 60
 
 export function holdExpiryFrom(now: Date): Date {
   return new Date(now.getTime() + HOLD_MINUTES * 60_000 + HOLD_CUSHION_SECONDS * 1000)
@@ -111,7 +111,7 @@ export function refusalMessage(refusal: PromoCodeRefusal, productName: string): 
   }
 }
 
-export type PromoCodeEvaluation =
+type PromoCodeEvaluation =
   | { ok: true; discountSgd: string; effectivePriceSgd: string }
   | { ok: false; refusal: PromoCodeRefusal }
 
@@ -206,7 +206,7 @@ export function moneyOffFor(code: PromoCodeRow, basePriceSgd: string): string {
   return Math.min(raw, base).toFixed(2)
 }
 
-export interface EvaluateInput {
+interface EvaluateInput {
   /** null when no row matched the typed text — indistinguishable from archived. */
   code: PromoCodeRow | null
   /** Scope rows for this code. Ignored when `appliesToAll`. */

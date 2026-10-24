@@ -115,7 +115,7 @@ const off = (sgd: string): string => `-${money(sgd)}`
  * `Apple Pay · Visa •••• 4242`, `PayNow`. The Receipt pages no longer word it
  * themselves: they frame the `html` drawn from this.
  */
-export const paymentLabel = (p: ReceiptPayment): string => {
+const paymentLabel = (p: ReceiptPayment): string => {
   if (p.method === 'card' || p.cardBrand) {
     const card = [p.cardBrand ? cardBrandName(p.cardBrand) : 'Card', p.cardLast4 ? `•••• ${p.cardLast4}` : null]
       .filter(Boolean)

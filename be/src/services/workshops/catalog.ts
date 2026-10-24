@@ -20,7 +20,7 @@ import { readRoster, readRosters } from '../schedule/roster'
 import { lineupOf, lineupsOf, type Lineup } from '../schedule/lineup'
 import { confirmedPlacesByDay, tierHasRoom } from './capacity'
 
-export type WorkshopRow = typeof workshops.$inferSelect
+type WorkshopRow = typeof workshops.$inferSelect
 
 interface InstructorLite {
   id: string

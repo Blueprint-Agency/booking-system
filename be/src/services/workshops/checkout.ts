@@ -21,7 +21,7 @@ import { applyPromoCode, type AppliedPromoCode } from '../packages/promo-redempt
 import type { BillingAddress } from '../billing-details/billing-details'
 import { assertWorkshopBookable, assertWorkshopOnSale, bookWorkshopFree, tierDaysClash, tierEffectivePrice } from './book'
 
-export type WorkshopCheckout = CheckoutQuote<{ bookingId: string }>
+type WorkshopCheckout = CheckoutQuote<{ bookingId: string }>
 
 /**
  * 409 `time_clash` when any day of the tier overlaps a booking the member

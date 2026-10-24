@@ -29,7 +29,7 @@ import { env } from '../env'
  *   job             — the cron job's name, set by the wrappers in jobs/index.ts
  *   webhook         — the vendor a webhook came from: stripe | resend
  */
-export type LogContext = {
+type LogContext = {
   requestId?: string
   tenantId?: string
   actorId?: string

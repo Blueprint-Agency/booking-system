@@ -45,7 +45,7 @@ import type { ErrorCode } from '../../shared/error-codes'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { mergeRoster, type RosterEntry, type RosterPatch } from './roster-merge'
 
-export type { RosterAssignment, RosterEntry, RosterPatch, RosterRole } from './roster-merge'
+export type { RosterAssignment, RosterPatch } from './roster-merge'
 
 /** The handle `db.transaction(async tx => …)` hands its callback. */
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]

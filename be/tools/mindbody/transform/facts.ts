@@ -106,7 +106,7 @@ export function cancellationWindow(rows: CancellationRow[]): CancellationWindow 
 }
 
 /** What a Mindbody payment method label looks like here, by its words alone. A proposal for a person to confirm. */
-export function proposePaymentMethod(label: string): OfflineMethod | null {
+function proposePaymentMethod(label: string): OfflineMethod | null {
   if (/^cash\b/i.test(label)) return 'cash'
   if (/paynow/i.test(label)) return 'paynow'
   if (/credit card|debit card|\b(visa|master ?card|mc|amex|nets)\b/i.test(label)) return 'card'

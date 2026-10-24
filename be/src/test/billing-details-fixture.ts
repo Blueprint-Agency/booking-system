@@ -19,7 +19,7 @@ export const TEST_ADDRESS = { line1: '1 Test Street', city: 'Singapore', postcod
  * Asked over HTTP, as the app asks, so a member who has used up their three
  * sets is billed to their default rather than refused a fourth.
  */
-export async function billingDetailsFor(app: Requester, headers: Record<string, string>): Promise<string> {
+async function billingDetailsFor(app: Requester, headers: Record<string, string>): Promise<string> {
   const listed = await app.request('/api/v1/me/billing-details', { headers })
   assert.equal(listed.status, 200, `listing the member's Billing details: ${await listed.clone().text()}`)
   const sets = ((await listed.json()) as { billing_details: { id: string; is_default: boolean }[] }).billing_details

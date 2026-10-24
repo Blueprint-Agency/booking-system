@@ -86,7 +86,7 @@ export function purchaseLines(args: {
  * plan line a discount took to zero stays here, unlike the provider's lines:
  * the Receipt says what was bought, and the plan was.
  */
-export function packageSaleLines(args: {
+function packageSaleLines(args: {
   planName: string
   listPriceSgd: string
   reductions: Array<LineReduction | null>
@@ -105,7 +105,7 @@ export function packageSaleLines(args: {
   return lines
 }
 
-export interface PackageCheckoutInput {
+interface PackageCheckoutInput {
   /** Whose catalogue is being bought from, and where the grant lands. */
   tenantId: string
   clientId: string
@@ -130,7 +130,7 @@ export interface PackageCheckoutInput {
   billTo: BillingAddress
 }
 
-export type PackageCheckout = CheckoutQuote<{ clientPackageId: string }>
+type PackageCheckout = CheckoutQuote<{ clientPackageId: string }>
 
 export async function beginPackageCheckout(input: PackageCheckoutInput): Promise<PackageCheckout> {
   const { tenantId, clientId, packageKind, packageId, locationId, instructorId } = input

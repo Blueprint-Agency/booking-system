@@ -37,7 +37,7 @@ import { spendSignInStepBudget, spendStaffLinkBudget } from './rate-limit'
  * and a spent link budget still answers `link_sent` (`mailQuietly`).
  */
 
-export type StaffSignInStep = { next: 'password' } | { next: 'link_sent' }
+type StaffSignInStep = { next: 'password' } | { next: 'link_sent' }
 
 const tooManyRequests = () => new AppError(429, 'too_many_requests')
 

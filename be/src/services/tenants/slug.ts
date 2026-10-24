@@ -28,9 +28,9 @@ const MIN_LENGTH = 3
 const MAX_LENGTH = 63
 const LABEL = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
 
-export type SlugRejection = 'slug_too_short' | 'slug_too_long' | 'slug_malformed' | 'slug_reserved'
+type SlugRejection = 'slug_too_short' | 'slug_too_long' | 'slug_malformed' | 'slug_reserved'
 
-export type SlugCheck = { ok: true; slug: string } | { ok: false; reason: SlugRejection }
+type SlugCheck = { ok: true; slug: string } | { ok: false; reason: SlugRejection }
 
 /** Trim + lowercase. Casing must not be able to smuggle a reserved slug through. */
 export function normaliseSlug(input: string): string {

@@ -13,7 +13,7 @@ import { clients } from '../../db/schema/identity'
 import { NotFoundError } from '../../shared/errors'
 import type { ClientRow } from './manage'
 
-export type DisplayPrefs = {
+type DisplayPrefs = {
   theme?: NonNullable<ClientRow['theme']>
   fontSize?: NonNullable<ClientRow['fontSize']>
 }

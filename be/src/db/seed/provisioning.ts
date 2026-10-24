@@ -30,7 +30,7 @@ import { TENANT_ONE_ID, SECOND_TENANT_ID } from '../schema/tenancy'
 /** The fixture studios' slugs. Invented names, deliberately unremarkable. */
 export const TENANT_ONE_SLUG = 'northwind'
 export const SECOND_TENANT_SLUG = 'acme'
-export type TenantProvisioning = {
+type TenantProvisioning = {
   /** As its members know it. */
   name: string
   /** IANA zone — drives every "daily at 01:00" job. */

@@ -46,7 +46,7 @@ export const COUNTRY_CODES: ReadonlySet<string> = new Set(
 const REGIONS = new Intl.DisplayNames(['en'], { type: 'region', fallback: 'code' })
 
 /** A country's English name, from its code: the code itself where the runtime has no name for it. */
-export const countryName = (code: string): string => REGIONS.of(code) ?? code
+const countryName = (code: string): string => REGIONS.of(code) ?? code
 
 /**
  * A Bill to's address as it prints, a line each: the two address lines, then

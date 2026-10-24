@@ -22,7 +22,7 @@ export const businessDetailsBody = z.object({
   footer: detail,
 })
 
-export type BusinessDetailsBody = z.infer<typeof businessDetailsBody>
+type BusinessDetailsBody = z.infer<typeof businessDetailsBody>
 
 export const businessDetailsInput = (body: BusinessDetailsBody): BusinessDetailsInput => ({
   businessName: body.business_name,

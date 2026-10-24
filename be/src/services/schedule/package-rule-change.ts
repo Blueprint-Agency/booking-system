@@ -34,7 +34,7 @@ import { writeClassRule } from './package-rules'
 import type { Tx } from './roster'
 
 /** One booking a rule change cancelled, as its member is told. */
-export interface RuleCancellation {
+interface RuleCancellation {
   bookingId: string
   clientId: string
   classId: string

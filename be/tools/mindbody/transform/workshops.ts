@@ -62,7 +62,7 @@ import {
 
 type Row = Record<string, unknown>
 
-export type MappedWorkshops = {
+type MappedWorkshops = {
   workshops: Row[]
   workshopDays: Row[]
   workshopTiers: Row[]

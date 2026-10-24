@@ -17,7 +17,7 @@ import { TEST_ADDRESS } from './billing-details-fixture'
  */
 
 /** What the fake accepts as a valid provider signature. Anything else fails verification. */
-export const PROVIDER_SIGNATURE = 't=1,v1=corporate-purchase'
+const PROVIDER_SIGNATURE = 't=1,v1=corporate-purchase'
 
 /**
  * The fake provider, ready to sell: both fixture studios on accounts of their

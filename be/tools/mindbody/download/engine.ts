@@ -31,7 +31,7 @@ class TooManyError extends Error {}
 
 type Job = Report & ReportOverride & { single?: boolean; file?: string }
 
-export type EngineOptions = {
+type EngineOptions = {
   page: Page
   /** The export folder; reports go under `reports/`, the run's log under `_logs/`. */
   exportDir: string

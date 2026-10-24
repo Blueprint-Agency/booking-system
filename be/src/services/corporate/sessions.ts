@@ -40,7 +40,7 @@ export type CorporateSessionError =
   | 'bad_time_range'
   | 'location_required'
 
-export type CreateCorporateSessionResult =
+type CreateCorporateSessionResult =
   | { ok: true; session: CorporateSessionRow }
   | { ok: false; error: CorporateSessionError }
 
@@ -153,7 +153,7 @@ export async function getCorporateSession(
   return { ...row, supportingInstructorIds: supports }
 }
 
-export async function listSupportingInstructorIds(
+async function listSupportingInstructorIds(
   tenantId: string,
   corporateSessionId: string,
 ): Promise<string[]> {
@@ -164,7 +164,7 @@ export async function listSupportingInstructorIds(
   return roster.filter(r => r.role === 'supporting').map(r => r.instructorId)
 }
 
-export interface ListCorporateSessionsOpts {
+interface ListCorporateSessionsOpts {
   from?: Date
   to?: Date
   locationId?: string

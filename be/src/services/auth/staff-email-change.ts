@@ -51,7 +51,7 @@ import { isPlaceholderEmail } from './account-access'
 import type { StaffRole } from '../../db/enums'
 import { STAFF_EDIT_REFUSAL_MESSAGE, isTopRank, staffEditRefusal } from './staff-rank'
 
-export const EMAIL_CHANGE_LINK_TTL_MS = 24 * 60 * 60_000
+const EMAIL_CHANGE_LINK_TTL_MS = 24 * 60 * 60_000
 /** How soon another link may be sent for the same person. */
 export const EMAIL_CHANGE_RESEND_AFTER_MS = 30_000
 
@@ -105,7 +105,7 @@ function secretMatches(pending: PendingChange, staffId: string, secret: string):
  * The confirmation page, on the **studio's own portal**: the link is looked up
  * inside the Tenant it was issued for, as an invitation's is.
  */
-export function buildConfirmEmailUrl(portalUrl: string, token: string): string {
+function buildConfirmEmailUrl(portalUrl: string, token: string): string {
   return `${portalUrl.replace(/\/+$/, '')}/confirm-email?token=${encodeURIComponent(token)}`
 }
 
@@ -268,7 +268,7 @@ export async function pendingStaffEmails(
   return byStaff
 }
 
-export interface StartStaffEmailChangeInput {
+interface StartStaffEmailChangeInput {
   tenantId: string
   targetStaffId: string
   actorStaffId: string
@@ -394,7 +394,7 @@ function requesterStillEntitled(
   )
 }
 
-export type StaffEmailChangeLinkStatus = 'valid' | 'expired' | 'invalid'
+type StaffEmailChangeLinkStatus = 'valid' | 'expired' | 'invalid'
 
 /**
  * What the confirmation page shows before the click. Read-only, and public:
@@ -527,7 +527,7 @@ export async function revokeStaffEmailChange(input: {
 
 /* ── the two messages, in the studio's name ─────────────────────────────── */
 
-export function emailChangeLinkEmail(studio: string, name: string, link: string) {
+function emailChangeLinkEmail(studio: string, name: string, link: string) {
   const subject = `Confirm your new ${studio} portal email`
   return {
     subject,
@@ -550,7 +550,7 @@ export function emailChangeLinkEmail(studio: string, name: string, link: string)
   }
 }
 
-export function emailChangedNotice(studio: string, name: string, newEmail: string, changedBy: string | null) {
+function emailChangedNotice(studio: string, name: string, newEmail: string, changedBy: string | null) {
   const subject = `Your ${studio} portal email was changed`
   const by = changedBy ? ` by ${escapeHtml(changedBy)}` : ''
   return {

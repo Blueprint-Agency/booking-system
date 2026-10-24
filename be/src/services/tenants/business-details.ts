@@ -49,7 +49,7 @@ export interface BusinessDetailsView {
 }
 
 /** The most a Business name may hold: it heads a Receipt and signs an email. */
-export const BUSINESS_NAME_MAX = 200
+const BUSINESS_NAME_MAX = 200
 
 /**
  * Letters and digits, hyphens only between them, up to ten: it heads a number
@@ -75,7 +75,7 @@ const tidy = (value: string | null | undefined): string => value?.replace(/\r\n?
  * A Business name as it is stored: trimmed, never blank, at most 200
  * characters. Refuses with one sentence an admin can read.
  */
-export function cleanBusinessName(input: string | null | undefined): string {
+function cleanBusinessName(input: string | null | undefined): string {
   const name = tidy(input)
   if (!name) refuse('A business name is required.')
   if (name.length > BUSINESS_NAME_MAX) refuse(`The business name is at most ${BUSINESS_NAME_MAX} characters.`)
@@ -83,7 +83,7 @@ export function cleanBusinessName(input: string | null | undefined): string {
 }
 
 /** A Display name as it is stored: the same rule as the Business name, in its own words. */
-export function cleanDisplayName(input: string | null | undefined): string {
+function cleanDisplayName(input: string | null | undefined): string {
   const name = tidy(input)
   if (!name) refuse('A display name is required.')
   if (name.length > BUSINESS_NAME_MAX) refuse(`The display name is at most ${BUSINESS_NAME_MAX} characters.`)

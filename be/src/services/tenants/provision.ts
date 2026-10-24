@@ -44,7 +44,7 @@ import { assertUsableSlug } from './slug'
 import { DEFAULT_TIMEZONE, termEndDate, todayFor, type TermMonths } from './term-dates'
 import { activateAfterFirstStaff, forgetCachedTenants, loadTenantById } from './tenants'
 
-export interface ProvisionTenantInput {
+interface ProvisionTenantInput {
   slug: string
   name: string
   timezone?: string
@@ -73,7 +73,7 @@ export interface ProvisionTenantInput {
   businessDetails?: BusinessDetailsInput
 }
 
-export interface ProvisionedTenant {
+interface ProvisionedTenant {
   tenant: TenantRow
   /** Null when no first admin was asked for — see `adminEmail` above. */
   admin: { id: string; email: string; name: string } | null

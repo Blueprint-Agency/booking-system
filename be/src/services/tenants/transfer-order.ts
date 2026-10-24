@@ -24,7 +24,7 @@ export type ForeignKey = {
   required: boolean
 }
 
-export type TableOrder = {
+type TableOrder = {
   /** Tables, parents first. Every table given is present exactly once. */
   order: string[]
   /**

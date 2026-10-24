@@ -27,7 +27,7 @@ import { tenantKey } from '../../lib/object-key'
 
 /** Singapore-time arithmetic lives in `lib/time`; re-exported so the leave rules
  *  still read as one vocabulary. */
-export { daysBetween, sgToday, type PlainDate }
+export { sgToday, type PlainDate }
 
 export type LeaveType = 'annual' | 'medical' | 'study'
 export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'cancelled' | 'revoked'
@@ -160,7 +160,7 @@ export const COMMITTED_STATUSES: readonly LeaveStatus[] = ['approved', 'pending'
 /** Which rows a sum counts: one Leave Type, one Leave Year, one set of statuses.
  *  The Leave Types and the two status sets are what keep Taken, Committed and
  *  each type's Pool from ever being the same number. */
-export interface LeaveDaysScope {
+interface LeaveDaysScope {
   type: LeaveType
   leaveYear: number
   statuses: readonly LeaveStatus[]
@@ -223,7 +223,7 @@ export function poolDays(assigned: number, carried: number): number {
  *  result, camelCase and internal. The snake_case API shapes built from it are
  *  `LeaveBalance` and `LeaveFiguresResponse` in `requests.ts`; keeping them
  *  apart is what lets a response field be renamed without touching a rule. */
-export interface LeavePoolFigures {
+interface LeavePoolFigures {
   type: LeaveType
   pool: number
   /** Approved days only. */
@@ -278,7 +278,7 @@ export function poolForRemaining(desiredRemaining: number, committedDays: number
   return (Math.round(desiredRemaining * 2) + Math.round(committedDays * 2)) / 2
 }
 
-export type RemainingAdjustmentCode = 'remaining_above_pool' | 'remaining_below_zero'
+type RemainingAdjustmentCode = 'remaining_above_pool' | 'remaining_below_zero'
 
 /**
  * What an admin may set a Remaining to: anywhere from 0 up to `ceiling`, both
@@ -326,14 +326,14 @@ export function checkRemainingAdjustment(
  *  back at all — annual and study must both start after today. */
 export const MEDICAL_BACKDATE_DAYS = 7
 
-export type LeaveRefusalCode =
+type LeaveRefusalCode =
   | 'invalid_date_range'
   | 'half_day_requires_single_date'
   | 'leave_must_start_in_future'
   | 'medical_leave_backdated_too_far'
   | 'insufficient_leave_balance'
 
-export interface LeaveSubmission {
+interface LeaveSubmission {
   type: LeaveType
   startDate: PlainDate
   endDate: PlainDate
@@ -348,7 +348,7 @@ export interface LeaveSubmission {
   committedDays: number
 }
 
-export type LeaveCheck =
+type LeaveCheck =
   | { ok: true; days: number; leaveYear: number }
   | { ok: false; code: LeaveRefusalCode; message: string }
 
@@ -436,7 +436,7 @@ export function formatLeaveDate(d: PlainDate): string {
   return `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`
 }
 
-export interface LeaveInstantWindow {
+interface LeaveInstantWindow {
   startsAt: Date
   endsAt: Date
 }
@@ -481,7 +481,7 @@ export function peakLeaveAway(
 /** "Alice", "Alice and Cara", "Alice, Bob and Cara". */
 const nameList = new Intl.ListFormat('en', { type: 'conjunction' })
 
-export interface LeaveCapInput {
+interface LeaveCapInput {
   type: LeaveType
   /** The instructors the APPLICANT is in a declared **Leave Conflict** with —
    *  nobody else's declarations decide this, and an archived partner is not in
@@ -545,7 +545,7 @@ export function checkLeaveCaps(
 /** The moment a rule is exceeded, who else is away then, the cap it is over, and
  *  WHICH rule produced it — the last of those is what decides how much the
  *  refusal, the warning and the calendar flag may say. */
-export interface LeaveCapExceedance {
+interface LeaveCapExceedance {
   at: Date
   away: LeaveCapPeer[]
   cap: number
@@ -628,19 +628,19 @@ export const SUPPORTING_DOCUMENT_MAX_BYTES = 5 * 1024 * 1024
 
 /** The only three things a Supporting Document may be, and the extension each is
  *  kept as. */
-export const SUPPORTING_DOCUMENT_TYPES: Readonly<Record<string, string>> = {
+const SUPPORTING_DOCUMENT_TYPES: Readonly<Record<string, string>> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'application/pdf': 'pdf',
 }
 
-export type SupportingDocumentRefusalCode =
+type SupportingDocumentRefusalCode =
   | 'document_not_allowed_on_annual_leave'
   | 'document_type_not_allowed'
   | 'document_empty'
   | 'document_too_large'
 
-export type SupportingDocumentCheck =
+type SupportingDocumentCheck =
   | { ok: true; extension: string }
   | { ok: false; code: SupportingDocumentRefusalCode; message: string }
 
@@ -716,7 +716,7 @@ export function supportingDocumentKey(
 // ── The instructor's own transitions ───────────────────────────────────────
 
 /** Why a withdraw, cancel or admin decision is refused — shared by both checks below. */
-export type LeaveTransitionRefusalCode = 'leave_not_pending' | 'leave_not_approved' | 'leave_already_started'
+type LeaveTransitionRefusalCode = 'leave_not_pending' | 'leave_not_approved' | 'leave_already_started'
 
 /**
  * Withdraw abandons a request still awaiting a decision; cancel gives back

@@ -40,7 +40,7 @@ export interface DateSpan {
   to: PlainDate
 }
 
-export interface AttendancePlan extends DateSpan {
+interface AttendancePlan extends DateSpan {
   period: AttendancePeriod
   /** Each bucket's first day, ascending. A bucket runs to the day before the
    *  next one starts; the last runs to `to`. */
@@ -63,7 +63,7 @@ export interface BucketCount {
 }
 
 /** A start on the Tenant's calendar: its day and its hour, 0–23. */
-export interface SessionStart {
+interface SessionStart {
   day: PlainDate
   hour: number
 }
@@ -165,7 +165,7 @@ export function attendancePlan(
 const earliestDay = (today: PlainDate, firstAttendedOn: PlainDate | null): PlainDate =>
   firstOfYear(firstAttendedOn ?? today)
 
-export type AnchorRefusal = 'period_in_future' | 'period_before_first_year'
+type AnchorRefusal = 'period_in_future' | 'period_before_first_year'
 
 /**
  * Why the timeframe `period` containing `on` cannot be shown, or null when it

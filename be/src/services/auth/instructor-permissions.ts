@@ -31,7 +31,7 @@ export async function resolveInstructorPermissions(staff: StaffLike): Promise<Re
  * The stored grant of each of `staffUserIds` that has an instructors row, in
  * one read. A staff member with no row is absent from the map.
  */
-export async function readInstructorPermissions(
+async function readInstructorPermissions(
   tenantId: string,
   staffUserIds: string[],
 ): Promise<Map<string, InstructorPermission[]>> {

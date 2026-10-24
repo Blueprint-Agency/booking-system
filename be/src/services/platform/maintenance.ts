@@ -10,10 +10,10 @@ import { logger } from '../../shared/logger'
  * it exists for the deploys that touch every studio at once.
  */
 
-export const DEFAULT_MAINTENANCE_MESSAGE = "Maintenance in progress. We'll be back shortly."
+const DEFAULT_MAINTENANCE_MESSAGE = "Maintenance in progress. We'll be back shortly."
 
 /** How long one read of the switch is trusted. Switching it takes effect within this. */
-export const MAINTENANCE_CACHE_MS = 5_000
+const MAINTENANCE_CACHE_MS = 5_000
 
 export type Maintenance = {
   enabled: boolean

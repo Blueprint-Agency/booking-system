@@ -15,7 +15,7 @@ function formatUuid(bytes: Buffer): string {
 }
 
 /** RFC 9562 UUID version 5: SHA-1 of a namespace and a name. */
-export function uuidV5(name: string, namespace: string): string {
+function uuidV5(name: string, namespace: string): string {
   const hash = createHash('sha1').update(parseUuid(namespace)).update(name, 'utf8').digest()
   const bytes = hash.subarray(0, 16)
   bytes[6] = (bytes[6]! & 0x0f) | 0x50

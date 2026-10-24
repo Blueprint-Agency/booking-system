@@ -19,7 +19,7 @@ import { isoClock, isoDay, normaliseClassName, normaliseStaffName, zonedToInstan
  */
 
 /** The sheet's columns, which `readWaitlists` reads by name. */
-export const WAITLIST_HEADER = ['Class date', 'Start', 'Description', 'Staff', 'Client ID', 'Client', 'Position', 'Payment status'] as const
+const WAITLIST_HEADER = ['Class date', 'Start', 'Description', 'Staff', 'Client ID', 'Client', 'Position', 'Payment status'] as const
 
 export type FutureClass = Pick<ScheduledClassRow, 'date' | 'start' | 'description' | 'staff'>
 

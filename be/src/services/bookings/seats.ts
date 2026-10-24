@@ -35,7 +35,7 @@ export interface SeatCapacities {
 /** Who is asking for the seat. A member books themselves; staff book a member. */
 export type SeatRole = 'member' | 'admin' | 'instructor'
 
-export type SeatDecision = { ok: true; seat: BookingSeat } | { ok: false; refusal: 'class_full' }
+type SeatDecision = { ok: true; seat: BookingSeat } | { ok: false; refusal: 'class_full' }
 
 const EMPTY: SeatCounts = { onlineUsed: 0, bufferUsed: 0, overbookUsed: 0, attending: 0 }
 

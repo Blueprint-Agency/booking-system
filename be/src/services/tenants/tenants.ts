@@ -180,7 +180,7 @@ export type TenantRowSummary = {
   createdAt: Date
 }
 
-export type TenantSummary = TenantRowSummary & {
+type TenantSummary = TenantRowSummary & {
   /** Staff who could sign in — active or invited, never archived. Zero means a
    *  studio nobody can get into. */
   staffCount: number
@@ -319,7 +319,7 @@ export async function setTenantStatus(
   return row ?? null
 }
 
-export type CreateTenantInput = {
+type CreateTenantInput = {
   slug: string
   name: string
   timezone?: string

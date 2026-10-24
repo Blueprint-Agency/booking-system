@@ -20,7 +20,7 @@ import type { StripeFake } from './stripe-fake'
  */
 
 /** What the provider's charge says about how it was paid — `payment_method_details`. */
-export type PaymentDetails = Partial<Stripe.Charge.PaymentMethodDetails> & { type: string }
+type PaymentDetails = Partial<Stripe.Charge.PaymentMethodDetails> & { type: string }
 
 export const cardPaid = (brand: string, last4: string, wallet?: string): PaymentDetails => ({
   type: 'card',

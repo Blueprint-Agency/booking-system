@@ -54,7 +54,7 @@ export type NotMigrated = {
 
 export type AccountBalance = { clientId: string; name: string; balance: string }
 
-export type MappedPackages = {
+type MappedPackages = {
   classPackages: Row[]
   ptPackages: Row[]
   clientPackages: Row[]
@@ -287,8 +287,8 @@ export function optionHome(config: StudioConfig, entry: CatalogueEntry, option: 
 }
 
 /** Where a member's Home Location was read from, most trusted first. */
-export const HOME_SOURCES = ['option', 'retention', 'membership', 'sold', 'plan', 'default'] as const
-export type HomeSource = (typeof HOME_SOURCES)[number]
+const HOME_SOURCES = ['option', 'retention', 'membership', 'sold', 'plan', 'default'] as const
+type HomeSource = (typeof HOME_SOURCES)[number]
 type MemberSource = Exclude<HomeSource, 'option' | 'plan' | 'default'>
 
 /**

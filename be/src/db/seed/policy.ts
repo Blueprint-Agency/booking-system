@@ -17,7 +17,7 @@ const PT_CONFIG_SINGLETON_ID = '00000000-0000-0000-0000-000000000002'
  * provisioned from the super portal all start here, so what the tests run against
  * is what a new studio gets.
  */
-export const DEFAULT_GLOBAL_POLICY = {
+const DEFAULT_GLOBAL_POLICY = {
   cancelCapEnabled: true,
   cancelCapCount: 10,
   cancelCapCycleDays: 30,

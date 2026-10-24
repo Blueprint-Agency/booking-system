@@ -58,7 +58,7 @@ export interface RetryPolicy {
 /** For webhook handlers and cron steps. Never on a route. */
 export const OFF_REQUEST_RETRY: RetryPolicy = { attempts: 3, baseMs: 500, capMs: 4_000 }
 
-export interface OutboundOptions {
+interface OutboundOptions {
   deadlineMs?: number
   retry?: RetryPolicy
 }
@@ -72,7 +72,7 @@ export interface OutboundLine {
   err?: unknown
 }
 
-export interface OutboundDeps {
+interface OutboundDeps {
   now: () => number
   /** Resolves after `ms`; the fake clock in tests. */
   sleep: (ms: number) => Promise<void>
@@ -80,7 +80,7 @@ export interface OutboundDeps {
   log: (line: OutboundLine) => void
 }
 
-export type Outbound = <T>(
+type Outbound = <T>(
   vendor: Vendor,
   op: string,
   call: (signal: AbortSignal) => Promise<T>,

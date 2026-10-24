@@ -90,7 +90,7 @@ export async function listInstructors(
 
 export const getInstructor = loadById
 
-export interface CreateInstructorInput {
+interface CreateInstructorInput {
   email: string
   name: string
   bio?: string | null
@@ -175,7 +175,7 @@ export async function createInstructor(
   return view
 }
 
-export interface UpdateInstructorInput {
+interface UpdateInstructorInput {
   name?: string
   bio?: string | null
   phone?: string | null

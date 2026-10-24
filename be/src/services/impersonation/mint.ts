@@ -6,7 +6,7 @@ import { signGrant } from '../../lib/impersonation-grant'
 import { openImpersonationSession } from '../auth/better-auth'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 
-export interface MintImpersonationInput {
+interface MintImpersonationInput {
   /** The admin's own studio. Impersonating across studios is not a feature
    *  this has ever had, and the lookup is what makes that true. */
   tenantId: string
@@ -18,7 +18,7 @@ export interface MintImpersonationInput {
   from: Headers
 }
 
-export interface MintImpersonationResult {
+interface MintImpersonationResult {
   token: string
   grant: string
   feClientUrl: string

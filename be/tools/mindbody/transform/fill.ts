@@ -117,7 +117,7 @@ export type StudioAnswers = {
 }
 
 /** Decision 21 where the answers name no figure: the switch on, every class at 0 until staff set one. */
-export const DEFAULT_WAITLIST = { enabled: true, capacity: 0 } as const
+const DEFAULT_WAITLIST = { enabled: true, capacity: 0 } as const
 
 const pattern = (source: string) => new RegExp(source, 'i')
 /** One key per name the way a person reads it: NFKC-folded, single-spaced, case-folded. */
@@ -226,7 +226,7 @@ function completeWorkshops(c: Json, answers: StudioAnswers, facts: ReportFacts, 
 }
 
 /** Starter + answers + facts → one filled config (before `outputs` are applied). */
-export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportFacts, staff: StaffFact[], notes?: string[]): Json {
+function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportFacts, staff: StaffFact[], notes?: string[]): Json {
   const c = structuredClone(starter) as Json
   const norm = normaliseStaffName
   const optionKey = nameKey

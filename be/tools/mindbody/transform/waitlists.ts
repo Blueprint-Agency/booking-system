@@ -19,7 +19,7 @@ import { dayNumber, isoClock, isoDay, zonedToInstant, type CalendarDate, type Cl
 type Row = Record<string, unknown>
 
 /** A class the timetable import wrote, as much of it as a waitlist needs. */
-export type WaitlistClass = { id: string; label: string; capacity: number; waitlist: number; date: CalendarDate; start: ClockTime }
+type WaitlistClass = { id: string; label: string; capacity: number; waitlist: number; date: CalendarDate; start: ClockTime }
 
 export function mapWaitlists(input: {
   /** Null where the download has no Class Waitlists file. */

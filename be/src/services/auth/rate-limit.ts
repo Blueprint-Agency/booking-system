@@ -125,7 +125,7 @@ export const AUTH_EMAIL_RATE_LIMITS = {
  * one does. Roomier than a code request, as a whole class signs in from the
  * studio's wifi.
  */
-export const SIGN_IN_STEP_ADDRESS_LIMIT: Rule = { window: 60, max: 20 }
+const SIGN_IN_STEP_ADDRESS_LIMIT: Rule = { window: 60, max: 20 }
 
 const signInStepStorage = authRateLimitStorage()
 

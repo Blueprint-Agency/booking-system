@@ -22,7 +22,7 @@
 import { tenantOrigin } from '../../lib/allowed-origins'
 import { loadTenantById } from './tenants'
 
-export type TenantApp = 'client' | 'portal'
+type TenantApp = 'client' | 'portal'
 
 /**
  * The origin serving one studio's member or staff app, or null.

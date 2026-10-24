@@ -32,7 +32,7 @@ export type { MailKind } from './send-gate'
  * see docs/md/mail-identity.md and services/tenants/mail-identity.ts.
  */
 import { PLATFORM_MAIL_FROM_EMAIL, PLATFORM_MAIL_FROM_NAME } from './mailer-identity'
-export { PLATFORM_MAIL_FROM_EMAIL, PLATFORM_MAIL_FROM_NAME }
+export { PLATFORM_MAIL_FROM_NAME }
 
 /**
  * The one place a message's kind is decided. Credential mail is what someone
@@ -48,7 +48,7 @@ const CREDENTIAL_SLUGS: ReadonlySet<string> = new Set([
   'platform_password_reset',
 ])
 
-export function mailKind(slug: string): MailKind {
+function mailKind(slug: string): MailKind {
   return CREDENTIAL_SLUGS.has(slug) ? 'credential' : 'everyday'
 }
 
@@ -61,7 +61,7 @@ export interface MailAttachment {
   content: Buffer
 }
 
-export interface SendMailInput {
+interface SendMailInput {
   to: string
   subject: string
   /** Rendered through the shared design — `services/mail/layout.ts`. */

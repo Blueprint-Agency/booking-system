@@ -19,14 +19,14 @@ import { classCancelWindow } from '../policy/cancel-window'
 import { localDateOf, zonedInstant } from './series-dates'
 import { loadTenantById } from '../tenants/tenants'
 
-export interface LocationLite {
+interface LocationLite {
   id: string
   name: string
   address: string | null
   gmaps_url: string | null
 }
 
-export interface ClassCardPayload {
+interface ClassCardPayload {
   id: string
   class_type: { id: string; name: string; difficulty: ClassLevel }
   instructor: { id: string; name: string }
@@ -61,7 +61,7 @@ export interface ClassCardPayload {
   effective_cancel_window_hours: number
 }
 
-export interface ClassDetailPayload extends ClassCardPayload {
+interface ClassDetailPayload extends ClassCardPayload {
   class_type: { id: string; name: string; difficulty: ClassLevel; description: string | null }
   location: { id: string; name: string; address: string | null; gmaps_url: string | null } | null
   supporting_instructors: { id: string; name: string }[]
@@ -69,9 +69,9 @@ export interface ClassDetailPayload extends ClassCardPayload {
   package_rule: ReturnType<typeof namedRuleJson>
 }
 
-export type ClassLevel = (typeof classDifficultyEnum.enumValues)[number]
+type ClassLevel = (typeof classDifficultyEnum.enumValues)[number]
 
-export interface ClassListFilters {
+interface ClassListFilters {
   from?: Date
   to?: Date
   locationId?: string
@@ -80,7 +80,7 @@ export interface ClassListFilters {
   level?: ClassLevel
 }
 
-export const classFiltersSchema = z.object({
+const classFiltersSchema = z.object({
   location_id: z.string().uuid().optional(),
   instructor_id: z.string().uuid().optional(),
   class_type_id: z.string().uuid().optional(),
@@ -108,7 +108,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
  * "Today" is the studio's own day on the app clock: midnight in its timezone,
  * never the server's.
  */
-export function resolveWindow(timezone: string, from?: Date, to?: Date): { from: Date; to: Date } {
+function resolveWindow(timezone: string, from?: Date, to?: Date): { from: Date; to: Date } {
   const start = from ?? zonedInstant(localDateOf(clockNow(), timezone), '00:00', timezone)
   let end = to ?? new Date(start.getTime() + 28 * DAY_MS)
   if (end.getTime() - start.getTime() > 90 * DAY_MS) {
@@ -409,7 +409,7 @@ export async function listActiveLocations(tenantId: string): Promise<
   }))
 }
 
-export interface InstructorLite {
+interface InstructorLite {
   id: string
   name: string
   bio: string | null

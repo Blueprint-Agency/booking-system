@@ -23,7 +23,7 @@ export const TOP_RANK_ROLES = (Object.keys(RANK) as StaffRole[]).filter(r => RAN
 
 export const isTopRank = (role: StaffRole) => RANK[role] === TOP_RANK
 
-export type StaffEditRefusal =
+type StaffEditRefusal =
   | 'outranked_staff_edit_forbidden'
   | 'privilege_fields_admin_only'
 

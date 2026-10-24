@@ -234,7 +234,7 @@ function saleMethods(rows: SaleMethodRow[], table: Record<string, OfflineMethod>
 }
 
 /** A past purchase as history needs it, to point a past visit at the package that paid for it. */
-export type PastSlot = {
+type PastSlot = {
   clientId: string
   entry: CatalogueEntry
   /** The Location the option bought names, for a plan sold once per Location (`optionHome`). */

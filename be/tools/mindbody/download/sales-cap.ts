@@ -11,7 +11,7 @@ import { plannedFiles, profileReports, reportsDir } from './plan'
  * after a cutover download it is checked against the Members instead.
  */
 
-export type CapCheck = { level: 'ok' | 'warn' | 'refuse'; message: string }
+type CapCheck = { level: 'ok' | 'warn' | 'refuse'; message: string }
 
 /** Near enough to the cap to say so: a busy month could take the studio past it. */
 const NEAR = 0.9
