@@ -207,6 +207,28 @@ describe('scheduling writes made at once', { skip: integrationTestsEnabled ? fal
   const instructorRow = (id: string) => sql`SELECT staff_user_id FROM instructors WHERE staff_user_id = ${id}`
   const roomRow = (id: string) => sql`SELECT id FROM rooms WHERE id = ${id}`
   const classRow = (id: string) => sql`SELECT id FROM classes WHERE id = ${id}`
+  const ptSessionRow = (id: string) => sql`SELECT id FROM pt_sessions WHERE id = ${id}`
+
+  const workshopIds: string[] = []
+  const workshop = async (name: string) => {
+    const res = await send('/portal/admin/workshops', admin.headers, 'POST', {
+      name: `${TAG} ${name}`,
+      location_id: locationId,
+      main_instructor_id: teacher.id,
+    })
+    assert.equal(res.status, 201, JSON.stringify(res.body))
+    workshopIds.push(res.body.id)
+    return res.body.id as string
+  }
+  const workshopDay = (ref: string, room: string, date: string, from: string, to: string) => ({
+    ref,
+    room_id: room,
+    starts_at: sg(date, from),
+    ends_at: sg(date, to),
+    capacity_online: 10,
+  })
+  const saveSchedule = (workshopId: string, days: ReturnType<typeof workshopDay>[]) => () =>
+    send(`/portal/admin/workshops/${workshopId}/schedule`, admin.headers, 'PUT', { days, tiers: [] })
 
   before(async () => {
     harness = await startTestApp()
@@ -279,6 +301,15 @@ describe('scheduling writes made at once', { skip: integrationTestsEnabled ? fal
     await cleanup(sql`DELETE FROM pt_requests WHERE id IN (${ourPtRequests})`)
     await cleanup(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
     if (classPackageId) await cleanup(sql`DELETE FROM class_packages WHERE id = ${classPackageId}`)
+    if (workshopIds.length) {
+      await attempt(() => db.delete(schema.workshopTiers).where(inArray(schema.workshopTiers.workshopId, workshopIds)))
+      await attempt(() => db.delete(schema.workshopDays).where(inArray(schema.workshopDays.workshopId, workshopIds)))
+      await attempt(() => db.delete(schema.workshopImages).where(inArray(schema.workshopImages.workshopId, workshopIds)))
+      await attempt(() =>
+        db.delete(schema.workshopInstructors).where(inArray(schema.workshopInstructors.workshopId, workshopIds)),
+      )
+      await attempt(() => db.delete(schema.workshops).where(inArray(schema.workshops.id, workshopIds)))
+    }
     if (classTypeId) {
       await cleanup(sql`DELETE FROM class_supporting_instructors WHERE class_id IN (${ourClasses})`)
       await cleanup(sql`DELETE FROM classes WHERE id IN (${ourClasses})`)
@@ -390,5 +421,78 @@ describe('scheduling writes made at once', { skip: integrationTestsEnabled ? fal
     assert.equal(cls!.body.subject_id, teacher.id)
     assert.equal(cls!.body.conflicts[0].kind, 'leave')
     assert.equal(await teachingOn(teacher.id, date), 0, 'no class was saved on his leave')
+  })
+
+  test('SCH-32 two classes saved at once into one room, the second naming the room id in upper case: one is saved, the other is refused schedule_conflict', async () => {
+    const date = day(7)
+    const [first, second] = await inFlightTogether(roomRow(roomA), [
+      createClass(classBody(teacher, roomA, sg(date, '10:00'), sg(date, '11:00'))),
+      createClass(classBody(colleague, roomA.toUpperCase(), sg(date, '10:30'), sg(date, '11:30'))),
+    ])
+    assert.equal(first!.status, 201, JSON.stringify(first!.body))
+    assert.equal(second!.status, 409, JSON.stringify(second!.body))
+    assert.equal(second!.body.error, 'schedule_conflict')
+    assert.equal(second!.body.subject, 'room')
+    assert.equal(second!.body.subject_id, roomA)
+    assert.equal(await teachingOn(colleague.id, date), 0, 'the refused class was never saved')
+  })
+
+  test('SCH-33 a class whose instructor id is sent in upper case is refused schedule_conflict while that instructor already teaches then', async () => {
+    const date = day(8)
+    const first = await createClass(classBody(teacher, roomA, sg(date, '10:00'), sg(date, '11:00')))()
+    assert.equal(first.status, 201, JSON.stringify(first.body))
+    const second = await createClass({
+      ...classBody(teacher, roomB, sg(date, '10:30'), sg(date, '11:30')),
+      main_instructor_id: teacher.id.toUpperCase(),
+    })()
+    assert.equal(second.status, 409, JSON.stringify(second.body))
+    assert.equal(second.body.error, 'schedule_conflict')
+    assert.equal(second.body.subject, 'instructor')
+    assert.equal(second.body.subject_id, teacher.id)
+    assert.equal(await teachingOn(teacher.id, date), 1, 'the instructor teaches one class then')
+  })
+
+  test('WSP-22 two workshop schedules naming the same two rooms in opposite order, saved at once: both are saved', async () => {
+    const one = await workshop('one')
+    const two = await workshop('two')
+    const [first, second] = [day(10), day(11)]
+    const [savedOne, savedTwo] = await inFlightTogether(roomRow(roomA), [
+      saveSchedule(one, [
+        workshopDay('first', roomA, first, '09:00', '10:00'),
+        workshopDay('second', roomB, second, '09:00', '10:00'),
+      ]),
+      saveSchedule(two, [
+        workshopDay('first', roomB, first, '12:00', '13:00'),
+        workshopDay('second', roomA, second, '12:00', '13:00'),
+      ]),
+    ])
+    assert.equal(savedOne!.status, 200, JSON.stringify(savedOne!.body))
+    assert.equal(savedTwo!.status, 200, JSON.stringify(savedTwo!.body))
+    assert.equal(savedOne!.body.days.length, 2)
+    assert.equal(savedTwo!.body.days.length, 2)
+  })
+
+  test('PT-135 two edits of one PT session at once, one moving its room and one its time, never leave it in a room taken at its new time: the second is refused schedule_conflict', async () => {
+    const date = day(13)
+    const scheduled = await schedulePt(await ptRequest(await member('pt-six')), teacher, roomA, date)()
+    assert.equal(scheduled.status, 201, JSON.stringify(scheduled.body))
+    const sessionId = scheduled.body.pt_request.session.id as string
+    const taken = await createClass(classBody(colleague, roomB, sg(date, '14:00'), sg(date, '15:00')))()
+    assert.equal(taken.status, 201, JSON.stringify(taken.body))
+
+    const edit = (body: Record<string, unknown>) => () =>
+      send(`/portal/admin/pt-sessions/sessions/${sessionId}`, admin.headers, 'PATCH', body)
+    const [moved, retimed] = await inFlightTogether(ptSessionRow(sessionId), [
+      edit({ room_id: roomB }),
+      edit({ starts_at: sg(date, '14:00'), ends_at: sg(date, '15:00') }),
+    ])
+    assert.equal(moved!.status, 200, JSON.stringify(moved!.body))
+    assert.equal(retimed!.status, 409, JSON.stringify(retimed!.body))
+    assert.equal(retimed!.body.error, 'schedule_conflict')
+    assert.equal(retimed!.body.subject, 'room')
+    assert.equal(retimed!.body.subject_id, roomB)
+    const [row] = await harness.db.select().from(schema.ptSessions).where(eq(schema.ptSessions.id, sessionId))
+    assert.equal(row!.roomId, roomB)
+    assert.equal(row!.startsAt.toISOString(), sg(date, '10:00'))
   })
 })
