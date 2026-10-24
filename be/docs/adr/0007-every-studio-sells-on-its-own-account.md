@@ -1,8 +1,8 @@
 # Every studio sells on its own payment account, and the platform account is gone
 
-**Status**: accepted (2026-09-25) — supersedes the section "A Tenant with no credentials still charges on the platform account" of `0004-tenant-supplied-payment-credentials.md`, and with it that ADR's two-endpoint and statement-descriptor consequences. The rest of 0004 stands: sealed credentials, no read-back, validation when set, and per-studio webhook routing. It also narrows what `null` means in `0005-a-payment-records-the-account-it-was-taken-on.md`.
+**Status**: accepted (2026-09-25) — supersedes the section "A Tenant with no credentials still charges on the platform account" of `0013-tenant-supplied-payment-credentials.md`, and with it that ADR's two-endpoint and statement-descriptor consequences. The rest of 0013 stands: sealed credentials, no read-back, validation when set, and per-studio webhook routing. It also narrows what `null` means in `0014-a-payment-records-the-account-it-was-taken-on.md`.
 
-ADR 0004 kept the platform's own Stripe account as the place a studio sold until it supplied credentials of its own. That was what made onboarding one studio at a time possible, and it has done its job. It has also become the thing most likely to go wrong: a studio whose credentials were never entered does not fail, it quietly sells on an account that belongs to nobody it knows, under a descriptor its members have never heard of, into a balance the platform then owes the studio. The platform's live account was never even activated, so in production that "working state" was a checkout that could not take money at all.
+ADR 0013 kept the platform's own Stripe account as the place a studio sold until it supplied credentials of its own. That was what made onboarding one studio at a time possible, and it has done its job. It has also become the thing most likely to go wrong: a studio whose credentials were never entered does not fail, it quietly sells on an account that belongs to nobody it knows, under a descriptor its members have never heard of, into a balance the platform then owes the studio. The platform's live account was never even activated, so in production that "working state" was a checkout that could not take money at all.
 
 ## A studio with no credentials takes no online payments
 
@@ -12,13 +12,13 @@ ADR 0004 kept the platform's own Stripe account as the place a studio sold until
 - A **$0 purchase** is unaffected. It never reaches the provider; it is granted at quote time, before anything here is asked.
 - The member app asks first (`GET /public/online-payments`) and shows that sentence in place of a paid buy button, so the refusal is the backstop rather than the experience.
 - A Refund at a studio that has since removed its credentials is refused with the same code: nothing it holds can be reached.
-- Credentials that exist and cannot be opened still **throw**, exactly as 0004 decided. Treating them as absent would switch a selling studio's payments off without a word.
+- Credentials that exist and cannot be opened still **throw**, exactly as 0013 decided. Treating them as absent would switch a selling studio's payments off without a word.
 
 In the super portal a studio with no credentials reads **Payments not set up**, and removing a studio's credentials is worded as what it now does: the studio stops taking online payments.
 
 ## Payments already on the platform account are refunded outside the app
 
-ADR 0005 stamped `null` on a payment taken on the platform's account. Those rows still exist on staging (test payments) and should not exist in production, but the app no longer holds a key that could reach them. A Refund that includes one is refused up front — `409 payment_on_platform_account`, pointing the admin at the Stripe dashboard — before any of the Purchase's other payments are returned, because a Refund that stops half-way is worse than one that never starts.
+ADR 0014 stamped `null` on a payment taken on the platform's account. Those rows still exist on staging (test payments) and should not exist in production, but the app no longer holds a key that could reach them. A Refund that includes one is refused up front — `409 payment_on_platform_account`, pointing the admin at the Stripe dashboard — before any of the Purchase's other payments are returned, because a Refund that stops half-way is worse than one that never starts.
 
 The member's confirmation page records a payment too, when it lands before the webhook (`/me/checkout/sync-session`). It used to pass no account, which stamped `null` — the platform's — on a payment taken on the studio's own account. It now passes the account it read the session back with, so every new payment row names a real account and `null` is only ever history.
 

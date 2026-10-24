@@ -524,7 +524,7 @@ The greatest number of instructors who may be on **study** leave at the same mom
 _Avoid_: limit, quota, threshold, max concurrent leave
 
 **Cover Group** — _removed 2026-08-17_:
-Was one flat, studio-wide ticked set of instructors who covered each other. **Replaced by Leave Conflict**, which names specific pairs instead of one anonymous set. Do not use the term for new work; it survives here only so that a reader who meets it in an old commit or issue can find out what became of it. The survey behind the decision, including the option that was recommended and not taken, is `docs/md/research-cover-group-ux.md`.
+Was one flat, studio-wide ticked set of instructors who covered each other. **Replaced by Leave Conflict**, which names specific pairs instead of one anonymous set. Do not use the term for new work; it survives here only so that a reader who meets it in an old commit or issue can find out what became of it. The survey behind the decision, including the option that was recommended and not taken, is `docs/archive/research-cover-group-ux.md`.
 
 **Cover Group Leave Cap** — _removed 2026-08-17_:
 Was the greatest number of Cover Group members who could be away at once, counting every Leave Type. **Removed with the Cover Group and not replaced**: a Leave Conflict is a pair, so "at most 2 of these 6 away at once" is deliberately no longer sayable. Leave Cap now means the Study Leave cap alone.

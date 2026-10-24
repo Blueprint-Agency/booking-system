@@ -13,7 +13,7 @@ const noop = () => () => {};
  * already settled, the clock, the browser's locale — must not change what the
  * hydrating render draws, or React throws the server's HTML away. Gate it on
  * this; `memberSessionView` (lib/member-session-view.ts) is the worked case,
- * and docs/md/research-nextjs-hydration-and-errors.md the rules.
+ * and docs/archive/research-nextjs-hydration-and-errors.md the rules.
  */
 export function useHydrated(): boolean {
   return useSyncExternalStore(noop, () => true, () => false);

@@ -16,18 +16,19 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 
 ## File structure
 
+What exists today (`*` = not created yet; made lazily as above):
+
 ```
 /
 ├── CONTEXT-MAP.md
 ├── docs/
 │   ├── adr/                    ← system-wide decisions
-│   └── md/                     ← canonical product & architecture specs
+│   ├── md/                     ← canonical product & architecture specs
+│   └── archive/                ← shipped or superseded research and specs: history only
 ├── fe-client/
-│   ├── CONTEXT.md
-│   └── docs/adr/               ← client-app decisions
+│   └── CONTEXT.md *
 ├── fe-portal/
-│   ├── CONTEXT.md
-│   └── docs/adr/               ← portal-app decisions
+│   └── CONTEXT.md *
 └── be/
     ├── CONTEXT.md
     └── docs/adr/               ← backend decisions

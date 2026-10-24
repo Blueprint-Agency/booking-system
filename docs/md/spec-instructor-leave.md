@@ -167,7 +167,7 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 
 ### Study leave, the Leave Cap and Leave Conflicts
 
-**Superseded content (2026-08-17).** Full detail and rationale live in `docs/md/spec-pre-launch-batch.md` §16–§17; this is the summary needed so the rest of this document reads correctly. The **Cover Group** and its cap, described in earlier revisions of this section, were retired the same day and replaced by declared pairs — see §17 and `docs/md/research-cover-group-ux.md`.
+**Superseded content (2026-08-17).** Full detail and rationale live in `docs/md/spec-pre-launch-batch.md` §16–§17; this is the summary needed so the rest of this document reads correctly. The **Cover Group** and its cap, described in earlier revisions of this section, were retired the same day and replaced by declared pairs — see §17 and `docs/archive/research-cover-group-ux.md`.
 
 - **Study is a third Leave Type**, deliberately the least exceptional of the three. `instructors` gains `study_leave_days`, defaulting to 7, validated 0–365 like its two neighbours — one more row in the Pool triple, drawn from and Committed against exactly like annual and medical. It never carries.
 - **Study must start after today**, same as annual — the "annual must start in the future" rule above widens to "not medical", rather than gaining a separate minimum-notice rule. Medical keeps its own backdate window, unchanged.
@@ -271,7 +271,7 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 - Supporting Document retention, expiry or deletion policy.
 - Instructor photo upload, even though this spec builds the first upload path it would need.
 - Any member-facing surface. Members see nothing about leave.
-- ~~Per-instructor allowances~~ / a named-groups model for who covers whom. **Shipped 2026-08-17 as the Leave Cap, then narrowed the same day to declared pairs.** Who covers whom is a **Leave Conflict**: a pair, not a named group and not a ticked set — see the section above, `spec-pre-launch-batch.md` §17, and `docs/md/research-cover-group-ux.md` for the survey that recommended named groups and the reason pairs were taken instead.
+- ~~Per-instructor allowances~~ / a named-groups model for who covers whom. **Shipped 2026-08-17 as the Leave Cap, then narrowed the same day to declared pairs.** Who covers whom is a **Leave Conflict**: a pair, not a named group and not a ticked set — see the section above, `spec-pre-launch-batch.md` §17, and `docs/archive/research-cover-group-ux.md` for the survey that recommended named groups and the reason pairs were taken instead.
 - A cap over a *set* of instructors counting every Leave Type. Retired with the Cover Group: "at most 2 of these 6 away at once" is deliberately no longer sayable, because the stated requirement is about specific people.
 - An admin override on a refusal. The escape hatch is removing the declaration or raising the cap and having the instructor resubmit — see above.
 

@@ -3,7 +3,7 @@
 **Status:** active from 2026-09-16.
 **Scope:** the one platform sender, `noreply@reservetoday.app`, on the Resend Free plan. Every studio's mail leaves on it.
 **Issues:** #155 (this doc), parent #126 (row 7 of #129). The invitation batch plan below is handed to #130.
-**Numbers:** every Resend figure here comes from [`research-resend-sending-limits.md`](research-resend-sending-limits.md) (checked 2026-09-16), cited as *R§n*. Figures marked *our choice* are planning decisions, not Resend limits.
+**Numbers:** every Resend figure here comes from [`research-resend-sending-limits.md`](../archive/research-resend-sending-limits.md) (checked 2026-09-16), cited as *R§n*. Figures marked *our choice* are planning decisions, not Resend limits.
 
 Why this exists: on 2026-09-13 the first message from `reservetoday.app` landed in Gmail spam with SPF, DKIM and DMARC all passing. The domain is new and has no reputation. Sign-in codes and staff second factors depend on that reputation, and the cutover invitations are the one send that can wreck it.
 

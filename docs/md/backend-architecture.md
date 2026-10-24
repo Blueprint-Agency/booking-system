@@ -369,7 +369,7 @@ The **Assigned Days** (`annual_leave_days`, `medical_leave_days`, `study_leave_d
 
 #### `leave_conflicts` — declared **Leave Conflicts** (§17)
 
-Two instructors an admin has declared cannot be away at the same time. Replaced `instructors.in_cover_group` and `global_policy.cover_group_leave_cap`, both dropped in `0024_retire_cover_group.sql`; the survey behind that decision is `docs/md/research-cover-group-ux.md`.
+Two instructors an admin has declared cannot be away at the same time. Replaced `instructors.in_cover_group` and `global_policy.cover_group_leave_cap`, both dropped in `0024_retire_cover_group.sql`; the survey behind that decision is `docs/archive/research-cover-group-ux.md`.
 
 | Column | Type | Constraints |
 |---|---|---|
@@ -933,7 +933,7 @@ tenant_id (uuid not null, FK → tenants), id (uuid PK), client_id (uuid not nul
 
 tenant_id (uuid PK, FK → tenants.id on delete cascade), provider (text, not null, default `'stripe'`), account_id (text, not null), secret_key_sealed (text, not null), webhook_secret_sealed (text, not null), webhook_endpoint_id (text, nullable — the endpoint the platform created on the studio's account, #294; null on rows saved before then), created_at, updated_at.
 
-A studio's **own** payment-provider account: its credentials, so every call on that studio's behalf is made against that account rather than the platform's. Not Stripe Connect — there is no connected account and no `Stripe-Account` header; an account here is a *key*. See `be/docs/adr/0004-tenant-supplied-payment-credentials.md`.
+A studio's **own** payment-provider account: its credentials, so every call on that studio's behalf is made against that account rather than the platform's. Not Stripe Connect — there is no connected account and no `Stripe-Account` header; an account here is a *key*. See `be/docs/adr/0013-tenant-supplied-payment-credentials.md`.
 
 **A Tenant with no row here takes no online payments** (#293, `be/docs/adr/0007-every-studio-sells-on-its-own-account.md`): its checkouts are refused `409 payments_not_configured` before a Purchase opens, and only $0 purchases — which never reach the provider — go through. There is no platform account to fall back to.
 

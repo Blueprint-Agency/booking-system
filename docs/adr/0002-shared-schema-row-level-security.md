@@ -1,7 +1,7 @@
 # One database, `tenant_id` on every row, Row-Level Security underneath
 
 **Status**: accepted (2026-08-31) — recorded *after* execution. Implements the model chosen in
-`docs/md/research-multi-tenancy.md` §5.1 and executed across issues #59, #63 and #65. Spans all
+`docs/archive/research-multi-tenancy.md` §5.1 and executed across issues #59, #63 and #65. Spans all
 three applications, which is why it lives in the root `docs/adr/` rather than in `be/docs/adr/`.
 
 A studio on this platform is a **Tenant**, and creating one is a single `INSERT` into `tenants` —

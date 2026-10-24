@@ -78,4 +78,4 @@ workflow, the test harness, and `db/seed/`.
   admin, no third role and no role editor._
 - **Platform administrators are untouched** — the super portal, the `platform` pool and
   `PLATFORM_ADMIN_EMAIL` do not change, and neither role is ever called by the platform's name.
-- Historical plans under `docs/superpowers/` keep the old word; they are records of past decisions.
+- Historical plans (once under `docs/superpowers/`, now only in git history) keep the old word; they are records of past decisions.
