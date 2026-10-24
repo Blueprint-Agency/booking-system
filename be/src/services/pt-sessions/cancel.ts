@@ -58,7 +58,10 @@ export interface CancelPtRequestInput {
    * the cancellation for admin or instructor), or whose act set off a system one.
    */
   actorStaffId?: string
-  /** The expiry cron: a pending request's debit comes back as an expiry refund. */
+  /**
+   * The expiry cron. It ends a request only if it is still pending under the
+   * lock, and the debit comes back as an expiry refund.
+   */
   expired?: boolean
   /**
    * When set (instructor-initiated cancel), restricts the action to a SCHEDULED
@@ -119,12 +122,12 @@ async function cancelPtRequestInTx(
       throw new ForbiddenError('not_your_request')
     }
 
-    // Terminal states → idempotent no-op.
-    if (
+    const terminal =
       req.status === 'cancelled_before_scheduled' ||
       req.status === 'cancelled_after_scheduled' ||
       req.status === 'attended'
-    ) {
+    const scheduledSinceExpirySweep = input.expired && req.status === 'scheduled'
+    if (terminal || scheduledSinceExpirySweep) {
       return { status: 'noop', refundedSessions: 0, refundOutcome: 'n_a' }
     }
 
@@ -410,9 +413,6 @@ async function cancelPtRequestInTx(
  */
 export async function expireStaleSessions(): Promise<void> {
   const now = clockNow()
-  // The scan is deliberately platform-wide — one process sweeps every studio —
-  // but each expiry is then performed AS its own tenant, so the refund, the
-  // status flip and the inbox item all land under the right one.
   const stale = await db
     .select({ id: ptRequests.id, tenantId: ptRequests.tenantId })
     .from(ptRequests)
@@ -431,8 +431,6 @@ export async function expireStaleSessions(): Promise<void> {
         expired: true,
       })
     } catch (err) {
-      // A request that raced into a terminal/scheduled state between the scan and
-      // the lock is fine to skip — the sweep is best-effort and idempotent.
       logger.error({ ptRequestId: row.id, err }, 'pt-expiry: failed to expire request')
     }
   }
@@ -447,23 +445,22 @@ export async function expireStaleSessions(): Promise<void> {
  */
 export async function completeEndedPtSessions(): Promise<void> {
   const now = clockNow()
-  // Platform-wide on purpose, like `expirePackages`: this is a clock advancing
-  // a lifecycle, not a caller asking a question, and it moves each row only in
-  // relation to its own session. Nothing crosses between studios.
-  const ended = await db
-    .select({ id: ptRequests.id })
-    .from(ptRequests)
-    .innerJoin(ptSessions, eq(ptSessions.id, ptRequests.scheduledPtSessionId))
-    .where(
-      and(
-        eq(ptRequests.status, 'scheduled'),
-        eq(ptSessions.lifecycle, 'active'),
-        lt(ptSessions.endsAt, now),
-      ),
-    )
-  if (!ended.length) return
+  const ended = and(
+    eq(ptRequests.status, 'scheduled'),
+    inArray(
+      ptRequests.scheduledPtSessionId,
+      db
+        .select({ id: ptSessions.id })
+        .from(ptSessions)
+        .where(and(eq(ptSessions.lifecycle, 'active'), lt(ptSessions.endsAt, now))),
+    ),
+  )
+  const locked = await db.select({ id: ptRequests.id }).from(ptRequests).where(ended).for('update')
+  if (!locked.length) return
+  // A statement that waited on a request's lock re-reads the request but not
+  // its session, so a session just moved later would still read as ended.
   await db
     .update(ptRequests)
     .set({ status: 'attended' })
-    .where(inArray(ptRequests.id, ended.map(r => r.id)))
+    .where(and(inArray(ptRequests.id, locked.map(r => r.id)), ended))
 }
