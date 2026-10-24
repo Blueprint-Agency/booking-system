@@ -5,7 +5,8 @@ import { countSeats } from '../bookings/seats'
 import { assertRoomAvailable, assertRoomInLocation } from './room-conflicts'
 import { assertInstructorsAvailable, plannedInstructorIds } from './occupancy'
 import { computeEventState } from '../policy/event-state'
-import { ConflictError, NotFoundError } from '../../shared/errors'
+import { now as clockNow } from '../../lib/clock'
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import {
   ensureInstructors,
   readRoster,
@@ -49,7 +50,13 @@ export interface CreateClassInput {
 
 export type ClassRow = typeof classes.$inferSelect
 
+/** A class ends after it starts — on create, and on every edit of either end. */
+function assertEndsAfterStart(startsAt: Date, endsAt: Date): void {
+  if (endsAt <= startsAt) throw new BadRequestError('ends_at_must_be_after_starts_at')
+}
+
 export async function createClass(tenantId: string, input: CreateClassInput): Promise<ClassRow> {
+  assertEndsAfterStart(input.startsAt, input.endsAt)
   // The room gate doubles as the location gate: a room only passes if it is this
   // tenant's and sits in the location named, so neither can be borrowed.
   await assertRoomInLocation(tenantId, input.roomId, input.locationId)
@@ -174,13 +181,22 @@ export async function updateClass(
   // Once a class has started it is a record of what happened, not a plan — moving,
   // repricing or resizing it rewrites history under the people who already sat in it.
   // Same predicate every read path uses (policy/event-state.ts).
+  const now = clockNow()
   const state = computeEventState({
     startsAt: existing.startsAt,
     endsAt: existing.endsAt,
     lifecycle: existing.lifecycle,
-    now: new Date(),
+    now,
   })
   if (state !== 'scheduled') throw new ConflictError(`class_${state}`)
+
+  const newStartsAt = patch.startsAt ?? existing.startsAt
+  const newEndsAt = patch.endsAt ?? existing.endsAt
+  assertEndsAfterStart(newStartsAt, newEndsAt)
+  // Nor may an edit make an upcoming class one that has already started: that is
+  // the guard above's state reached by a typo, and from it there is no way back —
+  // no edit, no class cancel to refund its bookings, and its Instructor Pay owed.
+  if (newStartsAt <= now) throw new BadRequestError('starts_at_in_past')
 
   // Online capacity can't drop below the members already holding an online seat.
   // Buffer and overbook seats are staff's and don't count against it.
@@ -193,8 +209,6 @@ export async function updateClass(
 
   const newRoomId = patch.roomId ?? existing.roomId
   const newLocationId = patch.locationId ?? existing.locationId
-  const newStartsAt = patch.startsAt ?? existing.startsAt
-  const newEndsAt = patch.endsAt ?? existing.endsAt
 
   if (
     patch.roomId !== undefined ||

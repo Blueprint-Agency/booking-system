@@ -332,6 +332,7 @@ export const ERROR_CODES = {
   staff_not_provisioned: "staff_not_provisioned",
   staff_unarchive_failed: "staff_unarchive_failed",
   staff_update_failed: "staff_update_failed",
+  starts_at_in_past: "starts_at_in_past",
   supporting_instructor_duplicates_main: "supporting_instructor_duplicates_main",
   tenant_already_has_staff: "tenant_already_has_staff",
   tenant_archived: "tenant_archived",

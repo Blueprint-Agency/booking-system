@@ -43,6 +43,19 @@ test("a known code is explained without a status", () => {
   );
 });
 
+// An edit that would move a class into the past, or end it before it starts,
+// is refused in words the admin can act on, not a status (#246).
+test("an edit into the past or with inverted times is explained without a status", () => {
+  assert.strictEqual(
+    scheduleErrorMessage(new ApiError(400, { error: "starts_at_in_past" })),
+    "A class can't be moved to a time that has already passed. Pick a date and start time still to come.",
+  );
+  assert.strictEqual(
+    scheduleErrorMessage(new ApiError(400, { error: "ends_at_must_be_after_starts_at" })),
+    "End time must be after start time.",
+  );
+});
+
 // An unknown code still says which action failed, in the caller's words.
 test("an unknown code falls back to the named action", () => {
   assert.strictEqual(
