@@ -1078,6 +1078,35 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
     assert.equal((await adjustmentsOf(bundle)).length, 0)
   })
 
+  test('CRD-29 an adjustment or a set balance past 10,000 credits is refused, not a server error, and the balance is unchanged', async () => {
+    const max = await member(one, 'max')
+    const bundle = await give(one, max, 'credit_bundle', { credits: 5 })
+
+    // The four from #240: past the column's range, and one that only overflows once added to the balance.
+    for (const res of [
+      await adjust(one.admin.headers, max, bundle, { delta: 2_147_483_647, reason: 'huge' }),
+      await adjust(one.admin.headers, max, bundle, { delta: 999_999_999_999, reason: 'huger' }),
+      await adjust(one.admin.headers, max, bundle, { delta: 2_147_483_643, reason: 'edge' }),
+      await setBalance(one.admin.headers, max, bundle, { balance: 99_999_999_999, reason: 'huge' }),
+      await adjust(one.admin.headers, max, bundle, { delta: -10_001, reason: 'huge' }),
+      await setBalance(one.admin.headers, max, bundle, { balance: 10_001, reason: 'just past' }),
+    ]) {
+      assert.equal(res.status, 400, await res.text())
+    }
+    // Inside the bound per call, past it once added: the service names it.
+    await expectStatus(await adjust(one.admin.headers, max, bundle, { delta: 9_996, reason: 'one too many' }), 400, 'balance_too_large')
+    assert.equal(await balanceOf(bundle), 5)
+    assert.equal((await adjustmentsOf(bundle)).length, 0)
+
+    // The bound itself is a balance.
+    const res = await expectStatus(await adjust(one.admin.headers, max, bundle, { delta: 9_995, reason: 'to the top' }), 200)
+    assert.equal(res.credits_or_sessions_remaining, 10_000)
+    await expectStatus(await setBalance(one.admin.headers, max, bundle, { balance: 0, reason: 'back down' }), 200)
+    await expectStatus(await setBalance(one.admin.headers, max, bundle, { balance: 10_000, reason: 'set to the top' }), 200)
+    assert.equal(await balanceOf(bundle), 10_000)
+    await assertLedger(bundle)
+  })
+
   test('CRD-17 a manual adjustment does not count toward the member’s cancellation cap', async () => {
     const mo = await member(one, 'mo')
     const bundle = await give(one, mo, 'credit_bundle', { credits: 10 })

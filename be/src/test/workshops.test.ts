@@ -383,6 +383,45 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(peek.status, 404, peek.text)
   })
 
+  test('WSP-03 a workshop with no tier is not offered to members, and its last tier cannot be removed', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Unpriced retreat',
+      days: [{ capacity: 10 }],
+      tiers: [],
+    })
+    const ana = await member(one, 'Ana Unpriced')
+    const listed = async () =>
+      ((await call('/api/v1/me/workshops', ana.headers)).body.workshops as { id: string }[]).some(x => x.id === w.id)
+    assert.equal(await listed(), false, 'a workshop no one can buy is not in the catalogue')
+    const peek = await call(`/api/v1/me/workshops/${w.id}`, ana.headers)
+    assert.equal(peek.status, 404, peek.text)
+
+    const tierAt = (name: string) =>
+      call(`/api/v1/portal/admin/workshops/${w.id}/tiers`, adminAtOne.headers, {
+        method: 'POST',
+        body: { name, regular_price_sgd: '80.00', ord: 1, day_ids: [w.dayIds[0]] },
+      })
+    const first = await tierAt('Full')
+    assert.equal(first.status, 201, first.text)
+    assert.equal(await listed(), true, 'priced, it is on sale')
+
+    const tiersPath = `/api/v1/portal/admin/workshops/${w.id}/tiers`
+    const last = await call(`${tiersPath}/${first.body.id}`, adminAtOne.headers, { method: 'DELETE' })
+    assert.equal(last.status, 409, last.text)
+    assert.equal(last.body.error, 'workshop_tier_required')
+    assert.equal((await call(tiersPath, adminAtOne.headers)).body.tiers.length, 1, 'the tier is still there')
+
+    // With another tier in its place, the first one may go.
+    const second = await tierAt('Replacement')
+    assert.equal(second.status, 201, second.text)
+    const gone = await call(`${tiersPath}/${first.body.id}`, adminAtOne.headers, { method: 'DELETE' })
+    assert.equal(gone.status, 200, gone.text)
+    assert.deepEqual(
+      ((await call(tiersPath, adminAtOne.headers)).body.tiers as { id: string }[]).map(t => t.id),
+      [second.body.id],
+    )
+  })
+
   test("a member of another studio cannot buy a place in this studio's workshop", async () => {
     const w = await workshop(one, adminAtOne, teacherAtOne, {
       name: 'Members-only retreat',

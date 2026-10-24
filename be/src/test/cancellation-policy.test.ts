@@ -785,6 +785,42 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     }
   })
 
+  test('CXL-66 a cap, cycle or window past its most is refused with a reason an Admin can read, not a server error, and the policy is unchanged', async () => {
+    try {
+      const before = await policyOf(one)
+      for (const body of [
+        { class_window_hours: 99_999_999_999 },
+        { cancel_cap_cycle_days: 99_999_999_999 },
+        { pt_window_hours: 99_999_999_999 },
+        { cancel_cap_count: 99_999_999_999 },
+        { class_window_hours: 8_761 },
+        { pt_window_hours: 8_761 },
+        { cancel_cap_cycle_days: 366 },
+        { cancel_cap_count: 1_000 },
+      ]) {
+        const refused = await expectStatus(await patchPolicy(one.admin.headers, body), 400, 'invalid_policy')
+        assert.equal(typeof refused.message, 'string', JSON.stringify(body))
+      }
+      const after = await policyOf(one)
+      assert.deepEqual(
+        [after.classWindowHours, after.ptWindowHours, after.cancelCapCycleDays, after.cancelCapCount],
+        [before.classWindowHours, before.ptWindowHours, before.cancelCapCycleDays, before.cancelCapCount],
+      )
+
+      // Each most is itself a policy.
+      const saved = await expectStatus(
+        await patchPolicy(one.admin.headers, { class_window_hours: 8_760, pt_window_hours: 8_760, cancel_cap_cycle_days: 365, cancel_cap_count: 999 }),
+        200,
+      )
+      assert.deepEqual(
+        [saved.class_window_hours, saved.pt_window_hours, saved.cancel_cap_cycle_days, saved.cancel_cap_count],
+        [8_760, 8_760, 365, 999],
+      )
+    } finally {
+      await restorePolicies()
+    }
+  })
+
   test('CXL-19 with a 24-hour PT window and a 12-hour class window, a PT cancel 18 hours out is refused; a class cancel 18 hours out is not', async () => {
     try {
       await expectStatus(await patchPolicy(one.admin.headers, { pt_window_hours: 24, class_window_hours: 12 }), 200)

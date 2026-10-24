@@ -348,6 +348,36 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(row, undefined, 'none was saved')
   })
 
+  test('PRM-20 an amount off that rounds to zero or is past S$99,999.99, a cap past 1,000,000, or a blank label is refused, on create or edit', async () => {
+    const amount = (amount_off_sgd: unknown) => ({ kind: 'amount', percent_off: undefined, amount_off_sgd })
+    for (const [i, over] of [
+      amount('0.001'),
+      amount(0.004),
+      amount(1e20),
+      amount('100000.00'),
+      { max_redemptions: 99_999_999_999 },
+      { max_redemptions: 1_000_001 },
+      { label: '   ' },
+    ].entries()) {
+      const res = await newCode(one, `OUT${i}`, over)
+      assert.equal(res.status, 400, `${JSON.stringify(over)}: ${JSON.stringify(res.body)}`)
+    }
+    for (const value of ['0.001', 1e20]) {
+      assert.equal((await newCode(one, 'OUTX', amount(value))).body.error, 'invalid_promo_amount', String(value))
+    }
+    const [row] = await harness.db.select().from(schema.promoCodes).where(like(schema.promoCodes.code, `${CODE_PREFIX}-OUT%`))
+    assert.equal(row, undefined, 'none was saved')
+
+    const edge = created(await newCode(one, 'EDGE', { ...amount('99999.99'), max_redemptions: 1_000_000, label: '  Most off  ' }))
+    assert.deepEqual([edge.amount_off_sgd, edge.max_redemptions, edge.label], ['99999.99', 1_000_000, 'Most off'])
+    for (const patch of [{ label: ' ' }, { max_redemptions: 99_999_999_999 }, { kind: 'amount', amount_off_sgd: '0.004' }]) {
+      const res = await send('PATCH', `/promo-codes/${edge.id}`, one.admin, patch)
+      assert.equal(res.status, 400, `nor edited to ${JSON.stringify(patch)}: ${JSON.stringify(res.body)}`)
+    }
+    const after = (await send('GET', `/promo-codes/${edge.id}`, one.admin)).body
+    assert.deepEqual([after.amount_off_sgd, after.max_redemptions, after.label], ['99999.99', 1_000_000, 'Most off'])
+  })
+
   test('PRM-11 a code applies to everything or names its products, and never another studio’s', async () => {
     const mine = created(await send('POST', '/class-packages', one.admin, bundleBody('Scoped pass')))
     const theirs = created(await send('POST', '/class-packages', two.admin, bundleBody('Their pass')))
