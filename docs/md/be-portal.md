@@ -99,10 +99,7 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/instructors` | List with `?status=pending|active|archived`, joins `staff_users` |
-| GET | `/instructors/:id` | Detail incl. `instructor_class_types` eligibility, photo presigned URL |
 | POST | `/instructors` | Create `staff_users` row (role=`instructor`, status=`pending`) + `instructors` row + `instructor_class_types` rows + auto-fires staff invitation (see §3a) |
-| PATCH | `/instructors/:id` | Update bio, phone override, eligible class types. Photo upload via presigned R2 PUT URL flow (see `backend-architecture.md` §6c). |
-| POST | `/instructors/:id/archive` | Set `staff_users.archived_at` and delete the instructor's Better Auth sessions at this studio (`endStaffSessionsAt`). Blocks on active future sessions where this instructor is assigned. |
 | POST | `/instructors/:id/resend-invite` | Re-issue invitation (§3a) — only if `status='pending'` |
 
 ### `policy.ts`
@@ -218,9 +215,6 @@ Workshops are configured under Packages (not Schedule). Three-stage editor: **Ba
 | POST | `/workshops/:id/tiers` | `{ name, description?, regular_price_sgd, early_bird_price_sgd?, early_bird_quota?, early_bird_cutoff_at?, day_ids[], ord }`. Inserts `workshop_tiers` + `workshop_tier_days` junction rows in one tx. **No `capacity` field** — derived. |
 | PATCH | `/workshops/:id/tiers/:tier_id` | Edit. Changing `day_ids` requires rewriting the `workshop_tier_days` rows; rejected if confirmed bookings exist on the tier AND a covered day is being removed. |
 | DELETE | `/workshops/:id/tiers/:tier_id` | Reject if any confirmed booking references this tier. |
-| **Roster (per day for check-in / attendance)** | | |
-| GET | `/workshops/:id/roster` | All confirmed bookings on the workshop (across tiers). Returns each booking with the `day_ids[]` it grants access to (joined via `workshop_tier_days`). |
-| GET | `/workshops/:id/days/:day_id/roster` | Bookings whose tier covers this specific day. Used by the workshop check-in screen even though workshops are not check-in tracked in v1 — admin still needs the per-day attendee list. |
 
 ### `pt-requests.ts` (workspace-**scoped** — `admin-restructure.md` §9)
 
@@ -689,7 +683,6 @@ Scoped to the authenticated instructor. `staffAuth` loads `staff_users` and reso
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/schedule` | All `classes` + confirmed `pt_sessions` + `workshops` where the instructor is assigned, with `event_state` computed |
-| GET | `/schedule/today` | Same, filtered to today (SGT) |
 | POST | `/schedule/classes` | **`schedule_classes`.** Create a class. The admin body without `main_instructor_id`, supporting instructors or `instructor_pay_sgd`: the caller is forced as main instructor, nobody supports, and pay is `null` (Unpriced). Those fields, if sent, are ignored. |
 | POST | `/schedule/series/preview` | **`schedule_classes`.** **Class Series** preview — the admin contract (§2 `schedule.ts`) with the same forcing as a single class: the caller is the main instructor, no supporting instructors, pay `null`. Location and room come from the body. `main_instructor_id`, `instructor_pay_sgd` and `supporting_instructors`, if sent, are ignored. |
 | POST | `/schedule/series` | **`schedule_classes`.** Commit the same body, all or nothing: `201 { series, class_ids }`, `409 series_conflict { dates }`. There is no instructor extend or end: those are admin only (`403` on the admin routes). |

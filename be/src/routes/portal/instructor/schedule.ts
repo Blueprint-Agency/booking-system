@@ -6,7 +6,6 @@ import * as classesSvc from '../../../services/schedule/classes'
 import * as seriesSvc from '../../../services/schedule/series'
 import { cancelClass } from '../../../services/bookings/cancel-class'
 import { staffBookClass, staffPackagesForClass } from '../../../services/bookings/book'
-import { sgDayWindow, sgToday } from '../../../lib/time'
 import { tenantId } from '../../../middleware/tenant'
 import { requirePermission } from '../../../middleware/require-permission'
 import { seatFields, staffBookingJson, staffBookingSchema, staffPackagesJson, staffPackagesQuery } from '../class-seats'
@@ -19,7 +18,6 @@ import { hasCapacity, NO_CAPACITY, previewJson, seriesRow, seriesTemplateFields,
  *
  *   GET  /schedule        — the caller's own classes + PT (+ workshops/corporate
  *                           they're assigned to), optionally windowed by from/to.
- *   GET  /schedule/today  — same, narrowed to today (Asia/Singapore).
  *   POST /schedule/classes — create a class. The instructor and pay are NOT
  *                           accepted from the body: main_instructor_id is forced
  *                           to the acting instructor, there are no supporting
@@ -137,13 +135,6 @@ const app = new Hono()
       to: q.to ? new Date(q.to) : undefined,
       type: q.type,
     })
-    return c.json({ entries: entries.map(entryRow) })
-  })
-  .get('/today', async c => {
-    const self = c.get('staffUserId')
-    // Today's [from, to) window in studio time, as UTC instants.
-    const { startsAt: from, endsAt: to } = sgDayWindow(sgToday(new Date()))
-    const entries = await timetable.listSchedule(tenantId(c), { instructorId: self, from, to })
     return c.json({ entries: entries.map(entryRow) })
   })
   .post('/classes', schedulesClasses, zValidator('json', createClassSchema), async c => {
