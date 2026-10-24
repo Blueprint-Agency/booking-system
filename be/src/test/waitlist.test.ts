@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, inArray, sql } from 'drizzle-orm'
-import { inTenantContext, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import postgres from 'postgres'
+import {
+  inTenantContext,
+  integrationTestsEnabled,
+  SKIP_REASON,
+  startTestApp,
+  TEST_DATABASE_URL,
+  type TestApp,
+} from './harness'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.waitlist.test`
@@ -636,6 +644,95 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     const notMine = await leaveLine(behind, theirs.entry_id)
     assert.equal(notMine.status, 404)
     assert.equal(notMine.body.error, 'waitlist_entry_not_found')
+  })
+
+  async function untilRowLockWaiters(n: number, stop: () => boolean): Promise<void> {
+    while (!stop()) {
+      const [row] = (await harness.db.execute(sql`
+        SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock' AND wait_event IN ('transactionid', 'tuple')`)) as unknown as { n: number }[]
+      if (Number(row?.n ?? 0) >= n) return
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
+  }
+
+  async function holdPackagesOf(who: Member): Promise<{ release: () => Promise<void> }> {
+    const holder = postgres(TEST_DATABASE_URL!, { max: 1 })
+    let letGo!: () => void
+    const released = new Promise<void>(resolve => (letGo = resolve))
+    let locked!: () => void
+    const held = new Promise<void>(resolve => (locked = resolve))
+    const holding = holder.begin(async tx => {
+      await tx`SELECT id FROM client_packages WHERE client_id = ${who.clientId} FOR UPDATE`
+      locked()
+      await released
+    })
+    const release = async () => {
+      letGo()
+      await holding.finally(() => holder.end({ timeout: 5 }))
+    }
+    await Promise.race([held, holding]).catch(async err => {
+      await release()
+      throw err
+    })
+    return { release }
+  }
+
+  async function leaveWhilePaying(waiter: Member, entryId: string, promote: () => Promise<Reply>) {
+    const promotionWaits = 1
+    const leaveWaitsToo = 2
+    const packages = await holdPackagesOf(waiter)
+    try {
+      let promoted = false
+      const promoting = promote().finally(() => (promoted = true))
+      await untilRowLockWaiters(promotionWaits, () => promoted)
+      let left = false
+      const leaving = leaveLine(waiter, entryId).finally(() => (left = true))
+      await untilRowLockWaiters(leaveWaitsToo, () => left)
+
+      await packages.release()
+      return { promote: await promoting, leave: await leaving }
+    } finally {
+      await packages.release()
+    }
+  }
+
+  async function heldBy(waiter: Member, classId: string, entryId: string) {
+    return {
+      entry: (await entryStatus(entryId)).status,
+      booked: (await confirmedOn(waiter, classId)).length,
+      credits: await creditsLeft(waiter),
+      emails: (await promotedMails(waiter)).length,
+    }
+  }
+
+  test('WTL-33 a member who leaves the line while a cancel books them into the freed seat is left or booked, never told they left and then charged', async () => {
+    const { classId, seated } = await fullClass(one, { online: 1, waitlist: 3 })
+    const waiter = await member(one)
+    const entry = await joined(waiter, classId)
+
+    const answers = await leaveWhilePaying(waiter, entry.entry_id, () => cancel(seated[0]!.who, seated[0]!.bookingId))
+    assert.equal(answers.promote.status, 200, JSON.stringify(answers.promote.body))
+
+    const seen = { leave: answers.leave.status, error: answers.leave.body?.error ?? null, ...(await heldBy(waiter, classId, entry.entry_id)) }
+    const leftFirst = { leave: 204, error: null, entry: 'withdrawn', booked: 0, credits: 10, emails: 0 }
+    const bookedFirst = { leave: 404, error: 'waitlist_entry_not_found', entry: 'promoted', booked: 1, credits: 9, emails: 1 }
+    assert.deepEqual(seen, seen.leave === 204 ? leftFirst : bookedFirst, 'the leave and the promotion took turns')
+  })
+
+  test('WTL-34 a member who leaves the line while staff Add them to the class is left or booked, never told they left and then charged', async () => {
+    const { classId } = await fullClass(one, { online: 1, buffer: 1, waitlist: 3 })
+    const waiter = await member(one)
+    const entry = await joined(waiter, classId)
+
+    const answers = await leaveWhilePaying(waiter, entry.entry_id, () =>
+      send('POST', `/portal/admin/schedule/classes/${classId}/waitlist/${entry.entry_id}/promote`, one.admin.headers, {}),
+    )
+
+    const seen = { add: answers.promote.status, leave: answers.leave.status, ...(await heldBy(waiter, classId, entry.entry_id)) }
+    const leftFirst = { add: 404, leave: 204, entry: 'withdrawn', booked: 0, credits: 10, emails: 0 }
+    const addedFirst = { add: 201, leave: 404, entry: 'promoted', booked: 1, credits: 9, emails: 1 }
+    assert.deepEqual(seen, seen.leave === 204 ? leftFirst : addedFirst, 'the leave and the Add to class took turns')
   })
 
   test('WTL-12 once the class starts the line is over: reads show nothing, and the sweep marks it expired', async () => {
