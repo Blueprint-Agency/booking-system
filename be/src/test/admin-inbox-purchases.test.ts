@@ -18,12 +18,11 @@ const DAY = 24 * HOUR
 /**
  * The admin Inbox and the admin Purchases surface over real HTTP (#206).
  *
- * **Inbox.** Its read routes (the list, the unread count, mark-read) still
- * answer `501`, so what can be proven today is the write side: every
- * cancellation the Inbox promises to report leaves one item behind, of the
- * right type, naming who acted, what was cancelled and what was refunded. Each
- * cancel is driven through the route a person uses; the item is read back from
- * the table.
+ * **Inbox.** The admin Inbox is not being built (#237), and its routes are
+ * gone. A class or booking cancel no longer writes an item; a PT session or
+ * workshop cancel still does, until those writes are removed with the
+ * `inbox_items` table. Each cancel is driven through the route a person uses;
+ * the item is read back from the table.
  *
  * **Purchases.** Part-paid Purchases that were never granted and have gone
  * silent (#95): the list an admin reads, and the refund button — with the
@@ -434,23 +433,6 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
 
   // ── Inbox: what each cancellation writes ─────────────────────────────────
 
-  test('INB-01, INB-02 an Admin cancelling a class with 4 booked members writes one admin-cancel item naming the Admin, the class and 4 refunded', async () => {
-    const classId = await addClass(one, 3 * DAY)
-    for (const name of ['Ana', 'Ben', 'Cai', 'Dee']) await bookedMember(one, `${name} Class`, classId)
-
-    const res = await ok(send(`/portal/admin/schedule/classes/${classId}/cancel`, adminAtOne.headers))
-    assert.deepEqual(res, { total_bookings: 4, refunded_count: 4 })
-
-    const item = await onlyItem('classId', classId)
-    assert.equal(item.tenantId, one.id)
-    assert.equal(item.type, 'admin_cancel_class_pt')
-    assert.equal(item.payload.kind, 'class')
-    assert.equal(item.payload.cancelledByStaffId, adminAtOne.staffId)
-    assert.equal(item.payload.totalBookings, 4)
-    assert.equal(item.payload.refundedCount, 4)
-    assert.equal(item.payload.reason, undefined, 'an admin cancel carries no instructor reason')
-  })
-
   test('INB-01 an Admin cancelling a scheduled PT session writes an admin-cancel item for it', async () => {
     const eli = await member(one, 'Eli PT')
     const requestId = await scheduledPt(one, eli)
@@ -479,18 +461,7 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     assert.equal(item.payload.affectedBookings, 2)
   })
 
-  test('INB-03 a member cancelling a class booking or a scheduled PT session writes a client-cancellation item naming them and the refund outcome', async () => {
-    const classId = await addClass(one, 3 * DAY)
-    const hui = await bookedMember(one, 'Hui Self', classId)
-    const cancelled = await ok(send(`/me/bookings/${hui.bookingId}`, hui.headers, 'DELETE'))
-
-    const classItem = await onlyItem('bookingId', hui.bookingId)
-    assert.equal(classItem.type, 'client_cancellation')
-    assert.equal(classItem.payload.clientId, hui.clientId)
-    assert.equal(classItem.payload.kind, 'class')
-    assert.equal(classItem.payload.refundOutcome, cancelled.refund_outcome)
-    assert.equal(classItem.payload.actorStaffId, undefined, 'no staff member acted')
-
+  test('INB-03 a member cancelling a scheduled PT session writes a client-cancellation item naming them and the refund outcome', async () => {
     const ivy = await member(one, 'Ivy Self')
     const requestId = await scheduledPt(one, ivy)
     const ptCancelled = await ok(send(`/me/pt-sessions/${requestId}/cancel`, ivy.headers))
@@ -501,38 +472,6 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     assert.equal(ptItem.payload.kind, 'pt')
     assert.ok(ptItem.payload.ptSessionId, 'names the session')
     assert.equal(ptItem.payload.refundOutcome, ptCancelled.refundOutcome)
-  })
-
-  test('INB-04 an admin force-cancelling one booking writes an item with its refund outcome and the acting staff member', async () => {
-    const classId = await addClass(one, 3 * DAY)
-    const jun = await bookedMember(one, 'Jun Forced', classId)
-
-    const res = await ok(send(`/portal/admin/bookings/${jun.bookingId}/cancel`, adminAtOne.headers, 'POST', { credit: 'return' }))
-
-    const item = await onlyItem('bookingId', jun.bookingId)
-    assert.equal(item.type, 'admin_cancel_class_pt')
-    assert.equal(item.payload.clientId, jun.clientId)
-    assert.equal(item.payload.actorStaffId, adminAtOne.staffId)
-    assert.equal(item.payload.refundOutcome, res.refund_outcome)
-    assert.equal(item.payload.refundOutcome, 'credit_returned', 'an admin cancel refunds in full')
-  })
-
-  test('INB-07 the main instructor cancelling their class writes an instructor item with their reason and the counts', async () => {
-    const classId = await addClass(one, 3 * DAY)
-    await bookedMember(one, 'Kai Taught', classId)
-    await bookedMember(one, 'Lux Taught', classId)
-
-    const res = await ok(
-      send(`/portal/instructor/schedule/classes/${classId}/cancel`, teacherAtOne.headers, 'POST', { reason: 'Lost my voice' }),
-    )
-    assert.deepEqual(res, { total_bookings: 2, refunded_count: 2 })
-
-    const item = await onlyItem('classId', classId)
-    assert.equal(item.type, 'instructor_cancel_class')
-    assert.equal(item.payload.cancelledByStaffId, teacherAtOne.staffId)
-    assert.equal(item.payload.reason, 'Lost my voice')
-    assert.equal(item.payload.totalBookings, 2)
-    assert.equal(item.payload.refundedCount, 2)
   })
 
   test('INB-08 a refused cancel writes no Inbox item: wrong role, another instructor’s class, or another studio', async () => {

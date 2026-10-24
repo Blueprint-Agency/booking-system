@@ -99,7 +99,6 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
   let ptListSvc: typeof import('../services/pt-sessions/list')
   let ptCancelSvc: typeof import('../services/pt-sessions/cancel')
   let leaveSvc: typeof import('../services/leave/requests')
-  let inboxSvc: typeof import('../services/inbox')
   let flagsSvc: typeof import('../services/feature-flags')
 
   /** One studio's worth of rows: a class type, an instructor, a class, an item, a member. */
@@ -429,7 +428,6 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     ptListSvc = inTenantContext(await import('../services/pt-sessions/list'))
     ptCancelSvc = inTenantContext(await import('../services/pt-sessions/cancel'))
     leaveSvc = inTenantContext(await import('../services/leave/requests'))
-    inboxSvc = inTenantContext(await import('../services/inbox'))
     flagsSvc = await import('../services/feature-flags')
 
     // A run killed mid-flight leaves its fixtures behind, and their emails and
@@ -1478,7 +1476,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     )
   })
 
-  // ── content, inbox and the switchboard (#62) ──────────────────────────────
+  // ── content and the switchboard (#62) ─────────────────────────────────────
 
   test('every tenant owns its own email templates, waiver and home page', async () => {
     for (const table of [schema.emailTemplates, schema.waiver, schema.marketingContent]) {
@@ -1518,36 +1516,6 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
         name: 'Acme Yoga',
         timezone: 'Australia/Sydney',
       })
-    }
-  })
-
-  test("an inbox item is filed under, and marked read by, its own tenant", async () => {
-    const { id } = await inboxSvc.insertInbox(one.tenantId, {
-      type: 'admin_cancel_workshop',
-      payload: { isolation: true, workshopId: one.workshopId },
-    })
-    try {
-      const [filed] = await harness.db
-        .select()
-        .from(schema.inboxItems)
-        .where(eq(schema.inboxItems.id, id))
-      assert.equal(filed?.tenantId, one.tenantId)
-
-      await inboxSvc.markRead(two.tenantId, id, two.instructorId)
-      const [afterForeign] = await harness.db
-        .select()
-        .from(schema.inboxItems)
-        .where(eq(schema.inboxItems.id, id))
-      assert.equal(afterForeign?.readAt, null, "acme marked northwind's notification read")
-
-      await inboxSvc.markRead(one.tenantId, id, one.instructorId)
-      const [afterOwn] = await harness.db
-        .select()
-        .from(schema.inboxItems)
-        .where(eq(schema.inboxItems.id, id))
-      assert.ok(afterOwn?.readAt)
-    } finally {
-      await harness.db.delete(schema.inboxItems).where(eq(schema.inboxItems.id, id))
     }
   })
 

@@ -1,6 +1,6 @@
 /**
  * Cancels an entire class instance — bulk full refund to every confirmed booker.
- * See admin-restructure.md §10 (class detail) + §13 (inbox).
+ * See admin-restructure.md §10 (class detail).
  *
  * Two actors reach this, and they get the SAME outcome for members — only the
  * recorded provenance differs (`source`):
@@ -20,7 +20,6 @@ import { classes } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { bookings, cancellations } from '../../db/schema/bookings'
-import { inboxItems } from '../../db/schema/inbox'
 import { isVoided, refundCredits } from '../packages/ledger'
 import { computeEventState } from '../policy/event-state'
 import { staffCancelInTime } from '../policy/evaluate-cancellation'
@@ -38,7 +37,7 @@ interface CancelClassInput {
   actorStaffId: string
   /** Who is acting. Defaults to `admin` (the original caller). */
   source?: CancelClassSource
-  /** Required when `source` is `instructor`; stored on the inbox item. */
+  /** Required when `source` is `instructor`; it goes to every admin in their email. */
   reason?: string
 }
 
@@ -176,22 +175,6 @@ export async function cancelClass(
 
     // Nobody is left queued for a class that will not run (spec-waitlist.md §6).
     await removeLineForCancelledClass(tx, tenantId, classId, actorStaffId, now)
-
-    // Inbox notification per §13. The instructor's reason is free text and
-    // lives here — the only place a cancellation carries one.
-    await tx.insert(inboxItems).values({
-      tenantId,
-      type: source === 'instructor' ? 'instructor_cancel_class' : 'admin_cancel_class_pt',
-      payload: {
-        kind: 'class',
-        classId,
-        cancelledByStaffId: actorStaffId,
-        totalBookings: confirmed.length,
-        refundedCount,
-        at: now.toISOString(),
-        ...(source === 'instructor' ? { reason } : {}),
-      },
-    })
 
     return {
       totalBookings: confirmed.length,

@@ -809,7 +809,7 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
       assert.equal(b.source, 'admin')
     }
 
-    // The refund is recorded against the instructor, and the reason is kept.
+    // The refund is recorded against the instructor.
     const refunds = await harness.db
       .select()
       .from(schema.manualAdjustments)
@@ -818,13 +818,6 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
       refunds.map(r => [r.delta, r.reason]),
       [[1, 'instructor_class_cancellation_refund']],
     )
-    const [inbox] = await harness.db
-      .select()
-      .from(schema.inboxItems)
-      .where(sql`${schema.inboxItems.payload}->>'classId' = ${byInstructor.id}`)
-    assert.ok(inbox)
-    assert.equal(inbox.type, 'instructor_cancel_class')
-    assert.equal((inbox.payload as Record<string, unknown>).reason, reason)
   })
 
   test('LEV-114 there is no notice window: he cancels his class ten minutes before it starts', async () => {

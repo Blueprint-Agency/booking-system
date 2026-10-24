@@ -20,7 +20,6 @@ import bookings from './bookings'
 import finance from './finance'
 import leave from './leave'
 import checkIn from './check-in'
-import inbox from './inbox'
 import clients from './clients'
 import staff from './staff'
 import notifications from './notifications'
@@ -66,7 +65,6 @@ const app = new Hono()
   .route('/finance', finance)
   .route('/leave', leave)
   .route('/check-in', checkIn)
-  .route('/inbox', inbox)
   .route('/clients', clients)
   .route('/', impersonate)
   .route('/staff', staff)
