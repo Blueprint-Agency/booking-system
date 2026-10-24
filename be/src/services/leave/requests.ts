@@ -5,7 +5,7 @@ import { leavePools, leaveRequests } from '../../db/schema/leave'
 import { instructors, leaveConflicts } from '../../db/schema/catalog'
 import { globalPolicy } from '../../db/schema/policy'
 import { staffUsers } from '../../db/schema/identity'
-import { conflictMessage, findOccupancyConflicts, leaveDaysPhrase } from '../schedule/occupancy'
+import { conflictMessage, findOccupancyConflicts, leaveDaysPhrase, lockOccupancy } from '../schedule/occupancy'
 import type { Tx } from '../schedule/roster'
 import { emailEveryAdmin, sendTemplatedEmail } from '../notifications/send'
 import { reportError } from '../../shared/logger'
@@ -509,6 +509,10 @@ export interface SubmitLeaveInput {
  * An instructor's submission takes one lock before that: the rule lock on
  * `instructors`, which is what the Leave Conflicts and the study Leave Cap are
  * serialised by. An admin is subject to neither and takes only their own.
+ *
+ * Before either, the person's occupancy (`lockOccupancy`), which a class or
+ * session saved for them takes too: the two are decided one after the other,
+ * and the second one's clash check sees the first.
  */
 export async function submitLeaveRequest(
   tenantId: string,
@@ -529,6 +533,8 @@ export async function submitLeaveRequest(
       .limit(1)
     if (!applicant) throw new NotFoundError('staff_not_found')
     const teaches = applicant.role === 'instructor'
+
+    await lockOccupancy(tx, tenantId, [{ kind: 'instructor', id: input.staffUserId }])
 
     // Who this instructor is in a declared **Leave Conflict** with. An ARCHIVED
     // partner is not in the set — their conflicts refuse nothing — and nor is
@@ -569,7 +575,7 @@ export async function submitLeaveRequest(
             )
         ).map(r => r.id)
 
-    // An instructor's FIRST write-blocking statement: the rule lock. Locking
+    // Then, for an instructor, the rule lock. Locking
     // only the applicant's own row is not enough — two instructors in a
     // declared pair submitting the same dates take two different locks, both
     // read a clear calendar and both pass. So the applicant AND their partners

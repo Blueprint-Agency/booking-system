@@ -33,7 +33,7 @@ import { bookings } from '../../db/schema/bookings'
 import { loadTenantById } from '../tenants/tenants'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { assertRoomInLocation } from './room-conflicts'
-import { findClash, type SubjectClash } from './occupancy'
+import { eventSubjects, findClash, lockOccupancy, type SubjectClash } from './occupancy'
 import { ensureInstructors, exec, replaceRoster, type Tx } from './roster'
 import {
   ACCEPTS_ALL,
@@ -137,6 +137,7 @@ export async function createSeries(
   const occurrences = await planCreate(tenantId, input, now)
   const packageRule = input.packageRule ? await validateRule(db, tenantId, input.packageRule) : ACCEPTS_ALL
   const created = await db.transaction(async tx => {
+    await lockOccupancy(tx, tenantId, takenBy(input))
     await ensureInstructors(
       tenantId,
       [input.mainInstructorId, ...input.supportingInstructors.map(s => s.instructorId)],
@@ -244,6 +245,7 @@ export async function extendSeries(
       })
       .where(and(eq(classSeries.tenantId, tenantId), eq(classSeries.id, seriesId)))
     if (plan.occurrences.length === 0) return []
+    await lockOccupancy(tx, tenantId, takenBy(plan.template))
     await ensureInstructors(
       tenantId,
       [plan.template.mainInstructorId, ...plan.template.supportingInstructors.map(s => s.instructorId)],
@@ -495,26 +497,31 @@ async function withClashes(
   occurrences: Occurrence[],
   tx?: Tx,
 ): Promise<PreviewDate[]> {
-  const instructorIds = [
-    template.mainInstructorId,
-    ...template.supportingInstructors.map(s => s.instructorId),
-  ]
   const out: PreviewDate[] = []
   for (const o of occurrences) {
     const window = { startsAt: o.startsAt, endsAt: o.endsAt }
     const clashes: SubjectClash[] = []
-    const room = await findClash(tenantId, { kind: 'room', id: template.roomId }, window, undefined, tx)
-    if (room) clashes.push(room)
-    for (const id of instructorIds) {
-      const busy = await findClash(tenantId, { kind: 'instructor', id }, window, undefined, tx)
-      if (busy) clashes.push(busy)
+    for (const subject of takenBy(template)) {
+      const clash = await findClash(tenantId, subject, window, undefined, tx)
+      if (clash) clashes.push(clash)
     }
     out.push({ ...o, clashes })
   }
   return out
 }
 
-/** The commit: check every date again, then create every class or none. */
+function takenBy(template: Pick<SeriesTemplate, 'roomId' | 'mainInstructorId' | 'supportingInstructors'>) {
+  return eventSubjects(template.roomId, [
+    template.mainInstructorId,
+    ...template.supportingInstructors.map(s => s.instructorId),
+  ])
+}
+
+/**
+ * The commit: check every date again, then create every class or none. The
+ * caller holds the series' room and roster (`lockOccupancy`), so a class or
+ * session saved for them meanwhile is seen here.
+ */
 async function createClasses(
   tx: Tx,
   tenantId: string,

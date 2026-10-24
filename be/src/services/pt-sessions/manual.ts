@@ -25,7 +25,7 @@
  * never touching the other attendee's balance. A seat whose session Activated
  * its package, cancelled in time, returns the package to Dormant.
  */
-import { and, asc, eq, notInArray, sql } from 'drizzle-orm'
+import { and, asc, eq, notInArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
@@ -40,8 +40,8 @@ import type { CancelSource, RefundOutcome as BookingRefundOutcome } from '../boo
 import { now as clockNow } from '../../lib/clock'
 import type { PtCancelMail } from '../notifications/send-booking-email'
 import { generateBookingCodes } from '../bookings/qr'
-import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
-import { assertInstructorsAvailable, findClash } from '../schedule/occupancy'
+import { assertRoomInLocation } from '../schedule/room-conflicts'
+import { assertAvailable, eventSubjects } from '../schedule/occupancy'
 import { ensureInstructors } from '../schedule/roster'
 import { assertMemberFree, lockMemberTime } from '../bookings/member-time'
 import { ptSessionCost, type PtSessionType } from './cost'
@@ -300,26 +300,6 @@ async function seatMember(
   return { bookingId: booking!.id, clientPackageId: pkg.id }
 }
 
-/**
- * Two staff saving the same slot at once must not both get it: the clash
- * checks read before any write, so each create takes a transaction-scoped
- * lock on its room and its instructor — in one order, so two creates cannot
- * deadlock — and asks again once it holds them.
- */
-async function holdSlot(
-  tx: Tx,
-  tenantId: string,
-  subjects: { kind: 'room' | 'instructor'; id: string }[],
-  window: { startsAt: Date; endsAt: Date },
-): Promise<void> {
-  const keys = subjects.map(s => `pt-slot:${tenantId}:${s.kind}:${s.id}`).sort()
-  for (const key of keys) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`)
-  for (const subject of subjects) {
-    const clash = await findClash(tenantId, subject, window, undefined, tx)
-    if (clash) throw new ConflictError('schedule_conflict', { ...clash })
-  }
-}
-
 export async function createManualPtSession(
   tenantId: string,
   input: CreateManualPtSessionInput,
@@ -331,23 +311,13 @@ export async function createManualPtSession(
   if (new Set(ids).size !== ids.length) throw new ConflictError('already_booked')
   if (ids.length > capacity) throw new ConflictError('session_full')
 
-  // The same gates as scheduling a request: room in its Location, room free,
-  // instructor free — the one `schedule_conflict` 409 for either clash.
   await assertRoomInLocation(tenantId, input.roomId, input.locationId)
-  const window = { startsAt: input.startsAt, endsAt: input.endsAt }
-  await assertRoomAvailable(tenantId, input.roomId, input.startsAt, input.endsAt)
-  await assertInstructorsAvailable(tenantId, [input.instructorId], window)
 
   return db.transaction(async tx => {
-    await holdSlot(
-      tx,
-      tenantId,
-      [
-        { kind: 'room', id: input.roomId },
-        { kind: 'instructor', id: input.instructorId },
-      ],
-      window,
-    )
+    await assertAvailable(tx, tenantId, eventSubjects(input.roomId, [input.instructorId]), {
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+    })
     await ensureInstructors(tenantId, [input.instructorId], tx)
 
     const at = clockNow()

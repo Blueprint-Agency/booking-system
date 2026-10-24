@@ -149,7 +149,8 @@ export async function memberClash(
  * Hold these members' time for the rest of the transaction: a second booking
  * for one of them waits here until the first commits, then sees it. Keys are
  * taken in one order, so two bookings of the same pair cannot deadlock. Take it
- * after the event's own lock (the class row, the PT request, the slot).
+ * after the event's own lock (the class row, the PT request) and its room and
+ * instructors' (`lockOccupancy`).
  */
 export async function lockMemberTime(tx: Tx, tenantId: string, clientIds: readonly string[]): Promise<void> {
   const keys = [...new Set(clientIds)].map(id => `member-time:${tenantId}:${id}`).sort()

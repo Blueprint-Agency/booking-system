@@ -26,8 +26,8 @@ import { debitCredits, refundCredits, type Tx } from '../packages/ledger'
 import { activateOnSchedule } from '../packages/activation'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertMemberFree, lockMemberTime } from '../bookings/member-time'
-import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
-import { assertInstructorsAvailable, plannedInstructorIds } from '../schedule/occupancy'
+import { assertRoomInLocation } from '../schedule/room-conflicts'
+import { assertAvailable, eventSubjects, plannedInstructorIds } from '../schedule/occupancy'
 import {
   ensureInstructors,
   replaceRoster,
@@ -143,21 +143,13 @@ export async function schedulePtRequest(
   // Room must belong to the location (throws AppError on mismatch — surfaces 4xx).
   await assertRoomInLocation(tenantId, input.roomId, input.locationId)
 
-  // Room and instructor clashes both throw ConflictError('schedule_conflict') —
-  // one identity, one 409, whichever subject was taken.
-  await assertRoomAvailable(tenantId, input.roomId, input.startsAt, input.endsAt)
-  await assertInstructorsAvailable(tenantId, [input.instructorId], {
-    startsAt: input.startsAt,
-    endsAt: input.endsAt,
-  })
-
   const cost = ptSessionCost(req.sessionType)
   const capacityOnline = cost // 1on1 → 1 seat, 2on1 → 2 seats
 
   const ptSessionId = await db.transaction(async tx => {
-    // The checks above read without a lock, so two schedules of one request can
-    // both get here. Whichever locks the request first makes the session; the
-    // other finds it no longer pending — a 409, not a unique-index 500.
+    // The request was read above without a lock, so two schedules of one
+    // request can both get here. Whichever locks the request first makes the
+    // session; the other finds it no longer pending — a 409, not a unique-index 500.
     const [locked] = await tx
       .select({ status: ptRequests.status })
       .from(ptRequests)
@@ -165,6 +157,11 @@ export async function schedulePtRequest(
       .for('update')
       .limit(1)
     if (locked?.status !== 'pending') return null
+
+    await assertAvailable(tx, tenantId, eventSubjects(input.roomId, [input.instructorId]), {
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+    })
 
     // One body, one session at a time: neither member may already be booked
     // for an overlapping time, unless staff were warned and went ahead.
@@ -487,20 +484,12 @@ export async function updatePtSession(
 
   if (newEndsAt <= newStartsAt) throw new BadRequestError('bad_time_range')
 
-  if (
+  const movesRoom =
     patch.roomId !== undefined ||
     patch.locationId !== undefined ||
     patch.startsAt !== undefined ||
     patch.endsAt !== undefined
-  ) {
-    if (newRoomId) {
-      await assertRoomInLocation(tenantId, newRoomId, newLocationId)
-      await assertRoomAvailable(tenantId, newRoomId, newStartsAt, newEndsAt, {
-        kind: 'pt_session',
-        id,
-      })
-    }
-  }
+  if (movesRoom && newRoomId) await assertRoomInLocation(tenantId, newRoomId, newLocationId)
 
   // Who is on the session, and what they're paid, belongs to the roster module —
   // including instructor_id and instructor_pay_sgd, which live on this row.
@@ -523,23 +512,17 @@ export async function updatePtSession(
 
   // A new roster, or the same roster at a new time, can put someone in two
   // places at once. Ask about whoever the session will END UP with.
-  if (touchesRoster || patch.startsAt !== undefined || patch.endsAt !== undefined) {
-    await assertInstructorsAvailable(
-      tenantId,
-      await plannedInstructorIds(tenantId, { kind: 'pt_session', id }, rosterPatch),
-      { startsAt: newStartsAt, endsAt: newEndsAt },
-      { kind: 'pt_session', id },
-    )
-  }
+  const movesRoster = touchesRoster || patch.startsAt !== undefined || patch.endsAt !== undefined
 
   return db.transaction(async tx => {
     // A move, or a partner joining, reads everyone's time below. Their locks
     // are all taken here, in one order, before any is taken one by one — the
     // partner's seat takes its own — so two such edits cannot deadlock. The
     // request and the session first, as every PT path takes them (cancelPtRequest,
-    // a manual seat), then the members: never a member before its session.
+    // a manual seat), then the room and instructors, then the members: never a
+    // member before its session.
     const movesOrGrows = patch.startsAt !== undefined || patch.endsAt !== undefined || patch.sessionType === '2on1'
-    if (movesOrGrows) {
+    if (movesOrGrows || movesRoom || movesRoster) {
       if (existing.ptRequestId) {
         await tx
           .select({ id: ptRequests.id })
@@ -552,6 +535,18 @@ export async function updatePtSession(
         .from(ptSessions)
         .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
         .for('update')
+    }
+    await assertAvailable(
+      tx,
+      tenantId,
+      eventSubjects(
+        movesRoom ? newRoomId : null,
+        movesRoster ? await plannedInstructorIds(tenantId, { kind: 'pt_session', id }, rosterPatch) : [],
+      ),
+      { startsAt: newStartsAt, endsAt: newEndsAt },
+      { kind: 'pt_session', id },
+    )
+    if (movesOrGrows) {
       const seatedNow = await tx
         .select({ clientId: bookings.clientId })
         .from(bookings)

@@ -532,7 +532,9 @@ tx start
 3. Conflict check: no class, workshop_day, pt_session or corporate_session the instructor is
    ON — main or supporting — overlaps [starts_at, ends_at]
    → if conflict: 409 schedule_conflict
-4. Room check: services/schedule/room-conflicts.ts (assertRoomInLocation + assertRoomAvailable)
+4. Room check: services/schedule/room-conflicts.ts (assertRoomInLocation), then the room and
+   the instructor are locked and checked together (services/schedule/occupancy.ts
+   assertAvailable), so a second schedule of either waits and then sees this one
 5. Location check: location_id is an active location of this studio (no per-staff grants)
 6. Insert pt_sessions row: pt_request_id=X, instructor_id, location_id, room_id, starts_at, ends_at,
    session_type (copied from request), capacity_online (default 1 for 1on1, 2 for 2on1),
