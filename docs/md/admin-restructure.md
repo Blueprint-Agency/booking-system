@@ -8,7 +8,7 @@ Staff identity is `admin` or `instructor` — a studio's portal has exactly thes
 
 | Role | Authority |
 |---|---|
-| **Admin** | Runs the studio. Global catalog + policy owner: creates locations, edits class types, configures all packages and their promotions, promo codes, Global Policy, Waiver, Marketing and feature flags. Manages Staff (including other admins), Clients, Workshops and Rooms with full read/write — nothing is read-only — and can impersonate a member. Sees every active location of the studio. |
+| **Admin** | Runs the studio. Global catalog + policy owner: creates locations, edits class types, configures all packages and their promotions, promo codes, Global Policy, Marketing and feature flags. Manages Staff (including other admins), Clients, Workshops and Rooms with full read/write — nothing is read-only — and can impersonate a member. Sees every active location of the studio. |
 | **Instructor** | Teaching staff. Uses the instructor portal (`/instructor/*`; routes in `be-portal.md` §4) scoped to their own sessions. Cannot reach any `/admin/*` surface. |
 
 - There are no location grants: an admin's accessible locations are all of the studio's active locations.
@@ -21,7 +21,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 | Tier | Surfaces |
 |---|---|
-| **Global (admin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Workshops, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Waiver, Staff |
+| **Global (admin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Workshops, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Staff |
 | **Workspace-scoped** | Schedule, Check-in, PT Requests (clients pick a `location_id` at request time — see §9) |
 | **Cross-workspace (global)** | Clients — cross-location credits mean a client record spans workspaces; admin sees and manages every client (kebab actions, expiry edits, set-balance, manual adjustments, block/unblock) |
 
@@ -47,7 +47,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 - **Config**: Class Types, Promo Codes. **A Promo Code sits in Config, not Packages**: it crosses products, so it belongs with the building blocks rather than inside any one catalogue (contrast a Promotion, which belongs to exactly one product and is edited there).
 - **Packages**: Classes, Workshops, Private Sessions, Corporate, Merch (global, shared across locations). Merch is shop-floor stock (mats, props, apparel) rather than catalogue governance, but like the rest of Packages it is managed by admins.
 - **People**: Customers, Corporate Requests, Staff, Leave, My leave (members + staff accounts). **Leave** is the queue of every staff member's requests, each labelled with the applicant's role, where any admin decides any request, their own included. **My leave** (`/admin/my-leave`) is the admin's own balances, request form, documents and history, the same page instructors have at `/instructor/leave` (#315). **Corporate Requests sits here, not in the workspace zone** — a request records no `location_id` until it is scheduled, so there is nothing for the switcher to filter it by; it is a person asking, which is what People is.
-- **Settings**: Global Policy, Waiver, Business details, ClassPass (location-independent policy + config). **ClassPass** (#407, `/admin/classpass`, admins only) is where the studio sets up importing its ClassPass bookings from the emails ClassPass sends it — see §21. **Business details** (#391, #398, `/admin/business-details`, admins only) sets what the studio's business documents say about it: first its **Business name** (required), the name it trades under, then the registration number, address and footer note its Receipts print, and the Receipt number prefix (default `R`), with a live preview of the number the next Receipt will take under the prefix being typed. A save applies to Receipts issued afterwards; earlier ones keep what they were issued with. The super portal's New studio form takes the same fields, optional: its "Domain name" field is `tenants.name`, the platform's own label, and a blank Business name is that Domain name. **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
+- **Settings**: Global Policy, Business details, ClassPass (location-independent policy + config). **ClassPass** (#407, `/admin/classpass`, admins only) is where the studio sets up importing its ClassPass bookings from the emails ClassPass sends it — see §21. **Business details** (#391, #398, `/admin/business-details`, admins only) sets what the studio's business documents say about it: first its **Business name** (required), the name it trades under, then the registration number, address and footer note its Receipts print, and the Receipt number prefix (default `R`), with a live preview of the number the next Receipt will take under the prefix being typed. A save applies to Receipts issued afterwards; earlier ones keep what they were issued with. The super portal's New studio form takes the same fields, optional: its "Domain name" field is `tenants.name`, the platform's own label, and a blank Business name is that Domain name. **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
 - **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
 
 `NavItem.workspaceScoped` marks the workspace-zone items; it is distinct from `NavItem.scope`, which only governs role visibility (admin vs instructor). The build-order below is the recommended *setup* sequence, not the visual order.
@@ -79,19 +79,18 @@ Locations are workspaces. Surfaces are partitioned as follows:
 10. Session Detail Pages (class / workshop / PT)
 11. Check-in
 12. Cancellation & Refund Mechanics
-13. Inbox
+13. Inbox — not being built
 14. Roles & Invitations
 
 **Clients & Content:**
 15. Clients
 16. Notifications (Email Templates)
-17. Waivers
+17. Waivers — not being built
 
 **Completed this phase:**
 - 14. Roles & Invitations
 - 15. Clients (list, profile, credit balance, history, manual adjustments)
 - 16. Notifications (email template management) — built against fixture templates, then hidden (#277); see §16
-- 17. Waivers
 
 **Next phase (see §19):**
 - Dashboard
@@ -352,8 +351,6 @@ When admin cancels a class, workshop, or PT session from the Schedule, all booke
 - **PT cancelled by admin** → full session returned to client's PT package. In-app, automatic.
 - **Workshop cancelled by admin** → automatic Stripe money refund to each attendee, fired immediately on cancellation. No manual settlement.
 
-In all three cases, an Inbox notification is generated (see §13).
-
 ### 7b. Create Schedule — Class Instance
 
 Fields:
@@ -494,7 +491,7 @@ Credit deduction happens **on submit**, not on schedule. 1 session debited for `
 | `scheduled → cancelled_after_scheduled` | Client or admin cancels after scheduling | **No refund (v1)** — cascade-cancels the `pt_sessions` row + every booking on it; bookings marked `state='cancelled'`, `refund_outcome='forfeited'` |
 | `scheduled → attended` | Check-in on the linked PT booking flips the mirrored status | n/a |
 
-Both the cancel-before and cancel-after paths fire the same client email (subject differs only in whether a refund line is included). The matching admin Inbox entry uses `type='admin_cancel_class_pt'`.
+Both the cancel-before and cancel-after paths fire the same client email (subject differs only in whether a refund line is included).
 
 ### 9b. Corporate Requests (`/admin/corporate-requests`)
 
@@ -535,7 +532,7 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 
 **Class detail page additions:**
 - Each roster row shows a read-only **Checked in** tag once the member is attended (or **No-show**). Attendance is not marked here — that is the check-in desk's alone (§11)
-- Cancel-this-instance action (admin) → triggers full credit refund + Inbox notification
+- Cancel-this-instance action (admin) → triggers full credit refund
 - **Cancel** on each confirmed, not-attended roster row (admin on any class; instructor on a class they lead) → the staff cancel dialog, Return credit or Keep credit (§12)
 - **Cancelled (n)** (#352) — a collapsed section under the roster, on the admin page and the instructor's session page alike: each booking cancelled off the class with the member's name (linked to their profile for an admin), when it was cancelled and by whom (Member / the staff member's name / Automatic / Studio), and where the credit went in the profile's words; a Late cancel reads "Late cancel · credit not returned", marked as a warning. These rows carry no check-in and no Cancel. A cancelled class shows who was booked here, open from the start, instead of "No bookings yet."
 - **Packages accepted** — the class's Package rule as a sentence ("All group packages" / "Only: …" / "All except: …"), on the admin page and the instructor's session page. The admin editor changes it with the same `PackageRuleField` as §7b. A change that would cancel bookings is previewed first (`PATCH …/classes/:id` with `preview: true` → `{ would_cancel: n }`): above zero, a confirm step says **"This will cancel N bookings"** before anything is saved. Saving cancels exactly the bookings paid by a package the class no longer accepts (never one already checked in) — each refunded in full to the package that paid, its seat offered to the waitlist, not counted against the member's cancellations, and the member emailed `class_rule_cancelled`. A change that cancels nobody saves without the confirm.
@@ -549,7 +546,7 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 - Single client (1-on-1) or two clients (2-on-1)
 - Check-in row (QR / code / manual — see §11)
 - Check-in state chip: `pending` / `completed`
-- Cancel-this-session action (admin or assigned instructor) → full session return + Inbox notification
+- Cancel-this-session action (admin or assigned instructor) → full session return
 - Members panel: each member with their check-in and the package paying their seat (name, sessions left)
 - **Manual sessions (#338).** A session staff added manually (§9d) carries a **Manual** badge here and on the PT Requests list and drawer, which hide the request-only fields (proposed slots, preferred class type, message, bound instructor). While it is to come, the Members panel manages it: **Remove** takes one member off, their session back on their own package, the others staying; **Add member** fills a free seat through the same member search, package pick and Add anyway band as Add manually (an Instructor is refused another coach's package); and, an Admin's alone, **Change to 1-on-1** confirms which partner leaves and refunds them, while **Change to 2-on-1** asks for the partner through that same add-member row, who pays one session from their own package. The edit form's Format select is not shown for a manual session. Refusals are worded from their error code. The **Instructor** portal opens the same page for a private session they run from My schedule (`/instructor/schedule/pt/:id`): the members, Remove and Add member on a manual one, and Cancel — no pay, editing or type change.
 
@@ -632,7 +629,6 @@ Consolidated reference for all cancellation paths.
 | Workshop | Full Stripe money refund to all attendees (in-app, automatic, immediate) |
 
 - Always 100%, overrides cap and window.
-- Generates an Inbox notification (§13).
 
 **Staff-initiated — one member's class booking** (#320):
 
@@ -650,31 +646,13 @@ Every staff cancel asks, in one shared dialog, with **neither option pre-selecte
 - A freed online seat goes to the head of the waitlist under the usual rules and the class's effective window.
 - No member email.
 
-**Refund inbox: does not exist as a separate actionable queue.** All refunds (credit, session, money) are automated. The Inbox surfaces them informationally only.
+**Refund inbox: does not exist.** All refunds (credit, session, money) are automated, and there is no admin Inbox (§13).
 
 ---
 
 ## 13. Inbox
 
-> **Hidden (#277).** The Inbox screen read fixture data and described cancellations as refunds they are not (a Workshop cancel refunds nobody; a class cancel returns credits, not money). It has been removed from the portal until it is wired to real data — a separate ticket. The design below is the target for that work, not a description of the shipped portal.
-
-Single workspace-scoped inbox at `/admin/inbox`. Filter tabs by notification type. One sidebar item with total unread count for the active workspace.
-
-PT request triage **does not live here** — it has its own dedicated page (`/admin/pt-requests`, §9). The Inbox is now purely a notification feed.
-
-**Notification types:**
-
-| # | Type | Trigger | Shape | Actionable? |
-|---|---|---|---|---|
-| 1 | **Client cancellation** | Client cancels a class or PT | Feed-style row: client, session, time-of-cancel, refund result (credit returned / forfeited) | No — read/unread only |
-| 2 | **Admin cancellation — class/PT** | Admin cancels a class or PT instance | Feed-style row: actor, session, time-of-cancel, count of clients refunded | No — read/unread only |
-| 3 | **Admin cancellation — workshop** | Admin cancels a workshop | Feed-style row: actor, workshop, time-of-cancel, total SGD refunded, count of attendees refunded | No — read/unread only |
-
-**Shape conventions:**
-- Informational rows (1–3): mark read individually or bulk; no other actions on the row. To drill into a client pattern, admin navigates to the client profile from the row.
-- Filter chips: All / Unread / By type / Date range.
-
-**Unread count** surfaces as a chip on the dashboard and on the sidebar Inbox item, scoped to the active workspace.
+> **Not being built** (product decision, 2026-10-24; #237 closed as not planned). There is no `/admin/inbox` page, no unread count and no `/portal/admin/inbox` route. A cancellation shows on the session's roster and the member's profile. PT request triage has its own page (`/admin/pt-requests`, §9).
 
 ---
 
@@ -686,7 +664,7 @@ Two staff roles in the system: `admin` and `instructor`. The `staff_role` type h
 
 | Role | How created | Authority |
 |---|---|---|
-| **Admin** | A studio's first admin arrives with the studio (created or restored through the super portal); further admins are invited by an admin | Everything in the portal: Locations, Class Types, all Packages + Promotions, Promo Codes, Global Policy, Waiver, Notifications, Marketing, feature flags, Staff (including other admins), Clients, Workshops, Rooms, and member impersonation. Sees every active location of the studio. |
+| **Admin** | A studio's first admin arrives with the studio (created or restored through the super portal); further admins are invited by an admin | Everything in the portal: Locations, Class Types, all Packages + Promotions, Promo Codes, Global Policy, Notifications, Marketing, feature flags, Staff (including other admins), Clients, Workshops, Rooms, and member impersonation. Sees every active location of the studio. |
 | **Instructor** | Invited by an admin | The instructor portal only, scoped to their own sessions. What they may do there beyond teaching is set per person by their **Instructor Permissions** (below). |
 
 - Roles are **mutually exclusive** — one email = one staff account = one role.
@@ -776,7 +754,6 @@ One read, `GET /portal/admin/clients/:id`, fills the page.
 **Personal details (read-only):**
 - Name, email, phone — sourced from registration or import; the email is changeable (#176), the rest is not editable by admin in v1.
 - Join date, gender and date of birth when given, referral source (who referred them, linked to their profile).
-- Waiver signed date, or "Waiver not signed" (see §17).
 - **Attendance strip** under the name: sessions attended, no-shows, late cancels and the last visit, counted over every booking the member has ever had (not just the history listed below). Late cancels are class cancels whose credit was kept (`forfeited`) — a member's Late cancel, an over-cap cancel or staff's Keep credit; a private session's kept session is not one (`be/CONTEXT.md` § Late cancel).
 
 **Packages & memberships:**
@@ -929,25 +906,7 @@ The actions on a client's active-package kebab, all written into the same immuta
 
 ## 17. Waivers
 
-Single studio-wide liability waiver. One page at `/admin/waivers`.
-
-### 17a. Waiver Text
-
-- Admin edits the waiver body via a **rich text editor** (headings, bold, italic, bullet points, links).
-- Ships with seeded placeholder text for a fresh deployment.
-- Save replaces the current waiver body — no versioning, no rollback in v1.
-- Updating the text does **not** require existing signed clients to re-sign. Their original acceptance timestamp stands.
-
-### 17b. Client Signing
-
-- Waiver is presented during **registration** — client must tick an acceptance checkbox to complete account creation. Hard block: no account without acceptance.
-- Acceptance timestamp is recorded per client at the moment of sign-up.
-- No manual "mark as signed" action for admin — signing is self-service only.
-
-### 17c. Admin Visibility
-
-- **Client profile (§15b):** shows "Waiver signed — [date]" as a read-only field.
-- **`/admin/waivers` page:** shows total signed count alongside the editor. No per-client list on this page — individual signed dates live on each client profile.
+> **Not being built** (product decision, 2026-10-24; #233 closed as not planned). There is no waiver editor, no waiver at registration and no waiver line on a client's profile; the portal's `/admin/waiver` page, the member app's `/waiver` page and their routes are gone.
 
 ---
 

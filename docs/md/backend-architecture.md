@@ -99,11 +99,9 @@ be/
     │   │   │   ├── pt-sessions.ts     # admin cancel of confirmed PT sessions
     │   │   │   ├── bookings.ts        # admin cancel + roster
     │   │   │   ├── check-in.ts        # generic page + per-session (§11)
-    │   │   │   ├── inbox.ts           # list, mark read, approve/decline PT (§13)
     │   │   │   ├── clients.ts         # list, profile, status toggle, adjustments (§16)
     │   │   │   ├── staff.ts           # list, invite, revoke, archive, resend invite (§15)
     │   │   │   ├── notifications.ts   # email template editor (§17)
-    │   │   │   ├── waiver.ts          # edit waiver text + signed count (§18)
     │   │   │   ├── marketing.ts       # edit hero / pricing / footer copy
     │   │   │   └── feature-flags.ts   # toggle ops flags
     │   │   └── instructor/            # gated by require-role('instructor'|'admin')
@@ -123,7 +121,6 @@ be/
     │   │   ├── pt-sessions.ts         # submit request + view own + cancel
     │   │   ├── purchases.ts           # initiate Stripe checkout (package or workshop)
     │   │   ├── receipts.ts            # own Receipts: list (dates, pages) + one (#384) + its PDF (#386)
-    │   │   ├── waiver.ts              # read for sign + sign endpoint
     │   │   └── referral.ts            # own referral code + conversion stats
     │   │
     │   ├── public/                    # Unauthenticated reads — no session required
@@ -177,8 +174,6 @@ be/
     │   │   ├── profile.ts             # GET/PATCH self profile
     │   │   ├── dashboard.ts           # Next-up + balances aggregation
     │   │   └── admin-views.ts         # List + detail aggregations for admin clients page
-    │   ├── inbox.ts                   # Insert / mark read / resolve action
-    │   ├── waiver.ts                  # Read singleton + sign
     │   ├── marketing.ts               # Read + update marketing_content
     │   ├── referrals.ts               # Code generate + conversion grant via manual_adjustments
     │   └── feature-flags.ts           # Read (cached) + toggle
@@ -252,7 +247,7 @@ The `portal/*` prefix mirrors the `staff` pool boundary: one auth gate for both 
 
 Per-audience endpoint enumeration, mount internals, middleware stacks, and business flows are documented in:
 
-- **`be-portal.md`** — staff auth (admin + instructor), endpoint tables per route file, portal-driven flows (staff invitations, schedule create, admin cancel + refund fanout, manual adjustments, PT approval, inbox, etc.).
+- **`be-portal.md`** — staff auth (admin + instructor), endpoint tables per route file, portal-driven flows (staff invitations, schedule create, admin cancel + refund fanout, manual adjustments, PT approval, etc.).
 - **`be-client.md`** — member auth + verification gate, public reads, client endpoints, client-driven flows (registration, booking, self-cancel, purchases, referral conversion).
 
 ### File ownership
@@ -313,7 +308,7 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 
 **Hard delete: never** (per §15c). Archive only. Email uniqueness enforces "one email = one staff account."
 
-**Workspace semantics.** `locations.id` doubles as the workspace identifier referenced here. All workspace-scoped portal reads (Schedule, Workshops, Check-in, Inbox) filter by the selected location — see `be-portal.md` §1 for the middleware contract. An admin may select any of the studio's active locations; there are no per-staff location grants (the `granted_location_ids` column was dropped in the two-roles migration — ADR 0006).
+**Workspace semantics.** `locations.id` doubles as the workspace identifier referenced here. All workspace-scoped portal reads (Schedule, Workshops, Check-in) filter by the selected location — see `be-portal.md` §1 for the middleware contract. An admin may select any of the studio's active locations; there are no per-staff location grants (the `granted_location_ids` column was dropped in the two-roles migration — ADR 0006).
 
 **Last-admin guard.** Archiving a staff member, or changing their role away from `admin`, is refused when the target is the studio's only active admin — `role = 'admin'`, `status = 'active'`, not soft-deleted. The count and the write run in one transaction, so two concurrent removals cannot both pass. Delete requires an already-archived row and so needs no check of its own; signing a staff member out everywhere is not guarded. Changing your own role and archiving yourself stay refused. The guard lives in one place in the staff service, and every removal path calls it.
 
@@ -1028,6 +1023,8 @@ id, body_html (text), updated_at, updated_by_staff_id (FK).
 
 id, client_id (FK, **unique** — one signature per client), signed_at.
 
+**Waivers are not being built** (#233): no route reads or writes either table. They stay until a migration drops them, which needs both backend devs' review.
+
 #### `marketing_content` (singleton)
 
 Drives admin-editable copy on the fe-client public pages (`/`, `/pricing`).
@@ -1065,6 +1062,8 @@ The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-
 **Subsumed tables (drop during reshape).** The existing `/be` scaffolding had `cancellation_requests` and `refund_requests` tables modelling an admin-approval workflow. These are not used in v1 — the spec's automated cancellation flow + `inbox_items` (for any actionable cases) cover the same surface area without introducing an admin-resolution queue. Drop both tables when reshaping the schema.
 
 ### 4l. Inbox (§13)
+
+**The admin Inbox is not being built** (#237): its routes are gone and nothing reads `inbox_items`. A class or booking cancel no longer writes one; a PT session cancel and a workshop cancel still do, until those writes go with the table in a migration both backend devs review.
 
 #### `inbox_items`
 

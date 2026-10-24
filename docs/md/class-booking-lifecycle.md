@@ -15,7 +15,7 @@ workshops are referenced where they share policy but are not the subject here.
 | Attendee roster (G4) | ✅ done | `services/schedule/detail.ts` (`attendees`), exposed in `admin/schedule.ts` |
 | Booking-time expiry validation (G1) | ✅ done | `services/bookings/book.ts` |
 | Credit-movement ledger on refund (G8) | ✅ done | writes `manual_adjustments` rows in cancel paths |
-| Inbox notifications (§13) | ✅ done | `services/inbox.ts` + inline `inbox_items` writes in cancel flows |
+| Inbox notifications (§13) | ✖ not being built (#237) | class and booking cancels no longer write `inbox_items`; the admin Inbox routes and `services/inbox.ts` are gone |
 | Waitlist seat-free hook / promotion (G7) | ✅ done | `services/waitlist/promote.ts`, called from `services/bookings/cancel.ts` (`spec-waitlist.md` §5) |
 | Admin bookings list/detail (G9 partial) | ⛔ still 501 | `admin/bookings.ts` `GET /`, `GET /:id` |
 

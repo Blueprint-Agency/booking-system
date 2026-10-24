@@ -117,7 +117,7 @@ What a staff member of one Tenant may do in that studio's portal — exactly two
 _Avoid_: owner, main admin, permission level
 
 **Admin**:
-A staff member who runs the studio: its catalogue, locations, policy, waiver, notifications and feature flags; its staff, including other Admins; its members, read and write; and **Impersonation**. Sees every active location of the studio — there are no per-location grants. The first staff member of a Tenant created or restored from the super portal is an Admin.
+A staff member who runs the studio: its catalogue, locations, policy, notifications and feature flags; its staff, including other Admins; its members, read and write; and **Impersonation**. Sees every active location of the studio — there are no per-location grants. The first staff member of a Tenant created or restored from the super portal is an Admin.
 _Avoid_: studio owner, manager
 
 **Instructor**:

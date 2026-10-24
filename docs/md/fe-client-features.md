@@ -146,20 +146,9 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 **Where admin comes in**
 - Admin can trigger a password reset email/SMS on behalf of a user.
 
-### 1.5 Waiver `/waiver`
+### 1.5 Waiver
 
-**Business logic**
-- One-time legal acknowledgement: Assumption of Risk, Release of Liability, Medical Disclaimer, Photo/Video Release, etc.
-- Required **once before the first paid booking**.
-- A `waiverSignedAt` timestamp is stored on the user record. Pages that need a signed waiver gate on this.
-
-**User journey**
-- Long-form scrollable text → checkbox "I have read and agree" → "Continue" CTA.
-- After signing, user returns via `?next=` to the action they were attempting.
-
-**Where admin comes in**
-- Admin sees waiver status per user.
-- Admin can re-request waiver (e.g., after a policy revision).
+**Not being built** (product decision, 2026-10-24; #233 closed as not planned). There is no `/waiver` page; a member is never asked to sign a waiver, and nothing is gated on one.
 
 ---
 
@@ -296,7 +285,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 2. Scrolls/clicks day on the date strip → list of classes for that day.
 3. Optionally narrows with location/instructor/level filters.
 4. Clicks **Book Now** on a row → routed to `/booking/confirmation?sessionId=...`.
-5. If unverified or unsigned-waiver, intercepted → routed through the appropriate gate first (waiver, OTP), then back via `?next=`.
+5. If unverified, intercepted → routed through the OTP gate first, then back via `?next=`.
 
 **Where admin comes in**
 - Admin builds session templates (recurring patterns), generates instances, manages cancellations/substitutions.
@@ -308,7 +297,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 **Business logic**
 - This is a **pre-confirmation reserve step** (not a success page) for class bookings — confirms session details, shows credit balance, lets user pick which package the credit is drawn from (if multiple), and exposes the cancellation window. *(Not built as a page: the class's details are the class detail overlay and the package choice the Book sheet's picker, both in §3.1 — BKG-06.)*
 - For workshop purchases and package buys, this page acts as the success endpoint after `/checkout` completes.
-- Requires auth + verified user + signed waiver.
+- Requires auth + verified user.
 
 **User journey (class flow)**
 1. Lands on page with session summary (title, instructor, time, location).
@@ -815,7 +804,7 @@ For every fe-client feature above, admin must own at least the **write side** of
 | Packages | Products catalogue — Trial Pass, bundles, unlimited, VIP — with nested promotions (best-price-wins); manual grants + expiry edits + set-balance via client kebab |
 | Checkout | Transactions, refunds, payment provider settings, tax/GST |
 | Account dashboard | Membership ops on user profile (extend / pause / cancel / contact) |
-| Account profile | User detail editor (incl. waiver re-request) |
+| Account profile | User detail editor |
 | My Classes / Workshops / Private Sessions | Per-user booking history; attendance overrides |
 | Receipts | Every Receipt in the studio; open, download, resend, CSV; receipt details and prefix (no void, no editing) |
 | Referral | Referral graph, attribution audit, reward config |
