@@ -63,6 +63,16 @@ test('refunded and failed payments count for nothing', () => {
   assert.equal(isSettled(500_00, amountPaidCents(payments)), false)
 })
 
+test('the payment being processed counts for nothing once it has been refunded', () => {
+  // A redelivery of the original confirmation, or the confirmation page
+  // replaying it, names the refunded payment as the one being processed. The
+  // money is back with the member, so it must not settle the Purchase again.
+  const payments = [payment('pi_1', '1500.00', 'refunded')]
+  assert.equal(amountPaidCents(payments, 'pi_1'), 0)
+  assert.equal(isSettled(1500_00, amountPaidCents(payments, 'pi_1')), false)
+  assert.equal(amountPaidCents([payment('pi_2', '200.00', 'failed')], 'pi_2'), 0)
+})
+
 test('cents, not floats — a total that floats would round short of settled', () => {
   const payments = [payment('pi_1', '0.1'), payment('pi_2', '0.2')]
   assert.equal(amountPaidCents(payments), 30)
