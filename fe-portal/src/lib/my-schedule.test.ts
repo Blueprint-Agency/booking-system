@@ -32,10 +32,10 @@ test("SCH-34 a cancelled class on My schedule is marked cancelled and offers no 
   assert.strictEqual(row.href, "/instructor/schedule/class/class-1", "its page still shows who was booked");
 });
 
-test("SCH-34 a cancelled private session on My schedule is marked cancelled too", () => {
-  const row = myScheduleRow(entry({ kind: "pt", id: "pt-1", main_instructor_id: null, event_state: "cancelled" }), lead);
+test("SCH-34 a cancelled workshop on My schedule is marked cancelled too", () => {
+  const row = myScheduleRow(entry({ kind: "workshop", id: "ws-1", event_state: "cancelled" }), lead);
   assert.strictEqual(row.cancelled, true);
-  assert.strictEqual(row.href, "/instructor/schedule/pt/pt-1");
+  assert.strictEqual(row.canCancel, false);
 });
 
 test("SCH-34 a class still to run is not marked cancelled, and its lead may cancel it", () => {
