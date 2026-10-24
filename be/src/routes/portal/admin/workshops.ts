@@ -4,6 +4,7 @@ import { z } from 'zod'
 import * as publish from '../../../services/workshops/publish'
 import * as daysSvc from '../../../services/workshops/days'
 import * as tiersSvc from '../../../services/workshops/tiers'
+import * as scheduleSvc from '../../../services/workshops/schedule'
 import * as cancelSvc from '../../../services/workshops/cancel'
 import { tenantId } from '../../../middleware/tenant'
 import { BadRequestError } from '../../../shared/errors'
@@ -101,6 +102,21 @@ const tierUpdateSchema = z.object({
   early_bird_cutoff_at: isoDate.nullish().optional(),
   ord: z.number().int().min(1).optional(),
   day_ids: z.array(z.string().uuid()).min(1).optional(),
+})
+
+const dayRef = z.string().min(1).max(100)
+
+const scheduleSchema = z.object({
+  days: z.array(
+    dayCreateSchema
+      .omit({ ord: true, base_price_sgd: true })
+      .extend({ id: z.string().uuid().optional(), ref: dayRef }),
+  ),
+  tiers: z.array(
+    tierCreateSchema
+      .omit({ ord: true, day_ids: true })
+      .extend({ id: z.string().uuid().optional(), day_refs: z.array(dayRef).min(1) }),
+  ),
 })
 
 const listQuery = z.object({ lifecycle: lifecycleEnum.optional() })
@@ -287,6 +303,35 @@ const app = new Hono()
     const row = await cancelSvc.cancelWorkshop(tenantId(c), id, staffId, c.get('staffRow').role)
     c.set('auditTarget' as any, { table: 'workshops', id })
     return c.json(workshopRow(row))
+  })
+
+  .put('/:id/schedule', zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
+    const { id } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const saved = await scheduleSvc.saveWorkshopSchedule(tenantId(c), id, {
+      days: body.days.map(d => ({
+        id: d.id,
+        ref: d.ref,
+        roomId: d.room_id,
+        startsAt: new Date(d.starts_at),
+        endsAt: new Date(d.ends_at),
+        capacityOnline: d.capacity_online,
+        capacityWaitlist: d.capacity_waitlist,
+        capacityBuffer: d.capacity_buffer,
+      })),
+      tiers: body.tiers.map(t => ({
+        id: t.id,
+        name: t.name,
+        description: t.description ?? null,
+        regularPriceSgd: t.regular_price_sgd,
+        earlyBirdPriceSgd: t.early_bird_price_sgd ?? null,
+        earlyBirdQuota: t.early_bird_quota ?? null,
+        earlyBirdCutoffAt: t.early_bird_cutoff_at ? new Date(t.early_bird_cutoff_at) : null,
+        dayRefs: t.day_refs,
+      })),
+    })
+    c.set('auditTarget' as any, { table: 'workshops', id })
+    return c.json({ days: saved.days.map(dayRow), tiers: saved.tiers.map(tierRow) })
   })
 
   // ---- workshop_days ----

@@ -198,51 +198,46 @@ export async function deleteTier(
   workshopId: string,
   tierId: string,
 ): Promise<void> {
-  await ensureWorkshop(tenantId, workshopId)
-  const [existing] = await db
-    .select()
-    .from(workshopTiers)
-    .where(
-      and(
-        eq(workshopTiers.tenantId, tenantId),
-        eq(workshopTiers.id, tierId),
-        eq(workshopTiers.workshopId, workshopId),
-      ),
-    )
-    .limit(1)
-  if (!existing) throw new NotFoundError('workshop_tier_not_found')
-
-  const rows = await db
-    .select({ n: count() })
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.tenantId, tenantId),
-        eq(bookings.workshopTierId, tierId),
-        sql`${bookings.state} = 'confirmed'`,
-      ),
-    )
-  const n = Number(rows[0]?.n ?? 0)
-  if (n > 0) {
-    throw new ConflictError('workshop_tier_has_bookings', { bookings: n })
-  }
-
-  // A workshop is sold by its tiers, so the editor refuses to save one with
-  // none (admin-restructure §18b), and the API refuses to take a priced
-  // workshop back to that: add the replacement first, then remove this (#235).
-  const [{ tiers } = { tiers: 0 }] = await db
-    .select({ tiers: count() })
-    .from(workshopTiers)
-    .where(and(eq(workshopTiers.tenantId, tenantId), eq(workshopTiers.workshopId, workshopId)))
-  if (Number(tiers) <= 1) throw new ConflictError('workshop_tier_required')
-
-  await db.transaction(async tx => {
-    await tx
-      .delete(workshopTierDays)
+  await db.transaction(async () => {
+    await ensureWorkshop(tenantId, workshopId, { lock: true })
+    const [existing] = await db
+      .select()
+      .from(workshopTiers)
       .where(
-        and(eq(workshopTierDays.tenantId, tenantId), eq(workshopTierDays.workshopTierId, tierId)),
+        and(
+          eq(workshopTiers.tenantId, tenantId),
+          eq(workshopTiers.id, tierId),
+          eq(workshopTiers.workshopId, workshopId),
+        ),
       )
-    await tx
+      .limit(1)
+    if (!existing) throw new NotFoundError('workshop_tier_not_found')
+
+    const [{ tiers } = { tiers: 0 }] = await db
+      .select({ tiers: count() })
+      .from(workshopTiers)
+      .where(and(eq(workshopTiers.tenantId, tenantId), eq(workshopTiers.workshopId, workshopId)))
+    if (Number(tiers) <= 1) throw new ConflictError('workshop_tier_required')
+
+    const rows = await db
+      .select({ n: count() })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.tenantId, tenantId),
+          eq(bookings.workshopTierId, tierId),
+          sql`${bookings.state} = 'confirmed'`,
+        ),
+      )
+    const n = Number(rows[0]?.n ?? 0)
+    if (n > 0) {
+      throw new ConflictError('workshop_tier_has_bookings', { bookings: n })
+    }
+
+    await db
+      .delete(workshopTierDays)
+      .where(and(eq(workshopTierDays.tenantId, tenantId), eq(workshopTierDays.workshopTierId, tierId)))
+    await db
       .delete(workshopTiers)
       .where(and(eq(workshopTiers.tenantId, tenantId), eq(workshopTiers.id, tierId)))
   })

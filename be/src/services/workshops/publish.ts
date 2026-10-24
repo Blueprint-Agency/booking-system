@@ -126,12 +126,17 @@ export interface UpdateWorkshopInput {
   imageR2Keys?: string[]
 }
 
-export async function getWorkshop(tenantId: string, id: string): Promise<WorkshopRow> {
-  const [row] = await db
+export async function getWorkshop(
+  tenantId: string,
+  id: string,
+  { lock = false }: { lock?: boolean } = {},
+): Promise<WorkshopRow> {
+  const query = db
     .select()
     .from(workshops)
     .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, id)))
     .limit(1)
+  const [row] = lock ? await query.for('update') : await query
   if (!row) throw new NotFoundError('workshop_not_found')
   return row
 }

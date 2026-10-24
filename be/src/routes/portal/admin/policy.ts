@@ -18,7 +18,7 @@ const leaveCap = z.number().int(LEAVE_CAP_MESSAGE).min(1, LEAVE_CAP_MESSAGE).max
 /** A year in hours: the longest a Cancellation Window may run. */
 const MAX_WINDOW_HOURS = 365 * 24
 
-const LEAVE_CONFLICT_MESSAGE ='A leave conflict must be a pair of instructors.'
+const LEAVE_CONFLICT_MESSAGE = 'A leave conflict must be a pair of instructors.'
 
 /** A rejected body answers with a reason an admin can read, not a raw zod dump. */
 const explainInvalid = (result: { success: boolean; error?: unknown }) => {
