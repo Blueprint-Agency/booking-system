@@ -20,7 +20,7 @@ import { type RetryPolicy } from '../../lib/outbound'
 import { latestCharge, methodPatch } from './payment-methods'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
-import { unwindRefund } from './refunds'
+import { unwindRefund, unwindRefundForTenant } from './refunds'
 import { openPurchase, purchaseById, recomputeBalance, type PurchaseRow } from './purchases'
 import { purchaseKindFor } from './checkout-session'
 import { toCents } from '../../shared/money'
@@ -202,23 +202,47 @@ async function purchaseForPayment(
  * the next recompute could not see. On the settling payment the flip stays
  * where it was, after the grant, which is what makes a crash between the two
  * recoverable by the provider's next redelivery.
+ *
+ * **Nothing is granted on a charge the provider says was given back.** A
+ * studio can refund from the provider's dashboard while this payment's first
+ * delivery is failing, and that `charge.refunded` finds no payment row and
+ * returns (`unwindRefund`) — so a later redelivery, or the confirmation page's
+ * `sync-session`, would grant against money already returned. The charge is
+ * read first, and one refunded in full is recorded as refunded and unwound
+ * here, the same unwind its own event would have run: the payment is
+ * `refunded` and an ungranted Purchase closes Abandoned. A charge that cannot
+ * be read is not taken for refunded — the lookup is best-effort, as the
+ * receipt and the method are (PAY-22), and a grant that lands before its
+ * refund is unwound by the refund's own event.
  */
 async function settleAndMayGrant(
   tenantId: string,
   purchase: PurchaseRow,
   paymentIntentId: string,
   providerAccountId: string | null,
+  retry?: RetryPolicy,
 ): Promise<boolean> {
+  const charge = await latestCharge(tenantId, paymentIntentId, providerAccountId, retry)
+  if (charge && isRefundedInFull(charge)) {
+    await unwindRefundForTenant(paymentIntentId)
+    return false
+  }
+
   const { settled } = await recomputeBalance(tenantId, purchase, paymentIntentId)
   if (settled) return true
 
   // Each part of a Part Payment is its own charge, so each keeps its own method.
-  await bankPayment(
-    tenantId,
-    paymentIntentId,
-    await chargePatch(tenantId, paymentIntentId, providerAccountId),
-  )
+  await bankPayment(tenantId, paymentIntentId, { ...receiptOf(charge), ...methodPatch(charge) })
   return false
+}
+
+/**
+ * Has the provider given this charge back in full? Partials do not count
+ * (§14): a part-refund touches no entitlement, so there is nothing to unwind.
+ */
+function isRefundedInFull(charge: Stripe.Charge): boolean {
+  const captured = charge.amount_captured ?? charge.amount ?? 0
+  return captured > 0 && (charge.amount_refunded ?? 0) >= captured
 }
 
 /**
@@ -510,7 +534,7 @@ async function dispatchStripeEvent(
       // A sale paid in full at the first attempt — every sale before #93 — clears
       // here and carries on exactly as it did before Purchases existed. A part
       // payment stops, having banked its money and granted nothing.
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry))) return
 
       const granted = await grantPackage(tenantId, {
         clientId,
@@ -528,6 +552,8 @@ async function dispatchStripeEvent(
         // was wrong; this only carries it through.
         instructorId: meta.instructor_id || null,
         crossLocationPaidSgd: crossLocationSgd,
+        // The money is in: an archive since checkout cannot refuse it.
+        alreadySold: true,
       })
 
       // Mark the payment succeeded + link the granted package so a second
@@ -596,7 +622,7 @@ async function dispatchStripeEvent(
           .onConflictDoNothing()
       }
 
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry))) return
 
       const applied = await applyCrossLocationAddOn(
         tenantId,
@@ -667,7 +693,7 @@ async function dispatchStripeEvent(
           .onConflictDoNothing()
       }
 
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry))) return
 
       await recordMerchOrder({
         tenantId,
@@ -742,7 +768,7 @@ async function dispatchStripeEvent(
         .for('update')
       if (locked?.status === 'succeeded') return
 
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry))) return
 
       const { corporateRequestId } = await createCorporateRequest(tenantId, {
         clientId,
@@ -823,7 +849,7 @@ async function dispatchStripeEvent(
       // settling payment that refuses the booking and flags the Purchase for the
       // studio to refund — which needs a way to refund a Purchase that granted
       // nothing, and there is none yet (see `refundStatesFor`).
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry))) return
 
       const booked = await bookWorkshopPaid(tenantId, {
         clientId,
@@ -889,9 +915,7 @@ async function dispatchStripeEvent(
     // a pure money event that touches no entitlement — the member's plan keeps
     // running and their bookings stand — so there is nothing here to unwind and
     // no amount to record. Only a full refund voids anything.
-    const captured = charge.amount_captured ?? charge.amount ?? 0
-    const fullyRefunded = captured > 0 && (charge.amount_refunded ?? 0) >= captured
-    if (!fullyRefunded) return
+    if (!isRefundedInFull(charge)) return
 
     // The whole unwind lives on this event, so a refund issued from the portal
     // and one issued from the provider's dashboard are the same operation. It is
