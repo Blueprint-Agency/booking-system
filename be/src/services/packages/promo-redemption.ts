@@ -13,9 +13,14 @@
  *
  * Nothing sweeps a lapsed Hold. A used place is `consumed OR held_until > now()`
  * and `occupiesPlace` is the whole of that mechanism.
+ *
+ * The one call out to the payment provider is `endEarlierCheckouts`: a Hold is
+ * one row per member and code, so a second checkout takes it over, and the
+ * checkout it was taken from has to stop being payable at the discount.
  */
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
+import { purchases } from '../../db/schema/ledger'
 import {
   classPackages,
   promoCodeProducts,
@@ -25,7 +30,10 @@ import {
 } from '../../db/schema/packages'
 import { workshopTiers, workshops } from '../../db/schema/schedule'
 import { now as clockNow } from '../../lib/clock'
-import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { outbound } from '../../lib/outbound'
+import { stripeForTenant } from '../../lib/stripe'
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { reportError } from '../../shared/logger'
 import { toCents } from '../../shared/money'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import { tierEffectivePrice } from '../workshops/book'
@@ -245,6 +253,13 @@ export async function holdPromoCode(input: RedemptionInput): Promise<AppliedProm
     if (!evaluated.ok) refuse(evaluated.refusal, input.productName)
 
     const code = found!.code
+    // The member's own Hold is being taken over — another tab, or a checkout
+    // they walked away from. Whatever page that checkout opened must be dead
+    // before this one exists, or both could be paid at the discount.
+    if (found!.redemptions.some(r => r.clientId === input.clientId && r.status === 'held')) {
+      await endEarlierCheckouts(tx, input.tenantId, input.clientId, code.id, input.productName)
+    }
+
     const free = Number(evaluated.effectivePriceSgd) <= 0
     const heldUntil = holdExpiryFrom(now)
     const row = {
@@ -279,6 +294,99 @@ export async function holdPromoCode(input: RedemptionInput): Promise<AppliedProm
       holdExpiresAt: code.maxRedemptions != null ? heldUntil : null,
     }
   })
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/**
+ * End the payment pages of this member's earlier checkouts on this code, before
+ * a new checkout takes their Hold over.
+ *
+ * A member holds one Redemption per code (§9), so a retry updates their own row
+ * rather than taking a second place. But the earlier checkout's price already
+ * has the discount in it: left payable, its payment would find the Hold gone to
+ * the new checkout, consume nothing, and the member would have the discount on
+ * two sales — and a Refund of either would hand the code back while the other
+ * still used it. So each earlier session is expired at the provider first, and
+ * the checkout being started now is the only one carrying the code.
+ *
+ * Race-free because the code's row is locked for the rest of the request (a
+ * request is one transaction, so the lock outlives this savepoint): a checkout
+ * started in another tab has either committed its Purchase, session id and
+ * all, before this reads, or is waiting on the lock until this one is done.
+ *
+ * What the provider says decides the rest:
+ * - expired now, or already expired: that page can take no payment;
+ * - already complete: the member has paid with this code and the webhook is on
+ *   its way, so this checkout is refused as a code they have used;
+ * - anything else — a timeout, an outage: the earlier page is alive and
+ *   unknown, so no second one is made beside it.
+ *
+ * Only Purchases opened in the last day are asked about: a provider session
+ * lives 24 hours at most.
+ */
+async function endEarlierCheckouts(
+  tx: Tx,
+  tenantId: string,
+  clientId: string,
+  promoCodeId: string,
+  productName: string,
+): Promise<void> {
+  const earlier = await tx
+    .select({ id: purchases.id, checkoutSessionId: purchases.checkoutSessionId })
+    .from(purchases)
+    .where(
+      and(
+        eq(purchases.tenantId, tenantId),
+        eq(purchases.clientId, clientId),
+        eq(purchases.status, 'open'),
+        isNotNull(purchases.checkoutSessionId),
+        sql`${purchases.metadata}->>'promo_code_id' = ${promoCodeId}`,
+        sql`${purchases.createdAt} > now() - interval '24 hours'`,
+      ),
+    )
+  if (earlier.length === 0) return
+
+  const stripe = await stripeForTenant(tenantId)
+  const busy = (err: unknown, purchaseId: string, checkoutSessionId: string): never => {
+    reportError(err, 'could not end an earlier checkout carrying the same Promo Code', {
+      scope: 'promo-code',
+      purchaseId,
+      checkoutSessionId,
+    })
+    throw new ConflictError('checkout_session_busy', {
+      message:
+        'Your other payment page for this code is still open. Close it, wait a moment, and try again.',
+    })
+  }
+
+  for (const { id, checkoutSessionId } of earlier) {
+    const sessionId = checkoutSessionId!
+    let status: string | null = null
+    try {
+      const ended = await outbound('stripe', 'checkout.sessions.expire', () =>
+        stripe.checkout.sessions.expire(sessionId),
+      )
+      status = ended.status
+    } catch (err) {
+      // Stripe's answer for a session that is no longer open. Anything else is
+      // about the call, and says nothing about the session.
+      if ((err as { type?: unknown } | null)?.type !== 'StripeInvalidRequestError') {
+        busy(err, id, sessionId)
+      }
+      // No longer open — which way it closed is the whole question.
+      try {
+        const session = await outbound('stripe', 'checkout.sessions.retrieve', () =>
+          stripe.checkout.sessions.retrieve(sessionId),
+        )
+        status = session.status
+      } catch (retrieveErr) {
+        busy(retrieveErr, id, sessionId)
+      }
+    }
+    if (status === 'complete') refuse('already_redeemed', productName)
+    if (status !== 'expired') busy(new Error(`checkout session is ${status}`), id, sessionId)
+  }
 }
 
 /**
