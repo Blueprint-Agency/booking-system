@@ -53,6 +53,15 @@ export function addDays(from: Date, days: number): Date {
 }
 
 /**
+ * The longest a package may run once Activated: ten years, in either unit. The
+ * catalogue refuses a longer length, and Activation caps one frozen before it
+ * did, since `validity_days: 2000000000` lands past the last date a `Date` can
+ * hold (#245).
+ */
+export const MAX_VALIDITY_DAYS = 3650
+export const MAX_DURATION_MONTHS = 120
+
+/**
  * The length a package carries, frozen at purchase — a Duration in calendar
  * months for an Unlimited Plan, `validity_days` for every other kind. Both are
  * copied off the catalogue row because the catalogue is admin-editable and
@@ -78,9 +87,9 @@ interface PackageLength {
  */
 export function activationExpiry(p: PackageLength, activatedAt: Date): Date | null {
   if (p.kind === 'unlimited') {
-    return p.durationMonths == null ? null : addMonths(activatedAt, p.durationMonths)
+    return p.durationMonths == null ? null : addMonths(activatedAt, Math.min(p.durationMonths, MAX_DURATION_MONTHS))
   }
-  return p.validityDays == null ? null : addDays(activatedAt, p.validityDays)
+  return p.validityDays == null ? null : addDays(activatedAt, Math.min(p.validityDays, MAX_VALIDITY_DAYS))
 }
 
 /**
