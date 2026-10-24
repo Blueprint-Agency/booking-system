@@ -80,7 +80,7 @@ function workshopTicket(w: ApiWorkshopBooking): Ticket {
  * The soonest of the three that has not yet ended. A running one starts
  * earliest, so it leads — the member arriving late still has a QR to show.
  */
-export function nextUp(
+function nextUp(
   classes: { upcoming: ApiBooking[]; past: ApiBooking[] },
   pt: RawPtRequest[],
   workshops: ApiWorkshopBooking[],

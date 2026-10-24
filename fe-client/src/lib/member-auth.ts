@@ -117,7 +117,7 @@ export async function signOutMember(): Promise<void> {
  * Forget the token and let the session store re-read — the member reads as
  * signed out, and the pages that need one send them to `/login`.
  */
-export function handleExpiredSession(sentToken?: string): void {
+function handleExpiredSession(sentToken?: string): void {
   const current = readMemberToken();
   if (!current) return;
   // A late 401 for a token this browser has since replaced (the member signed

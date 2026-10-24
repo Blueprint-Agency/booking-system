@@ -67,7 +67,7 @@ function buildUrl(path: string, query?: RequestOptions["query"]) {
   return url.toString();
 }
 
-export async function apiFetch<T = unknown>(
+async function apiFetch<T = unknown>(
   path: string,
   getToken: TokenGetter,
   opts: RequestOptions = {},

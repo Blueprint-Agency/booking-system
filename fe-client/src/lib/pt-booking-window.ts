@@ -49,7 +49,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
  * "Wed 1 Oct" for a YYYY-MM-DD date. Spelled out rather than through `Intl`,
  * whose punctuation differs between browsers' locale data.
  */
-export function shortDate(iso: string): string {
+function shortDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
   return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }

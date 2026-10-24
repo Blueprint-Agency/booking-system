@@ -26,7 +26,7 @@ export function cachedValue<T>(key: string): T | undefined {
  * `fresh` starts a new read even if one is in flight — after a change the
  * member made, a read that set off before it would answer with the old state.
  */
-export function fetchCached<T>(key: string, fetcher: () => Promise<T>, fresh = false): Promise<T> {
+function fetchCached<T>(key: string, fetcher: () => Promise<T>, fresh = false): Promise<T> {
   const running = inflight.get(key);
   if (running && !fresh) return running as Promise<T>;
   const p: Promise<T> = fetcher()

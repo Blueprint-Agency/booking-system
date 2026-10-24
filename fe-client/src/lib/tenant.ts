@@ -13,8 +13,7 @@
  *  - **Cache.** A short TTL, matching the route's own `Cache-Control: max-age=60`,
  *    so a Tenant created a minute ago is reachable. Per server instance and
  *    in-memory — there is no shared cache and there needn't be, because the TTL
- *    bounds how stale any instance can be. `bustTenantCache` exists for the
- *    write path (creating or suspending a Tenant in the super portal).
+ *    bounds how stale any instance can be.
  *  - **Single flight.** Concurrent requests for the same slug share one lookup,
  *    so a cold instance under load doesn't fan out onto the backend.
  *  - **A deadline.** Every call is bounded by `AbortSignal.timeout`. A backend
@@ -79,12 +78,6 @@ type CachedOutcome = Extract<TenantOutcome, { kind: "found" | "moved" | "unknown
 
 const cache = new Map<string, { outcome: CachedOutcome; freshUntil: number; staleUntil: number }>();
 const inFlight = new Map<string, Promise<TenantOutcome>>();
-
-/** Drop memoised lookups after a Tenant row is written, so no ghost is served. */
-export function bustTenantCache(slug?: string) {
-  if (slug) cache.delete(slug);
-  else cache.clear();
-}
 
 export async function resolveTenant(slug: string): Promise<TenantOutcome> {
   const now = Date.now();
