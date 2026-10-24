@@ -445,6 +445,8 @@ That partial unique index does three jobs: it *is* the one-use-per-member rule, 
 3. Payment succeeds → the webhook flips the row to `consumed` and stamps the time and the payment intent.
 4. The member walks away → the hold lapses. Nothing sweeps it.
 
+**A member's second checkout takes their own hold over.** The upsert in step 1 updates their row rather than refusing them, but the earlier checkout's session already carries the discount, so before the row is retaken every session of theirs still open on this code is expired at the provider. A session the provider says is already complete means they have paid with the code and the webhook is on its way: the new checkout is refused as already redeemed. A session whose state the provider will not confirm refuses the new checkout as `checkout_session_busy` rather than leave two payable pages. The code row lock is held for the whole checkout request, so two tabs cannot interleave.
+
 **A used slot is `status = 'consumed' OR held_until > now()`.** Stale holds stop counting because the query says so — no cron job, no reservation sweeper, no second expiry mechanism to reason about. Because the hold and the payment session end together, payment is refused after the hold lapses, so **a member who has paid can never be told the code ran out** — the outcome the hard cap threatened.
 
 The short session applies **only** when the code carries a cap. Uncapped and code-free checkouts keep the standard 24 hours.

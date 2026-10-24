@@ -244,7 +244,7 @@ One member's single use of one Promo Code. It is Held when their checkout begins
 _Avoid_: use, usage, claim, application
 
 **Hold**:
-The claim a Redemption places on a Promo Code while a checkout is in progress. It occupies one of the code's places, and it lapses by itself when the checkout is abandoned. Nothing releases it by hand.
+The claim a Redemption places on a Promo Code while a checkout is in progress. It occupies one of the code's places, and it lapses by itself when the checkout is abandoned. Nothing releases it by hand. A member's second checkout on the same code — another tab, or coming back — takes their Hold over, and the earlier checkout's payment page is expired first, so a code discounts one paid sale per member however many pages were opened; one already paid is refused as "already used".
 _Avoid_: reservation, lock, pending, soft-booked
 
 ### Refunds
