@@ -1079,7 +1079,7 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
   })
 
   test('CRD-29 an adjustment or a set balance past 10,000 credits is refused, not a server error, and the balance is unchanged', async () => {
-    const max = await member(one, 'max')
+    const max = await member(one, 'topper')
     const bundle = await give(one, max, 'credit_bundle', { credits: 5 })
 
     // The four from #240: past the column's range, and one that only overflows once added to the balance.
