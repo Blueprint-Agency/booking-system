@@ -315,7 +315,6 @@ describe('customers directory and detail', { skip: integrationTestsEnabled ? fal
   type DetailBody = {
     id: string
     gender: string | null
-    waiver_signed_at: string | null
     packages: { id: string; standing: string; paid_online: boolean; credits_or_sessions_remaining: number; package_name: string }[]
     past_packages: { standing: string; paid_online: boolean }[]
     upcoming_bookings: { title: string; kind: string; instructor: string; location: string | null; package_name: string; state: string }[]
@@ -328,7 +327,6 @@ describe('customers directory and detail', { skip: integrationTestsEnabled ? fal
     const { status, body } = await get<DetailBody>(`/${detailId}`, adminOne.headers)
     assert.equal(status, 200, JSON.stringify(body))
     assert.equal(body.gender, 'female')
-    assert.equal(body.waiver_signed_at, null)
 
     assert.equal(body.packages.length, 1)
     assert.equal(body.packages[0]!.standing, 'running')

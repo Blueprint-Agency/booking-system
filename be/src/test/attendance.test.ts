@@ -596,14 +596,12 @@ describe('attendance over HTTP', { skip: integrationTestsEnabled ? false : SKIP_
     const { withTenant } = await import('../db')
     const { expireStaleSessions, completeEndedPtSessions } = await import('../services/pt-sessions/cancel')
     const { expirePackages, sendLapsingAlerts, sendExpiredNotifications } = await import('../services/packages/expire')
-    const { flagExpiredWaivers } = await import('../services/waiver')
     for (const job of [
       expireStaleSessions,
       completeEndedPtSessions,
       expirePackages,
       sendLapsingAlerts,
       sendExpiredNotifications,
-      flagExpiredWaivers,
     ]) {
       await withTenant(one.id, async () => {
         await job()

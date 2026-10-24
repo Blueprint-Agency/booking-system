@@ -153,7 +153,6 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
     { group: 'corporate sessions', method: 'POST', path: `/corporate-sessions/${crypto.randomUUID()}/cancel` },
     { group: 'bookings', method: 'POST', path: `/bookings/${crypto.randomUUID()}/cancel` },
     { group: 'notifications', method: 'PATCH', path: '/notifications/templates/welcome', body: {} },
-    { group: 'waiver', method: 'PATCH', path: '/waiver', body: {} },
     { group: 'marketing', method: 'PATCH', path: '/marketing', body: {} },
     { group: 'feature flags', method: 'PATCH', path: '/feature-flags/anything', body: {} },
     { group: 'workshops', method: 'POST', path: `/workshops/${crypto.randomUUID()}/cancel` },

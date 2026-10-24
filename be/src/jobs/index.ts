@@ -7,7 +7,6 @@ import { suspendEndedTerms } from '../services/tenants/term'
 import { SLOT_CRON, isDailySlot } from './local-time'
 import { expireStaleSessions, completeEndedPtSessions } from '../services/pt-sessions/cancel'
 import { expirePackages, sendLapsingAlerts, sendExpiredNotifications } from '../services/packages/expire'
-import { flagExpiredWaivers } from '../services/waiver'
 import { expireWaitlists } from '../services/waitlist/line'
 import { sendCheckInNags } from '../services/bookings/check-in-nag'
 import { loadFeatureFlags } from '../services/feature-flags'
@@ -141,9 +140,6 @@ export const scheduledJobs = {
   sendLapsingAlerts: dailyTenantJob('sendLapsingAlerts', 8, sendLapsingAlerts),
   sendExpiredNotifications: dailyTenantJob('sendExpiredNotifications', 8, sendExpiredNotifications),
 
-  // Daily 02:00 tenant-local — flag clients with stale waiver signature
-  flagExpiredWaivers: dailyTenantJob('flagExpiredWaivers', 2, flagExpiredWaivers),
-
   // Nightly, platform-wide — release renamed studios' old slugs whose redirect
   // window has ended. Not per tenant: `former_slugs` is platform data with no
   // `tenant_id`, and an expired row already counts for nothing, so the hour
@@ -170,7 +166,6 @@ export async function registerJobs() {
   cron.schedule(SLOT_CRON, scheduledJobs.expirePackages)
   cron.schedule(SLOT_CRON, scheduledJobs.sendLapsingAlerts)
   cron.schedule(SLOT_CRON, scheduledJobs.sendExpiredNotifications)
-  cron.schedule(SLOT_CRON, scheduledJobs.flagExpiredWaivers)
   cron.schedule('0 3 * * *', scheduledJobs.releaseExpiredFormerSlugs, { timezone: 'UTC' })
   cron.schedule(SLOT_CRON, scheduledJobs.suspendEndedTerms)
 }

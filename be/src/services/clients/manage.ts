@@ -5,7 +5,6 @@ import { clients } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
 import { manualAdjustments } from '../../db/schema/ledger'
-import { waiverSignatures } from '../../db/schema/content'
 import { endClientSessionsAt, ensureAuthUser } from '../auth/auth-users'
 import { recordStaffAct } from '../auth/staff-acts'
 import { requireTenantUrl } from '../tenants/urls'
@@ -241,13 +240,12 @@ export async function listClientsPage(
 
 /**
  * The contact facts the customer detail page shows beside the directory row:
- * the optional profile fields and whether the waiver is signed. Read with the
- * row itself, so a member of another studio is a 404 here exactly as it is in
+ * the optional profile fields and who referred them. Read with the row itself,
+ * so a member of another studio is a 404 here exactly as it is in
  * `getClientById`.
  */
 export interface ClientContact {
   client: ClientRow
-  waiverSignedAt: Date | null
   referredBy: { id: string; name: string } | null
 }
 
@@ -275,23 +273,15 @@ export async function searchClients(tenantId: string, q: string, limit = 10): Pr
 
 export async function getClientContact(tenantId: string, id: string): Promise<ClientContact> {
   const client = await getClientById(tenantId, id)
-  const [waiver, referrer] = await Promise.all([
-    db
-      .select({ signedAt: waiverSignatures.signedAt })
-      .from(waiverSignatures)
-      .where(and(eq(waiverSignatures.tenantId, tenantId), eq(waiverSignatures.clientId, id)))
-      .limit(1),
-    client.referredByClientId
-      ? db
-          .select({ id: clients.id, name: clients.name })
-          .from(clients)
-          .where(and(eq(clients.tenantId, tenantId), eq(clients.id, client.referredByClientId)))
-          .limit(1)
-      : Promise.resolve([]),
-  ])
+  const referrer = client.referredByClientId
+    ? await db
+        .select({ id: clients.id, name: clients.name })
+        .from(clients)
+        .where(and(eq(clients.tenantId, tenantId), eq(clients.id, client.referredByClientId)))
+        .limit(1)
+    : []
   return {
     client,
-    waiverSignedAt: waiver[0]?.signedAt ?? null,
     referredBy: referrer[0] ?? null,
   }
 }
