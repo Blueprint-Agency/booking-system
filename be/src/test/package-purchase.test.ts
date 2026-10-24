@@ -237,6 +237,8 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     /** Which of the checkout events, and what it says of the money; paid on completion by default. */
     type?: 'checkout.session.completed' | 'checkout.session.async_payment_succeeded'
     paymentStatus?: 'paid' | 'unpaid'
+    /** What the session captured, in cents, when the card paid less than the session asked (a Part Payment). */
+    amountTotal?: number
   }
 
   /** The provider's checkout-completed delivery for the last session, paid in full. */
@@ -250,7 +252,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
           id: `cs_${randomUUID()}`,
           payment_intent: options.intent ?? `pi_${randomUUID()}`,
           payment_status: options.paymentStatus ?? 'paid',
-          amount_total: sessionTotal(params),
+          amount_total: options.amountTotal ?? sessionTotal(params),
           metadata: options.metadata ?? params.metadata,
         },
       },
@@ -310,9 +312,61 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
       if (signature !== GOOD_SIGNATURE) throw new Error('No signatures found matching the expected signature for payload')
       return JSON.parse(String(body))
     })
-    installed.reply('paymentIntents.retrieve', (id: unknown) => ({ id, latest_charge: { id: `ch_${String(id)}`, receipt_url: null } }))
+    installed.reply('paymentIntents.retrieve', (id: unknown) => {
+      const captured = refundedAtProvider.get(String(id))
+      return {
+        id,
+        latest_charge: {
+          id: `ch_${String(id)}`,
+          receipt_url: null,
+          // What the provider says of a charge given back from its dashboard.
+          ...(captured === undefined
+            ? {}
+            : { amount: captured, amount_captured: captured, amount_refunded: captured, refunded: true }),
+        },
+      }
+    })
     return installed
   }
+
+  /** Intents the provider has given back in full, with what each captured in cents. */
+  const refundedAtProvider = new Map<string, number>()
+
+  /**
+   * The provider's `charge.refunded` delivery for a whole refund, as its
+   * dashboard sends it, to studio one's own endpoint.
+   */
+  async function deliverRefund(intent: string, capturedCents: number): Promise<Response> {
+    refundedAtProvider.set(intent, capturedCents)
+    const event = {
+      id: `evt_${randomUUID()}`,
+      type: 'charge.refunded',
+      data: {
+        object: {
+          id: `ch_${intent}`,
+          payment_intent: intent,
+          amount: capturedCents,
+          amount_captured: capturedCents,
+          amount_refunded: capturedCents,
+          refunded: true,
+          metadata: {},
+        },
+      },
+    }
+    return harness.app.request(stripeWebhookPath(one.slug), {
+      method: 'POST',
+      headers: { ...json, 'stripe-signature': GOOD_SIGNATURE },
+      body: JSON.stringify(event),
+    })
+  }
+
+  /** A studio Admin acting in the portal. */
+  const asAdmin = (method: 'GET' | 'POST', path: string, body?: unknown) =>
+    harness.app.request(`/api/v1/portal/admin${path}`, {
+      method,
+      headers: { ...one.admin.headers, ...json },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
 
   before(async () => {
     harness = await startTestApp()
@@ -490,6 +544,134 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal((await packagesOf(kai)).length, 1, 'one package')
     assert.equal((await paymentsOf(kai)).length, 1, 'one payment')
     assert.equal((await purchasesOf(kai))[0]!.amountPaidSgd, '150.00')
+  })
+
+  /* ── what changed between checkout and payment ──────────────────────── */
+
+  /** The member's package as the Admin's client page lists it, with its Refund state. */
+  async function adminSees(who: Member, clientPackageId: string): Promise<Record<string, any>> {
+    const detail = await expectStatus(await asAdmin('GET', `/clients/${who.clientId}`), 200)
+    const listed = [...detail.packages, ...detail.past_packages].find((p: any) => p.id === clientPackageId)
+    assert.ok(listed, "the package is not on the Admin's client page")
+    return listed
+  }
+
+  test('PAY-59 a package archived between checkout and payment is granted when the payment lands, and the Admin sees it and can refund it', async () => {
+    const retiring = await catalogue(one.id, { kind: 'credit_bundle', credits: 10, validityDays: 90, name: `${NAME} retiring bundle` })
+    const ada = await member(one)
+    await expectStatus(await buyClass(ada, retiring), 200)
+    await expectStatus(await asAdmin('POST', `/class-packages/${retiring}/archive`), 200)
+
+    const intent = `pi_${randomUUID()}`
+    await expectStatus(await deliver({ intent }), 200)
+
+    const [payment, ...morePayments] = await paymentsOf(ada)
+    assert.equal(morePayments.length, 0)
+    assert.equal(payment!.paymentIntentId, intent, 'the money is recorded')
+    assert.equal(payment!.status, 'succeeded')
+    assert.equal(payment!.amountSgd, '150.00')
+    const [sale] = await purchasesOf(ada)
+    assert.equal(sale!.status, 'paid')
+    assert.equal(sale!.amountPaidSgd, '150.00')
+    const [granted, ...more] = await packagesOf(ada)
+    assert.equal(more.length, 0)
+    assert.equal(granted!.sourceClassPackageId, retiring, 'the member gets what they paid for')
+    assert.equal(granted!.purchaseId, sale!.id)
+    assert.equal(granted!.creditsOrSessionsRemaining, 10)
+    assert.equal(granted!.active, true)
+    assert.equal(payment!.clientPackageId, granted!.id)
+
+    const listed = await adminSees(ada, granted!.id)
+    assert.equal(listed.refundable, true)
+    assert.equal(listed.refund_amount_sgd, '150.00')
+    const asked = fake.callsTo('refunds.create').length
+    await expectStatus(await asAdmin('POST', `/clients/${ada.clientId}/packages/${granted!.id}/refund`, { reason: 'Plan retired' }), 200)
+    const [call, ...moreCalls] = fake.callsTo('refunds.create').slice(asked)
+    assert.equal(moreCalls.length, 0)
+    assert.equal((call!.args[0] as { payment_intent: string }).payment_intent, intent, 'the Refund returns this payment')
+  })
+
+  test('PAY-59 a Part Payment whose package was archived before the Balance was cleared is granted on the payment that settles it', async () => {
+    const retiring = await catalogue(one.id, { kind: 'credit_bundle', credits: 10, validityDays: 90, name: `${NAME} retiring part-paid bundle` })
+    const bo = await member(one)
+    await expectStatus(await buyClass(bo, retiring), 200)
+    // The first card covers S$50 of the S$150.
+    await expectStatus(await deliver({ intent: `pi_${randomUUID()}`, amountTotal: 5000 }), 200)
+    const [open] = await purchasesOf(bo)
+    assert.equal(open!.status, 'open')
+    assert.equal(open!.amountPaidSgd, '50.00')
+
+    await expectStatus(await asAdmin('POST', `/class-packages/${retiring}/archive`), 200)
+
+    // Weeks later the member clears the rest.
+    await expectStatus(await post(bo, `/api/v1/me/purchases/${open!.id}/resume`, {}), 200)
+    await expectStatus(await deliver(), 200)
+
+    const [sale] = await purchasesOf(bo)
+    assert.equal(sale!.status, 'paid')
+    assert.equal(sale!.amountPaidSgd, '150.00')
+    const payments = await paymentsOf(bo)
+    assert.deepEqual(payments.map(p => [p.amountSgd, p.status]).sort(), [['100.00', 'succeeded'], ['50.00', 'succeeded']])
+    const [granted, ...more] = await packagesOf(bo)
+    assert.equal(more.length, 0)
+    assert.equal(granted!.sourceClassPackageId, retiring)
+    assert.equal(granted!.purchaseId, sale!.id)
+    assert.equal((await adminSees(bo, granted!.id)).refundable, true)
+  })
+
+  test('PAY-59 a PT package whose Bound Instructor was archived between checkout and payment is granted, bound to them, and the Admin sees it and can refund it', async () => {
+    const [bound] = await harness.db
+      .insert(schema.ptPackages)
+      .values({ tenantId: one.id, name: `${NAME} bound pt`, sessionType: '1on1', numSessions: 5, validityDays: 90, priceSgd: '400.00', instructorBound: true })
+      .returning({ id: schema.ptPackages.id })
+    const leaver = await staffAt(one, 'leaver', 'instructor')
+    await harness.db.insert(schema.instructors).values({ tenantId: one.id, staffUserId: leaver.id })
+
+    const cy = await member(one)
+    await expectStatus(await checkout(cy, { package_kind: 'pt', package_id: bound!.id, instructor_id: leaver.id }), 200)
+    await expectStatus(await asAdmin('POST', `/staff/${leaver.id}/archive`), 200)
+
+    const intent = `pi_${randomUUID()}`
+    await expectStatus(await deliver({ intent }), 200)
+
+    const [payment] = await paymentsOf(cy)
+    assert.equal(payment!.paymentIntentId, intent, 'the money is recorded')
+    assert.equal(payment!.status, 'succeeded')
+    const [sale] = await purchasesOf(cy)
+    assert.equal(sale!.status, 'paid')
+    const [granted, ...more] = await packagesOf(cy)
+    assert.equal(more.length, 0)
+    assert.equal(granted!.sourcePtPackageId, bound!.id)
+    assert.equal(granted!.boundInstructorId, leaver.id, 'bound to the instructor the member picked, archived and visibly so')
+    assert.equal(payment!.clientPackageId, granted!.id)
+    assert.equal((await adminSees(cy, granted!.id)).refundable, true)
+  })
+
+  test('PAY-60 a payment the studio refunded from the provider dashboard before this system recorded it grants nothing when its checkout-completed delivery lands', async () => {
+    const ola = await member(one)
+    await expectStatus(await buyClass(ola, one.bundleId), 200)
+    const intent = `pi_${randomUUID()}`
+
+    // The refund arrives first: there is no payment row for it to unwind yet.
+    await expectStatus(await deliverRefund(intent, 15000), 200)
+    assert.equal((await paymentsOf(ola)).length, 0)
+
+    await expectStatus(await deliver({ intent }), 200)
+
+    assert.equal((await packagesOf(ola)).length, 0, 'a package was granted on money already given back')
+    const [payment, ...morePayments] = await paymentsOf(ola)
+    assert.equal(morePayments.length, 0)
+    assert.equal(payment!.paymentIntentId, intent, 'the payment is recorded')
+    assert.equal(payment!.status, 'refunded', 'as given back')
+    const [sale] = await purchasesOf(ola)
+    assert.equal(sale!.status, 'abandoned', 'the sale is closed: nothing was granted and the money is back')
+    assert.equal(sale!.amountPaidSgd, '0.00')
+
+    // The provider retries, and the confirmation page replays it.
+    await expectStatus(await deliver({ intent }), 200)
+    assert.equal((await packagesOf(ola)).length, 0)
+    assert.equal((await paymentsOf(ola))[0]!.status, 'refunded')
+    assert.equal((await purchasesOf(ola))[0]!.status, 'abandoned')
   })
 
   test('PAY-17 a webhook whose signature does not verify grants nothing and records no payment', async () => {

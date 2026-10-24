@@ -859,11 +859,19 @@ export async function unwindRefund(
   // 0034. Everything after runs inside that tenant's context.
   const tenantId = await tenantForPaymentIntent(paymentIntentId, claimedTenantId)
   // An intent this system never recorded: the same silence as a missing row.
+  // One that is recorded later is checked then, and never granted against
+  // (`settleAndMayGrant` in webhook-handler.ts).
   if (!tenantId) return
   return withTenant(tenantId, () => unwindRefundForTenant(paymentIntentId))
 }
 
-async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
+/**
+ * The unwind for one payment, inside a Tenant context already open. Exported
+ * for the checkout webhook, which meets a charge refunded at the provider
+ * before its payment was recorded — the `charge.refunded` that should have
+ * unwound it found no row — and runs this once it has written the row.
+ */
+export async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
   const [payment] = await db
     .select({
       // The provider's event names an intent and nothing else, and the intent is

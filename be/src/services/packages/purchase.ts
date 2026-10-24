@@ -234,9 +234,10 @@ export function assertPurchasableLocation(kind: PackageKind, locationId: string 
 
 /**
  * `instructorForPurchase` against the Tenant's roster. The ONE place the rule
- * meets the database, called by both the checkout and the grant — checkout for
- * the refusal (a rule that only fires in the webhook has already charged the
- * member) and the grant for the id it stores.
+ * meets the database, called by the checkout and by a grant decided on the
+ * spot — checkout for the refusal (a rule that only fires in the webhook has
+ * already charged the member) and a comp for the id it stores. The webhook's
+ * grant does not ask again: see `GrantPackageInput.alreadySold`.
  *
  * The roster comes from the same listing that feeds the checkout picker, so the
  * picker can never offer somebody the rule would then refuse. It is read only
@@ -417,6 +418,21 @@ export interface GrantPackageInput {
    * paid 0 too, and Finance must keep counting those in Gross.
    */
   complimentary?: boolean
+  /**
+   * The member has already paid for this: the webhook's grant, on the payment
+   * that settled the Purchase. Checkout applied every rule about what the
+   * studio may sell before the member was charged, and what has changed since
+   * — the package archived or deleted, the instructor they picked archived —
+   * stops new sales but cannot unmake this one. Refusing here would roll back
+   * the payment row with it and leave the money recorded nowhere. So the
+   * catalogue row is read whatever its status, and the Bound Instructor is the
+   * one picked at checkout, kept bound and visibly archived as any other is.
+   * The Admin can still refund it.
+   *
+   * Absent for every grant decided on the spot — a comp, a free trial, a sale
+   * a discount took to zero — which refuse exactly as before.
+   */
+  alreadySold?: boolean
 }
 
 /**
@@ -465,12 +481,12 @@ export async function grantPackage(
         and(
           eq(classPackages.tenantId, tenantId),
           eq(classPackages.id, input.packageId),
-          isNull(classPackages.deletedAt),
+          input.alreadySold ? undefined : isNull(classPackages.deletedAt),
         ),
       )
       .limit(1)
     if (!row) throw new NotFoundError('class_package_not_found')
-    if (row.status !== 'active') throw new BadRequestError('class_package_not_active')
+    if (!input.alreadySold && row.status !== 'active') throw new BadRequestError('class_package_not_active')
     source = row
     kind = row.kind
     sourceClassPackageId = row.id
@@ -483,12 +499,12 @@ export async function grantPackage(
         and(
           eq(ptPackages.tenantId, tenantId),
           eq(ptPackages.id, input.packageId),
-          isNull(ptPackages.deletedAt),
+          input.alreadySold ? undefined : isNull(ptPackages.deletedAt),
         ),
       )
       .limit(1)
     if (!row) throw new NotFoundError('pt_package_not_found')
-    if (row.status !== 'active') throw new BadRequestError('pt_package_not_active')
+    if (!input.alreadySold && row.status !== 'active') throw new BadRequestError('pt_package_not_active')
     source = row
     kind = 'pt'
     sourcePtPackageId = row.id
@@ -511,15 +527,13 @@ export async function grantPackage(
   let validityDays: number | null = null
 
   const locationId = locationForPurchase(kind, input.locationId)
-  // The same rule checkout already applied, applied again against the roster as
-  // it stands now. Checkout is what saves the member from paying for a refusal;
-  // this is what makes the refusal true of the row that actually lands.
-  const boundInstructorId = await resolveBoundInstructor(
-    tenantId,
-    kind,
-    instructorBound,
-    input.instructorId,
-  )
+  // A grant decided now applies the rule against the roster as it stands now. A
+  // sale already paid for keeps the pick checkout accepted (`alreadySold`): an
+  // instructor archived since stays bound, as one archived after the grant
+  // would, and the Admin rebinds or refunds it.
+  const boundInstructorId = input.alreadySold
+    ? (kind === 'pt' ? input.instructorId ?? null : null)
+    : await resolveBoundInstructor(tenantId, kind, instructorBound, input.instructorId)
 
   if (kind === 'unlimited') {
     const cs = source as ClassPackageRow
