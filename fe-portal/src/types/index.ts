@@ -45,20 +45,6 @@ export interface Capacity {
   buffer: number;
 }
 
-// --- Policy (§4, §6 booking config) ---
-
-export interface GlobalPolicy {
-  cancelCapCount: number;
-  cancelCapCycleDays: number;
-  classWindowHours: number;
-  ptWindowHours: number;
-  updatedAt: string;
-}
-
-export interface PtBookingConfig {
-  bookInAdvanceDays: number;
-}
-
 // --- Promotions (cross-cutting on packages) ---
 
 export type PromotionMode = "percent" | "price";
@@ -127,29 +113,6 @@ export interface ClientPackage {
 export type Lifecycle = "active" | "cancelled";
 export type EventState = "scheduled" | "ongoing" | "completed" | "cancelled";
 
-export interface ClassInstance {
-  id: string;
-  classTypeId: string;
-  instructorId: string;
-  locationId: string;
-  startsAt: string;
-  endsAt: string;
-  capacity: Capacity;
-  creditCost: number;
-  difficulty: ClassTypeDifficulty;
-  lifecycle: Lifecycle;
-  cancelledAt: string | null;
-  cancelledByStaffId: string | null;
-}
-
-export interface Room {
-  id: string;
-  locationId: string;
-  name: string;
-  capacity: number;
-  archivedAt: string | null;
-}
-
 export interface WorkshopDay {
   id: string;
   date: string;        // YYYY-MM-DD
@@ -191,20 +154,6 @@ export interface Workshop {
   cancelledByStaffId: string | null;
 }
 
-export interface PtSession {
-  id: string;
-  instructorId: string;
-  locationId: string | null;
-  startsAt: string;
-  endsAt: string;
-  sessionType: PtSessionType;
-  capacity: Capacity;
-  clientIds: string[];
-  lifecycle: Lifecycle;
-  cancelledAt: string | null;
-  cancelledByStaffId: string | null;
-}
-
 // --- Corporate Requests ---
 // Request-driven corporate flow (mirrors PT requests). A member buys a
 // corporate package → BE auto-creates one pending request. Note: unlike PT,
@@ -234,37 +183,6 @@ export interface CorporateRequest {
   };
 }
 
-// --- Bookings (§10, §12) ---
-
-export type BookingKind = "class" | "workshop" | "pt";
-export type BookingState = "confirmed" | "cancelled" | "no_show";
-export type CheckInState = "pending" | "attended" | "no_show" | "n_a";
-export type RefundOutcome =
-  | "credit_returned"
-  | "session_returned"
-  | "stripe_refunded"
-  | "forfeited"
-  | "n_a";
-
-export interface Booking {
-  id: string;
-  clientId: string;
-  kind: BookingKind;
-  classId: string | null;
-  workshopId: string | null;
-  workshopTierId: string | null;
-  ptSessionId: string | null;
-  clientPackageId: string | null;
-  state: BookingState;
-  creditsOrSessionsUsed: number | null;
-  refundOutcome: RefundOutcome;
-  checkInState: CheckInState;
-  qrToken: string;
-  code: string;
-  bookedAt: string;
-  cancelledAt: string | null;
-}
-
 // --- Identity (§15, §16) ---
 
 export type StaffRole = "admin" | "instructor";
@@ -276,21 +194,4 @@ export interface StaffUser {
   email: string;
   role: StaffRole;
   status: StaffStatus;
-}
-
-export interface Client {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  joinedAt: string;
-  referredByClientId: string | null;
-  waiverSignedAt: string;
-}
-
-// --- Waiver (§18) ---
-
-export interface Waiver {
-  bodyHtml: string;
-  updatedAt: string;
 }

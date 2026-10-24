@@ -18,8 +18,6 @@ import {
   Gift,
   ChevronDown,
   ChevronRight,
-  FileCheck,
-  FileWarning,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -274,7 +272,6 @@ interface ApiProfile {
   gender: "female" | "male" | "non_binary" | "prefer_not_to_say" | null;
   /** yyyy-mm-dd, or null when never given. */
   dob: string | null;
-  waiver_signed_at: string | null;
   referred_by: { id: string; name: string } | null;
   /** Current: running, or waiting for a first booking. */
   packages: ApiPackage[];
@@ -639,18 +636,6 @@ export default function ClientProfilePage({
                   <span className="inline-flex items-center gap-1.5">
                     <Phone className="h-3.5 w-3.5 shrink-0" /> {profile.phone || "—"}
                   </span>
-                  {/* Beside the contact details, because an unsigned waiver is
-                      the one thing that stops a member being checked in. */}
-                  {profile.waiver_signed_at ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <FileCheck className="h-3.5 w-3.5 shrink-0" /> Waiver signed{" "}
-                      {formatDate(profile.waiver_signed_at, "d MMM yyyy")}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 text-warning">
-                      <FileWarning className="h-3.5 w-3.5 shrink-0" /> Waiver not signed
-                    </span>
-                  )}
                 </div>
               </div>
               {/* The address the member signs in with (#176) — beside the one
