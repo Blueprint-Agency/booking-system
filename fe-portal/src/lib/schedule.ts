@@ -364,6 +364,10 @@ const SCHEDULE_ERROR_COPY: Record<string, string> = {
     "Online booking can't go below the members already booked online. Cancel a booking first, or add seats as buffer.",
   class_ongoing: "This class has started, so it can no longer be edited.",
   class_completed: "This class has ended, so it can no longer be edited.",
+  // An edit may not move an upcoming class to a time that has already passed.
+  starts_at_in_past:
+    "A class can't be moved to a time that has already passed. Pick a date and start time still to come.",
+  ends_at_must_be_after_starts_at: "End time must be after start time.",
   // A class's or series' Package rule.
   ...PACKAGE_RULE_ERROR_COPY,
 };
