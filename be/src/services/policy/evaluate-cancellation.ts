@@ -16,6 +16,7 @@ import { and, eq, gte, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { globalPolicy } from '../../db/schema/policy'
 import { cancellations } from '../../db/schema/bookings'
+import { clients } from '../../db/schema/identity'
 import { AppError, NotFoundError } from '../../shared/errors'
 import { insideCancelWindow } from './cancel-window'
 
@@ -138,6 +139,15 @@ export async function evaluateCancellation(input: EvaluateInput): Promise<Evalua
           : 'over_cap'
 
   return { allowed: true, refund, reason, wasWithinWindow, wasWithinCap, windowHours }
+}
+
+export async function lockMemberAndEvaluateCancellation(input: EvaluateInput): Promise<EvaluateResult> {
+  await db
+    .select({ id: clients.id })
+    .from(clients)
+    .where(and(eq(clients.tenantId, input.tenantId), eq(clients.id, input.clientId)))
+    .for('no key update')
+  return evaluateCancellation(input)
 }
 
 /**

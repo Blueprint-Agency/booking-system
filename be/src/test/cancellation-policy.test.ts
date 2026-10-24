@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
 
 const run = Date.now().toString(36)
@@ -375,6 +375,42 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     return ids
   }
 
+  async function bothInFlight(
+    packageIds: string[],
+    first: () => Response | Promise<Response>,
+    second: () => Response | Promise<Response>,
+  ): Promise<[Response, Response]> {
+    const responses = await harness.db.transaction(async tx => {
+      const [holder] = await tx.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`)
+      await tx
+        .select({ id: schema.clientPackages.id })
+        .from(schema.clientPackages)
+        .where(inArray(schema.clientPackages.id, packageIds))
+        .for('update')
+      const queued = async (calls: number) => {
+        const deadline = Date.now() + 10_000
+        for (;;) {
+          const [waiting] = await tx.execute<{ n: number }>(sql`
+            WITH RECURSIVE queue(pid) AS (
+              SELECT pid FROM pg_locks WHERE NOT granted AND ${holder!.pid}::int = ANY(pg_blocking_pids(pid))
+              UNION
+              SELECT l.pid FROM pg_locks l, queue q WHERE NOT l.granted AND q.pid = ANY(pg_blocking_pids(l.pid))
+            )
+            SELECT count(*)::int AS n FROM queue`)
+          if (waiting!.n >= calls) return
+          assert.ok(Date.now() < deadline, `cancel ${calls} never queued behind the held packages`)
+          await new Promise(resolve => setTimeout(resolve, 10))
+        }
+      }
+      const firstResponse = first()
+      await queued(1)
+      const secondResponse = second()
+      await queued(2)
+      return [firstResponse, secondResponse] as const
+    })
+    return Promise.all(responses)
+  }
+
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
@@ -683,6 +719,66 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     assert.equal(record.wasWithinWindow, true)
     assert.equal(record.wasWithinCap, false)
     assert.equal(record.refundFired, false)
+  })
+
+  test('CXL-67 two in-time class cancels by one member at once, one short of the cap: one returns its credit and the other forfeits', async () => {
+    try {
+      await expectStatus(await patchPolicy(one.admin.headers, { cancel_cap_count: 2 }), 200)
+      const t0 = aWeekOut()
+      harness.clock.set(t0)
+      const ray = await member(one, 'ray')
+      const bundle = await give(one, ray, 'credit_bundle', { credits: 10 })
+      await cancelInTime(one, ray, t0, 1)
+      const first = await bookOk(ray, await addClass(one, shifted(t0, 6 * DAY)))
+      const second = await bookOk(ray, await addClass(one, shifted(t0, 7 * DAY)))
+      assert.equal(await balanceOf(bundle), 8)
+
+      const responses = await bothInFlight([bundle], () => cancel(ray, first), () => cancel(ray, second))
+      const outcomes = await Promise.all(responses.map(async res => (await expectStatus(res, 200)).refund_outcome))
+      assert.deepEqual(outcomes.sort(), ['credit_returned', 'forfeited'])
+      assert.equal(await balanceOf(bundle), 9)
+      await assertLedger(bundle)
+      const records = [await cancellationOf(first), await cancellationOf(second)]
+      assert.deepEqual(records.map(r => r?.wasWithinCap).sort(), [false, true])
+      assert.deepEqual(records.map(r => r?.refundFired).sort(), [false, true])
+    } finally {
+      await restorePolicies()
+    }
+  })
+
+  test('CXL-67 a class cancel and a PT cancel by one member at once, one short of the shared cap: one is refunded and the other forfeits', async () => {
+    try {
+      await expectStatus(await patchPolicy(one.admin.headers, { cancel_cap_count: 2 }), 200)
+      const t0 = aWeekOut()
+      harness.clock.set(t0)
+      const sid = await member(one, 'sid')
+      const bundle = await give(one, sid, 'credit_bundle', { credits: 10 })
+      const pack = await give(one, sid, 'pt', { credits: 3 })
+      await cancelInTime(one, sid, t0, 1)
+      const bookingId = await bookOk(sid, await addClass(one, shifted(t0, 6 * DAY)))
+      const requestId = await ptRequestOk(sid, one, pack)
+      await schedulePt(one, requestId, ptStart(t0, 4))
+      assert.equal(await balanceOf(bundle), 9)
+      assert.equal(await balanceOf(pack), 2)
+
+      const [classRes, ptRes] = await bothInFlight(
+        [bundle, pack],
+        () => cancel(sid, bookingId),
+        () => ptCancel(sid, requestId),
+      )
+      const creditBack = (await expectStatus(classRes, 200)).refund_outcome === 'credit_returned'
+      const sessionBack = (await expectStatus(ptRes, 200)).refundOutcome === 'session_returned'
+      assert.notEqual(creditBack, sessionBack, 'exactly one of the two is refunded')
+      assert.equal(await balanceOf(bundle), creditBack ? 10 : 9)
+      assert.equal(await balanceOf(pack), sessionBack ? 3 : 2)
+      await assertLedger(bundle)
+      await assertLedger(pack)
+      const records = [await cancellationOf(bookingId), await cancellationOf((await ptBookingOf(requestId)).id)]
+      assert.deepEqual(records.map(r => r?.wasWithinCap).sort(), [false, true])
+      assert.deepEqual(records.map(r => r?.refundFired).sort(), [false, true])
+    } finally {
+      await restorePolicies()
+    }
   })
 
   test('CXL-15 no-shows and admin-made cancellations in the cycle do not count: the member’s early cancel is refunded', async () => {

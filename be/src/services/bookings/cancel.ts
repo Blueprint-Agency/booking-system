@@ -35,7 +35,7 @@ import {
   type StaffCancelSource,
   type StaffCredit,
 } from './refund-outcome'
-import { evaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
+import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
 import { promoteFromWaitlist, sendPromotionEmails, type Promotion } from '../waitlist/promote'
 import { assertMayWorkClass } from '../waitlist/staff'
 import type { Tx } from '../schedule/roster'
@@ -217,7 +217,7 @@ export async function cancelBookingInTx(
   const evaluation =
     source !== 'client'
       ? undefined
-      : await evaluateCancellation({
+      : await lockMemberAndEvaluateCancellation({
           tenantId,
           clientId: bk.clientId,
           kind: cancelKind,
