@@ -372,7 +372,7 @@ describe('Instructor Permissions', { skip: integrationTestsEnabled ? false : SKI
         phone: '+6580000000',
       })
       .returning({ id: schema.clients.id })
-    const code = `RT-${run.slice(-6).toUpperCase()}`
+    const code = `RT-S${run.slice(-5).toUpperCase()}`
     const [booking] = await harness.db
       .insert(schema.bookings)
       .values({
