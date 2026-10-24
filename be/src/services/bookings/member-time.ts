@@ -37,7 +37,7 @@ export interface HeldWindow extends TimeWindow {
 }
 
 /** The event being booked, which never clashes with itself. */
-export interface EventOf {
+interface EventOf {
   kind: HeldKind
   id: string
 }

@@ -20,15 +20,15 @@ import { auditLog } from '../../db/schema/ledger'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import type { ClientRow } from './manage'
 
-export type ClientGender = NonNullable<ClientRow['gender']>
+type ClientGender = NonNullable<ClientRow['gender']>
 
 const NAME_MAX = 160
 const PHONE_MAX = 40
 
 /** The editable fields. Absent: left as it is. A null gender: cleared. */
-export type ProfileFields = { name?: string; phone?: string; gender?: ClientGender | null }
+type ProfileFields = { name?: string; phone?: string; gender?: ClientGender | null }
 
-export type EditClientProfileInput = ProfileFields & {
+type EditClientProfileInput = ProfileFields & {
   tenantId: string
   clientId: string
   actorStaffId: string

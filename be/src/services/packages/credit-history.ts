@@ -15,7 +15,7 @@ import { staffUsers } from '../../db/schema/identity'
 import { NotFoundError } from '../../shared/errors'
 import type { CreditMovementActor, CreditMovementCause } from './ledger'
 
-export interface CreditMovementView {
+interface CreditMovementView {
   id: string
   at: Date
   cause: Exclude<CreditMovementCause, 'opening'>
@@ -34,7 +34,7 @@ export interface CreditMovementView {
   note: string | null
 }
 
-export interface CreditHistory {
+interface CreditHistory {
   /** Where the record starts: the migration's `opening` row, else the purchase. */
   historyFrom: Date
   movements: CreditMovementView[]

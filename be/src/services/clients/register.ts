@@ -10,7 +10,7 @@ import { BadRequestError, ConflictError, ForbiddenError } from '../../shared/err
 
 type ClientGender = (typeof clientGenderEnum.enumValues)[number]
 
-export interface RegisterMemberInput {
+interface RegisterMemberInput {
   tenantId: string
   email: string
   otp: string

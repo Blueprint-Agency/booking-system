@@ -6,10 +6,10 @@ import { parseSetCookieHeader, setRequestCookie } from 'better-auth/cookies'
 const TWO_FACTOR_COOKIE = 'two_factor'
 
 /** Where a password sign-in that still owes a second factor hands the challenge back. */
-export const TWO_FACTOR_CHALLENGE_RESPONSE_HEADER = 'set-two-factor-challenge'
+const TWO_FACTOR_CHALLENGE_RESPONSE_HEADER = 'set-two-factor-challenge'
 
 /** Where the portal sends it with the factor. */
-export const TWO_FACTOR_CHALLENGE_REQUEST_HEADER = 'x-two-factor-challenge'
+const TWO_FACTOR_CHALLENGE_REQUEST_HEADER = 'x-two-factor-challenge'
 
 /**
  * The two-factor challenge as a header, the way `bearer()` makes the session one.

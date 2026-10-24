@@ -18,9 +18,9 @@ export const BASE = 'https://clients.mindbodyonline.com'
 const LANDING = `${BASE}/app/business/reportslandingpage/FavoriteReports`
 const SIGNED_IN = /clients\.mindbodyonline\.com\/(app|ASP|asp|Report)/
 
-export class SignInError extends Error {}
+class SignInError extends Error {}
 
-export const isSignedIn = (url: string) => SIGNED_IN.test(url) && !/signin|\/launch|LoginLaunch/i.test(url)
+const isSignedIn = (url: string) => SIGNED_IN.test(url) && !/signin|\/launch|LoginLaunch/i.test(url)
 
 // Page-side code runs in the browser, where these exist; declared here, not for the whole backend.
 declare const document: any
@@ -91,7 +91,7 @@ async function signIn(page: Page, login: StudioLogin, loginFile: string) {
   if (!isSignedIn(page.url())) throw new SignInError('signed in, but did not reach the business back office')
 }
 
-export type SessionFiles = {
+type SessionFiles = {
   /** The saved Mindbody session (cookies). Private. */
   authFile: string
   /** The studio sign-in (MB_STUDIO / MB_EMAIL / MB_PASSWORD). Private. */
@@ -120,7 +120,7 @@ async function ensureSignedIn(page: Page, ctx: BrowserContext, files: SessionFil
   return true
 }
 
-export type Session = {
+type Session = {
   browser: Browser
   ctx: BrowserContext
   page: Page

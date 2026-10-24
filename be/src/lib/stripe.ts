@@ -34,7 +34,7 @@ import {
 export const STRIPE_API_VERSION = '2023-10-16'
 
 /** The provider account a call is made against — always a studio's own. */
-export type ProviderAccount = TenantProviderCredentials
+type ProviderAccount = TenantProviderCredentials
 
 export type StripeFactory = (account: ProviderAccount) => Stripe
 

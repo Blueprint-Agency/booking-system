@@ -46,7 +46,7 @@ import {
 const TOP_CLASS_TYPES = 3
 
 /** A session in a week: attended, or booked and not checked in. */
-export interface PracticeSession {
+interface PracticeSession {
   kind: 'class' | 'pt'
   /** The class type's name; "Private session" for a private session. */
   name: string
@@ -54,7 +54,7 @@ export interface PracticeSession {
   status: 'attended' | 'booked'
 }
 
-export interface MemberAttendance {
+interface MemberAttendance {
   period: AttendancePeriod
   from: PlainDate
   to: PlainDate

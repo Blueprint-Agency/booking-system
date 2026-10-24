@@ -35,7 +35,7 @@ import { randomUUID } from 'node:crypto'
 /** Canonical uuid text, which is the only form Postgres hands back. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export type IdentityMap = ReadonlyMap<string, string>
+type IdentityMap = ReadonlyMap<string, string>
 
 /**
  * Old row id → new row id, for every row in the archive.

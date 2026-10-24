@@ -90,48 +90,6 @@ export function useCorporatePackages(): {
   return { data, loading, error, refresh: load };
 }
 
-/** Loads the signed-in member's corporate requests (authed only). */
-export function useCorporateRequests(): {
-  data: ApiCorporateRequest[] | null;
-  loading: boolean;
-  error: ApiError | Error | null;
-  refresh: () => Promise<void>;
-} {
-  const { isSignedIn, isLoaded } = useMemberSession();
-  const api = useApi();
-  const [data, setData] = useState<ApiCorporateRequest[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | Error | null>(null);
-
-  async function load() {
-    if (!isLoaded) return;
-    if (!isSignedIn) {
-      setData([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.get<{ corporate_requests: ApiCorporateRequest[] }>(
-        "/me/corporate-requests",
-      );
-      setData(res.corporate_requests);
-    } catch (err) {
-      setError(err as Error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, isSignedIn]);
-
-  return { data, loading, error, refresh: load };
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**

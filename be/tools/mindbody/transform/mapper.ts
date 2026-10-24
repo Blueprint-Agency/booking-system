@@ -812,7 +812,7 @@ export function renderPreflight(p: Preflight): string {
   return `${lines.join('\n')}\n`
 }
 
-export type LiveAutopay = Omit<AutopayRow, 'date'> & { next: string; runs: number }
+type LiveAutopay = Omit<AutopayRow, 'date'> & { next: string; runs: number }
 
 /**
  * Autopay Detail lists every run due in the next 12 months, so a monthly

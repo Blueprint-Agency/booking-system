@@ -19,7 +19,7 @@ import { env } from '../env'
  *   jti — random — placeholder for a future revocation table
  *   exp — 1h after mint
  */
-export interface ImpersonationGrant {
+interface ImpersonationGrant {
   sub: string
   sas: string
   tid: string

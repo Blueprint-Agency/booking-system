@@ -25,11 +25,11 @@ import { mailPlatformSetPasswordLink } from './better-auth'
  * so the resend button cannot be turned into a mail flood.
  */
 
-export type FirstSignInStep =
+type FirstSignInStep =
   | { step: 'password' }
   | { step: 'set_password'; sent: boolean; retryAfterSeconds: number }
 
-export const RESEND_COOLDOWN_MS = 60_000
+const RESEND_COOLDOWN_MS = 60_000
 
 /** When each address was last mailed a link. One process serves the API, so memory is enough. */
 const lastSent = new Map<string, number>()

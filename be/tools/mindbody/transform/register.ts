@@ -12,7 +12,7 @@ import { normaliseStaffName } from './values'
  * (splitting a member's combined holding back into its purchases) read this.
  */
 
-export type RegisterMatch = { clientId: string; outcome: 'matched' } | { clientId: null; outcome: 'unmatched' | 'ambiguous' }
+type RegisterMatch = { clientId: string; outcome: 'matched' } | { clientId: null; outcome: 'unmatched' | 'ambiguous' }
 
 /**
  * A person's name as a key: its words, case-folded and sorted — the same fold

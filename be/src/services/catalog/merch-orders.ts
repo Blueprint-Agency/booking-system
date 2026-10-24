@@ -23,8 +23,8 @@ import type { BillingAddress } from '../billing-details/billing-details'
 import { saleLine } from '../billing/purchase-lines'
 import { tenantBusinessName } from '../tenants/mail-identity'
 
-export type MerchOrderRow = typeof merchOrders.$inferSelect
-export type MerchCheckout = CheckoutQuote<{ orderId: string }>
+type MerchOrderRow = typeof merchOrders.$inferSelect
+type MerchCheckout = CheckoutQuote<{ orderId: string }>
 
 export async function beginMerchCheckout(input: {
   tenantId: string

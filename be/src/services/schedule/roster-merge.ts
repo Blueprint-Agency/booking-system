@@ -64,7 +64,7 @@ export interface RosterPatch {
   supportingInstructorIds?: string[]
 }
 
-export type RosterRefusal = 'supporting_instructor_duplicates_main'
+type RosterRefusal = 'supporting_instructor_duplicates_main'
 
 /**
  * Who on this merged roster has newly arrived with no pay on them.
@@ -86,7 +86,7 @@ export function unpricedArrivals(
   return roster.filter(r => r.paySgd == null && !already.has(r.instructorId))
 }
 
-export type RosterMergeResult =
+type RosterMergeResult =
   | { ok: true; roster: RosterEntry[] }
   | { ok: false; refusal: RosterRefusal }
 

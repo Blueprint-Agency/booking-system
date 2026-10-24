@@ -97,8 +97,6 @@ export interface PreviewDate extends Occurrence {
   clashes: SubjectClash[]
 }
 
-export type SeriesRow = typeof classSeries.$inferSelect
-
 export interface SeriesDetail extends SeriesTemplate {
   packageRule: PackageRule
   /** The same rule with its packages named, for the series panel. */

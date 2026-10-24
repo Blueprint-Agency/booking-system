@@ -34,8 +34,8 @@ skeletons and no per-section spinners.
 
 - **A backend read in a hook goes through `useCachedResource`.** If what it
   returns depends on who is signed in, the key carries `session.userId`.
-- **Some reads are not cached, and on purpose:** saved cards, open purchases, and
-  the checkout sync. A stale answer to any of them is actively misleading. Each
+- **Some reads are not cached, and on purpose:** open purchases and the checkout
+  sync. A stale answer to any of them is actively misleading. Each
   file says so; keep it that way.
 - **Loading is `ContentLoading` (or `useHoldLoader`), never a local spinner or
   "Loading…" text.** Anything that renders *above* other content must hold the

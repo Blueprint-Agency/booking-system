@@ -21,7 +21,7 @@ const KIND_LABELS: Record<StudioReceiptSummary['kind'], string> = {
   corporate_package: 'Corporate package',
 }
 
-export const RECEIPTS_CSV_HEADER = [
+const RECEIPTS_CSV_HEADER = [
   'number',
   'date',
   'member',

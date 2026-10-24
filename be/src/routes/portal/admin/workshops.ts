@@ -423,12 +423,4 @@ const app = new Hono()
     },
   )
 
-  // ---- roster (v0 stubs — no bookings yet) ----
-  .get('/:id/roster', zValidator('param', idParam), async c => {
-    return c.json({ roster: [], note: 'roster: v0 stub — no bookings yet' })
-  })
-  .get('/:id/days/:day_id/roster', zValidator('param', idDayParam), async c => {
-    return c.json({ roster: [], note: 'roster: v0 stub — no bookings yet' })
-  })
-
 export default app

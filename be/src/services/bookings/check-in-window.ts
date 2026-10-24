@@ -12,7 +12,7 @@
  */
 import { localDateOf } from '../schedule/series-dates'
 
-export type CheckInWindow = 'open' | 'not_open' | 'closed'
+type CheckInWindow = 'open' | 'not_open' | 'closed'
 
 export function checkInOpensAt(startsAt: Date, minutesBefore: number): Date {
   return new Date(startsAt.getTime() - minutesBefore * 60_000)

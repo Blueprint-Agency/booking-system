@@ -46,7 +46,7 @@ export function refundFailureMessage(body: unknown): string {
  * from the Stripe dashboard and return it twice. "Accepted", not "returned":
  * the money is back only when Stripe confirms.
  */
-export function incompleteRefundMessage(requestedCount: number, paymentCount: number): string {
+function incompleteRefundMessage(requestedCount: number, paymentCount: number): string {
   return (
     `Some of this refund may have gone through. Stripe accepted ${requestedCount} of ` +
     `${paymentCount} payments and refused the next. Check Stripe before you try again.`

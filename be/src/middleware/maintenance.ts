@@ -3,7 +3,7 @@ import { currentMaintenance } from '../services/platform/maintenance'
 import { ERROR_CODES } from '../shared/error-codes'
 
 /** What the 503 tells a client to wait, in seconds — the frontends re-check about this often. */
-export const MAINTENANCE_RETRY_AFTER_SECONDS = 30
+const MAINTENANCE_RETRY_AFTER_SECONDS = 30
 
 /**
  * Maintenance mode, enforced: `503 { error: 'maintenance', message }` with

@@ -32,7 +32,7 @@ import type { FinanceInstructorTotal, FinanceLine, FinanceTotals } from './total
  * do versus Unlimited versus Trial"; those three plus the Cross-Location Add-On
  * are all someone paying to come to class.
  */
-export type SaleCategory = 'classes' | 'pt' | 'workshops' | 'corporate' | 'merch'
+type SaleCategory = 'classes' | 'pt' | 'workshops' | 'corporate' | 'merch'
 
 const SALE_CATEGORY: Partial<Record<FinanceLine['type'], SaleCategory>> = {
   credit: 'classes',
@@ -48,7 +48,7 @@ const SALE_CATEGORY: Partial<Record<FinanceLine['type'], SaleCategory>> = {
 /** Fixed order, so the breakdown doesn't reshuffle itself between periods. */
 const CATEGORY_ORDER: readonly SaleCategory[] = ['classes', 'pt', 'workshops', 'corporate', 'merch']
 
-export interface CategorySales {
+interface CategorySales {
   category: SaleCategory
   /** Sum of List Price — sums to the Gross tile across all categories. */
   gross_sgd: number
@@ -58,7 +58,7 @@ export interface CategorySales {
   count: number
 }
 
-export interface MemberCounts {
+interface MemberCounts {
   /**
    * Members holding a live entitlement RIGHT NOW — an active, unexpired
    * package. The stock, not the flow: it does not change with a longer period
@@ -70,7 +70,7 @@ export interface MemberCounts {
   joined: number
 }
 
-export interface ClassPopularity {
+interface ClassPopularity {
   class_type_id: string
   name: string
   /** Attendances — check-ins, not bookings. A booked no-show is not popularity. */
@@ -82,7 +82,7 @@ export interface ClassPopularity {
   previous: number | null
 }
 
-export interface FinanceOverview {
+interface FinanceOverview {
   totals: FinanceTotals
   /** Sessions with no pay set. Excluded from Net, so Net has to say so. */
   unpriced_count: number

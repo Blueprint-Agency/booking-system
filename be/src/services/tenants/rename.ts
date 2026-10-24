@@ -37,14 +37,14 @@ import { claimSlug, clearExpired, releaseOwn, REDIRECT_WINDOW_DAYS } from './for
 import { assertUsableSlug } from './slug'
 import { forgetCachedTenants } from './tenants'
 
-export interface RenameTenantInput {
+interface RenameTenantInput {
   tenantId: string
   slug: string
   /** The platform administrator's email, for the record. */
   renamedBy: string
 }
 
-export interface RenamedTenant {
+interface RenamedTenant {
   tenant: TenantRow
   former: { slug: string; redirectUntil: Date }
 }

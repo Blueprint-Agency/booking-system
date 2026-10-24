@@ -20,7 +20,7 @@ import { purchaseEmail } from '../notifications/send-purchase-email'
 import { sendTemplatedEmail } from '../notifications/send'
 import { studioReceipt } from './read'
 
-export interface ResendReceiptInput {
+interface ResendReceiptInput {
   tenantId: string
   receiptId: string
   actorStaffId: string

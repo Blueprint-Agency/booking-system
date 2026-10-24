@@ -24,7 +24,7 @@ import type { PurchaseLine } from '../billing/purchase-lines'
 import { DEFAULT_RECEIPT_PREFIX, displayNumber, receiptLines, receiptTotals, type ReceiptPayment } from './snapshot'
 
 /** A handle that can read and write: the transaction the Purchase settles in. */
-export type ReceiptTx = Pick<typeof db, 'select' | 'insert' | 'update'>
+type ReceiptTx = Pick<typeof db, 'select' | 'insert' | 'update'>
 
 export type ReceiptRow = typeof receipts.$inferSelect
 

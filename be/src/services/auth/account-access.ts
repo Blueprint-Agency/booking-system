@@ -169,7 +169,7 @@ export async function resendStaffInvitation(input: {
 }
 
 /** What a resend from the staff detail view mailed. */
-export type ResentMail = 'invitation' | 'set_password'
+type ResentMail = 'invitation' | 'set_password'
 
 /**
  * Resend the mail that lets a staff member set their password.

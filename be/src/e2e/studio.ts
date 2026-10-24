@@ -168,7 +168,7 @@ const LATE_CANCEL_CLASS_STARTS_IN = 3 * HOUR
 /** Resend's sink: accepted and reported delivered, never sent to a person. */
 const addressFor = (slug: string, who: string) => `delivered+${slug}-${who}@resend.dev`
 
-export function isE2eSlug(slug: string): boolean {
+function isE2eSlug(slug: string): boolean {
   return slug.startsWith(E2E_SLUG_PREFIX) && /^[a-z0-9-]+$/.test(slug)
 }
 
@@ -193,7 +193,7 @@ function hourFromNow(days: number): Date {
  * endpoint created on that account, and the key and signing secret sealed with
  * `PAYMENT_CREDENTIALS_KEY`.
  */
-export type E2ePayments = { secretKey: string }
+type E2ePayments = { secretKey: string }
 
 export async function createE2eStudio({
   app,

@@ -34,7 +34,7 @@ import {
 
 type Row = Record<string, unknown>
 
-export type MappedSchedule = {
+type MappedSchedule = {
   /** Staff who lead something imported and had no instructor profile yet. */
   instructors: Row[]
   classSeries: Row[]

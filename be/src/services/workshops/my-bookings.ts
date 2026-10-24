@@ -11,7 +11,7 @@ import { locations } from '../../db/schema/catalog'
 import type { RefundOutcome } from '../../db/enums'
 import { summarizeCancellation } from '../bookings/cancellation-summary'
 
-export interface MyWorkshopBooking {
+interface MyWorkshopBooking {
   id: string
   workshop_id: string
   workshop_name: string

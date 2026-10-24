@@ -27,7 +27,7 @@ export interface PaymentMethod {
 }
 
 /** A provider payment's columns, as `stripe_payments` holds them. */
-export type ProviderMethodColumns = {
+type ProviderMethodColumns = {
   method: string | null
   cardBrand: string | null
   cardLast4: string | null
@@ -78,7 +78,7 @@ export function providerMethod(p: ProviderMethodColumns): PaymentMethod | null {
 }
 
 /** How a sale no provider took was paid: `purchases.offline_method`. */
-export type OfflineMethod = (typeof offlinePaymentMethodEnum.enumValues)[number]
+type OfflineMethod = (typeof offlinePaymentMethodEnum.enumValues)[number]
 
 /** A Purchase's offline method — the platform's own list, each already one of the categories. */
 export function offlineMethod(method: OfflineMethod | null, label: string | null): PaymentMethod | null {

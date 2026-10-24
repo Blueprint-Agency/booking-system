@@ -19,9 +19,9 @@ import { classTypes, locations } from '../../db/schema/catalog'
 import { corporatePackages } from '../../db/schema/packages'
 import { corporateRequests, corporateSessions, ptRequests, ptSessions } from '../../db/schema/schedule'
 
-export type ApprovalKind = 'pt' | 'corporate'
+type ApprovalKind = 'pt' | 'corporate'
 
-export interface UnseenApproval {
+interface UnseenApproval {
   kind: ApprovalKind
   /** The request's id: what the member marks seen. */
   id: string

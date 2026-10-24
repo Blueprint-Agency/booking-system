@@ -13,10 +13,10 @@ import { receiptStatus, type ReceiptSummary } from '../services/receipts/read'
  */
 
 /** A studio calendar day. */
-export const plainDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'a date like 2026-01-31' })
+const plainDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'a date like 2026-01-31' })
 
-export const RECEIPTS_PAGE_SIZE_DEFAULT = 20
-export const RECEIPTS_PAGE_SIZE_MAX = 100
+const RECEIPTS_PAGE_SIZE_DEFAULT = 20
+const RECEIPTS_PAGE_SIZE_MAX = 100
 
 /** The query every Receipts list takes: studio days, and the page. */
 export const receiptsListQuery = z.object({
@@ -37,7 +37,7 @@ export const receiptSummaryView = (r: ReceiptSummary) => ({
   status: r.status,
 })
 
-export const receiptView = (r: ReceiptRow) => ({
+const receiptView = (r: ReceiptRow) => ({
   id: r.id,
   number: r.displayNumber,
   kind: r.kind,

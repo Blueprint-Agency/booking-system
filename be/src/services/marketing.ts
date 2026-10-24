@@ -10,14 +10,14 @@ import { NotFoundError } from '../shared/errors'
  * seeded or provisioned. The hero is required on every save; the other fields
  * are kept when left out and cleared when sent as null.
  */
-export type MarketingRow = typeof marketingContent.$inferSelect
+type MarketingRow = typeof marketingContent.$inferSelect
 
-export interface Testimonial {
+interface Testimonial {
   quote: string
   author?: string | null
 }
 
-export interface MarketingInput {
+interface MarketingInput {
   heroHeading: string
   heroSubheading: string
   pricingBlurb?: string | null

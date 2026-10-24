@@ -98,7 +98,7 @@ export const LEAVE_HALF_DAY_SHORT: Record<HalfDay, string> = {
 };
 
 /** A plain `YYYY-MM-DD` — never parsed as an instant, so no timezone shifting. */
-export function formatLeaveDay(day: string): string {
+function formatLeaveDay(day: string): string {
   return formatDate(`${day}T00:00:00`, "d MMM yyyy");
 }
 

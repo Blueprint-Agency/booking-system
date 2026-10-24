@@ -29,7 +29,7 @@ export type ComplimentaryBooking = {
   startsAt: Date | null
 }
 
-export type RemovalRefusal = 'package_touched'
+type RemovalRefusal = 'package_touched'
 
 /**
  * Null when the package may be removed, otherwise the refusal code. `now` is

@@ -30,8 +30,6 @@ export function PtRequestDrawer({
   // Staff put a manual session on the Schedule (#338): the member asked for
   // nothing, so there are no proposed slots, class type, message or binding.
   const manual = request.origin === "portal";
-  // As Sheet does: on a phone a swipe on the backdrop or a short panel would
-  // otherwise scroll the list underneath.
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";

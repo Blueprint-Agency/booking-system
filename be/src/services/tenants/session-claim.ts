@@ -12,7 +12,7 @@
  * studio A is worthless at studio B.
  */
 
-export type SessionClaimVerdict = 'ok' | 'tenant_mismatch' | 'tenant_required'
+type SessionClaimVerdict = 'ok' | 'tenant_mismatch' | 'tenant_required'
 
 export function sessionClaimVerdict(input: {
   /** The Tenant the request resolved to, from `X-Tenant-Slug` / `Origin`. */

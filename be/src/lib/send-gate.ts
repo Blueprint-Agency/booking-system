@@ -38,12 +38,12 @@ import { AsyncResource } from 'node:async_hooks'
 export type MailKind = 'credential' | 'everyday'
 
 /** Under Resend's default of 10 a second, per team. */
-export const SEND_RATE_PER_SECOND = 8
+const SEND_RATE_PER_SECOND = 8
 /** First try included. */
-export const MAX_SEND_ATTEMPTS = 5
+const MAX_SEND_ATTEMPTS = 5
 /** Resend Free's caps. A paid plan has no daily cap and a larger month. */
-export const DAILY_QUOTA = 100
-export const MONTHLY_QUOTA = 3000
+const DAILY_QUOTA = 100
+const MONTHLY_QUOTA = 3000
 const HEADROOM_WARNING = 0.8
 const BACKOFF_BASE_MS = 1000
 const BACKOFF_CAP_MS = 30_000

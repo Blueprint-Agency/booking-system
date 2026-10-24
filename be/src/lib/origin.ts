@@ -19,7 +19,7 @@
  * `X-Tenant-Slug` be checked against the browser it came from.
  */
 
-export type OriginPattern = {
+type OriginPattern = {
   /** The pattern as configured, for logs and error messages. */
   raw: string
   protocol: string
@@ -71,14 +71,14 @@ export function parseOriginPatterns(...sources: Array<string | undefined | null>
   return patterns
 }
 
-export type OriginMatch = {
+type OriginMatch = {
   /** The wildcard label the origin filled in — the tenant slug — or null when
    *  the pattern is an exact origin and so names no tenant. */
   label: string | null
 }
 
 /** Match one origin against one pattern. Null means "no match". */
-export function matchOriginPattern(origin: string, pattern: OriginPattern): OriginMatch | null {
+function matchOriginPattern(origin: string, pattern: OriginPattern): OriginMatch | null {
   let url: URL
   try {
     url = new URL(origin)

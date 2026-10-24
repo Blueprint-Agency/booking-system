@@ -28,10 +28,10 @@ import { COUNTRY_CODES, type BillingAddress } from './address'
 export type { BillingAddress } from './address'
 
 /** The most sets a member may keep at a studio. */
-export const BILLING_DETAILS_LIMIT = 3
+const BILLING_DETAILS_LIMIT = 3
 
 /** The country a set is in when the member does not say. */
-export const DEFAULT_BILLING_COUNTRY = 'SG'
+const DEFAULT_BILLING_COUNTRY = 'SG'
 
 export type BillingDetails = typeof clientBillingDetails.$inferSelect
 
@@ -40,7 +40,7 @@ export type BillingDetails = typeof clientBillingDetails.$inferSelect
  * field left out keeps its value, and an optional one sent blank or null is
  * cleared. Country left out on add is Singapore.
  */
-export type BillingDetailsInput = {
+type BillingDetailsInput = {
   name?: string
   line1?: string
   line2?: string | null
@@ -132,7 +132,7 @@ export async function ownBillingDetails(tenantId: string, clientId: string, id: 
 }
 
 /** The address a Purchase copies from a set: never its id, so nothing later can reach back. */
-export const billingAddressOf = (row: BillingDetails): BillingAddress => ({
+const billingAddressOf = (row: BillingDetails): BillingAddress => ({
   name: row.name,
   line1: row.line1,
   line2: row.line2,

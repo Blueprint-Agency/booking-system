@@ -29,7 +29,7 @@ export type StaffCredit = 'return' | 'keep'
  * (`unwindRefund`), once the money has actually gone back, so the branch below is
  * unreachable and no booking is ever falsely labelled refunded.
  */
-export function decideOutcome(
+function decideOutcome(
   kind: 'class' | 'workshop' | 'pt',
   source: CancelSource,
   evaluation?: EvaluateResult,
@@ -45,7 +45,7 @@ export function decideOutcome(
   return kind === 'class' ? 'credit_returned' : 'session_returned'
 }
 
-export interface SettleInput {
+interface SettleInput {
   kind: 'class' | 'pt'
   source: CancelSource
   /** The member's evaluation; absent for a staff cancel, which `credit` decides. */
@@ -58,7 +58,7 @@ export interface SettleInput {
   returnable: boolean
 }
 
-export interface Settlement {
+interface Settlement {
   refundOutcome: RefundOutcome
   /** Whether credits or sessions actually go back to the package. */
   refundFired: boolean

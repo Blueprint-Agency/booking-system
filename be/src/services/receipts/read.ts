@@ -29,7 +29,7 @@ export interface ReceiptSummary {
   status: ReceiptStatus
 }
 
-export const summarise = (r: ReceiptRow): ReceiptSummary => ({
+const summarise = (r: ReceiptRow): ReceiptSummary => ({
   id: r.id,
   number: r.displayNumber,
   item: receiptItem(r.lines),
@@ -38,7 +38,7 @@ export const summarise = (r: ReceiptRow): ReceiptSummary => ({
   status: receiptStatus(r),
 })
 
-export interface MemberReceiptQuery {
+interface MemberReceiptQuery {
   /** The first studio day to include, `YYYY-MM-DD`. */
   from?: PlainDate
   /** The last studio day to include, `YYYY-MM-DD`. */
@@ -87,7 +87,7 @@ export interface StudioReceiptSummary extends ReceiptSummary {
 }
 
 /** What narrows the studio's Receipts: the admin's search and filters. */
-export interface StudioReceiptFilters {
+interface StudioReceiptFilters {
   /** Part of a receipt number, or of the buyer's name or email, as the Receipt has them. */
   q?: string
   /** The first studio day to include, `YYYY-MM-DD`. */
@@ -98,7 +98,7 @@ export interface StudioReceiptFilters {
   status?: ReceiptStatus
 }
 
-export interface StudioReceiptQuery extends StudioReceiptFilters, MemberReceiptQuery {}
+interface StudioReceiptQuery extends StudioReceiptFilters, MemberReceiptQuery {}
 
 /**
  * The studio's Receipts the filters keep, or one member's of them. The search

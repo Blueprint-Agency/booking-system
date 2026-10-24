@@ -15,7 +15,7 @@ import { isoClock, isoDay, normaliseStaffName } from './values'
 type Row = Record<string, unknown>
 
 /** How a trainer is paid for a PT session: a percentage of what one session of the package is worth, or a flat amount. */
-export type PtRate = { percent: number; flat?: never } | { flat: number; percent?: never }
+type PtRate = { percent: number; flat?: never } | { flat: number; percent?: never }
 
 /** A rate Payroll pays personal training on: `PT`, `PT (50%)`, `Personal Training`. */
 const PT_RATE = /\bpt\b|personal training/i
@@ -40,7 +40,7 @@ export function ptRates(payroll: PayrollRow[]): Map<string, PtRate> {
   return new Map([...latest].map(([key, { rate }]) => [key, rate]))
 }
 
-export type PtAppointmentRows = { request: Row; session: Row; sessionClients: Row[] }
+type PtAppointmentRows = { request: Row; session: Row; sessionClients: Row[] }
 
 export function ptAppointmentRows(input: {
   tenantId: string

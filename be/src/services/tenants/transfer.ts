@@ -27,12 +27,6 @@ const RECEIPT_DETAIL_COLUMNS = [
   'receipt_footer',
 ] as const
 
-// Re-exported so a caller that already reaches for the service keeps working.
-// The declarations live in `transfer-shape.ts`, which carries no database
-// import — see the note there.
-export { ARCHIVE_VERSION, ArchiveError } from './transfer-shape'
-export type { TenantArchive, TenantManifest } from './transfer-shape'
-
 /**
  * Everything a studio is, out of the database and back into it.
  *
@@ -108,7 +102,7 @@ export async function tenantTableOrder() {
  * when the platform administrator asks for them by name (`by`, for the
  * studio's audit log). Off unless asked — see `readPasswords`.
  */
-export type ExportOptions = { includePasswords?: false } | { includePasswords: true; by: string }
+type ExportOptions = { includePasswords?: false } | { includePasswords: true; by: string }
 
 /** Read one studio out of the database, whole. */
 export async function exportTenant(tenantId: string, options: ExportOptions = {}): Promise<TenantArchive> {
@@ -260,14 +254,14 @@ async function readPasswords(): Promise<ArchivedPasswords> {
  * only ever goes up. `phase` is what it is doing now, for a label.
  */
 export type ImportPhase = 'checking' | 'clearing' | 'accounts' | 'writing' | 'linking' | 'settings' | 'committing'
-export type ImportProgress = { phase: ImportPhase; processed: number; total: number }
+type ImportProgress = { phase: ImportPhase; processed: number; total: number }
 /**
  * Called synchronously from inside the import's transaction, often — once per
  * batch and once per row in the per-row phases. A listener must be cheap and
  * must not reach the database through `db`, which is the import's own
  * transaction here: anything it writes there is invisible until the commit.
  */
-export type ImportProgressListener = (progress: ImportProgress) => void
+type ImportProgressListener = (progress: ImportProgress) => void
 
 /**
  * How an archive meets the studio it is written to.
@@ -281,7 +275,7 @@ export type ImportProgressListener = (progress: ImportProgress) => void
  */
 export type ImportMode = 'restore' | 'replace'
 
-export type ImportOptions =
+type ImportOptions =
   | {
       mode?: 'restore'
       /** The platform administrator's email, for the audit entry an archive carrying passwords writes. */
@@ -304,7 +298,7 @@ export type ImportOptions =
  */
 const KEPT_ON_REPLACE = new Set(['tenant_payment_credentials', 'classpass_settings'])
 
-export type ImportSummary = {
+type ImportSummary = {
   mode: ImportMode
   /** Rows written, per table. */
   written: Record<string, number>

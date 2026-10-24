@@ -69,13 +69,13 @@ import { clearStudioRows, slugConfirmed, tenantTableOrder } from './transfer'
 /** The statuses a studio may be deleted from. Never `active`. */
 const DELETABLE = new Set(['suspended', 'archived'])
 
-export interface DeleteTenantInput {
+interface DeleteTenantInput {
   tenantId: string
   /** The studio's current Slug, typed by the operator as confirmation. */
   confirmSlug: string
 }
 
-export interface DeletedTenant {
+interface DeletedTenant {
   id: string
   slug: string
   /** Rows deleted, per table, `tenant_settings` and the login tables included. */

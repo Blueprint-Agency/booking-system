@@ -4,7 +4,7 @@ import { promotions } from '../../db/schema/packages'
 import { now as clockNow } from '../../lib/clock'
 
 export type PromotionRow = typeof promotions.$inferSelect
-export type PromotionParent = 'class_package' | 'pt_package' | 'workshop'
+type PromotionParent = 'class_package' | 'pt_package' | 'workshop'
 export type PromotionKind = 'percent' | 'special_price'
 
 /**

@@ -24,7 +24,7 @@ import {
  * really does need an extra exact origin puts it in `FRONTEND_URLS`,
  * which has always accepted one.
  */
-export const allowedOriginPatterns = parseOriginPatterns(env.FRONTEND_URLS)
+const allowedOriginPatterns = parseOriginPatterns(env.FRONTEND_URLS)
 
 /**
  * Both apps must be expressible, or the process does not start.

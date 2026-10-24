@@ -158,7 +158,7 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data
-export type Env = typeof env
+type Env = typeof env
 
 /**
  * One setting as the environment holds it *now*, validated by that field's own

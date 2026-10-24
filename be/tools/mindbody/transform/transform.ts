@@ -209,7 +209,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** A host that is the operator's own machine. */
 const LOCAL_HOST = /(?:\/\/|\.)localhost(?=[:/,]|$)|\b127\.\d{1,3}\.\d{1,3}\.\d{1,3}\b|\b0\.0\.0\.0\b|\[::1\]/i
 
-export type TransformOutput = Transformed & {
+type TransformOutput = Transformed & {
   /** The zip, byte-for-byte the same for the same inputs. */
   zip: Buffer
   /** The preflight report, for a person. */

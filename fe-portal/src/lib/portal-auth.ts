@@ -62,7 +62,7 @@ let memoryToken: string | null = null;
 let challenge: string | null = null;
 
 /** The session token this hostname holds, or null when signed out. */
-export function readPortalToken(): string | null {
+function readPortalToken(): string | null {
   return storage()?.getItem(TOKEN_KEY) ?? memoryToken;
 }
 

@@ -11,7 +11,7 @@ import type { AuthPool } from './better-auth'
  * database (#114), and the actor id every log line will carry (#105 story 16).
  */
 
-export type AuthEvent = {
+type AuthEvent = {
   pool: AuthPool
   kind: AuthEventKind
   /** The auth user in `pool` this happened to or was done by, when known. */

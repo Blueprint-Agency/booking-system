@@ -39,7 +39,7 @@ function formatBytes(bytes: number): string {
  * A determinate bar when `value`/`max` are known, and an indeterminate one
  * (no `aria-valuenow`, per the ARIA spec) while the step count is not yet known.
  */
-export function ProgressBar({
+function ProgressBar({
   label,
   value,
   max,

@@ -50,7 +50,7 @@ const plural = (n: number, one: string, many = `${one}s`) =>
   `${n} ${n === 1 ? one : many}`;
 
 /** "24 hours", "1 hour". */
-export function hoursText(hours: number): string {
+function hoursText(hours: number): string {
   return plural(hours, "hour");
 }
 
@@ -98,7 +98,7 @@ function capped(policy: CancellationPolicy): boolean {
 }
 
 /** "3 cancellations every 30 days", "1 cancellation every day". */
-export function capText(policy: CancellationPolicy): string {
+function capText(policy: CancellationPolicy): string {
   const cycle =
     policy.cancel_cap_cycle_days === 1
       ? "day"

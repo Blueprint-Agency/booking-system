@@ -10,7 +10,7 @@
  * stand-in would "grant" every plan it is asked about. Its own file, with no
  * imports, so `src/env.ts` can refuse it at boot without a cycle.
  */
-export type StripeEndpoint = { host?: string; port?: number; protocol?: 'http' | 'https' }
+type StripeEndpoint = { host?: string; port?: number; protocol?: 'http' | 'https' }
 
 export function stripeEndpoint(url: string | undefined, appEnv: string): StripeEndpoint {
   if (!url) return {}

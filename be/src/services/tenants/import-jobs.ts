@@ -44,12 +44,12 @@ import { ArchiveError, unpackArchive } from './transfer-archive'
  * fresh transaction on its own pooled connection, so these commit at once.
  */
 
-export type ImportStatus = 'uploading' | 'processing' | 'succeeded' | 'failed'
+type ImportStatus = 'uploading' | 'processing' | 'succeeded' | 'failed'
 /** `uploading`, `unpacking`, then `importTenant`'s phases, then `finishing`. */
-export type ImportJobPhase = 'uploading' | 'unpacking' | WritePhase | 'finishing' | 'done'
+type ImportJobPhase = 'uploading' | 'unpacking' | WritePhase | 'finishing' | 'done'
 
 /** The archive is held in memory while it is imported. Beyond this, refuse. */
-export const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
+const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
 
 /** How often a live job touches `updated_at`, and how long without it means dead. */
 const HEARTBEAT_MS = 5_000
@@ -59,9 +59,9 @@ const UPLOAD_IDLE_MS = 60_000
 /** Progress is written at most this often; the last value always lands. */
 const PROGRESS_EVERY_MS = 500
 
-export const UPLOAD_INTERRUPTED =
+const UPLOAD_INTERRUPTED =
   'The upload stopped before the whole file arrived — the page was reloaded or closed, or the connection dropped. Nothing was written. Choose the file again to restart the import.'
-export const SERVER_STOPPED =
+const SERVER_STOPPED =
   'The server stopped while this import was running. The import writes the studio in a single transaction, so nothing from this attempt was kept — restore the archive again.'
 
 /** The jobs this process is holding right now: never expired as stale by it. */
@@ -82,7 +82,7 @@ export type ImportRequest = { mode: 'restore' } | { mode: 'replace'; confirmSlug
 const requestByJob = new Map<string, ImportRequest>()
 
 /** A job as the super portal sees it. */
-export interface ImportJobView {
+interface ImportJobView {
   id: string
   tenant_id: string
   status: ImportStatus
@@ -105,7 +105,7 @@ export interface ImportJobView {
 }
 
 /** What a finished restore says — the body the synchronous route has always answered with. */
-export interface RestoreSummary {
+interface RestoreSummary {
   mode: ImportMode
   imported: number
   tables: Record<string, number>
@@ -445,7 +445,7 @@ async function runImport(
  * Unpack an archive, write it into the studio and — for a restore — open the
  * studio if it brought staff: what both the job and the synchronous route do.
  */
-export async function restoreArchive(
+async function restoreArchive(
   tenantId: string,
   bytes: Buffer,
   { request, by }: { request: ImportRequest; by: string },

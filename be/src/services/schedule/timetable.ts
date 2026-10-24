@@ -59,7 +59,7 @@ export interface ScheduleEntryRow {
   seriesId: string | null
 }
 
-export interface ListScheduleOptions {
+interface ListScheduleOptions {
   from?: Date
   to?: Date
   type?: ScheduleKind

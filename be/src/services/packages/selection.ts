@@ -72,7 +72,7 @@ export interface CandidatePackage {
   purchasedAt: Date
 }
 
-export interface ClassifyInput {
+interface ClassifyInput {
   /** The client's active package rows, as the caller read them. */
   packages: CandidatePackage[]
   classLocationId: string
@@ -110,7 +110,7 @@ export type SelectionRefusal =
   | 'insufficient_credits'
 
 /** One live class package, read against one class. */
-export interface ClassifiedPackage {
+interface ClassifiedPackage {
   pkg: CandidatePackage
   /** Activated: its clock is running. False means Dormant. */
   running: boolean
@@ -126,7 +126,7 @@ export interface ClassifiedPackage {
   activateUntil: Date | null
 }
 
-export type SelectionResult =
+type SelectionResult =
   | {
       ok: true
       clientPackageId: string

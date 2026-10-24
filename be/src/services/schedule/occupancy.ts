@@ -84,7 +84,7 @@ export interface EventRef {
  * NOT an EventKind: no scheduling path creates, edits or excludes a leave
  * request, so it can occupy without being an `EventRef`.
  */
-export type ConflictKind = EventKind | 'leave'
+type ConflictKind = EventKind | 'leave'
 
 /** A conflict: what has the subject, and when. Serialised shape (snake_case) is
  *  part of the `schedule_conflict` error payload — do not rename. */
@@ -113,7 +113,7 @@ export function occupies(
 
 /** A leave request as the schedule sees it: an instructor's run of plain days,
  *  possibly only one half of a single day. */
-export interface LeaveRun {
+interface LeaveRun {
   id: string
   startDate: PlainDate
   endDate: PlainDate

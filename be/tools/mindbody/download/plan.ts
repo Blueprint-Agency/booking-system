@@ -9,7 +9,7 @@ import { CUTOVER, REPORTS, type FieldSet, type ProfileEntry, type Report, type R
  */
 
 /** `be/tools/mindbody/report-files.json`: the files the transform reads, shared by both tools. */
-export const MANIFEST_PATH = path.join(__dirname, '..', 'report-files.json')
+const MANIFEST_PATH = path.join(__dirname, '..', 'report-files.json')
 
 export type ManifestEntry = { kind: string; file: string; single: boolean; required: boolean }
 
@@ -54,7 +54,7 @@ export function profileReports(profile: Profile, manifest: ManifestEntry[] = rea
 
 /* ── Dates ─────────────────────────────────────────────────────────────── */
 
-export type DateToken = '$START' | '$TODAY' | '$FUTURE1Y' | '$FUTURE'
+type DateToken = '$START' | '$TODAY' | '$FUTURE1Y' | '$FUTURE'
 
 export type RunDates = { start: Date; today: Date; future1y: Date; future: Date }
 
@@ -79,11 +79,11 @@ export const pad2 = (n: number) => String(n).padStart(2, '0')
 export const dmy = (d: Date) => `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`
 export const ymd = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 
-export function tokenDates(d: RunDates): Record<DateToken, Date> {
+function tokenDates(d: RunDates): Record<DateToken, Date> {
   return { $START: d.start, $TODAY: d.today, $FUTURE1Y: d.future1y, $FUTURE: d.future }
 }
 
-export const isToken = (v: unknown): v is DateToken => v === '$START' || v === '$TODAY' || v === '$FUTURE1Y' || v === '$FUTURE'
+const isToken = (v: unknown): v is DateToken => v === '$START' || v === '$TODAY' || v === '$FUTURE1Y' || v === '$FUTURE'
 
 /** Field values with every date token written as a date. */
 export function resolveTokens(set: FieldSet, d: RunDates): FieldSet {
@@ -133,13 +133,13 @@ export const logsDir = (exportDir: string) => path.join(exportDir, '_logs')
 /* ── File names ────────────────────────────────────────────────────────── */
 
 /** Windows-safe, single-spaced. */
-export const safe = (s: string) => s.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim()
+const safe = (s: string) => s.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim()
 
 /** `NN Report name`: the folder of a report, and the start of each of its files. */
 export const reportPrefix = (r: Pick<Report, 'num' | 'name'>) => `${pad2(r.num)} ${safe(r.name)}`
 
 /** The extension each kind of page downloads as. Old pages send HTML tables as `.xls`. */
-export function expectedExtension(type: RunnerType): '.xls' | '.xlsx' {
+function expectedExtension(type: RunnerType): '.xls' | '.xlsx' {
   return type === 'legacy' || type === 'react' ? '.xls' : '.xlsx'
 }
 
@@ -148,9 +148,9 @@ export function jobBase(r: Pick<Report, 'num' | 'name'>, labels: string[]): stri
   return safe([reportPrefix(r), ...labels.filter(Boolean)].join(' - '))
 }
 
-export const pieceSuffix = (split: StepName | undefined) => (split === undefined ? '' : split === 'year' ? ' - <year>' : ' - <piece>')
+const pieceSuffix = (split: StepName | undefined) => (split === undefined ? '' : split === 'year' ? ' - <year>' : ' - <piece>')
 
-export type PlannedFile = {
+type PlannedFile = {
   report: PlannedReport
   /** `<Clients|Staff>/<NN Report>`, under `reports/`. */
   folder: string

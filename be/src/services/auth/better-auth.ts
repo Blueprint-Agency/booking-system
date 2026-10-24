@@ -142,7 +142,7 @@ const CODE_TTL_SECONDS = 5 * 60
 const CODE_DIGITS = 6
 
 /** How long a member's set-password link works: short, and once (#173). */
-export const MEMBER_LINK_TTL_SECONDS = 30 * 60
+const MEMBER_LINK_TTL_SECONDS = 30 * 60
 
 /**
  * Impersonation opens a real member session (#118), so without this the admin
@@ -604,7 +604,7 @@ export async function mailPlatformSetPasswordLink(from: Headers, email: string, 
 }
 
 /** Why a member's emailed code was not accepted — Better Auth's own codes. */
-export type MemberCodeRefusal = 'INVALID_OTP' | 'OTP_EXPIRED' | 'TOO_MANY_ATTEMPTS'
+type MemberCodeRefusal = 'INVALID_OTP' | 'OTP_EXPIRED' | 'TOO_MANY_ATTEMPTS'
 
 /**
  * Is this the code mailed to `email` for signing in? Checked, not spent: the
@@ -755,7 +755,7 @@ export async function mailMemberSetPasswordLink(
 }
 
 /** Why a set-password link was not accepted. */
-export type SetPasswordRefusal = 'invalid_token' | 'password_too_short' | 'password_too_long'
+type SetPasswordRefusal = 'invalid_token' | 'password_too_short' | 'password_too_long'
 
 /**
  * Whose set-password link this is, or null for one that is used, expired, never

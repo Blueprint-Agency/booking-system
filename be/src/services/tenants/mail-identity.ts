@@ -20,7 +20,7 @@ import { PLATFORM_MAIL_FROM_NAME } from '../../lib/mailer'
  * same moment it becomes honourable — when the super portal can verify the
  * domain's records, step 2 of the upgrade path in docs/md/mail-identity.md.
  */
-export type TenantMailIdentity = {
+type TenantMailIdentity = {
   /** The studio's Display name: what its emails are signed with and call it. */
   fromName: string
   /** The studio's formal Business name: what its card charges carry. */

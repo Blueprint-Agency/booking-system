@@ -38,7 +38,7 @@ export async function getCorporatePackage(
   return row ?? null
 }
 
-export interface CreateCorporatePackageInput {
+interface CreateCorporatePackageInput {
   name: string
   description?: string | null
   priceSgd: string
@@ -63,7 +63,7 @@ export async function createCorporatePackage(
   return row!
 }
 
-export interface UpdateCorporatePackageInput {
+interface UpdateCorporatePackageInput {
   name?: string
   description?: string | null
   priceSgd?: string

@@ -31,9 +31,9 @@ import { sendClassCancelledByStudioEmails, type StudioCancelNotice } from '../no
 import { sgFormat } from '../../lib/time'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 
-export type CancelClassSource = 'admin' | 'instructor'
+type CancelClassSource = 'admin' | 'instructor'
 
-export interface CancelClassInput {
+interface CancelClassInput {
   classId: string
   actorStaffId: string
   /** Who is acting. Defaults to `admin` (the original caller). */
@@ -42,7 +42,7 @@ export interface CancelClassInput {
   reason?: string
 }
 
-export interface CancelClassResult {
+interface CancelClassResult {
   totalBookings: number
   refundedCount: number
 }

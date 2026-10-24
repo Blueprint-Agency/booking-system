@@ -51,7 +51,7 @@ export type CreditMovementActor = (typeof creditMovementActorEnum.enumValues)[nu
 export const actorOfSource = (source: CancellationSource): CreditMovementActor =>
   source === 'client' ? 'member' : source === 'system' ? 'system' : 'staff'
 
-export interface CreditMovementInput {
+interface CreditMovementInput {
   /**
    * The Tenant whose credits these are. Scopes the lookup alongside the owner,
    * so a package id borrowed from another studio names nothing here — a member's
@@ -83,7 +83,7 @@ export interface CreditMovementInput {
   audit?: boolean
 }
 
-export interface MovementOutcome {
+interface MovementOutcome {
   remaining: number
   active: boolean
 }
@@ -172,7 +172,7 @@ export function refundCredits(tx: Tx, input: CreditMovementInput): Promise<Movem
   return move(tx, input, 1)
 }
 
-export interface RecordedMovement {
+interface RecordedMovement {
   tenantId: string
   clientId: string
   clientPackageId: string
