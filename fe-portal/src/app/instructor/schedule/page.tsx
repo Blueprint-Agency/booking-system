@@ -19,25 +19,7 @@ import { localDay } from "@/lib/local-day";
 import { waitingTag } from "@/lib/class-waitlist";
 import { ManualPtSessionDialog } from "@/components/schedule/manual-pt-session-dialog";
 import { scheduleErrorMessage } from "@/lib/schedule";
-
-interface ScheduleEntry {
-  kind: "class" | "workshop" | "pt" | "corporate";
-  id: string;
-  label: string;
-  subtitle: string | null;
-  main_instructor_id: string | null;
-  /** Everyone teaching it; a private session's one instructor is here, not above. */
-  instructor_ids: string[];
-  location_id: string | null;
-  room_id: string | null;
-  starts_at: string;
-  ends_at: string;
-  capacity: number | null;
-  booked_count: number | null;
-  /** How many are in a class's waitlist; null for every other kind. */
-  waiting: number | null;
-  event_state: string;
-}
+import { myScheduleRow, type MyScheduleEntry as ScheduleEntry } from "@/lib/my-schedule";
 
 interface Room {
   id: string;
@@ -135,25 +117,7 @@ export default function InstructorSchedulePage() {
   }, [entries]);
 
   const todayKey = todayIso();
-
-  // A class this instructor leads: its session page (roster, Add member) and
-  // its cancel are theirs. Supporting on someone else's class grants neither.
-  const ownsClass = (e: ScheduleEntry) =>
-    e.kind === "class" && !!currentStaff && e.main_instructor_id === currentStaff.id;
-  // A private session they run has its own page too: its members and, on a
-  // manual one, removing or adding a member (#338).
-  const pageOf = (e: ScheduleEntry): string | null =>
-    ownsClass(e)
-      ? `/instructor/schedule/class/${e.id}`
-      : e.kind === "pt" && !!currentStaff && e.instructor_ids.includes(currentStaff.id)
-        ? `/instructor/schedule/pt/${e.id}`
-        : null;
-
-  const canCancel = (e: ScheduleEntry) =>
-    canSchedule &&
-    ownsClass(e) &&
-    e.event_state !== "cancelled" &&
-    e.event_state !== "completed";
+  const viewer = { staffId: currentStaff?.id ?? null, canSchedule };
 
   async function submitCancel() {
     if (!api || !cancelling) return;
@@ -248,62 +212,65 @@ export default function InstructorSchedulePage() {
                 )}
               </div>
               <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
-                {items.map((e) => (
-                  <li
-                    key={`${e.kind}:${e.id}`}
-                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      {pageOf(e) ? (
-                        <Link
-                          href={pageOf(e)!}
-                          className="block truncate py-0.5 font-medium text-ink hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                          {e.label}
-                        </Link>
-                      ) : (
-                        <div className="truncate font-medium text-ink">{e.label}</div>
-                      )}
-                      <div className="break-words text-xs text-muted">
-                        {formatTime(e.starts_at)}–{formatTime(e.ends_at)}
-                        {e.location_id
-                          ? ` · ${locName.get(e.location_id) ?? "Studio"}`
-                          : ""}
-                        {e.room_id ? ` · ${roomName.get(e.room_id) ?? "Room"}` : ""}
+                {items.map((e) => {
+                  const row = myScheduleRow(e, viewer);
+                  return (
+                    <li
+                      key={`${e.kind}:${e.id}`}
+                      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        {row.href ? (
+                          <Link
+                            href={row.href}
+                            className="block truncate py-0.5 font-medium text-ink hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          >
+                            {e.label}
+                          </Link>
+                        ) : (
+                          <div className="truncate font-medium text-ink">{e.label}</div>
+                        )}
+                        <div className="break-words text-xs text-muted">
+                          {formatTime(e.starts_at)}–{formatTime(e.ends_at)}
+                          {e.location_id
+                            ? ` · ${locName.get(e.location_id) ?? "Studio"}`
+                            : ""}
+                          {e.room_id ? ` · ${roomName.get(e.room_id) ?? "Room"}` : ""}
+                        </div>
                       </div>
-                    </div>
-                    <div className="ml-auto flex shrink-0 items-center gap-2">
-                      {e.capacity != null && (
-                        <span
-                          className="text-xs tabular-nums text-muted"
-                          title={`${e.booked_count ?? 0} booked of ${e.capacity} places`}
-                        >
-                          {e.booked_count ?? 0}/{e.capacity}
+                      <div className="ml-auto flex shrink-0 items-center gap-2">
+                        {e.capacity != null && (
+                          <span
+                            className="text-xs tabular-nums text-muted"
+                            title={`${e.booked_count ?? 0} booked of ${e.capacity} places`}
+                          >
+                            {e.booked_count ?? 0}/{e.capacity}
+                          </span>
+                        )}
+                        {waitingTag(e.waiting) && (
+                          <span className="text-xs tabular-nums text-warning">{waitingTag(e.waiting)}</span>
+                        )}
+                        <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
+                          {KIND_LABEL[e.kind]}
                         </span>
-                      )}
-                      {waitingTag(e.waiting) && (
-                        <span className="text-xs tabular-nums text-warning">{waitingTag(e.waiting)}</span>
-                      )}
-                      <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
-                        {KIND_LABEL[e.kind]}
-                      </span>
-                      {canCancel(e) && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-10 text-error hover:bg-error/5 sm:h-8"
-                          onClick={() => {
-                            setCancelling(e);
-                            setReason("");
-                            setCancelError(null);
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                    </div>
-                  </li>
-                ))}
+                        {row.canCancel && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-10 text-error hover:bg-error/5 sm:h-8"
+                            onClick={() => {
+                              setCancelling(e);
+                              setReason("");
+                              setCancelError(null);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           ))}
