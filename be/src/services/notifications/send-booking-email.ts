@@ -24,7 +24,7 @@ import { loadTenantById } from '../tenants/tenants'
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { NotFoundError } from '../../shared/errors'
-import { bookingCreditsLine, classRefundLine, privateSessionLine, sessionsRefundLine, workshopRefundLine } from './booking-email'
+import { WAITLIST_CANCEL_LINE, bookingCreditsLine, classRefundLine, privateSessionLine, sessionsRefundLine, workshopRefundLine } from './booking-email'
 import { sendTemplatedEmail } from './send'
 import type { PurchasedKind } from './purchase-email'
 
@@ -238,6 +238,55 @@ export async function sendClassCancelledByStudioEmails(tenantId: string, notices
       })
     } catch (err) {
       reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, bookingId: n.bookingId })
+    }
+  }
+}
+
+/** spec-waitlist §6. Never throws; one member's failure does not stop the rest. */
+export async function sendClassCancelledToWaitlistEmails(tenantId: string, classId: string, clientIds: readonly string[]): Promise<void> {
+  if (!clientIds.length) return
+  let shared
+  try {
+    const [cls] = await db
+      .select({ className: classTypes.name, startsAt: classes.startsAt })
+      .from(classes)
+      .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
+      .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
+      .limit(1)
+    if (!cls) throw new NotFoundError('class_not_found', { classId })
+    const rows = await db
+      .select({ id: clients.id, name: clients.name, email: clients.email })
+      .from(clients)
+      .where(and(eq(clients.tenantId, tenantId), inArray(clients.id, [...clientIds])))
+    shared = {
+      className: cls.className,
+      date: (await sessionTimeFormat(tenantId)).format(cls.startsAt),
+      clients: new Map(rows.map(r => [r.id, r])),
+      classesUrl: await clientUrl(tenantId, '/classes'),
+    }
+  } catch (err) {
+    reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, classId })
+    return
+  }
+  for (const clientId of clientIds) {
+    try {
+      const client = shared.clients.get(clientId)
+      if (!client) throw new NotFoundError('client_not_found', { clientId })
+      await sendTemplatedEmail({
+        tenantId,
+        slug: 'admin_cancel_class',
+        recipient: { email: client.email, userId: clientId, userKind: 'client' },
+        variables: {
+          client_name: client.name,
+          class_name: shared.className,
+          date: shared.date,
+          refund_line: WAITLIST_CANCEL_LINE,
+          classes_url: shared.classesUrl,
+          credits_returned: '0',
+        },
+      })
+    } catch (err) {
+      reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, classId, clientId })
     }
   }
 }

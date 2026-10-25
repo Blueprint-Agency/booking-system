@@ -26,7 +26,7 @@ import { staffCancelInTime } from '../policy/evaluate-cancellation'
 import { now as clockNow } from '../../lib/clock'
 import { removeLineForCancelledClass } from '../waitlist/line'
 import { emailEveryAdmin } from '../notifications/send'
-import { sendClassCancelledByStudioEmails, type StudioCancelNotice } from '../notifications/send-booking-email'
+import { sendClassCancelledByStudioEmails, sendClassCancelledToWaitlistEmails, type StudioCancelNotice } from '../notifications/send-booking-email'
 import { sgFormat } from '../../lib/time'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import type { Tx } from '../schedule/roster'
@@ -182,7 +182,7 @@ export async function cancelClassInTx(
   }
 
   // Nobody is left queued for a class that will not run (spec-waitlist.md §6).
-  await removeLineForCancelledClass(tx, tenantId, classId, actorStaffId, now)
+  const waiting = await removeLineForCancelledClass(tx, tenantId, classId, actorStaffId, now)
 
   // Both once the request's transaction has committed (`afterCommit`), the
   // Admins first.
@@ -199,9 +199,8 @@ export async function cancelClassInTx(
     )
   }
 
-  // NTF-10: every member who was booked is told, whoever cancelled — the
-  // outcome for them is the same. Never throws.
   afterCommit(() => sendClassCancelledByStudioEmails(tenantId, notices))
+  afterCommit(() => sendClassCancelledToWaitlistEmails(tenantId, classId, waiting))
 
   return { totalBookings: confirmed.length, refundedCount }
 }

@@ -293,7 +293,6 @@ export async function settleWaitingOnBooking(
     )
 }
 
-/** A whole-class cancel empties its line (§6): every `waiting` entry is `removed`. Returns who was waiting. */
 export async function removeLineForCancelledClass(
   tx: Tx,
   tenantId: string,
@@ -301,18 +300,21 @@ export async function removeLineForCancelledClass(
   staffId: string,
   now: Date,
 ): Promise<string[]> {
-  const removed = await tx
+  const line = await waitingLine(tx, tenantId, classId, now)
+  if (line.length === 0) return []
+  await tx
     .update(waitlistEntries)
     .set({ status: 'removed', resolvedAt: now, resolvedBy: staffId })
     .where(
       and(
         eq(waitlistEntries.tenantId, tenantId),
-        eq(waitlistEntries.classId, classId),
-        eq(waitlistEntries.status, 'waiting'),
+        inArray(
+          waitlistEntries.id,
+          line.map(e => e.id),
+        ),
       ),
     )
-    .returning({ clientId: waitlistEntries.clientId })
-  return removed.map(r => r.clientId)
+  return line.map(e => e.clientId)
 }
 
 /**
