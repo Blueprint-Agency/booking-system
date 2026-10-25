@@ -335,6 +335,59 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(days.length, 0)
   })
 
+  test('WSP-23 a workshop day with no online, waitlist or buffer place is refused with a sentence, and nothing is written', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Placeless day',
+      days: [{ capacity: 10 }],
+      tiers: [{ name: 'Full', price: '80.00', days: [0] }],
+    })
+    const none = { capacity_online: 0, capacity_waitlist: 0, capacity_buffer: 0 }
+    const detailPath = `/api/v1/portal/admin/workshops/${w.id}`
+    const stored = async () => {
+      const res = await call(detailPath, adminAtOne.headers)
+      assert.equal(res.status, 200, res.text)
+      return res.body.days as { id: string; starts_at: string; ends_at: string; capacity_online: number }[]
+    }
+    const before = await stored()
+    const startsAt = nextStart()
+
+    const refusals = [
+      await call(`${detailPath}/days`, adminAtOne.headers, {
+        method: 'POST',
+        body: {
+          ord: 2,
+          room_id: one.roomId,
+          starts_at: startsAt.toISOString(),
+          ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+          ...none,
+        },
+      }),
+      await call(`${detailPath}/days/${w.dayIds[0]}`, adminAtOne.headers, { method: 'PATCH', body: none }),
+      await call(`${detailPath}/schedule`, adminAtOne.headers, {
+        method: 'PUT',
+        body: {
+          days: [
+            { id: before[0]!.id, ref: 'kept', room_id: one.roomId, starts_at: before[0]!.starts_at, ends_at: before[0]!.ends_at, capacity_online: 10 },
+            {
+              ref: 'empty',
+              room_id: one.roomId,
+              starts_at: startsAt.toISOString(),
+              ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+              ...none,
+            },
+          ],
+          tiers: [{ id: w.tierIds[0], name: 'Full', regular_price_sgd: '80.00', day_refs: ['kept', 'empty'] }],
+        },
+      }),
+    ]
+    for (const res of refusals) {
+      assert.equal(res.status, 400, res.text)
+      assert.equal(res.body.error, 'capacity_required', res.text)
+      assert.match(String(res.body.message), /at least one/i, `says why: ${res.text}`)
+    }
+    assert.deepEqual(await stored(), before, 'a refused day changes nothing')
+  })
+
   test('WSP-05 each day of a three-day workshop is its own timetable tile, marked day N of 3', async () => {
     const w = await workshop(one, adminAtOne, teacherAtOne, {
       name: 'Three-day immersion',

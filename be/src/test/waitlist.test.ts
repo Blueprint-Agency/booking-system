@@ -10,6 +10,7 @@ import {
   TEST_DATABASE_URL,
   type TestApp,
 } from './harness'
+import { isoWeekday, localDateOf } from '../services/schedule/series-dates'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.waitlist.test`
@@ -295,6 +296,8 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM class_packages WHERE name = ${PACKAGE_NAME}`)
     await harness.db.execute(sql`DELETE FROM classes WHERE created_by_staff_id IN (${staff})`)
+    await harness.db.execute(sql`DELETE FROM class_series WHERE created_by_staff_id IN (${staff})`)
+    await harness.db.execute(sql`DELETE FROM rooms WHERE name = ${`Waitlist series room ${run}`}`)
     await harness.db.execute(sql`DELETE FROM class_types WHERE name = ${CLASS_TYPE_NAME}`)
     await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staff})`)
     await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
@@ -759,6 +762,58 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
 
     const res = await send('POST', `/portal/admin/schedule/classes/${classId}/cancel`, one.admin.headers)
     assert.equal(res.status, 200, JSON.stringify(res.body))
+    const row = await entryStatus(entry.entry_id)
+    assert.equal(row.status, 'removed')
+    assert.equal(row.resolvedBy, one.admin.id)
+    assert.deepEqual(await myLines(waiter), [])
+  })
+
+  test('WTL-36 ending a series removes the line of each class it cancels, as cancelling the class does', async () => {
+    const [room] = await harness.db
+      .insert(schema.rooms)
+      .values({ tenantId: one.id, locationId: one.locationId, name: `Waitlist series room ${run}`, capacity: 5 })
+      .returning({ id: schema.rooms.id })
+    const teacher = await staffAt(one, 'series-teacher', 'instructor')
+    const outsideTheWindow = 5 * DAY
+    const date = localDateOf(new Date(Date.now() + outsideTheWindow), 'Asia/Singapore')
+    const created = await send('POST', '/portal/admin/schedule/series', one.admin.headers, {
+      class_type_id: one.classTypeId,
+      main_instructor_id: teacher.id,
+      instructor_pay_sgd: 50,
+      supporting_instructors: [],
+      location_id: one.locationId,
+      room_id: room!.id,
+      weekday: isoWeekday(date),
+      start_time: '07:00',
+      end_time: '08:00',
+      capacity_online: 1,
+      capacity_waitlist: 3,
+      capacity_buffer: 0,
+      credit_cost: 1,
+      first_date: date,
+      last_date: date,
+      excluded_dates: [],
+    })
+    assert.equal(created.status, 201, JSON.stringify(created.body))
+    const seriesId = created.body.series.id as string
+    const [classId] = created.body.class_ids as string[]
+
+    const seated = await member(one)
+    const bookingId = await booked(seated, classId!)
+    const waiter = await member(one)
+    const entry = await joined(waiter, classId!)
+    await harness.db
+      .update(schema.clientPackages)
+      .set({ creditsOrSessionsRemaining: 0 })
+      .where(eq(schema.clientPackages.clientId, waiter.clientId))
+    assert.equal((await cancel(seated, bookingId)).status, 200)
+    assert.equal((await entryStatus(entry.entry_id)).status, 'waiting')
+
+    const ended = await send('POST', `/portal/admin/schedule/series/${seriesId}/end`, one.admin.headers, { from_date: date })
+    assert.equal(ended.status, 200, JSON.stringify(ended.body))
+    assert.deepEqual(ended.body.cancelled_class_ids, [classId])
+    assert.deepEqual(ended.body.booked_classes, [])
+
     const row = await entryStatus(entry.entry_id)
     assert.equal(row.status, 'removed')
     assert.equal(row.resolvedBy, one.admin.id)
