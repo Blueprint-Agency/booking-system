@@ -621,6 +621,39 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.ok(!list.sessions.some(s => s.id === later), "a class whose window has not opened stays tomorrow's")
   })
 
+  test("CHK-28 the Check-in Window and a no-show's start both turn on the app's clock: a scan is refused before the window opens and taken once it has, the desk lists the class on its day, and a no-show is taken once it starts", async () => {
+    const minutes = await windowOf(one)
+    assert.ok(minutes > 1, 'the seeded window is wide enough to test inside')
+    const startsAt = new Date(Date.now() + 4 * DAY)
+    const classId = await addClassAt(one, startsAt, teacherAtOne)
+    const { bookingId, code } = await book(await member(one, 'Ola Clock'), classId)
+    const absent = await book(await member(one, 'Pip Clock'), classId)
+    try {
+      harness.clock.set(new Date(startsAt.getTime() - (minutes + 1) * MINUTE))
+      const early = await scan(adminAtOne, { code })
+      assert.equal(early.status, 422, JSON.stringify(early.body))
+      assert.equal(early.body.error, 'check_in_not_open')
+
+      harness.clock.set(new Date(startsAt.getTime() - (minutes - 1) * MINUTE))
+      const inside = await scan(adminAtOne, { code })
+      assert.equal(inside.status, 200, JSON.stringify(inside.body))
+      assert.equal((await bookingRow(bookingId)).checkInState, 'attended')
+      const listed = (await today(adminAtOne)).sessions.find(s => s.id === classId)
+      assert.ok(listed, "the desk's list for the clock's day carries the class")
+      assert.equal(listed.roster.find(r => r.booking_id === bookingId)?.check_in_state, 'attended')
+
+      harness.clock.set(new Date(startsAt.getTime() + MINUTE))
+      const noShow = await harness.app.request(`/api/v1/portal/admin/bookings/${absent.bookingId}/no-show`, {
+        method: 'POST',
+        headers: adminAtOne.headers,
+      })
+      assert.equal(noShow.status, 200, await noShow.clone().text())
+      assert.equal((await bookingRow(absent.bookingId)).checkInState, 'no_show')
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
   test('the window is the studio’s to set', async () => {
     const was = await windowOf(one)
     const [prior] = await harness.db

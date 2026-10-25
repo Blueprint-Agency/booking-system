@@ -11,6 +11,7 @@ import {
   checkSupportingDocument,
   checkLeaveSubmission,
   checkOwnLeaveTransition,
+  checkRequestTakesDocument,
   countLeaveDays,
   carriedDays,
   clipWindow,
@@ -1107,6 +1108,19 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
   // health documents must not be addressable from the other's namespace.
   assert.notStrictEqual(supportingDocumentKey('tenant-2', 'instr-1', 'req-1', 'pdf'), key)
 }
+
+test('a Supporting Document is taken by a pending or approved request only, and the refusal names the status it reached', () => {
+  for (const status of ['pending', 'approved'] as const) {
+    assert.deepStrictEqual(checkRequestTakesDocument(status), { ok: true }, status)
+  }
+  for (const status of ['rejected', 'withdrawn', 'cancelled', 'revoked'] as const) {
+    const refused = checkRequestTakesDocument(status)
+    assert.strictEqual(refused.ok, false, status)
+    if (refused.ok) continue
+    assert.strictEqual(refused.code, 'document_request_closed', status)
+    assert.match(refused.message, new RegExp(`This request was ${status}\\.`), status)
+  }
+})
 
 // -- medical over a rule: never refused, always reported (§17) ----------------
 {
