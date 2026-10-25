@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { inFlightTogether } from './in-flight'
 import { ownAccountId, stripeWebhookPath, type StripeFake } from './stripe-fake'
 
 const run = Date.now().toString(36)
@@ -605,6 +606,32 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(pkg.active, false)
     assert.equal(pkg.creditsOrSessionsRemaining, 8, 'the cancelled booking returns no credit')
     assert.deepEqual(await ledgerOf(paid.clientPackageId), [])
+  })
+
+  test('RFD-24 a member cancelling a booking while the Refund that voids its package unwinds: both go through, one after the other', async () => {
+    const eli = await member(one, 'Eli Racing')
+    const paid = await buy(one, eli, 'bundle')
+    const booked = await book(eli, await addClass(one, 3 * DAY))
+    assert.equal(booked.status, 201, JSON.stringify(booked.body))
+    const bookingId = booked.body.booking_id as string
+    harness.logs.clear()
+
+    const [cancelled, unwound] = await inFlightTogether(harness.db, sql`SELECT id FROM clients WHERE id = ${eli.clientId}`, [
+      async () => reply(await harness.app.request(`/api/v1/me/bookings/${bookingId}`, { method: 'DELETE', headers: eli.headers })),
+      () => deliverRefund(paid.intents[0]!),
+    ])
+
+    assert.equal(cancelled!.status, 200, JSON.stringify(cancelled!.body))
+    assert.equal(unwound!.status, 200, JSON.stringify(unwound!.body))
+    const errors = harness.logs.lines().filter(l => l.level === 'error')
+    assert.deepEqual(errors, [], 'Postgres aborted neither the cancel nor any step of the unwind')
+    assert.equal(cancelled!.body.refund_outcome, 'credit_returned', 'the member cancelled first, on a package still live')
+    assert.equal((await bookingRow(bookingId)).state, 'cancelled')
+    assert.equal((await cancellationsOf(bookingId)).length, 1, 'cancelled once')
+    await assertRefunded(paid.purchaseId)
+    const pkg = await packageRow(paid.clientPackageId)
+    assert.equal(pkg.active, false)
+    assert.equal(pkg.creditsOrSessionsRemaining, 10, 'the credit came back once, before the Void')
   })
 
   test('RFD-03 a refunded Purchase hands its Promo Code back to the member and to the pool', async () => {

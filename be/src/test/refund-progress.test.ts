@@ -203,6 +203,22 @@ describe('the state of a Refund between the button and the webhook', { skip: int
     assert.strictEqual((await stateOf(m)).progress, 'processing')
   })
 
+  test('RFD-25 once one of two payments is back and the other is still held, the Refund names only the money still held, and the Purchase stays paid', async () => {
+    const m = await paidPackage(['100.00', '50.00'])
+
+    await refundsSvc.unwindRefund(m.intents[0]!, tenantId)
+
+    const state = await stateOf(m)
+    assert.strictEqual(state.amountSgd, '50.00')
+    assert.strictEqual(state.refundable, true)
+    assert.strictEqual(state.paymentCount, 1)
+    const [purchase] = await harness.db.select().from(schema.purchases).where(eq(schema.purchases.id, m.purchaseId))
+    assert.strictEqual(purchase!.status, 'paid', 'a half-done Refund reopens nothing')
+    assert.strictEqual(purchase!.amountPaidSgd, '50.00')
+    const [pkg] = await harness.db.select().from(schema.clientPackages).where(eq(schema.clientPackages.id, m.clientPackageId))
+    assert.strictEqual(pkg!.active, true, 'and voids nothing')
+  })
+
   test('RFD-14 a Refund Stripe accepted and never confirmed stops blocking the button after a day', async () => {
     const m = await paidPackage(['80.00'])
     await refund(m)

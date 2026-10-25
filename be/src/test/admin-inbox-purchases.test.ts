@@ -430,6 +430,26 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     assert.equal(fake.callsTo('refunds.create').length, from + 2)
   })
 
+  test('RFD-25 one payment of a silent Purchase returned from the provider’s dashboard: the list and the money held count only the other, and it stays open', async () => {
+    const quil = await member(one, 'Quil Partly')
+    const held = await partPaid(one, quil, { payments: ['60.00', '40.00'], daysAgo: 21 })
+    const heldNow = async () => (await ok(get('/portal/admin/finance/overview', adminAtOne.headers))).held_on_open_purchases_sgd as number
+    const before = await heldNow()
+
+    const delivered = await deliverRefund(held.intents[0]!, 6000)
+
+    assert.equal(delivered.status, 200, JSON.stringify(delivered.body))
+    const row = (await silentList(adminAtOne)).find(p => p.id === held.purchaseId)
+    assert.ok(row, 'still part-paid and silent')
+    assert.equal(row.paid_sgd, '40.00')
+    assert.equal(row.outstanding_sgd, '160.00')
+    assert.equal(row.payment_count, 1)
+    assert.equal(Math.round((before - (await heldNow())) * 100), 6000, 'the studio holds 60.00 less')
+    const purchase = await purchaseRow(held.purchaseId)
+    assert.equal(purchase.status, 'open')
+    assert.equal(purchase.amountPaidSgd, '40.00')
+  })
+
   test('RFD-08 the purchase refund refuses a granted Purchase, a missing reason, and nothing-paid; no money moves', async () => {
     const quinn = await member(one, 'Quinn Paid')
     const granted = await partPaid(one, quinn, { payments: ['200.00'], daysAgo: 30, status: 'paid' })

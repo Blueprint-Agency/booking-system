@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { inTenantContext, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { billed } from './billing-details-fixture'
+import { inFlightTogether } from './in-flight'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.member-time.test`
@@ -341,6 +342,25 @@ describe('a member in one place at a time', { skip: integrationTestsEnabled ? fa
     assert.equal(results.find(r => r.status === 409)!.body.error, 'time_clash')
     assert.equal((await confirmedOn(dee, a)).length + (await confirmedOn(dee, b)).length, 1)
     assert.equal(await creditsLeft(dee), 9)
+  })
+
+  test('BKG-50 a member booking a class while staff book them into an overlapping one, naming them in capitals: exactly one is confirmed', async () => {
+    const four = slot()
+    const a = await addClass(one, four)
+    const b = await addClass(one, at(four, 30))
+    const fay = await member(one)
+    const inCapitals = { ...fay, clientId: fay.clientId.toUpperCase() }
+
+    const results = await inFlightTogether(
+      harness.db,
+      sql`SELECT id FROM client_packages WHERE client_id = ${fay.clientId}`,
+      [() => book(fay, a), () => staffBooks(one.admin, 'admin', b, inCapitals)],
+    )
+    assert.deepEqual(results.map(r => r.status), [201, 409], JSON.stringify(results.map(r => r.body)))
+    assert.equal(results[1]!.body.error, 'time_clash')
+    assert.equal(results[1]!.body.clash.booking_id, results[0]!.body.booking_id)
+    assert.equal((await confirmedOn(fay, a)).length + (await confirmedOn(fay, b)).length, 1)
+    assert.equal(await creditsLeft(fay), 9)
   })
 
   test('BKG-41 a workshop day the member registered for clashes with a class at that hour; a day at another hour does not', async () => {
