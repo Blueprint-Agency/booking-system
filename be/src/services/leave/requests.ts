@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { and, asc, desc, eq, gte, inArray, lte, ne, or } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { afterCommit, db } from '../../db'
@@ -17,6 +18,8 @@ import {
   NotFoundError,
 } from '../../shared/errors'
 import { deleteObject, r2Bucket, putObject, signedObjectUrl } from '../../lib/r2'
+import { tenantKey } from '../../lib/object-key'
+import { OFF_REQUEST_RETRY } from '../../lib/outbound'
 import { sgFormat } from '../../lib/time'
 import * as rules from './rules'
 
@@ -842,39 +845,53 @@ export async function attachSupportingDocument(input: {
     input.tenantId,
     row.staffUserId,
     row.id,
+    randomUUID(),
     check.extension,
   )
   await putObject(key, input.bytes, input.contentType)
 
-  const [updated] = await db
-    .update(leaveRequests)
-    .set({ supportingDocumentR2Key: key, updatedAt: new Date() })
-    .where(
-      and(
-        eq(leaveRequests.tenantId, input.tenantId),
-        eq(leaveRequests.id, row.id),
-        inArray(leaveRequests.status, rules.STATUSES_TAKING_A_DOCUMENT),
-      ),
-    )
-    .returning()
-  if (updated) return updated
-  return refuseUploadOvertakenByDecision(input.tenantId, row.id, key)
-}
-
-async function refuseUploadOvertakenByDecision(tenantId: string, requestId: string, key: string): Promise<never> {
+  // Locked only now, after the bucket call: a decision that committed while the
+  // file was uploading is read here, and one that comes later waits for this.
   const [current] = await db
     .select({ status: leaveRequests.status, key: leaveRequests.supportingDocumentR2Key })
     .from(leaveRequests)
-    .where(and(eq(leaveRequests.tenantId, tenantId), eq(leaveRequests.id, requestId)))
-    .limit(1)
-  if (current?.key !== key) {
-    await deleteObject(key).catch(err =>
-      reportError(err, 'leave document: removing a refused upload failed', { leaveRequestId: requestId }),
-    )
+    .where(and(eq(leaveRequests.tenantId, input.tenantId), eq(leaveRequests.id, row.id)))
+    .for('update')
+  if (!current) {
+    await removeUnreferencedObject(input.tenantId, key, row.id)
+    throw new NotFoundError('leave_request_not_found')
   }
-  if (!current) throw new NotFoundError('leave_request_not_found')
-  refuseClosedForDocument(current.status)
-  throw new Error(`leave request ${requestId} took no document while ${current.status}`)
+  const open = rules.checkRequestTakesDocument(current.status)
+  if (!open.ok) {
+    await removeUnreferencedObject(input.tenantId, key, row.id)
+    throw new ConflictError(open.code, { message: open.message })
+  }
+
+  const [updated] = await db
+    .update(leaveRequests)
+    .set({ supportingDocumentR2Key: key, updatedAt: new Date() })
+    .where(and(eq(leaveRequests.tenantId, input.tenantId), eq(leaveRequests.id, row.id)))
+    .returning()
+  const replaced = current.key
+  // A key from before the studio prefix is left where it is, as it always was.
+  if (replaced?.startsWith(tenantKey(input.tenantId, ''))) {
+    afterCommit(() => removeUnreferencedObject(input.tenantId, replaced, row.id))
+  }
+  return updated!
+}
+
+/**
+ * Delete a Supporting Document no request points at: a refused upload, or the
+ * file a later upload replaced. A failed delete is retried off the request, so
+ * neither the refusal nor the reply waits on the bucket and the file is not left
+ * behind without a word.
+ */
+async function removeUnreferencedObject(tenantId: string, key: string, leaveRequestId: string): Promise<void> {
+  await deleteObject(tenantId, key).catch(() => {
+    void deleteObject(tenantId, key, { retry: OFF_REQUEST_RETRY }).catch(err =>
+      reportError(err, 'leave document: removing a file no request points at failed', { leaveRequestId }),
+    )
+  })
 }
 
 function refuseClosedForDocument(status: LeaveRequestRow['status']): void {

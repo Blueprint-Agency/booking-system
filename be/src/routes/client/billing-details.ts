@@ -11,7 +11,7 @@ import {
   ownBillingDetails,
   type BillingDetails,
 } from '../../services/billing-details/billing-details'
-import { BadRequestError } from '../../shared/errors'
+import { explainInvalid } from '../explain-invalid'
 
 /**
  * The member's Billing details (#399): `GET`, `POST /me/billing-details`,
@@ -38,23 +38,24 @@ const view = (row: BillingDetails) => ({
   updated_at: row.updatedAt,
 })
 
-const bodySchema = z.object({
-  name: z.string().optional(),
-  line1: z.string().optional(),
-  line2: z.string().nullable().optional(),
-  city: z.string().optional(),
-  state: z.string().nullable().optional(),
-  postcode: z.string().optional(),
-  country: z.string().optional(),
-})
-
 /** A body of the wrong shape answers with a sentence a member can read, as a bad field does. */
-const explainInvalid = (result: { success: boolean }) => {
-  if (result.success) return
-  throw new BadRequestError('invalid_request', {
-    message: 'Billing details are a name and an address, each written as text.',
-  })
-}
+const SHAPE_MESSAGE = 'Billing details are a name and an address, each written as text.'
+const text = z.string({ message: SHAPE_MESSAGE })
+
+const bodySchema = z.object(
+  {
+    name: text.optional(),
+    line1: text.optional(),
+    line2: text.nullable().optional(),
+    city: text.optional(),
+    state: text.nullable().optional(),
+    postcode: text.optional(),
+    country: text.optional(),
+  },
+  { message: SHAPE_MESSAGE },
+)
+
+const explainShape = explainInvalid(SHAPE_MESSAGE)
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -63,7 +64,7 @@ const app = new Hono()
     const rows = await listBillingDetails(tenantId(c), c.get('clientId'))
     return c.json({ billing_details: rows.map(view) })
   })
-  .post('/', zValidator('json', bodySchema, explainInvalid), async c => {
+  .post('/', zValidator('json', bodySchema, explainShape), async c => {
     const row = await addBillingDetails(tenantId(c), c.get('clientId'), c.req.valid('json'))
     return c.json({ billing_details: view(row) }, 201)
   })
@@ -71,7 +72,7 @@ const app = new Hono()
     const row = await ownBillingDetails(tenantId(c), c.get('clientId'), c.req.valid('param').id)
     return c.json({ billing_details: view(row) })
   })
-  .patch('/:id', zValidator('param', idParam), zValidator('json', bodySchema, explainInvalid), async c => {
+  .patch('/:id', zValidator('param', idParam), zValidator('json', bodySchema, explainShape), async c => {
     const row = await editBillingDetails(tenantId(c), c.get('clientId'), c.req.valid('param').id, c.req.valid('json'))
     return c.json({ billing_details: view(row) })
   })

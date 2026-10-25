@@ -16,7 +16,8 @@ import { explainInvalid } from '../../explain-invalid'
 
 const idParam = z.object({ id: z.string().uuid() })
 
-const priceField = z.union([z.string(), z.number()]).transform(v => {
+const PRICE_MESSAGE = 'A price must be a number of dollars, like 12.50.'
+const priceField = z.union([z.string(), z.number()], { errorMap: () => ({ message: PRICE_MESSAGE }) }).transform(v => {
   const n = typeof v === 'string' ? Number(v) : v
   if (!Number.isFinite(n) || n < 0) throw new BadRequestError('invalid_price')
   return n.toFixed(2)
@@ -42,7 +43,7 @@ const updateSchema = z.object({
   title: titleField.optional(),
   description: descriptionField.optional(),
   price_sgd: priceField.optional(),
-  archived: z.boolean().optional(),
+  archived: z.boolean({ message: 'Archived is either on or off.' }).optional(),
 })
 
 const explainMerch = explainInvalid('That merch item is not valid.')

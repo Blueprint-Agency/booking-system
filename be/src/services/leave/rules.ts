@@ -707,8 +707,9 @@ export function checkRequestTakesDocument(
   }
 }
 
-/** Where the object lives. Deterministic, so re-uploading replaces rather than
- *  orphans.
+/** Where one upload's object lives. Each upload has a key of its own, so an
+ *  upload a decision overtakes never writes over the file its request already
+ *  holds; the upload service deletes whichever file the row stops pointing at.
  *
  *  Under the owning studio's prefix (#63): a Supporting Document is a health
  *  document on a public-read bucket, so the key is the only thing standing
@@ -721,9 +722,10 @@ export function supportingDocumentKey(
   tenantId: string,
   staffUserId: string,
   requestId: string,
+  uploadId: string,
   extension: string,
 ): string {
-  return tenantKey(tenantId, `supporting-documents/${staffUserId}/${requestId}.${extension}`)
+  return tenantKey(tenantId, `supporting-documents/${staffUserId}/${requestId}/${uploadId}.${extension}`)
 }
 
 // ── The instructor's own transitions ───────────────────────────────────────
