@@ -961,9 +961,6 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(sessionsAsked(), sessions, 'a payment page was made for a Purchase never paid towards')
   })
 
-  /* ── what the confirmation page is told ─────────────────────────────── */
-
-  /** The last session a checkout or a Resume asked for, as the provider reads it back once paid on `intent`. */
   function paidSession(intent: string, amountTotal?: number) {
     const { params } = lastSession()
     return {
@@ -975,7 +972,6 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     }
   }
 
-  /** The confirmation page's `sync-session` for `session`, as the member it was for. */
   async function sync(who: Member, session: ReturnType<typeof paidSession>): Promise<Record<string, any>> {
     fake.reply('checkout.sessions.retrieve', (id: unknown) =>
       id === session.id ? session : { id, status: 'expired', payment_status: 'unpaid', payment_intent: null },
@@ -1041,6 +1037,21 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(synced.purchase?.outstanding_sgd, '100.00')
     assert.equal(synced.receipt, null)
     assert.equal((await packagesOf(ben)).length, 0)
+  })
+
+  test('PAY-70 a session from before Purchases, naming none, is answered from the Purchase its payment was recorded against', async () => {
+    const kai = await member(one)
+    await expectStatus(await buyClass(kai, one.bundleId), 200)
+    const intent = `pi_${randomUUID()}`
+    const { purchase_id: _named, ...metadata } = lastSession().params.metadata
+    const session = { ...paidSession(intent), metadata }
+
+    assert.equal((await sync(kai, session)).status, 'granted')
+    const [granted] = await packagesOf(kai)
+    await expectStatus(await asAdmin('POST', `/clients/${kai.clientId}/packages/${granted!.id}/refund`, { reason: 'Member asked' }), 200)
+    await expectStatus(await deliverRefund(intent, 15000), 200)
+
+    assert.equal((await sync(kai, session)).status, 'refunded')
   })
 
   test('PAY-17 a webhook whose signature does not verify grants nothing and records no payment', async () => {

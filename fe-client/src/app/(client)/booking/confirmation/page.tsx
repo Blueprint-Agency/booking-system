@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { getMemberToken } from "@/lib/member-auth";
 import { fetchApi } from "@/lib/api-url";
-import { Check } from "lucide-react";
+import { Check, CircleAlert } from "lucide-react";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { OpenPurchases } from "@/components/account/open-purchases";
 import { usePartPaymentOptions, type OpenPurchase } from "@/lib/open-purchases";
@@ -15,10 +15,13 @@ import { ContentLoading } from "@/components/ui/content-loading";
 import {
   confirmationEyebrow,
   confirmationOutcome,
+  NOT_GRANTED_COPY,
+  notGranted,
   PENDING_BODY,
   PENDING_HEADING,
   syncedReceipt,
   type ConfirmationOutcome,
+  type NotGranted,
   type SyncResult,
 } from "@/lib/checkout-return";
 
@@ -139,23 +142,34 @@ function ConfirmationHeader({
   return (
     <div className="text-center mb-6">
       <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
-        {outcome === null || outcome === "pending" ? <Spinner /> : <Check className="w-8 h-8 text-accent" />}
+        <OutcomeIcon outcome={outcome} />
       </div>
       {outcome !== null && (
         <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">{confirmationEyebrow(outcome)}</p>
       )}
       <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink">
-        {outcome === null ? syncingHeading : outcome === "pending" ? PENDING_HEADING : doneHeading}
+        {outcome === null
+          ? syncingHeading
+          : outcome === "pending"
+            ? PENDING_HEADING
+            : notGranted(outcome)
+              ? NOT_GRANTED_COPY[outcome].heading
+              : doneHeading}
       </h1>
     </div>
   );
 }
 
-/** The body of the pending state: what to expect, and where to look. */
-function PendingNotice() {
+function OutcomeIcon({ outcome }: { outcome: ConfirmationOutcome | null }) {
+  if (outcome === null || outcome === "pending") return <Spinner />;
+  if (notGranted(outcome)) return <CircleAlert className="w-8 h-8 text-accent" />;
+  return <Check className="w-8 h-8 text-accent" />;
+}
+
+function OutcomeNotice({ body }: { body: string }) {
   return (
     <>
-      <p className="text-center text-base sm:text-lg text-muted">{PENDING_BODY}</p>
+      <p className="text-center text-base sm:text-lg text-muted">{body}</p>
       <div className={ctaRow}>
         <Link
           href="/account"
@@ -166,6 +180,12 @@ function PendingNotice() {
       </div>
     </>
   );
+}
+
+function UnsettledNotice({ outcome }: { outcome: ConfirmationOutcome | null }) {
+  if (outcome === "pending") return <OutcomeNotice body={PENDING_BODY} />;
+  if (notGranted(outcome)) return <OutcomeNotice body={NOT_GRANTED_COPY[outcome].body} />;
+  return null;
 }
 
 /** Settled — confirmed or free — as opposed to still syncing or pending. */
@@ -214,7 +234,7 @@ function WorkshopSuccess({
           doneHeading="You're booked!"
         />
 
-        {outcome === "pending" && <PendingNotice />}
+        <UnsettledNotice outcome={outcome} />
 
         {/* The way onward never waits on the workshop's details: a member who
             has paid is not left on a page with nowhere to go if that read fails. */}
@@ -265,7 +285,7 @@ function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
           doneHeading="Thank you!"
         />
 
-        {outcome === "pending" && <PendingNotice />}
+        <UnsettledNotice outcome={outcome} />
 
         {settled(outcome) && (
           <>
@@ -320,7 +340,7 @@ function CrossLocationSuccess({ stripeSessionId }: { stripeSessionId: string | n
           doneHeading="Add-on active"
         />
 
-        {outcome === "pending" && <PendingNotice />}
+        <UnsettledNotice outcome={outcome} />
 
         {settled(outcome) && (
           <>
@@ -375,6 +395,7 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
     | { kind: "pending" }
     | { kind: "settled" }
     | { kind: "owing"; purchase: OpenPurchase }
+    | { kind: "not_granted"; outcome: NotGranted }
   >({ kind: "syncing" });
 
   // The same sync every other flow does — record the payment now rather than
@@ -401,8 +422,11 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
         if (cancelled) return;
         // A session the provider has not marked paid carries no Purchase, and
         // reading that absence as "nothing owed" told a member it was settled.
-        if (confirmationOutcome(stripeSessionId, { ok: true, body: data }) === "pending") {
+        const synced = confirmationOutcome(stripeSessionId, { ok: true, body: data });
+        if (synced === "pending") {
           setOutcome({ kind: "pending" });
+        } else if (notGranted(synced)) {
+          setOutcome({ kind: "not_granted", outcome: synced });
         } else {
           setOutcome(data.purchase ? { kind: "owing", purchase: data.purchase } : { kind: "settled" });
         }
@@ -420,17 +444,19 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
   }, [stripeSessionId, getToken, refetchPackages]);
 
   const done = outcome.kind === "settled" || outcome.kind === "owing";
+  const unsettled: ConfirmationOutcome | null =
+    outcome.kind === "pending" ? "pending" : outcome.kind === "not_granted" ? outcome.outcome : null;
 
   return (
     <div id="summary">
       <ConfirmationCard>
         <div className="text-center mb-6">
           <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
-            {done ? <Check className="w-8 h-8 text-accent" /> : <Spinner />}
+            <OutcomeIcon outcome={done ? "confirmed" : unsettled} />
           </div>
           {outcome.kind !== "syncing" && (
             <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
-              {done ? "Part payment received" : confirmationEyebrow("pending")}
+              {done ? "Part payment received" : confirmationEyebrow(unsettled ?? "pending")}
             </p>
           )}
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink">
@@ -438,13 +464,15 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
               ? "Recording your payment…"
               : outcome.kind === "pending"
                 ? PENDING_HEADING
-                : outcome.kind === "settled"
-                  ? "You're all set!"
-                  : "Thanks — here's what's left"}
+                : outcome.kind === "not_granted"
+                  ? NOT_GRANTED_COPY[outcome.outcome].heading
+                  : outcome.kind === "settled"
+                    ? "You're all set!"
+                    : "Thanks — here's what's left"}
           </h1>
         </div>
 
-        {outcome.kind === "pending" && <PendingNotice />}
+        <UnsettledNotice outcome={unsettled} />
 
         {outcome.kind === "settled" && (
           <>
@@ -560,7 +588,7 @@ function PackageSuccess({
           doneHeading="You're all set!"
         />
 
-        {outcome === "pending" && <PendingNotice />}
+        <UnsettledNotice outcome={outcome} />
 
         {settled(outcome) && (
           <>

@@ -20,14 +20,13 @@ import {
 import { createCheckoutSession } from '../../services/billing/checkout-session'
 import {
   listOpenPurchases,
-  openPurchaseById,
   partPaymentEnabled,
   resumePurchaseCheckout,
   PART_PAYMENT_FLOOR_CENTS,
   type OpenPurchaseView,
 } from '../../services/billing/open-purchases'
 import { describeProduct, previewPromoCode } from '../../services/packages/promo-redemption'
-import { receiptForPurchase } from '../../services/receipts/read'
+import { checkoutOutcome } from '../../services/billing/checkout-outcome'
 import { billToFor } from '../../services/billing-details/billing-details'
 import { requireTenantUrl } from '../../services/tenants/urls'
 import { tenantId } from '../../middleware/tenant'
@@ -461,24 +460,17 @@ const app = new Hono()
       account.accountId,
     )
 
-    // What this payment left behind (#93). The confirmation page cannot work it
-    // out: a part payment may have cleared the Balance or may have left some of
-    // it, and the member may hold a *different* unfinished purchase besides — so
-    // "does this member owe anything" is the wrong question and this answers the
-    // right one, about the Purchase this session was for. Null where the session
-    // names no Purchase, or where it is settled: both mean nothing is owed here.
-    const purchaseId = session.metadata?.purchase_id
-    const purchase = purchaseId
-      ? await openPurchaseById(tenantId(c), clientId, purchaseId)
-      : null
-    // The Receipt the sale was given, for the confirmation page to link to
-    // (#384). Null until the Purchase is paid in full, and for the kinds that
-    // are not issued one yet.
-    const receipt = purchaseId ? await receiptForPurchase(tenantId(c), clientId, purchaseId) : null
+    const outcome = await checkoutOutcome(tenantId(c), clientId, {
+      purchaseId: session.metadata?.purchase_id,
+      paymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : (session.payment_intent?.id ?? null),
+    })
     return c.json({
-      status: 'granted',
-      purchase: purchase ? serializeOpenPurchase(purchase) : null,
-      receipt: receipt ? { id: receipt.id, number: receipt.number } : null,
+      status: outcome.status,
+      purchase: outcome.status === 'owing' ? serializeOpenPurchase(outcome.purchase) : null,
+      receipt:
+        outcome.status === 'granted' && outcome.receipt
+          ? { id: outcome.receipt.id, number: outcome.receipt.number }
+          : null,
     })
   })
 
