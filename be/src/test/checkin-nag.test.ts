@@ -186,12 +186,6 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
     }
   }
 
-  /**
-   * A tick whose claim waits until `write` has committed, as a check-in
-   * committed while the job runs does. A transaction of the test's own holds
-   * `table` in SHARE mode, which the job's reads pass and its claim, an UPDATE,
-   * queues behind; `write` runs and commits meanwhile.
-   */
   async function writeBeforeTheClaim(table: 'classes' | 'pt_sessions', write: () => Promise<unknown>): Promise<void> {
     let release!: () => void
     const released = new Promise<void>(resolve => (release = resolve))
@@ -216,7 +210,6 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
     }
   }
 
-  /** The desk's tick, as `markAttendance` writes it (its Check-in Window reads the wall clock, not NOW). */
   const tickAttended = (bookingId: string) =>
     tenantDb.db.update(schema.bookings).set({ checkInState: 'attended', refundOutcome: 'n_a' }).where(eq(schema.bookings.id, bookingId))
 

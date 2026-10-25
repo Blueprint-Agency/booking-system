@@ -6,11 +6,11 @@
  * Derived, never stored: it follows the rows, so undoing a tick reopens it. And
  * nothing flips a row by itself — there is no automatic no-show — so a session
  * nobody finished stays `pending` for as long as it takes someone to decide.
- *
- * The one definition of "undecided": the check-in desk (services/schedule/
- * detail.ts) and the check-in nag (./check-in-nag.ts) both read it from here,
- * so the nag can never count a session differently from the desk it links to.
  */
+import { sql } from 'drizzle-orm'
+import { bookings } from '../../db/schema/bookings'
+import { classes, ptSessionClients, ptSessions } from '../../db/schema/schedule'
+
 export type SessionCheckInState = 'pending' | 'completed'
 
 /** A roster row's own check-in state; null for a PT attendee with no booking row. */
@@ -52,3 +52,23 @@ export function ptSeats<T extends { state: string | null; bookedAt: Date | null 
   }
   return [...seatOf.values()]
 }
+
+export const classHasUndecidedRow = sql`exists (
+  select 1 from ${bookings}
+  where ${bookings.classId} = ${classes.id}
+    and ${bookings.state} in ('confirmed', 'no_show')
+    and ${bookings.checkInState} = 'pending'
+)`
+
+export const ptSessionHasUndecidedSeat = sql`exists (
+  select 1 from ${ptSessionClients}
+  left join lateral (
+    select ${bookings.checkInState} as check_in_state from ${bookings}
+    where ${bookings.ptSessionId} = ${ptSessionClients.ptSessionId}
+      and ${bookings.clientId} = ${ptSessionClients.clientId}
+    order by ${bookings.state} = 'confirmed' desc, ${bookings.bookedAt} desc
+    limit 1
+  ) seat on true
+  where ${ptSessionClients.ptSessionId} = ${ptSessions.id}
+    and (seat.check_in_state is null or seat.check_in_state = 'pending')
+)`
