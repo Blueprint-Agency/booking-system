@@ -24,7 +24,7 @@
  * translates the refusal into a typed error; nothing here touches the database.
  */
 import type { PackageRuleMode } from '../../db/enums'
-import { activationExpiry, isActivated, isDormant } from './validity'
+import { activationExpiry, effectiveExpiry, isActivated, isDormant } from './validity'
 
 /**
  * What a class accepts: every class package (`all`), only the catalogue
@@ -199,7 +199,7 @@ export function classifyPackages(input: ClassifyInput): ClassifiedPackage[] {
     // with a three-month plan booking four months out would activate it and
     // instantly invalidate it for the very class that activated it.
     const activateUntil = running ? null : activationExpiry(p, now)
-    const coverEnd = running ? p.expiresAt : activateUntil
+    const coverEnd = effectiveExpiry(p, now)
     const credit = isCreditKind(p)
 
     let reason: SelectionRefusal | null = null

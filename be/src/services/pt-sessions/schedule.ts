@@ -23,7 +23,8 @@ import { bookings } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
 import { debitCredits, refundCredits, type Tx } from '../packages/ledger'
-import { activateOnSchedule } from '../packages/activation'
+import { activateOnSchedule, assertPackageCoversSession } from '../packages/activation'
+import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertMemberFree, lockMemberTime } from '../bookings/member-time'
 import { assertRoomInLocation } from '../schedule/room-conflicts'
@@ -229,7 +230,7 @@ export async function schedulePtRequest(
     }
 
     if (req.debitedClientPackageId) {
-      await activateOnSchedule(tx, tenantId, req.debitedClientPackageId, sessionId)
+      await activateOnSchedule(tx, tenantId, req.debitedClientPackageId, { id: sessionId, startsAt: input.startsAt })
     }
 
     await tx
@@ -464,6 +465,31 @@ async function reconcileSessionType(
     )
 }
 
+/**
+ * A session moved to a new start must still start by the expiry of every
+ * package paying a seat on it (#444). The packages are locked last, after the
+ * members, in the order every PT path takes them.
+ */
+async function assertSeatsCoverStart(tx: Tx, tenantId: string, ptSessionId: string, startsAt: Date): Promise<void> {
+  const paying = await tx
+    .select({
+      kind: clientPackages.kind,
+      expiresAt: clientPackages.expiresAt,
+      durationMonths: clientPackages.durationMonths,
+      validityDays: clientPackages.validityDays,
+    })
+    .from(bookings)
+    .innerJoin(
+      clientPackages,
+      and(eq(clientPackages.tenantId, bookings.tenantId), eq(clientPackages.id, bookings.clientPackageId)),
+    )
+    .where(and(eq(bookings.tenantId, tenantId), eq(bookings.ptSessionId, ptSessionId), eq(bookings.state, 'confirmed')))
+    .orderBy(clientPackages.id)
+    .for('update', { of: clientPackages })
+  const now = clockNow()
+  for (const pkg of paying) assertPackageCoversSession(pkg, startsAt, now)
+}
+
 export async function updatePtSession(
   tenantId: string,
   id: string,
@@ -619,6 +645,10 @@ export async function updatePtSession(
           { exclude: { kind: 'pt', id }, allowClash: patch.allowClash === true },
         )
       }
+    }
+
+    if (patch.startsAt !== undefined && patch.startsAt.getTime() !== existing.startsAt.getTime()) {
+      await assertSeatsCoverStart(tx, tenantId, id, patch.startsAt)
     }
 
     const set: Partial<typeof ptSessions.$inferInsert> = {}

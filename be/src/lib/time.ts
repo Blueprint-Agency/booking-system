@@ -45,6 +45,12 @@ export function sgDayWindow(
   }
 }
 
+/** The instant a Singapore wall-clock time `HH:mm` on `date` falls at. */
+export function sgInstant(date: PlainDate, time: string): Date {
+  const [hours, minutes] = time.split(':').map(Number)
+  return new Date(asUtcMidnight(date) - SG_OFFSET_MS + (hours! * 60 + minutes!) * 60_000)
+}
+
 /** An instant formatter fixed to studio time. The zone is what's shared; the
  *  locale and the format are the caller's, because they legitimately differ. */
 export const sgFormat = (locale: string, options: Intl.DateTimeFormatOptions) =>

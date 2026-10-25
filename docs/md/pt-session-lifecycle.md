@@ -65,7 +65,9 @@ Verify each step with `npx tsc --noEmit` in `be/` (no test infra per project con
 `submitPtRequest` (`request.ts`) first holds each proposed date to the studio's Book in advance
 window, `[today + min_book_in_advance_days, today + book_in_advance_days]` on the Singapore calendar
 (`slot_date_too_soon` / `slot_date_too_far`). It is race-safe: locks `client_packages FOR UPDATE`, validates
-`kind='pt'`, `session_type` match, not expired, `remaining >= 1`; debits, recomputes `active`,
+`kind='pt'`, `session_type` match, not expired, every slot starting by the package's expiry (a
+Dormant package's would-be expiry if scheduled now; `package_expires_before_session`, #444),
+`remaining >= 1`; debits, recomputes `active`,
 inserts `pt_requests` (`status='pending'`, `expires_at = now + book_in_advance_days`) +
 `pt_request_slots`, and stores `debited_client_package_id` for precise reversal. The `pending`
 cancel branch refunds against that exact package and is idempotent on terminal states.

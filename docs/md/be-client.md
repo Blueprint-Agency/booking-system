@@ -423,6 +423,10 @@ tx start
    WHERE id=client_package_id AND client_id=ctx.client_id.
    Required: kind='pt', not expired, session_type matches, credits_or_sessions_remaining >=
    (1 for 1on1, 2 for 2on1) → else 422 insufficient_pt_sessions.
+   Every slot must start (its Singapore date and start_time) by the package's expires_at,
+   or, on a Dormant package, by the expiry it would get if staff scheduled the request now
+   (now + validity_days); a slot starting at that instant is accepted (#444)
+   → else 409 package_expires_before_session { expires_at, message }, nothing debited.
    A Dormant pick is accepted whether or not another PT package is running (ADR 0010:
    any number of PT packages may run at once; pt_package_not_current is retired), and
    it STAYS Dormant: the request debits it but starts no clock. Staff scheduling the

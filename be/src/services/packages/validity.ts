@@ -98,6 +98,18 @@ export function activationExpiry(p: PackageLength, activatedAt: Date): Date | nu
 }
 
 /**
+ * The expiry a package has, or, while it is Dormant, the one it would get by
+ * Activating at `activatingAt`. What a booking on it is judged against: a
+ * session or class may not start after it.
+ */
+export function effectiveExpiry(
+  p: PackageLength & Pick<PackageValidity, 'expiresAt'>,
+  activatingAt: Date,
+): Date | null {
+  return p.expiresAt ?? activationExpiry(p, activatingAt)
+}
+
+/**
  * Dormant: bought, paid for, clock not started (spec §3). A null `expires_at`
  * means this and nothing else — "never expires" has left the domain. Every
  * kind is Dormant at purchase and Activates on the first booking it pays for;
