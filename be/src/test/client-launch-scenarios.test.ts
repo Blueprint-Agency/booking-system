@@ -521,7 +521,7 @@ describe('client launch scenarios over HTTP', { skip: integrationTestsEnabled ? 
       201,
     )
     const requestId = requested.pt_request_id as string
-    const startsAt = new Date(Date.now() + 200 * DAY)
+    const startsAt = new Date(Date.now() + 60 * DAY)
     await expectStatus(
       await harness.app.request(`/api/v1/portal/admin/pt-sessions/${requestId}/schedule`, {
         method: 'POST',

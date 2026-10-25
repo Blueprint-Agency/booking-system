@@ -217,6 +217,7 @@ export const ERROR_CODES = {
   outranked_staff_edit_forbidden: 'outranked_staff_edit_forbidden',
   package_archived: 'package_archived',
   package_expired: 'package_expired',
+  package_expires_before_session: 'package_expires_before_session',
   package_has_live_bookings: 'package_has_live_bookings',
   package_not_consumable: 'package_not_consumable',
   package_not_found: 'package_not_found',

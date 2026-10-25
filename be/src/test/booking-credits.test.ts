@@ -318,7 +318,7 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
   /** Each scheduled PT session gets an hour of its own, far from every class. */
   let ptSlots = 0
   async function scheduledPtSession(requestId: string): Promise<string> {
-    await expectStatus(await schedulePt(one.admin.headers, requestId, new Date(Date.now() + 200 * DAY + ptSlots++ * 2 * HOUR)), 201)
+    await expectStatus(await schedulePt(one.admin.headers, requestId, new Date(Date.now() + 60 * DAY + ptSlots++ * 2 * HOUR)), 201)
     const [session] = await harness.db.select().from(schema.ptSessions).where(eq(schema.ptSessions.ptRequestId, requestId))
     assert.ok(session)
     return session.id

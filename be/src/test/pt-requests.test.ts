@@ -3473,4 +3473,184 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const [mine] = (await myRequests(pia)).filter(r => r.id === pending)
     assert.equal(mine.cancelled_by, 'studio')
   })
+
+  // ── Package expiry (#444) ────────────────────────────────────────────────
+
+  const setExpiry = (clientPackageId: string, expiresAt: Date) =>
+    harness.db.update(schema.clientPackages).set({ expiresAt }).where(eq(schema.clientPackages.id, clientPackageId))
+
+  const setValidityDays = (clientPackageId: string, validityDays: number) =>
+    harness.db.update(schema.clientPackages).set({ validityDays }).where(eq(schema.clientPackages.id, clientPackageId))
+
+  const sgDayPlus = (days: number) => new Date(Date.now() + 8 * HOUR + days * DAY).toISOString().slice(0, 10)
+  const sgAt = (day: string, time: string) => new Date(`${day}T${time}:00+08:00`)
+
+  function assertPastExpiry(refused: any, expiresAt: number) {
+    assert.equal(refused.error, 'package_expires_before_session')
+    assert.ok(withinMinutes(new Date(refused.expires_at), expiresAt), `expires_at ${refused.expires_at}`)
+    assert.match(refused.message, /^The package paying for this session ends at \d{1,2}:\d{2} [ap]m on /)
+  }
+
+  const movePatch = (sessionId: string, startsAt: Date) =>
+    harness.app.request(`/api/v1/portal/admin/pt-sessions/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ starts_at: startsAt.toISOString(), ends_at: new Date(startsAt.getTime() + HOUR).toISOString() }),
+    })
+
+  test('PT-138 a member proposing a slot after their running package expires is refused, and nothing is debited or written; a slot starting at the expiry instant on the expiry day is accepted', async () => {
+    await expectStatus(await setPtWindow({ min_book_in_advance_days: 1, book_in_advance_days: 14 }), 200)
+    const una = await member(one, 'Una Expiring')
+    const packageId = await givePt(one, una, '1on1')
+    const expiryDay = sgDayPlus(5)
+    const expiresAt = sgAt(expiryDay, '09:00')
+    await setExpiry(packageId, expiresAt)
+
+    for (const slot of [
+      { proposedDate: sgDayPlus(6), startTime: '09:00', endTime: '10:00' },
+      { proposedDate: expiryDay, startTime: '09:30', endTime: '10:30' },
+    ]) {
+      const refused = await expectStatus(
+        await submit(one, una, {
+          sessionType: '1on1',
+          clientPackageId: packageId,
+          slots: [{ proposedDate: sgDayPlus(2), startTime: '09:00', endTime: '10:00' }, slot],
+        }),
+        409,
+      )
+      assertPastExpiry(refused, expiresAt.getTime())
+    }
+    assert.equal((await requestsOf(una)).length, 0)
+    assert.equal(await sessionsLeft(packageId), 10)
+    assert.equal((await movementsOn(packageId)).length, 0)
+
+    await requestOk(one, una, {
+      sessionType: '1on1',
+      clientPackageId: packageId,
+      slots: [{ proposedDate: expiryDay, startTime: '09:00', endTime: '10:00' }],
+    })
+    assert.equal(await sessionsLeft(packageId), 9)
+  })
+
+  test('PT-139 a member proposing a slot after the expiry a Dormant package would get by Activating now is refused; a slot before it is accepted and the package stays Dormant', async () => {
+    await expectStatus(await setPtWindow({ min_book_in_advance_days: 1, book_in_advance_days: 14 }), 200)
+    const vic = await member(one, 'Vic Dormant Short')
+    const packageId = await givePt(one, vic, '1on1')
+    await setValidityDays(packageId, 3)
+
+    const before = Date.now()
+    const refused = await expectStatus(
+      await submit(one, vic, {
+        sessionType: '1on1',
+        clientPackageId: packageId,
+        slots: [{ proposedDate: sgDayPlus(5), startTime: '09:00', endTime: '10:00' }],
+      }),
+      409,
+    )
+    assertPastExpiry(refused, before + 3 * DAY)
+    assert.equal((await requestsOf(vic)).length, 0)
+    assert.equal(await sessionsLeft(packageId), 10)
+
+    await requestOk(one, vic, {
+      sessionType: '1on1',
+      clientPackageId: packageId,
+      slots: [{ proposedDate: sgDayPlus(2), startTime: '09:00', endTime: '10:00' }],
+    })
+    assert.equal((await pkg(packageId)).expiresAt, null)
+  })
+
+  test('PT-140 staff scheduling a request after its running package expires is refused on the admin and instructor routes, and nothing is made; a start at the expiry instant is accepted', async () => {
+    const wyn = await member(one, 'Wyn Late Schedule')
+    const packageId = await givePt(one, wyn, '1on1')
+    const requestId = await requestOk(one, wyn, { sessionType: '1on1', clientPackageId: packageId })
+    const startsAt = far()
+    await setExpiry(packageId, new Date(startsAt.getTime() - MINUTE))
+
+    assertPastExpiry(await expectStatus(await adminSchedule(one, adminAtOne, requestId, { startsAt }), 409), startsAt.getTime() - MINUTE)
+    assertPastExpiry(await expectStatus(await instructorSchedule(one, coachA, requestId, { startsAt }), 409), startsAt.getTime() - MINUTE)
+    assert.equal((await requestRow(requestId)).status, 'pending')
+    assert.equal((await sessionsFor(requestId)).length, 0)
+    assert.equal(await sessionsLeft(packageId), 9)
+
+    await setExpiry(packageId, startsAt)
+    await scheduled(requestId, { startsAt })
+    assert.equal((await pkg(packageId)).expiresAt?.getTime(), startsAt.getTime())
+  })
+
+  test('PT-141 staff scheduling a Dormant package\'s request after the expiry it would get by Activating now is refused and the package stays Dormant; an earlier start Activates it', async () => {
+    const xia = await member(one, 'Xia Dormant Schedule')
+    const packageId = await givePt(one, xia, '1on1')
+    await setValidityDays(packageId, 3)
+    const requestId = await requestOk(one, xia, {
+      sessionType: '1on1',
+      clientPackageId: packageId,
+      slots: [{ proposedDate: sgDayPlus(1), startTime: '09:00', endTime: '10:00' }],
+    })
+
+    const before = Date.now()
+    const startsAt = new Date(before + 3 * DAY + HOUR)
+    assertPastExpiry(await expectStatus(await adminSchedule(one, adminAtOne, requestId, { startsAt }), 409), before + 3 * DAY)
+    const dormant = await pkg(packageId)
+    assert.equal(dormant.expiresAt, null)
+    assert.equal(dormant.activatedByPtSessionId, null)
+    assert.equal((await requestRow(requestId)).status, 'pending')
+    assert.equal((await sessionsFor(requestId)).length, 0)
+
+    const sessionId = await scheduled(requestId, { startsAt: near() })
+    assert.equal((await pkg(packageId)).activatedByPtSessionId, sessionId)
+  })
+
+  test('PT-142 staff moving a session after the expiry of the package paying for it is refused and the session keeps its time; a move to the expiry instant is accepted', async () => {
+    const yan = await member(one, 'Yan Moved Late')
+    const packageId = await givePt(one, yan, '1on1')
+    const requestId = await requestOk(one, yan, { sessionType: '1on1', clientPackageId: packageId })
+    const first = far()
+    const later = far()
+    const sessionId = await scheduled(requestId, { startsAt: first })
+    await setExpiry(packageId, new Date(later.getTime() - MINUTE))
+
+    assertPastExpiry(await expectStatus(await movePatch(sessionId, later), 409), later.getTime() - MINUTE)
+    assert.equal((await sessionRow(sessionId)).startsAt.getTime(), first.getTime())
+
+    await setExpiry(packageId, later)
+    await expectStatus(await movePatch(sessionId, later), 200)
+    assert.equal((await sessionRow(sessionId)).startsAt.getTime(), later.getTime())
+  })
+
+  test('PT-143 a manual session after the expiry of a seat\'s package, running or Dormant, is refused and nothing is made or debited; moving a manual session past a seat\'s expiry is refused', async () => {
+    const zed = await member(one, 'Zed Manual Late')
+    const running = await givePt(one, zed, '1on1')
+    const startsAt = far()
+    await setExpiry(running, new Date(startsAt.getTime() - MINUTE))
+    const sessionsBefore = await ptSessionCount()
+
+    assertPastExpiry(
+      await expectStatus(await adminManual(adminAtOne, [{ client_id: zed.clientId, client_package_id: running }], { startsAt }), 409),
+      startsAt.getTime() - MINUTE,
+    )
+    assert.equal(await ptSessionCount(), sessionsBefore)
+    assert.equal(await sessionsLeft(running), 10)
+
+    const amy = await member(one, 'Amy Manual Dormant')
+    const dormant = await givePt(one, amy, '1on1')
+    await setValidityDays(dormant, 3)
+    const before = Date.now()
+    assertPastExpiry(
+      await expectStatus(
+        await adminManual(adminAtOne, [{ client_id: amy.clientId }], { startsAt: new Date(before + 3 * DAY + HOUR) }),
+        409,
+      ),
+      before + 3 * DAY,
+    )
+    assert.equal(await ptSessionCount(), sessionsBefore)
+    assert.equal((await pkg(dormant)).expiresAt, null)
+
+    await setExpiry(running, startsAt)
+    const { sessionId } = await manualSession(
+      await adminManual(adminAtOne, [{ client_id: zed.clientId, client_package_id: running }], { startsAt }),
+    )
+    const later = far()
+    assertPastExpiry(await expectStatus(await movePatch(sessionId, later), 409), startsAt.getTime())
+    assert.equal((await sessionRow(sessionId)).startsAt.getTime(), startsAt.getTime())
+  })
 })

@@ -21,8 +21,8 @@ export function fromPtBookingConfig(r: PtBookingConfigResponse): PtBookingWindow
   return { minDays: r.min_book_in_advance_days, maxDays: r.book_in_advance_days };
 }
 
-const SG_OFFSET_MS = 8 * 3_600_000;
-const DAY_MS = 86_400_000;
+export const SG_OFFSET_MS = 8 * 3_600_000;
+export const DAY_MS = 86_400_000;
 
 /** The Singapore calendar date `days` after today, as YYYY-MM-DD. */
 export function sgDatePlus(days: number, now: number = Date.now()): string {
@@ -49,7 +49,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
  * "Wed 1 Oct" for a YYYY-MM-DD date. Spelled out rather than through `Intl`,
  * whose punctuation differs between browsers' locale data.
  */
-function shortDate(iso: string): string {
+export function shortDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
   return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }

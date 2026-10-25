@@ -18,10 +18,10 @@ import { ptRequests, ptRequestSlots } from '../../db/schema/schedule'
 import { ptBookingConfig } from '../../db/schema/policy'
 import { AppError, BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { DEFAULT_PT_BOOKING_CONFIG } from '../../db/seed/policy'
-import { sweepExpired } from '../packages/activation'
+import { assertPackageCoversSession, sweepExpired } from '../packages/activation'
 import { debitCredits, type Tx } from '../packages/ledger'
 import { ptSessionCost } from './cost'
-import { daysBetween, sgToday } from '../../lib/time'
+import { daysBetween, sgInstant, sgToday } from '../../lib/time'
 import { now as clockNow } from '../../lib/clock'
 
 /** The days after today, in Singapore, a member may propose a private session on. */
@@ -126,6 +126,8 @@ export async function submitPtRequest(
         kind: clientPackages.kind,
         active: clientPackages.active,
         expiresAt: clientPackages.expiresAt,
+        durationMonths: clientPackages.durationMonths,
+        validityDays: clientPackages.validityDays,
         remaining: clientPackages.creditsOrSessionsRemaining,
         sessionType: ptPackages.sessionType,
       })
@@ -151,6 +153,7 @@ export async function submitPtRequest(
 
     const notExpired = pkg.expiresAt === null || pkg.expiresAt > now
     if (!pkg.active || !notExpired) throw new ConflictError('package_not_consumable')
+    for (const s of input.slots) assertPackageCoversSession(pkg, sgInstant(s.proposedDate, s.startTime), now)
 
     // The member picks which PT package pays, and any number may run at once
     // (be/docs/adr/0010). A Dormant pick stays Dormant: a PT package Activates

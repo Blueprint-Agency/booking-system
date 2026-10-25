@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert";
 import { scheduleErrorMessage, fetchCorporateSession } from "./schedule";
 import { seriesErrorMessage } from "./series";
+import { manualSessionErrorMessage } from "./pt-manual";
 import { ApiError, type Api } from "./api";
 
 // A clash is one code for both subjects, and the backend says who is taken by
@@ -63,6 +64,18 @@ test("an unknown code falls back to the named action", () => {
     "Failed to create class (HTTP 500).",
   );
   assert.strictEqual(scheduleErrorMessage(new ApiError(500, null)), "Save failed (HTTP 500).");
+});
+
+test("PT-145 scheduling, moving or creating a private session after its package's expiry shows the backend's sentence, and its own copy without one, never a status", () => {
+  const sentence =
+    "The package paying for this session ends at 9:00 am on Tue 24 Nov 2026. Choose a time no later than that.";
+  const withSentence = new ApiError(409, { error: "package_expires_before_session", message: sentence });
+  const bare = new ApiError(409, { error: "package_expires_before_session" });
+  const copy = "The package paying for this session runs out before that time. Choose an earlier time.";
+  assert.strictEqual(scheduleErrorMessage(withSentence, "Couldn't schedule"), sentence);
+  assert.strictEqual(manualSessionErrorMessage(withSentence), sentence);
+  assert.strictEqual(scheduleErrorMessage(bare, "Couldn't schedule"), copy);
+  assert.strictEqual(manualSessionErrorMessage(bare), copy);
 });
 
 test("a thrown non-response is a network error", () => {

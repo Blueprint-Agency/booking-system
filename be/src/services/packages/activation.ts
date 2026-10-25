@@ -14,9 +14,10 @@ import { and, eq, isNotNull, lte } from 'drizzle-orm'
 import { clientPackages } from '../../db/schema/packages'
 import { manualAdjustments } from '../../db/schema/ledger'
 import { recordExpired, type Tx } from './ledger'
-import { activationExpiry, isDormant } from './validity'
+import { effectiveExpiry, isDormant } from './validity'
 import { ConflictError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
+import { sgFormat } from '../../lib/time'
 
 /**
  * Flip `active` off on the member's own packages whose expiry has passed —
@@ -64,6 +65,27 @@ export async function activatePackage(
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
 }
 
+const expiryDay = sgFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+const expiryTime = sgFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+
+/**
+ * A Dormant package is judged by the expiry it would get by Activating at
+ * `now`, the moment scheduling would start its clock (be/docs/adr/0011, #444).
+ */
+export function assertPackageCoversSession(
+  pkg: Parameters<typeof effectiveExpiry>[0],
+  startsAt: Date,
+  now: Date,
+): Date {
+  const until = effectiveExpiry(pkg, now)
+  if (!until) throw new ConflictError('package_not_consumable')
+  if (startsAt <= until) return until
+  throw new ConflictError('package_expires_before_session', {
+    expires_at: until.toISOString(),
+    message: `The package paying for this session ends at ${expiryTime.format(until)} on ${expiryDay.format(until)}. Choose a time no later than that.`,
+  })
+}
+
 /**
  * A PT package Activates when its first session is put on the calendar, not
  * when the member asks for one (be/docs/adr/0011): a package the request left
@@ -77,7 +99,7 @@ export async function activateOnSchedule(
   tx: Tx,
   tenantId: string,
   clientPackageId: string,
-  ptSessionId: string,
+  session: { id: string; startsAt: Date },
 ): Promise<void> {
   const [pkg] = await tx
     .select({
@@ -90,10 +112,9 @@ export async function activateOnSchedule(
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
     .for('update')
     .limit(1)
-  if (!pkg || !isDormant(pkg)) return
-  const until = activationExpiry(pkg, clockNow())
-  if (!until) throw new ConflictError('package_not_consumable')
-  await activatePackage(tx, tenantId, clientPackageId, until, ptSessionId)
+  if (!pkg) return
+  const until = assertPackageCoversSession(pkg, session.startsAt, clockNow())
+  if (isDormant(pkg)) await activatePackage(tx, tenantId, clientPackageId, until, session.id)
 }
 
 /**

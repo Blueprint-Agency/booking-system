@@ -543,9 +543,15 @@ tx start
 8. Insert bookings row(s): kind='pt', pt_session_id=new id, state='confirmed',
    credits_or_sessions_used=1 per client (recorded on the booking for audit; the debit
    itself already happened on submit and is not re-applied here); generate qr_token + code
-8b. Activation (be/docs/adr/0011): SELECT the debited client_packages row FOR UPDATE; if it is
-   Dormant (the request left it so), stamp expires_at = now() + validity_days and
-   activated_by_pt_session_id = new id. A package already running is left alone.
+8b. Activation (be/docs/adr/0011): SELECT the debited client_packages row FOR UPDATE. The
+   session must start by the package's expiry, or, while it is Dormant, by the expiry it
+   would get by Activating now (now() + validity_days); a start at that instant is allowed
+   (#444) → else 409 package_expires_before_session { expires_at, message }, and nothing is
+   written. If it is Dormant (the request left it so), stamp expires_at = now() +
+   validity_days and activated_by_pt_session_id = new id. A package already running keeps
+   its date. A manual session's seat (`POST /pt-requests/manual`, `…/sessions/:id/members`)
+   runs the same step, and `PATCH /pt-sessions/sessions/:id` moving a session to a new
+   start holds every package paying a seat on it to the same rule.
 9. Update pt_requests: status='scheduled', scheduled_pt_session_id=new id,
    resolved_at=now(), resolved_by_staff_id=actor_staff_id
 10. enqueueEmail('pt_session_scheduled', client.email, { instructor_name, starts_at, location, room, qr_url })

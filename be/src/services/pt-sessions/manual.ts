@@ -296,7 +296,7 @@ async function seatMember(
     actedByStaffId: actor.actorStaffId,
   })
 
-  await activateOnSchedule(tx, tenantId, pkg.id, session.id)
+  await activateOnSchedule(tx, tenantId, pkg.id, session)
   return { bookingId: booking!.id, clientPackageId: pkg.id }
 }
 
