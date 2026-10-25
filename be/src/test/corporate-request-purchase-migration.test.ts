@@ -8,10 +8,10 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.corporate-purchase-migration.test`
-const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0129_corporate_requests_purchase_unique.sql')
+const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0137_corporate_requests_purchase_unique.sql')
 const INDEX = 'corporate_requests_purchase_unique'
 
-describe('migration 0129: one Corporate Request per Purchase', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+describe('migration 0137: one Corporate Request per Purchase', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   const seeded: string[] = []

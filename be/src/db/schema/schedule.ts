@@ -916,8 +916,9 @@ export const corporateRequests = pgTable(
       .references(() => corporatePackages.id, { onDelete: 'restrict' }),
     status: corporateRequestStatusEnum('status').notNull().default('pending'),
     // The Purchase that paid for it, so refunding the Purchase can close the
-    // request. Null on a request made before the link existed, and on one made
-    // without a purchase.
+    // request. Null on a request made before the link existed, on one made
+    // without a purchase, and on a duplicate whose Purchase migration 0137 left
+    // with another request.
     purchaseId: uuid('purchase_id').references((): AnyPgColumn => purchases.id, {
       onDelete: 'restrict',
     }),
@@ -942,6 +943,9 @@ export const corporateRequests = pgTable(
     clientIdFkIdx: index('corporate_requests_client_id_fk_idx').on(table.clientId),
     corporatePackageIdFkIdx: index('corporate_requests_corporate_package_id_fk_idx').on(table.corporatePackageId),
     purchaseIdFkIdx: index('corporate_requests_purchase_id_fk_idx').on(table.purchaseId),
+    purchaseUnique: uniqueIndex('corporate_requests_purchase_unique')
+      .on(table.tenantId, table.purchaseId)
+      .where(sql`${table.purchaseId} IS NOT NULL`),
     resolvedByStaffIdFkIdx: index('corporate_requests_resolved_by_staff_id_fk_idx').on(table.resolvedByStaffId),
     statusCreatedIdx: index('corporate_requests_status_created_idx').on(
       table.tenantId,

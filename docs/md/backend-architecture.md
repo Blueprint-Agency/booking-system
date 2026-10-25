@@ -740,14 +740,14 @@ Unlike `pt_requests`, the cancelled state is a **single** `cancelled` value (no 
 | client_id | uuid | FK → clients.id, **on delete restrict** — the purchasing member |
 | corporate_package_id | uuid | FK → corporate_packages.id, **on delete restrict** |
 | status | enum `corporate_request_status` | not null, default `'pending'` — `pending`, `scheduled`, `cancelled`, `attended` |
-| purchase_id | uuid | FK → purchases.id, **nullable**, on delete restrict — the Purchase that paid for it (migration `0110`), set by the webhook and by checkout's nothing-to-pay path. A full Refund of that Purchase cancels the request while it is `pending` (§14). Null on requests made before the link existed. |
+| purchase_id | uuid | FK → purchases.id, **nullable**, on delete restrict — the Purchase that paid for it (migration `0110`), set by the webhook and by checkout's nothing-to-pay path. A full Refund of that Purchase cancels the request while it is `pending` (§14). At most one request per Purchase (migration `0137`): a second payment on it, or a second write at once, gets the request already made. Null on requests made before the link existed, and on a duplicate migration `0137` left without it (the request furthest along kept the Purchase). |
 | message | text | nullable |
 | scheduled_corporate_session_id | uuid | FK → corporate_sessions.id, **nullable** — set when status=`scheduled`. Deferred circular FK (see note below). |
 | resolved_at | timestamptz | nullable — set on scheduled / cancelled / attended |
 | resolved_by_staff_id | uuid | FK → staff_users.id, nullable |
 | created_at | timestamptz | not null, default now() |
 
-**Indexes:** `(status, created_at)` — drives the `/admin/corporate-requests` triage queue; `(client_id, status)` for the client's own list.
+**Indexes:** `(status, created_at)` — drives the `/admin/corporate-requests` triage queue; `(client_id, status)` for the client's own list; `(tenant_id, purchase_id) unique where not null` — one request per Purchase.
 
 #### `corporate_sessions` (created when a corporate request is scheduled by admin)
 
