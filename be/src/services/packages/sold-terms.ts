@@ -10,9 +10,7 @@
 import type { classPackages, ptPackages } from '../../db/schema/packages'
 
 export interface SoldTerms {
-  /** Credits on a Credit Bundle or Trial Pass, sessions on a PT package, null on an Unlimited Plan. */
   creditsOrSessions: number | null
-  /** Null on an Unlimited Plan, which runs for `durationMonths` instead. */
   validityDays: number | null
   durationMonths: number | null
   listPriceSgd: string
@@ -42,14 +40,11 @@ export const soldTermsMetadata = (terms: SoldTerms): Record<string, string> => (
 /**
  * The terms a checkout froze, or null for a session from before it froze them,
  * which the grant answers from the catalogue row as it stands.
- *
- * Every package runs for a validity or a Duration, so a session carrying
- * neither never had its terms frozen. Read by value rather than by key: the
- * provider drops a metadata key whose value is empty.
  */
 export function soldTermsFromMetadata(meta: Record<string, string>): SoldTerms | null {
   const listPriceSgd = meta.list_price_sgd
-  if (!listPriceSgd || (!meta.validity_days && !meta.duration_months)) return null
+  const runsForALength = Boolean(meta.validity_days || meta.duration_months)
+  if (!listPriceSgd || !runsForALength) return null
   const count = (value: string | undefined) => (value ? Number(value) : null)
   return {
     creditsOrSessions: count(meta.credits_or_sessions),

@@ -427,16 +427,14 @@ export interface GrantPackageInput {
    * one picked at checkout, kept bound and visibly archived as any other is.
    * The Admin can still refund it.
    *
+   * `terms` are the ones checkout showed, so an Admin edit to the package since
+   * cannot change what the member bought either. Null for a sale checked out
+   * before checkout froze them, granted from the catalogue row.
+   *
    * Absent for every grant decided on the spot — a comp, a free trial, a sale
    * a discount took to zero — which refuse exactly as before.
    */
-  alreadySold?: boolean
-  /**
-   * The terms checkout showed for a sale already paid for. An Admin edit to
-   * the package since cannot change what the member bought. Null for a sale
-   * checked out before checkout froze them, granted from the catalogue row.
-   */
-  soldTerms?: SoldTerms | null
+  alreadySold?: { terms: SoldTerms | null }
 }
 
 /**
@@ -512,7 +510,7 @@ export async function grantPackage(
     catalogueTerms = ptPackageTerms(row)
     instructorBound = row.instructorBound
   }
-  const terms = input.soldTerms ?? catalogueTerms
+  const terms = input.alreadySold?.terms ?? catalogueTerms
   const creditsOrSessionsRemaining = terms.creditsOrSessions
 
   // Only an Unlimited Plan has a Home Location to extend, so only it can carry

@@ -505,7 +505,7 @@ services/packages/purchase.ts
                  credits_or_sessions, validity_days, duration_months, list_price_sgd }
      — the last four are the sale's terms as checkout showed them (`services/packages/sold-terms.ts`),
      frozen here because the catalogue row is admin-editable. The Purchase keeps the same metadata,
-     so a Part Payment's later Balance session carries them too.
+     and the webhook grants from the Purchase's copy, so a Part Payment's Balance is granted on them too.
    }, { expires_at: matches the redemption hold when the code is capped, else the standard 24h })
 8. Insert stripe_payments: status='pending', kind, client_id, payment_intent_id
 9. Return { client_secret, effective_price_sgd, applied_promotion, applied_promo_code }
@@ -523,13 +523,13 @@ tx start
    source_class_package_id or source_pt_package_id,
    applied_promotion_id / applied_promo_code_id = intent.metadata (frozen — later edits won't rewrite),
    location_id = intent.metadata.location_id (unlimited only),
-   duration_months = metadata.duration_months, frozen (unlimited only),
+   duration_months = purchase.metadata.duration_months, frozen (unlimited only),
    cross_location_paid_sgd = intent.metadata.cross_location_sgd (unlimited only, nullable),
-   credits_or_sessions_remaining = metadata.credits_or_sessions (NULL for unlimited),
-   validity_days = metadata.validity_days, frozen (every kind but unlimited),
-   list_price_sgd = metadata.list_price_sgd
-   (A session from before checkout froze these terms carries no validity_days or duration_months,
-    and is granted from the catalogue row as it stands.)
+   credits_or_sessions_remaining = purchase.metadata.credits_or_sessions (NULL for unlimited),
+   validity_days = purchase.metadata.validity_days, frozen (every kind but unlimited),
+   list_price_sgd = purchase.metadata.list_price_sgd
+   (A Purchase from before checkout froze these terms carries no validity_days or duration_months,
+    and is granted from the catalogue row as it stands, with an info log line.)
    expires_at = NULL on every kind — every purchase lands Dormant and Activates on the
                 first booking it pays for (be/docs/adr/0004), whatever else the member
                 holds or has running (be/docs/adr/0010),

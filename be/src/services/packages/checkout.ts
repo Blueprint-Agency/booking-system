@@ -137,7 +137,6 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   const { tenantId, clientId, packageKind, packageId, locationId, instructorId } = input
 
   let packageName: string
-  let priceSgd: string
   let appliedPromotionId: string | null = null
   let effectivePriceSgd: string
   let productType: 'class_package' | 'pt_package'
@@ -210,7 +209,6 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     }
 
     packageName = pkg.name
-    priceSgd = pkg.priceSgd
     appliedPromotionId = eff.appliedPromotionId
     effectivePriceSgd = eff.effectivePriceSgd
     productType = 'class_package'
@@ -240,7 +238,6 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
     promotion = promotionReduction(promos[pkg.id] ?? [], eff.appliedPromotionId, eff.effectivePriceSgd)
     packageName = pkg.name
-    priceSgd = pkg.priceSgd
     appliedPromotionId = eff.appliedPromotionId
     effectivePriceSgd = eff.effectivePriceSgd
     productType = 'pt_package'
@@ -276,7 +273,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   })
   const lines = packageSaleLines({
     planName: packageName,
-    listPriceSgd: priceSgd,
+    listPriceSgd: terms.listPriceSgd,
     reductions: [promotion, promoCodeReduction(applied)],
     crossLocation,
   })

@@ -656,6 +656,13 @@ async function dispatchStripeEvent(
         granted = await db.transaction(async () => {
           const hold = promoCodeId ? { promoCodeId, clientId } : null
           if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry, hold))) return null
+          const terms = soldTermsFromMetadata(purchase.metadata as Record<string, string>)
+          if (!terms) {
+            logger.info(
+              { purchaseId: purchase.id, packageId },
+              'stripe-webhook: a sale checked out before its terms were frozen is granted from the catalogue row',
+            )
+          }
           return grantPackage(tenantId, {
             clientId,
             purchaseId: purchase.id,
@@ -672,9 +679,9 @@ async function dispatchStripeEvent(
             // was wrong; this only carries it through.
             instructorId: meta.instructor_id || null,
             crossLocationPaidSgd: crossLocationSgd,
-            // The money is in: an archive since checkout cannot refuse it.
-            alreadySold: true,
-            soldTerms: soldTermsFromMetadata(meta),
+            // The money is in: an archive or an edit since checkout cannot
+            // refuse it or change what it grants.
+            alreadySold: { terms },
           })
         })
       } catch (err) {
