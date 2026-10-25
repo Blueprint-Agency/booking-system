@@ -78,7 +78,9 @@ checkout, only two runs in the same checkout ever wait on each other.
 one process (`--experimental-test-isolation=none`, the spelling Node 22 and 23 both accept;
 `--test-isolation` exists only from Node 23.6), so the app import and the database setup happen
 once per run instead of once per file. `--import ./src/test/environment.ts` puts the test
-environment in place before any file loads. In one process, every file's top level runs before
+environment in place before any file loads. `node --test` runs one file, `be/scripts/load-test-files.mjs`,
+which imports the test files itself, so a file whose top-level code fails is a failing test
+(`test-guardrails.md` § A test file's own failure). In one process, every file's top level runs before
 any test does, and a hook outside a `describe` hooks the whole run. So a backend test file must not:
 
 - call `before`, `after`, `beforeEach` or `afterEach` outside a `describe`;

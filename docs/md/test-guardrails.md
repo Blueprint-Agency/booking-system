@@ -8,6 +8,7 @@ make it pass.**
 | Guardrail | Where | What it stops |
 |---|---|---|
 | No skipped tests | `be/scripts/check.mjs` and every slice of the backend `test-shard` job (deploy-be.yml), which the `test` check sums up; `e2e/src/no-skips-reporter.ts` | A skip passing as a pass |
+| A test file's own failure fails the run | `be/scripts/load-test-files.mjs`, which `npm run check` runs | A failed top-level assertion, or a file that stops part way, passing as a pass |
 | Scenario Inventory traces | `scripts/check-scenarios.mjs` in `test-guardrails.yml` | A row still marked covered after its test was renamed or deleted (`testing.md`) |
 | Coverage report | nightly `be-coverage.yml` → run summary | Untested code going unseen (report only, no % gate) |
 
@@ -60,6 +61,21 @@ Postgres advisory lock on it for the whole run. See `testing.md` § Running the 
   `forbidOnly` also fails a stray `test.only`.
 
 A journey that is genuinely broken is a bug to file, not a test to skip.
+
+## A test file's own failure
+
+Many backend test files assert at their top level, outside any `test(...)`. Node 22's one-process
+run (`--experimental-test-isolation=none`) reports such a file only when it fails before it has
+registered a test. Once a file had registered one, Node dropped the error, the tests below it never
+ran, and the run passed. So `npm run check` hands `node --test` one file,
+`be/scripts/load-test-files.mjs`, which imports the test files itself. A file whose own code
+throws or fails an assertion, rejects a top-level `await`, or cannot load is a failing test named
+after the file. It counts in the TAP `# fail` line, and the run exits 1. An unhandled rejection
+fails the run too. If the next file is still loading, Node stops the run with the error (exit 7).
+Otherwise it is a `# Error:` line in the TAP, and the run exits 1. In CI the slice fails on that exit
+code before the skip check reads the summary. `be/scripts/check.test.mjs` runs `check.mjs` on
+fixture files that fail each way, written to a temporary directory so the suite never picks them
+up.
 
 ## Deleted tests
 
