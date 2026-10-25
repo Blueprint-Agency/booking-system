@@ -223,10 +223,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     console.log(`check: a full run, so ${database} starts empty, as CI's does`)
   }
 
+  const { SHARD, ...env } = process.env
   const result = spawnSync(process.execPath, argv, {
     cwd: beDir,
     stdio: 'inherit',
-    env: { ...process.env, CHECK_TEST_FILES: JSON.stringify(files) },
+    env: { ...env, CHECK_TEST_FILES: JSON.stringify(files) },
   })
   if (result.error) throw result.error
   process.exit(result.status ?? 1)

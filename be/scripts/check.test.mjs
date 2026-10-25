@@ -133,8 +133,13 @@ function checkFixtures(fixtures) {
       writeFileSync(join(dir, name), source)
       return join(dir, name)
     })
-    const { SHARD, NODE_TEST_CONTEXT, ...env } = process.env
-    return spawnSync(process.execPath, ['scripts/check.mjs', '--test-reporter=tap', ...files], { cwd: beDir, env, encoding: 'utf8' })
+    const { NODE_TEST_CONTEXT, ...env } = process.env
+    return spawnSync(process.execPath, ['scripts/check.mjs', '--test-reporter=tap', ...files], {
+      cwd: beDir,
+      env,
+      encoding: 'utf8',
+      timeout: 60_000,
+    })
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
