@@ -176,7 +176,6 @@ Single entry point for client (`/me/pt-sessions/:id/cancel`, `source='client'`) 
     `cancelled_*`; every booking `state='cancelled'`, `refund_outcome` per outcome.
   - Insert `cancellations` rows (`kind='pt'`, `source`, `was_within_window`, `was_within_cap`,
     `refund_fired`) — **admin rows excluded from cap**, consistent with the class path.
-  - Insert `inbox_items` (`type='admin_cancel_class_pt'` for admin; `client_cancellation` for client).
   - Email `pt_cancelled_session_returned` or `pt_cancelled_forfeited`.
 - **terminal** → idempotent no-op.
 

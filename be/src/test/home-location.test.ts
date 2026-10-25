@@ -33,9 +33,7 @@ describe('home location and member cancellations over HTTP', { skip: integration
     away: { id: string; roomId: string }
     classTypeId: string
     bundlePackageId: string
-    ptPackageId: string
     renewalPackageId: string
-    admin: Staff
     instructor: Staff
   }
   type Member = { clientId: string; headers: Record<string, string> }
@@ -92,10 +90,6 @@ describe('home location and member cancellations over HTTP', { skip: integration
       .insert(schema.classPackages)
       .values({ tenantId: tenant.id, name: `${NAME} month`, kind: 'unlimited', durationMonths: 1, priceSgd: '0.00' })
       .returning({ id: schema.classPackages.id })
-    const [pt] = await harness.db
-      .insert(schema.ptPackages)
-      .values({ tenantId: tenant.id, name: `${NAME} PT`, sessionType: '1on1', numSessions: 5, validityDays: 90, priceSgd: '400.00' })
-      .returning({ id: schema.ptPackages.id })
     const instructor = await staffAt(tenant, 'instructor', 'instructor')
     await harness.db.insert(schema.instructors).values({ tenantId: tenant.id, staffUserId: instructor.id })
     return {
@@ -105,8 +99,6 @@ describe('home location and member cancellations over HTTP', { skip: integration
       classTypeId: classType!.id,
       bundlePackageId: bundle!.id,
       renewalPackageId: renewal!.id,
-      ptPackageId: pt!.id,
-      admin: await staffAt(tenant, 'admin', 'admin'),
       instructor,
     }
   }
@@ -196,8 +188,6 @@ describe('home location and member cancellations over HTTP', { skip: integration
   const bookingsOn = (who: Member, classId: string) =>
     harness.db.select().from(schema.bookings).where(and(eq(schema.bookings.clientId, who.clientId), eq(schema.bookings.classId, classId)))
   const adjustmentsOf = (who: Member) => harness.db.select().from(schema.manualAdjustments).where(eq(schema.manualAdjustments.clientId, who.clientId))
-  const inboxFor = async (at: Studio, key: string, value: string) =>
-    harness.db.select().from(schema.inboxItems).where(and(eq(schema.inboxItems.tenantId, at.id), sql`${schema.inboxItems.payload}->>${key} = ${value}`))
 
   before(async () => {
     harness = await startTestApp()
@@ -344,75 +334,5 @@ describe('home location and member cancellations over HTTP', { skip: integration
     await plan(two, fay, { crossLocation: true })
     const res = await book(fay, await addClass(one, 'home'))
     assert.equal(res.status, 404, await res.text())
-  })
-
-  /* ── a member's own cancellation, in the Inbox ─────────────────────── */
-
-  test('INB-03 a member cancelling a scheduled PT session leaves a client-cancellation Inbox item naming them, the session and its refund', async () => {
-    const hal = await member(one, 'hal')
-    const [pack] = await harness.db
-      .insert(schema.clientPackages)
-      .values({
-        tenantId: one.id,
-        clientId: hal.clientId,
-        kind: 'pt',
-        sourcePtPackageId: one.ptPackageId,
-        validityDays: 90,
-        creditsOrSessionsRemaining: 2,
-        active: true,
-        amountPaidSgd: '400.00',
-        listPriceSgd: '400.00',
-      })
-      .returning({ id: schema.clientPackages.id })
-
-    const requested = await expectStatus(
-      await harness.app.request('/api/v1/me/pt-sessions/request', {
-        method: 'POST',
-        headers: { ...hal.headers, ...json },
-        body: JSON.stringify({
-          classTypeId: one.classTypeId,
-          locationId: one.home.id,
-          sessionType: '1on1',
-          clientPackageId: pack!.id,
-          // Inside the studio's Book in advance window, which a request must be.
-          slots: [{ proposedDate: new Date(Date.now() + 5 * DAY).toISOString().slice(0, 10), startTime: '09:00', endTime: '10:00' }],
-        }),
-      }),
-      201,
-    )
-    const requestId = requested.pt_request_id as string
-    const startsAt = new Date(Date.now() + 60 * DAY)
-    await expectStatus(
-      await harness.app.request(`/api/v1/portal/admin/pt-sessions/${requestId}/schedule`, {
-        method: 'POST',
-        headers: { ...one.admin.headers, ...json },
-        body: JSON.stringify({
-          instructor_id: one.instructor.id,
-          location_id: one.home.id,
-          room_id: one.home.roomId,
-          starts_at: startsAt.toISOString(),
-          ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
-          instructor_pay_sgd: 0,
-        }),
-      }),
-      201,
-    )
-    const [session] = await harness.db.select().from(schema.ptSessions).where(eq(schema.ptSessions.ptRequestId, requestId))
-    assert.ok(session)
-
-    const cancelled = await expectStatus(await harness.app.request(`/api/v1/me/pt-sessions/${requestId}/cancel`, { method: 'POST', headers: hal.headers }), 200)
-    assert.equal(cancelled.refundOutcome, 'session_returned')
-
-    const items = await inboxFor(one, 'ptSessionId', session.id)
-    assert.equal(items.length, 1)
-    const [item] = items
-    assert.equal(item!.type, 'client_cancellation')
-    const payload = item!.payload as Record<string, unknown>
-    assert.equal(payload.clientId, hal.clientId)
-    assert.equal(payload.ptRequestId, requestId)
-    assert.equal(payload.kind, 'pt')
-    assert.equal(payload.refundOutcome, 'session_returned')
-    assert.equal(payload.refundedSessions, 1)
-    assert.equal((await inboxFor(two, 'ptSessionId', session.id)).length, 0, 'written under the member\'s own studio only')
   })
 })

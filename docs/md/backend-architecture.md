@@ -1063,7 +1063,7 @@ The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-
 
 ### 4l. Inbox (§13)
 
-**The admin Inbox is not being built** (#237): its routes are gone and nothing reads `inbox_items`. A class or booking cancel no longer writes one; a PT session cancel and a workshop cancel still do, until those writes go with the table in a migration both backend devs review.
+**The admin Inbox is not being built** (#237): its routes are gone and nothing reads `inbox_items`. No cancel writes one any more (#434). The table itself stays until a migration both backend devs review drops it.
 
 #### `inbox_items`
 

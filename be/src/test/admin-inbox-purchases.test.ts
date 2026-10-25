@@ -10,19 +10,14 @@ const DOMAIN = `${run}.inbox.test`
 // Not ending in "Flow" / "Bundle": isolation.test.ts purges by those suffixes.
 const CLASS_TYPE_NAME = `Inbox class type ${run}`
 const BUNDLE_NAME = `Inbox pass ${run}`
-const PT_PACKAGE_NAME = `Inbox PT ${run}`
-const WORKSHOP_NAME = `Inbox workshop ${run}`
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
  * The admin Inbox and the admin Purchases surface over real HTTP (#206).
  *
- * **Inbox.** The admin Inbox is not being built (#237), and its routes are
- * gone. A class or booking cancel no longer writes an item; a PT session or
- * workshop cancel still does, until those writes are removed with the
- * `inbox_items` table. Each cancel is driven through the route a person uses;
- * the item is read back from the table.
+ * **Inbox.** The admin Inbox is not being built (#237) and its routes are gone;
+ * what is tested is INB-08's refusals, through the routes a person uses.
  *
  * **Purchases.** Part-paid Purchases that were never granted and have gone
  * silent (#95): the list an admin reads, and the refund button — with the
@@ -35,7 +30,6 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
   let fake!: StripeFake
   let classTypesSvc!: typeof import('../services/catalog/class-types')
   let classPackagesSvc!: typeof import('../services/packages/class-packages')
-  let ptPackagesSvc!: typeof import('../services/packages/pt-packages')
   let purchaseSvc!: typeof import('../services/packages/purchase')
 
   type Studio = {
@@ -45,7 +39,6 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     roomId: string
     classTypeId: string
     bundleId: string
-    ptPackageId: string
   }
   type Staff = { staffId: string; headers: Record<string, string> }
   type Member = { clientId: string; headers: Record<string, string> }
@@ -78,20 +71,12 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
       validityDays: 90,
       priceSgd: '200.00',
     })
-    const pt = await ptPackagesSvc.createPtPackage(tenant.id, {
-      name: PT_PACKAGE_NAME,
-      sessionType: '1on1',
-      numSessions: 5,
-      validityDays: 60,
-      priceSgd: '500.00',
-    })
     return {
       ...tenant,
       locationId: location.id,
       roomId: room.id,
       classTypeId: classType.id,
       bundleId: bundle.id,
-      ptPackageId: pt.id,
     }
   }
 
@@ -149,8 +134,6 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     return res.body
   }
 
-  // ── Classes, bookings, PT and workshops ──────────────────────────────────
-
   /** A class taught by `teacherAtOne`, starting `startsIn` ms from now. */
   async function addClass(at: Studio, startsIn: number): Promise<string> {
     const instructor = teacherAtOne
@@ -187,94 +170,12 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     return { ...who, bookingId: body.booking_id as string }
   }
 
-  let slot = 0
-  /** A PT request of `who`'s, scheduled by the admin: the request id. */
-  async function scheduledPt(at: Studio, who: Member): Promise<string> {
-    const { clientPackageId } = await purchaseSvc.grantPackage(at.id, {
-      clientId: who.clientId,
-      purchaseId: null,
-      amountSgd: '500.00',
-      packageKind: 'pt',
-      packageId: at.ptPackageId,
-    })
-    const requested = await ok(
-      send('/me/pt-sessions/request', who.headers, 'POST', {
-        classTypeId: at.classTypeId,
-        locationId: at.locationId,
-        sessionType: '1on1',
-        clientPackageId,
-        slots: [{ proposedDate: new Date(Date.now() + 5 * DAY).toISOString().slice(0, 10), startTime: '09:00', endTime: '10:00' }],
-      }),
-      201,
-    )
-    const startsAt = new Date(Date.now() + 4 * DAY + slot++ * 2 * HOUR)
-    await ok(
-      send(`/portal/admin/pt-sessions/${requested.pt_request_id}/schedule`, adminAtOne.headers, 'POST', {
-        location_id: at.locationId,
-        room_id: at.roomId,
-        starts_at: startsAt.toISOString(),
-        ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
-        instructor_id: teacherAtOne.staffId,
-        instructor_pay_sgd: 60,
-      }),
-      201,
-    )
-    return requested.pt_request_id as string
-  }
-
-  async function addWorkshop(at: Studio, holders: Member[]): Promise<string> {
-    const [workshop] = await harness.db
-      .insert(schema.workshops)
-      .values({ tenantId: at.id, name: WORKSHOP_NAME, locationId: at.locationId, createdByStaffId: adminAtOne.staffId })
-      .returning({ id: schema.workshops.id })
-    const [tier] = await harness.db
-      .insert(schema.workshopTiers)
-      .values({ tenantId: at.id, workshopId: workshop!.id, name: 'Full', regularPriceSgd: '0.00', ord: 1 })
-      .returning({ id: schema.workshopTiers.id })
-    const startsAt = new Date(Date.now() + 8 * DAY)
-    const [day] = await harness.db
-      .insert(schema.workshopDays)
-      .values({
-        tenantId: at.id,
-        workshopId: workshop!.id,
-        ord: 1,
-        roomId: at.roomId,
-        startsAt,
-        endsAt: new Date(startsAt.getTime() + 2 * HOUR),
-        basePriceSgd: '0.00',
-        capacityOnline: 10,
-      })
-      .returning({ id: schema.workshopDays.id })
-    await harness.db.insert(schema.workshopTierDays).values({ tenantId: at.id, workshopTierId: tier!.id, workshopDayId: day!.id })
-    for (const who of holders) {
-      await harness.db.insert(schema.bookings).values({
-        tenantId: at.id,
-        clientId: who.clientId,
-        kind: 'workshop',
-        workshopId: workshop!.id,
-        workshopTierId: tier!.id,
-        creditsOrSessionsUsed: 0,
-        listPriceSgd: '0.00',
-        amountPaidSgd: '0.00',
-        qrToken: `inbox-ws-${randomUUID()}`,
-        code: `IW-${randomUUID().slice(0, 6).toUpperCase()}`,
-      })
-    }
-    return workshop!.id
-  }
-
   /** Inbox items, at any studio, whose payload names `key` = `value`. */
   async function inboxNaming(key: string, value: string): Promise<InboxRow[]> {
     return harness.db
       .select({ type: schema.inboxItems.type, payload: schema.inboxItems.payload, tenantId: schema.inboxItems.tenantId })
       .from(schema.inboxItems)
       .where(sql`${schema.inboxItems.payload}->>${key} = ${value}`)
-  }
-
-  async function onlyItem(key: string, value: string): Promise<InboxRow> {
-    const rows = await inboxNaming(key, value)
-    assert.equal(rows.length, 1, `one Inbox item names ${key}=${value}: ${JSON.stringify(rows)}`)
-    return rows[0]!
   }
 
   // ── Part-paid Purchases ──────────────────────────────────────────────────
@@ -364,7 +265,6 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     schema = await import('../db/schema')
     classTypesSvc = inTenantContext(await import('../services/catalog/class-types'))
     classPackagesSvc = inTenantContext(await import('../services/packages/class-packages'))
-    ptPackagesSvc = inTenantContext(await import('../services/packages/pt-packages'))
     purchaseSvc = inTenantContext(await import('../services/packages/purchase'))
 
     const { installStripeFake } = await import('./stripe-fake')
@@ -392,36 +292,21 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     const ours = `%@${DOMAIN}`
     const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
     const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
-    const requests = sql`SELECT id FROM pt_requests WHERE client_id IN (${clients})`
-    const sessions = sql`SELECT id FROM pt_sessions WHERE pt_request_id IN (${requests})`
     const ourClasses = sql`SELECT id FROM classes WHERE created_by_staff_id IN (${staffIds})`
-    const ourWorkshops = sql`SELECT id FROM workshops WHERE name = ${WORKSHOP_NAME}`
     const q = (query: ReturnType<typeof sql>) => harness.db.execute(query)
     await q(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
     await q(sql`DELETE FROM inbox_items WHERE payload->>'classId' IN (SELECT id::text FROM (${ourClasses}) c)`)
-    await q(sql`DELETE FROM inbox_items WHERE payload->>'workshopId' IN (SELECT id::text FROM (${ourWorkshops}) w)`)
     await q(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
     await q(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
-    await q(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id IN (${requests})`)
     await q(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
-    await q(sql`DELETE FROM pt_session_clients WHERE pt_session_id IN (${sessions})`)
-    await q(sql`DELETE FROM pt_session_supporting_instructors WHERE pt_session_id IN (${sessions})`)
-    await q(sql`DELETE FROM pt_sessions WHERE id IN (${sessions})`)
-    await q(sql`DELETE FROM pt_request_slots WHERE pt_request_id IN (${requests})`)
-    await q(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await q(sql`DELETE FROM class_packages WHERE name = ${BUNDLE_NAME}`)
-    await q(sql`DELETE FROM pt_packages WHERE name = ${PT_PACKAGE_NAME}`)
     await q(sql`DELETE FROM classes WHERE created_by_staff_id IN (${staffIds})`)
-    await q(sql`DELETE FROM workshop_tier_days WHERE workshop_tier_id IN (SELECT id FROM workshop_tiers WHERE workshop_id IN (${ourWorkshops}))`)
-    await q(sql`DELETE FROM workshop_days WHERE workshop_id IN (${ourWorkshops})`)
-    await q(sql`DELETE FROM workshop_tiers WHERE workshop_id IN (${ourWorkshops})`)
-    await q(sql`DELETE FROM workshops WHERE name = ${WORKSHOP_NAME}`)
     await q(sql`DELETE FROM class_types WHERE name = ${CLASS_TYPE_NAME}`)
     await q(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
     await q(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
@@ -429,49 +314,6 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     await q(sql`DELETE FROM client_auth_users WHERE email LIKE ${ours}`)
     await q(sql`DELETE FROM staff_auth_users WHERE email LIKE ${ours}`)
     await harness.close()
-  })
-
-  // ── Inbox: what each cancellation writes ─────────────────────────────────
-
-  test('INB-01 an Admin cancelling a scheduled PT session writes an admin-cancel item for it', async () => {
-    const eli = await member(one, 'Eli PT')
-    const requestId = await scheduledPt(one, eli)
-
-    await ok(send(`/portal/admin/pt-sessions/${requestId}/cancel`, adminAtOne.headers))
-
-    const item = await onlyItem('ptRequestId', requestId)
-    assert.equal(item.type, 'admin_cancel_class_pt')
-    assert.equal(item.payload.kind, 'pt')
-    assert.equal(item.payload.clientId, eli.clientId)
-    assert.equal(item.payload.actorStaffId, adminAtOne.staffId)
-    assert.ok(item.payload.ptSessionId)
-    assert.ok(item.payload.refundOutcome)
-  })
-
-  test('INB-01 an Admin cancelling a workshop writes an admin-cancel-workshop item with the places it cancelled', async () => {
-    const holders = [await member(one, 'Fox Workshop'), await member(one, 'Gil Workshop')]
-    const workshopId = await addWorkshop(one, holders)
-
-    await ok(send(`/portal/admin/workshops/${workshopId}/cancel`, adminAtOne.headers))
-
-    const item = await onlyItem('workshopId', workshopId)
-    assert.equal(item.tenantId, one.id)
-    assert.equal(item.type, 'admin_cancel_workshop')
-    assert.equal(item.payload.cancelledByStaffId, adminAtOne.staffId)
-    assert.equal(item.payload.affectedBookings, 2)
-  })
-
-  test('INB-03 a member cancelling a scheduled PT session writes a client-cancellation item naming them and the refund outcome', async () => {
-    const ivy = await member(one, 'Ivy Self')
-    const requestId = await scheduledPt(one, ivy)
-    const ptCancelled = await ok(send(`/me/pt-sessions/${requestId}/cancel`, ivy.headers))
-
-    const ptItem = await onlyItem('ptRequestId', requestId)
-    assert.equal(ptItem.type, 'client_cancellation')
-    assert.equal(ptItem.payload.clientId, ivy.clientId)
-    assert.equal(ptItem.payload.kind, 'pt')
-    assert.ok(ptItem.payload.ptSessionId, 'names the session')
-    assert.equal(ptItem.payload.refundOutcome, ptCancelled.refundOutcome)
   })
 
   test('INB-08 a refused cancel leaves the class active and its booking confirmed, with no cancellation recorded: wrong role, another instructor’s class, or another studio', async () => {

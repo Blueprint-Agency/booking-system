@@ -29,7 +29,6 @@ import { and, asc, eq, notInArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
-import { inboxItems } from '../../db/schema/inbox'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
 import { actorOfSource, debitCredits, isVoided, recordMovement, refundCredits, type Tx } from '../packages/ledger'
@@ -738,20 +737,6 @@ export async function cancelManualSessionInTx(
     const last = seats.length === 1
     if (last) await endSession()
     else await followRoster(tx, tenantId, session.id, req)
-    await tx.insert(inboxItems).values({
-      tenantId,
-      type: 'client_cancellation',
-      payload: {
-        ptRequestId: req.id,
-        ptSessionId: session.id,
-        bookingId: mine.id,
-        clientId: mine.clientId,
-        kind: 'pt',
-        refundOutcome,
-        refundedSessions: refunded,
-        at: now.toISOString(),
-      },
-    })
     return { status: last ? 'cancelled_after_scheduled' : 'seat_cancelled', refundedSessions: refunded, refundOutcome }
   }
 
@@ -780,20 +765,6 @@ export async function cancelManualSessionInTx(
   }
   await endSession()
   const refundOutcome: RefundOutcome = refundedSessions > 0 ? 'session_returned' : 'n_a'
-  await tx.insert(inboxItems).values({
-    tenantId,
-    type: 'admin_cancel_class_pt',
-    payload: {
-      ptRequestId: req.id,
-      ptSessionId: session.id,
-      clientId: req.clientId,
-      kind: 'pt',
-      refundOutcome,
-      refundedSessions,
-      ...(input.actorStaffId ? { actorStaffId: input.actorStaffId } : {}),
-      at: now.toISOString(),
-    },
-  })
   return { status: 'cancelled_after_scheduled', refundedSessions, refundOutcome }
 }
 
@@ -835,22 +806,6 @@ export async function removeManualPtSessionMember(
       now,
     })
     await followRoster(tx, tenantId, session.id, req)
-    await tx.insert(inboxItems).values({
-      tenantId,
-      type: 'admin_cancel_class_pt',
-      payload: {
-        ptRequestId: req.id,
-        ptSessionId: session.id,
-        bookingId: seat.id,
-        clientId: seat.clientId,
-        kind: 'pt',
-        refundOutcome,
-        refundedSessions: refunded,
-        source: input.source,
-        actorStaffId: input.actorStaffId,
-        at: now.toISOString(),
-      },
-    })
     return { refundOutcome, refundedSessions: refunded }
   })
 }

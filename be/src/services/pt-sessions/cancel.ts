@@ -2,7 +2,6 @@ import { and, eq, inArray, lt } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
-import { inboxItems } from '../../db/schema/inbox'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
 import { actorOfSource, isVoided, recordMovement, refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
@@ -373,21 +372,6 @@ async function cancelPtRequestInTx(
       .update(ptRequests)
       .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId, cancelSource: source })
       .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
-
-    await tx.insert(inboxItems).values({
-      tenantId,
-      type: staff ? 'admin_cancel_class_pt' : 'client_cancellation',
-      payload: {
-        ptRequestId,
-        ptSessionId: session.id,
-        clientId: req.clientId,
-        kind: 'pt',
-        refundOutcome,
-        refundedSessions: refundSessions,
-        ...(actorStaffId ? { actorStaffId } : {}),
-        at: now.toISOString(),
-      },
-    })
 
     // NTF-11: every member the session booked is told — the requester with the
     // sessions returned to them, a 2-on-1 partner, who paid nothing, without.
