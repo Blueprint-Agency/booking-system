@@ -34,6 +34,7 @@ import { loadTenantById } from '../tenants/tenants'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { assertRoomInLocation } from './room-conflicts'
 import { assertHasCapacity } from './classes'
+import { cancelClassInTx } from '../bookings/cancel-class'
 import { eventSubjects, findClash, lockOccupancy, type SubjectClash } from './occupancy'
 import { ensureInstructors, exec, replaceRoster, type Tx } from './roster'
 import {
@@ -386,12 +387,8 @@ export async function endSeries(
     const booked = new Map(counts.map(c => [c.classId, Number(c.cnt)]))
 
     const unbooked = future.filter(c => !booked.has(c.id)).map(c => c.id)
-    // Nobody to refund or tell, so the flip is all class-cancel would do here.
-    if (unbooked.length) {
-      await tx
-        .update(classes)
-        .set({ lifecycle: 'cancelled', cancelledAt: now, cancelledByStaffId: input.actorStaffId })
-        .where(and(eq(classes.tenantId, tenantId), inArray(classes.id, unbooked)))
+    for (const classId of unbooked) {
+      await cancelClassInTx(tx, tenantId, { classId, actorStaffId: input.actorStaffId })
     }
     return {
       endedFrom,
