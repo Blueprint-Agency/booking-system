@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { afterCommit, db } from '../../db'
+import { afterCommit, db, retryingTransaction } from '../../db'
 import { classes } from '../../db/schema'
 import { countSeats } from '../bookings/seats'
 import { assertRoomInLocation } from './room-conflicts'
@@ -180,7 +180,9 @@ export async function updateClass(
   /** Who made the edit — named on the refunds a rule change makes. */
   actorStaffId?: string,
 ): Promise<ClassRow> {
-  const { row, ruleChange } = await db.transaction(async tx => {
+  // A rule change cancels bookings and promotes from their lines, so it can
+  // deadlock with a member's cancel as a promotion can (`cancelBooking`).
+  const { row, ruleChange } = await retryingTransaction(async tx => {
     // The lock booking takes (bookings/book.ts `lockClass`), before anything is
     // read: a booking made meanwhile is counted below, and one made after
     // waits and is judged by the edit.

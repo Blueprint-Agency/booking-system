@@ -379,6 +379,9 @@ tx start
     order through the same booking path as POST /bookings/class; a member whose package cannot pay
     stays `waiting`. A buffer or overbook seat promotes nobody.
 tx commit
+   Postgres aborting 0-10 for a deadlock (40P01) or a serialization failure (40001) runs them again
+   from 0, up to four attempts (db/index.ts:retryingTransaction): an Admin act that holds this
+   booking's package can reach the same head further on (#439). An aborted attempt sends nothing.
 11. 'class_waitlist_promoted' email to each promoted member (after commit, best-effort)
 12. refund fired (an in-time cancel that returned what the booking used): 'class_cancelled_credit_returned'
     (class) or 'pt_cancelled_session_returned' (private session) to the member, after commit and

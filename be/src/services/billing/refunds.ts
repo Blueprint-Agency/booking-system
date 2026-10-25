@@ -27,7 +27,8 @@
  * that was never revenue must not be subtracted from Net as though it had been.
  */
 import { and, eq, gt, inArray, ne, or, sql } from 'drizzle-orm'
-import { db, withTenant } from '../../db'
+import { afterCommit, db, retryingTransaction, withTenant } from '../../db'
+import { isRetryableAbort } from '../../db/retryable-abort'
 import { tenantForPaymentIntent } from '../../db/routing'
 import { auditLog, purchases, stripePayments } from '../../db/schema/ledger'
 import { bookings } from '../../db/schema/bookings'
@@ -1001,7 +1002,12 @@ export async function unwindRefund(
  * before its payment was recorded — the `charge.refunded` that should have
  * unwound it found no row — and runs this once it has written the row.
  */
-export async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
+export function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
+  // One unit: a deadlock in any of its cancels starts the whole unwind over.
+  return retryingTransaction(() => unwindPayment(paymentIntentId))
+}
+
+async function unwindPayment(paymentIntentId: string): Promise<void> {
   const [payment] = await db
     .select({
       // The provider's event names an intent and nothing else, and the intent is
@@ -1194,26 +1200,29 @@ async function unwindPurchase(tenantId: string, purchaseId: string): Promise<voi
   // The member is told. The provider sends its own money receipt; ours is the
   // one that says the plan has ended and names the classes that were cancelled.
   // Cancelling someone's booked classes silently is not acceptable — and this
-  // must never take the unwind down with it, so it swallows.
-  try {
-    const { slug, variables } = composeRefundEmail({
-      clientName: pkg.clientName,
-      packageName: pkg.classPackageName ?? pkg.ptPackageName ?? 'Your package',
-      // What the member gets back is the whole Purchase, which is what the
-      // Balance held a moment ago — however many cards it arrived on.
-      amountSgd: purchase.amountPaidSgd,
-      cancelled,
-      accountUrl: await accountUrlFor(tenantId),
-    })
-    await sendTemplatedEmail({
-      tenantId,
-      slug,
-      recipient: { email: pkg.clientEmail, userId: pkg.clientId, userKind: 'client' },
-      variables,
-    })
-  } catch (err) {
-    reportError(err, 'refund email failed', { scope: 'refunds', purchaseId })
-  }
+  // must never take the unwind down with it, so it swallows. Once committed,
+  // so an unwind run again (`retryingTransaction`) mails nobody twice.
+  afterCommit(async () => {
+    try {
+      const { slug, variables } = composeRefundEmail({
+        clientName: pkg.clientName,
+        packageName: pkg.classPackageName ?? pkg.ptPackageName ?? 'Your package',
+        // What the member gets back is the whole Purchase, which is what the
+        // Balance held a moment ago — however many cards it arrived on.
+        amountSgd: purchase.amountPaidSgd,
+        cancelled,
+        accountUrl: await accountUrlFor(tenantId),
+      })
+      await sendTemplatedEmail({
+        tenantId,
+        slug,
+        recipient: { email: pkg.clientEmail, userId: pkg.clientId, userKind: 'client' },
+        variables,
+      })
+    } catch (err) {
+      reportError(err, 'refund email failed', { scope: 'refunds', purchaseId })
+    }
+  })
 }
 
 /**
@@ -1251,24 +1260,28 @@ async function abandonPurchase(tenantId: string, purchase: PurchaseRow): Promise
   // The provider sends its own money receipt; ours is the one that says the
   // purchase is closed and that nothing was ever issued on it — which is the
   // question a member who part-paid will otherwise ring the studio to ask. It
-  // must never take the unwind down with it, so it swallows.
-  try {
-    const metadata = purchase.metadata as Record<string, string>
-    const { slug, variables } = composeAbandonedRefundEmail({
-      clientName: client.name,
-      itemName: metadata.item_name || 'your purchase',
-      amountSgd: returnedSgd,
-      accountUrl: await accountUrlFor(tenantId),
-    })
-    await sendTemplatedEmail({
-      tenantId,
-      slug,
-      recipient: { email: client.email, userId: purchase.clientId, userKind: 'client' },
-      variables,
-    })
-  } catch (err) {
-    reportError(err, 'abandoned refund email failed', { scope: 'refunds', purchaseId: purchase.id })
-  }
+  // must never take the unwind down with it, so it swallows. Once committed,
+  // as the refund email is.
+  const clientId = purchase.clientId
+  afterCommit(async () => {
+    try {
+      const metadata = purchase.metadata as Record<string, string>
+      const { slug, variables } = composeAbandonedRefundEmail({
+        clientName: client.name,
+        itemName: metadata.item_name || 'your purchase',
+        amountSgd: returnedSgd,
+        accountUrl: await accountUrlFor(tenantId),
+      })
+      await sendTemplatedEmail({
+        tenantId,
+        slug,
+        recipient: { email: client.email, userId: clientId, userKind: 'client' },
+        variables,
+      })
+    } catch (err) {
+      reportError(err, 'abandoned refund email failed', { scope: 'refunds', purchaseId: purchase.id })
+    }
+  })
 }
 
 /**
@@ -1363,6 +1376,7 @@ async function cancelFutureBookings(
       await cancelBooking(tenantId, { bookingId: t.id, source: 'system', credit: 'return', packageVoided: true })
       cancelled.push({ name: t.name, startsAt: t.startsAt })
     } catch (err) {
+      if (isRetryableAbort(err)) throw err
       // One booking that will not cancel — checked in between the read and the
       // write, most likely — must not strand the rest, nor hold back the email
       // telling the member their plan has ended. It is reported, loudly: a

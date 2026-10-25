@@ -23,7 +23,7 @@
  * with the cancels it causes (a Package rule change) uses `cancelBookingInTx`.
  */
 import { and, eq } from 'drizzle-orm'
-import { afterCommit, db } from '../../db'
+import { afterCommit, retryingTransaction } from '../../db'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { classes, ptRequests, ptSessions } from '../../db/schema/schedule'
 import { actorOfSource, isVoided, recordMovement, refundCredits } from '../packages/ledger'
@@ -116,7 +116,10 @@ export async function cancelBooking(
   tenantId: string,
   input: CancelInput,
 ): Promise<CancelResult> {
-  const { result, promotions } = await db.transaction(tx => cancelBookingInTx(tx, tenantId, input))
+  // A promotion locks the head of the line's time and packages, and an Admin
+  // act already holding the canceller's package can reach the same head
+  // further on (#439): Postgres aborts one of the two, and it runs again.
+  const { result, promotions } = await retryingTransaction(tx => cancelBookingInTx(tx, tenantId, input))
   // Once the request's transaction has committed (`afterCommit`), never inside it.
   if (promotions.length) afterCommit(() => sendPromotionEmails(tenantId, promotions))
   // NTF-09: a member who cancelled in time is told what came back. Never throws.
