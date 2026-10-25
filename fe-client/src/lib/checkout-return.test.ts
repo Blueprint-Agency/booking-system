@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cancelledNotice, confirmationOutcome, confirmationEyebrow, syncedReceipt } from "./checkout-return.ts";
+import {
+  cancelledNotice,
+  confirmationOutcome,
+  confirmationEyebrow,
+  NOT_GRANTED_COPY,
+  syncedReceipt,
+} from "./checkout-return.ts";
 
 const params = (query: string) => new URLSearchParams(query);
 
@@ -58,4 +64,28 @@ test("INV-10 the confirmation links the Receipt the sync named, and nothing when
   assert.equal(syncedReceipt({ ok: true, body: { status: "pending" } }), null);
   assert.equal(syncedReceipt({ ok: false, body: { error: "forbidden" } }), null);
   assert.equal(syncedReceipt("failed"), null);
+});
+
+test("PAY-68 a sync that says the Purchase was refunded or abandoned is neither a payment confirmed nor one still pending", () => {
+  assert.equal(confirmationOutcome("cs_1", { ok: true, body: { status: "refunded" } }), "refunded");
+  assert.equal(confirmationOutcome("cs_1", { ok: true, body: { status: "abandoned" } }), "abandoned");
+  const receipt = { id: "6f1d6c1e-6e0a-4d4e-9d5b-3d1d0c7a2b11", number: "R-000042" };
+  assert.equal(syncedReceipt({ ok: true, body: { status: "refunded", receipt } }), null);
+});
+
+test("PAY-68 a refunded or abandoned purchase is never called successful, and says nothing was added and the money goes back", () => {
+  for (const outcome of ["refunded", "abandoned"] as const) {
+    assert.doesNotMatch(confirmationEyebrow(outcome), /successful/i);
+    const { heading, body } = NOT_GRANTED_COPY[outcome];
+    assert.doesNotMatch(heading, /all set|booked|thank you|active/i);
+    assert.match(body, /nothing/i);
+    assert.match(body, /the way you paid \(card or PayNow\)/);
+  }
+  assert.notEqual(NOT_GRANTED_COPY.refunded.heading, NOT_GRANTED_COPY.abandoned.heading);
+});
+
+test("PAY-69 a part payment the sync counted towards a Balance is a payment confirmed, and a status the page does not know stays pending", () => {
+  assert.equal(confirmationOutcome("cs_1", { ok: true, body: { status: "owing", purchase: { outstanding_sgd: "100.00" } } }), "confirmed");
+  assert.equal(confirmationOutcome("cs_1", { ok: true, body: { status: "constructor" } }), "pending");
+  assert.equal(confirmationOutcome("cs_1", { ok: true, body: { status: "paid" } }), "pending");
 });
