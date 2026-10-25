@@ -66,6 +66,7 @@ import {
   markPurchaseRefunded,
   paymentsForPurchase,
   purchaseById,
+  restateBalanceOnPartRefund,
   type PurchasePayment,
   type PurchaseRow,
 } from './purchases'
@@ -1066,6 +1067,7 @@ async function unwindPurchase(tenantId: string, purchaseId: string): Promise<voi
   const payments = await paymentsForPurchase(tenantId, purchaseId)
   const outstanding = heldPayments(payments)
   if (outstanding.length > 0) {
+    await restateBalanceOnPartRefund(tenantId, purchaseId, payments)
     reportError(
       new Error(`purchase ${purchaseId} is part-refunded: ${outstanding.length} payment(s) still held`),
       'refund not complete — some payments not returned',

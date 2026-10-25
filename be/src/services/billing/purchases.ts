@@ -17,7 +17,7 @@ import { purchases, stripePayments } from '../../db/schema/ledger'
 import { toCents, toSgd } from '../../shared/money'
 import type { BillingAddress } from '../billing-details/billing-details'
 import { issueReceipt, stampReceiptRefunded } from '../receipts/issue'
-import { amountPaidCents, isSettled, outstandingCents } from './balance'
+import { amountPaidCents, isSettled, outstandingCents, type PaymentEvidence } from './balance'
 import { linesTotalCents, type PurchaseLine } from './purchase-lines'
 
 export type PurchaseRow = typeof purchases.$inferSelect
@@ -243,6 +243,23 @@ export async function markPurchaseRefunded(
   if (rows.length === 0) return false
   await stampReceiptRefunded(db, tenantId, purchaseId)
   return true
+}
+
+/**
+ * The Balance of a Purchase some of whose payments are back and some still
+ * held: what the payments still held add up to, from the payment rows. Its
+ * status stays. The Refund is not complete until every payment is back, and a
+ * paid Purchase put back to open would ask the member to pay again.
+ */
+export async function restateBalanceOnPartRefund(
+  tenantId: string,
+  purchaseId: string,
+  payments: PaymentEvidence[],
+): Promise<void> {
+  await db
+    .update(purchases)
+    .set({ amountPaidSgd: toSgd(amountPaidCents(payments)) })
+    .where(and(eq(purchases.tenantId, tenantId), eq(purchases.id, purchaseId)))
 }
 
 /**
