@@ -338,9 +338,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
 
   /**
    * The provider's `charge.refunded` delivery for a whole refund, as its
-   * dashboard sends it, to studio one's own endpoint. `metadata` is what the
-   * charge carries from its intent: a checkout of this system's own writes the
-   * studio and the member there.
+   * dashboard sends it, to studio one's own endpoint.
    */
   async function deliverRefund(intent: string, capturedCents: number, metadata: Record<string, string> = {}): Promise<Response> {
     refundedAtProvider.set(intent, capturedCents)

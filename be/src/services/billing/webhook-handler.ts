@@ -19,9 +19,16 @@ import { and, eq, ne } from 'drizzle-orm'
 import { type RetryPolicy } from '../../lib/outbound'
 import { latestCharge, methodPatch } from './payment-methods'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
-import { consumePromoCodeHold } from '../packages/promo-redemption'
+import { consumePromoCodeHold, refundPromoCodeRedemption } from '../packages/promo-redemption'
 import { returnLatePayment, unwindRefund, unwindRefundForTenant } from './refunds'
-import { openPurchase, paymentsForPurchase, purchaseById, recomputeBalance, type PurchaseRow } from './purchases'
+import {
+  markPurchaseAbandoned,
+  openPurchase,
+  paymentsForPurchase,
+  purchaseById,
+  recomputeBalance,
+  type PurchaseRow,
+} from './purchases'
 import { purchaseKindFor } from './checkout-session'
 import { toCents } from '../../shared/money'
 import { bookWorkshopPaid, tierDaysClash } from '../workshops/book'
@@ -35,7 +42,7 @@ import {
   sendWorkshopPurchaseEmail,
 } from '../notifications/send-purchase-email'
 import { logger, reportError } from '../../shared/logger'
-import { NotFoundError } from '../../shared/errors'
+import { ConflictError, NotFoundError } from '../../shared/errors'
 
 /** The provider's own receipt for a payment (§13), off its latest charge. */
 const receiptOf = (charge: Stripe.Charge | null): { receiptUrl?: string } =>
@@ -263,6 +270,12 @@ async function withReturnsHeard(
  * be read is not taken for refunded — the lookup is best-effort, as the
  * receipt and the method are (PAY-22), and a grant that lands before its
  * refund is unwound by the refund's own event.
+ *
+ * **The sale's Promo Code Hold is consumed here, and only for a Purchase still
+ * live** (PRM-21). The Hold is the member's one row for the code, not this
+ * Purchase's: a late payment on a closed Purchase that consumed it would take
+ * the Hold of the member's newer Purchase, and the unwind that returns the
+ * late payment stops at the closed Purchase without handing it back.
  */
 async function settleAndMayGrant(
   tenantId: string,
@@ -270,6 +283,7 @@ async function settleAndMayGrant(
   paymentIntentId: string,
   providerAccountId: string | null,
   retry?: RetryPolicy,
+  promoCodeHold?: { promoCodeId: string; clientId: string } | null,
 ): Promise<boolean> {
   const charge = await latestCharge(tenantId, paymentIntentId, providerAccountId, retry)
   if (charge && isRefundedInFull(charge)) {
@@ -287,6 +301,15 @@ async function settleAndMayGrant(
     return false
   }
 
+  // **At the FIRST payment, not at settlement** (#93). The price a Promo Code
+  // cut is already frozen on the Purchase, so a member paying with two cards is
+  // paying the discounted price whatever happens next; leaving the Redemption
+  // Held until the second card would let its Hold lapse and put a capped code's
+  // place back in the pool while somebody was mid-purchase at the discounted
+  // price. It only ever touches a Held row, so the second payment's delivery
+  // finds nothing to do.
+  if (promoCodeHold) await consumePromoCodeHold({ tenantId, ...promoCodeHold, paymentIntentId })
+
   const { settled } = await recomputeBalance(tenantId, purchase, paymentIntentId)
   if (settled) return true
 
@@ -302,6 +325,31 @@ async function settleAndMayGrant(
 function isRefundedInFull(charge: Stripe.Charge): boolean {
   const captured = charge.amount_captured ?? charge.amount ?? 0
   return captured > 0 && (charge.amount_refunded ?? 0) >= captured
+}
+
+/**
+ * Give back a sale whose money arrived and whose grant was then refused: a
+ * Trial Pass paid for on a second checkout the member opened before the first
+ * one granted (PKG-43). Eligibility is asked when checkout starts, so two can
+ * be open at once, and the one-trial index refuses the second grant.
+ *
+ * The unwind that each `charge.refunded` runs stops at the closed Purchase, so
+ * the Promo Code is handed back here rather than there.
+ */
+async function returnRefusedSale(
+  tenantId: string,
+  purchaseId: string,
+  paymentIntentId: string,
+  providerAccountId: string | null,
+  retry: RetryPolicy | undefined,
+): Promise<void> {
+  await bankPayment(tenantId, paymentIntentId, await chargePatch(tenantId, paymentIntentId, providerAccountId, retry))
+  await markPurchaseAbandoned(tenantId, purchaseId)
+  for (const payment of await paymentsForPurchase(tenantId, purchaseId)) {
+    if (payment.status !== 'succeeded') continue
+    await refundPromoCodeRedemption(tenantId, payment.paymentIntentId)
+    await returnLatePayment(tenantId, purchaseId, payment.paymentIntentId)
+  }
 }
 
 /**
@@ -407,6 +455,24 @@ function isCheckoutPaidEvent(event: Stripe.Event): boolean {
     event.type === 'checkout.session.completed' ||
     event.type === 'checkout.session.async_payment_succeeded'
   )
+}
+
+/**
+ * A full refund of a charge this studio's own checkout took, whose payment is
+ * not recorded yet (RFD-26).
+ *
+ * A late payment is given back inside the delivery that records it
+ * (`returnLatePayment`), so the provider can send its `charge.refunded` before
+ * that delivery commits. The unwind finds no payment row then and does nothing,
+ * and a 200 would tell the provider not to send it again: the payment would
+ * stay `succeeded` for money that went back. The charge carries the studio its
+ * checkout wrote, so a refund of this studio's own money is asked to come
+ * again; the route answers 503 with a warning, which is not an alert.
+ */
+export class RefundAheadOfPayment extends Error {
+  constructor(readonly paymentIntentId: string) {
+    super(`charge.refunded for ${paymentIntentId} arrived before its payment was recorded`)
+  }
 }
 
 /**
@@ -575,45 +641,46 @@ async function dispatchStripeEvent(
         }).onConflictDoNothing()
       }
 
-      // Payment succeeded, so the Hold becomes a Consumed Redemption, stamped
-      // with the moment and the payment intent (§10 step 3).
-      //
-      // **At the FIRST payment, not at settlement** (#93). The price a Promo
-      // Code cut is already frozen on the Purchase, so a member paying with two
-      // cards is paying the discounted price whatever happens next; leaving the
-      // Redemption Held until the second card would let its Hold lapse and put
-      // a capped code's place back in the pool while somebody was mid-purchase
-      // at the discounted price. It only ever touches a Held row, so the second
-      // payment's delivery finds nothing to do.
       const promoCodeId = meta.promo_code_id || null
-      if (promoCodeId) {
-        await consumePromoCodeHold({ tenantId, promoCodeId, clientId, paymentIntentId })
-      }
 
       // A sale paid in full at the first attempt — every sale before #93 — clears
       // here and carries on exactly as it did before Purchases existed. A part
       // payment stops, having banked its money and granted nothing.
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry))) return
-
-      const granted = await grantPackage(tenantId, {
-        clientId,
-        purchaseId: purchase.id,
-        amountSgd,
-        packageKind: kind === 'class_package' ? 'class' : 'pt',
-        packageId,
-        appliedPromotionId: meta.applied_promotion_id || null,
-        appliedPromoCodeId: promoCodeId,
-        // Home Location for an Unlimited Plan (§1). The checkout that puts it on
-        // the session is #23; this only carries it through.
-        locationId: meta.location_id || null,
-        // The instructor the member picked for an Instructor-Bound PT package
-        // (#109). Checkout put it on the session and refused the purchase if it
-        // was wrong; this only carries it through.
-        instructorId: meta.instructor_id || null,
-        crossLocationPaidSgd: crossLocationSgd,
-        // The money is in: an archive since checkout cannot refuse it.
-        alreadySold: true,
-      })
+      //
+      // In one savepoint with the grant, so a grant refused for a Trial Pass
+      // the member already holds (PKG-43) leaves the Purchase as the settle
+      // found it, to be given back.
+      let granted: { clientPackageId: string } | null
+      try {
+        granted = await db.transaction(async () => {
+          const hold = promoCodeId ? { promoCodeId, clientId } : null
+          if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry, hold))) return null
+          return grantPackage(tenantId, {
+            clientId,
+            purchaseId: purchase.id,
+            amountSgd,
+            packageKind: kind === 'class_package' ? 'class' : 'pt',
+            packageId,
+            appliedPromotionId: meta.applied_promotion_id || null,
+            appliedPromoCodeId: promoCodeId,
+            // Home Location for an Unlimited Plan (§1). The checkout that puts it on
+            // the session is #23; this only carries it through.
+            locationId: meta.location_id || null,
+            // The instructor the member picked for an Instructor-Bound PT package
+            // (#109). Checkout put it on the session and refused the purchase if it
+            // was wrong; this only carries it through.
+            instructorId: meta.instructor_id || null,
+            crossLocationPaidSgd: crossLocationSgd,
+            // The money is in: an archive since checkout cannot refuse it.
+            alreadySold: true,
+          })
+        })
+      } catch (err) {
+        if (!(err instanceof ConflictError && err.code === 'trial_already_used')) throw err
+        await returnRefusedSale(tenantId, purchase.id, paymentIntentId, providerAccountId, retry)
+        return
+      }
+      if (!granted) return
 
       // Mark the payment succeeded + link the granted package so a second
       // delivery (webhook AND sync-session both fire in local dev) short-circuits
@@ -887,12 +954,7 @@ async function dispatchStripeEvent(
           .onConflictDoNothing()
       }
 
-      // Consumed at the first payment and the price locks with it — see the
-      // package branch above for why it cannot wait for settlement.
       const promoCodeId = meta.promo_code_id || null
-      if (promoCodeId) {
-        await consumePromoCodeHold({ tenantId, promoCodeId, clientId, paymentIntentId })
-      }
 
       // A workshop place is not held until the Balance reaches zero — the
       // booking is the grant, and it is not made while anything is outstanding.
@@ -908,7 +970,8 @@ async function dispatchStripeEvent(
       // settling payment that refuses the booking and flags the Purchase for the
       // studio to refund — which needs a way to refund a Purchase that granted
       // nothing, and there is none yet (see `refundStatesFor`).
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry))) return
+      const hold = promoCodeId ? { promoCodeId, clientId } : null
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry, hold))) return
 
       const booked = await bookWorkshopPaid(tenantId, {
         clientId,
@@ -975,6 +1038,13 @@ async function dispatchStripeEvent(
     // running and their bookings stand — so there is nothing here to unwind and
     // no amount to record. Only a full refund voids anything.
     if (!isRefundedInFull(charge)) return
+
+    if (
+      charge.metadata?.tenant_id === expectedTenantId &&
+      !(await tenantForPaymentIntent(paymentIntentId, expectedTenantId))
+    ) {
+      throw new RefundAheadOfPayment(paymentIntentId)
+    }
 
     // The whole unwind lives on this event, so a refund issued from the portal
     // and one issued from the provider's dashboard are the same operation. It is
