@@ -56,7 +56,7 @@ const registerSchema = z.object({
   otp: z.string().trim().min(1).max(12),
   first_name: z.string().trim().min(1).max(100),
   last_name: z.string().trim().min(1).max(100),
-  phone: z.string().trim().min(1).max(40),
+  phone: z.string(),
   gender: z.enum(clientGenderEnum.enumValues).optional(),
   password,
 })

@@ -99,7 +99,7 @@ const listQuery = z.object({
 const createSchema = z.object({
   name: z.string().min(1).max(160),
   email: z.string().email(),
-  phone: z.string().min(1).max(40),
+  phone: z.string(),
   gender: z
     .enum(clientGenderEnum.enumValues, {
       message: 'Gender is female, male, non-binary or prefer not to say.',

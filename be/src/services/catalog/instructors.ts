@@ -5,6 +5,7 @@ import { instructors } from '../../db/schema/catalog'
 import { ConflictError, NotFoundError, BadRequestError } from '../../shared/errors'
 import { assertOwnObjectKeys } from '../../lib/object-key'
 import { inviterNameFor, mailInvitation, writePendingStaff } from '../auth/invitations'
+import { assertBioWithin } from '../auth/staff-bio'
 import { requireTenantUrl } from '../tenants/urls'
 
 export type StaffRow = typeof staffUsers.$inferSelect
@@ -116,6 +117,7 @@ export async function createInstructor(
 ): Promise<InstructorView> {
   const email = input.email.trim().toLowerCase()
   if (!email) throw new BadRequestError('email_required')
+  assertBioWithin(input.bio)
   // The photo is an object key an admin sends as a string, not an upload made
   // here, so without this a profile is a way to point at another studio's file.
   assertOwnObjectKeys(tenantId, [input.photoR2Key])
@@ -175,7 +177,6 @@ export async function createInstructor(
   return view
 }
 
-const BIO_MAX = 2000
 const PHONE_MAX = 40
 
 function assertWithin(value: string | null | undefined, what: string, max: number): void {
@@ -196,9 +197,9 @@ export async function updateInstructor(
   id: string,
   patch: UpdateInstructorInput,
 ): Promise<InstructorView> {
-  await loadById(tenantId, id) // 404 if missing
+  const current = await loadById(tenantId, id)
   assertOwnObjectKeys(tenantId, [patch.photoR2Key])
-  assertWithin(patch.bio, 'A bio', BIO_MAX)
+  assertBioWithin(patch.bio, current.bio)
   assertWithin(patch.phone, 'A phone number', PHONE_MAX)
 
   await db.transaction(async tx => {

@@ -19,7 +19,8 @@ import {
   type CatalogRoom,
 } from "@/lib/catalog";
 import { atLocalTime, localDay } from "@/lib/local-day";
-import { scheduleErrorMessage, type Slot } from "@/lib/schedule";
+import type { Slot } from "@/lib/schedule";
+import { workshopSaveError } from "@/lib/workshop-save-error";
 import { PAY_OPTIONAL_HINT, payOrNull } from "@/lib/pay";
 import { WORKSHOP_CANCEL_CONFIRM } from "@/lib/workshop-cancel";
 import {
@@ -394,7 +395,7 @@ export function WorkshopEditor({
         onSave(id);
       }
     } catch (err) {
-      const msg = scheduleErrorMessage(err);
+      const msg = workshopSaveError(err);
       setError(msg);
       toast.error(msg);
     } finally {

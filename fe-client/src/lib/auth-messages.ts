@@ -9,7 +9,9 @@ import { MIN_PASSWORD_LENGTH } from "./password.ts";
  * `client_blocked` comes back as a Better Auth `message`.
  *
  * Pure, so it is testable without a browser. A code it does not know gets the
- * caller's fallback rather than the raw string — a member should never read
+ * backend's own sentence when the refusal carries one (`{ error, message }`,
+ * such as a phone that is not a phone number), and otherwise the caller's
+ * fallback rather than the raw string — a member should never read
  * `internal_error`.
  */
 export type MemberAuthError =
@@ -50,6 +52,6 @@ export function memberAuthMessage(error: MemberAuthError, fallback: string): str
     case "invalid_token":
       return "This link has expired or was already used. Ask for a new link.";
     default:
-      return fallback;
+      return error.error && error.message ? error.message : fallback;
   }
 }

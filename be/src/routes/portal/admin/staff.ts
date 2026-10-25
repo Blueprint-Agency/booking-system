@@ -53,7 +53,7 @@ const updateStaffSchema = z.object({
   phone: z.string().trim().max(40).nullable().optional(),
   address: z.string().trim().max(500).nullable().optional(),
   gender: genderEnum.nullable().optional(),
-  bio: z.string().max(4000).nullable().optional(),
+  bio: z.string().nullable().optional(),
   languages: z.array(z.string().trim().min(1).max(60)).optional(),
   role: z.enum(['admin', 'instructor']).optional(),
   // The whole grant, replacing what is stored. An Instructor's only: on an
