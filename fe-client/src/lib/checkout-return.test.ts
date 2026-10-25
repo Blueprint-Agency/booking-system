@@ -79,7 +79,7 @@ test("PAY-68 a refunded or abandoned purchase is never called successful, and sa
     const { heading, body } = NOT_GRANTED_COPY[outcome];
     assert.doesNotMatch(heading, /all set|booked|thank you|active/i);
     assert.match(body, /nothing/i);
-    assert.match(body, /card you paid with/);
+    assert.match(body, /the way you paid \(card or PayNow\)/);
   }
   assert.notEqual(NOT_GRANTED_COPY.refunded.heading, NOT_GRANTED_COPY.abandoned.heading);
 });

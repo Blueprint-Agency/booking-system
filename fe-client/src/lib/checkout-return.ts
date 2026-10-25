@@ -94,12 +94,12 @@ export const NOT_GRANTED_COPY: Record<NotGranted, { heading: string; body: strin
   refunded: {
     heading: "This purchase has been refunded",
     body:
-      "Nothing from it is on your account. Your payment goes back to the card you paid with, which can take a few business days. If you weren't expecting this, please contact the studio.",
+      "Nothing from it is on your account. Your payment goes back the way you paid (card or PayNow), which can take a few business days. If you weren't expecting this, please contact the studio.",
   },
   abandoned: {
     heading: "We couldn't complete this purchase",
     body:
-      "Nothing was added to your account, and your payment is being returned to the card you paid with, which can take a few business days. You can buy it again whenever you're ready, or contact the studio if you have questions.",
+      "Nothing was added to your account, and your payment is being returned the way you paid (card or PayNow), which can take a few business days. You can buy it again whenever you're ready, or contact the studio if you have questions.",
   },
 };
 
