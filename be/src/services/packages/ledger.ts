@@ -29,7 +29,7 @@
  *   - `packages/expire.ts`, `packages/activation.ts` `sweepExpired` — the time-trigger
  *     that flips `active` on expiry; each records what it ended through `recordExpired`.
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray, or } from 'drizzle-orm'
 import type { db } from '../../db'
 import { clientPackages } from '../../db/schema/packages'
 import { creditMovements, manualAdjustments, purchases } from '../../db/schema/ledger'
@@ -188,6 +188,31 @@ export async function isVoided(tx: Pick<Handle, 'select'>, tenantId: string, cli
     )
     .limit(1)
   return row !== undefined
+}
+
+/**
+ * Lock, for the rest of the transaction, the packages named and every package
+ * of the members named, in id order. A pass that moves more than one member's
+ * credits takes them all here, after any member-time lock and before its first
+ * movement, so two passes never each hold one package and wait on the other's
+ * (#439).
+ */
+export async function lockPackages(
+  tx: Tx,
+  tenantId: string,
+  of: { packageIds?: readonly string[]; clientIds?: readonly string[] },
+): Promise<void> {
+  const named = [
+    ...(of.packageIds?.length ? [inArray(clientPackages.id, [...of.packageIds])] : []),
+    ...(of.clientIds?.length ? [inArray(clientPackages.clientId, [...of.clientIds])] : []),
+  ]
+  if (!named.length) return
+  await tx
+    .select({ id: clientPackages.id })
+    .from(clientPackages)
+    .where(and(eq(clientPackages.tenantId, tenantId), or(...named)))
+    .orderBy(clientPackages.id)
+    .for('update')
 }
 
 /** Spend `amount` credits/sessions. Throws 409 `insufficient_credits` rather than overdrawing. */

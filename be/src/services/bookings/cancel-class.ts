@@ -20,7 +20,7 @@ import { classes } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { bookings, cancellations } from '../../db/schema/bookings'
-import { isVoided, refundCredits } from '../packages/ledger'
+import { isVoided, lockPackages, refundCredits } from '../packages/ledger'
 import { computeEventState } from '../policy/event-state'
 import { staffCancelInTime } from '../policy/evaluate-cancellation'
 import { now as clockNow } from '../../lib/clock'
@@ -123,6 +123,7 @@ export async function cancelClassInTx(
       ),
     )
     .for('update')
+  await lockPackages(tx, tenantId, { packageIds: confirmed.flatMap(b => (b.clientPackageId ? [b.clientPackageId] : [])) })
 
   // Whether the cancel came before the class window, as a staff cancel of
   // one booking records it (#350): never acted on, every credit comes back.

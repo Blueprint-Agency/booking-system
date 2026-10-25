@@ -11,16 +11,16 @@
  * Inside the Cancellation Window nobody is moved automatically: a promoted
  * member must always be able to cancel free. Staff fill those seats by hand.
  */
-import { and, eq, inArray, or } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { waitlistEntries } from '../../db/schema/bookings'
 import { classes } from '../../db/schema/schedule'
 import { classTypes, locations } from '../../db/schema/catalog'
 import { clients, staffUsers } from '../../db/schema/identity'
-import { clientPackages } from '../../db/schema/packages'
 import type { Tx } from '../schedule/roster'
 import { holdsSeat, lockClass, payAndBook } from '../bookings/book'
 import { lockMemberTime } from '../bookings/member-time'
+import { lockPackages } from '../packages/ledger'
 import { countSeats } from '../bookings/seats'
 import { sendTemplatedEmail } from '../notifications/send'
 import { loadTenantById } from '../tenants/tenants'
@@ -129,18 +129,7 @@ export async function lockPromotionMembers(
   if (!promotable?.line.length) return
   const waiting = promotable.line.map(e => e.clientId)
   await lockMemberTime(tx, tenantId, waiting)
-  const theirs = inArray(clientPackages.clientId, waiting)
-  await tx
-    .select({ id: clientPackages.id })
-    .from(clientPackages)
-    .where(
-      and(
-        eq(clientPackages.tenantId, tenantId),
-        refundPackageId ? or(theirs, eq(clientPackages.id, refundPackageId)) : theirs,
-      ),
-    )
-    .orderBy(clientPackages.id)
-    .for('update')
+  await lockPackages(tx, tenantId, { clientIds: waiting, packageIds: refundPackageId ? [refundPackageId] : [] })
 }
 
 /**
