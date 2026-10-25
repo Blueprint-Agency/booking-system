@@ -361,9 +361,10 @@ tx start
    A class cancel inside its window is NOT refused: it is a Late cancel (#318) —
    refund='forfeit', wasWithinWindow=false. In time, refund='full' while under the
    cap, or always when cancel_cap_enabled is false.
-3b. kind='class' AND booking.seat='online' AND the class would promote (step 10): lock every
-   waiting member's time, then the booking's package and every package of theirs, in id order,
-   before any package is written — so two cancels that each promote the other take turns (#439)
+3b. kind='class' AND booking.seat='online' AND the class would promote (step 10): lock the head
+   of the line's time, then the booking's package and every package of the head's, in id order,
+   before any package is written — so two cancels that each promote the other take turns (#439).
+   Only the head: a member further back is locked if step 10 reaches them, as on any booking
 4. Settle (services/bookings/refund-outcome.ts:settleCancel — the preview's settlement too):
    - refund='full', something spent, a package to return it to: credits_or_sessions_used
      go back; refund_outcome='credit_returned' | 'session_returned'

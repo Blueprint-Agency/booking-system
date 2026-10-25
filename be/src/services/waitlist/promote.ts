@@ -111,7 +111,12 @@ async function promotableLine(tx: Tx, tenantId: string, classId: string, now: Da
   return { cls, line: await waitingLine(tx, tenantId, classId, now) }
 }
 
-export async function lockPromotionMembers(
+/**
+ * Only the head: a member further back is locked if the promotion reaches them,
+ * as on any booking. Locking the whole line meets every path that refunds
+ * several members in an order of its own (a session cancel, a rule change).
+ */
+export async function lockPromotionHead(
   tx: Tx,
   tenantId: string,
   classId: string,
@@ -119,10 +124,10 @@ export async function lockPromotionMembers(
   now: Date,
 ): Promise<void> {
   const promotable = await promotableLine(tx, tenantId, classId, now)
-  if (!promotable?.line.length) return
-  const waiting = promotable.line.map(e => e.clientId)
-  await lockMemberTime(tx, tenantId, waiting)
-  await lockPackages(tx, tenantId, { clientIds: waiting, packageIds: refundPackageId ? [refundPackageId] : [] })
+  const head = promotable && nextToPromote(promotable.line, new Map())
+  if (!head) return
+  await lockMemberTime(tx, tenantId, [head.clientId])
+  await lockPackages(tx, tenantId, { clientIds: [head.clientId], packageIds: refundPackageId ? [refundPackageId] : [] })
 }
 
 /**

@@ -36,7 +36,7 @@ import {
   type StaffCredit,
 } from './refund-outcome'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
-import { lockPromotionMembers, promoteFromWaitlist, sendPromotionEmails, type Promotion } from '../waitlist/promote'
+import { lockPromotionHead, promoteFromWaitlist, sendPromotionEmails, type Promotion } from '../waitlist/promote'
 import { assertMayWorkClass } from '../waitlist/staff'
 import type { Tx } from '../schedule/roster'
 import { settleSessionAfterBookingCancel, type LockedSessionRequest } from '../pt-sessions/manual'
@@ -245,7 +245,7 @@ export async function cancelBookingInTx(
     evaluation?.wasWithinWindow ?? (await staffCancelInTime(tenantId, cancelKind, sessionStartsAt, now))
 
   const freesOnlineSeat = bk.kind === 'class' && bk.seat === 'online'
-  if (freesOnlineSeat) await lockPromotionMembers(tx, tenantId, bk.classId!, bk.clientPackageId, now)
+  if (freesOnlineSeat) await lockPromotionHead(tx, tenantId, bk.classId!, bk.clientPackageId, now)
 
   // 4. Return the credit/session to the originating package. The ledger also
   // re-derives `active`, so a bundle emptied to zero becomes spendable again
