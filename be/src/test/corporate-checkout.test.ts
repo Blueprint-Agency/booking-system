@@ -294,6 +294,74 @@ describe('buying a corporate package over HTTP', { skip: integrationTestsEnabled
     assert.equal((await packagesOf(mia)).length, 0)
   })
 
+  test('CORP-17 a second payment confirmed for a corporate Purchase that already made its request makes no second request, and the delivery succeeds', async () => {
+    const mia = await member(one)
+    await expectStatus(await buyCorporate(mia), 200)
+    const { params } = lastCheckoutSession(fake)
+    const purchaseId = params.metadata.purchase_id
+    assert.ok(purchaseId, 'the session names its Purchase')
+    await expectStatus(await deliverTo(harness, one.slug, completedEvent(params, `pi_${randomUUID()}`)), 200)
+    const [made] = await requestsOf(mia)
+    assert.ok(made, 'the first payment made the request')
+
+    await expectStatus(await deliverTo(harness, one.slug, completedEvent(params, `pi_${randomUUID()}`)), 200)
+
+    assert.deepEqual(
+      (await requestsOf(mia)).map(r => [r.id, r.status, r.purchaseId]),
+      [[made.id, 'pending', purchaseId]],
+      'one request for the Purchase',
+    )
+  })
+
+  test('CORP-18 two writes making the Corporate Request for one Purchase at once make one request, and the second returns the first one’s', async () => {
+    const mia = await member(one)
+    const packageId = await corporatePackage(one, adminAtOne, '900.00')
+    const [sale] = await harness.db
+      .insert(schema.purchases)
+      .values({ tenantId: one.id, clientId: mia.clientId, kind: 'corporate_package', totalSgd: '900.00', amountPaidSgd: '900.00', status: 'paid' })
+      .returning({ id: schema.purchases.id })
+    const { db, withTenant } = await import('../db')
+    const { createCorporateRequest } = await import('../services/corporate/requests')
+    const input = { clientId: mia.clientId, corporatePackageId: packageId, purchaseId: sale!.id }
+
+    let release!: () => void
+    const released = new Promise<void>(resolve => (release = resolve))
+    let holding!: (pid: number) => void
+    const held = new Promise<number>(resolve => (holding = resolve))
+    const first = withTenant(one.id, async () => {
+      const made = await createCorporateRequest(one.id, input)
+      const [me] = await db.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`)
+      holding(me!.pid)
+      await released
+      return made
+    })
+    const holder = await Promise.race([
+      held,
+      first.then(() => assert.fail('the first write committed before the second started')),
+    ])
+
+    let answered = false
+    const second = withTenant(one.id, () => createCorporateRequest(one.id, input)).finally(() => (answered = true))
+    const deadline = Date.now() + 10_000
+    while (!answered) {
+      const [queued] = await harness.db.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted AND ${holder}::int = ANY(pg_blocking_pids(pid))`,
+      )
+      if (queued!.n > 0) break
+      assert.ok(Date.now() < deadline, 'the second write never waited on the first')
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    release()
+
+    const [won, lost] = await Promise.all([first, second])
+    assert.equal(lost.corporateRequestId, won.corporateRequestId, 'the second write names the request the first made')
+    const made = await harness.db
+      .select({ id: schema.corporateRequests.id })
+      .from(schema.corporateRequests)
+      .where(eq(schema.corporateRequests.purchaseId, sale!.id))
+    assert.deepEqual(made.map(r => r.id), [won.corporateRequestId], 'one request for the Purchase')
+  })
+
   test('CORP-03 a delivery naming one studio’s corporate sale on another studio’s endpoint is refused, and nothing is written', async () => {
     const mia = await member(one)
     await expectStatus(await buyCorporate(mia), 200)
