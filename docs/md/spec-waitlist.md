@@ -132,13 +132,13 @@ The join check that the class starts outside the window is Mindbody's reason and
 
 ### 5. Promotion
 
-`promoteFromWaitlist(tx, classId, now)` is called from `cancelBooking` after the booking flips to `cancelled`, inside the same transaction, holding the class lock it already takes (`cancel.ts:92-110`). It also runs after a staff "Remove" of a confirmed booking and after a refund- or complimentary-driven cancel, which already go through `cancelBooking` (`refunds.ts:1203`, `complimentary.ts:357`).
+`promoteFromWaitlist(tx, tenantId, classId, now)` is called from `cancelBookingInTx` (which `cancelBooking` wraps) after the booking flips to `cancelled`, inside the same transaction, holding the class lock it already takes. It also runs after a staff "Remove" of a confirmed booking and after a refund- or complimentary-driven cancel, which already go through `cancelBooking` (`cancelFutureBookings` in `services/billing/refunds.ts`, `cancelFutureBookingsOn` in `services/packages/complimentary.ts`).
 
 1. If `now ≥ starts_at − window`, return. (Mindbody's default: no auto-add inside the window. Its "First to Claim" / "Continue auto-add" modes are SMS features and out of scope.)
 2. While `online_used < capacity_online`:
    - Take the first `waiting` entry in order that has not been tried in this call.
    - Run `sweepExpired` and `selectPackage` for it, with no package named — so the member's **Default payer** pays (`be/docs/adr/0010-several-packages-run-per-family.md`: running soonest-ending first, then Dormant with Unlimited Plans before credits). The same holds for the join check (§4), staff Add to class (§7) and the panel's "Pending: <package>" (§10). If refused, leave it `waiting` and try the next (Mindbody: "Invalid" clients stay on the list and are re-checked when the next spot opens). A member who has since booked something at an overlapping time is skipped the same way (`time_clash`): nobody is there to say "book anyway", and cancelling the other booking puts them back in contention.
-   - Otherwise create the booking through the same code path as `bookClass` (debit, dormant activation, QR token, `seat = 'online'`), set the entry `promoted` with `booking_id`, and enqueue the `class_waitlist_promoted` email.
+   - Otherwise create the booking through `payAndBook`, the same code path as `bookClass` (debit, dormant activation, QR token, `seat = 'online'`), and set the entry `promoted` with `booking_id`. The caller sends the `class_waitlist_promoted` email once the transaction has committed (`sendPromotionEmails`).
 3. Stop when the seats are full or the line is exhausted.
 
 The promoted booking is a normal booking: it cancels under the normal policy and counts toward the member's cancellation cap like any other. Because promotion only happens outside the window, a promoted member always has the full window to cancel free.

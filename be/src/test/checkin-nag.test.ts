@@ -24,7 +24,9 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let jobs!: typeof import('../jobs')
+  let tenantDb!: typeof import('../db')
   let ensureAuthUser!: typeof import('../services/auth/auth-users').ensureAuthUser
+  let cancelBooking!: typeof import('../services/bookings/cancel').cancelBooking
 
   type Staff = { id: string; email: string; name: string }
   type Studio = { id: string; slug: string; locationId: string; roomId: string; classTypeId: string; instructor: Staff; admin: Staff }
@@ -172,11 +174,62 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
     return rows.map(r => r.email)
   }
 
+  async function untilBlockedBy(pid: number): Promise<void> {
+    const deadline = Date.now() + 10_000
+    for (;;) {
+      const [blocked] = await harness.db.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted AND ${pid}::int = ANY(pg_blocking_pids(pid))`,
+      )
+      if (blocked!.n > 0) return
+      assert.ok(Date.now() < deadline, 'the tick never queued behind the held table')
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+  }
+
+  async function writeBeforeTheClaim(table: 'classes' | 'pt_sessions', write: () => Promise<unknown>): Promise<void> {
+    let release!: () => void
+    const released = new Promise<void>(resolve => (release = resolve))
+    let holding!: (pid: number) => void
+    const held = new Promise<number>(resolve => (holding = resolve))
+    const holder = tenantDb.withTenant(one.id, async () => {
+      await tenantDb.db.execute(sql`LOCK TABLE ${sql.identifier(table)} IN SHARE MODE`)
+      const [row] = await tenantDb.db.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`)
+      holding(row!.pid)
+      await released
+    })
+    const pid = await Promise.race([held, holder.then(() => 0)])
+    let ticking: Promise<void> = Promise.resolve()
+    try {
+      ticking = jobs.scheduledJobs.sendCheckInNags()
+      await untilBlockedBy(pid)
+      await tenantDb.withTenant(one.id, write)
+    } finally {
+      release()
+      await holder
+      await ticking
+    }
+  }
+
+  const tickAttended = (bookingId: string) =>
+    tenantDb.db.update(schema.bookings).set({ checkInState: 'attended', refundOutcome: 'n_a' }).where(eq(schema.bookings.id, bookingId))
+
+  async function unmarkedOn(session: { classId: string } | { ptSessionId: string }): Promise<string> {
+    const on = 'classId' in session ? eq(schema.bookings.classId, session.classId) : eq(schema.bookings.ptSessionId, session.ptSessionId)
+    const rows = await harness.db
+      .select({ id: schema.bookings.id })
+      .from(schema.bookings)
+      .where(and(on, eq(schema.bookings.checkInState, 'pending')))
+    assert.equal(rows.length, 1, 'one member is still unmarked')
+    return rows[0]!.id
+  }
+
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
     jobs = await import('../jobs')
+    tenantDb = await import('../db')
     ;({ ensureAuthUser } = await import('../services/auth/auth-users'))
+    ;({ cancelBooking } = await import('../services/bookings/cancel'))
     restoreMail = (await import('../lib/mailer')).useTransport(recording)
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
@@ -191,6 +244,7 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
       const ours = `%@${DOMAIN}`
       const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
       const staff = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
+      await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM pt_sessions WHERE instructor_id IN (${staff})`)
       await harness.db.execute(sql`DELETE FROM classes WHERE created_by_staff_id IN (${staff})`)
@@ -353,5 +407,51 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
 
     await jobs.scheduledJobs.sendCheckInNags()
     assert.deepEqual(drainNags(), [], 'nothing is sent again')
+  })
+
+  test('NTF-28 a class whose last unmarked member is checked in while the nag job runs, before it claims the class, is not nagged', async () => {
+    harness.clock.set(NOW)
+    const cls = await classEnded(one, 25 * HOUR, ['pending', 'attended'])
+    const unmarked = await unmarkedOn({ classId: cls })
+    sent.splice(0)
+
+    await writeBeforeTheClaim('classes', () => tickAttended(unmarked))
+
+    assert.deepEqual(drainNags(), [], 'nobody is nagged about a class whose check-in is complete')
+    const [row] = await harness.db.select({ sentAt: schema.classes.checkinNagSentAt }).from(schema.classes).where(eq(schema.classes.id, cls))
+    assert.equal(row!.sentAt, null, 'the class is not claimed')
+  })
+
+  test('NTF-29 a class whose last unmarked member\'s booking is cancelled while the nag job runs, before it claims the class, is not nagged', async () => {
+    harness.clock.set(NOW)
+    const cls = await classEnded(one, 25 * HOUR, ['pending', 'no_show'])
+    const unmarked = await unmarkedOn({ classId: cls })
+    sent.splice(0)
+
+    await writeBeforeTheClaim('classes', () =>
+      cancelBooking(one.id, { bookingId: unmarked, source: 'admin', actorStaffId: one.admin.id, credit: 'return' }),
+    )
+
+    const [booking] = await harness.db.select({ state: schema.bookings.state }).from(schema.bookings).where(eq(schema.bookings.id, unmarked))
+    assert.equal(booking!.state, 'cancelled', 'the cancel went through')
+    assert.deepEqual(drainNags(), [], 'nobody is nagged about a class whose roster is decided')
+    const [row] = await harness.db.select({ sentAt: schema.classes.checkinNagSentAt }).from(schema.classes).where(eq(schema.classes.id, cls))
+    assert.equal(row!.sentAt, null, 'the class is not claimed')
+  })
+
+  test('NTF-30 a private session whose member is checked in while the nag job runs, before it claims the session, is not nagged', async () => {
+    harness.clock.set(NOW)
+    const session = await ptSessionEnded(one, 25 * HOUR)
+    const unmarked = await unmarkedOn({ ptSessionId: session })
+    sent.splice(0)
+
+    await writeBeforeTheClaim('pt_sessions', () => tickAttended(unmarked))
+
+    assert.deepEqual(drainNags(), [], 'nobody is nagged about a session whose check-in is complete')
+    const [row] = await harness.db
+      .select({ sentAt: schema.ptSessions.checkinNagSentAt })
+      .from(schema.ptSessions)
+      .where(eq(schema.ptSessions.id, session))
+    assert.equal(row!.sentAt, null, 'the session is not claimed')
   })
 })

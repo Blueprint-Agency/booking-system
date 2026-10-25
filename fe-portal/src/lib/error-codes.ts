@@ -101,6 +101,7 @@ export const ERROR_CODES = {
   document_empty: "document_empty",
   document_not_allowed_on_annual_leave: "document_not_allowed_on_annual_leave",
   document_not_found: "document_not_found",
+  document_request_closed: "document_request_closed",
   document_required: "document_required",
   document_storage_unavailable: "document_storage_unavailable",
   document_too_large: "document_too_large",

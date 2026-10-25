@@ -37,7 +37,7 @@ import { sessionTimeFormat } from '../notifications/send-booking-email'
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
-import { pendingCheckIns, ptSeats, type RowCheckInState } from './session-check-in'
+import { classHasUndecidedRow, pendingCheckIns, ptSeats, ptSessionHasUndecidedSeat, type RowCheckInState } from './session-check-in'
 
 /** How long after a session ends its check-in may stay open before the nag. */
 const NAG_AFTER_MS = 24 * 60 * 60 * 1000
@@ -59,8 +59,7 @@ export async function sendCheckInNags(): Promise<void> {
   const endedAfter = new Date(now.getTime() - LOOK_BACK_MS)
 
   const claimed = [...(await claimClasses(endedBy, endedAfter, now)), ...(await claimPtSessions(endedBy, endedAfter, now))]
-  // Sent once the claims have committed, each session on its own.
-  for (const c of claimed) afterCommit(() => nag(c))
+  for (const c of claimed) if (c.pending) afterCommit(() => nag(c))
 }
 
 /** Rows still undecided per session, counted from each roster's check-in states. */
@@ -107,27 +106,20 @@ async function ptPending(ids: string[]) {
 }
 
 async function claimClasses(endedBy: Date, endedAfter: Date, now: Date): Promise<Claimed[]> {
-  const due = await db
-    .select({ id: classes.id })
-    .from(classes)
+  const rows = await db
+    .update(classes)
+    .set({ checkinNagSentAt: now })
     .where(
       and(
         eq(classes.lifecycle, 'active'),
         isNull(classes.checkinNagSentAt),
         lte(classes.endsAt, endedBy),
         gt(classes.endsAt, endedAfter),
+        classHasUndecidedRow,
       ),
     )
-  const pending = await classPending(due.map(d => d.id))
-  const ids = [...pending.keys()]
-  if (!ids.length) return []
-  // The claim: only a row still unstamped is taken, so two ticks racing on
-  // one session claim it once between them.
-  const rows = await db
-    .update(classes)
-    .set({ checkinNagSentAt: now })
-    .where(and(inArray(classes.id, ids), isNull(classes.checkinNagSentAt)))
     .returning({ id: classes.id, tenantId: classes.tenantId, instructorId: classes.mainInstructorId, startsAt: classes.startsAt, classTypeId: classes.classTypeId })
+  const pending = await classPending(rows.map(r => r.id))
   const names = new Map(
     rows.length
       ? (
@@ -148,25 +140,20 @@ async function claimClasses(endedBy: Date, endedAfter: Date, now: Date): Promise
 }
 
 async function claimPtSessions(endedBy: Date, endedAfter: Date, now: Date): Promise<Claimed[]> {
-  const due = await db
-    .select({ id: ptSessions.id })
-    .from(ptSessions)
+  const rows = await db
+    .update(ptSessions)
+    .set({ checkinNagSentAt: now })
     .where(
       and(
         eq(ptSessions.lifecycle, 'active'),
         isNull(ptSessions.checkinNagSentAt),
         lte(ptSessions.endsAt, endedBy),
         gt(ptSessions.endsAt, endedAfter),
+        ptSessionHasUndecidedSeat,
       ),
     )
-  const pending = await ptPending(due.map(d => d.id))
-  const ids = [...pending.keys()]
-  if (!ids.length) return []
-  const rows = await db
-    .update(ptSessions)
-    .set({ checkinNagSentAt: now })
-    .where(and(inArray(ptSessions.id, ids), isNull(ptSessions.checkinNagSentAt)))
     .returning({ id: ptSessions.id, tenantId: ptSessions.tenantId, instructorId: ptSessions.instructorId, startsAt: ptSessions.startsAt })
+  const pending = await ptPending(rows.map(r => r.id))
   return rows.map(r => ({
     tenantId: r.tenantId,
     instructorId: r.instructorId,

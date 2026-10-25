@@ -694,6 +694,17 @@ export function checkSupportingDocument(input: {
   return { ok: true, extension }
 }
 
+export function checkRequestTakesDocument(
+  status: LeaveStatus,
+): { ok: true } | { ok: false; code: 'document_request_closed'; message: string } {
+  if (status === 'pending' || status === 'approved') return { ok: true }
+  return {
+    ok: false,
+    code: 'document_request_closed',
+    message: `This request was ${status}. A Supporting Document can only be attached to a pending or approved request.`,
+  }
+}
+
 /** Where the object lives. Deterministic, so re-uploading replaces rather than
  *  orphans.
  *

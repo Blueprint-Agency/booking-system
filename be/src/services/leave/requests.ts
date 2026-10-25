@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, lte, ne, or } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { leavePools, leaveRequests } from '../../db/schema/leave'
 import { instructors, leaveConflicts } from '../../db/schema/catalog'
 import { globalPolicy } from '../../db/schema/policy'
@@ -746,9 +746,7 @@ export async function submitLeaveRequest(
     return { inserted, capWarning }
   })
 
-  // Outside the transaction on purpose: the lock is released before anything
-  // touches SMTP.
-  await emailAdminsOfSubmission(tenantId, filed.inserted, filed.capWarning)
+  afterCommit(() => emailAdminsOfSubmission(tenantId, filed.inserted, filed.capWarning))
   return filed.inserted
 }
 
@@ -830,6 +828,9 @@ export async function attachSupportingDocument(input: {
     )
     .limit(1)
   if (!row) throw new NotFoundError('leave_request_not_found')
+
+  const open = rules.checkRequestTakesDocument(row.status)
+  if (!open.ok) throw new ConflictError(open.code, { message: open.message })
 
   const check = rules.checkSupportingDocument({
     leaveType: row.type,
@@ -1182,24 +1183,13 @@ export async function decideLeaveRequest(
   // exists, so it names who took it back and when. An admin deciding their own
   // request already knows, and is not emailed about it.
   if (updated.staffUserId !== input.actorStaffId) {
-    await emailApplicantOfDecision(
-      tenantId,
-      updated,
-      reason,
-      revoking ? { staffId: input.actorStaffId, at: now } : undefined,
-    )
+    const revokedBy = revoking ? { staffId: input.actorStaffId, at: now } : undefined
+    afterCommit(() => emailApplicantOfDecision(tenantId, updated, reason, revokedBy))
   }
   return updated
 }
 
 // ── Notifications ──────────────────────────────────────────────────────────
-//
-// Both senders run AFTER the row is written and never throw: a request that has
-// already been filed or decided must not fail because SMTP — or a missing
-// template row on an unseeded database — misbehaved. What they DO do is report
-// the failure (shared/logger.ts), so a swallowed send is never a silent one. The
-// admin one gets both guarantees from `emailEveryAdmin`, which also owns who
-// "the admins" are.
 
 const HALF_DAY_LABEL: Record<LeaveRequestRow['halfDay'], string> = {
   none: '',
