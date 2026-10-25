@@ -181,4 +181,31 @@ describe('instructor profile edit', { skip: integrationTestsEnabled ? false : SK
     const [unchanged] = await harness.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, instructorId))
     assert.equal(unchanged!.email, before!.email, 'a refused email change leaves the address')
   })
+
+  test('STF-45 an Admin staff edit or invitation with a gender, role, permission or languages that is not one of the choices is refused 400 invalid_request with a sentence naming the field, and nothing is written', async () => {
+    const [before] = await harness.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, instructorId))
+    const edits = [
+      { body: { gender: 'robot' }, says: /gender/i },
+      { body: { role: 'owner' }, says: /role.*admin or instructor/i },
+      { body: { permissions: ['fly'] }, says: /permission/i },
+      { body: { permissions: 'all' }, says: /permission/i },
+      { body: { languages: 'English' }, says: /languages.*list/i },
+    ]
+    for (const { body, says } of edits) {
+      const res = await editStaff(body)
+      assert.equal(res.status, 400, `${JSON.stringify(body)}: ${res.text}`)
+      assert.equal(res.body.error, 'invalid_request', res.text)
+      assert.match(String(res.body.message), says, res.text)
+    }
+    const [after] = await harness.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, instructorId))
+    assert.deepEqual(after, before, 'a refused staff edit changes nothing')
+
+    const invite = await request('/api/v1/portal/admin/staff/invite', 'POST', adminHeaders, {
+      email: `stf45-${Date.now()}@example.com`,
+      role: 'owner',
+    })
+    assert.equal(invite.status, 400, invite.text)
+    assert.equal(invite.body.error, 'invalid_request', invite.text)
+    assert.match(String(invite.body.message), /role.*admin or instructor/i, invite.text)
+  })
 })

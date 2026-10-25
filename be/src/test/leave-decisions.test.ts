@@ -46,6 +46,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
   // ── Fake storage: an in-memory bucket behind the R2 client's `send` ────────
   const bucket = new Map<string, { bytes: Uint8Array; contentType: string }>()
   let holdUpload: ((key: string) => Promise<void>) | null = null
+  let failingDeletes = 0
   let restoreStorage: () => void = () => {}
 
   // ── Fake mail: records every message; can be made to throw ─────────────────
@@ -297,6 +298,10 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
       }
       if (command.constructor.name === 'DeleteObjectCommand') {
         assert.equal(command.input.Bucket, r2Module.r2Bucket())
+        if (failingDeletes > 0) {
+          failingDeletes--
+          throw Object.assign(new Error('fake storage: delete failed'), { $metadata: { httpStatusCode: 503 } })
+        }
         bucket.delete(command.input.Key)
         return {}
       }
@@ -1180,16 +1185,21 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.ok((await row(approved)).supportingDocumentR2Key, 'an approved request takes its document')
   })
 
-  test('LEV-141 a Supporting Document still uploading when its request is rejected or withdrawn is refused, the request keeps the document it had, and no new file is left in the bucket', async () => {
+  test('LEV-141 a Supporting Document still uploading when its request is rejected, withdrawn, cancelled or revoked is refused, the request keeps the document it had with its file untouched, even one of the same type, and no new file is left in the bucket', async () => {
     const cases = [
-      { closing: 'rejected', had: null },
-      { closing: 'withdrawn', had: null },
-      { closing: 'withdrawn', had: 'image/png' },
+      { closing: 'rejected', had: null, uploading: 'application/pdf' },
+      { closing: 'withdrawn', had: null, uploading: 'application/pdf' },
+      { closing: 'withdrawn', had: 'image/png', uploading: 'application/pdf' },
+      { closing: 'withdrawn', had: 'image/png', uploading: 'image/png' },
+      { closing: 'cancelled', had: null, uploading: 'application/pdf' },
+      { closing: 'revoked', had: null, uploading: 'application/pdf' },
+      { closing: 'revoked', had: 'application/pdf', uploading: 'application/pdf' },
     ] as const
-    for (const { closing, had } of cases) {
-      const what = `${closing}${had ? ', with a document already attached' : ''}`
+    for (const { closing, had, uploading: uploadingType } of cases) {
+      const what = `${closing}${had ? `, with a ${had} already attached` : ''}, uploading a ${uploadingType}`
       const { id } = await file(cal, 'medical')
-      if (had) assert.equal((await upload(cal, id, fileBytes(100, 3), had, 'first.png')).status, 200)
+      if (closing === 'cancelled' || closing === 'revoked') assert.equal((await approve(adminOne, id)).status, 200, what)
+      if (had) assert.equal((await upload(cal, id, fileBytes(100, 3), had, 'first')).status, 200, what)
       const keyBefore = (await row(id)).supportingDocumentR2Key
       let heldKey: string | undefined
       let markHeld!: () => void
@@ -1207,10 +1217,17 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
         await released
       }
       try {
-        const uploading = upload(cal, id, fileBytes(100), 'application/pdf', 'x.pdf')
+        const uploading = upload(cal, id, fileBytes(100, 9), uploadingType, 'second')
         await held
 
-        const close = closing === 'rejected' ? reject(adminOne, id, `Closed mid-upload ${run}`) : withdraw(cal, id)
+        const close =
+          closing === 'rejected'
+            ? reject(adminOne, id, `Closed mid-upload ${run}`)
+            : closing === 'withdrawn'
+              ? withdraw(cal, id)
+              : closing === 'cancelled'
+                ? cancel(cal, id)
+                : revoke(adminOne, id)
         const closed = await Promise.race([
           close,
           new Promise<null>(resolve => setTimeout(() => resolve(null), 10_000)),
@@ -1226,11 +1243,104 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
         assert.equal(after.status, closing)
         assert.equal(after.supportingDocumentR2Key, keyBefore, `${what}: the request keeps the document it had`)
         if (keyBefore) assert.ok(bucket.has(keyBefore), `${what}: the document it had is still in the bucket`)
+        if (keyBefore) assert.deepEqual(bucket.get(keyBefore)?.bytes, fileBytes(100, 3), `${what}: the document it had is the file it was`)
         assert.ok(heldKey && heldKey !== keyBefore && !bucket.has(heldKey), `${what}: the new file is not left in the bucket`)
       } finally {
         holdUpload = null
         release()
       }
     }
+  })
+
+  /** Every object in the bucket that belongs to one request. */
+  const objectsOf = (id: string) => [...bucket.keys()].filter(key => key.includes(id))
+
+  test('LEV-143 a second Supporting Document, of the same file type or another, is stored under a key of its own, and the file it replaced leaves the bucket', async () => {
+    for (const [firstType, secondType] of [
+      ['image/png', 'image/png'],
+      ['image/png', 'application/pdf'],
+    ] as const) {
+      const what = `${firstType} then ${secondType}`
+      const req = await file(ada, 'medical')
+      assert.equal((await upload(ada, req.id, fileBytes(1000, 1), firstType, 'first')).status, 200, what)
+      const firstKey = (await row(req.id)).supportingDocumentR2Key
+
+      const res = await upload(ada, req.id, fileBytes(1500, 2), secondType, 'second')
+
+      assert.equal(res.status, 200, `${what}: ${res.text}`)
+      const key = (await row(req.id)).supportingDocumentR2Key
+      assert.ok(key && firstKey, what)
+      assert.notEqual(key, firstKey, `${what}: the second file has a key of its own`)
+      assert.deepEqual(bucket.get(key)?.bytes, fileBytes(1500, 2), `${what}: the request points at the second file`)
+      assert.deepEqual(objectsOf(req.id), [key], `${what}: the first file leaves the bucket`)
+    }
+  })
+
+  test('LEV-144 a file nothing points at any more, a refused upload or the one a second upload replaced, is still deleted when the bucket fails the first delete', async () => {
+    const waitUntilGone = async (key: string, what: string) => {
+      const deadline = Date.now() + 10_000
+      while (bucket.has(key)) {
+        assert.ok(Date.now() < deadline, `${what}: ${key} is still in the bucket`)
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+    }
+
+    const replaced = await file(cal, 'medical')
+    assert.equal((await upload(cal, replaced.id, fileBytes(100, 1), 'image/png', 'first')).status, 200)
+    const firstKey = (await row(replaced.id)).supportingDocumentR2Key!
+    failingDeletes = 1
+    try {
+      const res = await upload(cal, replaced.id, fileBytes(100, 2), 'application/pdf', 'second')
+      assert.equal(res.status, 200, res.text)
+      await waitUntilGone(firstKey, 'the replaced file')
+    } finally {
+      failingDeletes = 0
+    }
+    assert.deepEqual(objectsOf(replaced.id), [(await row(replaced.id)).supportingDocumentR2Key], 'only the second file is left')
+
+    const { id } = await file(cal, 'medical')
+    let heldKey: string | undefined
+    let markHeld!: () => void
+    const held = new Promise<void>(resolve => {
+      markHeld = resolve
+    })
+    let release!: () => void
+    const released = new Promise<void>(resolve => {
+      release = resolve
+    })
+    holdUpload = async key => {
+      if (!key.includes(id)) return
+      heldKey = key
+      markHeld()
+      await released
+    }
+    failingDeletes = 1
+    try {
+      const uploading = upload(cal, id, fileBytes(100), 'application/pdf', 'x.pdf')
+      await held
+      assert.equal((await reject(adminOne, id, `Closed mid-upload ${run}`)).status, 200)
+      release()
+      refused(await uploading, 409, 'document_request_closed', 'the refused upload')
+      await waitUntilGone(heldKey!, 'the refused upload')
+    } finally {
+      holdUpload = null
+      failingDeletes = 0
+      release()
+    }
+    assert.equal((await row(id)).supportingDocumentR2Key, null, 'the refused upload is not attached')
+  })
+
+  test('TEN-43 the bucket refuses to delete a file outside the studio named, so a key of another studio or from before the studio prefix is never deleted', async () => {
+    const one = harness.tenants.one.id
+    const two = harness.tenants.two.id
+    for (const key of [`t/${two}/supporting-documents/someone/${run}.pdf`, `medical-certificates/someone/${run}.pdf`]) {
+      bucket.set(key, { bytes: fileBytes(10), contentType: 'application/pdf' })
+      await assert.rejects(r2Module.deleteObject(one, key), /not under/, key)
+      assert.ok(bucket.has(key), `${key} is still in the bucket`)
+    }
+    const ours = `t/${one}/supporting-documents/someone/${run}.pdf`
+    bucket.set(ours, { bytes: fileBytes(10), contentType: 'application/pdf' })
+    await r2Module.deleteObject(one, ours)
+    assert.ok(!bucket.has(ours), 'a key under the studio named is deleted')
   })
 })

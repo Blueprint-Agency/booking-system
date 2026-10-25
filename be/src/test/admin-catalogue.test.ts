@@ -572,6 +572,28 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.deepEqual(row, was, 'a refused edit changes nothing')
   })
 
+  test('MRC-13 a merch item with no price, a price that is not a number, or an archived flag that is not on or off, is refused 400 invalid_request with a sentence naming the field, and nothing is written', async () => {
+    const item = created(await send('POST', '/merch', one.admin, { title: `${NAME} Mat`, price_sgd: '30.00' }))
+    const [was] = await harness.db.select().from(schema.merch).where(eq(schema.merch.id, item.id))
+    const refusals = [
+      { method: 'POST', path: '/merch', body: { title: `${NAME} Priceless` }, says: /price/i },
+      { method: 'POST', path: '/merch', body: { title: `${NAME} Priceless`, price_sgd: true }, says: /price/i },
+      { method: 'PATCH', path: `/merch/${item.id}`, body: { price_sgd: null }, says: /price/i },
+      { method: 'PATCH', path: `/merch/${item.id}`, body: { archived: 'yes' }, says: /archived/i },
+    ] as const
+    for (const { method, path, body, says } of refusals) {
+      const res = await send(method, path, one.admin, body)
+      const what = `${method} ${JSON.stringify(body)}: ${JSON.stringify(res.body).slice(0, 300)}`
+      assert.equal(res.status, 400, what)
+      assert.equal(res.body.error, 'invalid_request', what)
+      assert.match(String(res.body.message), says, what)
+    }
+    const rows = await harness.db.select().from(schema.merch).where(eq(schema.merch.title, `${NAME} Priceless`))
+    assert.deepEqual(rows, [], 'a refused create writes no item')
+    const [row] = await harness.db.select().from(schema.merch).where(eq(schema.merch.id, item.id))
+    assert.deepEqual(row, was, 'a refused edit changes nothing')
+  })
+
   /* ── Rooms ──────────────────────────────────────────────────────────── */
 
   test('SCH-21 a room is made at one of the studio’s Locations, keeps it, and must be archived before it is deleted', async () => {

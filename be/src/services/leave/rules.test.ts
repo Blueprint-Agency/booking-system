@@ -1099,14 +1099,16 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
   assert.strictEqual(empty.ok, false)
   if (!empty.ok) assert.strictEqual(empty.code, 'document_empty')
 
-  // the key is deterministic — a second upload replaces the first
-  const key = supportingDocumentKey('tenant-1', 'instr-1', 'req-1', 'pdf')
-  assert.strictEqual(key, 't/tenant-1/supporting-documents/instr-1/req-1.pdf')
-  assert.strictEqual(supportingDocumentKey('tenant-1', 'instr-1', 'req-1', 'pdf'), key)
-  assert.notStrictEqual(supportingDocumentKey('tenant-1', 'instr-2', 'req-1', 'pdf'), key)
+  // each upload has a key of its own, so a refused upload never writes over the
+  // file its request already holds, even one of the same type
+  const key = supportingDocumentKey('tenant-1', 'instr-1', 'req-1', 'upload-1', 'pdf')
+  assert.strictEqual(key, 't/tenant-1/supporting-documents/instr-1/req-1/upload-1.pdf')
+  assert.strictEqual(supportingDocumentKey('tenant-1', 'instr-1', 'req-1', 'upload-1', 'pdf'), key)
+  assert.notStrictEqual(supportingDocumentKey('tenant-1', 'instr-1', 'req-1', 'upload-2', 'pdf'), key)
+  assert.notStrictEqual(supportingDocumentKey('tenant-1', 'instr-2', 'req-1', 'upload-1', 'pdf'), key)
   // …and two studios never share a path, even for identical ids: one studio's
   // health documents must not be addressable from the other's namespace.
-  assert.notStrictEqual(supportingDocumentKey('tenant-2', 'instr-1', 'req-1', 'pdf'), key)
+  assert.notStrictEqual(supportingDocumentKey('tenant-2', 'instr-1', 'req-1', 'upload-1', 'pdf'), key)
 }
 
 test('a Supporting Document is taken by a pending or approved request only, and the refusal names the status it reached', () => {
