@@ -29,6 +29,7 @@ import { emailEveryAdmin } from '../notifications/send'
 import { sendClassCancelledByStudioEmails, type StudioCancelNotice } from '../notifications/send-booking-email'
 import { sgFormat } from '../../lib/time'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
+import type { Tx } from '../schedule/roster'
 
 type CancelClassSource = 'admin' | 'instructor'
 
@@ -52,6 +53,14 @@ export async function cancelClass(
   tenantId: string,
   input: CancelClassInput,
 ): Promise<CancelClassResult> {
+  return db.transaction(tx => cancelClassInTx(tx, tenantId, input))
+}
+
+export async function cancelClassInTx(
+  tx: Tx,
+  tenantId: string,
+  input: CancelClassInput,
+): Promise<CancelClassResult> {
   const { classId, actorStaffId } = input
   const source: CancelClassSource = input.source ?? 'admin'
   const reason = input.reason?.trim() ?? ''
@@ -59,131 +68,121 @@ export async function cancelClass(
   // in the service (not the route) so no future caller can skip it.
   if (source === 'instructor' && !reason) throw new BadRequestError('reason_required')
 
-  const outcome = await db.transaction(async tx => {
-    const [cls] = await tx
-      .select({
-        id: classes.id,
-        lifecycle: classes.lifecycle,
-        mainInstructorId: classes.mainInstructorId,
-        startsAt: classes.startsAt,
-        endsAt: classes.endsAt,
-        classTypeId: classes.classTypeId,
-      })
-      .from(classes)
-      .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
-      .for('update')
-      .limit(1)
-    if (!cls) throw new NotFoundError('class_not_found')
-    if (source === 'instructor' && cls.mainInstructorId !== actorStaffId) {
-      throw new ForbiddenError('not_main_instructor')
-    }
-    if (cls.lifecycle !== 'active') throw new ConflictError('class_not_active')
-
-    const now = clockNow()
-
-    // A class that has already finished can't be "cancelled" — that would refund
-    // every attendee for a class they sat through. Mid-session cancellation (state
-    // `ongoing`) stays allowed: the aircon really does break 10 minutes in.
-    const state = computeEventState({
-      startsAt: cls.startsAt,
-      endsAt: cls.endsAt,
-      lifecycle: cls.lifecycle,
-      now,
+  const [cls] = await tx
+    .select({
+      id: classes.id,
+      lifecycle: classes.lifecycle,
+      mainInstructorId: classes.mainInstructorId,
+      startsAt: classes.startsAt,
+      endsAt: classes.endsAt,
+      classTypeId: classes.classTypeId,
     })
-    if (state === 'completed') throw new ConflictError('class_completed')
+    .from(classes)
+    .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
+    .for('update')
+    .limit(1)
+  if (!cls) throw new NotFoundError('class_not_found')
+  if (source === 'instructor' && cls.mainInstructorId !== actorStaffId) {
+    throw new ForbiddenError('not_main_instructor')
+  }
+  if (cls.lifecycle !== 'active') throw new ConflictError('class_not_active')
 
-    // Flip the class.
-    await tx
-      .update(classes)
-      .set({ lifecycle: 'cancelled', cancelledAt: now, cancelledByStaffId: actorStaffId })
-      .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
+  const now = clockNow()
 
-    // All confirmed bookings → cancel + refund.
-    const confirmed = await tx
-      .select({
-        id: bookings.id,
-        clientId: bookings.clientId,
-        clientPackageId: bookings.clientPackageId,
-        used: bookings.creditsOrSessionsUsed,
-      })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.tenantId, tenantId),
-          eq(bookings.classId, classId),
-          eq(bookings.state, 'confirmed'),
-        ),
-      )
-      .for('update')
+  // A class that has already finished can't be "cancelled" — that would refund
+  // every attendee for a class they sat through. Mid-session cancellation (state
+  // `ongoing`) stays allowed: the aircon really does break 10 minutes in.
+  const state = computeEventState({
+    startsAt: cls.startsAt,
+    endsAt: cls.endsAt,
+    lifecycle: cls.lifecycle,
+    now,
+  })
+  if (state === 'completed') throw new ConflictError('class_completed')
 
-    // Whether the cancel came before the class window, as a staff cancel of
-    // one booking records it (#350): never acted on, every credit comes back.
-    const wasWithinWindow = await staffCancelInTime(tenantId, 'class', cls.startsAt, now)
+  // Flip the class.
+  await tx
+    .update(classes)
+    .set({ lifecycle: 'cancelled', cancelledAt: now, cancelledByStaffId: actorStaffId })
+    .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
 
-    let refundedCount = 0
-    const notices: StudioCancelNotice[] = []
-    for (const bk of confirmed) {
-      const used = bk.used ?? 0
-      // Nothing goes back to a Voided package: the member has their money.
-      const refundFired =
-        used > 0 && !!bk.clientPackageId && !(await isVoided(tx, tenantId, bk.clientPackageId))
-      notices.push({ bookingId: bk.id, returned: refundFired ? used : 0 })
+  // All confirmed bookings → cancel + refund.
+  const confirmed = await tx
+    .select({
+      id: bookings.id,
+      clientId: bookings.clientId,
+      clientPackageId: bookings.clientPackageId,
+      used: bookings.creditsOrSessionsUsed,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        eq(bookings.classId, classId),
+        eq(bookings.state, 'confirmed'),
+      ),
+    )
+    .for('update')
 
-      if (refundFired) {
-        // Ledger re-derives `active` — an emptied bundle refunded here is
-        // spendable again (it previously came back unusable).
-        await refundCredits(tx, {
-          tenantId,
-          clientId: bk.clientId,
-          clientPackageId: bk.clientPackageId!,
-          amount: used,
-          reason:
-            source === 'instructor'
-              ? 'instructor_class_cancellation_refund'
-              : 'admin_class_cancellation_refund',
-          cause: 'returned',
-          bookingId: bk.id,
-          actor: 'staff',
-          actedByStaffId: actorStaffId,
-        })
-        refundedCount++
-      }
+  // Whether the cancel came before the class window, as a staff cancel of
+  // one booking records it (#350): never acted on, every credit comes back.
+  const wasWithinWindow = await staffCancelInTime(tenantId, 'class', cls.startsAt, now)
 
-      await tx.insert(cancellations).values({
+  let refundedCount = 0
+  const notices: StudioCancelNotice[] = []
+  for (const bk of confirmed) {
+    const used = bk.used ?? 0
+    // Nothing goes back to a Voided package: the member has their money.
+    const refundFired =
+      used > 0 && !!bk.clientPackageId && !(await isVoided(tx, tenantId, bk.clientPackageId))
+    notices.push({ bookingId: bk.id, returned: refundFired ? used : 0 })
+
+    if (refundFired) {
+      // Ledger re-derives `active` — an emptied bundle refunded here is
+      // spendable again (it previously came back unusable).
+      await refundCredits(tx, {
         tenantId,
-        bookingId: bk.id,
         clientId: bk.clientId,
-        kind: 'class',
-        source,
-        cancelledByStaffId: actorStaffId,
-        wasWithinWindow,
-        wasWithinCap: true,
-        refundFired,
+        clientPackageId: bk.clientPackageId!,
+        amount: used,
+        reason:
+          source === 'instructor'
+            ? 'instructor_class_cancellation_refund'
+            : 'admin_class_cancellation_refund',
+        cause: 'returned',
+        bookingId: bk.id,
+        actor: 'staff',
+        actedByStaffId: actorStaffId,
+      })
+      refundedCount++
+    }
+
+    await tx.insert(cancellations).values({
+      tenantId,
+      bookingId: bk.id,
+      clientId: bk.clientId,
+      kind: 'class',
+      source,
+      cancelledByStaffId: actorStaffId,
+      wasWithinWindow,
+      wasWithinCap: true,
+      refundFired,
+      cancelledAt: now,
+    })
+
+    await tx
+      .update(bookings)
+      .set({
+        state: 'cancelled',
+        refundOutcome: refundFired ? 'credit_returned' : 'n_a',
+        checkInState: 'n_a',
         cancelledAt: now,
       })
+      .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
+  }
 
-      await tx
-        .update(bookings)
-        .set({
-          state: 'cancelled',
-          refundOutcome: refundFired ? 'credit_returned' : 'n_a',
-          checkInState: 'n_a',
-          cancelledAt: now,
-        })
-        .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
-    }
-
-    // Nobody is left queued for a class that will not run (spec-waitlist.md §6).
-    await removeLineForCancelledClass(tx, tenantId, classId, actorStaffId, now)
-
-    return {
-      totalBookings: confirmed.length,
-      refundedCount,
-      startsAt: cls.startsAt,
-      classTypeId: cls.classTypeId,
-      notices,
-    }
-  })
+  // Nobody is left queued for a class that will not run (spec-waitlist.md §6).
+  await removeLineForCancelledClass(tx, tenantId, classId, actorStaffId, now)
 
   // Both once the request's transaction has committed (`afterCommit`), the
   // Admins first.
@@ -191,20 +190,20 @@ export async function cancelClass(
     afterCommit(() =>
       emailAdmins({
         tenantId,
-        classTypeId: outcome.classTypeId,
-        startsAt: outcome.startsAt,
+        classTypeId: cls.classTypeId,
+        startsAt: cls.startsAt,
         instructorStaffId: actorStaffId,
         reason,
-        refundedCount: outcome.refundedCount,
+        refundedCount,
       }),
     )
   }
 
   // NTF-10: every member who was booked is told, whoever cancelled — the
   // outcome for them is the same. Never throws.
-  afterCommit(() => sendClassCancelledByStudioEmails(tenantId, outcome.notices))
+  afterCommit(() => sendClassCancelledByStudioEmails(tenantId, notices))
 
-  return { totalBookings: outcome.totalBookings, refundedCount: outcome.refundedCount }
+  return { totalBookings: confirmed.length, refundedCount }
 }
 
 /**

@@ -28,6 +28,15 @@ export interface CreateDayInput {
   capacityBuffer?: number
 }
 
+type Places = Pick<CreateDayInput, 'capacityOnline' | 'capacityWaitlist' | 'capacityBuffer'>
+
+function assertDayHasCapacity(p: Places): void {
+  if (p.capacityOnline + (p.capacityWaitlist ?? 0) + (p.capacityBuffer ?? 0) > 0) return
+  throw new BadRequestError('capacity_required', {
+    message: 'Give the workshop day at least one online, buffer or waitlist place.',
+  })
+}
+
 export async function listDays(tenantId: string, workshopId: string): Promise<WorkshopDayRow[]> {
   await ensureWorkshop(tenantId, workshopId)
   return db
@@ -44,6 +53,7 @@ export async function createDay(
 ): Promise<WorkshopDayRow> {
   const w = await ensureWorkshop(tenantId, workshopId)
   if (input.endsAt <= input.startsAt) throw new BadRequestError('ends_at_must_be_after_starts_at')
+  assertDayHasCapacity(input)
   await assertRoomInLocation(tenantId, input.roomId, w.locationId)
   return db.transaction(async tx => {
     await assertAvailable(tx, tenantId, eventSubjects(input.roomId, []), {
@@ -94,6 +104,11 @@ export async function updateDay(
   if (nextEnds <= nextStarts) {
     throw new BadRequestError('ends_at_must_be_after_starts_at')
   }
+  assertDayHasCapacity({
+    capacityOnline: patch.capacityOnline ?? existing.capacityOnline,
+    capacityWaitlist: patch.capacityWaitlist ?? existing.capacityWaitlist,
+    capacityBuffer: patch.capacityBuffer ?? existing.capacityBuffer,
+  })
 
   // Re-run room validation when the room, start, or end changes.
   const nextRoomId = patch.roomId ?? existing.roomId
