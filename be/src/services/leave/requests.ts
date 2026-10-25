@@ -16,7 +16,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../../shared/errors'
-import { r2Bucket, putObject, signedObjectUrl } from '../../lib/r2'
+import { deleteObject, r2Bucket, putObject, signedObjectUrl } from '../../lib/r2'
 import { sgFormat } from '../../lib/time'
 import * as rules from './rules'
 
@@ -828,9 +828,7 @@ export async function attachSupportingDocument(input: {
     )
     .limit(1)
   if (!row) throw new NotFoundError('leave_request_not_found')
-
-  const open = rules.checkRequestTakesDocument(row.status)
-  if (!open.ok) throw new ConflictError(open.code, { message: open.message })
+  refuseClosedForDocument(row.status)
 
   const check = rules.checkSupportingDocument({
     leaveType: row.type,
@@ -851,10 +849,37 @@ export async function attachSupportingDocument(input: {
   const [updated] = await db
     .update(leaveRequests)
     .set({ supportingDocumentR2Key: key, updatedAt: new Date() })
-    .where(and(eq(leaveRequests.tenantId, input.tenantId), eq(leaveRequests.id, row.id)))
+    .where(
+      and(
+        eq(leaveRequests.tenantId, input.tenantId),
+        eq(leaveRequests.id, row.id),
+        inArray(leaveRequests.status, rules.STATUSES_TAKING_A_DOCUMENT),
+      ),
+    )
     .returning()
-  if (!updated) throw new NotFoundError('leave_request_not_found')
-  return updated
+  if (updated) return updated
+  return refuseUploadOvertakenByDecision(input.tenantId, row.id, key)
+}
+
+async function refuseUploadOvertakenByDecision(tenantId: string, requestId: string, key: string): Promise<never> {
+  const [current] = await db
+    .select({ status: leaveRequests.status, key: leaveRequests.supportingDocumentR2Key })
+    .from(leaveRequests)
+    .where(and(eq(leaveRequests.tenantId, tenantId), eq(leaveRequests.id, requestId)))
+    .limit(1)
+  if (current?.key !== key) {
+    await deleteObject(key).catch(err =>
+      reportError(err, 'leave document: removing a refused upload failed', { leaveRequestId: requestId }),
+    )
+  }
+  if (!current) throw new NotFoundError('leave_request_not_found')
+  refuseClosedForDocument(current.status)
+  throw new Error(`leave request ${requestId} took no document while ${current.status}`)
+}
+
+function refuseClosedForDocument(status: LeaveRequestRow['status']): void {
+  const open = rules.checkRequestTakesDocument(status)
+  if (!open.ok) throw new ConflictError(open.code, { message: open.message })
 }
 
 /**

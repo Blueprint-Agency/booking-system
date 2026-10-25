@@ -54,7 +54,7 @@ import {
 import { creditHistory, serializeCreditHistory } from '../../../services/packages/credit-history'
 import { changeClientEmail } from '../../../services/clients/change-email'
 import { editClientProfile } from '../../../services/clients/edit-profile'
-import { BadRequestError } from '../../../shared/errors'
+import { explainInvalid } from '../../explain-invalid'
 import { clientGenderEnum } from '../../../db/enums'
 import {
   listMemberSessions,
@@ -96,10 +96,12 @@ const listQuery = z.object({
     .default(CLIENTS_PAGE_SIZE_DEFAULT),
 })
 
+const EMAIL_MESSAGE = 'Enter a full email address, like name@example.com.'
+
 const createSchema = z.object({
-  name: z.string().min(1).max(160),
-  email: z.string().email(),
-  phone: z.string(),
+  name: z.string({ message: 'A name must be text.' }).min(1, 'A name is required.').max(160, 'A name can be at most 160 characters.'),
+  email: z.string({ message: EMAIL_MESSAGE }).email(EMAIL_MESSAGE),
+  phone: z.string({ message: 'A phone number must be text.' }),
   gender: z
     .enum(clientGenderEnum.enumValues, {
       message: 'Gender is female, male, non-binary or prefer not to say.',
@@ -168,7 +170,7 @@ const issueSchema = z.object({
 // Changing a member's email. Trimming and lower-casing are the service's, so
 // one rule covers this route and every other path onto the column.
 const emailSchema = z.object({
-  email: z.string().email().max(254),
+  email: z.string({ message: EMAIL_MESSAGE }).email(EMAIL_MESSAGE).max(254, 'An email address can be at most 254 characters.'),
 })
 // Editing a member's profile (#281): any of the three, gender nullable to clear
 // it. The trimmed 1–160 / 1–40 limits are the service's, so they answer with
@@ -187,12 +189,6 @@ const profileSchema = z
   .refine(b => b.name !== undefined || b.phone !== undefined || b.gender !== undefined, {
     message: 'Change at least one of name, gender and phone.',
   })
-/** A rejected profile answers with a reason an admin can read, not a raw zod dump. */
-const explainInvalidProfile = (result: { success: boolean; error?: unknown }) => {
-  if (result.success) return
-  const issues = (result.error as z.ZodError | undefined)?.issues
-  throw new BadRequestError('invalid_request', { message: issues?.[0]?.message ?? 'That profile is not valid.' })
-}
 const expirySchema = z.object({
   expires_at: z.string().datetime({ offset: true }).nullable(),
   reason: z.string().min(1).max(2000),
@@ -441,7 +437,7 @@ const app = new Hono()
       funnel: result.funnel,
     })
   })
-  .post('/', zValidator('json', createSchema), async c => {
+  .post('/', zValidator('json', createSchema, explainInvalid('That customer is not valid.')), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
     const row = await createClient({
@@ -696,7 +692,7 @@ const app = new Hono()
   })
   // The member's email (#176) — the address they sign in with and the one the
   // studio writes to, moved together.
-  .post('/:id/email', zValidator('param', idParam), zValidator('json', emailSchema), async c => {
+  .post('/:id/email', zValidator('param', idParam), zValidator('json', emailSchema, explainInvalid(EMAIL_MESSAGE)), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const row = await changeClientEmail({
@@ -710,7 +706,7 @@ const app = new Hono()
     return c.json(clientRow(row))
   })
   // The member's name, gender and phone (#281), in one save.
-  .patch('/:id/profile', zValidator('param', idParam), zValidator('json', profileSchema, explainInvalidProfile), async c => {
+  .patch('/:id/profile', zValidator('param', idParam), zValidator('json', profileSchema, explainInvalid('That profile is not valid.')), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const row = await editClientProfile({

@@ -27,9 +27,13 @@ import {
   type PendingStaffEmail,
 } from '../../../services/auth/staff-email-change'
 import { sessionView } from '../session-view'
+import { explainInvalid } from '../../explain-invalid'
+
+const EMAIL_MESSAGE = 'Enter a full email address, like name@example.com.'
+const emailField = z.string({ message: EMAIL_MESSAGE }).email(EMAIL_MESSAGE).max(254, 'An email address can be at most 254 characters.')
 
 // Trimming and lower-casing are the service's, so a refusal can name what was typed.
-const emailChangeSchema = z.object({ email: z.string().email().max(254) })
+const emailChangeSchema = z.object({ email: emailField })
 
 // The three Instructor Permissions (be/docs/adr/0012), each at most once. A
 // duplicate is a malformed request, not a grant made twice.
@@ -39,7 +43,7 @@ const permissionsSchema = z
   .refine(keys => new Set(keys).size === keys.length, { message: 'each permission at most once' })
 
 const inviteSchema = z.object({
-  email: z.string().email().max(254),
+  email: emailField,
   role: z.enum(['admin', 'instructor']).optional(), // default 'admin' in the service
   // An Instructor's permissions from their first sign-in; omitted = all three.
   permissions: permissionsSchema.optional(),
@@ -47,30 +51,54 @@ const inviteSchema = z.object({
 
 const genderEnum = z.enum(['female', 'male', 'non_binary', 'prefer_not_to_say'])
 
+const ASSIGNED_DAYS_MESSAGE = 'Assigned Days must be a whole number from 0 to 365.'
+const assignedDays = z.number({ message: ASSIGNED_DAYS_MESSAGE }).int(ASSIGNED_DAYS_MESSAGE).min(0, ASSIGNED_DAYS_MESSAGE).max(365, ASSIGNED_DAYS_MESSAGE)
+const REMAINING_MESSAGE = 'Remaining must be in half days, between -365 and 365.'
+const remainingDays = z
+  .number({ message: REMAINING_MESSAGE })
+  .multipleOf(0.5, REMAINING_MESSAGE)
+  .min(-365, REMAINING_MESSAGE)
+  .max(365, REMAINING_MESSAGE)
+
 const updateStaffSchema = z.object({
-  first_name: z.string().trim().min(1).max(120).optional(),
-  last_name: z.string().trim().max(120).nullable().optional(),
-  phone: z.string().trim().max(40).nullable().optional(),
-  address: z.string().trim().max(500).nullable().optional(),
+  first_name: z
+    .string({ message: 'A first name must be text.' })
+    .trim()
+    .min(1, 'A first name is required.')
+    .max(120, 'A first name can be at most 120 characters.')
+    .optional(),
+  last_name: z.string({ message: 'A last name must be text.' }).trim().max(120, 'A last name can be at most 120 characters.').nullable().optional(),
+  phone: z.string({ message: 'A phone number must be text.' }).trim().max(40, 'A phone number can be at most 40 characters.').nullable().optional(),
+  address: z.string({ message: 'An address must be text.' }).trim().max(500, 'An address can be at most 500 characters.').nullable().optional(),
   gender: genderEnum.nullable().optional(),
-  bio: z.string().nullable().optional(),
-  languages: z.array(z.string().trim().min(1).max(60)).optional(),
+  bio: z.string({ message: 'A bio must be text.' }).nullable().optional(),
+  languages: z
+    .array(
+      z
+        .string({ message: 'A language must be text.' })
+        .trim()
+        .min(1, 'A language cannot be blank.')
+        .max(60, 'A language can be at most 60 characters.'),
+    )
+    .optional(),
   role: z.enum(['admin', 'instructor']).optional(),
   // The whole grant, replacing what is stored. An Instructor's only: on an
   // admin, or with a role change to admin, 400 `permissions_require_instructor`.
   permissions: permissionsSchema.optional(),
   // Assigned Days — any staff member's, admins included.
-  annual_leave_days: z.number().int().min(0).max(365).optional(),
-  medical_leave_days: z.number().int().min(0).max(365).optional(),
-  study_leave_days: z.number().int().min(0).max(365).optional(),
+  annual_leave_days: assignedDays.optional(),
+  medical_leave_days: assignedDays.optional(),
+  study_leave_days: assignedDays.optional(),
   // The Remaining for the current Leave Year, which back-solves that year's
   // Pool. Half-grained like every leave day count. Negatives are let through
   // the schema so the domain refusal — which names the floor and the ceiling —
   // is what the admin is shown.
-  annual_remaining_days: z.number().multipleOf(0.5).min(-365).max(365).optional(),
-  medical_remaining_days: z.number().multipleOf(0.5).min(-365).max(365).optional(),
-  study_remaining_days: z.number().multipleOf(0.5).min(-365).max(365).optional(),
+  annual_remaining_days: remainingDays.optional(),
+  medical_remaining_days: remainingDays.optional(),
+  study_remaining_days: remainingDays.optional(),
 })
+
+const explainStaff = explainInvalid('That staff change is not valid.')
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -172,7 +200,7 @@ const app = new Hono()
       invitations: invitations.map(serializeInvitation),
     })
   })
-  .post('/invite', zValidator('json', inviteSchema), async c => {
+  .post('/invite', zValidator('json', inviteSchema, explainStaff), async c => {
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
     const inv = await svc.inviteAdmin({
@@ -203,7 +231,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'staff_invitations', id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }))
   })
-  .patch('/:id', zValidator('param', idParam), zValidator('json', updateStaffSchema), async c => {
+  .patch('/:id', zValidator('param', idParam), zValidator('json', updateStaffSchema, explainStaff), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
@@ -248,7 +276,7 @@ const app = new Hono()
   // address is saved Unverified and mailed a confirmation link, and nothing
   // moves until the link is clicked (`routes/public/staff-email-change.ts`).
   // The same address again is the resend.
-  .post('/:id/email', zValidator('param', idParam), zValidator('json', emailChangeSchema), async c => {
+  .post('/:id/email', zValidator('param', idParam), zValidator('json', emailChangeSchema, explainStaff), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const pending = await startStaffEmailChange({

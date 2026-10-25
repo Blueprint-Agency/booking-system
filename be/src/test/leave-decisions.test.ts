@@ -45,6 +45,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
 
   // ── Fake storage: an in-memory bucket behind the R2 client's `send` ────────
   const bucket = new Map<string, { bytes: Uint8Array; contentType: string }>()
+  let holdUpload: ((key: string) => Promise<void>) | null = null
   let restoreStorage: () => void = () => {}
 
   // ── Fake mail: records every message; can be made to throw ─────────────────
@@ -290,7 +291,13 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
       if (command.constructor.name === 'PutObjectCommand') {
         const { Key, Body, ContentType, Bucket } = command.input
         assert.equal(Bucket, r2Module.r2Bucket())
+        await holdUpload?.(Key)
         bucket.set(Key, { bytes: new Uint8Array(Body), contentType: ContentType })
+        return {}
+      }
+      if (command.constructor.name === 'DeleteObjectCommand') {
+        assert.equal(command.input.Bucket, r2Module.r2Bucket())
+        bucket.delete(command.input.Key)
         return {}
       }
       throw new Error(`fake storage: unexpected ${command.constructor.name}`)
@@ -1171,5 +1178,59 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     const res = await upload(cal, approved, fileBytes(100), 'application/pdf', 'x.pdf')
     assert.equal(res.status, 200, res.text)
     assert.ok((await row(approved)).supportingDocumentR2Key, 'an approved request takes its document')
+  })
+
+  test('LEV-141 a Supporting Document still uploading when its request is rejected or withdrawn is refused, the request keeps the document it had, and no new file is left in the bucket', async () => {
+    const cases = [
+      { closing: 'rejected', had: null },
+      { closing: 'withdrawn', had: null },
+      { closing: 'withdrawn', had: 'image/png' },
+    ] as const
+    for (const { closing, had } of cases) {
+      const what = `${closing}${had ? ', with a document already attached' : ''}`
+      const { id } = await file(cal, 'medical')
+      if (had) assert.equal((await upload(cal, id, fileBytes(100, 3), had, 'first.png')).status, 200)
+      const keyBefore = (await row(id)).supportingDocumentR2Key
+      let heldKey: string | undefined
+      let markHeld!: () => void
+      const held = new Promise<void>(resolve => {
+        markHeld = resolve
+      })
+      let release!: () => void
+      const released = new Promise<void>(resolve => {
+        release = resolve
+      })
+      holdUpload = async key => {
+        if (!key.includes(id)) return
+        heldKey = key
+        markHeld()
+        await released
+      }
+      try {
+        const uploading = upload(cal, id, fileBytes(100), 'application/pdf', 'x.pdf')
+        await held
+
+        const close = closing === 'rejected' ? reject(adminOne, id, `Closed mid-upload ${run}`) : withdraw(cal, id)
+        const closed = await Promise.race([
+          close,
+          new Promise<null>(resolve => setTimeout(() => resolve(null), 10_000)),
+        ])
+        assert.ok(closed, `${what}: the decision is not held behind the upload`)
+        assert.equal(closed.status, 200, `${what}: ${closed.text}`)
+
+        release()
+        const res = await uploading
+        refused(res, 409, 'document_request_closed', what)
+        assert.match(res.body.message, new RegExp(`This request was ${closing}\\.`), `${what}: the refusal says why`)
+        const after = await row(id)
+        assert.equal(after.status, closing)
+        assert.equal(after.supportingDocumentR2Key, keyBefore, `${what}: the request keeps the document it had`)
+        if (keyBefore) assert.ok(bucket.has(keyBefore), `${what}: the document it had is still in the bucket`)
+        assert.ok(heldKey && heldKey !== keyBefore && !bucket.has(heldKey), `${what}: the new file is not left in the bucket`)
+      } finally {
+        holdUpload = null
+        release()
+      }
+    }
   })
 })

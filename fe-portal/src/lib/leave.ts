@@ -82,6 +82,16 @@ export const LEAVE_STATUS_TONE: Record<
   revoked: "error",
 };
 
+export const STATUSES_TAKING_A_DOCUMENT: readonly LeaveStatus[] = ["pending", "approved"];
+
+export function supportingDocumentAction(
+  request: Pick<ApiOwnLeaveRequest, "type" | "status" | "has_supporting_document">,
+): "open" | "attach" | null {
+  if (request.type === "annual") return null;
+  if (request.has_supporting_document) return "open";
+  return STATUSES_TAKING_A_DOCUMENT.includes(request.status) ? "attach" : null;
+}
+
 /** Half days split the day at 1pm Singapore time — the same boundary the
  *  backend enforces when it decides what a booking clashes with. */
 export const LEAVE_HALF_DAY_SUFFIX: Record<HalfDay, string> = {
