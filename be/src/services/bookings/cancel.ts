@@ -25,7 +25,7 @@
 import { and, eq } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
 import { bookings, cancellations } from '../../db/schema/bookings'
-import { classes, ptSessions } from '../../db/schema/schedule'
+import { classes, ptRequests, ptSessions } from '../../db/schema/schedule'
 import { actorOfSource, isVoided, recordMovement, refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import {
@@ -36,10 +36,10 @@ import {
   type StaffCredit,
 } from './refund-outcome'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
-import { promoteFromWaitlist, sendPromotionEmails, type Promotion } from '../waitlist/promote'
+import { lockPromotionMembers, promoteFromWaitlist, sendPromotionEmails, type Promotion } from '../waitlist/promote'
 import { assertMayWorkClass } from '../waitlist/staff'
 import type { Tx } from '../schedule/roster'
-import { settleSessionAfterBookingCancel } from '../pt-sessions/manual'
+import { settleSessionAfterBookingCancel, type LockedSessionRequest } from '../pt-sessions/manual'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
 import { sendMemberCancelReturnedEmail } from '../notifications/send-booking-email'
@@ -141,6 +141,8 @@ export async function cancelBookingInTx(
   const actorStaffId = 'actorStaffId' in input ? input.actorStaffId : undefined
   const credit = 'credit' in input ? input.credit : undefined
 
+  const parent = await lockParentOf(tx, tenantId, bookingId)
+
   // 1. Lock the booking row.
   const [bk] = await tx
     .select({
@@ -186,31 +188,12 @@ export async function cancelBookingInTx(
 
   const cancelKind: 'class' | 'pt' = bk.kind === 'class' ? 'class' : 'pt'
 
-  // 2. Load + lock the session to read its start time (race-safe vs admin bulk cancel).
-  let sessionStartsAt: Date
-  if (bk.kind === 'class') {
-    const [cls] = await tx
-      .select({
-        startsAt: classes.startsAt,
-        mainInstructorId: classes.mainInstructorId,
-      })
-      .from(classes)
-      .where(and(eq(classes.tenantId, tenantId), eq(classes.id, bk.classId!)))
-      .for('update')
-      .limit(1)
-    if (!cls) throw new NotFoundError('class_not_found')
-    if (source === 'instructor') assertMayWorkClass({ role: 'instructor', staffId: actorStaffId! }, cls)
-    sessionStartsAt = cls.startsAt
-  } else {
-    const [pt] = await tx
-      .select({ startsAt: ptSessions.startsAt })
-      .from(ptSessions)
-      .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, bk.ptSessionId!)))
-      .for('update')
-      .limit(1)
-    if (!pt) throw new NotFoundError('pt_session_not_found')
-    sessionStartsAt = pt.startsAt
+  // 2. The session's start time, read under the lock taken above (race-safe vs admin bulk cancel).
+  if (parent?.kind !== bk.kind) throw new NotFoundError(bk.kind === 'class' ? 'class_not_found' : 'pt_session_not_found')
+  if (source === 'instructor' && parent.kind === 'class') {
+    assertMayWorkClass({ role: 'instructor', staffId: actorStaffId! }, parent)
   }
+  const sessionStartsAt = parent.startsAt
 
   // 3. Evaluate the refund decision.
   const now = clockNow()
@@ -261,6 +244,9 @@ export async function cancelBookingInTx(
   // member's would be. A staff cancel's is recorded, never acted on.
   const wasWithinWindow =
     evaluation?.wasWithinWindow ?? (await staffCancelInTime(tenantId, cancelKind, sessionStartsAt, now))
+
+  const freesOnlineSeat = bk.kind === 'class' && bk.seat === 'online'
+  if (freesOnlineSeat) await lockPromotionMembers(tx, tenantId, bk.classId!, bk.clientPackageId, now)
 
   // 4. Return the credit/session to the originating package. The ledger also
   // re-derives `active`, so a bundle emptied to zero becomes spendable again
@@ -331,8 +317,9 @@ export async function cancelBookingInTx(
   // 6b. A private session's request and session follow the booking, as a
   // cancel of the request leaves them — never scheduled with nobody paying,
   // nor completed as attended once its time passes (#350).
-  if (bk.kind === 'pt') {
+  if (parent?.kind === 'pt') {
     await settleSessionAfterBookingCancel(tx, tenantId, {
+      req: parent.req,
       ptSessionId: bk.ptSessionId!,
       clientId: bk.clientId,
       source,
@@ -342,11 +329,61 @@ export async function cancelBookingInTx(
   }
 
   // 7. A freed online seat goes to the head of the waitlist, in this
-  // transaction and under the class lock taken in step 2 (spec-waitlist.md
-  // §5). A buffer or overbook seat is staff's, not the line's, and promotes
+  // transaction and under the class lock (spec-waitlist.md §5). A buffer or overbook seat is staff's, not the line's, and promotes
   // nobody.
-  const promotions =
-    bk.kind === 'class' && bk.seat === 'online' ? await promoteFromWaitlist(tx, tenantId, bk.classId!, now) : []
+  const promotions = freesOnlineSeat ? await promoteFromWaitlist(tx, tenantId, bk.classId!, now) : []
 
   return { result: { refundOutcome, refundFired }, promotions }
+}
+
+type LockedParent =
+  | { kind: 'class'; startsAt: Date; mainInstructorId: string }
+  | { kind: 'pt'; startsAt: Date; req: LockedSessionRequest | undefined }
+
+/** Taken before the booking row, in the order every other writer of its seats locks them (#439). */
+async function lockParentOf(tx: Tx, tenantId: string, bookingId: string): Promise<LockedParent | undefined> {
+  const [target] = await tx
+    .select({
+      kind: bookings.kind,
+      classId: bookings.classId,
+      ptSessionId: bookings.ptSessionId,
+      ptRequestId: ptSessions.ptRequestId,
+    })
+    .from(bookings)
+    .leftJoin(ptSessions, and(eq(ptSessions.tenantId, bookings.tenantId), eq(ptSessions.id, bookings.ptSessionId)))
+    .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bookingId)))
+    .limit(1)
+  if (target?.kind === 'class' && target.classId) {
+    const [cls] = await tx
+      .select({ startsAt: classes.startsAt, mainInstructorId: classes.mainInstructorId })
+      .from(classes)
+      .where(and(eq(classes.tenantId, tenantId), eq(classes.id, target.classId)))
+      .for('update')
+      .limit(1)
+    return cls && { kind: 'class', ...cls }
+  }
+  if (target?.kind === 'pt' && target.ptSessionId) {
+    const [req] = target.ptRequestId
+      ? await tx
+          .select({
+            id: ptRequests.id,
+            origin: ptRequests.origin,
+            status: ptRequests.status,
+            clientId: ptRequests.clientId,
+            coClientId: ptRequests.coClientId,
+          })
+          .from(ptRequests)
+          .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, target.ptRequestId)))
+          .for('update')
+          .limit(1)
+      : []
+    const [session] = await tx
+      .select({ startsAt: ptSessions.startsAt })
+      .from(ptSessions)
+      .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, target.ptSessionId)))
+      .for('update')
+      .limit(1)
+    return session && { kind: 'pt', startsAt: session.startsAt, req }
+  }
+  return undefined
 }

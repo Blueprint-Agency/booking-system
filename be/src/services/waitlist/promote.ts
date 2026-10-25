@@ -11,14 +11,16 @@
  * Inside the Cancellation Window nobody is moved automatically: a promoted
  * member must always be able to cancel free. Staff fill those seats by hand.
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray, or } from 'drizzle-orm'
 import { db } from '../../db'
 import { waitlistEntries } from '../../db/schema/bookings'
 import { classes } from '../../db/schema/schedule'
 import { classTypes, locations } from '../../db/schema/catalog'
 import { clients, staffUsers } from '../../db/schema/identity'
+import { clientPackages } from '../../db/schema/packages'
 import type { Tx } from '../schedule/roster'
 import { holdsSeat, lockClass, payAndBook } from '../bookings/book'
+import { lockMemberTime } from '../bookings/member-time'
 import { countSeats } from '../bookings/seats'
 import { sendTemplatedEmail } from '../notifications/send'
 import { loadTenantById } from '../tenants/tenants'
@@ -47,11 +49,9 @@ export async function promoteFromWaitlist(
   classId: string,
   now: Date,
 ): Promise<Promotion[]> {
-  const cls = await lockClass(tx, tenantId, classId)
-  if (!cls || cls.lifecycle !== 'active') return []
-  if (!beforeWindow(cls.startsAt, await classCancelWindow(tenantId), now)) return []
-
-  const line = await waitingLine(tx, tenantId, classId, now)
+  const promotable = await promotableLine(tx, tenantId, classId, now)
+  if (!promotable) return []
+  const { cls, line } = promotable
   const outcomes = new Map<string, PromotionOutcome>()
   const promoted: Promotion[] = []
 
@@ -68,6 +68,24 @@ export async function promoteFromWaitlist(
       continue
     }
 
+    // The expiry sweep ends entries without the class lock. One it has ended,
+    // or is ending, is not booked, and the promotion never waits on its lock.
+    const stillWaiting = and(
+      eq(waitlistEntries.tenantId, tenantId),
+      eq(waitlistEntries.id, next.id),
+      eq(waitlistEntries.status, 'waiting'),
+    )
+    const [claimed] = await tx
+      .select({ id: waitlistEntries.id })
+      .from(waitlistEntries)
+      .where(stillWaiting)
+      .for('update', { skipLocked: true })
+      .limit(1)
+    if (!claimed) {
+      outcomes.set(next.id, 'not_waiting')
+      continue
+    }
+
     // Nobody is there to pick, so the Default payer pays. A member who has
     // since booked something at an overlapping time is skipped, not moved:
     // nobody is there to say "book anyway".
@@ -80,12 +98,49 @@ export async function promoteFromWaitlist(
     await tx
       .update(waitlistEntries)
       .set({ status: 'promoted', bookingId: paid.booking.bookingId, resolvedAt: now, resolvedBy: 'system' })
-      .where(and(eq(waitlistEntries.tenantId, tenantId), eq(waitlistEntries.id, next.id)))
+      .where(stillWaiting)
     outcomes.set(next.id, 'promoted')
     promoted.push({ entryId: next.id, bookingId: paid.booking.bookingId, clientId: next.clientId, classId })
   }
 
   return promoted
+}
+
+async function promotableLine(tx: Tx, tenantId: string, classId: string, now: Date) {
+  const cls = await lockClass(tx, tenantId, classId)
+  if (!cls || cls.lifecycle !== 'active') return null
+  if (!beforeWindow(cls.startsAt, await classCancelWindow(tenantId), now)) return null
+  return { cls, line: await waitingLine(tx, tenantId, classId, now) }
+}
+
+/**
+ * Call before refunding a cancel's package when it frees an online seat, so two
+ * cancels whose waitlists name each other's members take turns here instead of
+ * deadlocking on each other's packages in promotion (#439).
+ */
+export async function lockPromotionMembers(
+  tx: Tx,
+  tenantId: string,
+  classId: string,
+  refundPackageId: string | null,
+  now: Date,
+): Promise<void> {
+  const promotable = await promotableLine(tx, tenantId, classId, now)
+  if (!promotable?.line.length) return
+  const waiting = promotable.line.map(e => e.clientId)
+  await lockMemberTime(tx, tenantId, waiting)
+  const theirs = inArray(clientPackages.clientId, waiting)
+  await tx
+    .select({ id: clientPackages.id })
+    .from(clientPackages)
+    .where(
+      and(
+        eq(clientPackages.tenantId, tenantId),
+        refundPackageId ? or(theirs, eq(clientPackages.id, refundPackageId)) : theirs,
+      ),
+    )
+    .orderBy(clientPackages.id)
+    .for('update')
 }
 
 /**

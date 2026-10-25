@@ -35,7 +35,7 @@ export function positions(entries: readonly LineEntry[]): Map<string, number> {
  * overlapping time. A refused entry stays `waiting` (§5) — it is only skipped
  * for the rest of this pass.
  */
-export type PromotionOutcome = 'promoted' | SelectionRefusal | 'already_booked' | 'time_clash'
+export type PromotionOutcome = 'promoted' | SelectionRefusal | 'already_booked' | 'time_clash' | 'not_waiting'
 
 /**
  * The next entry to try for a freed online seat: the first in queue order not

@@ -344,10 +344,12 @@ Free workshops do not insert a `stripe_payments` row. Since #383 the place opens
 services/bookings/cancel.ts:cancel({ booking_id, source: 'client' })
   ↓
 tx start
+0. Lock what the booking is for, before the booking, as every writer of its seats does (#439):
+   kind='class': the class FOR UPDATE; kind='pt': the session's pt_request, then the pt_session
 1. SELECT booking FOR UPDATE WHERE id=X AND client_id=me AND state='confirmed'
    a booking with source='classpass' → 409 classpass_booking_cancel_on_classpass
    (the member cancels it on ClassPass, whose email cancels it here; staff still can)
-2. session = load class | pt_session by booking.kind
+2. session = the class or pt_session locked in 0
 3. evaluation = services/policy/evaluate-cancellation({
      clientId: me, kind: booking.kind,
      sessionStartsAt: session.starts_at,
@@ -359,6 +361,9 @@ tx start
    A class cancel inside its window is NOT refused: it is a Late cancel (#318) —
    refund='forfeit', wasWithinWindow=false. In time, refund='full' while under the
    cap, or always when cancel_cap_enabled is false.
+3b. kind='class' AND booking.seat='online' AND the class would promote (step 10): lock every
+   waiting member's time, then the booking's package and every package of theirs, in id order,
+   before any package is written — so two cancels that each promote the other take turns (#439)
 4. Settle (services/bookings/refund-outcome.ts:settleCancel — the preview's settlement too):
    - refund='full', something spent, a package to return it to: credits_or_sessions_used
      go back; refund_outcome='credit_returned' | 'session_returned'

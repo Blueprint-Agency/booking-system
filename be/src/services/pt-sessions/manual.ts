@@ -487,6 +487,11 @@ function seatsOn(tx: Tx, tenantId: string, ptSessionId: string) {
 
 type Seat = Awaited<ReturnType<typeof seatsOn>>[number]
 
+export type LockedSessionRequest = Pick<
+  typeof ptRequests.$inferSelect,
+  'id' | 'origin' | 'status' | 'clientId' | 'coClientId'
+>
+
 /**
  * The request and the attendee rows mirror who is booked, as a request
  * session's do: the request's client stays while they are booked, and the
@@ -529,19 +534,22 @@ async function followRoster(
  * partner's going leaves it on; a manual session goes on for whoever is still
  * seated, and is cancelled with the last one — unless staff cancelled it, who
  * free the seat to fill again, as removing a member does (PT-94, PT-101).
+ *
+ * `req` is the session's request, locked by the caller before the booking.
  */
 export async function settleSessionAfterBookingCancel(
   tx: Tx,
   tenantId: string,
-  input: { ptSessionId: string; clientId: string; source: CancelSource; cancelledByStaffId: string | null; now: Date },
+  input: {
+    req: LockedSessionRequest | undefined
+    ptSessionId: string
+    clientId: string
+    source: CancelSource
+    cancelledByStaffId: string | null
+    now: Date
+  },
 ): Promise<void> {
-  const { ptSessionId, now } = input
-  const [req] = await tx
-    .select({ id: ptRequests.id, origin: ptRequests.origin, status: ptRequests.status, clientId: ptRequests.clientId, coClientId: ptRequests.coClientId })
-    .from(ptRequests)
-    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.scheduledPtSessionId, ptSessionId)))
-    .for('update')
-    .limit(1)
+  const { req, ptSessionId, now } = input
   if (req?.status !== 'scheduled') return
   const left = await seatsOn(tx, tenantId, ptSessionId)
   const staffFreedSeat = input.source === 'admin' || input.source === 'instructor'
