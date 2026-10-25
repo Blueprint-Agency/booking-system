@@ -10,7 +10,7 @@ import { db } from '../../db'
 import { clientPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
-import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { isVoided, recordAdjustment } from './ledger'
 import { listActiveInstructors } from '../schedule/client-catalog'
 import { computeActive } from './validity'
@@ -23,26 +23,27 @@ export type ClientPackageRow = typeof clientPackages.$inferSelect
  * as owner, so a package id belonging to another studio's member names nothing
  * — the refusal is `client_package_not_found`, the same answer an id that does
  * not exist gets, and nothing about the row leaks.
+ *
+ * A Voided package is refused (`package_voided`): its member has been refunded
+ * for it, and it stays as the Void left it (be/CONTEXT.md § Void).
  */
-function ownedPackage(tenantId: string, clientId: string, clientPackageId: string) {
-  return and(
-    eq(clientPackages.tenantId, tenantId),
-    eq(clientPackages.id, clientPackageId),
-    eq(clientPackages.clientId, clientId),
-  )
-}
-
-async function loadOwnedPackage(
-  tenantId: string,
-  clientId: string,
-  clientPackageId: string,
+async function editablePackage(
+  handle: Pick<typeof db, 'select'>,
+  input: { tenantId: string; clientId: string; clientPackageId: string },
 ): Promise<ClientPackageRow> {
-  const [row] = await db
+  const [row] = await handle
     .select()
     .from(clientPackages)
-    .where(ownedPackage(tenantId, clientId, clientPackageId))
+    .where(
+      and(
+        eq(clientPackages.tenantId, input.tenantId),
+        eq(clientPackages.id, input.clientPackageId),
+        eq(clientPackages.clientId, input.clientId),
+      ),
+    )
     .limit(1)
   if (!row) throw new NotFoundError('client_package_not_found')
+  if (await isVoided(handle, input.tenantId, row.id)) throw new ConflictError('package_voided')
   return row
 }
 
@@ -74,12 +75,7 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
   if (!input.reason.trim()) throw new BadRequestError('reason_required')
 
   return db.transaction(async tx => {
-    const [pkg] = await tx
-      .select()
-      .from(clientPackages)
-      .where(ownedPackage(input.tenantId, input.clientId, input.clientPackageId))
-      .limit(1)
-    if (!pkg) throw new NotFoundError('client_package_not_found')
+    const pkg = await editablePackage(tx, input)
     if (pkg.creditsOrSessionsRemaining === null) {
       throw new BadRequestError('cannot_adjust_unlimited_package')
     }
@@ -92,12 +88,11 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
 
     // Recompute the consumable flag — adding credits to an exhausted bundle must
     // reactivate it, and zeroing one must deactivate it, without waiting for the
-    // nightly expiry sweep. A Voided one stays voided.
+    // nightly expiry sweep.
     const nextActive = computeActive({
       kind: pkg.kind,
       expiresAt: pkg.expiresAt,
       creditsOrSessionsRemaining: next,
-      voided: await isVoided(tx, input.tenantId, pkg.id),
     })
     // Topping up a spent package revives it with its expiry untouched, whatever
     // else of its Family is running (be/docs/adr/0010).
@@ -141,7 +136,7 @@ export async function setBalance(input: SetBalanceInput): Promise<ClientPackageR
   // Checked here, not left to `adjustBalance`: the reason it is handed is
   // prefixed with "Set N:", which is never blank.
   if (!input.reason.trim()) throw new BadRequestError('reason_required')
-  const pkg = await loadOwnedPackage(input.tenantId, input.clientId, input.clientPackageId)
+  const pkg = await editablePackage(db, input)
   if (pkg.creditsOrSessionsRemaining === null) {
     throw new BadRequestError('cannot_set_balance_on_unlimited_package')
   }
@@ -179,12 +174,7 @@ export async function setCrossLocationAddOn(
   if (!input.reason.trim()) throw new BadRequestError('reason_required')
 
   return db.transaction(async tx => {
-    const [pkg] = await tx
-      .select()
-      .from(clientPackages)
-      .where(ownedPackage(input.tenantId, input.clientId, input.clientPackageId))
-      .limit(1)
-    if (!pkg) throw new NotFoundError('client_package_not_found')
+    const pkg = await editablePackage(tx, input)
     // Only an Unlimited Plan has a Home Location to extend.
     if (pkg.kind !== 'unlimited') throw new BadRequestError('cross_location_requires_unlimited')
 
@@ -237,12 +227,7 @@ export async function setHomeLocation(input: SetHomeLocationInput): Promise<Clie
   if (!input.reason.trim()) throw new BadRequestError('reason_required')
 
   return db.transaction(async tx => {
-    const [pkg] = await tx
-      .select()
-      .from(clientPackages)
-      .where(ownedPackage(input.tenantId, input.clientId, input.clientPackageId))
-      .limit(1)
-    if (!pkg) throw new NotFoundError('client_package_not_found')
+    const pkg = await editablePackage(tx, input)
 
     // Somewhere real, and somewhere classes can still be scheduled — moving a
     // member onto an archived Location strands them exactly as the wrong
@@ -337,12 +322,7 @@ export async function setBoundInstructor(
   if (!input.reason.trim()) throw new BadRequestError('reason_required')
 
   return db.transaction(async tx => {
-    const [pkg] = await tx
-      .select()
-      .from(clientPackages)
-      .where(ownedPackage(input.tenantId, input.clientId, input.clientPackageId))
-      .limit(1)
-    if (!pkg) throw new NotFoundError('client_package_not_found')
+    const pkg = await editablePackage(tx, input)
 
     // The Tenant's active instructors, read only when there is a pick to check
     // against them — clearing a binding needs no roster. Same set the checkout
@@ -409,12 +389,7 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
   if (!input.reason.trim()) throw new BadRequestError('reason_required')
 
   return db.transaction(async tx => {
-    const [pkg] = await tx
-      .select()
-      .from(clientPackages)
-      .where(ownedPackage(input.tenantId, input.clientId, input.clientPackageId))
-      .limit(1)
-    if (!pkg) throw new NotFoundError('client_package_not_found')
+    const pkg = await editablePackage(tx, input)
 
     // A blank expiry returns the package to Dormant (§8) — the escape hatch the
     // one-way activation rule depends on, the way an admin undoes an Activation
@@ -425,13 +400,11 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
 
     // Extending an expired package's expiry must make its credits usable again
     // (and shortening it past `now` must deactivate it) — recompute, don't wait
-    // for the nightly sweep. `bookClass` filters on `active = true`. A Voided
-    // package stays voided.
+    // for the nightly sweep. `bookClass` filters on `active = true`.
     const nextActive = computeActive({
       kind: pkg.kind,
       expiresAt: input.expiresAt,
       creditsOrSessionsRemaining: pkg.creditsOrSessionsRemaining,
-      voided: await isVoided(tx, input.tenantId, pkg.id),
     })
 
     // Giving a Dormant package a date IS an Activation by hand, allowed while

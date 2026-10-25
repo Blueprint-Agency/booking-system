@@ -36,6 +36,7 @@ import { formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatt
 import { localDay } from "@/lib/local-day";
 import { WORKSHOP_CANCEL_CONFIRM } from "@/lib/workshop-cancel";
 import {
+  CLASS_CANCEL_CONFIRM,
   cancelClass,
   cancelCorporateSession,
   fetchClassDetail,
@@ -54,7 +55,13 @@ import {
   type ScheduleCorporateSession,
   type SchedulePtDetail,
 } from "@/lib/schedule";
-import { cancelSession, isManual, ptCancelConfirm, sessionActionErrorMessage } from "@/lib/pt-manual";
+import {
+  canCancelSession,
+  cancelSession,
+  isManual,
+  ptCancelConfirm,
+  sessionActionErrorMessage,
+} from "@/lib/pt-manual";
 import { CancelPtDialog } from "@/components/pt-requests/cancel-pt-dialog";
 import { PtSessionMembers } from "@/components/schedule/pt-session-members";
 import {
@@ -162,9 +169,7 @@ function ClassDetail({ id }: { id: string }) {
 
   async function handleCancelClass() {
     if (!api || !data) return;
-    if (!confirm("Cancel this class? Attendee bookings will be cancelled and credits returned.")) {
-      return;
-    }
+    if (!confirm(CLASS_CANCEL_CONFIRM)) return;
     setCancelBusy(true);
     setActionError(null);
     try {
@@ -685,7 +690,7 @@ function PtDetail({ id }: { id: string }) {
         title={`Private session · ${typeLabel}`}
         meta={meta}
         action={
-          data.lifecycle === "active" ? (
+          canCancelSession(data) ? (
             <Button
               type="button"
               variant="ghost"

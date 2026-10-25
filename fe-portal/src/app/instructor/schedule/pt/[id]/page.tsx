@@ -10,7 +10,14 @@ import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime } from "@/lib/formatters";
 import { fetchInstructorPt, type InstructorPtDetail } from "@/lib/schedule";
-import { cancelSession, isManual, ptCancelConfirm, sessionActionErrorMessage, sessionTypeLabel } from "@/lib/pt-manual";
+import {
+  canCancelSession,
+  cancelSession,
+  isManual,
+  ptCancelConfirm,
+  sessionActionErrorMessage,
+  sessionTypeLabel,
+} from "@/lib/pt-manual";
 
 /**
  * A private session the instructor runs (#338): who is on it and the package
@@ -97,7 +104,7 @@ function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged:
           {state === "cancelled" && <Badge tone="error">Cancelled</Badge>}
           {state === "ongoing" && <Badge tone="warning">Ongoing</Badge>}
           {state === "completed" && <Badge tone="sage">Completed</Badge>}
-          {state === "scheduled" && data.pt_request_id && canTakePt && (
+          {canCancelSession(data) && data.pt_request_id && canTakePt && (
             <Button
               type="button"
               variant="ghost"

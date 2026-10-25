@@ -3,6 +3,7 @@ import { db } from '../../db'
 import { clientPackages, classPackages, promoCodes, ptPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
+import { purchases } from '../../db/schema/ledger'
 import {
   familyOf,
   isActivated,
@@ -230,6 +231,8 @@ export interface ClientPackageWithSource {
   complimentary: boolean
   /** Where it stands — running, dormant, expired, used up or ended (`packageStanding`). */
   standing: PackageStanding
+  /** Its Purchase was Refunded (be/CONTEXT.md § Void). */
+  voided: boolean
   /**
    * A Purchase paid for it through the payment provider. False for a comp, a
    * $0 trial pass and a package brought over from another system — none of
@@ -304,6 +307,7 @@ export async function listClientPackages(
       promoCode: promoCodes.code,
       complimentary: clientPackages.complimentary,
       purchaseId: clientPackages.purchaseId,
+      purchaseStatus: purchases.status,
     })
     .from(clientPackages)
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
@@ -313,6 +317,7 @@ export async function listClientPackages(
     // someone who has since been archived stays bound and says so.
     .leftJoin(staffUsers, eq(staffUsers.id, clientPackages.boundInstructorId))
     .leftJoin(promoCodes, eq(promoCodes.id, clientPackages.appliedPromoCodeId))
+    .leftJoin(purchases, eq(purchases.id, clientPackages.purchaseId))
     .where(and(...baseConds))
 
   return rows.map(r => ({
@@ -345,5 +350,6 @@ export async function listClientPackages(
       active: r.active,
     }),
     paidOnline: r.purchaseId !== null,
+    voided: r.purchaseStatus === 'refunded',
   }))
 }

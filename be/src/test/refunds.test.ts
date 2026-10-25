@@ -940,7 +940,6 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     return { who, paid }
   }
 
-  /** Each edit is refused as `package_voided`, and the package and its ledger are as the Void left them. */
   async function assertEditsRefused(who: Member, paid: Paid, edits: Record<string, unknown>) {
     const before = await state(paid)
     for (const [path, body] of Object.entries(edits)) {
