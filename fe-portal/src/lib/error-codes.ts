@@ -225,6 +225,7 @@ export const ERROR_CODES = {
   package_rule_empty: "package_rule_empty",
   package_rule_invalid_package: "package_rule_invalid_package",
   package_touched: "package_touched",
+  package_voided: "package_voided",
   parent_must_be_root: "parent_must_be_root",
   parent_self_reference: "parent_self_reference",
   part_payment_below_floor: "part_payment_below_floor",

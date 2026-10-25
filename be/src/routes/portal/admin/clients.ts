@@ -277,6 +277,7 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
     // False on a comp, a $0 trial and a package imported from another system:
     // no online payment stands behind it, so there is no discount to derive.
     paid_online: p.paidOnline,
+    voided: p.voided,
   }
 }
 

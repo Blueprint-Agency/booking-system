@@ -3,6 +3,7 @@ import assert from "node:assert";
 import { ApiError } from "./api";
 import {
   addMemberBody,
+  canCancelSession,
   canAddMember,
   downgradeConfirm,
   downgradeLeaving,
@@ -313,13 +314,27 @@ test("PT-113 a refused remove, add, type change or cancel is worded from its cod
   assert.strictEqual(sessionActionErrorMessage(new Error("offline"), "Couldn't remove them"), "Network error");
 });
 
-test("PT-113 cancelling a manual session says each member is paid back on their own package", () => {
+test("PT-113 PT-150 cancelling a private session says each member is paid back on their own package, unless it was refunded", () => {
   assert.strictEqual(
     ptCancelConfirm({ origin: "portal" }),
-    "Cancel this private session? Each member gets their session back on the package it was paid from.",
+    "Cancel this private session? Each member gets their session back on the package it was paid from, unless that package has been refunded.",
   );
   assert.strictEqual(
     ptCancelConfirm({ origin: "member" }),
-    "Cancel this private session? Customer bookings will be cancelled and credits returned.",
+    "Cancel this private session? The member who asked for it gets their session back on the package it was paid from, unless that package has been refunded.",
+  );
+});
+
+test("PT-151 staff are offered Cancel session only before the session starts", () => {
+  const at = (iso: string) => new Date(iso);
+  const s = { lifecycle: "active" as const, starts_at: "2031-05-01T09:00:00.000Z" };
+  assert.strictEqual(canCancelSession(s, at("2031-05-01T08:59:59.000Z")), true);
+  assert.strictEqual(canCancelSession(s, at("2031-05-01T09:00:00.000Z")), false, "the backend refuses from the start");
+  assert.strictEqual(canCancelSession(s, at("2031-05-01T09:30:00.000Z")), false, "ongoing");
+  assert.strictEqual(canCancelSession(s, at("2031-05-01T12:00:00.000Z")), false, "ended unticked");
+  assert.strictEqual(
+    canCancelSession({ ...s, lifecycle: "cancelled" }, at("2031-04-30T09:00:00.000Z")),
+    false,
+    "already cancelled",
   );
 });

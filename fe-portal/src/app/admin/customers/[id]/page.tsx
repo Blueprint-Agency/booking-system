@@ -42,6 +42,7 @@ import {
 } from "@/components/clients/package-set-balance-dialog";
 import { RefundDialog } from "@/components/clients/refund-dialog";
 import { REFUND_REFUSALS } from "@/lib/refund-refusals";
+import { packageActions, type PackageAction } from "@/lib/package-actions";
 import { GivePackageDialog, type GivePackagePayload } from "@/components/clients/give-package-dialog";
 import { RemovePackageDialog } from "@/components/clients/remove-package-dialog";
 import { CreditHistoryPanel } from "@/components/clients/credit-history-panel";
@@ -131,6 +132,7 @@ interface ApiPackage {
    * package imported from another system — none has a discount to derive.
    */
   paid_online: boolean;
+  voided: boolean;
 }
 
 type PackageStanding = "running" | "dormant" | "expired" | "used_up" | "ended";
@@ -315,6 +317,7 @@ const REFUSALS: Record<string, string> = {
   name_required: "A name is required.",
   phone_required: "A phone number is required.",
   balance_too_large: `A package can hold at most ${MAX_PACKAGE_BALANCE.toLocaleString("en-SG")} credits or sessions.`,
+  package_voided: "This package has been refunded, so it can no longer be changed.",
   booking_attended:
     "They have already been checked in to this class. Untick them on the roster first if that was a mistake.",
   not_cancellable: "This booking is no longer booked — it may already have been cancelled.",
@@ -341,53 +344,6 @@ function toClientPackage(clientId: string, p: ApiPackage): ClientPackage {
     purchasedAt: p.purchased_at,
     amountPaidSgd: Number(p.amount_paid_sgd),
   };
-}
-
-type PackageAction =
-  | "balance"
-  | "expiry"
-  | "cross_location"
-  | "home_location"
-  | "bound_instructor"
-  | "adjust"
-  | "refund"
-  | "remove";
-
-/** What an admin can do to one package, in menu order. */
-function packageActions(p: ApiPackage): { action: PackageAction; label: string }[] {
-  const out: { action: PackageAction; label: string }[] = [];
-  if (p.kind === "credit_bundle" || p.kind === "trial") {
-    out.push({ action: "balance", label: "Set credit balance" });
-  }
-  // Every kind expires, PT included — a PT package carries its own validity in
-  // days like a Credit Bundle does. A blank date returns any kind to Dormant
-  // (§8): every package starts there and Activates on its first booking.
-  out.push({ action: "expiry", label: "Edit expiry" });
-  // Only an Unlimited Plan has a Home Location to extend or move.
-  if (p.kind === "unlimited") {
-    out.push({
-      action: "cross_location",
-      label:
-        p.cross_location_paid_sgd !== null
-          ? "Edit Cross-Location Add-On"
-          : "Add Cross-Location Add-On",
-    });
-    out.push({ action: "home_location", label: "Change home studio" });
-  }
-  // Only a PT Package has a Bound Instructor — one sold open is bound from here.
-  if (p.kind === "pt") out.push({ action: "bound_instructor", label: "Change bound instructor" });
-  if (p.kind !== "unlimited") out.push({ action: "adjust", label: "Manual adjustment" });
-  // Always offered on a purchase that reached Stripe — attendance is a notice
-  // inside the dialog, never a reason to hide the button (§14). Withheld only
-  // while a Refund is already on its way and there is nothing left to ask
-  // Stripe for (#275); a part-issued one is offered again to return the rest.
-  if (p.refundable && p.refund_progress !== "processing") {
-    out.push({ action: "refund", label: "Refund purchase…" });
-  }
-  // A comp has no money behind it, so it is removed rather than refunded. The
-  // backend is what knows whether a class it paid for has been held.
-  if (p.complimentary) out.push({ action: "remove", label: "Remove free package…" });
-  return out;
 }
 
 export default function ClientProfilePage({

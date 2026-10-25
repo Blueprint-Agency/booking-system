@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
-import { scheduleErrorMessage, fetchCorporateSession } from "./schedule";
+import { CLASS_CANCEL_CONFIRM, scheduleErrorMessage, fetchCorporateSession } from "./schedule";
 import { seriesErrorMessage } from "./series";
 import { manualSessionErrorMessage } from "./pt-manual";
 import { ApiError, type Api } from "./api";
@@ -76,6 +76,13 @@ test("PT-145 scheduling, moving or creating a private session after its package'
   assert.strictEqual(manualSessionErrorMessage(withSentence), sentence);
   assert.strictEqual(scheduleErrorMessage(bare, "Couldn't schedule"), copy);
   assert.strictEqual(manualSessionErrorMessage(bare), copy);
+});
+
+test("CXL-70 cancelling a class promises no credit back to a refunded package", () => {
+  assert.strictEqual(
+    CLASS_CANCEL_CONFIRM,
+    "Cancel this class? Every attendee's booking is cancelled, and the credits each one spent go back to their package, unless that package has been refunded.",
+  );
 });
 
 test("a thrown non-response is a network error", () => {

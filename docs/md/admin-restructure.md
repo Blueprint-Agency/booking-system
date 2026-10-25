@@ -629,6 +629,7 @@ Consolidated reference for all cancellation paths.
 | Workshop | Full Stripe money refund to all attendees (in-app, automatic, immediate) |
 
 - Always 100%, overrides cap and window.
+- Nothing goes back to a package that has been refunded (be/CONTEXT.md § Void), so the confirmation says "unless that package has been refunded" rather than promising credits back. A private session is cancellable only before it starts (`session_already_started`, #241), so Cancel session is not offered on one that has.
 
 **Staff-initiated — one member's class booking** (#320):
 
@@ -815,6 +816,7 @@ The actions on a client's active-package kebab, all written into the same immuta
 
 **Rules:**
 - Balance cannot go below zero — adjustment / set-balance is blocked if it would result in a negative balance.
+- A refunded package (Voided, be/CONTEXT.md § Void) offers none of these actions, expired or used up as it may also read; the backend refuses each with `package_voided`. An expired or used-up package that was never refunded keeps them all.
 - Every action is recorded with timestamp, acting admin, package, delta, reason — immutable.
 - _As built (#353):_ the old **"Package adjustments"** list is replaced by **Credit history**, one package at a time (a picker of the member's packages, current and past). Each row is a Credit movement (backend-architecture §4i) in words — Booked, Returned, Late cancel · credit not returned, Over the cancellation limit · credit not returned, Staff cancel · credit not returned, No-show · credit not returned, Expired, Adjusted by staff, Private session requested, Request cancelled · returned — never a raw code like `client_cancellation_refund`. It shows the signed amount, the class or private session and its time, the staff member's name (or Member / System), an adjustment's reason, and the balance after; an expiry shows what it took and a balance of 0. Newest first, with "History from <date>" at its foot. Read by `GET /portal/admin/clients/:id/packages/:pid/credit-history`; each action above writes its ledger row and its movement together.
 - Adjustments do not affect cancellation cap counter (§4) — they are an admin override, not a client action.

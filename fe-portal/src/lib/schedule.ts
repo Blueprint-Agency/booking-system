@@ -328,6 +328,9 @@ export function patchCorporateSession(
   return api.patch(`/portal/admin/corporate-sessions/${sessionId}`, input);
 }
 
+export const CLASS_CANCEL_CONFIRM =
+  "Cancel this class? Every attendee's booking is cancelled, and the credits each one spent go back to their package, unless that package has been refunded.";
+
 export function cancelClass(api: Api, classId: string): Promise<unknown> {
   return api.post(`/portal/admin/schedule/classes/${classId}/cancel`);
 }

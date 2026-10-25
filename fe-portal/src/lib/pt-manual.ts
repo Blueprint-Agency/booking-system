@@ -11,6 +11,7 @@ import { formatDate } from "@/lib/formatters";
 import { payOrNull } from "@/lib/pay";
 import { scheduleErrorMessage } from "@/lib/schedule";
 import { withClashConfirm } from "@/lib/time-clash";
+import type { Lifecycle } from "@/types";
 
 export type PtSessionType = "1on1" | "2on1";
 
@@ -281,8 +282,19 @@ export function canAddMember(s: ManualSessionState): boolean {
 /** What staff are asked before cancelling the whole session. */
 export function ptCancelConfirm(s: Pick<ManualSessionState, "origin">): string {
   return isManual(s)
-    ? "Cancel this private session? Each member gets their session back on the package it was paid from."
-    : "Cancel this private session? Customer bookings will be cancelled and credits returned.";
+    ? "Cancel this private session? Each member gets their session back on the package it was paid from, unless that package has been refunded."
+    : "Cancel this private session? The member who asked for it gets their session back on the package it was paid from, unless that package has been refunded.";
+}
+
+/**
+ * Staff may cancel a private session only before it starts: the backend refuses
+ * one that is running or has ended unticked (`session_already_started`, #241).
+ */
+export function canCancelSession(
+  s: { lifecycle: Lifecycle; starts_at: string },
+  now: Date = new Date(),
+): boolean {
+  return s.lifecycle === "active" && now.getTime() < new Date(s.starts_at).getTime();
 }
 
 export interface AddMemberBody {
