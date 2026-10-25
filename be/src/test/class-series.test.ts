@@ -180,7 +180,7 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
     assert.equal((await json(res, 400)).error, 'series_range_too_long')
   })
 
-  test('SCH-39 a series whose first, last or excluded date has a five-digit year is refused 400 invalid_request with a sentence naming the field', async () => {
+  test('SCH-41 a series whose first, last or excluded date has a five-digit year is refused 400 invalid_request with a sentence naming the field', async () => {
     for (const [over, says] of [
       [{ first_date: '20260-01-05' }, /first date/i],
       [{ last_date: '20260-01-05' }, /last date/i],

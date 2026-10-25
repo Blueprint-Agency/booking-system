@@ -1255,7 +1255,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
   /** Every object in the bucket that belongs to one request. */
   const objectsOf = (id: string) => [...bucket.keys()].filter(key => key.includes(id))
 
-  test('LEV-143 a second Supporting Document, of the same file type or another, is stored under a key of its own, and the file it replaced leaves the bucket', async () => {
+  test('LEV-146 a second Supporting Document, of the same file type or another, is stored under a key of its own, and the file it replaced leaves the bucket', async () => {
     for (const [firstType, secondType] of [
       ['image/png', 'image/png'],
       ['image/png', 'application/pdf'],
@@ -1330,7 +1330,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal((await row(id)).supportingDocumentR2Key, null, 'the refused upload is not attached')
   })
 
-  test('TEN-43 the bucket refuses to delete a file outside the studio named, so a key of another studio or from before the studio prefix is never deleted', async () => {
+  test('TEN-44 the bucket refuses to delete a file outside the studio named, so a key of another studio or from before the studio prefix is never deleted', async () => {
     const one = harness.tenants.one.id
     const two = harness.tenants.two.id
     for (const key of [`t/${two}/supporting-documents/someone/${run}.pdf`, `medical-certificates/someone/${run}.pdf`]) {

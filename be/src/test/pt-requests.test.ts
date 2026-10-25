@@ -988,7 +988,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(packageId), 8)
   })
 
-  test('PT-156 linking a 2on1 partner by an address that is not an email, or by neither a member nor an email, is refused 400 invalid_request with a sentence, and the request still waits', async () => {
+  test('PT-160 linking a 2on1 partner by an address that is not an email, or by neither a member nor an email, is refused 400 invalid_request with a sentence, and the request still waits', async () => {
     const host = await member(one, 'Lin Host')
     const packageId = await givePt(one, host, '2on1')
     const requestId = await requestOk(one, host, {

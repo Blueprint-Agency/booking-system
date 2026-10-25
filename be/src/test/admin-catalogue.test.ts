@@ -953,7 +953,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
     }
   }
 
-  test('SCH-38 a class type or room name that is blank or past 120 characters, or a class type description past 500, is refused 400 invalid_request with a sentence naming the field and its limit, and nothing is written', async () => {
+  test('SCH-40 a class type or room name that is blank or past 120 characters, or a class type description past 500, is refused 400 invalid_request with a sentence naming the field and its limit, and nothing is written', async () => {
     const type = created(await send('POST', '/class-types', one.admin, { name: `${NAME} Refusals type` }))
     const room = created(await send('POST', '/rooms', one.admin, { location_id: one.locationId, name: `${NAME} Refusals room`, capacity: 10 }))
     await refusedWithSentence([
@@ -992,7 +992,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(after!.name, `${NAME} Refusals hall`, 'a refused edit leaves the location')
   })
 
-  test('PKG-46 a class or PT package name past 160 characters, PT sessions past 200, or a promotion with a blank label or a date that is not one, is refused 400 invalid_request with a sentence naming the field, and nothing is written', async () => {
+  test('PKG-47 a class or PT package name past 160 characters, PT sessions past 200, or a promotion with a blank label or a date that is not one, is refused 400 invalid_request with a sentence naming the field, and nothing is written', async () => {
     const bundle = created(await send('POST', '/class-packages', one.admin, bundleBody('Refusals bundle')))
     const pt = created(await send('POST', '/pt-packages', one.admin, ptBody('Refusals PT')))
     await refusedWithSentence([

@@ -3,7 +3,7 @@ import assert from "node:assert";
 import { refusalMessage } from "./refusal-message";
 import { ApiError } from "./api";
 
-test("SCH-38, LOC-17, PKG-46, SUP-31, PT-156 a refused portal form shows the API's sentence, and its own fallback when the API sent none", () => {
+test("SCH-40, LOC-17, PKG-47, SUP-37, PT-160 a refused portal form shows the API's sentence, and its own fallback when the API sent none", () => {
   assert.strictEqual(
     refusalMessage(
       new ApiError(400, { error: "invalid_request", message: "A name can be at most 120 characters." }),

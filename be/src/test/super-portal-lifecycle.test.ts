@@ -556,7 +556,7 @@ describe('super portal studio lifecycle', { skip: integrationTestsEnabled ? fals
     assert.equal(row!.status, 'active')
   })
 
-  test('SUP-31 a New studio, first Admin or Term form with a studio or admin name past 200 characters, an email that is not one, or a start date with a five-digit year, is refused 400 invalid_request with a sentence naming the field, and nothing is written', async () => {
+  test('SUP-37 a New studio, first Admin or Term form with a studio or admin name past 200 characters, an email that is not one, or a start date with a five-digit year, is refused 400 invalid_request with a sentence naming the field, and nothing is written', async () => {
     const studio = await throwawayStudio('life-sentences')
     const sentence = (reply: Reply, says: RegExp, what: string) => {
       expectReply(reply, 400, 'invalid_request', what)
