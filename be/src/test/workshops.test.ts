@@ -488,6 +488,43 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     )
   })
 
+  test('WSP-24 a workshop save refused for a booked tier or for leaving no tier says why in a sentence, and writes nothing', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Refusal sentences',
+      days: [{ capacity: 10 }],
+      tiers: [{ name: 'Free', price: '0.00', days: [0] }],
+    })
+    const bea = await member(one, 'Bea Refusal Sentences')
+    assert.equal((await checkout(bea, w)).status, 201)
+
+    const detailPath = `/api/v1/portal/admin/workshops/${w.id}`
+    const detail = await call(detailPath, adminAtOne.headers)
+    const [day] = detail.body.days as { id: string; starts_at: string; ends_at: string }[]
+    const tierIds = () =>
+      call(detailPath, adminAtOne.headers).then(res => (res.body.tiers as { id: string }[]).map(t => t.id).sort())
+    const before = await tierIds()
+    const schedule = (tiers: object[]) =>
+      call(`${detailPath}/schedule`, adminAtOne.headers, {
+        method: 'PUT',
+        body: {
+          days: [{ id: day!.id, ref: day!.id, room_id: one.roomId, starts_at: day!.starts_at, ends_at: day!.ends_at, capacity_online: 10 }],
+          tiers,
+        },
+      })
+
+    const booked = await schedule([{ name: 'Replacement', regular_price_sgd: '95.00', day_refs: [day!.id] }])
+    assert.equal(booked.status, 409, booked.text)
+    assert.equal(booked.body.error, 'workshop_tier_has_bookings')
+    assert.match(String(booked.body.message), /1 confirmed booking\b/, booked.text)
+
+    const none = await schedule([])
+    assert.equal(none.status, 409, none.text)
+    assert.equal(none.body.error, 'workshop_tier_required')
+    assert.match(String(none.body.message), /at least one tier/i, none.text)
+
+    assert.deepEqual(await tierIds(), before, 'neither refused save changed a tier')
+  })
+
   test('WSP-21 removing one of two tiers while the other is being removed leaves the workshop one tier', async () => {
     const w = await workshop(one, adminAtOne, teacherAtOne, {
       name: 'Two tier race',

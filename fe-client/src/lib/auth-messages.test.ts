@@ -22,6 +22,12 @@ test("too many attempts, from the limiter or from the code check", () => {
   assert.match(memberAuthMessage({ status: 403, error: "too_many_attempts" }, FALLBACK), /new code/i);
 });
 
+test("AUTH-21 a sign-up the backend refuses with its own sentence shows that sentence", () => {
+  const message = "A phone number is 7 to 15 digits, optionally starting with +.";
+  assert.equal(memberAuthMessage({ status: 400, error: "invalid_request", message }, FALLBACK), message);
+  assert.equal(memberAuthMessage({ status: 400, error: "invalid_request" }, FALLBACK), FALLBACK);
+});
+
 test("registering an address already a member here points at sign-in", () => {
   assert.match(memberAuthMessage({ status: 409, error: "already_member" }, FALLBACK), /sign in/i);
 });
