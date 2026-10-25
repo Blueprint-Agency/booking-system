@@ -70,10 +70,12 @@ registered a test. Once a file had registered one, Node dropped the error, the t
 ran, and the run passed. So `npm run check` hands `node --test` one file,
 `be/scripts/load-test-files.mjs`, which imports the test files itself. A file whose own code
 throws or fails an assertion, rejects a top-level `await`, or cannot load is a failing test named
-after the file. It counts in the TAP `# fail` line, and the run exits 1. An unhandled rejection
-fails the run too. If the next file is still loading, Node stops the run with the error (exit 7).
-Otherwise it is a `# Error:` line in the TAP, and the run exits 1. In CI the slice fails on that exit
-code before the skip check reads the summary. `be/scripts/check.test.mjs` runs `check.mjs` on
+after the file. It counts in the TAP `# fail` line, and the run exits 1. A rejection that a file's
+top level leaves unawaited fails the run too, when it is pending by the time the tests end. If the
+next file is still loading, Node stops the run with the error (exit 7). Otherwise it is a `# Error:`
+line in the TAP, and the run exits 1. A rejection that settles later, on a timer, can still pass
+unseen when the remaining tests are synchronous. In CI the slice fails on that exit code before the
+skip check reads the summary. `be/scripts/check.test.mjs` runs `check.mjs` on
 fixture files that fail each way, written to a temporary directory so the suite never picks them
 up.
 
