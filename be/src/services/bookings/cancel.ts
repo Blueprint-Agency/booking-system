@@ -201,8 +201,6 @@ export async function cancelBookingInTx(
 
   // 3. Evaluate the refund decision.
   const now = clockNow()
-  // An Admin cancels a private session's booking only before it starts, as
-  // they cancel its request (#434).
   if (cancelKind === 'pt' && source === 'admin') refuseOnceStarted(sessionStartsAt, now)
   const evaluation =
     source !== 'client'

@@ -47,8 +47,6 @@ export function PtSessionMembers({
 
   const state = computeEventState({ startsAt: data.starts_at, endsAt: data.ends_at, lifecycle: data.lifecycle });
   // Once it has ended its seats were used; the backend refuses `session_ended`.
-  // A member is removed only before it starts, as the session is cancelled
-  // (`session_already_started`, #434).
   // Changing who is on a private session is Take PT bookings' (an Admin always
   // may); without it the list still reads, and the actions are gone.
   const editable = isManual(data) && may("take_pt_bookings") && (state === "scheduled" || state === "ongoing");

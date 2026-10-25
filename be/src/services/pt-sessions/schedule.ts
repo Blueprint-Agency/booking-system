@@ -385,7 +385,6 @@ async function reconcileSessionType(
       actedByStaffId: args.actorStaffId,
     })
   } else if (plan.delta > 0 && !(await isVoided(tx, tenantId, req.debitedClientPackageId))) {
-    // Nothing goes back to a package its Refund Voided (be/CONTEXT.md § Void).
     await refundCredits(tx, {
       tenantId,
       clientId: req.clientId,

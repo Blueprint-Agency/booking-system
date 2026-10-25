@@ -3887,8 +3887,6 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal((await sessionRow(sessionId)).startsAt.getTime(), startsAt.getTime())
   })
 
-  // ── A started session, and a Voided package (#434) ───────────────────────
-
   const adminBookingCancel = (bookingId: string, credit: 'return' | 'keep') =>
     harness.app.request(`/api/v1/portal/admin/bookings/${bookingId}/cancel`, {
       method: 'POST',
@@ -3896,7 +3894,6 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       body: JSON.stringify({ credit }),
     })
 
-  /** What a Refund's Void leaves on a package (be/CONTEXT.md § Void): its Purchase refunded, the package off. */
   async function voidPackage(who: Member, clientPackageId: string) {
     const [purchase] = await harness.db
       .insert(schema.purchases)

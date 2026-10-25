@@ -40,8 +40,8 @@ import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notif
  *               its own package; a member cancels only their own seat
  *               (./manual.ts:cancelManualSessionInTx).
  *
- * Terminal states are an idempotent no-op, except `attended` for staff: its
- * session has ended, so they are refused `session_already_started`. Credit movements write a
+ * Terminal states are an idempotent no-op, except `attended` for an admin or
+ * instructor, who is refused `session_already_started`. Credit movements write a
  * manual_adjustments ledger row for traceability/parity with the class path.
  */
 /**
@@ -128,13 +128,11 @@ async function cancelPtRequestInTx(
     const staff = source !== 'client'
     const byPerson = source === 'admin' || source === 'instructor'
 
-    // An ended session the completion job has marked attended goes on to the
-    // start check below for staff, which refuses it, rather than passing as done.
-    const attendedForStaff = byPerson && req.status === 'attended'
+    if (byPerson && req.status === 'attended') throw new AppError(422, 'session_already_started')
     const terminal =
       req.status === 'cancelled_before_scheduled' ||
       req.status === 'cancelled_after_scheduled' ||
-      (req.status === 'attended' && !attendedForStaff)
+      req.status === 'attended'
     const scheduledSinceExpirySweep = input.expired && req.status === 'scheduled'
     if (terminal || scheduledSinceExpirySweep) {
       return { status: 'noop', refundedSessions: 0, refundOutcome: 'n_a' }
@@ -142,13 +140,12 @@ async function cancelPtRequestInTx(
 
     // Instructors may only cancel sessions they run, and only once scheduled —
     // triage (pending) is an admin responsibility.
-    if (input.requireOwnInstructorId && req.status === 'pending') {
+    if (input.requireOwnInstructorId && req.status !== 'scheduled') {
       throw new ForbiddenError('not_your_session')
     }
 
     const cost = ptSessionCost(req.sessionType)
     const resolvedByStaffId = staff ? (actorStaffId ?? null) : null
-    // Nothing goes back to a package its Refund Voided (be/CONTEXT.md § Void).
     const voided = req.debitedClientPackageId !== null && (await isVoided(tx, tenantId, req.debitedClientPackageId))
 
     // Written first, in this transaction, so every branch below — the manual
@@ -207,7 +204,7 @@ async function cancelPtRequestInTx(
     }
 
     // ---- scheduled → cancelled_after_scheduled (cascade) ------------------
-    if (req.status !== 'scheduled' && !attendedForStaff) throw new ConflictError('cannot_cancel')
+    if (req.status !== 'scheduled') throw new ConflictError('cannot_cancel')
 
     const [session] = await tx
       .select({
@@ -234,8 +231,6 @@ async function cancelPtRequestInTx(
 
     const now = clockNow()
 
-    // A cancel of a started session would also take the instructor's pay off
-    // it. The member is refused earlier still, at their PT window.
     if (byPerson) refuseOnceStarted(session.startsAt, now)
 
     // A manual session has no debit on its request: each seat was paid on its
@@ -294,8 +289,6 @@ async function cancelPtRequestInTx(
     // The requester's booking carries the debit (schedule.ts). If it was already
     // cancelled on its own (services/bookings/cancel.ts), that cancel settled the
     // session(s) — returned or forfeited — and returning them here would pay twice.
-    // A Voided package takes nothing back either: `n_a`, as on a class booking
-    // (bookings/refund-outcome.ts:settleCancel).
     const requesterStillBooked = sessionBookings.some(b => b.clientId === req.clientId)
     const refundOutcome: CancelPtRequestResult['refundOutcome'] = !requesterStillBooked
       ? 'n_a'
@@ -322,8 +315,7 @@ async function cancelPtRequestInTx(
 
     // The session that Activated the package, cancelled in time, returns it to
     // Dormant (be/docs/adr/0011). Not when the requester's booking was already
-    // cancelled on its own: that cancel settled it. Nor a Voided package: it
-    // has ended, and nothing may make it live again.
+    // cancelled on its own: that cancel settled it.
     if (requesterStillBooked && req.debitedClientPackageId && !voided) {
       await reverseActivationOnCancel(tx, {
         tenantId,

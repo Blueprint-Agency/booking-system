@@ -602,7 +602,6 @@ async function cancelSeat(
 ): Promise<{ refundOutcome: RefundOutcome; refunded: number }> {
   const { seat } = input
   const used = seat.used ?? 0
-  // Nothing goes back to a package its Refund Voided (be/CONTEXT.md § Void).
   const voided = seat.clientPackageId !== null && (await isVoided(tx, tenantId, seat.clientPackageId))
   const refunded = input.refund && seat.clientPackageId && used > 0 && !voided ? used : 0
   if (refunded) {
@@ -811,7 +810,6 @@ export interface RemoveManualPtSessionMemberInput {
  * Staff take one member off a manual session (#335): their seat is cancelled
  * and its session returned to their own package, whatever the window; the
  * others stay seated and the session stays on, its seat free to fill again.
- * Only before it starts, as a cancel of the whole session (#434).
  */
 export async function removeManualPtSessionMember(
   tenantId: string,
