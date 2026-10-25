@@ -508,7 +508,7 @@ describe('PT jobs on the app clock', { skip: integrationTestsEnabled ? false : S
     assert.equal((await pkg(packageId)).creditsOrSessionsRemaining, 9)
   })
 
-  test('PT-133 an Admin cancels the booking of an ended session, returning its session, while a completion tick that read it as scheduled is under way: the request ends cancelled, not attended', async () => {
+  test('PT-133 the studio cancels the booking of an ended session, returning its session, while a completion tick that read it as scheduled is under way: the request ends cancelled, not attended', async () => {
     harness.clock.set(new Date())
     const hal = await member(one)
     const packageId = await givePt(one, hal, '1on1')
@@ -523,8 +523,7 @@ describe('PT jobs on the app clock', { skip: integrationTestsEnabled ? false : S
       () =>
         bookingCancelSvc.cancelBooking(one.id, {
           bookingId: booking.id,
-          source: 'admin',
-          actorStaffId: adminAtOne.staffId,
+          source: 'system',
           credit: 'return',
         }),
       jobs.scheduledJobs.completeEndedPtSessions,
