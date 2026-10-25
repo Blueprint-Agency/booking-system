@@ -3474,7 +3474,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(mine.cancelled_by, 'studio')
   })
 
-  // ── A session never falls after its package's expiry (#444) ─────────────
+  // ── Package expiry (#444) ────────────────────────────────────────────────
 
   const setExpiry = (clientPackageId: string, expiresAt: Date) =>
     harness.db.update(schema.clientPackages).set({ expiresAt }).where(eq(schema.clientPackages.id, clientPackageId))

@@ -261,8 +261,6 @@ export default function PrivateSessionsPage() {
     () => ptPickRows(ptPackages, computedSessionType, requestCost, latestStart),
     [ptPackages, computedSessionType, requestCost, latestStart],
   );
-  // The furthest any package of this type runs: no time after it can be paid
-  // for, so the date picker stops there.
   const latestEnd = useMemo(
     () => ptLatestEnd(ptPackages.filter((p) => p.sessionType === computedSessionType)),
     [ptPackages, computedSessionType],

@@ -465,11 +465,6 @@ async function reconcileSessionType(
     )
 }
 
-/**
- * A session moved to a new start must still start by the expiry of every
- * package paying a seat on it (#444). The packages are locked last, after the
- * members, in the order every PT path takes them.
- */
 async function assertSeatsCoverStart(tx: Tx, tenantId: string, ptSessionId: string, startsAt: Date): Promise<void> {
   const paying = await tx
     .select({

@@ -153,8 +153,6 @@ export async function submitPtRequest(
 
     const notExpired = pkg.expiresAt === null || pkg.expiresAt > now
     if (!pkg.active || !notExpired) throw new ConflictError('package_not_consumable')
-    // Each slot must start by the package's expiry; a Dormant package is judged
-    // by the one it would get if staff scheduled the request now (#444).
     for (const s of input.slots) assertPackageCoversSession(pkg, sgInstant(s.proposedDate, s.startTime), now)
 
     // The member picks which PT package pays, and any number may run at once

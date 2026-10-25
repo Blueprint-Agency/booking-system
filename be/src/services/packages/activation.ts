@@ -69,12 +69,8 @@ const expiryDay = sgFormat('en-GB', { weekday: 'short', day: 'numeric', month: '
 const expiryTime = sgFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
 
 /**
- * A PT session may not start after the package paying for it has run out
- * (#444): after its expiry, or, while it is Dormant, after the expiry it would
- * get by Activating at `now`, the moment scheduling would start its clock
- * (be/docs/adr/0011). A start at the expiry instant itself is allowed, as a
- * class is (`plan_expires_before_class` in ./selection.ts). Returns the expiry
- * it judged by.
+ * A Dormant package is judged by the expiry it would get by Activating at
+ * `now`, the moment scheduling would start its clock (be/docs/adr/0011, #444).
  */
 export function assertPackageCoversSession(
   pkg: Parameters<typeof effectiveExpiry>[0],
@@ -95,10 +91,9 @@ export function assertPackageCoversSession(
  * when the member asks for one (be/docs/adr/0011): a package the request left
  * Dormant starts its clock now, from the scheduling moment, and records this
  * session as the one that started it. A package already running keeps its
- * date. Either way the session must start by the package's expiry. The row is
- * locked, so two requests on one Dormant package scheduled at once Activate it
- * once. A manual session's seat Activates its package the same way
- * (services/pt-sessions/manual.ts).
+ * date. The row is locked, so two requests on one Dormant package scheduled
+ * at once Activate it once. A manual session's seat Activates its package the
+ * same way (services/pt-sessions/manual.ts).
  */
 export async function activateOnSchedule(
   tx: Tx,

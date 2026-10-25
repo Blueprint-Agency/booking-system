@@ -2,14 +2,11 @@
  * The PT request's package picker: which of the member's PT packages can pay
  * for this request, and in words why the rest cannot. The class Book sheet's
  * picker reads its reasons from the server (`lib/package-picker.ts`); a PT
- * request has only three rules, all in what `/me/packages` already carries —
- * the session type, the sessions left, and that every time proposed starts by
- * the package's end — so they are stated here. The server still refuses a
- * package that cannot pay (`insufficient_pt_credit`,
- * `package_expires_before_session`).
+ * request's rules read only what `/me/packages` already carries, so they are
+ * stated here. The server still refuses a package that cannot pay.
  */
 import { formatExpiryDate } from "./utils.ts";
-import { shortDate } from "./pt-booking-window.ts";
+import { DAY_MS, SG_OFFSET_MS, shortDate } from "./pt-booking-window.ts";
 
 /** The fields of a live package the picker reads (`LivePackage` in `use-client-packages`). */
 export interface PtPickable {
@@ -24,25 +21,16 @@ export interface PtPickable {
   boundInstructor: { id: string; name: string } | null;
 }
 
-const SG_OFFSET_MS = 8 * 3_600_000;
-const DAY_MS = 86_400_000;
-
-/** The instant a proposed slot starts: its Singapore date and `HH:mm`. */
 export function ptSlotStart(slot: { proposedDate: string; startTime: string }): number {
   return Date.parse(`${slot.proposedDate}T${slot.startTime}:00Z`) - SG_OFFSET_MS;
 }
 
-/**
- * When a PT package runs out: its expiry, or, while it is Dormant, the one it
- * would get if staff scheduled a session now. The server judges every
- * proposed time against the same instant.
- */
+/** A Dormant package is judged by the end scheduling a session now would give it, as the server judges it. */
 export function ptPackageEnd(pkg: Pick<PtPickable, "expiresAt" | "validityDays">, now: number = Date.now()): number | null {
   if (pkg.expiresAt) return Date.parse(pkg.expiresAt);
   return pkg.validityDays === null ? null : now + pkg.validityDays * DAY_MS;
 }
 
-/** "9:00 am on Tue 24 Nov", in Singapore time. */
 export function ptEndLabel(end: number): string {
   const wall = new Date(end + SG_OFFSET_MS);
   const h = wall.getUTCHours();
@@ -50,26 +38,17 @@ export function ptEndLabel(end: number): string {
   return `${time} on ${shortDate(wall.toISOString().slice(0, 10))}`;
 }
 
-/** The furthest any of these packages runs, or null when none has an end. */
 export function ptLatestEnd(packages: readonly Pick<PtPickable, "expiresAt" | "validityDays">[], now: number = Date.now()): number | null {
   const ends = packages.map((p) => ptPackageEnd(p, now)).filter((e): e is number => e !== null);
   return ends.length ? Math.max(...ends) : null;
 }
 
-/**
- * The last date the picker offers, as YYYY-MM-DD: the Book in advance window's
- * last day, or the Singapore day the furthest package ends if that is sooner.
- */
 export function ptLatestDate(windowLatest: string | undefined, latestEnd: number | null): string | undefined {
   const endDay = latestEnd === null ? undefined : new Date(latestEnd + SG_OFFSET_MS).toISOString().slice(0, 10);
   if (!windowLatest || !endDay) return windowLatest ?? endDay;
   return endDay < windowLatest ? endDay : windowLatest;
 }
 
-/**
- * What is wrong with one proposed time against the furthest any package of
- * the request's type runs, or null. `slot` is 1-based, for the message.
- */
 export function ptSlotEndProblem(
   s: { proposedDate: string; startTime: string },
   slot: number,
@@ -92,11 +71,7 @@ export const sessionTypeLabel = (t: "1on1" | "2on1") => (t === "2on1" ? "2-on-1"
 
 export const sessionsWord = (n: number) => `${n} ${n === 1 ? "session" : "sessions"}`;
 
-/**
- * Every PT package of the request's session type, each ticked or with its
- * reason. `latestStart` is the last proposed time: a package that runs out
- * before it cannot pay.
- */
+/** Every PT package of the request's session type, each ticked or with its reason. */
 export function ptPickRows<P extends PtPickable>(
   packages: readonly P[],
   sessionType: "1on1" | "2on1",

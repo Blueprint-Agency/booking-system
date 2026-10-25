@@ -21,8 +21,8 @@ export function fromPtBookingConfig(r: PtBookingConfigResponse): PtBookingWindow
   return { minDays: r.min_book_in_advance_days, maxDays: r.book_in_advance_days };
 }
 
-const SG_OFFSET_MS = 8 * 3_600_000;
-const DAY_MS = 86_400_000;
+export const SG_OFFSET_MS = 8 * 3_600_000;
+export const DAY_MS = 86_400_000;
 
 /** The Singapore calendar date `days` after today, as YYYY-MM-DD. */
 export function sgDatePlus(days: number, now: number = Date.now()): string {

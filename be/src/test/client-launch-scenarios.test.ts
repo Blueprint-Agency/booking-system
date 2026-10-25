@@ -521,7 +521,6 @@ describe('client launch scenarios over HTTP', { skip: integrationTestsEnabled ? 
       201,
     )
     const requestId = requested.pt_request_id as string
-    // Inside the 90 days the package runs once scheduled (#444).
     const startsAt = new Date(Date.now() + 60 * DAY)
     await expectStatus(
       await harness.app.request(`/api/v1/portal/admin/pt-sessions/${requestId}/schedule`, {

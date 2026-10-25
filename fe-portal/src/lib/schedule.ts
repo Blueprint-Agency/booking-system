@@ -368,7 +368,6 @@ const SCHEDULE_ERROR_COPY: Record<string, string> = {
   starts_at_in_past:
     "A class can't be moved to a time that has already passed. Pick a date and start time still to come.",
   ends_at_must_be_after_starts_at: "End time must be after start time.",
-  // The backend names the package's end in `message`; this is the fallback.
   package_expires_before_session:
     "The package paying for this session runs out before that time. Choose an earlier time.",
   // A class's or series' Package rule.

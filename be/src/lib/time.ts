@@ -45,7 +45,6 @@ export function sgDayWindow(
   }
 }
 
-/** The instant a Singapore wall-clock time `HH:mm` on `date` falls at. */
 export function sgInstant(date: PlainDate, time: string): Date {
   const [hours, minutes] = time.split(':').map(Number)
   return new Date(asUtcMidnight(date) - SG_OFFSET_MS + (hours! * 60 + minutes!) * 60_000)

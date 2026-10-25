@@ -97,11 +97,6 @@ export function activationExpiry(p: PackageLength, activatedAt: Date): Date | nu
   return p.validityDays == null ? null : addDays(activatedAt, Math.min(p.validityDays, MAX_VALIDITY_DAYS))
 }
 
-/**
- * The expiry a package has, or, while it is Dormant, the one it would get by
- * Activating at `activatingAt`. What a booking on it is judged against: a
- * session or class may not start after it.
- */
 export function effectiveExpiry(
   p: PackageLength & Pick<PackageValidity, 'expiresAt'>,
   activatingAt: Date,
