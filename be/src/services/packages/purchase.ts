@@ -10,9 +10,7 @@ import { listActiveInstructors } from '../schedule/client-catalog'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import type { Tx } from './ledger'
 import { computeActive, crossLocationMonths, crossLocationPriceSgd } from './validity'
-
-type ClassPackageRow = typeof classPackages.$inferSelect
-type PtPackageRow = typeof ptPackages.$inferSelect
+import { classPackageTerms, ptPackageTerms, type SoldTerms } from './sold-terms'
 
 /**
  * The client's live Unlimited Plans. Live means active and either Activated with
@@ -433,6 +431,12 @@ export interface GrantPackageInput {
    * a discount took to zero — which refuse exactly as before.
    */
   alreadySold?: boolean
+  /**
+   * The terms checkout showed for a sale already paid for. An Admin edit to
+   * the package since cannot change what the member bought. Null for a sale
+   * checked out before checkout froze them, granted from the catalogue row.
+   */
+  soldTerms?: SoldTerms | null
 }
 
 /**
@@ -468,8 +472,7 @@ export async function grantPackage(
   let kind: PackageKind
   let sourceClassPackageId: string | null = null
   let sourcePtPackageId: string | null = null
-  let creditsOrSessionsRemaining: number | null = null
-  let source: ClassPackageRow | PtPackageRow
+  let catalogueTerms: SoldTerms
   /** The catalogue's Instructor-Bound flag, read at purchase — never a class package's. */
   let instructorBound = false
 
@@ -487,10 +490,9 @@ export async function grantPackage(
       .limit(1)
     if (!row) throw new NotFoundError('class_package_not_found')
     if (!input.alreadySold && row.status !== 'active') throw new BadRequestError('class_package_not_active')
-    source = row
     kind = row.kind
     sourceClassPackageId = row.id
-    creditsOrSessionsRemaining = row.credits ?? null
+    catalogueTerms = classPackageTerms(row)
   } else {
     const [row] = await db
       .select()
@@ -505,12 +507,13 @@ export async function grantPackage(
       .limit(1)
     if (!row) throw new NotFoundError('pt_package_not_found')
     if (!input.alreadySold && row.status !== 'active') throw new BadRequestError('pt_package_not_active')
-    source = row
     kind = 'pt'
     sourcePtPackageId = row.id
-    creditsOrSessionsRemaining = row.numSessions
+    catalogueTerms = ptPackageTerms(row)
     instructorBound = row.instructorBound
   }
+  const terms = input.soldTerms ?? catalogueTerms
+  const creditsOrSessionsRemaining = terms.creditsOrSessions
 
   // Only an Unlimited Plan has a Home Location to extend, so only it can carry
   // an Add-On. The DB check backs this; refusing here names the mistake.
@@ -536,12 +539,11 @@ export async function grantPackage(
     : await resolveBoundInstructor(tenantId, kind, instructorBound, input.instructorId)
 
   if (kind === 'unlimited') {
-    const cs = source as ClassPackageRow
-    if (cs.durationMonths == null) throw new BadRequestError('unlimited_requires_duration_months')
-    durationMonths = cs.durationMonths
+    if (terms.durationMonths == null) throw new BadRequestError('unlimited_requires_duration_months')
+    durationMonths = terms.durationMonths
   } else {
-    if (source.validityDays == null) throw new BadRequestError('package_requires_validity_days')
-    validityDays = source.validityDays
+    if (terms.validityDays == null) throw new BadRequestError('package_requires_validity_days')
+    validityDays = terms.validityDays
   }
 
   try {
@@ -572,7 +574,7 @@ export async function grantPackage(
         // every row. A comp grant or a $0 trial records the real price against
         // zero paid so it reads as a 100% discount instead of vanishing.
         // Discount is always derived (list minus paid); nothing stores it.
-        listPriceSgd: source.priceSgd,
+        listPriceSgd: terms.listPriceSgd,
         purchaseId: input.purchaseId,
         complimentary: input.complimentary ?? false,
       })

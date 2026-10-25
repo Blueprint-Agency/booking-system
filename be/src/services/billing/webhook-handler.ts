@@ -19,6 +19,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import { type RetryPolicy } from '../../lib/outbound'
 import { latestCharge, methodPatch } from './payment-methods'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
+import { soldTermsFromMetadata } from '../packages/sold-terms'
 import { consumePromoCodeHold, refundPromoCodeRedemption } from '../packages/promo-redemption'
 import { returnLatePayment, unwindRefund, unwindRefundForTenant } from './refunds'
 import {
@@ -673,6 +674,7 @@ async function dispatchStripeEvent(
             crossLocationPaidSgd: crossLocationSgd,
             // The money is in: an archive since checkout cannot refuse it.
             alreadySold: true,
+            soldTerms: soldTermsFromMetadata(meta),
           })
         })
       } catch (err) {
