@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
-import type { StripeFake } from './stripe-fake'
+import { stripeWebhookPath, type StripeFake } from './stripe-fake'
 import { billed } from './billing-details-fixture'
 
 const run = Date.now().toString(36)
@@ -177,16 +178,66 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
       .where(and(eq(schema.bookings.clientId, who.clientId), eq(schema.bookings.workshopId, w.id)))
 
   let sessions = 0
+  const newSession = () => {
+    sessions++
+    return { id: `cs_${run}_${sessions}`, url: `https://checkout.stripe.test/${run}/${sessions}` }
+  }
+
+  const GOOD_SIGNATURE = 't=1,v1=workshops'
+  type SessionParams = { metadata: Record<string, string>; line_items: { price_data: { unit_amount: number } }[] }
+  const lastSession = () => stripe.callsTo('checkout.sessions.create').at(-1)!.args[0] as SessionParams
+
+  /** The provider's record of `params`' session, paid in full on `intent`. */
+  const paidSession = (params: SessionParams, intent: string) => ({
+    id: `cs_${intent}`,
+    payment_intent: intent,
+    payment_status: 'paid',
+    amount_total: params.line_items.reduce((n, l) => n + l.price_data.unit_amount, 0),
+    metadata: params.metadata,
+  })
+
+  const deliverPaid = (session: object) =>
+    harness.app.request(stripeWebhookPath(one.slug), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'stripe-signature': GOOD_SIGNATURE },
+      body: JSON.stringify({ id: `evt_${randomUUID()}`, type: 'checkout.session.completed', data: { object: session } }),
+    })
+
+  const workshopSalesOf = (who: Member) =>
+    harness.db
+      .select()
+      .from(schema.purchases)
+      .where(and(eq(schema.purchases.clientId, who.clientId), eq(schema.purchases.kind, 'workshop')))
+
+  /** Settles once some call shows in Postgres as waiting on a lock another transaction holds. */
+  async function untilQueued(answered: () => boolean, what: string): Promise<void> {
+    const deadline = Date.now() + 10_000
+    for (;;) {
+      const [row] = await harness.db.execute<{ n: number }>(sql`
+        SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE datname = current_database() AND cardinality(pg_blocking_pids(pid)) > 0`)
+      if (row!.n > 0) return
+      assert.equal(answered(), false, `${what} answered before it queued`)
+      assert.ok(Date.now() < deadline, `${what} never queued`)
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+  }
+
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
     bookSvc = inTenantContext(await import('../services/workshops/book'))
     stripe = (await import('./stripe-fake')).installStripeFake()
     stripe.reply('customers.create', () => ({ id: `cus_${run}_${sessions}` }))
-    stripe.reply('checkout.sessions.create', () => {
-      sessions++
-      return { id: `cs_${run}_${sessions}`, url: `https://checkout.stripe.test/${run}/${sessions}` }
+    stripe.reply('checkout.sessions.create', newSession)
+    stripe.reply('webhooks.constructEvent', (body: unknown, signature: unknown) => {
+      if (signature !== GOOD_SIGNATURE) throw new Error('No signatures found matching the expected signature for payload')
+      return JSON.parse(String(body))
     })
+    stripe.reply('paymentIntents.retrieve', (id: unknown) => ({
+      id,
+      latest_charge: { id: `ch_${String(id)}`, receipt_url: null },
+    }))
 
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
@@ -211,6 +262,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM bookings WHERE workshop_id IN (${workshops}) OR client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
@@ -622,6 +674,315 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     const lapsed = await remove()
     assert.equal(lapsed.status, 200, lapsed.text)
     assert.deepEqual(await tierIds(), [w.tierIds[1]], 'a sale nobody can pay into any more holds no tier')
+  })
+
+  test('WSP-26 a sale started with its tier id in capitals holds the tier, and so does a sale whose tier is removed by its id in capitals', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Capital tier',
+      days: [{ capacity: 10 }],
+      tiers: [
+        { name: 'Full', price: '150.00', days: [0] },
+        { name: 'Half', price: '90.00', days: [0] },
+        { name: 'Other', price: '60.00', days: [0] },
+      ],
+    })
+    const dee = await member(one, 'Dee Capital Tier')
+    const started = await call('/api/v1/me/checkout/workshop', dee.headers, {
+      method: 'POST',
+      body: await billed(harness.app, dee.headers, { workshop_id: w.id, workshop_tier_id: w.tierIds[0]!.toUpperCase() }),
+    })
+    assert.equal(started.status, 200, started.text)
+    const eve = await member(one, 'Eve Lower Tier')
+    assert.equal((await checkout(eve, w, 1)).status, 200)
+
+    const tiersPath = `/api/v1/portal/admin/workshops/${w.id}/tiers`
+    const capitalSale = await call(`${tiersPath}/${w.tierIds[0]}`, adminAtOne.headers, { method: 'DELETE' })
+    assert.equal(capitalSale.status, 409, capitalSale.text)
+    assert.equal(capitalSale.body.error, 'workshop_tier_has_open_purchases')
+    const capitalRemoval = await call(`${tiersPath}/${w.tierIds[1]!.toUpperCase()}`, adminAtOne.headers, { method: 'DELETE' })
+    assert.equal(capitalRemoval.status, 409, capitalRemoval.text)
+    assert.equal(capitalRemoval.body.error, 'workshop_tier_has_open_purchases')
+    assert.deepEqual(
+      ((await call(tiersPath, adminAtOne.headers)).body.tiers as { id: string }[]).map(t => t.id).sort(),
+      [...w.tierIds].sort(),
+      'both held tiers are still there',
+    )
+  })
+
+  test("WSP-27 a payment made on a tier's payment page that lands after the tier was removed is recorded, given back once and its Purchase closed Abandoned, and the confirmation page says nothing was granted", async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Late payment tier',
+      days: [{ capacity: 10 }],
+      tiers: [
+        { name: 'Full', price: '150.00', days: [0] },
+        { name: 'Other', price: '90.00', days: [0] },
+      ],
+    })
+    const eli = await member(one, 'Eli Late Payment')
+    assert.equal((await checkout(eli, w)).status, 200)
+    const params = lastSession()
+    const [sale] = await workshopSalesOf(eli)
+    await harness.db.execute(sql`UPDATE purchases SET created_at = now() - interval '25 hours' WHERE id = ${sale!.id}`)
+    const removed = await call(`/api/v1/portal/admin/workshops/${w.id}/tiers/${w.tierIds[0]}`, adminAtOne.headers, {
+      method: 'DELETE',
+    })
+    assert.equal(removed.status, 200, removed.text)
+
+    const intent = `pi_${randomUUID()}`
+    const asked = stripe.callsTo('refunds.create').length
+    const delivered = await deliverPaid(paidSession(params, intent))
+    assert.equal(delivered.status, 200, await delivered.text())
+
+    assert.equal((await bookingsOf(eli, w)).length, 0, 'a place was booked on a removed tier')
+    const [closed] = await workshopSalesOf(eli)
+    assert.equal(closed!.status, 'abandoned')
+    const [payment] = await harness.db
+      .select()
+      .from(schema.stripePayments)
+      .where(eq(schema.stripePayments.paymentIntentId, intent))
+    assert.ok(payment, 'the payment is recorded nowhere')
+    assert.equal(payment.purchaseId, sale!.id)
+    assert.ok(payment.refundRequestedAt, 'its return is on its way')
+    assert.deepEqual(
+      stripe.callsTo('refunds.create').slice(asked).map(c => (c.args[0] as { payment_intent: string }).payment_intent),
+      [intent],
+      'the payment, and only it, is given back',
+    )
+
+    stripe.reply('checkout.sessions.retrieve', () => paidSession(params, intent))
+    const confirmation = await call('/api/v1/me/checkout/sync-session', eli.headers, {
+      method: 'POST',
+      body: { session_id: `cs_${intent}` },
+    })
+    assert.equal(confirmation.status, 200, confirmation.text)
+    assert.equal(confirmation.body.status, 'abandoned')
+    assert.equal(stripe.callsTo('refunds.create').length, asked + 1, 'the replay asked for it twice')
+  })
+
+  test('WSP-28 a tier removal and a checkout for that tier at the same moment take turns: a removal mid-checkout waits and is refused for the new sale, and a checkout mid-removal waits and finds no tier', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Racing tier',
+      days: [{ capacity: 10 }],
+      tiers: [
+        { name: 'Full', price: '150.00', days: [0] },
+        { name: 'Other', price: '90.00', days: [0] },
+      ],
+    })
+    const tiersPath = `/api/v1/portal/admin/workshops/${w.id}/tiers`
+    const tierIds = async () =>
+      ((await call(tiersPath, adminAtOne.headers)).body.tiers as { id: string }[]).map(t => t.id).sort()
+
+    const fay = await member(one, 'Fay Mid Checkout')
+    let reach!: () => void
+    let release!: () => void
+    const reached = new Promise<void>(resolve => (reach = resolve))
+    const released = new Promise<void>(resolve => (release = resolve))
+    stripe.reply('checkout.sessions.create', async () => {
+      reach()
+      await released
+      return newSession()
+    })
+    try {
+      const paying = checkout(fay, w)
+      await reached
+      let answered = false
+      const removing = call(`${tiersPath}/${w.tierIds[0]}`, adminAtOne.headers, { method: 'DELETE' }).finally(
+        () => (answered = true),
+      )
+      await untilQueued(() => answered, 'the removal')
+      release()
+      assert.equal((await paying).status, 200)
+      const removal = await removing
+      assert.equal(removal.status, 409, removal.text)
+      assert.equal(removal.body.error, 'workshop_tier_has_open_purchases')
+      assert.deepEqual(await tierIds(), [...w.tierIds].sort(), 'the tier on the sale made mid-removal is still there')
+    } finally {
+      release()
+      stripe.reply('checkout.sessions.create', newSession)
+    }
+
+    const gus = await member(one, 'Gus Mid Removal')
+    const { withTenant } = await import('../db')
+    const tiersSvc = await import('../services/workshops/tiers')
+    let letGo!: () => void
+    const held = new Promise<void>(resolve => (letGo = resolve))
+    let removed!: () => void
+    const tierGone = new Promise<void>(resolve => (removed = resolve))
+    const removal = withTenant(one.id, async () => {
+      await tiersSvc.deleteTier(one.id, w.id, w.tierIds[1]!)
+      removed()
+      await held
+    })
+    try {
+      await Promise.race([tierGone, removal])
+      let answered = false
+      const buying = checkout(gus, w, 1).finally(() => (answered = true))
+      await untilQueued(() => answered, 'the checkout')
+      letGo()
+      await removal
+      const bought = await buying
+      assert.equal(bought.status, 404, bought.text)
+      assert.equal(bought.body.error, 'workshop_tier_not_found')
+      assert.equal((await workshopSalesOf(gus)).length, 0, 'a sale was opened on a removed tier')
+    } finally {
+      letGo()
+      await removal.catch(() => undefined)
+    }
+  })
+
+  test('WSP-29 a tier whose only bookings were cancelled cannot be removed, and the refusal says why in a sentence', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Cancelled history tier',
+      days: [{ capacity: 10 }],
+      tiers: [
+        { name: 'Free', price: '0.00', days: [0] },
+        { name: 'Other', price: '90.00', days: [0] },
+      ],
+    })
+    const hal = await member(one, 'Hal Cancelled')
+    assert.equal((await checkout(hal, w)).status, 201)
+    await harness.db.execute(sql`UPDATE bookings SET state = 'cancelled', cancelled_at = now() WHERE client_id = ${hal.clientId}`)
+
+    const tiersPath = `/api/v1/portal/admin/workshops/${w.id}/tiers`
+    const refused = await call(`${tiersPath}/${w.tierIds[0]}`, adminAtOne.headers, { method: 'DELETE' })
+    assert.equal(refused.status, 409, refused.text)
+    assert.equal(refused.body.error, 'workshop_tier_has_booking_history')
+    assert.match(String(refused.body.message), /1 cancelled or no-show booking\b/, refused.text)
+    assert.deepEqual(
+      ((await call(tiersPath, adminAtOne.headers)).body.tiers as { id: string }[]).map(t => t.id).sort(),
+      [...w.tierIds].sort(),
+    )
+  })
+
+  test('WSP-30 a workshop save that removes a tier with an unpaid sale is refused, saying the hold clears within a day, and writes nothing until the payment page has closed', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Save held tier',
+      days: [{ capacity: 10 }],
+      tiers: [
+        { name: 'Full', price: '150.00', days: [0] },
+        { name: 'Other', price: '90.00', days: [0] },
+      ],
+    })
+    const ivy = await member(one, 'Ivy Save Held')
+    assert.equal((await checkout(ivy, w)).status, 200)
+    const [sale] = await workshopSalesOf(ivy)
+
+    const detailPath = `/api/v1/portal/admin/workshops/${w.id}`
+    const detail = async () => {
+      const res = await call(detailPath, adminAtOne.headers)
+      assert.equal(res.status, 200, res.text)
+      return res.body as { days: { id: string; starts_at: string; ends_at: string; capacity_online: number }[]; tiers: { id: string }[] }
+    }
+    const [day] = (await detail()).days
+    const save = () =>
+      call(`${detailPath}/schedule`, adminAtOne.headers, {
+        method: 'PUT',
+        body: {
+          days: [{ id: day!.id, ref: day!.id, room_id: one.roomId, starts_at: day!.starts_at, ends_at: day!.ends_at, capacity_online: 12 }],
+          tiers: [{ id: w.tierIds[1], name: 'Other', regular_price_sgd: '90.00', day_refs: [day!.id] }],
+        },
+      })
+
+    const opened = sale!.createdAt.getTime()
+    try {
+      harness.clock.set(new Date(opened + DAY - 60_000))
+      const refused = await save()
+      assert.equal(refused.status, 409, refused.text)
+      assert.equal(refused.body.error, 'workshop_tier_has_open_purchases')
+      assert.match(String(refused.body.message), /1 unfinished purchase\b/, refused.text)
+      assert.match(String(refused.body.message), /within a day/, refused.text)
+      const unchanged = await detail()
+      assert.equal(unchanged.days[0]!.capacity_online, 10, 'the refused save edited the day')
+      assert.deepEqual(unchanged.tiers.map(t => t.id).sort(), [...w.tierIds].sort())
+
+      harness.clock.set(new Date(opened + DAY + 60_000))
+      const saved = await save()
+      assert.equal(saved.status, 200, saved.text)
+      const after = await detail()
+      assert.equal(after.days[0]!.capacity_online, 12)
+      assert.deepEqual(after.tiers.map(t => t.id), [w.tierIds[1]])
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
+  test('WSP-31 a new workshop is made with its days, tiers and promotions in one request, so a refused create leaves no workshop behind and trying again makes one', async () => {
+    const name = `One request retreat ${run}`
+    const startsAt = nextStart()
+    const endsAt = new Date(startsAt.getTime() + 2 * HOUR)
+    const create = (tierDayRef: string) =>
+      call('/api/v1/portal/admin/workshops', adminAtOne.headers, {
+        method: 'POST',
+        body: {
+          name,
+          location_id: one.locationId,
+          main_instructor_id: teacherAtOne.staffId,
+          main_instructor_pay_sgd: 100,
+          days: [{ ref: 'first', room_id: one.roomId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), capacity_online: 10 }],
+          tiers: [{ name: 'Full', regular_price_sgd: '120.00', day_refs: [tierDayRef] }],
+          promotions: [
+            {
+              label: 'Launch',
+              kind: 'percent',
+              percent_off: 10,
+              starts_at: new Date(Date.now() - DAY).toISOString(),
+              ends_at: new Date(Date.now() + DAY).toISOString(),
+            },
+          ],
+        },
+      })
+    const named = () =>
+      harness.db.select({ id: schema.workshops.id }).from(schema.workshops).where(eq(schema.workshops.name, name))
+
+    const refused = await create('missing')
+    assert.equal(refused.status, 400, refused.text)
+    assert.equal(refused.body.error, 'invalid_workshop_day_ids')
+    assert.deepEqual(await named(), [], 'the refused create left a workshop behind')
+
+    const created = await create('first')
+    assert.equal(created.status, 201, created.text)
+    assert.deepEqual(await named(), [{ id: created.body.id }], 'trying again made more than one workshop')
+    const detail = await call(`/api/v1/portal/admin/workshops/${created.body.id}`, adminAtOne.headers)
+    assert.equal(detail.body.days.length, 1)
+    assert.deepEqual((detail.body.tiers as { name: string; day_ids: string[] }[]).map(t => [t.name, t.day_ids]), [
+      ['Full', [detail.body.days[0].id]],
+    ])
+    assert.deepEqual((detail.body.promotions as { label: string }[]).map(p => p.label), ['Launch'])
+  })
+
+  test('SCH-37 a workshop roster naming one supporting instructor twice, once in capitals, keeps them once at the pay given, and the main instructor in capitals as supporting is refused', async () => {
+    const sam = await staff(one, `Sam Support ${run}`, 'instructor')
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Two spellings roster',
+      days: [{ capacity: 10 }],
+      tiers: [{ name: 'Full', price: '100.00', days: [0] }],
+    })
+    const detailPath = `/api/v1/portal/admin/workshops/${w.id}`
+    const twice = await call(detailPath, adminAtOne.headers, {
+      method: 'PATCH',
+      body: {
+        supporting_instructors: [
+          { instructor_id: sam.staffId, pay_sgd: 45 },
+          { instructor_id: sam.staffId.toUpperCase() },
+        ],
+      },
+    })
+    assert.equal(twice.status, 200, twice.text)
+    const roster = (await call(detailPath, adminAtOne.headers)).body.supporting_instructors as {
+      instructor_id: string
+      pay_sgd: number | string | null
+    }[]
+    assert.deepEqual(
+      roster.map(s => [s.instructor_id.toLowerCase(), Number(s.pay_sgd)]),
+      [[sam.staffId.toLowerCase(), 45]],
+    )
+
+    const mainAsSupporting = await call(detailPath, adminAtOne.headers, {
+      method: 'PATCH',
+      body: { supporting_instructors: [{ instructor_id: teacherAtOne.staffId.toUpperCase(), pay_sgd: 10 }] },
+    })
+    assert.equal(mainAsSupporting.status, 400, mainAsSupporting.text)
+    assert.equal(mainAsSupporting.body.error, 'supporting_instructor_duplicates_main')
   })
 
   test('WSP-21 removing one of two tiers while the other is being removed leaves the workshop one tier', async () => {
