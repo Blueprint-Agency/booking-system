@@ -447,7 +447,7 @@ Admin-side **inbox surfaces** (refund / cancellation / private-session) are dash
 | `booking-confirmed` (class) | Class booking → `confirmed` | Client | ✓ |
 | `booking-cancelled` (client-initiated, in window) | Client cancel within window | Client | ✓ |
 | `booking-cancelled` (client-initiated, out of window) | Client cancel outside window | Client | ✓ |
-| `class-cancelled` (admin-initiated) | Admin cancels class instance | All booked clients | ✓ |
+| `class-cancelled` (admin-initiated) | Admin cancels class instance | All booked clients, and every member still on its waitlist | ✓ |
 | `workshop-confirmed` | Workshop purchased | Client | ✓ |
 | `private-request-received` | Client submits request | Client (acknowledgment) | ✓ |
 | `private-request-approved` | Instructor or admin approves | Client | ✓ |

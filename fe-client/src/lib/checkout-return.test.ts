@@ -82,6 +82,8 @@ test("PAY-68 a refunded or abandoned purchase is never called successful, and sa
     assert.match(body, /the way you paid \(card or PayNow\)/);
   }
   assert.notEqual(NOT_GRANTED_COPY.refunded.heading, NOT_GRANTED_COPY.abandoned.heading);
+  assert.match(NOT_GRANTED_COPY.abandoned.body, /If you still need it, you can buy it again or contact the studio\./);
+  assert.doesNotMatch(NOT_GRANTED_COPY.abandoned.body, /whenever you're ready/);
 });
 
 test("PAY-69 a part payment the sync counted towards a Balance is a payment confirmed, and a status the page does not know stays pending", () => {

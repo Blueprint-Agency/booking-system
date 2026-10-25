@@ -7,6 +7,7 @@ import {
   workshopTierDays,
 } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
+import { payableSalesOfWorkshopTier } from '../billing/open-purchases'
 import { ConflictError, NotFoundError, BadRequestError } from '../../shared/errors'
 /**
  * The workshop exists **and is this tenant's**. Every entry point here starts
@@ -238,6 +239,14 @@ export async function deleteTier(
       throw new ConflictError('workshop_tier_has_bookings', {
         bookings: n,
         message: `This tier has ${n} confirmed booking${n === 1 ? '' : 's'}, so it can't be removed.`,
+      })
+    }
+
+    const unfinished = await payableSalesOfWorkshopTier(tenantId, tierId)
+    if (unfinished > 0) {
+      throw new ConflictError('workshop_tier_has_open_purchases', {
+        purchases: unfinished,
+        message: `This tier has ${unfinished} unfinished purchase${unfinished === 1 ? '' : 's'} a member can still pay, so it can't be removed.`,
       })
     }
 

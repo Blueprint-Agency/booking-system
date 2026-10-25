@@ -99,7 +99,7 @@ export const NOT_GRANTED_COPY: Record<NotGranted, { heading: string; body: strin
   abandoned: {
     heading: "We couldn't complete this purchase",
     body:
-      "Nothing was added to your account, and your payment is being returned the way you paid (card or PayNow), which can take a few business days. You can buy it again whenever you're ready, or contact the studio if you have questions.",
+      "Nothing was added to your account, and your payment is being returned the way you paid (card or PayNow), which can take a few business days. If you still need it, you can buy it again or contact the studio.",
   },
 };
 

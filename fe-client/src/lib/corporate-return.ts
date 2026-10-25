@@ -12,6 +12,15 @@
  * Pure, so it is testable without a browser.
  */
 
+import { confirmationOutcome, notGranted, type NotGranted, type SyncResult } from "./checkout-return.ts";
+
+export function corporateLanding(sessionId: string | null, sync: SyncResult | null): "syncing" | "sent" | NotGranted {
+  if (!sessionId) return "sent";
+  if (sync === null) return "syncing";
+  const outcome = confirmationOutcome(sessionId, sync);
+  return notGranted(outcome) ? outcome : "sent";
+}
+
 /** The landing for a corporate package just bought, before any payment session is known. */
 export function corporateRequestSentHref(packageId: string): string {
   const query = new URLSearchParams({ type: "corporate", submitted: "corporate", package_id: packageId });

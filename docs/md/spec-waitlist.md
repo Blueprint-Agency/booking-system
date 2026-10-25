@@ -213,7 +213,7 @@ The instructor session page gets the same roster, Add member (online, then buffe
 ### 11. Notifications
 
 - New slug `class_waitlist_promoted`, variables `client_name, class_name, date, time, location_name, instructor_name, cancel_by` (the moment that class's window closes). Subject: "You're in — {{class_name}}". Body says a seat opened, they've been booked, the credit used, and that they can cancel free until `{{cancel_by}}`. Seeded in `email-copy.ts`, declared in `TEMPLATE_VARIABLES`, so the slug-parity test in `email-copy.test.ts` covers it.
-- No email on join, withdraw, removal, expiry, or skip. A skipped member sees "Can't pay" only through what the app already tells them when they try to book.
+- No email on join, withdraw, expiry, or skip, or when staff remove one member from the line. A whole-class cancel is the one removal that emails: each member still waiting gets the class-cancelled email (§6). A skipped member sees "Can't pay" only through what the app already tells them when they try to book.
 - `workshop_waitlist_promoted` stays seeded and unsent (workshops are §12).
 
 ### 12. Workshops and PT sessions

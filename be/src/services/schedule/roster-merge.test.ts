@@ -1,4 +1,5 @@
 import assert from 'node:assert'
+import { test } from 'node:test'
 import { mergeRoster, unpricedArrivals, type RosterEntry, type RosterPatch } from './roster-merge'
 
 /** `roster('A:main=50', 'B=30', 'C')` — main first, `=` gives pay, bare = unpriced. */
@@ -259,5 +260,28 @@ assert.deepStrictEqual(
   arrivals([], { main: { instructorId: 'A' }, supportingInstructorIds: ['B'] }).length,
   2,
 )
+
+test('SCH-36 an instructor id sent in capitals is the instructor already on the roster: their pay stays, they cannot be main and supporting at once, and they are listed once', () => {
+  const main = '6f1d6c1e-6e0a-4d4e-9d5b-3d1d0c7a2b11'
+  const kept = 'a3c0e2f4-1b2d-4c6e-8f00-1a2b3c4d5e6f'
+  const stored: RosterEntry[] = [
+    { instructorId: main, role: 'main', paySgd: 100 },
+    { instructorId: kept, role: 'supporting', paySgd: 30 },
+  ]
+
+  assert.deepStrictEqual(merged(stored, { supporting: [{ instructorId: kept.toUpperCase() }] }), stored)
+  assert.deepStrictEqual(merged(stored, { supportingInstructorIds: [kept.toUpperCase()] }), stored)
+  assert.deepStrictEqual(merged(stored, { main: { instructorId: main.toUpperCase() } }), stored)
+
+  assert.strictEqual(
+    refusal(stored, { main: { instructorId: main }, supporting: [{ instructorId: main.toUpperCase() }] }),
+    'supporting_instructor_duplicates_main',
+  )
+
+  assert.deepStrictEqual(
+    merged(stored, { supporting: [{ instructorId: kept, paySgd: 45 }, { instructorId: kept.toUpperCase() }] }),
+    [stored[0], { instructorId: kept, role: 'supporting', paySgd: 45 }],
+  )
+})
 
 console.log('roster-merge.test ok')

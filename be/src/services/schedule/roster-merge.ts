@@ -86,6 +86,8 @@ export function unpricedArrivals(
   return roster.filter(r => r.paySgd == null && !already.has(r.instructorId))
 }
 
+const uuidKey = (id: string): string => id.toLowerCase()
+
 type RosterMergeResult =
   | { ok: true; roster: RosterEntry[] }
   | { ok: false; refusal: RosterRefusal }
@@ -101,12 +103,20 @@ type RosterMergeResult =
  * them, and a departing main's pay does not stick to their replacement.
  */
 export function mergeRoster(existing: RosterEntry[], patch: RosterPatch): RosterMergeResult {
-  const recorded = new Map(existing.map(e => [e.instructorId, e.paySgd]))
+  const recorded = new Map(existing.map(e => [uuidKey(e.instructorId), e.paySgd]))
   /** Supplied value wins; otherwise the instructor keeps what is recorded for them. */
-  const payFor = (instructorId: string, supplied: number | null | undefined): number | null =>
-    supplied !== undefined ? supplied : (recorded.get(instructorId) ?? null)
+  const payFor = (key: string, supplied: number | null | undefined): number | null =>
+    supplied !== undefined ? supplied : (recorded.get(key) ?? null)
 
-  const mainId = patch.main?.instructorId ?? existing.find(e => e.role === 'main')?.instructorId
+  const spelling = new Map(existing.map(e => [uuidKey(e.instructorId), e.instructorId]))
+  const register = (instructorId: string): string => {
+    const key = uuidKey(instructorId)
+    if (!spelling.has(key)) spelling.set(key, instructorId)
+    return key
+  }
+
+  const named = patch.main?.instructorId ?? existing.find(e => e.role === 'main')?.instructorId
+  const mainId = named === undefined ? undefined : register(named)
 
   // Untouched supporting roster → re-state today's members with pay omitted, so
   // they fall through to carry-over like anyone else.
@@ -119,10 +129,8 @@ export function mergeRoster(existing: RosterEntry[], patch: RosterPatch): Roster
   // the same instructor doesn't erase a value given earlier in the same list.
   const bySupporting = new Map<string, number | null | undefined>()
   for (const s of supplied) {
-    bySupporting.set(
-      s.instructorId,
-      s.paySgd !== undefined ? s.paySgd : bySupporting.get(s.instructorId),
-    )
+    const key = register(s.instructorId)
+    bySupporting.set(key, s.paySgd !== undefined ? s.paySgd : bySupporting.get(key))
   }
 
   if (mainId !== undefined && bySupporting.has(mainId)) {
@@ -131,10 +139,10 @@ export function mergeRoster(existing: RosterEntry[], patch: RosterPatch): Roster
 
   const roster: RosterEntry[] = []
   if (mainId !== undefined) {
-    roster.push({ instructorId: mainId, role: 'main', paySgd: payFor(mainId, patch.main?.paySgd) })
+    roster.push({ instructorId: spelling.get(mainId)!, role: 'main', paySgd: payFor(mainId, patch.main?.paySgd) })
   }
-  for (const [instructorId, paySgd] of [...bySupporting].sort(([a], [b]) => a.localeCompare(b))) {
-    roster.push({ instructorId, role: 'supporting', paySgd: payFor(instructorId, paySgd) })
+  for (const [key, paySgd] of [...bySupporting].sort(([a], [b]) => a.localeCompare(b))) {
+    roster.push({ instructorId: spelling.get(key)!, role: 'supporting', paySgd: payFor(key, paySgd) })
   }
 
   return { ok: true, roster }
