@@ -3205,6 +3205,188 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     }
   })
 
+  // ── A seat's package must run until the session (#444 follow-ups) ────────
+
+  test('PT-156 a manual seat naming no package passes over a package that ends before the session and is paid by the next that runs until it; with none that does it is refused with the first one\'s end', async () => {
+    const ivo = await member(one, 'Ivo Fall Through')
+    const running = await givePt(one, ivo, '1on1')
+    const dormant = await givePt(one, ivo, '1on1')
+    const startsAt = far()
+    await setExpiry(running, new Date(startsAt.getTime() - MINUTE))
+
+    const { sessionId } = await manualSession(await adminManual(adminAtOne, [{ client_id: ivo.clientId }], { startsAt }))
+    assert.equal(await sessionsLeft(running), 10)
+    assert.equal(await sessionsLeft(dormant), 9)
+    assert.equal((await pkg(dormant)).activatedByPtSessionId, sessionId)
+
+    const { sessionId: pairId } = await openPair('Ivy Fall Through')
+    const ivy = await member(one, 'Ivy Partner')
+    const ivyRunning = await givePt(one, ivy, '1on1')
+    const ivyDormant = await givePt(one, ivy, '1on1')
+    const pairStart = (await sessionRow(pairId)).startsAt
+    await setExpiry(ivyRunning, new Date(pairStart.getTime() - MINUTE))
+    await expectStatus(await adminAddMember(adminAtOne, pairId, { client_id: ivy.clientId, override: true }), 201)
+    assert.equal(await sessionsLeft(ivyRunning), 10)
+    assert.equal(await sessionsLeft(ivyDormant), 9)
+
+    const ole = await member(one, 'Ole Nothing Covers')
+    const oleRunning = await givePt(one, ole, '1on1')
+    const oleDormant = await givePt(one, ole, '1on1')
+    const late = far()
+    await setExpiry(oleRunning, new Date(late.getTime() - 2 * MINUTE))
+    await setValidityDays(oleDormant, 1)
+    const sessionsBefore = await ptSessionCount()
+    assertPastExpiry(
+      await expectStatus(await adminManual(adminAtOne, [{ client_id: ole.clientId }], { startsAt: late }), 409),
+      late.getTime() - 2 * MINUTE,
+    )
+    assert.equal(await ptSessionCount(), sessionsBefore)
+    assert.equal(await sessionsLeft(oleRunning), 10)
+    assert.equal((await pkg(oleDormant)).expiresAt, null)
+  })
+
+  test('PT-157 the candidate read for a chosen start greys a package that ends before it, running or Dormant, with its end and the reason, and the Default payer is the first that runs until it', async () => {
+    const pia = await member(one, 'Pia Dated Candidates')
+    const running = await givePt(one, pia, '1on1')
+    const shortDormant = await givePt(one, pia, '1on1')
+    const longDormant = await givePt(one, pia, '1on1')
+    const startsAt = new Date(Date.now() + 4 * DAY)
+    await setExpiry(running, new Date(startsAt.getTime() - MINUTE))
+    await setValidityDays(shortDormant, 3)
+
+    const beforeRead = Date.now()
+    for (const read of [
+      () =>
+        adminCandidates(adminAtOne, {
+          client_id: pia.clientId,
+          session_type: '1on1',
+          instructor_id: coachA.staffId,
+          starts_at: startsAt.toISOString(),
+        }),
+      () => instructorCandidates(coachA, { client_id: pia.clientId, session_type: '1on1', starts_at: startsAt.toISOString() }),
+    ]) {
+      const res = await expectStatus(await read(), 200)
+      const byId = new Map<string, any>(res.packages.map((p: any) => [p.id, p]))
+      assert.equal(byId.get(running).eligible, false)
+      assert.equal(byId.get(running).reason, 'package_expires_before_session')
+      assert.equal(new Date(byId.get(running).expires_at).getTime(), startsAt.getTime() - MINUTE)
+      assert.equal(byId.get(shortDormant).eligible, false)
+      assert.equal(byId.get(shortDormant).reason, 'package_expires_before_session')
+      assert.ok(withinMinutes(new Date(byId.get(shortDormant).activation_end_if_picked), beforeRead + 3 * DAY))
+      assert.equal(byId.get(longDormant).eligible, true)
+      assert.equal(res.default_client_package_id, longDormant)
+    }
+
+    const undated = await expectStatus(
+      await adminCandidates(adminAtOne, { client_id: pia.clientId, session_type: '1on1', instructor_id: coachA.staffId }),
+      200,
+    )
+    assert.equal(undated.default_client_package_id, running, 'with no start chosen, the shape alone is judged')
+  })
+
+  test('PT-158 a named package that bends the session type and ends before the session is refused for its end at once, never first asked Add anyway', async () => {
+    const rex = await member(one, 'Rex Bent And Late')
+    const otherType = await givePt(one, rex, '2on1')
+    const startsAt = far()
+    await setExpiry(otherType, new Date(startsAt.getTime() - MINUTE))
+    const sessionsBefore = await ptSessionCount()
+
+    assertPastExpiry(
+      await expectStatus(
+        await adminManual(adminAtOne, [{ client_id: rex.clientId, client_package_id: otherType }], { startsAt }),
+        409,
+      ),
+      startsAt.getTime() - MINUTE,
+    )
+    assert.equal(await ptSessionCount(), sessionsBefore)
+    assert.equal(await sessionsLeft(otherType), 10)
+  })
+
+  test('SCH-38 a private session that is cancelled stays on its Instructor\'s My schedule and the admin timetable, marked cancelled, as a cancelled class does', async () => {
+    const sue = await member(one, 'Sue Cancelled Private')
+    await givePt(one, sue, '1on1')
+    const { requestId, sessionId } = await manualSession(await adminManual(adminAtOne, [{ client_id: sue.clientId }]))
+    await expectStatus(await adminCancel(adminAtOne, requestId), 200)
+
+    for (const [path, by] of [
+      ['/api/v1/portal/instructor/schedule?type=pt', coachA],
+      ['/api/v1/portal/admin/schedule?type=pt', adminAtOne],
+    ] as const) {
+      const res = await expectStatus(await harness.app.request(path, { headers: by.headers }), 200)
+      const entry = (res.entries as any[]).find(e => e.id === sessionId)
+      assert.ok(entry, `${path} lists the cancelled private session`)
+      assert.equal(entry.kind, 'pt')
+      assert.equal(entry.event_state, 'cancelled')
+      assert.equal(entry.label, 'Private · Sue')
+    }
+  })
+
+  test('PKG-46 an Admin setting a package\'s expiry before a live session or class it pays for is refused with the earliest date allowed; a cancelled one no longer holds it', async () => {
+    const editExpiry = (who: Member, clientPackageId: string, expiresAt: Date) =>
+      harness.app.request(`/api/v1/portal/admin/clients/${who.clientId}/packages/${clientPackageId}/expiry`, {
+        method: 'POST',
+        headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expires_at: expiresAt.toISOString(), reason: 'Desk correction' }),
+      })
+    function assertStrands(refused: any, earliest: Date) {
+      assert.equal(refused.error, 'expiry_before_paid_booking')
+      assert.equal(refused.earliest_expires_at, earliest.toISOString())
+      assert.match(refused.message, /no earlier than/)
+    }
+
+    const tia = await member(one, 'Tia Stranded Session')
+    const ptPackage = await givePt(one, tia, '1on1')
+    const startsAt = far()
+    const { requestId } = await manualSession(
+      await adminManual(adminAtOne, [{ client_id: tia.clientId, client_package_id: ptPackage }], { startsAt }),
+    )
+    const ptEnd = (await pkg(ptPackage)).expiresAt
+
+    assertStrands(await expectStatus(await editExpiry(tia, ptPackage, new Date(startsAt.getTime() - MINUTE)), 409), startsAt)
+    assert.equal((await pkg(ptPackage)).expiresAt?.getTime(), ptEnd?.getTime())
+    await expectStatus(await editExpiry(tia, ptPackage, startsAt), 200)
+    await expectStatus(await adminCancel(adminAtOne, requestId), 200)
+    await expectStatus(await editExpiry(tia, ptPackage, new Date(startsAt.getTime() - DAY)), 200)
+
+    const uma = await member(one, 'Uma Stranded Class')
+    await giveClassCredits(one, uma)
+    const [classPackage] = await harness.db
+      .select({ id: schema.clientPackages.id })
+      .from(schema.clientPackages)
+      .where(and(eq(schema.clientPackages.clientId, uma.clientId), eq(schema.clientPackages.kind, 'credit_bundle')))
+    const classStart = new Date(Date.now() + 30 * DAY)
+    const [klass] = await harness.db
+      .insert(schema.classes)
+      .values({
+        tenantId: one.id,
+        classTypeId: one.classTypeId,
+        mainInstructorId: coachB.staffId,
+        locationId: one.places[0]!.locationId,
+        roomId: one.places[0]!.roomId,
+        startsAt: classStart,
+        endsAt: new Date(classStart.getTime() + HOUR),
+        capacityOnline: 10,
+        creditCost: 1,
+        createdByStaffId: coachB.staffId,
+      })
+      .returning({ id: schema.classes.id })
+    const booked = await expectStatus(
+      await harness.app.request('/api/v1/me/bookings/class', {
+        method: 'POST',
+        headers: { ...uma.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ class_id: klass!.id }),
+      }),
+      201,
+    )
+
+    assertStrands(await expectStatus(await editExpiry(uma, classPackage!.id, new Date(Date.now() + 10 * DAY)), 409), classStart)
+    await expectStatus(
+      await harness.app.request(`/api/v1/me/bookings/${booked.booking_id}`, { method: 'DELETE', headers: uma.headers }),
+      200,
+    )
+    await expectStatus(await editExpiry(uma, classPackage!.id, new Date(Date.now() + 10 * DAY)), 200)
+  })
+
   // ── Who may ──────────────────────────────────────────────────────────────
 
   test('a member, or a staff session on the member app, is refused the staff PT routes; an instructor is refused the admin ones', async () => {
