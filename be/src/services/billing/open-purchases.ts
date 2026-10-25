@@ -19,7 +19,7 @@
  *   3. **Nothing is granted here.** This takes money. The webhook decides what
  *      that money has bought, by the one question in `balance.ts`.
  */
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm'
 
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
@@ -487,6 +487,28 @@ export async function heldOnOpenPurchases(tenantId: string): Promise<number> {
     .from(purchases)
     .where(and(eq(purchases.tenantId, tenantId), eq(purchases.status, 'open')))
   return toCents(row?.total ?? '0') / 100
+}
+
+const PAYMENT_PAGE_LIFETIME = sql`interval '24 hours'`
+
+/**
+ * Open workshop Purchases for this tier that a member can still pay into:
+ * part-paid ones, and unpaid ones whose payment page may still be live.
+ */
+export async function payableSalesOfWorkshopTier(tenantId: string, workshopTierId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(purchases)
+    .where(
+      and(
+        eq(purchases.tenantId, tenantId),
+        eq(purchases.kind, 'workshop'),
+        eq(purchases.status, 'open'),
+        sql`${purchases.metadata}->>'workshop_tier_id' = ${workshopTierId}`,
+        sql`(${purchases.partPaidAt} is not null or ${purchases.createdAt} > now() - ${PAYMENT_PAGE_LIFETIME})`,
+      ),
+    )
+  return Number(row?.n ?? 0)
 }
 
 /**

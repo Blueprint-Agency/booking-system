@@ -207,7 +207,7 @@ Workshops are configured under Packages (not Schedule). Three-stage editor: **Ba
 | POST | `/workshops` | **Basics stage** — `{ name, description_html, class_type_id, location_id, instructor_ids[], cover_r2_key?, images[]? }`. Returns the workshop id; days + tiers added in follow-up calls. `location_id` must be an active location. |
 | PATCH | `/workshops/:id` | Edit basics. `location_id` is **immutable** once `workshop_days` exist (changing workspace mid-flight is unsafe). |
 | POST | `/workshops/:id/cancel` | Admin. Same as `schedule.ts:POST /schedule/workshops/:id/cancel` — exposed here too so the cancel action is reachable from the workshops surface. |
-| PUT | `/workshops/:id/schedule` | The editor's save of the workshop's days and tiers, in one transaction (`services/workshops/schedule.ts`). `{ days: [{ id?, ref, room_id, starts_at, ends_at, capacity_online, capacity_waitlist?, capacity_buffer? }], tiers: [{ id?, name, description?, regular_price_sgd, early_bird_price_sgd?, early_bird_quota?, early_bird_cutoff_at?, day_refs[] }] }`. A row with `id` is updated, one without is added, and a stored row left out is removed once the new tiers are written; `ord` is the list order. A tier names its days by their `ref`. Each part keeps the rules of the single-row routes below, and any refusal (409 `workshop_tier_has_bookings`, 409 `workshop_day_has_bookings`, 409 `workshop_tier_required` when it would leave a workshop that has tiers with none, a room clash, 400 `invalid_workshop_day_ids` for an unknown `ref`) leaves every day and tier as it was. Returns `{ days, tiers }`. |
+| PUT | `/workshops/:id/schedule` | The editor's save of the workshop's days and tiers, in one transaction (`services/workshops/schedule.ts`). `{ days: [{ id?, ref, room_id, starts_at, ends_at, capacity_online, capacity_waitlist?, capacity_buffer? }], tiers: [{ id?, name, description?, regular_price_sgd, early_bird_price_sgd?, early_bird_quota?, early_bird_cutoff_at?, day_refs[] }] }`. A row with `id` is updated, one without is added, and a stored row left out is removed once the new tiers are written; `ord` is the list order. A tier names its days by their `ref`. Each part keeps the rules of the single-row routes below, and any refusal (409 `workshop_tier_has_bookings`, 409 `workshop_tier_has_open_purchases`, 409 `workshop_day_has_bookings`, 409 `workshop_tier_required` when it would leave a workshop that has tiers with none, a room clash, 400 `invalid_workshop_day_ids` for an unknown `ref`) leaves every day and tier as it was. Returns `{ days, tiers }`. |
 | **Days** | | |
 | POST | `/workshops/:id/days` | `{ ord, starts_at, ends_at, base_price_sgd, capacity_online, capacity_waitlist, capacity_buffer }`. All three capacities 0 is `400 capacity_required` with a `message` to show, here, on the PATCH below and on the schedule save above. |
 | PATCH | `/workshops/:id/days/:day_id` | Edit. Capacity reductions reject if `count(confirmed bookings via tier→day join) > new capacity_online`. |
@@ -215,7 +215,7 @@ Workshops are configured under Packages (not Schedule). Three-stage editor: **Ba
 | **Tiers** | | |
 | POST | `/workshops/:id/tiers` | `{ name, description?, regular_price_sgd, early_bird_price_sgd?, early_bird_quota?, early_bird_cutoff_at?, day_ids[], ord }`. Inserts `workshop_tiers` + `workshop_tier_days` junction rows in one tx. **No `capacity` field** — derived. |
 | PATCH | `/workshops/:id/tiers/:tier_id` | Edit. Changing `day_ids` requires rewriting the `workshop_tier_days` rows; rejected if confirmed bookings exist on the tier AND a covered day is being removed. |
-| DELETE | `/workshops/:id/tiers/:tier_id` | Reject if any confirmed booking references this tier (409 `workshop_tier_has_bookings`, with `bookings` and a `message`), or if it is the workshop's only tier (409 `workshop_tier_required`, with a `message`, #235). The workshop editor shows the message. The workshop row is locked (`FOR UPDATE`) for the count and the delete, so two removals at once cannot leave it with none. |
+| DELETE | `/workshops/:id/tiers/:tier_id` | Reject if any confirmed booking references this tier (409 `workshop_tier_has_bookings`, with `bookings` and a `message`), if an open workshop Purchase names it that a member can still pay into, part-paid or opened within the last day while its payment page may still be live (409 `workshop_tier_has_open_purchases`, with `purchases` and a `message`), or if it is the workshop's only tier (409 `workshop_tier_required`, with a `message`, #235). The workshop editor shows the message. The workshop row is locked (`FOR UPDATE`) for the count and the delete, so two removals at once cannot leave it with none. |
 
 ### `pt-requests.ts` (workspace-**scoped** — `admin-restructure.md` §9)
 
@@ -513,7 +513,7 @@ Triggered from `POST /pt-requests/:id/schedule` (admin or instructor).
 ```
 services/pt-sessions/schedule.ts:schedulePtRequest({
   pt_request_id, instructor_id, location_id, room_id, starts_at, ends_at, actor_staff_id,
-  capacity_online?, capacity_waitlist?, capacity_buffer?
+  actor_is_admin, instructor_pay_sgd?, note?, allow_clash?
 })
   ↓
 tx start
@@ -537,7 +537,8 @@ tx start
    assertAvailable), so a second schedule of either waits and then sees this one
 5. Location check: location_id is an active location of this studio (no per-staff grants)
 6. Insert pt_sessions row: pt_request_id=X, instructor_id, location_id, room_id, starts_at, ends_at,
-   session_type (copied from request), capacity_online (default 1 for 1on1, 2 for 2on1),
+   session_type (copied from request), capacity_online (1 for 1on1, 2 for 2on1, set from the
+   session type and never by the caller),
    lifecycle='active', scheduled_at=now(), scheduled_by_staff_id=actor_staff_id
 7. Insert pt_session_clients rows: requesting client + co_client (if 2on1)
 8. Insert bookings row(s): kind='pt', pt_session_id=new id, state='confirmed',
@@ -581,8 +582,9 @@ CASE status
     1. Update pt_requests SET status='cancelled_after_scheduled', resolved_at=now()
     2. Update pt_sessions SET lifecycle='cancelled', cancelled_at=now(),
                               cancelled_by_staff_id=actor (NULL for client/system)
-    3. UPDATE every booking on the session: state='cancelled', refund_outcome='forfeited',
-       cancelled_at=now()
+    3. UPDATE every booking on the session: state='cancelled', cancelled_at=now(), and on the
+       requester's booking refund_outcome='session_returned' when the sessions go back to the
+       package or 'forfeited' when they are kept; a 2-on-1 partner's seat is 'n_a'
     4. INSERT cancellations rows (kind='pt', source=client|admin|instructor|system,
        cancelled_by_staff_id=actor for admin|instructor (NULL otherwise),
        was_within_window, was_within_cap, refund_fired)

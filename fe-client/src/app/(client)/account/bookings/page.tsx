@@ -54,11 +54,7 @@ const PHASES: { value: BookingPhase; label: string }[] = [
 const isType = (v: string | null): v is TypeFilter => TYPE_OPTIONS.some((o) => o.value === v);
 const isPhase = (v: string | null): v is BookingPhase => PHASES.some((o) => o.value === v);
 
-/** What a request just sent is told, on arrival from its form. */
-const SUBMITTED: Record<string, string> = {
-  pt: "Your request is in. We'll reach you on WhatsApp shortly to confirm the time.",
-  corporate: "Your request is in. We'll arrange the date, place and instructor with you on WhatsApp.",
-};
+const PT_REQUEST_SENT = "Your request is in. We'll reach you on WhatsApp shortly to confirm the time.";
 
 type Banner = { tone: "ok" | "warn" | "error"; text: string };
 
@@ -90,7 +86,7 @@ function YourBookings() {
     const w = params.get("when");
     return isPhase(w) ? w : "upcoming";
   });
-  const submitted = SUBMITTED[params.get("submitted") ?? ""] ?? null;
+  const submitted = params.get("submitted") === "pt" ? PT_REQUEST_SENT : null;
   // A corporate package just bought: the celebration and the WhatsApp button (§6.2).
   const [arrival] = useState(() => corporateArrival(new URLSearchParams(params.toString())));
 
