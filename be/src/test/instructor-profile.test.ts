@@ -146,4 +146,39 @@ describe('instructor profile edit', { skip: integrationTestsEnabled ? false : SK
     }
     assert.equal(await storedBio(), legacy, 'a refused change keeps the stored bio')
   })
+
+  test('STF-44 an Admin staff edit past a field limit, an invitation or an email change to an address that is not one, is refused 400 invalid_request with a sentence naming the field, and nothing is written', async () => {
+    const [before] = await harness.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, instructorId))
+    const edits = [
+      { body: { first_name: 'f'.repeat(121) }, says: /first name.*120/i },
+      { body: { first_name: '   ' }, says: /first name/i },
+      { body: { last_name: 'l'.repeat(121) }, says: /last name.*120/i },
+      { body: { phone: '9'.repeat(41) }, says: /phone.*40/i },
+      { body: { address: 'a'.repeat(501) }, says: /address.*500/i },
+      { body: { languages: ['English', 'g'.repeat(61)] }, says: /language.*60/i },
+      { body: { annual_leave_days: 366 }, says: /assigned days/i },
+    ]
+    for (const { body, says } of edits) {
+      const res = await editStaff(body)
+      assert.equal(res.status, 400, `${JSON.stringify(body).slice(0, 60)}: ${res.text}`)
+      assert.equal(res.body.error, 'invalid_request', res.text)
+      assert.match(String(res.body.message), says, res.text)
+    }
+    const [after] = await harness.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, instructorId))
+    assert.deepEqual(after, before, 'a refused staff edit changes nothing')
+
+    for (const email of ['owner@gmail', 'not an email']) {
+      const invite = await request('/api/v1/portal/admin/staff/invite', 'POST', adminHeaders, { email, role: 'instructor' })
+      assert.equal(invite.status, 400, `${email}: ${invite.text}`)
+      assert.equal(invite.body.error, 'invalid_request', invite.text)
+      assert.match(String(invite.body.message), /email address/i, invite.text)
+
+      const change = await request(`/api/v1/portal/admin/staff/${instructorId}/email`, 'POST', adminHeaders, { email })
+      assert.equal(change.status, 400, `${email}: ${change.text}`)
+      assert.equal(change.body.error, 'invalid_request', change.text)
+      assert.match(String(change.body.message), /email address/i, change.text)
+    }
+    const [unchanged] = await harness.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, instructorId))
+    assert.equal(unchanged!.email, before!.email, 'a refused email change leaves the address')
+  })
 })

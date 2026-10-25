@@ -256,6 +256,36 @@ describe('member profile edit', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(added.body.phone, '(65) 9123-4567')
   })
 
+  test('CUS-28 Add customer and the Admin email change refuse an address that is not one, and Add customer a blank or over-long name, 400 invalid_request with a sentence naming the field, and nothing is written', async () => {
+    const add = (body: Record<string, unknown>) =>
+      call('POST', '/portal/admin/clients', adminOne.headers, { phone: '+65 9123 4567', send_invite: false, ...body })
+
+    const refusals = [
+      { body: { name: 'Email Probe', email: 'aisha@gmail' }, says: /email address/i },
+      { body: { name: 'Email Probe', email: 'not an email' }, says: /email address/i },
+      { body: { name: '', email: fixtures.at('blank-name') }, says: /name/i },
+      { body: { name: 'n'.repeat(161), email: fixtures.at('long-name') }, says: /name.*160/i },
+    ]
+    for (const { body, says } of refusals) {
+      const res = await add(body)
+      assert.equal(res.status, 400, `${JSON.stringify(body).slice(0, 60)}: ${res.text}`)
+      assert.equal(res.body.error, 'invalid_request', res.text)
+      assert.match(String(res.body.message), says, res.text)
+      const rows = await harness.db.select().from(schema.clients).where(eq(schema.clients.email, String(body.email)))
+      assert.deepEqual(rows, [], `${body.email} adds no member`)
+    }
+
+    const member = await newMember()
+    for (const email of ['aisha@gmail', 'not an email']) {
+      const res = await call('POST', `/portal/admin/clients/${member.clientId}/email`, adminOne.headers, { email })
+      assert.equal(res.status, 400, `${email}: ${res.text}`)
+      assert.equal(res.body.error, 'invalid_request', res.text)
+      assert.match(String(res.body.message), /email address/i, res.text)
+    }
+    const [row] = await harness.db.select({ email: schema.clients.email }).from(schema.clients).where(eq(schema.clients.id, member.clientId))
+    assert.equal(row!.email, member.email, 'a refused email change leaves the address')
+  })
+
   test('ACC-20 a member saves their theme and text size to their account, one at a time, and an invalid or empty save is refused', async () => {
     const member = await newMember()
     const other = await newMember()
