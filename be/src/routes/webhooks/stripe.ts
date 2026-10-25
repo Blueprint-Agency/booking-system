@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { OFF_REQUEST_RETRY } from '../../lib/outbound'
 import { verifyTenantDelivery } from '../../services/billing/webhook-verification'
 import { resolveTenantBySlug } from '../../services/tenants/tenants'
-import { handleStripeEvent } from '../../services/billing/webhook-handler'
+import { handleStripeEvent, RefundAheadOfPayment } from '../../services/billing/webhook-handler'
 import { ERROR_CODES } from '../../shared/error-codes'
 import { logger, setLogContext } from '../../shared/logger'
 
@@ -63,6 +63,13 @@ const app = new Hono()
         retry: OFF_REQUEST_RETRY,
       })
     } catch (err) {
+      if (err instanceof RefundAheadOfPayment) {
+        logger.warn(
+          { tenantId, eventId: event.id, paymentIntentId: err.paymentIntentId },
+          'stripe-webhook: refund arrived before its payment, asking for redelivery',
+        )
+        return c.json({ error: ERROR_CODES.handler_failed }, 503)
+      }
       logger.error(
         { err, tenantId, eventId: event?.id, eventType: event?.type },
         'stripe-webhook handler error',
