@@ -7,13 +7,6 @@ const run = Date.now().toString(36)
 const DOMAIN = `${run}.paused.test`
 const REFUSED = [403, { error: 'tenant_suspended', status: 'suspended' }]
 
-/**
- * A suspended studio's member app, as the backend answers it (#250): the slug
- * lookup still answers, so the app can say the studio is paused, and every
- * other member-facing call is refused `403 tenant_suspended`, whether or not
- * anyone is signed in. The studio's portal sign-in step stays open, so its
- * staff still reach the portal's own closed-studio page.
- */
 describe('a suspended studio refuses its member surface', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
@@ -44,7 +37,6 @@ describe('a suspended studio refuses its member surface', { skip: integrationTes
     return { status: res.status, body: text ? JSON.parse(text) : null }
   }
 
-  /** This studio's row count in every table that carries a `tenant_id`. */
   async function rowsHeldBy(tenantId: string): Promise<Record<string, number>> {
     const tables = await harness.db.execute<{ t: string }>(sql`
       SELECT c.table_name AS t FROM information_schema.columns c

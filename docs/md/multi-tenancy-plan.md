@@ -487,11 +487,15 @@ platform administration deliberately lives outside the database. Refusals answer
 `404`, not `403` — a studio's staff must not be able to learn the super portal
 exists. See `be/src/services/tenants/platform-admin.ts`.
 
-**Suspension** refuses `/api/v1/me/*` and `/api/v1/portal/*` for that tenant
-(`middleware/require-active-tenant.ts`) and retains every row. Slug resolution
-still succeeds, so the studio's hostnames stay live rather than becoming a 404 —
-a dedicated "paused" page on the frontends is still to do; today they surface the
-`403 tenant_suspended` as a load failure.
+**Suspension** refuses `/api/v1/me/*`, `/api/v1/portal/*`, `/api/v1/public/*`
+and the member sign-in pool for that tenant with `403 tenant_suspended`
+(`middleware/require-active-tenant.ts`), and retains every row. Slug resolution
+still succeeds, so the studio's hostnames stay live rather than becoming a 404.
+On the public side only the slug lookup, the maintenance re-check and the staff
+steps (portal sign-in step, staff invitation, staff email change) still answer,
+so staff reach the portal's own closed-studio page. The member app shows a
+paused page from the status the slug lookup reports, and from any
+`tenant_suspended` answer (`fe-client/src/components/studio-gate.tsx`, #250).
 
 **Maintenance mode** (`be/src/services/platform/maintenance.ts`,
 `GET|PUT /api/v1/platform/maintenance`). The super portal's own Maintenance page (`/platform/maintenance`, beside Studios in its header):

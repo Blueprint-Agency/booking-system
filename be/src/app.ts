@@ -11,7 +11,7 @@ import { requestLogger } from './middleware/logger'
 import { resolveTenant } from './middleware/tenant'
 import { maintenanceGate } from './middleware/maintenance'
 
-import { requireActiveTenant } from './middleware/require-active-tenant'
+import { requireActiveTenant, requireActiveTenantForMembers } from './middleware/require-active-tenant'
 import { ERROR_CODES } from './shared/error-codes'
 import {
   AUTH_BASE_PATH,
@@ -194,6 +194,8 @@ app.get('/health', async c => {
 // what lifts the suspension.
 app.use('/api/v1/me/*', requireActiveTenant)
 app.use('/api/v1/portal/*', requireActiveTenant)
+app.use('/api/v1/public/*', requireActiveTenantForMembers)
+app.use(`${AUTH_BASE_PATH.client}/*`, requireActiveTenantForMembers)
 
 app.route('/api/v1/public', publicRoutes)
 app.route('/api/v1/me', clientRoutes)

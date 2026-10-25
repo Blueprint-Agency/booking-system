@@ -16,6 +16,7 @@ import { headers } from "next/headers";
 import { ROOT_DOMAIN, tenantSlugFromHost } from "@/lib/tenant-host";
 import { resolveTenant } from "@/lib/tenant";
 import { PLATFORM_BRAND, type Brand } from "@/lib/brand-shape";
+import { pausedByStatus } from "@/lib/studio-refusal";
 
 // The type and the fallback live in `brand-shape.ts`, which knows nothing about
 // requests — a client component needs both, and importing them from here would
@@ -29,18 +30,28 @@ const text = (value: string | null | undefined): string | null => {
   return trimmed ? trimmed : null;
 };
 
-export async function getBrand(): Promise<Brand> {
-  const host = (await headers()).get("host");
-  const slug = tenantSlugFromHost(host, ROOT_DOMAIN);
-  if (!slug) return PLATFORM_BRAND;
-
+/**
+ * Null unless the hostname names a studio that resolved. An outage or an
+ * unknown slug is the proxy's problem, not the layout's: it has already turned
+ * both into a response.
+ */
+async function currentStudio() {
+  const slug = tenantSlugFromHost((await headers()).get("host"), ROOT_DOMAIN);
+  if (!slug) return null;
   const outcome = await resolveTenant(slug);
-  // An outage or an unknown slug is the proxy's problem, not the layout's — it
-  // has already turned both into a response. Reaching here with neither means
-  // rendering the neutral shell, never a stale studio's.
-  if (outcome.kind !== "found") return PLATFORM_BRAND;
+  return outcome.kind === "found" ? outcome : null;
+}
 
-  const { tenant, settings } = outcome;
+export async function isStudioPaused(): Promise<boolean> {
+  const studio = await currentStudio();
+  return studio !== null && pausedByStatus(studio.tenant.status);
+}
+
+export async function getBrand(): Promise<Brand> {
+  const studio = await currentStudio();
+  if (!studio) return PLATFORM_BRAND;
+
+  const { tenant, settings } = studio;
   return {
     // `display_name` is what the studio chose to be called; its row `name` is
     // what it was created as. Either beats the platform's name.

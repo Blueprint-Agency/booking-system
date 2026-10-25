@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { afterFailedRead } from "./failed-read.ts";
 
-/** A refused call, shaped as `ApiError` carries it. */
 const answered = (status: number, body: unknown) => Object.assign(new Error(`API error ${status}`), { status, body });
 
 test("SUP-36 a read the studio or the session refused stays loading while the app answers the refusal", () => {

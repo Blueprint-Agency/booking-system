@@ -193,7 +193,7 @@ function ComingUpTicket({
     }
   });
   const loading = read.loading;
-  const next = read.error && !read.data ? null : read.data;
+  const next = read.data;
   const reload = read.refresh;
 
   // On the schedule the ticket sits above the class list with no placeholder:

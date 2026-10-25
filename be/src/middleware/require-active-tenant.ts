@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from 'hono'
+import { AUTH_BASE_PATH } from '../services/auth/better-auth'
 import { effectiveStatus } from '../services/tenants/term-dates'
 import { loadTenantById } from '../services/tenants/tenants'
 import { tenantId } from './tenant'
@@ -12,8 +13,7 @@ import { logger } from '../shared/logger'
  * frontends need to know the studio exists so they can render a "paused" page
  * rather than a 404, and a suspension that looked like a deletion would take a
  * studio's own branding off its own domain. So the refusal happens here instead,
- * on the routes that *do* something: every member call under `/api/v1/me` and
- * every staff call under `/api/v1/portal`.
+ * on the paths `app.ts` mounts it on.
  *
  * Not the platform routes. The super portal is how a suspension is lifted; a
  * gate that also fenced it would make suspension one-way.
@@ -43,3 +43,24 @@ export const requireActiveTenant: MiddlewareHandler = async (c, next) => {
 
   await next()
 }
+
+/**
+ * What a suspended studio still answers on its public routes and its member
+ * sign-in: the slug lookup, which is how the member app learns to show its
+ * paused page and which runs in no Tenant context; the maintenance re-check,
+ * which asks about the platform, not the studio; the staff steps, so the
+ * studio's staff still sign in and reach the portal's own closed-studio page;
+ * and the member reset-link redirect, opened from an inbox with no Tenant.
+ */
+const OPEN_WHILE_SUSPENDED = [
+  '/api/v1/public/tenants/by-slug/',
+  '/api/v1/public/maintenance',
+  '/api/v1/public/staff/',
+  '/api/v1/public/staff-invitation',
+  '/api/v1/public/staff-email-change',
+  `${AUTH_BASE_PATH.client}/reset-password/`,
+]
+
+/** So nobody signs up, is mailed a code or reads a timetable they cannot book (#250). */
+export const requireActiveTenantForMembers: MiddlewareHandler = (c, next) =>
+  OPEN_WHILE_SUSPENDED.some(prefix => c.req.path.startsWith(prefix)) ? next() : requireActiveTenant(c, next)

@@ -57,8 +57,8 @@ same path and query on the new host. See `be/CONTEXT.md` § Former slug.
 A studio whose **Term** has ended still resolves — like a suspended one, so the
 frontends can show it paused — but it counts as suspended from the first moment
 of its end date on its own clock: the public slug lookup reports
-`status: 'suspended'`, and `requireActiveTenant` refuses `/me` and `/portal`
-with `403 tenant_suspended`. Both read `effectiveStatus`
+`status: 'suspended'`, and `requireActiveTenant` refuses `/me`, `/portal`, the
+public member surface and the member sign-in pool with `403 tenant_suspended`. Both read `effectiveStatus`
 (`be/src/services/tenants/term-dates.ts`), so there is no gap while the
 15-minute sweep catches the stored status up. See `be/CONTEXT.md` § Term.
 
