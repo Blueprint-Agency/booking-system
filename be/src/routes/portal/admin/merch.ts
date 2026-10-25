@@ -7,6 +7,7 @@ import { BadRequestError } from '../../../shared/errors'
 import { ERROR_CODES } from '../../../shared/error-codes'
 import { tenantId } from '../../../middleware/tenant'
 import { uploadedFile } from '../uploaded-file'
+import { explainInvalid } from '../../explain-invalid'
 
 /**
  * Merch CRUD. The photo is its own call (POST /:id/image) so a file that is
@@ -21,18 +22,30 @@ const priceField = z.union([z.string(), z.number()]).transform(v => {
   return n.toFixed(2)
 })
 
+const titleField = z
+  .string({ message: 'A title must be text.' })
+  .trim()
+  .min(1, 'A merch item needs a title.')
+  .max(200, 'A title can be at most 200 characters.')
+const descriptionField = z
+  .string({ message: 'A description must be text.' })
+  .max(4000, 'A description can be at most 4000 characters.')
+  .nullish()
+
 const createSchema = z.object({
-  title: z.string().trim().min(1).max(200),
-  description: z.string().max(4000).nullish(),
+  title: titleField,
+  description: descriptionField,
   price_sgd: priceField,
 })
 
 const updateSchema = z.object({
-  title: z.string().trim().min(1).max(200).optional(),
-  description: z.string().max(4000).nullish().optional(),
+  title: titleField.optional(),
+  description: descriptionField.optional(),
   price_sgd: priceField.optional(),
   archived: z.boolean().optional(),
 })
+
+const explainMerch = explainInvalid('That merch item is not valid.')
 
 const listQuery = z.object({
   include_archived: z.enum(['true', 'false', '1', '0']).optional(),
@@ -46,7 +59,7 @@ const app = new Hono()
     })
     return c.json({ merch: rows.map(svc.serializeMerch) })
   })
-  .post('/', zValidator('json', createSchema), async c => {
+  .post('/', zValidator('json', createSchema, explainMerch), async c => {
     const body = c.req.valid('json')
     const row = await svc.createMerch(tenantId(c), {
       title: body.title,
@@ -56,7 +69,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'merch', id: row.id })
     return c.json(svc.serializeMerch(row), 201)
   })
-  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
+  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema, explainMerch), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const row = await svc.updateMerch(tenantId(c), id, {
