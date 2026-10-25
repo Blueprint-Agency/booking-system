@@ -42,6 +42,7 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
   let classTypesSvc!: typeof import('../services/catalog/class-types')
   let classPackagesSvc!: typeof import('../services/packages/class-packages')
   let purchaseSvc!: typeof import('../services/packages/purchase')
+  let ptPackagesSvc!: typeof import('../services/packages/pt-packages')
 
   type Headers = Record<string, string>
   type Reply = { status: number; body: any }
@@ -269,6 +270,7 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     classTypesSvc = inTenantContext(await import('../services/catalog/class-types'))
     classPackagesSvc = inTenantContext(await import('../services/packages/class-packages'))
     purchaseSvc = inTenantContext(await import('../services/packages/purchase'))
+    ptPackagesSvc = inTenantContext(await import('../services/packages/pt-packages'))
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
     assert.equal((await setFlag(one, true)).status, 200)
@@ -809,14 +811,46 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     assert.equal((await promotedMails(waiter)).length, 0)
   })
 
-  test('WTL-38 a member frees a seat whose line waits on another class while an Admin cancels that class whole: both go through in either order, and the head of the line is booked', async () => {
-    const packageOf = async (who: Member) => {
-      const [row] = await harness.db
-        .select({ id: schema.clientPackages.id })
-        .from(schema.clientPackages)
-        .where(eq(schema.clientPackages.clientId, who.clientId))
-      return row!.id
+  const grantOf =
+    (packageKind: 'class' | 'pt', packageId: string, opts: { complimentary?: boolean } = {}) =>
+    async (who: Member) =>
+      (
+        await purchaseSvc.grantPackage(one.id, {
+          clientId: who.clientId,
+          purchaseId: null,
+          amountSgd: opts.complimentary ? '0.00' : '200.00',
+          packageKind,
+          packageId,
+          ...opts,
+        })
+      ).clientPackageId
+
+  /** Two members whose packages sort `lower` then `higher` by id, each holding only the package `grant` gives them. */
+  async function byPackageOrder(grant: (who: Member) => Promise<string>): Promise<{ lower: Member; higher: Member; pkg: Map<Member, string> }> {
+    const pair = [await member(one, false), await member(one, false)]
+    const pkg = new Map([[pair[0]!, await grant(pair[0]!)], [pair[1]!, await grant(pair[1]!)]])
+    const [lower, higher] = pair.sort((a, b) => (pkg.get(a)! < pkg.get(b)! ? -1 : 1)) as [Member, Member]
+    return { lower, higher, pkg }
+  }
+
+  /** Hold rows, start `calls` in order, each once the ones before it queue behind the held rows, then let go. */
+  async function inTurn(hold: () => Promise<{ release: () => Promise<void> }>, calls: Array<() => Promise<Reply>>): Promise<Reply[]> {
+    const held = await hold()
+    try {
+      let settled = false
+      const started: Promise<Reply>[] = []
+      for (const call of calls) {
+        started.push(call().finally(() => (settled = true)))
+        await untilRowLockWaiters(started.length, () => settled)
+      }
+      await held.release()
+      return await Promise.all(started)
+    } finally {
+      await held.release()
     }
+  }
+
+  test('WTL-38 a member frees a seat whose line waits on another class while an Admin cancels that class whole: both go through in either order, and the head of the line is booked', async () => {
     for (const first of ['member', 'admin'] as const) {
       for (const bookedFirst of ['higher', 'lower'] as const) {
         const round = `${first} first, the ${bookedFirst} package booked first on the cancelled class`
@@ -824,29 +858,17 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
         const other = await addClass(one, { online: 2, waitlist: 0 }, 5 * DAY)
         const seated = await member(one)
         const seat = await booked(seated, full)
-        const pair = [await member(one), await member(one)]
-        const pkg = new Map([[pair[0]!, await packageOf(pair[0]!)], [pair[1]!, await packageOf(pair[1]!)]])
-        const [lower, higher] = pair.sort((a, b) => (pkg.get(a)! < pkg.get(b)! ? -1 : 1)) as [Member, Member]
+        const { lower, higher } = await byPackageOrder(grantOf('class', one.classPackageId))
         for (const w of bookedFirst === 'higher' ? [higher, lower] : [lower, higher]) await booked(w, other)
         const head = await joined(lower, full)
         await joined(higher, full)
 
         const memberCancel = () => cancel(seated, seat)
         const classCancel = () => send('POST', `/portal/admin/schedule/classes/${other}/cancel`, one.admin.headers)
-        const [firstCall, secondCall] = first === 'member' ? [memberCancel, classCancel] : [classCancel, memberCancel]
-        const packages = await holdPackagesOf(first === 'member' ? lower : higher)
-        let answers: Reply[]
-        try {
-          let settled = false
-          const a = firstCall().finally(() => (settled = true))
-          await untilRowLockWaiters(1, () => settled)
-          const b = secondCall().finally(() => (settled = true))
-          await untilRowLockWaiters(2, () => settled)
-          await packages.release()
-          answers = await Promise.all([a, b])
-        } finally {
-          await packages.release()
-        }
+        const answers = await inTurn(
+          () => holdPackagesOf(first === 'member' ? lower : higher),
+          first === 'member' ? [memberCancel, classCancel] : [classCancel, memberCancel],
+        )
         const [byMember, byAdmin] = (first === 'member' ? answers : [...answers].reverse()) as [Reply, Reply]
 
         assert.equal(byMember.status, 200, `${round}: ${JSON.stringify(byMember.body)}`)
@@ -890,6 +912,127 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     assert.equal(await creditsLeft(waiter), 10)
     assert.equal((await promotedMails(waiter)).length, 0)
     assert.ok(answeredMidSweep, 'the promotion did not wait for the sweep')
+  })
+
+  const holdPackage = (id: string) => holdRows(tx => tx`SELECT id FROM client_packages WHERE id = ${id} FOR UPDATE`)
+
+  test('WTL-40 a member frees a seat whose line holds both members of a two-to-one private session while an Admin cancels that session: both go through in either order', async () => {
+    const pt = await ptPackagesSvc.createPtPackage(one.id, { name: `Waitlist PT ${run}`, sessionType: '2on1', numSessions: 10, validityDays: 90, priceSgd: '900.00' })
+    const [room] = await harness.db
+      .insert(schema.rooms)
+      .values({ tenantId: one.id, locationId: one.locationId, name: `Waitlist PT room ${run}`, capacity: 2 })
+      .returning({ id: schema.rooms.id })
+    const instructor = await staffAt(one, 'pt-instructor', 'instructor')
+    for (const [i, first] of (['member', 'admin'] as const).entries()) {
+      const { lower, higher, pkg } = await byPackageOrder(grantOf('pt', pt.id))
+      for (const w of [lower, higher]) await grantOf('class', one.classPackageId)(w)
+      const startsAt = new Date(Date.now() + 20 * DAY + i * 3 * HOUR)
+      const created = await send('POST', '/portal/admin/pt-sessions/manual', one.admin.headers, {
+        location_id: one.locationId,
+        room_id: room!.id,
+        starts_at: startsAt.toISOString(),
+        ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+        session_type: '2on1',
+        instructor_pay_sgd: 60,
+        instructor_id: instructor.id,
+        members: [lower, higher].map(w => ({ client_id: w.clientId, client_package_id: pkg.get(w) })),
+      })
+      assert.equal(created.status, 201, JSON.stringify(created.body))
+      const sessionId = created.body.pt_request.session.id as string
+      // The session's cancel returns seats in booking order: the higher package's seat goes first.
+      await harness.db
+        .update(schema.bookings)
+        .set({ bookedAt: sql`${schema.bookings.bookedAt} - interval '1 minute'` })
+        .where(and(eq(schema.bookings.ptSessionId, sessionId), eq(schema.bookings.clientId, higher.clientId)))
+
+      const full = await addClass(one, { online: 1, waitlist: 3 })
+      const seated = await member(one)
+      const seat = await booked(seated, full)
+      const head = await joined(lower, full)
+      await joined(higher, full)
+
+      const memberCancel = () => cancel(seated, seat)
+      const sessionCancel = () => send('POST', `/portal/admin/pt-sessions/${created.body.pt_request.id}/cancel`, one.admin.headers)
+      const answers = await inTurn(
+        () => holdPackage(pkg.get(first === 'member' ? lower : higher)!),
+        first === 'member' ? [memberCancel, sessionCancel] : [sessionCancel, memberCancel],
+      )
+      const [byMember, byAdmin] = (first === 'member' ? answers : [...answers].reverse()) as [Reply, Reply]
+
+      assert.equal(byMember.status, 200, `${first} first: ${JSON.stringify(byMember.body)}`)
+      assert.equal(byAdmin.status, 200, `${first} first: ${JSON.stringify(byAdmin.body)}`)
+      assert.equal((await confirmedOn(lower, full)).length, 1, `${first} first: the head of the line holds the freed seat`)
+      assert.equal((await entryStatus(head.entry_id)).status, 'promoted', first)
+      const seats = await harness.db.select().from(schema.bookings).where(eq(schema.bookings.ptSessionId, sessionId))
+      assert.deepEqual(seats.map(s => s.state), ['cancelled', 'cancelled'], first)
+    }
+  })
+
+  test('WTL-41 a member frees a seat whose line holds two members while an Admin’s Package rule change cancels both their bookings on another class: both go through in either order', async () => {
+    const refused = await classPackagesSvc.createClassPackage(one.id, { name: `Waitlist refused ${run}`, kind: 'credit_bundle', credits: 10, validityDays: 90, priceSgd: '100.00' })
+    for (const first of ['member', 'admin'] as const) {
+      for (const bookedFirst of ['higher', 'lower'] as const) {
+        const round = `${first} first, the ${bookedFirst} package booked first on the changed class`
+        const changed = await addClass(one, { online: 2, waitlist: 0 }, 5 * DAY)
+        const { lower, higher, pkg } = await byPackageOrder(grantOf('class', refused.id))
+        for (const w of bookedFirst === 'higher' ? [higher, lower] : [lower, higher]) await booked(w, changed)
+        const full = await addClass(one, { online: 1, waitlist: 3 })
+        const seated = await member(one)
+        const seat = await booked(seated, full)
+        const head = await joined(lower, full)
+        await joined(higher, full)
+
+        const memberCancel = () => cancel(seated, seat)
+        const ruleChange = () =>
+          send('PATCH', `/portal/admin/schedule/classes/${changed}`, one.admin.headers, {
+            package_rule: { mode: 'only', package_ids: [one.classPackageId] },
+          })
+        const answers = await inTurn(
+          () => holdPackage(pkg.get(first === 'member' ? lower : higher)!),
+          first === 'member' ? [memberCancel, ruleChange] : [ruleChange, memberCancel],
+        )
+        const [byMember, byAdmin] = (first === 'member' ? answers : [...answers].reverse()) as [Reply, Reply]
+
+        assert.equal(byMember.status, 200, `${round}: ${JSON.stringify(byMember.body)}`)
+        assert.equal(byAdmin.status, 200, `${round}: ${JSON.stringify(byAdmin.body)}`)
+        assert.equal((await confirmedOn(lower, full)).length, 1, `${round}: the head of the line holds the freed seat`)
+        assert.equal((await entryStatus(head.entry_id)).status, 'promoted', round)
+        assert.equal((await confirmedOn(lower, changed)).length + (await confirmedOn(higher, changed)).length, 0, round)
+        assert.deepEqual([await creditsLeft(seated), await creditsLeft(lower), await creditsLeft(higher)], [10, 9, 10], round)
+      }
+    }
+  })
+
+  test('WTL-42 a member frees a seat on a class while an Admin removes a Complimentary Package booked there and on an earlier class, whose lines share a member who is not the head of this one: both go through', async () => {
+    const earlier = await addClass(one, { online: 1, waitlist: 3 }, 3 * DAY)
+    const later = await addClass(one, { online: 2, waitlist: 3 }, 4 * DAY)
+    const given = await member(one, false)
+    const comp = await grantOf('class', one.classPackageId, { complimentary: true })(given)
+    await booked(given, earlier)
+    await booked(given, later)
+    const seated = await member(one)
+    const seat = await booked(seated, later)
+    const shared = await member(one)
+    const head = await member(one)
+    await joined(shared, earlier)
+    await joined(head, later)
+    await joined(shared, later)
+
+    const [byMember, removal] = (await inTurn(
+      () => holdRows(tx => tx`SELECT id FROM classes WHERE id = ${later} FOR UPDATE`),
+      [
+        () => cancel(seated, seat),
+        () => send('POST', `/portal/admin/clients/${given.clientId}/packages/${comp}/remove`, one.admin.headers, { reason: 'Given to the wrong member' }),
+      ],
+    )) as [Reply, Reply]
+
+    assert.equal(byMember.status, 200, JSON.stringify(byMember.body))
+    assert.equal(byMember.body.refund_outcome, 'credit_returned')
+    assert.equal(removal.status, 200, JSON.stringify(removal.body))
+    assert.deepEqual(await harness.db.select().from(schema.clientPackages).where(eq(schema.clientPackages.id, comp)), [], 'the package is removed')
+    assert.equal((await confirmedOn(head, later)).length, 1, 'the head of the later line holds the seat the member freed')
+    assert.equal((await confirmedOn(shared, earlier)).length, 1, 'the shared member holds the earlier seat the Remove freed')
+    assert.equal((await confirmedOn(shared, later)).length, 1, 'and the later seat it freed')
   })
 
   test('WTL-12 once the class starts the line is over: reads show nothing, and the sweep marks it expired', async () => {
