@@ -534,8 +534,6 @@ async function followRoster(
  * partner's going leaves it on; a manual session goes on for whoever is still
  * seated, and is cancelled with the last one — unless staff cancelled it, who
  * free the seat to fill again, as removing a member does (PT-94, PT-101).
- *
- * `req` is the session's request, locked by the caller before the booking.
  */
 export async function settleSessionAfterBookingCancel(
   tx: Tx,

@@ -68,8 +68,6 @@ export async function promoteFromWaitlist(
       continue
     }
 
-    // The expiry sweep ends entries without the class lock. One it has ended,
-    // or is ending, is not booked, and the promotion never waits on its lock.
     const stillWaiting = and(
       eq(waitlistEntries.tenantId, tenantId),
       eq(waitlistEntries.id, next.id),
@@ -113,11 +111,6 @@ async function promotableLine(tx: Tx, tenantId: string, classId: string, now: Da
   return { cls, line: await waitingLine(tx, tenantId, classId, now) }
 }
 
-/**
- * Call before refunding a cancel's package when it frees an online seat, so two
- * cancels whose waitlists name each other's members take turns here instead of
- * deadlocking on each other's packages in promotion (#439).
- */
 export async function lockPromotionMembers(
   tx: Tx,
   tenantId: string,

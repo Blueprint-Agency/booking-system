@@ -188,7 +188,6 @@ export async function cancelBookingInTx(
 
   const cancelKind: 'class' | 'pt' = bk.kind === 'class' ? 'class' : 'pt'
 
-  // 2. The session's start time, read under the lock taken above (race-safe vs admin bulk cancel).
   if (parent?.kind !== bk.kind) throw new NotFoundError(bk.kind === 'class' ? 'class_not_found' : 'pt_session_not_found')
   if (source === 'instructor' && parent.kind === 'class') {
     assertMayWorkClass({ role: 'instructor', staffId: actorStaffId! }, parent)
@@ -328,9 +327,6 @@ export async function cancelBookingInTx(
     })
   }
 
-  // 7. A freed online seat goes to the head of the waitlist, in this
-  // transaction and under the class lock (spec-waitlist.md §5). A buffer or overbook seat is staff's, not the line's, and promotes
-  // nobody.
   const promotions = freesOnlineSeat ? await promoteFromWaitlist(tx, tenantId, bk.classId!, now) : []
 
   return { result: { refundOutcome, refundFired }, promotions }
@@ -340,7 +336,6 @@ type LockedParent =
   | { kind: 'class'; startsAt: Date; mainInstructorId: string }
   | { kind: 'pt'; startsAt: Date; req: LockedSessionRequest | undefined }
 
-/** Taken before the booking row, in the order every other writer of its seats locks them (#439). */
 async function lockParentOf(tx: Tx, tenantId: string, bookingId: string): Promise<LockedParent | undefined> {
   const [target] = await tx
     .select({

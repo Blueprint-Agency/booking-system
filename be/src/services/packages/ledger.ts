@@ -190,13 +190,6 @@ export async function isVoided(tx: Pick<Handle, 'select'>, tenantId: string, cli
   return row !== undefined
 }
 
-/**
- * Lock, for the rest of the transaction, the packages named and every package
- * of the members named, in id order. A pass that moves more than one member's
- * credits takes them all here, after any member-time lock and before its first
- * movement, so two passes never each hold one package and wait on the other's
- * (#439).
- */
 export async function lockPackages(
   tx: Tx,
   tenantId: string,
