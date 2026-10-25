@@ -3,7 +3,6 @@ import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { supportingDocumentAction, type ApiOwnLeaveRequest } from "@/lib/leave";
 
-/** Open the Supporting Document, or pick one to attach while the request still takes one. */
 export function DocumentButton({
   request,
   className,

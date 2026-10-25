@@ -82,14 +82,14 @@ export const LEAVE_STATUS_TONE: Record<
   revoked: "error",
 };
 
-/** What a request's document link does. Mirrors the backend's rule, which refuses
- *  an upload to a closed request `document_request_closed`. */
+export const STATUSES_TAKING_A_DOCUMENT: readonly LeaveStatus[] = ["pending", "approved"];
+
 export function supportingDocumentAction(
   request: Pick<ApiOwnLeaveRequest, "type" | "status" | "has_supporting_document">,
 ): "open" | "attach" | null {
   if (request.type === "annual") return null;
   if (request.has_supporting_document) return "open";
-  return request.status === "pending" || request.status === "approved" ? "attach" : null;
+  return STATUSES_TAKING_A_DOCUMENT.includes(request.status) ? "attach" : null;
 }
 
 /** Half days split the day at 1pm Singapore time — the same boundary the

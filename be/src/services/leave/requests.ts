@@ -808,10 +808,6 @@ function requireBucket(): void {
  * call, and the key is written only after the object is safely in the bucket —
  * a failed upload leaves the row pointing at nothing rather than at a missing
  * object.
- *
- * No row lock is held across the upload, so a reject or withdraw can commit
- * while it runs. The key is written only if the request still takes a
- * document; if not, the new file is removed and the upload refused.
  */
 export async function attachSupportingDocument(input: {
   tenantId: string
@@ -862,20 +858,23 @@ export async function attachSupportingDocument(input: {
     )
     .returning()
   if (updated) return updated
+  return refuseUploadOvertakenByDecision(input.tenantId, row.id, key)
+}
 
+async function refuseUploadOvertakenByDecision(tenantId: string, requestId: string, key: string): Promise<never> {
   const [current] = await db
     .select({ status: leaveRequests.status, key: leaveRequests.supportingDocumentR2Key })
     .from(leaveRequests)
-    .where(and(eq(leaveRequests.tenantId, input.tenantId), eq(leaveRequests.id, row.id)))
+    .where(and(eq(leaveRequests.tenantId, tenantId), eq(leaveRequests.id, requestId)))
     .limit(1)
   if (current?.key !== key) {
     await deleteObject(key).catch(err =>
-      reportError(err, 'leave document: removing a refused upload failed', { leaveRequestId: row.id }),
+      reportError(err, 'leave document: removing a refused upload failed', { leaveRequestId: requestId }),
     )
   }
   if (!current) throw new NotFoundError('leave_request_not_found')
   refuseClosedForDocument(current.status)
-  throw new Error(`leave request ${row.id} took no document while ${current.status}`)
+  throw new Error(`leave request ${requestId} took no document while ${current.status}`)
 }
 
 function refuseClosedForDocument(status: LeaveRequestRow['status']): void {
