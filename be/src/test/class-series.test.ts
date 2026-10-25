@@ -193,7 +193,7 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
     }
   })
 
-  test('SCH-38 an instructor id sent in capitals is that instructor: a series naming them twice, or as main and supporting, is refused and nothing is created', async () => {
+  test('SCH-39 an instructor id sent in capitals is that instructor: a series naming them twice, or as main and supporting, is refused and nothing is created', async () => {
     const twice = {
       ...template(),
       supporting_instructors: [
