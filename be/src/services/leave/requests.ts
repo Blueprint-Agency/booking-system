@@ -16,7 +16,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../../shared/errors'
-import { r2Bucket, putObject, signedObjectUrl } from '../../lib/r2'
+import { deleteObject, r2Bucket, putObject, signedObjectUrl } from '../../lib/r2'
 import { sgFormat } from '../../lib/time'
 import * as rules from './rules'
 
@@ -808,6 +808,10 @@ function requireBucket(): void {
  * call, and the key is written only after the object is safely in the bucket —
  * a failed upload leaves the row pointing at nothing rather than at a missing
  * object.
+ *
+ * No row lock is held across the upload, so a reject or withdraw can commit
+ * while it runs. The key is written only if the request still takes a
+ * document; if not, the new file is removed and the upload refused.
  */
 export async function attachSupportingDocument(input: {
   tenantId: string
@@ -828,9 +832,7 @@ export async function attachSupportingDocument(input: {
     )
     .limit(1)
   if (!row) throw new NotFoundError('leave_request_not_found')
-
-  const open = rules.checkRequestTakesDocument(row.status)
-  if (!open.ok) throw new ConflictError(open.code, { message: open.message })
+  refuseClosedForDocument(row.status)
 
   const check = rules.checkSupportingDocument({
     leaveType: row.type,
@@ -851,10 +853,34 @@ export async function attachSupportingDocument(input: {
   const [updated] = await db
     .update(leaveRequests)
     .set({ supportingDocumentR2Key: key, updatedAt: new Date() })
-    .where(and(eq(leaveRequests.tenantId, input.tenantId), eq(leaveRequests.id, row.id)))
+    .where(
+      and(
+        eq(leaveRequests.tenantId, input.tenantId),
+        eq(leaveRequests.id, row.id),
+        inArray(leaveRequests.status, rules.STATUSES_TAKING_A_DOCUMENT),
+      ),
+    )
     .returning()
-  if (!updated) throw new NotFoundError('leave_request_not_found')
-  return updated
+  if (updated) return updated
+
+  const [current] = await db
+    .select({ status: leaveRequests.status, key: leaveRequests.supportingDocumentR2Key })
+    .from(leaveRequests)
+    .where(and(eq(leaveRequests.tenantId, input.tenantId), eq(leaveRequests.id, row.id)))
+    .limit(1)
+  if (current?.key !== key) {
+    await deleteObject(key).catch(err =>
+      reportError(err, 'leave document: removing a refused upload failed', { leaveRequestId: row.id }),
+    )
+  }
+  if (!current) throw new NotFoundError('leave_request_not_found')
+  refuseClosedForDocument(current.status)
+  throw new Error(`leave request ${row.id} took no document while ${current.status}`)
+}
+
+function refuseClosedForDocument(status: LeaveRequestRow['status']): void {
+  const open = rules.checkRequestTakesDocument(status)
+  if (!open.ok) throw new ConflictError(open.code, { message: open.message })
 }
 
 /**

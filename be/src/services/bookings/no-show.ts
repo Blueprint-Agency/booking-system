@@ -9,6 +9,7 @@
  */
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
+import { now as clockNow } from '../../lib/clock'
 import { bookings } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { AppError, BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -59,7 +60,7 @@ export async function markNoShow(tenantId: string, input: MarkNoShowInput): Prom
       if (!pt) throw new NotFoundError('pt_session_not_found')
       startsAt = pt.startsAt
     }
-    if (new Date() < startsAt) throw new AppError(422, 'session_not_started')
+    if (clockNow() < startsAt) throw new AppError(422, 'session_not_started')
 
     await tx
       .update(bookings)

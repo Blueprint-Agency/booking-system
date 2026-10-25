@@ -1,9 +1,9 @@
 import { Loader2, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import type { ApiOwnLeaveRequest } from "@/lib/leave";
+import { supportingDocumentAction, type ApiOwnLeaveRequest } from "@/lib/leave";
 
-/** Open the Supporting Document, or pick one to attach when there is none yet. */
+/** Open the Supporting Document, or pick one to attach while the request still takes one. */
 export function DocumentButton({
   request,
   className,
@@ -15,14 +15,16 @@ export function DocumentButton({
   onOpen: () => void;
   onAttach: () => void;
 }) {
+  const action = supportingDocumentAction(request);
+  if (!action) return null;
   return (
     <button
       type="button"
       className={cn("flex items-center gap-1 text-xs text-accent hover:underline", className)}
-      onClick={request.has_supporting_document ? onOpen : onAttach}
+      onClick={action === "open" ? onOpen : onAttach}
     >
       <Paperclip className="h-3 w-3" />
-      {request.has_supporting_document ? "Document" : "Attach document"}
+      {action === "open" ? "Document" : "Attach document"}
     </button>
   );
 }

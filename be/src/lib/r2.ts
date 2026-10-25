@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
   ListObjectsV2Command,
@@ -80,6 +81,12 @@ export async function putObject(key: string, body: Uint8Array, contentType: stri
       }),
       { abortSignal },
     ),
+  )
+}
+
+export async function deleteObject(key: string): Promise<void> {
+  await outbound('storage', 'deleteObject', abortSignal =>
+    r2.send(new DeleteObjectCommand({ Bucket: r2Bucket(), Key: key }), { abortSignal }),
   )
 }
 

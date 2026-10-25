@@ -508,7 +508,7 @@ Morning or afternoon, costing 0.5 days, permitted only on a Leave Request coveri
 _Avoid_: partial day, AM/PM leave
 
 **Supporting Document**:
-One optional file a staff member attaches to a medical or study Leave Request — never to an annual one, which has nothing to evidence. JPG, PNG or PDF up to 5MB, handed back to admins and to the person who filed it through a short-lived signed link (the bucket itself is public, so the two-UUID key is the real protection — see backend-architecture.md §6c). One request holds one; a second upload replaces the first.
+One optional file a staff member attaches to a medical or study Leave Request — never to an annual one, which has nothing to evidence. JPG, PNG or PDF up to 5MB, handed back to admins and to the person who filed it through a short-lived signed link (the bucket itself is public, so the two-UUID key is the real protection — see backend-architecture.md §6c). One request holds one; a second upload replaces the first. Only a pending or approved request takes one: once a request is rejected, withdrawn, cancelled or revoked, an upload is refused, though a document already attached can still be opened.
 _Avoid_: medical certificate, MC, attachment, proof
 
 **Occupying**:

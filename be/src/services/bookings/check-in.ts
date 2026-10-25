@@ -17,6 +17,7 @@
  */
 import { and, asc, eq, gte, inArray, lt, lte, ne, or } from 'drizzle-orm'
 import { db } from '../../db'
+import { now as clockNow } from '../../lib/clock'
 import type { BookingSource } from '../../db/enums'
 import { bookings, checkIns, waitlistEntries } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
@@ -190,7 +191,7 @@ async function refuseOutsideWindow(
   closesWithTheDay: boolean,
 ): Promise<void> {
   const [minutes, timezone] = await Promise.all([windowMinutes(tx, tenantId), timezoneOf(tenantId)])
-  const now = new Date()
+  const now = clockNow()
   const state = checkInWindow({ now, startsAt: ses.startsAt, minutesBefore: minutes, timezone, closesWithTheDay })
   if (state === 'not_open') {
     const opensAt = checkInOpensAt(ses.startsAt, minutes)
@@ -415,7 +416,7 @@ export async function listCheckInDay(
   tenantId: string,
   input: { staffId: string; source: CheckInSource; locationId?: string; now?: Date },
 ): Promise<CheckInDay> {
-  const now = input.now ?? new Date()
+  const now = input.now ?? clockNow()
   const timezone = await timezoneOf(tenantId)
   const date = localDateOf(now, timezone)
   const dayStart = zonedInstant(date, '00:00', timezone)

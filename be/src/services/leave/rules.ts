@@ -694,10 +694,12 @@ export function checkSupportingDocument(input: {
   return { ok: true, extension }
 }
 
+export const STATUSES_TAKING_A_DOCUMENT = ['pending', 'approved'] as const satisfies readonly LeaveStatus[]
+
 export function checkRequestTakesDocument(
   status: LeaveStatus,
 ): { ok: true } | { ok: false; code: 'document_request_closed'; message: string } {
-  if (status === 'pending' || status === 'approved') return { ok: true }
+  if ((STATUSES_TAKING_A_DOCUMENT as readonly LeaveStatus[]).includes(status)) return { ok: true }
   return {
     ok: false,
     code: 'document_request_closed',

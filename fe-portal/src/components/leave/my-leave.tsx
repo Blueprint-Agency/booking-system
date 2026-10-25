@@ -26,6 +26,7 @@ import {
   LEAVE_STATUS_TONE,
   LEAVE_TYPE_LABEL,
   OWN_LEAVE_PATH,
+  supportingDocumentAction,
   type ApiLeaveBalance,
   type ApiOwnLeaveRequest,
   type HalfDay,
@@ -390,9 +391,9 @@ export function MyLeave() {
                     {r.decision_reason && (
                       <p className="break-words text-xs text-muted">Admin: {r.decision_reason}</p>
                     )}
-                    {(r.type !== "annual" || canTransition(r)) && (
+                    {(supportingDocumentAction(r) || canTransition(r)) && (
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                        {r.type !== "annual" ? (
+                        {supportingDocumentAction(r) ? (
                           <DocumentButton
                             request={r}
                             className="-ml-1 min-h-10 px-1"
@@ -447,17 +448,15 @@ export function MyLeave() {
                       </td>
                       <td className="px-3 py-2.5 text-muted">
                         {LEAVE_TYPE_LABEL[r.type]}
-                        {r.type !== "annual" && (
-                          <DocumentButton
-                            request={r}
-                            className="mt-0.5"
-                            onOpen={() => void openDocument(r.id)}
-                            onAttach={() => {
-                              setAttachTo(r.id);
-                              attachInput.current?.click();
-                            }}
-                          />
-                        )}
+                        <DocumentButton
+                          request={r}
+                          className="mt-0.5"
+                          onOpen={() => void openDocument(r.id)}
+                          onAttach={() => {
+                            setAttachTo(r.id);
+                            attachInput.current?.click();
+                          }}
+                        />
                       </td>
                       <td className="px-3 py-2.5 tabular-nums text-muted">{r.days}</td>
                       <td className="px-3 py-2.5">
