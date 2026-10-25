@@ -988,6 +988,32 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(packageId), 8)
   })
 
+  test('PT-156 linking a 2on1 partner by an address that is not an email, or by neither a member nor an email, is refused 400 invalid_request with a sentence, and the request still waits', async () => {
+    const host = await member(one, 'Lin Host')
+    const packageId = await givePt(one, host, '2on1')
+    const requestId = await requestOk(one, host, {
+      sessionType: '2on1',
+      clientPackageId: packageId,
+      partner: { kind: 'new', name: 'Lin Partner', email: emailFor('lin-partner-one') },
+    })
+    for (const [body, says] of [
+      [{ email: 'not an email' }, /email address/i],
+      [{}, /member or an email/i],
+    ] as const) {
+      const refused = await expectStatus(
+        await harness.app.request(`/api/v1/portal/admin/pt-sessions/${requestId}/link-partner`, {
+          method: 'POST',
+          headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+        400,
+      )
+      assert.equal(refused.error, 'invalid_request', JSON.stringify(refused))
+      assert.match(String(refused.message), says, JSON.stringify(refused))
+    }
+    assert.equal((await requestRow(requestId)).status, 'pending')
+  })
+
   test('PT-31 a request already scheduled or cancelled cannot be scheduled again', async () => {
     const oli = await member(one, 'Oli Twice')
     const packageId = await givePt(one, oli, '1on1')

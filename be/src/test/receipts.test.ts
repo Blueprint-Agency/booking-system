@@ -368,6 +368,15 @@ describe('member receipts over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal((await receiptsOf(kai, `?to=${sgDay(-1)}`)).total, 0, 'nothing up to yesterday')
     await expectStatus(await harness.app.request('/api/v1/me/receipts?from=yesterday', { headers: kai.headers }), 400)
   })
+
+  test('INV-112 a member Receipts filter from or to a date with a five-digit year is refused 400 invalid_request with a sentence', async () => {
+    const ida = await member(one)
+    for (const query of ['?from=20260-01-01', '?to=20260-01-01']) {
+      const body = await expectStatus(await harness.app.request(`/api/v1/me/receipts${query}`, { headers: ida.headers }), 400)
+      assert.equal(body.error, 'invalid_request', JSON.stringify(body))
+      assert.match(String(body.message), /date like/i, JSON.stringify(body))
+    }
+  })
 })
 
 /** `R-000123` → 123. */

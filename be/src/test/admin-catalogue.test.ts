@@ -939,4 +939,75 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
     const badKey = await send('PATCH', '/feature-flags/Not%20a%20key!', one.admin, { enabled: true })
     assert.equal(badKey.status, 400)
   })
+
+  /* ── Refusals a form can show ───────────────────────────────────────── */
+
+  /** Each body is refused `400 invalid_request` with a sentence matching `says`. */
+  async function refusedWithSentence(cases: readonly { method: string; path: string; body: unknown; says: RegExp }[]) {
+    for (const { method, path, body, says } of cases) {
+      const res = await send(method, path, one.admin, body)
+      const what = `${method} ${path} ${JSON.stringify(body).slice(0, 80)}: ${JSON.stringify(res.body).slice(0, 300)}`
+      assert.equal(res.status, 400, what)
+      assert.equal(res.body.error, 'invalid_request', what)
+      assert.match(String(res.body.message), says, what)
+    }
+  }
+
+  test('SCH-38 a class type or room name that is blank or past 120 characters, or a class type description past 500, is refused 400 invalid_request with a sentence naming the field and its limit, and nothing is written', async () => {
+    const type = created(await send('POST', '/class-types', one.admin, { name: `${NAME} Refusals type` }))
+    const room = created(await send('POST', '/rooms', one.admin, { location_id: one.locationId, name: `${NAME} Refusals room`, capacity: 10 }))
+    await refusedWithSentence([
+      { method: 'POST', path: '/class-types', body: { name: '' }, says: /name/i },
+      { method: 'POST', path: '/class-types', body: { name: 'n'.repeat(121) }, says: /name.*120/i },
+      { method: 'POST', path: '/class-types', body: { name: `${NAME} Wordy`, description: 'd'.repeat(501) }, says: /description.*500/i },
+      { method: 'PATCH', path: `/class-types/${type.id}`, body: { name: 'n'.repeat(121) }, says: /name.*120/i },
+      { method: 'PATCH', path: `/class-types/${type.id}`, body: { description: 'd'.repeat(501) }, says: /description.*500/i },
+      { method: 'POST', path: '/rooms', body: { location_id: one.locationId, name: '', capacity: 5 }, says: /name/i },
+      { method: 'POST', path: '/rooms', body: { location_id: one.locationId, name: 'n'.repeat(121), capacity: 5 }, says: /name.*120/i },
+      { method: 'PATCH', path: `/rooms/${room.id}`, body: { name: 'n'.repeat(121) }, says: /name.*120/i },
+      { method: 'PATCH', path: `/rooms/${room.id}`, body: { capacity: 0 }, says: /capacity/i },
+    ])
+    const [typeAfter] = await harness.db.select().from(schema.classTypes).where(eq(schema.classTypes.id, type.id))
+    assert.equal(typeAfter!.name, `${NAME} Refusals type`, 'a refused edit leaves the class type')
+    const [roomAfter] = await harness.db.select().from(schema.rooms).where(eq(schema.rooms.id, room.id))
+    assert.equal(roomAfter!.name, `${NAME} Refusals room`, 'a refused edit leaves the room')
+    const wordy = await harness.db.select().from(schema.classTypes).where(eq(schema.classTypes.name, `${NAME} Wordy`))
+    assert.deepEqual(wordy, [], 'a refused create writes no class type')
+  })
+
+  test('LOC-17 a location name that is blank or past 120 characters, an address past 500, a phone past 40, or a Maps link that is not a link, is refused 400 invalid_request with a sentence naming the field, and nothing is written', async () => {
+    const location = created(await send('POST', '/locations', one.admin, { name: `${NAME} Refusals hall` }))
+    await refusedWithSentence([
+      { method: 'POST', path: '/locations', body: { name: '' }, says: /name/i },
+      { method: 'POST', path: '/locations', body: { name: 'n'.repeat(121) }, says: /name.*120/i },
+      { method: 'POST', path: '/locations', body: { name: `${NAME} Far`, address: 'a'.repeat(501) }, says: /address.*500/i },
+      { method: 'POST', path: '/locations', body: { name: `${NAME} Far`, phone: '9'.repeat(41) }, says: /phone.*40/i },
+      { method: 'POST', path: '/locations', body: { name: `${NAME} Far`, gmaps_url: 'not a link' }, says: /maps link/i },
+      { method: 'PATCH', path: `/locations/${location.id}`, body: { gmaps_url: `https://maps.example.com/${'x'.repeat(500)}` }, says: /maps link.*500/i },
+      { method: 'PATCH', path: `/locations/${location.id}`, body: { name: 'n'.repeat(121) }, says: /name.*120/i },
+    ])
+    const far = await harness.db.select().from(schema.locations).where(eq(schema.locations.name, `${NAME} Far`))
+    assert.deepEqual(far, [], 'a refused create writes no location')
+    const [after] = await harness.db.select().from(schema.locations).where(eq(schema.locations.id, location.id))
+    assert.equal(after!.name, `${NAME} Refusals hall`, 'a refused edit leaves the location')
+  })
+
+  test('PKG-46 a class or PT package name past 160 characters, PT sessions past 200, or a promotion with a blank label or a date that is not one, is refused 400 invalid_request with a sentence naming the field, and nothing is written', async () => {
+    const bundle = created(await send('POST', '/class-packages', one.admin, bundleBody('Refusals bundle')))
+    const pt = created(await send('POST', '/pt-packages', one.admin, ptBody('Refusals PT')))
+    await refusedWithSentence([
+      { method: 'POST', path: '/class-packages', body: bundleBody('x', { name: 'n'.repeat(161) }), says: /name.*160/i },
+      { method: 'POST', path: '/class-packages', body: bundleBody('Promo', { promotions: [promotion({ label: '' })] }), says: /promotion.*label/i },
+      { method: 'POST', path: '/class-packages', body: bundleBody('Promo', { promotions: [promotion({ starts_at: '20260-01-01T00:00:00.000Z' })] }), says: /promotion.*date/i },
+      { method: 'PATCH', path: `/class-packages/${bundle.id}`, body: { name: 'n'.repeat(161) }, says: /name.*160/i },
+      { method: 'POST', path: '/pt-packages', body: ptBody('x', { name: 'n'.repeat(161) }), says: /name.*160/i },
+      { method: 'POST', path: '/pt-packages', body: ptBody('Many', { num_sessions: 201 }), says: /sessions.*200/i },
+      { method: 'POST', path: '/pt-packages', body: ptBody('Promo', { promotions: [promotion({ label: '' })] }), says: /promotion.*label/i },
+      { method: 'PATCH', path: `/pt-packages/${pt.id}`, body: { num_sessions: 201 }, says: /sessions.*200/i },
+    ])
+    const [ptAfter] = await harness.db.select().from(schema.ptPackages).where(eq(schema.ptPackages.id, pt.id))
+    assert.equal(ptAfter!.numSessions, 5, 'a refused edit leaves the PT package')
+    const promo = await harness.db.select().from(schema.classPackages).where(eq(schema.classPackages.name, `${NAME} Promo`))
+    assert.deepEqual(promo, [], 'a refused create writes no package')
+  })
 })
