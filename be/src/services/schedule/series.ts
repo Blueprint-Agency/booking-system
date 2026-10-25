@@ -591,8 +591,8 @@ function assertTemplate(t: SeriesTemplate): void {
   // timetable has, and allowing it would make "the date" of an occurrence ambiguous.
   if (t.endTime <= t.startTime) throw new BadRequestError('end_time_before_start_time')
   assertHasCapacity(t)
-  const supporting = t.supportingInstructors.map(s => s.instructorId)
-  if (supporting.includes(t.mainInstructorId)) {
+  const supporting = t.supportingInstructors.map(s => s.instructorId.toLowerCase())
+  if (supporting.includes(t.mainInstructorId.toLowerCase())) {
     throw new BadRequestError('supporting_instructor_duplicates_main')
   }
   if (new Set(supporting).size !== supporting.length) {
