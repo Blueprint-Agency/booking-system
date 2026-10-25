@@ -961,6 +961,88 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(sessionsAsked(), sessions, 'a payment page was made for a Purchase never paid towards')
   })
 
+  /* ── what the confirmation page is told ─────────────────────────────── */
+
+  /** The last session a checkout or a Resume asked for, as the provider reads it back once paid on `intent`. */
+  function paidSession(intent: string, amountTotal?: number) {
+    const { params } = lastSession()
+    return {
+      id: `cs_${randomUUID()}`,
+      payment_intent: intent,
+      payment_status: 'paid',
+      amount_total: amountTotal ?? sessionTotal(params),
+      metadata: params.metadata,
+    }
+  }
+
+  /** The confirmation page's `sync-session` for `session`, as the member it was for. */
+  async function sync(who: Member, session: ReturnType<typeof paidSession>): Promise<Record<string, any>> {
+    fake.reply('checkout.sessions.retrieve', (id: unknown) =>
+      id === session.id ? session : { id, status: 'expired', payment_status: 'unpaid', payment_intent: null },
+    )
+    return expectStatus(await post(who, '/api/v1/me/checkout/sync-session', { session_id: session.id }), 200)
+  }
+
+  test('PAY-63 a payment that settles its Purchase is confirmed to the member as granted, with its Receipt', async () => {
+    const ivy = await member(one)
+    await expectStatus(await buyClass(ivy, one.bundleId), 200)
+
+    const synced = await sync(ivy, paidSession(`pi_${randomUUID()}`))
+
+    assert.equal(synced.status, 'granted')
+    assert.equal(synced.purchase, null, 'nothing is owed')
+    assert.match(synced.receipt?.number ?? '', /^R-\d{6}$/)
+    assert.equal((await packagesOf(ivy)).length, 1)
+  })
+
+  test('PAY-64 a confirmation page reloaded after the studio refunded the package is told the Purchase was refunded, not granted', async () => {
+    const eve = await member(one)
+    await expectStatus(await buyClass(eve, one.bundleId), 200)
+    const intent = `pi_${randomUUID()}`
+    const session = paidSession(intent)
+    assert.equal((await sync(eve, session)).status, 'granted')
+    const [granted] = await packagesOf(eve)
+    await expectStatus(await asAdmin('POST', `/clients/${eve.clientId}/packages/${granted!.id}/refund`, { reason: 'Member asked' }), 200)
+    await expectStatus(await deliverRefund(intent, 15000), 200)
+    assert.equal((await purchasesOf(eve))[0]!.status, 'refunded')
+
+    assert.deepEqual(await sync(eve, session), { status: 'refunded', purchase: null, receipt: null })
+  })
+
+  test('PAY-65 a payment that lands on a Purchase already refunded and Abandoned is told to the member as abandoned, not granted', async () => {
+    const { who, firstIntent } = await midResume()
+    await expectStatus(await deliverRefund(firstIntent, 5000), 200)
+
+    const late = await sync(who, paidSession(`pi_${randomUUID()}`))
+
+    assert.deepEqual(late, { status: 'abandoned', purchase: null, receipt: null })
+    assert.equal((await packagesOf(who)).length, 0)
+  })
+
+  test('PAY-66 a payment the studio refunded in full from the provider dashboard before it was recorded is told to the member as abandoned, not granted', async () => {
+    const ola = await member(one)
+    await expectStatus(await buyClass(ola, one.bundleId), 200)
+    const intent = `pi_${randomUUID()}`
+    await expectStatus(await deliverRefund(intent, 15000), 200)
+
+    const synced = await sync(ola, paidSession(intent))
+
+    assert.deepEqual(synced, { status: 'abandoned', purchase: null, receipt: null })
+    assert.equal((await packagesOf(ola)).length, 0)
+  })
+
+  test('PAY-67 a part payment that leaves a Balance is told to the member as owing, with what is still owed, and grants nothing yet', async () => {
+    const ben = await member(one)
+    await expectStatus(await buyClass(ben, one.bundleId), 200)
+
+    const synced = await sync(ben, paidSession(`pi_${randomUUID()}`, 5000))
+
+    assert.equal(synced.status, 'owing')
+    assert.equal(synced.purchase?.outstanding_sgd, '100.00')
+    assert.equal(synced.receipt, null)
+    assert.equal((await packagesOf(ben)).length, 0)
+  })
+
   test('PAY-17 a webhook whose signature does not verify grants nothing and records no payment', async () => {
     const eli = await member(one)
     await expectStatus(await buyClass(eli, one.bundleId), 200)
