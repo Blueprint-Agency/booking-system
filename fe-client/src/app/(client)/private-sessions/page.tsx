@@ -25,7 +25,16 @@ import {
 import { usePtBookingWindow } from "@/lib/use-pt-booking-window";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { cn } from "@/lib/utils";
-import { initialPtPick, ptPickRows, sessionTypeLabel, sessionsWord } from "@/lib/pt-package-picker";
+import {
+  initialPtPick,
+  ptLatestDate,
+  ptLatestEnd,
+  ptPickRows,
+  ptSlotEndProblem,
+  ptSlotStart,
+  sessionTypeLabel,
+  sessionsWord,
+} from "@/lib/pt-package-picker";
 import { ConfirmPtRequestSheet, slotLabel } from "@/components/private-sessions/confirm-pt-request-sheet";
 import { RequestSentCelebration } from "@/components/celebration/request-sent-celebration";
 
@@ -36,6 +45,12 @@ function apiErrorCode(err: unknown): string | null {
   if (!err.body || typeof err.body !== "object" || !("error" in err.body)) return null;
   const code = (err.body as { error?: unknown }).error;
   return typeof code === "string" ? code : null;
+}
+
+function serverSentence(err: unknown): string | null {
+  if (!(err instanceof ApiError) || !err.body || typeof err.body !== "object") return null;
+  const message = (err.body as { message?: unknown }).message;
+  return typeof message === "string" && message ? message : null;
 }
 
 // The next hour as `HH:00`, so a new slot starts on a time the picker offers.
@@ -142,7 +157,8 @@ export default function PrivateSessionsPage() {
         : s.proposedDate < dateBounds.earliest
           ? `Time ${i + 1}: pick a date from tomorrow on.`
           : null;
-      if (problem) errs.push(problem);
+      const ends = problem ?? ptSlotEndProblem(s, i + 1, latestEnd);
+      if (ends) errs.push(ends);
     });
     if (sessionType === "2on1") {
       if (!partnerEmail.trim()) errs.push("Partner email is required for a 2-on-1.");
@@ -178,6 +194,9 @@ export default function PrivateSessionsPage() {
     const code = apiErrorCode(err);
     if (code === ERROR_CODES.insufficient_pt_credit) {
       return `That package no longer has ${sessionsWord(requestCost)} left. Pick another, or buy a package.`;
+    }
+    if (code === ERROR_CODES.package_expires_before_session) {
+      return serverSentence(err) ?? "That package runs out before one of your times. Pick an earlier time, or another package.";
     }
     if (code === ERROR_CODES.slot_date_too_soon || code === ERROR_CODES.slot_date_too_far) {
       return (
@@ -231,13 +250,24 @@ export default function PrivateSessionsPage() {
 
   const balanceForType = (t: "1on1" | "2on1") => (t === "2on1" ? pt2on1 : pt1on1);
   const requestCost = computedSessionType === "2on1" ? 2 : 1;
+  const latestStart = useMemo(() => {
+    const starts = slots.filter((s) => s.proposedDate && s.startTime).map(ptSlotStart);
+    return starts.length ? Math.max(...starts) : null;
+  }, [slots]);
   // Every PT package of this session type, each able to pay or greyed with the
   // reason — the confirm sheet's list. Any number of PT packages may run at
   // once (be/docs/adr/0010), so a Dormant pick simply starts.
   const pickRows = useMemo(
-    () => ptPickRows(ptPackages, computedSessionType, requestCost),
-    [ptPackages, computedSessionType, requestCost],
+    () => ptPickRows(ptPackages, computedSessionType, requestCost, latestStart),
+    [ptPackages, computedSessionType, requestCost, latestStart],
   );
+  // The furthest any package of this type runs: no time after it can be paid
+  // for, so the date picker stops there.
+  const latestEnd = useMemo(
+    () => ptLatestEnd(ptPackages.filter((p) => p.sessionType === computedSessionType)),
+    [ptPackages, computedSessionType],
+  );
+  const latestDate = ptLatestDate(dateBounds.latest, latestEnd);
   const hasPackageForType = pickRows.length > 0;
   const locationName = locations?.find((l) => l.id === locationId)?.name ?? null;
   const classTypeName = classTypeId ? (classTypes?.find((t) => t.id === classTypeId)?.name ?? null) : null;
@@ -349,7 +379,7 @@ export default function PrivateSessionsPage() {
                         id={`slot-${i}-date`}
                         type="date"
                         min={dateBounds.earliest}
-                        max={dateBounds.latest}
+                        max={latestDate}
                         value={s.proposedDate}
                         onChange={(e) => setSlot(i, { proposedDate: e.target.value })}
                         className="w-full min-h-[44px] rounded-lg border border-ink/10 bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
