@@ -825,7 +825,6 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
         })
       ).clientPackageId
 
-  /** Two members whose packages sort `lower` then `higher` by id, each holding only the package `grant` gives them. */
   async function byPackageOrder(grant: (who: Member) => Promise<string>): Promise<{ lower: Member; higher: Member; pkg: Map<Member, string> }> {
     const pair = [await member(one, false), await member(one, false)]
     const pkg = new Map([[pair[0]!, await grant(pair[0]!)], [pair[1]!, await grant(pair[1]!)]])
@@ -833,7 +832,6 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     return { lower, higher, pkg }
   }
 
-  /** Hold rows, start `calls` in order, each once the ones before it queue behind the held rows, then let go. */
   async function inTurn(hold: () => Promise<{ release: () => Promise<void> }>, calls: Array<() => Promise<Reply>>): Promise<Reply[]> {
     const held = await hold()
     try {
@@ -916,6 +914,12 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
 
   const holdPackage = (id: string) => holdRows(tx => tx`SELECT id FROM client_packages WHERE id = ${id} FOR UPDATE`)
 
+  const seatFirstInCancelOrder = (ptSessionId: string, who: Member) =>
+    harness.db
+      .update(schema.bookings)
+      .set({ bookedAt: sql`${schema.bookings.bookedAt} - interval '1 minute'` })
+      .where(and(eq(schema.bookings.ptSessionId, ptSessionId), eq(schema.bookings.clientId, who.clientId)))
+
   test('WTL-40 a member frees a seat whose line holds both members of a two-to-one private session while an Admin cancels that session: both go through in either order', async () => {
     const pt = await ptPackagesSvc.createPtPackage(one.id, { name: `Waitlist PT ${run}`, sessionType: '2on1', numSessions: 10, validityDays: 90, priceSgd: '900.00' })
     const [room] = await harness.db
@@ -939,11 +943,7 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
       })
       assert.equal(created.status, 201, JSON.stringify(created.body))
       const sessionId = created.body.pt_request.session.id as string
-      // The session's cancel returns seats in booking order: the higher package's seat goes first.
-      await harness.db
-        .update(schema.bookings)
-        .set({ bookedAt: sql`${schema.bookings.bookedAt} - interval '1 minute'` })
-        .where(and(eq(schema.bookings.ptSessionId, sessionId), eq(schema.bookings.clientId, higher.clientId)))
+      await seatFirstInCancelOrder(sessionId, higher)
 
       const full = await addClass(one, { online: 1, waitlist: 3 })
       const seated = await member(one)

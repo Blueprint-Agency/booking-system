@@ -111,11 +111,6 @@ async function promotableLine(tx: Tx, tenantId: string, classId: string, now: Da
   return { cls, line: await waitingLine(tx, tenantId, classId, now) }
 }
 
-/**
- * Only the head: a member further back is locked if the promotion reaches them,
- * as on any booking. Locking the whole line meets every path that refunds
- * several members in an order of its own (a session cancel, a rule change).
- */
 export async function lockPromotionHead(
   tx: Tx,
   tenantId: string,
