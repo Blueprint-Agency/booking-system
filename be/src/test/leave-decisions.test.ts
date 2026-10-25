@@ -222,8 +222,9 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
   async function inState(
     who: Staff,
     state: 'approved' | 'rejected' | 'withdrawn' | 'cancelled' | 'revoked',
+    type: LeaveType = 'annual',
   ): Promise<string> {
-    const { id } = await file(who, 'annual')
+    const { id } = await file(who, type)
     const step = async (res: Res) => assert.equal(res.status, 200, `to ${state}: ${res.text}`)
     if (state === 'rejected') await step(await reject(adminOne, id, `No ${run}`))
     else if (state === 'withdrawn') await step(await withdraw(who, id))
@@ -1112,5 +1113,63 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
       assert.ok(err.stack?.includes(failure.message), `${slug}: the error object, stack and all`)
       assert.equal(line.to, ben.email)
     }
+  })
+
+  test('LEV-138 the emails a submission and a decision send go out once the request is committed, so no row lock is held across the send', async () => {
+    const reason = `Committed first ${run}`
+    const statusWhenSent = new Map<string, string | null>()
+    const restore = mailer.useTransport({
+      name: 'null',
+      async send(message) {
+        const [committed] = await harness.db
+          .select({ status: schema.leaveRequests.status })
+          .from(schema.leaveRequests)
+          .where(eq(schema.leaveRequests.reason, reason))
+        statusWhenSent.set(templateOf(message)!, committed?.status ?? null)
+        return recordingTransport.send(message)
+      },
+    })
+    try {
+      const req = await file(ada, 'annual', { reason })
+      assert.equal((await approve(adminOne, req.id)).status, 200)
+    } finally {
+      restore()
+    }
+    assert.equal(statusWhenSent.get('leave_request_submitted'), 'pending', 'the admins are emailed about a request another connection can already read')
+    assert.equal(statusWhenSent.get('leave_approved'), 'approved', 'the applicant is emailed about a decision another connection can already read')
+  })
+
+  test('LEV-139 a decision whose transaction rolls back mails no one', async () => {
+    const { withTenant } = await import('../db')
+    const { decideLeaveRequest } = await import('../services/leave/requests')
+    const tenantId = harness.tenants.one.id
+    const req = await file(ben, 'annual')
+    const mailedBefore = mailTo(ben.email, 'leave_approved').length
+
+    await assert.rejects(
+      withTenant(tenantId, async () => {
+        await decideLeaveRequest(tenantId, { action: 'approve', id: req.id, actorStaffId: adminOne.staffId })
+        throw new Error(`rolled back after the decision ${run}`)
+      }),
+      /rolled back after the decision/,
+    )
+
+    assert.equal((await row(req.id)).status, 'pending', 'the decision rolled back')
+    assert.equal(mailTo(ben.email, 'leave_approved').length, mailedBefore, 'nobody is told of a decision that did not stand')
+  })
+
+  test('LEV-140 a Supporting Document is refused, with a sentence saying why, on a request that was rejected, withdrawn, cancelled or revoked, and still taken on an approved one', async () => {
+    for (const state of ['rejected', 'withdrawn', 'cancelled', 'revoked'] as const) {
+      const id = await inState(cal, state, 'medical')
+      const res = await upload(cal, id, fileBytes(100), 'application/pdf', 'x.pdf')
+      refused(res, 409, 'document_request_closed', state)
+      assert.match(res.body.message, new RegExp(`This request was ${state}\\.`), `${state}: the refusal says why`)
+      assert.equal((await row(id)).supportingDocumentR2Key, null, `${state}: nothing is attached`)
+    }
+
+    const approved = await inState(cal, 'approved', 'medical')
+    const res = await upload(cal, approved, fileBytes(100), 'application/pdf', 'x.pdf')
+    assert.equal(res.status, 200, res.text)
+    assert.ok((await row(approved)).supportingDocumentR2Key, 'an approved request takes its document')
   })
 })
