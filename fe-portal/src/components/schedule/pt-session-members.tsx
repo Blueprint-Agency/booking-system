@@ -20,6 +20,7 @@ import {
   addMemberBody,
   addSessionMember,
   canAddMember,
+  canCancelSession,
   downgradeConfirm,
   isManual,
   removeSessionMember,
@@ -46,6 +47,8 @@ export function PtSessionMembers({
 
   const state = computeEventState({ startsAt: data.starts_at, endsAt: data.ends_at, lifecycle: data.lifecycle });
   // Once it has ended its seats were used; the backend refuses `session_ended`.
+  // A member is removed only before it starts, as the session is cancelled
+  // (`session_already_started`, #434).
   // Changing who is on a private session is Take PT bookings' (an Admin always
   // may); without it the list still reads, and the actions are gone.
   const editable = isManual(data) && may("take_pt_bookings") && (state === "scheduled" || state === "ongoing");
@@ -68,7 +71,7 @@ export function PtSessionMembers({
 
   function remove(cl: SchedulePtAttendee) {
     if (!api) return;
-    if (!confirm(`Remove ${cl.name} from this session? They get their session back on their own package.`)) return;
+    if (!confirm(`Remove ${cl.name} from this session? They get their session back on their own package, unless that package has been refunded.`)) return;
     void run(cl.id, () => removeSessionMember(api, role, data.id, cl.id), "Couldn't remove them");
   }
 
@@ -130,7 +133,7 @@ export function PtSessionMembers({
               <div className="ml-auto flex shrink-0 items-center gap-2">
                 <PtCheckInBadge state={cl.check_in_state} />
                 {/* The last member off is a cancel, not a removal: use Cancel session. */}
-                {editable && data.clients.length > 1 && cl.check_in_state !== "attended" && (
+                {editable && canCancelSession(data) && data.clients.length > 1 && cl.check_in_state !== "attended" && (
                   <Button
                     type="button"
                     variant="ghost"

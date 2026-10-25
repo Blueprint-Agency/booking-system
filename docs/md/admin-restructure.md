@@ -487,9 +487,9 @@ Credit deduction happens **on submit**, not on schedule. 1 session debited for `
 |---|---|---|
 | `→ pending` | Client submits | n/a (credits debited) |
 | `pending → scheduled` | Admin schedules (creates `pt_sessions` + per-client `bookings`) | n/a |
-| `pending → cancelled_before_scheduled` | Client or admin cancels while pending **or** request expires | **Refund** — 1 (1on1) or 2 (2on1) sessions returned to the source package |
-| `scheduled → cancelled_after_scheduled` | Client or admin cancels after scheduling | **No refund (v1)** — cascade-cancels the `pt_sessions` row + every booking on it; bookings marked `state='cancelled'`, `refund_outcome='forfeited'` |
-| `scheduled → attended` | Check-in on the linked PT booking flips the mirrored status | n/a |
+| `pending → cancelled_before_scheduled` | Client or admin cancels while pending **or** request expires | **Refund** — 1 (1on1) or 2 (2on1) sessions returned to the source package, unless it has been Voided by a Refund |
+| `scheduled → cancelled_after_scheduled` | Client or staff cancel after scheduling, staff only before the session starts (`session_already_started`, #241) | Cascade-cancels the `pt_sessions` row + every booking on it. **Staff: full refund** to the source package (`session_returned`). **Client:** refused inside the PT window; outside it the cancellation cap decides (`session_returned` or `forfeited`). A Voided package gets nothing back (`n_a`) |
+| `scheduled → attended` | The completion job, once the session has ended | n/a — a staff cancel after this is refused `session_already_started` (#434) |
 
 Both the cancel-before and cancel-after paths fire the same client email (subject differs only in whether a refund line is included).
 

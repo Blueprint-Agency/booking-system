@@ -32,7 +32,7 @@ import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
-import { actorOfSource, debitCredits, recordMovement, refundCredits, type Tx } from '../packages/ledger'
+import { actorOfSource, debitCredits, isVoided, recordMovement, refundCredits, type Tx } from '../packages/ledger'
 import { activateOnSchedule, assertPackageCoversSession, reverseActivationOnCancel, sweepExpired } from '../packages/activation'
 import { activationExpiry } from '../packages/validity'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
@@ -45,6 +45,7 @@ import { assertAvailable, eventSubjects } from '../schedule/occupancy'
 import { ensureInstructors } from '../schedule/roster'
 import { assertMemberFree, lockMemberTime } from '../bookings/member-time'
 import { ptSessionCost, type PtSessionType } from './cost'
+import { refuseOnceStarted } from './started'
 import {
   mayPayForSeat,
   orderSeatCandidates,
@@ -601,7 +602,9 @@ async function cancelSeat(
 ): Promise<{ refundOutcome: RefundOutcome; refunded: number }> {
   const { seat } = input
   const used = seat.used ?? 0
-  const refunded = input.refund && seat.clientPackageId && used > 0 ? used : 0
+  // Nothing goes back to a package its Refund Voided (be/CONTEXT.md § Void).
+  const voided = seat.clientPackageId !== null && (await isVoided(tx, tenantId, seat.clientPackageId))
+  const refunded = input.refund && seat.clientPackageId && used > 0 && !voided ? used : 0
   if (refunded) {
     await refundCredits(tx, {
       tenantId,
@@ -625,7 +628,7 @@ async function cancelSeat(
       actedByStaffId: input.actorStaffId,
     })
   }
-  if (seat.clientPackageId) {
+  if (seat.clientPackageId && !voided) {
     await reverseActivationOnCancel(tx, {
       tenantId,
       clientId: seat.clientId,
@@ -808,6 +811,7 @@ export interface RemoveManualPtSessionMemberInput {
  * Staff take one member off a manual session (#335): their seat is cancelled
  * and its session returned to their own package, whatever the window; the
  * others stay seated and the session stays on, its seat free to fill again.
+ * Only before it starts, as a cancel of the whole session (#434).
  */
 export async function removeManualPtSessionMember(
   tenantId: string,
@@ -820,6 +824,7 @@ export async function removeManualPtSessionMember(
 
     const now = clockNow()
     assertSeatsStillOpen(session, req, [seat], now)
+    refuseOnceStarted(session.startsAt, now)
     const { refundOutcome, refunded } = await cancelSeat(tx, tenantId, {
       seat,
       ptSessionId: session.id,

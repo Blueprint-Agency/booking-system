@@ -163,7 +163,11 @@ Single entry point for client (`/me/pt-sessions/:id/cancel`, `source='client'`) 
   `now >= starts_at` → `422 session_already_started` (mirror class path). Built for staff
   (admin and instructor, member-origin and manual sessions alike, #241): a session that has
   begun, or ended with nobody checked in, was used, so nothing comes back. A member is refused
-  earlier, at the PT window (`cancellation_window_passed`).
+  earlier, at the PT window (`cancellation_window_passed`). The same refusal holds on every
+  other staff route that would give the session back (#434): an Admin's cancel of one booking on
+  it (`bookings/cancel.ts`), removing a member from a manual session, and a cancel of a request
+  the completion job has already marked `attended`. Nothing returns to a Voided package on any
+  of these paths (`n_a`).
   - `source='admin'` → always full refund (bypass window/cap), per `be-portal.md §3b`.
   - `source='client'` → `evaluateCancellation({ clientId, kind:'pt', sessionStartsAt, now })`
     then `decideOutcome('pt','client',evaluation)`; refund the session(s) **only on `full`**,

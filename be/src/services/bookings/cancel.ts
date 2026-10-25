@@ -15,6 +15,7 @@
  *     comes back while the member is under the cap, or always with the cap off
  *     (evaluateCancellation).
  *   - Client source, PT: refused inside the PT window (`cancellation_window_passed`).
+ *   - Staff source, PT: refused once the session has started (`session_already_started`).
  *   - Unlimited bookings debited 0 credits → nothing to return; seat is released and the
  *     outcome is recorded as `n_a` (not `credit_returned`). See `settleCancel`.
  *
@@ -40,6 +41,7 @@ import { lockPromotionHead, promoteFromWaitlist, sendPromotionEmails, type Promo
 import { assertMayWorkClass } from '../waitlist/staff'
 import type { Tx } from '../schedule/roster'
 import { settleSessionAfterBookingCancel, type LockedSessionRequest } from '../pt-sessions/manual'
+import { refuseOnceStarted } from '../pt-sessions/started'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
 import { sendMemberCancelReturnedEmail } from '../notifications/send-booking-email'
@@ -199,6 +201,9 @@ export async function cancelBookingInTx(
 
   // 3. Evaluate the refund decision.
   const now = clockNow()
+  // An Admin cancels a private session's booking only before it starts, as
+  // they cancel its request (#434).
+  if (cancelKind === 'pt' && source === 'admin') refuseOnceStarted(sessionStartsAt, now)
   const evaluation =
     source !== 'client'
       ? undefined
