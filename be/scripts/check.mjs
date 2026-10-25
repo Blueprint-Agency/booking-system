@@ -5,14 +5,16 @@
  * Serially, in one process (`--experimental-test-isolation=none`, the spelling
  * Node 22 accepts), with the test environment put in place before any file
  * loads (`src/test/environment.ts`) — see docs/md/testing.md § Running the
- * backend tests.
+ * backend tests. `node --test` runs one file, `scripts/load-test-files.mjs`,
+ * which imports the test files so that a file whose own code fails fails the
+ * run (that file says why Node alone does not).
  *
  * A wrapper rather than one `node` line in package.json because `node --test`
- * stops reading options at its first file pattern: flags appended by
- * `npm run check -- <flags>` would land after the patterns and be ignored. Here
- * every argument that starts with `-` goes before the patterns (write a value
- * with `=`: `--test-reporter=tap`), and any other argument is a test file that
- * replaces the default patterns:
+ * stops reading options at its first file: flags appended by
+ * `npm run check -- <flags>` would land after it and be ignored. Here every
+ * argument that starts with `-` goes before the file (write a value with `=`:
+ * `--test-reporter=tap`), and any other argument is a test file that replaces
+ * the default patterns:
  *
  *   npm run check
  *   npm run check -- --test-reporter=tap
@@ -54,20 +56,24 @@ export const BASE_FLAGS = [
 
 export const DEFAULT_PATTERNS = ['src/**/*.test.ts', 'tools/**/*.test.ts', 'scripts/**/*.test.mjs']
 
+/** What `node --test` runs: it imports the test files itself (see the file for why). */
+export const LOADER = 'scripts/load-test-files.mjs'
+
 /**
- * The `node` arguments for `npm run check -- <args>`. Refuses an argument that
- * is neither a flag nor a test file: it is almost certainly a flag's value
- * written after a space, which would otherwise run as a pattern matching
- * nothing, in place of the whole suite.
+ * The `node` arguments for `npm run check -- <args>`, and the test files the
+ * loader imports: the ones named, else every file the default patterns match.
+ * Refuses an argument that is neither a flag nor a test file: it is almost
+ * certainly a flag's value written after a space, which would otherwise run
+ * as a file name in place of the whole suite.
  */
-export function nodeArgs(args) {
+export function nodeArgs(args, beDir) {
   const flags = args.filter(a => a.startsWith('-'))
   const files = args.filter(a => !a.startsWith('-'))
   const stray = files.filter(f => !/\.test\.(ts|mjs)$/.test(f))
   if (stray.length) {
     throw new Error(`not a test file: ${stray.join(', ')} (write a flag's value with =, e.g. --test-reporter=tap)`)
   }
-  return [...BASE_FLAGS, ...flags, ...(files.length ? files : DEFAULT_PATTERNS)]
+  return { argv: [...BASE_FLAGS, ...flags, LOADER], files: files.length ? files : listTestFiles(beDir) }
 }
 
 /** `SHARD=i/n` parsed, or null when unset. Refuses anything but `i/n` with 1 <= i <= n. */
@@ -173,7 +179,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(2)
   }
   const args = process.argv.slice(2)
-  let argv
+  let run
   try {
     const shard = parseShard(process.env.SHARD)
     if (shard && args.some(a => !a.startsWith('-'))) {
@@ -185,7 +191,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       files = shardFiles(all, shard)
       console.log(`check: shard ${shard.index}/${shard.total}, ${files.length} of ${all.length} test files:\n  ${files.join('\n  ')}`)
     }
-    argv = nodeArgs([...args, ...files])
+    run = nodeArgs([...args, ...files], beDir)
   } catch (err) {
     refuse(err.message)
   }
@@ -213,7 +219,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     console.log(`check: a full run, so ${database} starts empty, as CI's does`)
   }
 
-  const result = spawnSync(process.execPath, argv, { cwd: beDir, stdio: 'inherit' })
+  const result = spawnSync(process.execPath, run.argv, {
+    cwd: beDir,
+    stdio: 'inherit',
+    env: { ...process.env, CHECK_TEST_FILES: JSON.stringify(run.files) },
+  })
   if (result.error) throw result.error
   process.exit(result.status ?? 1)
 }

@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   BASE_FLAGS,
-  DEFAULT_PATTERNS,
+  LOADER,
   connectionReason,
   databaseRefusal,
   listTestFiles,
@@ -20,21 +20,23 @@ import {
   testDatabaseUrl,
 } from './check.mjs'
 
-test('a bare run tests every default pattern', () => {
-  assert.deepEqual(nodeArgs([]), [...BASE_FLAGS, ...DEFAULT_PATTERNS])
+const beDir = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+test('a bare run tests every file the default patterns match', () => {
+  assert.deepEqual(nodeArgs([], beDir), { argv: [...BASE_FLAGS, LOADER], files: listTestFiles(beDir) })
 })
 
-test('flags go before the patterns, where node --test still reads them', () => {
-  assert.deepEqual(nodeArgs(['--test-reporter=tap', '--test-reporter-destination=stdout']), [
+test('flags go before the file node --test runs, where it still reads them', () => {
+  assert.deepEqual(nodeArgs(['--test-reporter=tap', '--test-reporter-destination=stdout'], beDir).argv, [
     ...BASE_FLAGS,
     '--test-reporter=tap',
     '--test-reporter-destination=stdout',
-    ...DEFAULT_PATTERNS,
+    LOADER,
   ])
 })
 
 test("a flag's value written after a space is refused, not run as a pattern", () => {
-  assert.throws(() => nodeArgs(['--test-reporter', 'tap']), /not a test file: tap/)
+  assert.throws(() => nodeArgs(['--test-reporter', 'tap'], beDir), /not a test file: tap/)
 })
 
 test('the Node major .nvmrc names runs the suite, and so does a newer one; an older one does not', () => {
@@ -92,7 +94,7 @@ test('the shards of a file list are disjoint, together the whole list, and the s
 })
 
 test('the checkout’s own test files shard without loss', () => {
-  const all = listTestFiles(join(dirname(fileURLToPath(import.meta.url)), '..'))
+  const all = listTestFiles(beDir)
   assert.ok(all.length > 100, `${all.length} test files found`)
   assert.ok(all.includes('scripts/check.test.mjs'))
   assert.ok(all.every(f => !f.includes('\\')), 'forward slashes, so the slicing is the same on every OS')
@@ -103,12 +105,10 @@ test('the checkout’s own test files shard without loss', () => {
 })
 
 test('named files replace the default patterns', () => {
-  assert.deepEqual(nodeArgs(['--test-reporter=spec', 'src/test/refunds.test.ts', 'src/test/rls.test.ts']), [
-    ...BASE_FLAGS,
-    '--test-reporter=spec',
-    'src/test/refunds.test.ts',
-    'src/test/rls.test.ts',
-  ])
+  assert.deepEqual(nodeArgs(['--test-reporter=spec', 'src/test/refunds.test.ts', 'src/test/rls.test.ts'], beDir), {
+    argv: [...BASE_FLAGS, '--test-reporter=spec', LOADER],
+    files: ['src/test/refunds.test.ts', 'src/test/rls.test.ts'],
+  })
 })
 
 test('a test database that refuses the connection is named by host and port, never by its password', () => {
@@ -129,10 +129,10 @@ test('a test file whose own code fails, after a test of its own passed, fails th
     'asserts-after-a-test.test.mjs':
       "import assert from 'node:assert'\nimport { test } from 'node:test'\n" +
       "test('passes', () => {})\nassert.strictEqual(1, 2)\ntest('below the assertion', () => {})\n",
+    'fails-to-load.test.mjs': "import { test } from 'node:test'\nimport { gone } from './missing.mjs'\ntest('passes', () => {})\n",
     'rejects-unawaited.test.mjs':
       "import { test } from 'node:test'\n" +
       "test('passes', () => {})\nPromise.reject(new Error('rejected at the top level'))\n",
-    'fails-to-load.test.mjs': "import { test } from 'node:test'\nimport { gone } from './missing.mjs'\ntest('passes', () => {})\n",
   }
   const dir = mkdtempSync(join(tmpdir(), 'check-fixtures-'))
   try {
@@ -140,7 +140,6 @@ test('a test file whose own code fails, after a test of its own passed, fails th
       writeFileSync(join(dir, name), source)
       return join(dir, name)
     })
-    const beDir = join(dirname(fileURLToPath(import.meta.url)), '..')
     const run = spawnSync(process.execPath, ['scripts/check.mjs', '--test-reporter=tap', ...files], { cwd: beDir, encoding: 'utf8' })
     assert.equal(run.status, 1, `npm run check exits 1\n${run.stdout}\n${run.stderr}`)
     assert.match(run.stdout, /^not ok \d+ - .*asserts-after-a-test\.test\.mjs$/m, 'the failed top-level assertion fails its file')
