@@ -19,7 +19,7 @@
  *   3. **Nothing is granted here.** This takes money. The webhook decides what
  *      that money has bought, by the one question in `balance.ts`.
  */
-import { and, count, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
@@ -27,6 +27,7 @@ import { purchases, stripePayments } from '../../db/schema/ledger'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import { reportError } from '../../shared/logger'
+import { now as clockNow } from '../../lib/clock'
 import { requireProviderAccount, stripeForTenant } from '../../lib/stripe'
 import { tenantBusinessName } from '../tenants/mail-identity'
 import { requireTenantUrl } from '../tenants/urls'
@@ -489,26 +490,32 @@ export async function heldOnOpenPurchases(tenantId: string): Promise<number> {
   return toCents(row?.total ?? '0') / 100
 }
 
-const PAYMENT_PAGE_LIFETIME = sql`interval '24 hours'`
+const PAYMENT_PAGE_LIFETIME_MS = 24 * 60 * 60 * 1000
 
 /**
  * Open workshop Purchases for this tier that a member can still pay into:
- * part-paid ones, and unpaid ones whose payment page may still be live.
+ * unpaid ones whose payment page may still be live, and part-paid ones.
  */
-export async function payableSalesOfWorkshopTier(tenantId: string, workshopTierId: string): Promise<number> {
+export async function payableSalesOfWorkshopTier(
+  tenantId: string,
+  workshopTierId: string,
+): Promise<{ unpaid: number; partPaid: number }> {
+  const pageOpenSince = new Date(clockNow().getTime() - PAYMENT_PAGE_LIFETIME_MS).toISOString()
   const [row] = await db
-    .select({ n: count() })
+    .select({
+      unpaid: sql<number>`count(*) filter (where ${purchases.partPaidAt} is null and ${purchases.createdAt} > ${pageOpenSince}::timestamptz)`,
+      partPaid: sql<number>`count(*) filter (where ${purchases.partPaidAt} is not null)`,
+    })
     .from(purchases)
     .where(
       and(
         eq(purchases.tenantId, tenantId),
         eq(purchases.kind, 'workshop'),
         eq(purchases.status, 'open'),
-        sql`${purchases.metadata}->>'workshop_tier_id' = ${workshopTierId}`,
-        sql`(${purchases.partPaidAt} is not null or ${purchases.createdAt} > now() - ${PAYMENT_PAGE_LIFETIME})`,
+        sql`lower(${purchases.metadata}->>'workshop_tier_id') = lower(${workshopTierId})`,
       ),
     )
-  return Number(row?.n ?? 0)
+  return { unpaid: Number(row?.unpaid ?? 0), partPaid: Number(row?.partPaid ?? 0) }
 }
 
 /**

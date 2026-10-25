@@ -5,7 +5,7 @@
  */
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { workshops, workshopTiers } from '../../db/schema/schedule'
+import { workshopTiers } from '../../db/schema/schedule'
 import { clashError } from '../bookings/member-time'
 import { NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
@@ -20,6 +20,7 @@ import { listActivePromotionsFor } from '../packages/promotions'
 import { applyPromoCode, type AppliedPromoCode } from '../packages/promo-redemption'
 import type { BillingAddress } from '../billing-details/billing-details'
 import { assertWorkshopBookable, assertWorkshopOnSale, bookWorkshopFree, tierDaysClash, tierEffectivePrice } from './book'
+import { holdWorkshopAgainstTierRemoval } from './tiers'
 
 type WorkshopCheckout = CheckoutQuote<{ bookingId: string }>
 
@@ -45,8 +46,11 @@ export async function beginWorkshopCheckout(
     billTo: BillingAddress
   },
 ): Promise<WorkshopCheckout> {
-  const { clientId, workshopId, workshopTierId } = input
+  const { clientId } = input
+  const workshopId = input.workshopId.toLowerCase()
+  const workshopTierId = input.workshopTierId.toLowerCase()
 
+  const ws = await holdWorkshopAgainstTierRemoval(tenantId, workshopId)
   const [tier] = await db
     .select()
     .from(workshopTiers)
@@ -59,12 +63,6 @@ export async function beginWorkshopCheckout(
     )
     .limit(1)
   if (!tier) throw new NotFoundError('workshop_tier_not_found')
-
-  const [ws] = await db
-    .select()
-    .from(workshops)
-    .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, workshopId)))
-    .limit(1)
   if (!ws) throw new NotFoundError('workshop_not_found')
   await assertWorkshopOnSale(tenantId, ws)
 

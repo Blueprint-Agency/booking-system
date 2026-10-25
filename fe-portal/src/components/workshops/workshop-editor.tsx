@@ -88,16 +88,14 @@ function inferMode(days: WorkshopDay[]): Mode {
   return "range";
 }
 
-async function saveSchedule(
-  api: Api,
-  workshopId: string,
+function scheduleBody(
   stored: { days: WorkshopDay[]; tiers: WorkshopTier[] },
   days: WorkshopDay[],
   tiers: WorkshopTier[],
 ) {
   const storedDayIds = new Set(stored.days.map((d) => d.id));
   const storedTierIds = new Set(stored.tiers.map((t) => t.id));
-  await api.put(`/portal/admin/workshops/${workshopId}/schedule`, {
+  return {
     days: [...days]
       .sort((a, b) => a.date.localeCompare(b.date))
       .map((d) => ({
@@ -120,7 +118,7 @@ async function saveSchedule(
       early_bird_cutoff_at: t.earlyBirdCutoffAt,
       day_refs: t.dayIds,
     })),
-  });
+  };
 }
 
 function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
@@ -186,7 +184,7 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
   };
 }
 
-async function createWorkshopWithChildren(
+async function createWorkshop(
   api: Api,
   args: {
     name: string;
@@ -198,9 +196,10 @@ async function createWorkshopWithChildren(
     supportingInstructors: { instructor_id: string; pay_sgd: number | null }[];
     days: WorkshopDay[];
     tiers: WorkshopTier[];
+    promotions: Promotion[];
   },
 ) {
-  const basics = await api.post<{ id: string }>("/portal/admin/workshops", {
+  const created = await api.post<{ id: string }>("/portal/admin/workshops", {
     name: args.name,
     location_id: args.locationId,
     description_html: args.descriptionHtml || null,
@@ -208,9 +207,10 @@ async function createWorkshopWithChildren(
     main_instructor_pay_sgd: args.mainInstructorPaySgd,
     supporting_instructors: args.supportingInstructors,
     image_r2_keys: [],
+    ...scheduleBody({ days: [], tiers: [] }, args.days, args.tiers),
+    promotions: args.promotions.map(promotionToApiPayload),
   });
-  await saveSchedule(api, basics.id, { days: [], tiers: [] }, args.days, args.tiers);
-  return basics.id;
+  return created.id;
 }
 
 export function WorkshopEditor({
@@ -366,14 +366,17 @@ export function WorkshopEditor({
             pay_sgd: payOrNull(supportingPay[iid] ?? ""),
           })),
         });
-        await saveSchedule(api, initial.id, initial, days, prunedTiers);
+        await api.put(
+          `/portal/admin/workshops/${initial.id}/schedule`,
+          scheduleBody(initial, days, prunedTiers),
+        );
         await api.put(`/portal/admin/workshops/${initial.id}/promotions`, {
           promotions: promotions.map(promotionToApiPayload),
         });
         toast.success("Workshop saved.");
         onSave(initial.id);
       } else {
-        const id = await createWorkshopWithChildren(api, {
+        const id = await createWorkshop(api, {
           name: name.trim(),
           locationId,
           descriptionHtml,
@@ -385,12 +388,8 @@ export function WorkshopEditor({
           })),
           days,
           tiers: prunedTiers,
+          promotions,
         });
-        if (promotions.length) {
-          await api.put(`/portal/admin/workshops/${id}/promotions`, {
-            promotions: promotions.map(promotionToApiPayload),
-          });
-        }
         toast.success("Workshop created.");
         onSave(id);
       }

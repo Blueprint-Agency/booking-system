@@ -194,6 +194,25 @@ export async function updateTier(
   return refreshed
 }
 
+/**
+ * The workshop row, held until the caller's transaction ends, so a `deleteTier`
+ * (which takes the same row `FOR UPDATE` before anything else) waits for a sale
+ * the caller is about to record, and the caller's tier read after this waits
+ * for a removal already under way.
+ */
+export async function holdWorkshopAgainstTierRemoval(
+  tenantId: string,
+  workshopId: string,
+): Promise<typeof workshops.$inferSelect | undefined> {
+  const [row] = await db
+    .select()
+    .from(workshops)
+    .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, workshopId)))
+    .limit(1)
+    .for('key share')
+  return row
+}
+
 export async function deleteTier(
   tenantId: string,
   workshopId: string,
@@ -224,29 +243,38 @@ export async function deleteTier(
       })
     }
 
-    const rows = await db
-      .select({ n: count() })
+    const [booked] = await db
+      .select({
+        confirmed: sql<number>`count(*) filter (where ${bookings.state} = 'confirmed')`,
+        past: sql<number>`count(*) filter (where ${bookings.state} <> 'confirmed')`,
+      })
       .from(bookings)
-      .where(
-        and(
-          eq(bookings.tenantId, tenantId),
-          eq(bookings.workshopTierId, tierId),
-          sql`${bookings.state} = 'confirmed'`,
-        ),
-      )
-    const n = Number(rows[0]?.n ?? 0)
+      .where(and(eq(bookings.tenantId, tenantId), eq(bookings.workshopTierId, tierId)))
+    const n = Number(booked?.confirmed ?? 0)
     if (n > 0) {
       throw new ConflictError('workshop_tier_has_bookings', {
         bookings: n,
         message: `This tier has ${n} confirmed booking${n === 1 ? '' : 's'}, so it can't be removed.`,
       })
     }
+    const past = Number(booked?.past ?? 0)
+    if (past > 0) {
+      throw new ConflictError('workshop_tier_has_booking_history', {
+        bookings: past,
+        message: `This tier has ${past} cancelled or no-show booking${past === 1 ? '' : 's'} on record, so it can't be removed.`,
+      })
+    }
 
-    const unfinished = await payableSalesOfWorkshopTier(tenantId, tierId)
+    const { unpaid, partPaid } = await payableSalesOfWorkshopTier(tenantId, tierId)
+    const unfinished = unpaid + partPaid
     if (unfinished > 0) {
+      const clears =
+        partPaid > 0
+          ? 'A part-paid purchase holds it until it is paid in full or refunded.'
+          : 'The hold clears within a day if the member does not pay.'
       throw new ConflictError('workshop_tier_has_open_purchases', {
         purchases: unfinished,
-        message: `This tier has ${unfinished} unfinished purchase${unfinished === 1 ? '' : 's'} a member can still pay, so it can't be removed.`,
+        message: `This tier has ${unfinished} unfinished purchase${unfinished === 1 ? '' : 's'} a member can still pay, so it can't be removed. ${clears}`,
       })
     }
 

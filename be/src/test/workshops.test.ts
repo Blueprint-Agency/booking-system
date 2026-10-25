@@ -187,7 +187,6 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
   type SessionParams = { metadata: Record<string, string>; line_items: { price_data: { unit_amount: number } }[] }
   const lastSession = () => stripe.callsTo('checkout.sessions.create').at(-1)!.args[0] as SessionParams
 
-  /** The provider's record of `params`' session, paid in full on `intent`. */
   const paidSession = (params: SessionParams, intent: string) => ({
     id: `cs_${intent}`,
     payment_intent: intent,
@@ -209,7 +208,6 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
       .from(schema.purchases)
       .where(and(eq(schema.purchases.clientId, who.clientId), eq(schema.purchases.kind, 'workshop')))
 
-  /** Settles once some call shows in Postgres as waiting on a lock another transaction holds. */
   async function untilQueued(answered: () => boolean, what: string): Promise<void> {
     const deadline = Date.now() + 10_000
     for (;;) {
