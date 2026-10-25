@@ -46,6 +46,8 @@ export function classRefundLine(creditsReturned: number): string {
     : 'The booking did not use any credits, so nothing was taken from your package.'
 }
 
+export const WAITLIST_CANCEL_LINE = 'You were on the waitlist for this class, so nothing was taken from your package.'
+
 /**
  * The refund line on a private-session cancellation (NTF-10, NTF-11): the
  * sessions returned, or empty when none were — the line is left out rather
