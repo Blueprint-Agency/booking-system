@@ -829,11 +829,7 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
           like(schema.emailLog.bodyRendered, `%Reason given: ${reason}%`),
         ),
       )
-    assert.deepEqual(
-      told.map(t => t.status),
-      ['sent'],
-      'the admin is emailed the reason the instructor gave',
-    )
+    assert.deepEqual(told.map(t => t.status), ['sent'])
   })
 
   test('LEV-114 there is no notice window: he cancels his class ten minutes before it starts', async () => {

@@ -6,6 +6,10 @@
 > the current spine and `docs/md/spec-tenant-resolution.md` for how a request
 > finds its Tenant.
 
+> **Superseded on waivers.** Waivers are not being built (#233). The waiver
+> columns, routes, `WaiverService` and `waiver-expiry-check` job below describe
+> nothing in the code. See `docs/md/admin-restructure.md` §17.
+
 **Status:** v1 scope (2026-05-07)
 **Owner:** Teeko (Christopher Kwek)
 **Companion doc:** [`../../../booking-system/docs/md/prd.md`](../../../booking-system/docs/md/prd.md) (product PRD — source of truth for business logic)
