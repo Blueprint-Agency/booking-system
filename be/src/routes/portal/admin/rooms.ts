@@ -3,16 +3,25 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/catalog/rooms'
 import { tenantId } from '../../../middleware/tenant'
+import { explainInvalid } from '../../explain-invalid'
+
+const nameField = z
+  .string({ message: 'A name must be text.' })
+  .min(1, 'A room needs a name.')
+  .max(120, 'A name can be at most 120 characters.')
+const CAPACITY_MESSAGE = 'A capacity is a whole number of at least 1.'
+const capacityField = z.number({ message: CAPACITY_MESSAGE }).int(CAPACITY_MESSAGE).min(1, CAPACITY_MESSAGE)
 
 const createSchema = z.object({
-  location_id: z.string().uuid(),
-  name: z.string().min(1).max(120),
-  capacity: z.number().int().min(1),
+  location_id: z.string({ message: 'Choose a location.' }).uuid('Choose a location.'),
+  name: nameField,
+  capacity: capacityField,
 })
 const updateSchema = z.object({
-  name: z.string().min(1).max(120).optional(),
-  capacity: z.number().int().min(1).optional(),
+  name: nameField.optional(),
+  capacity: capacityField.optional(),
 })
+const explainRoom = explainInvalid('That room is not valid.')
 const idParam = z.object({ id: z.string().uuid() })
 const listQuery = z.object({
   location_id: z.string().uuid().optional(),
@@ -41,13 +50,13 @@ const app = new Hono()
     const row = await svc.getRoom(tenantId(c), id)
     return c.json(serialize(row))
   })
-  .post('/', zValidator('json', createSchema), async c => {
+  .post('/', zValidator('json', createSchema, explainRoom), async c => {
     const body = c.req.valid('json')
     const row = await svc.createRoom(tenantId(c), body)
     c.set('auditTarget' as any, { table: 'rooms', id: row.id })
     return c.json(serialize(row), 201)
   })
-  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
+  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema, explainRoom), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const row = await svc.updateRoom(tenantId(c), id, body)

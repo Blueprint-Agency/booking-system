@@ -2,8 +2,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
-import { todayIso } from "@/lib/formatters";
+import { LATEST_DATE, todayIso } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
+import { refusalMessage } from "@/lib/refusal-message";
 import { useWorkspace } from "@/lib/workspace-context";
 import {
   fetchActiveInstructors,
@@ -238,7 +239,7 @@ export function ScheduleFromRequestDialog({
       }
     } catch (e) {
       const code = apiErrorCode(e);
-      setPartnerLinkError(PARTNER_LINK_ERROR[code] ?? "Couldn't link the partner.");
+      setPartnerLinkError(PARTNER_LINK_ERROR[code] ?? refusalMessage(e, "Couldn't link the partner."));
     } finally {
       setPartnerLinking(false);
     }
@@ -295,6 +296,7 @@ export function ScheduleFromRequestDialog({
             <Input
               type="date"
               min={todayIso()}
+              max={LATEST_DATE}
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />

@@ -1781,6 +1781,7 @@ function AdjustmentDialog({
           <textarea
             id="reason"
             required
+            maxLength={2000}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Free text — required for the audit log."

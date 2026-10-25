@@ -189,9 +189,13 @@ const profileSchema = z
   .refine(b => b.name !== undefined || b.phone !== undefined || b.gender !== undefined, {
     message: 'Change at least one of name, gender and phone.',
   })
+const EXPIRY_MESSAGE = 'A new expiry must be a date, like 2026-01-31, or none.'
 const expirySchema = z.object({
-  expires_at: z.string().datetime({ offset: true }).nullable(),
-  reason: z.string().min(1).max(2000),
+  expires_at: z.string({ message: EXPIRY_MESSAGE }).datetime({ offset: true, message: EXPIRY_MESSAGE }).nullable(),
+  reason: z
+    .string({ message: 'A reason must be text.' })
+    .min(1, 'Give a reason for the change.')
+    .max(2000, 'A reason can be at most 2000 characters.'),
 })
 
 // The directory row carries the trial funnel with it (started / attended /
@@ -547,7 +551,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'client_packages', id: pid })
     return c.json(editedPackageView(row))
   })
-  .post('/:id/packages/:pid/expiry', zValidator('param', idPkgParam), zValidator('json', expirySchema), async c => {
+  .post('/:id/packages/:pid/expiry', zValidator('param', idPkgParam), zValidator('json', expirySchema, explainInvalid('That expiry change is not valid.')), async c => {
     const { id, pid } = c.req.valid('param')
     const body = c.req.valid('json')
     const row = await setPackageExpiry({

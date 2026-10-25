@@ -32,7 +32,7 @@ import {
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
-import { formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatters";
+import { LATEST_DATE, formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
 import { WORKSHOP_CANCEL_CONFIRM } from "@/lib/workshop-cancel";
 import {
@@ -508,6 +508,7 @@ function ClassEditor({
           <Input
             id="cls-d"
             type="date"
+            max={LATEST_DATE}
             value={date}
             disabled={disabled || saving}
             onChange={(e) => setDate(e.target.value)}
@@ -917,6 +918,7 @@ function PtEditor({
           <Input
             id="pt-d"
             type="date"
+            max={LATEST_DATE}
             value={date}
             disabled={disabled || saving}
             onChange={(e) => setDate(e.target.value)}
@@ -1486,6 +1488,7 @@ function CorporateEditor({
           <Input
             id="cor-d"
             type="date"
+            max={LATEST_DATE}
             value={date}
             disabled={cancelled || saving}
             onChange={(e) => setDate(e.target.value)}

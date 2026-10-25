@@ -5,7 +5,7 @@ import { CalendarPlus, CalendarX, Loader2, Pencil, Repeat, Save } from "lucide-r
 import { Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { SeriesPreviewList, blockingDates } from "@/components/schedule/series-preview";
 import { useWorkspace } from "@/lib/workspace-context";
-import { formatDate, formatDateTime } from "@/lib/formatters";
+import { LATEST_DATE, formatDate, formatDateTime } from "@/lib/formatters";
 import {
   endSeries,
   extendSeries,
@@ -268,6 +268,7 @@ function ExtendDialog({
               id="extend-last"
               type="date"
               min={series.last_date}
+              max={LATEST_DATE}
               value={lastDate}
               onChange={(e) => setLastDate(e.target.value)}
             />
@@ -407,6 +408,7 @@ function EndDialog({
               id="end-from"
               type="date"
               min={series.first_date}
+              max={LATEST_DATE}
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
             />

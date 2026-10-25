@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
-import { todayIso } from "@/lib/formatters";
+import { LATEST_DATE, todayIso } from "@/lib/formatters";
 import type { ClientPackage } from "@/types";
 
 export function PackageExpiryDialog({
@@ -46,6 +46,7 @@ export function PackageExpiryDialog({
             id="exp-date"
             type="date"
             min={todayIso()}
+            max={LATEST_DATE}
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />
@@ -61,6 +62,7 @@ export function PackageExpiryDialog({
           <textarea
             id="exp-reason"
             rows={3}
+            maxLength={2000}
             required
             value={reason}
             onChange={(e) => setReason(e.target.value)}

@@ -60,6 +60,7 @@ export function CrossLocationDialog({
           <textarea
             id="xloc-reason"
             rows={3}
+            maxLength={2000}
             required
             value={reason}
             onChange={(e) => setReason(e.target.value)}

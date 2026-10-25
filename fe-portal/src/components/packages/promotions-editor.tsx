@@ -1,7 +1,7 @@
 "use client";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { Button, Label } from "@/components/ui";
-import { todayIso } from "@/lib/formatters";
+import { LATEST_DATE, todayIso } from "@/lib/formatters";
 import { localDay, localDayRange } from "@/lib/local-day";
 import { overlappingPromotionIds } from "@/lib/promotions";
 import type { Promotion, PromotionMode } from "@/types";
@@ -78,6 +78,9 @@ export function PromotionsEditor({
         >
           <div className="flex gap-2">
             <input
+              required
+              maxLength={160}
+              aria-label="Promotion label"
               value={p.label}
               onChange={(e) => update(p.id, { label: e.target.value })}
               placeholder="e.g. CNY Promo"
@@ -160,6 +163,7 @@ export function PromotionsEditor({
               <input
                 type="date"
                 min={todayIso()}
+                max={LATEST_DATE}
                 value={localDay(p.startsAt)}
                 onChange={(e) => {
                   const start = e.target.value;
@@ -177,6 +181,7 @@ export function PromotionsEditor({
               <input
                 type="date"
                 min={localDay(p.startsAt) || todayIso()}
+                max={LATEST_DATE}
                 value={localDay(p.endsAt)}
                 onChange={(e) =>
                   e.target.value && update(p.id, { endsAt: endsOn(e.target.value) })

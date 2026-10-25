@@ -8,6 +8,7 @@ import {
 } from '../../../services/pt-sessions/list'
 import { linkPtRequestPartner } from '../../../services/pt-sessions/request'
 import { tenantId } from '../../../middleware/tenant'
+import { explainInvalid } from '../../explain-invalid'
 import { ERROR_CODES } from '../../../shared/error-codes'
 import { schedulePtRequest, updatePtSession } from '../../../services/pt-sessions/schedule'
 import { statusForScheduleError } from '../pt-schedule-status'
@@ -95,14 +96,16 @@ const updateSessionSchema = z.object({
     .optional(),
 })
 
+const PARTNER_EMAIL_MESSAGE = 'Enter the partner’s full email address, like name@example.com.'
 const linkPartnerSchema = z
   .object({
-    client_id: z.string().uuid().optional(),
-    email: z.string().email().optional(),
+    client_id: z.string().uuid('That partner is not one of the studio’s members.').optional(),
+    email: z.string({ message: PARTNER_EMAIL_MESSAGE }).email(PARTNER_EMAIL_MESSAGE).optional(),
   })
   .refine(v => Boolean(v.client_id || v.email), {
-    message: 'client_id_or_email_required',
+    message: 'Name the partner by a member or an email address.',
   })
+const explainLinkPartner = explainInvalid('That partner is not valid.')
 
 function serialize(r: AdminPtRequestView) {
   return {
@@ -299,7 +302,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'pt_sessions', id })
     return c.json(removedMemberJson(res))
   })
-  .post('/:id/link-partner', zValidator('param', idParam), zValidator('json', linkPartnerSchema), async c => {
+  .post('/:id/link-partner', zValidator('param', idParam), zValidator('json', linkPartnerSchema, explainLinkPartner), async c => {
     const { id } = c.req.valid('param')
     const { client_id, email } = c.req.valid('json')
     await linkPtRequestPartner({

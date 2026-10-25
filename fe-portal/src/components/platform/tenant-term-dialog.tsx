@@ -4,6 +4,8 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button, Dialog, DialogFooter, Input, Label, Select } from "@/components/ui";
 import { ApiError, type Api } from "@/lib/api";
+import { LATEST_DATE } from "@/lib/formatters";
+import { refusalMessage } from "@/lib/refusal-message";
 import {
   TENANT_REFUSALS,
   TERM_MONTHS,
@@ -61,7 +63,7 @@ export function TenantTermDialog({ api, tenant, onOpenChange, onSaved }: TenantT
         err instanceof ApiError && err.body && typeof err.body === "object"
           ? (err.body as { error?: string }).error
           : undefined;
-      toast.error(code && TENANT_REFUSALS[code] ? TENANT_REFUSALS[code] : "Could not save the term.");
+      toast.error(code && TENANT_REFUSALS[code] ? TENANT_REFUSALS[code] : refusalMessage(err, "Could not save the term."));
     } finally {
       setSubmitting(false);
     }
@@ -80,6 +82,7 @@ export function TenantTermDialog({ api, tenant, onOpenChange, onSaved }: TenantT
           <Input
             id="term-start"
             type="date"
+            max={LATEST_DATE}
             value={startDate}
             onChange={e => setStartDate(e.target.value)}
             required

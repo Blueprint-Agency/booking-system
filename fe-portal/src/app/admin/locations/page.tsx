@@ -28,21 +28,15 @@ export default function LocationsPage() {
   const archived = locations.filter((l) => l.archivedAt);
 
   async function handleSave(loc: Location) {
-    try {
-      if (locations.some((l) => l.id === loc.id)) {
-        await updateLocation(loc);
-        toast.success("Location updated.");
-      } else {
-        await addLocation(loc);
-        toast.success("Location created.");
-      }
-      setEditing(null);
-      setCreating(false);
-    } catch (err) {
-      const msg =
-        err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.";
-      toast.error(msg);
+    if (locations.some((l) => l.id === loc.id)) {
+      await updateLocation(loc);
+      toast.success("Location updated.");
+    } else {
+      await addLocation(loc);
+      toast.success("Location created.");
     }
+    setEditing(null);
+    setCreating(false);
   }
 
   async function toggleArchive(loc: Location) {

@@ -4,7 +4,7 @@ import { CalendarSearch, Loader2 } from "lucide-react";
 import { Button, Input, Label } from "@/components/ui";
 import { SeriesPreviewList, blockingDates } from "@/components/schedule/series-preview";
 import { ApiError, type Api } from "@/lib/api";
-import { todayIso } from "@/lib/formatters";
+import { LATEST_DATE, todayIso } from "@/lib/formatters";
 import { lastDateLimit } from "@/lib/repeat-weekly";
 import {
   createSeries,
@@ -82,7 +82,7 @@ export function RepeatRangeFields({
           required
           type="date"
           min={firstDate || todayIso()}
-          max={lastDateLimit(firstDate) || undefined}
+          max={lastDateLimit(firstDate) || LATEST_DATE}
           value={lastDate}
           onChange={(e) => onLastDateChange(e.target.value)}
         />

@@ -11,6 +11,7 @@
  * Label, expiry, cap and product list stay editable for the code's whole life.
  */
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { LATEST_DATE } from "@/lib/formatters";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Check } from "lucide-react";
@@ -409,6 +410,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
             <Input
               id="pc-expires"
               type="date"
+              max={LATEST_DATE}
               value={expiresOn}
               onChange={(e) => setExpiresOn(e.target.value)}
             />

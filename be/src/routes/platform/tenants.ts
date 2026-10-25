@@ -15,6 +15,7 @@ import {
   type TenantRowSummary,
 } from '../../services/tenants/tenants'
 import { ERROR_CODES } from '../../shared/error-codes'
+import { explainInvalid } from '../explain-invalid'
 import {
   NO_PAYMENT_ACCOUNT,
   providerAccountStatus,
@@ -92,12 +93,24 @@ function serialize(
 }
 
 
+const ADMIN_EMAIL_MESSAGE = 'Enter the admin’s full email address, like name@example.com.'
+const adminEmail = z.string({ message: ADMIN_EMAIL_MESSAGE }).email(ADMIN_EMAIL_MESSAGE)
+const adminName = z
+  .string({ message: 'An admin name must be text.' })
+  .max(200, 'An admin name can be at most 200 characters.')
+const termMonths = z.union([z.literal(3), z.literal(6), z.literal(12)], {
+  errorMap: () => ({ message: 'A Term runs 3, 6 or 12 months.' }),
+})
+
 const createBody = z.object({
   // Any string: whether it may be an address — a blank one included, which is
   // `slug_too_short` — is `checkSlug`'s to say, so the form gets one of its
   // reasons rather than a validation error it has no words for.
-  slug: z.string(),
-  name: z.string().min(1).max(200),
+  slug: z.string({ message: 'An address must be text.' }),
+  name: z
+    .string({ message: 'A studio name must be text.' })
+    .min(1, 'A studio name is required.')
+    .max(200, 'A studio name can be at most 200 characters.'),
   // IANA zone. Validated against the runtime's own database rather than a list
   // we would have to maintain — a zone this process cannot resolve would make
   // every scheduled job for the studio fire at the wrong hour.
@@ -114,15 +127,15 @@ const createBody = z.object({
           return false
         }
       },
-      { message: 'timezone must be an IANA zone like Asia/Singapore' },
+      { message: 'A time zone must be an IANA zone, like Asia/Singapore.' },
     ),
   // Optional, and an empty string means "none" rather than "invalid": a studio
   // created to receive an archive must be left with no `staff_users` rows at
   // all, because the archive brings its own and the import refuses to merge.
-  admin_email: z.union([z.string().email(), z.literal('')]).optional(),
-  admin_name: z.string().max(200).optional(),
+  admin_email: z.union([adminEmail, z.literal('')], { errorMap: () => ({ message: ADMIN_EMAIL_MESSAGE }) }).optional(),
+  admin_name: adminName.optional(),
   // How long the first Term runs from today. Omitted leaves it open-ended.
-  term_months: z.union([z.literal(3), z.literal(6), z.literal(12)]).optional(),
+  term_months: termMonths.optional(),
   // The studio's Business details (#391, #398): the Business name it trades
   // under (the Domain name, `name`, when blank or omitted), and the Receipt
   // prefix (default `R`), registration number, address and footer. Its admin
@@ -131,11 +144,12 @@ const createBody = z.object({
 })
 
 /** A calendar date, `YYYY-MM-DD`, that exists. */
-const isoDate = z.string().refine(isIsoDate, { message: 'a date like 2026-01-31' })
+const START_DATE_MESSAGE = 'A start date must be a date like 2026-01-31.'
+const isoDate = z.string({ message: START_DATE_MESSAGE }).refine(isIsoDate, { message: START_DATE_MESSAGE })
 
 const termBody = z.object({
   start_date: isoDate,
-  months: z.union([z.literal(3), z.literal(6), z.literal(12)]),
+  months: termMonths,
 })
 
 /**
@@ -152,9 +166,11 @@ const slugCheckQuery = z.object({
 
 /** Required here, unlike at creation: naming nobody would be a no-op. */
 const firstAdminBody = z.object({
-  admin_email: z.string().email(),
-  admin_name: z.string().max(200).optional(),
+  admin_email: adminEmail,
+  admin_name: adminName.optional(),
 })
+
+const explainTenant = explainInvalid('That studio is not valid.')
 
 /**
  * A studio's own payment-provider credentials, on the way in and never on the
@@ -224,7 +240,7 @@ const app = new Hono()
     })
   })
 
-  .post('/tenants', zValidator('json', createBody), async c => {
+  .post('/tenants', zValidator('json', createBody, explainTenant), async c => {
     const body = c.req.valid('json')
     const result = await provisionTenant({
       slug: body.slug,
@@ -304,7 +320,7 @@ const app = new Hono()
    * Changes the Term only. Extending an ended Term does not reopen the studio —
    * reactivating is the operator's separate act, through the status route.
    */
-  .put('/tenants/:id/term', zValidator('json', termBody), async c => {
+  .put('/tenants/:id/term', zValidator('json', termBody, explainTenant), async c => {
     const id = z.string().uuid().safeParse(c.req.param('id'))
     if (!id.success) return c.json({ error: ERROR_CODES.not_found }, 404)
     const body = c.req.valid('json')
@@ -399,7 +415,7 @@ const app = new Hono()
    * has staff — inviting into a working studio is that studio's own job, done
    * from inside it — so this is a bootstrap and not a standing way in.
    */
-  .post('/tenants/:id/admin', zValidator('json', firstAdminBody), async c => {
+  .post('/tenants/:id/admin', zValidator('json', firstAdminBody, explainTenant), async c => {
     const id = z.string().uuid().safeParse(c.req.param('id'))
     if (!id.success) return c.json({ error: ERROR_CODES.not_found }, 404)
     const body = c.req.valid('json')

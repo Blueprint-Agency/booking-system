@@ -22,6 +22,9 @@ import {
   type ReceiptsPage,
 } from "@/lib/receipts";
 
+/** A browser lets a year run to six digits; the API takes only four. */
+const LATEST_DATE = "9999-12-31";
+
 const dateInput =
   "min-h-[44px] w-full rounded-xl border border-ink/10 bg-card px-3 text-sm text-ink focus:border-accent focus:outline-none";
 
@@ -63,6 +66,7 @@ export default function AccountReceiptsPage() {
           <input
             type="date"
             className={`${dateInput} mt-1`}
+            max={LATEST_DATE}
             value={from}
             onChange={(e) => {
               setFrom(e.target.value);
@@ -75,6 +79,7 @@ export default function AccountReceiptsPage() {
           <input
             type="date"
             className={`${dateInput} mt-1`}
+            max={LATEST_DATE}
             value={to}
             onChange={(e) => {
               setTo(e.target.value);

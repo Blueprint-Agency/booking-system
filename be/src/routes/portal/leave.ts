@@ -7,6 +7,8 @@ import { SUPPORTING_DOCUMENT_MAX_BYTES } from '../../services/leave/rules'
 import { ERROR_CODES } from '../../shared/error-codes'
 import { tenantId } from '../../middleware/tenant'
 import { uploadedFile } from './uploaded-file'
+import { explainInvalid } from '../explain-invalid'
+import { plainDate } from '../plain-date'
 
 /**
  * /api/v1/portal/leave — the caller's OWN leave, whichever role they hold.
@@ -25,18 +27,23 @@ import { uploadedFile } from './uploaded-file'
 /** Headroom over the file limit for the multipart framing around the file. */
 const MULTIPART_ENVELOPE_BYTES = 16 * 1024
 
-const plainDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
-
 const submitSchema = z.object({
   // The one place a new Leave Type fails at runtime instead of at compile time
   // — every other per-type structure is a Record keyed by the union.
-  type: z.enum(['annual', 'medical', 'study']),
-  start_date: plainDate,
-  end_date: plainDate,
+  type: z.enum(['annual', 'medical', 'study'], { message: 'A leave type is annual, medical or study.' }),
+  start_date: plainDate('A start date'),
+  end_date: plainDate('An end date'),
   // Only valid on a single date — the service refuses it on a range.
-  half_day: z.enum(['none', 'morning', 'afternoon']).default('none'),
-  reason: z.string().trim().min(1).max(500),
+  half_day: z
+    .enum(['none', 'morning', 'afternoon'], { message: 'A half day is none, morning or afternoon.' })
+    .default('none'),
+  reason: z
+    .string({ message: 'A reason must be text.' })
+    .trim()
+    .min(1, 'Give a reason for the leave.')
+    .max(500, 'A reason can be at most 500 characters.'),
 })
+const explainSubmit = explainInvalid('That leave request is not valid.')
 
 function serialize(r: svc.LeaveRequestRow) {
   return {
@@ -73,7 +80,7 @@ const app = new Hono()
       requests: res.requests.map(serialize),
     })
   })
-  .post('/', zValidator('json', submitSchema), async c => {
+  .post('/', zValidator('json', submitSchema, explainSubmit), async c => {
     const body = c.req.valid('json')
     const row = await svc.submitLeaveRequest(tenantId(c), {
       staffUserId: c.get('staffUserId'), // forced — never from the body

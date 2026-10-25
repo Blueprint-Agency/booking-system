@@ -2,6 +2,8 @@ import { z } from 'zod'
 import * as seriesSvc from '../../services/schedule/series'
 import { packageRuleSchema, toPackageRule } from './class-package-rule'
 import { namedRuleJson } from '../../services/schedule/package-rules'
+import { explainInvalid } from '../explain-invalid'
+import { plainDate } from '../plain-date'
 
 /**
  * A Class Series on the wire, shared by the admin and instructor schedule
@@ -11,7 +13,9 @@ import { namedRuleJson } from '../../services/schedule/package-rules'
  * Shape only: what a series does is `services/schedule/series`.
  */
 
-export const plainDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
+/** A series body refused for its shape, answered with the first field's sentence. */
+export const explainSeries = explainInvalid('That series is not valid.')
+
 const localTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'expected HH:MM')
 
 /** Everything a series body carries except its instructors and their pay. */
@@ -28,9 +32,9 @@ export const seriesTemplateFields = z.object({
   credit_cost: z.number().int().min(0),
   // Copied onto every class the series creates, extends included; omitted = accepts all.
   package_rule: packageRuleSchema.optional(),
-  first_date: plainDate,
-  last_date: plainDate,
-  excluded_dates: z.array(plainDate).default([]),
+  first_date: plainDate('A first date'),
+  last_date: plainDate('A last date'),
+  excluded_dates: z.array(plainDate('A skipped date')).default([]),
 })
 
 type TemplateBody = z.infer<typeof seriesTemplateFields>

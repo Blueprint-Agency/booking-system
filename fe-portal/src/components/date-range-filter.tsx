@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { LATEST_DATE } from "@/lib/formatters";
 import { localDay, localDayRange } from "@/lib/local-day";
 
 /**
@@ -162,6 +163,7 @@ export function DateRangeFilter({
           <input
             type="date"
             aria-label="From date"
+            max={LATEST_DATE}
             value={value?.from ?? ""}
             onChange={(e) => setEndpoint("from", e.target.value)}
             className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-9 sm:flex-none"
@@ -170,6 +172,7 @@ export function DateRangeFilter({
           <input
             type="date"
             aria-label="To date"
+            max={LATEST_DATE}
             value={value?.to ?? ""}
             onChange={(e) => setEndpoint("to", e.target.value)}
             className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-9 sm:flex-none"

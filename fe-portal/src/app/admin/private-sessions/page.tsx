@@ -19,6 +19,7 @@ import { PtPackageDialog } from "@/components/packages/pt-package-dialog";
 import { formatSgd } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { refusalMessage } from "@/lib/refusal-message";
 import { ptBookingWindowProblem } from "@/lib/pt-requests";
 import type { PtPackage, PtSessionType } from "@/types";
 import {
@@ -131,7 +132,7 @@ export default function PrivateSessionsPage() {
       await load();
       toast.success("PT package saved.");
     } catch (err) {
-      toast.error(err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.");
+      toast.error(refusalMessage(err, err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed."));
     }
   }
 

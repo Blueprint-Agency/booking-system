@@ -11,7 +11,7 @@ import { requirePermission } from '../../../middleware/require-permission'
 import { seatFields, staffBookingJson, staffBookingSchema, staffPackagesJson, staffPackagesQuery } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
 import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
-import { previewJson, seriesRow, seriesTemplateFields, toSeriesInput } from '../class-series'
+import { explainSeries, previewJson, seriesRow, seriesTemplateFields, toSeriesInput } from '../class-series'
 
 /**
  * Instructor schedule surface.
@@ -174,11 +174,11 @@ const app = new Hono()
     )
   })
   // ── Class Series ── preview, then commit the same input; see services/schedule/series.ts.
-  .post('/series/preview', schedulesClasses, zValidator('json', seriesSchema), async c => {
+  .post('/series/preview', schedulesClasses, zValidator('json', seriesSchema, explainSeries), async c => {
     const input = ownSeriesInput(c.req.valid('json'), c.get('staffUserId'))
     return c.json(previewJson(await seriesSvc.previewSeries(tenantId(c), input)))
   })
-  .post('/series', schedulesClasses, zValidator('json', seriesSchema), async c => {
+  .post('/series', schedulesClasses, zValidator('json', seriesSchema, explainSeries), async c => {
     const self = c.get('staffUserId')
     const res = await seriesSvc.createSeries(tenantId(c), {
       ...ownSeriesInput(c.req.valid('json'), self),

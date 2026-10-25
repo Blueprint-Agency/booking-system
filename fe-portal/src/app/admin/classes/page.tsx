@@ -17,6 +17,7 @@ import { ClassPackageDialog } from "@/components/packages/class-package-dialog";
 import { formatSgd } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { refusalMessage } from "@/lib/refusal-message";
 import type { ClassPackage, ClassPackageKind, Promotion } from "@/types";
 import {
   promotionFromApi,
@@ -109,7 +110,7 @@ export default function ClassPackagesPage() {
       await load();
       toast.success("Package saved.");
     } catch (err) {
-      toast.error(err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.");
+      toast.error(refusalMessage(err, err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed."));
     }
   }
 

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Dialog, DialogFooter, Button, Input, Label } from "@/components/ui";
+import { refusalMessage } from "@/lib/refusal-message";
 import type { Location } from "@/types";
 
 export function LocationFormDialog({
@@ -16,17 +17,27 @@ export function LocationFormDialog({
   const [address, setAddress] = useState(location?.address ?? "");
   const [gmapsUrl, setGmapsUrl] = useState(location?.gmapsUrl ?? "");
   const [phone, setPhone] = useState(location?.phone ?? "");
+  const [saving, setSaving] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    onSave({
-      id: location?.id ?? `loc-${Date.now().toString(36)}`,
-      name: name.trim(),
-      address: address.trim(),
-      gmapsUrl: gmapsUrl.trim(),
-      phone: phone.trim(),
-      archivedAt: location?.archivedAt ?? null,
-    });
+    setSaving(true);
+    setRefusal(null);
+    try {
+      await onSave({
+        id: location?.id ?? `loc-${Date.now().toString(36)}`,
+        name: name.trim(),
+        address: address.trim(),
+        gmapsUrl: gmapsUrl.trim(),
+        phone: phone.trim(),
+        archivedAt: location?.archivedAt ?? null,
+      });
+    } catch (err) {
+      setRefusal(refusalMessage(err, "The location could not be saved. Try again."));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -41,6 +52,7 @@ export function LocationFormDialog({
           <Input
             id="loc-name"
             required
+            maxLength={120}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
@@ -50,6 +62,7 @@ export function LocationFormDialog({
           <Input
             id="loc-address"
             required
+            maxLength={500}
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             placeholder="Street, building, postal code"
@@ -60,6 +73,7 @@ export function LocationFormDialog({
           <Input
             id="loc-gmaps"
             type="url"
+            maxLength={500}
             value={gmapsUrl}
             onChange={(e) => setGmapsUrl(e.target.value)}
             placeholder="https://maps.app.goo.gl/…"
@@ -69,16 +83,24 @@ export function LocationFormDialog({
           <Label htmlFor="loc-phone">Phone number</Label>
           <Input
             id="loc-phone"
+            maxLength={40}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="+65 …"
           />
         </div>
+        {refusal && (
+          <p role="alert" className="text-sm text-error">
+            {refusal}
+          </p>
+        )}
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit">{location ? "Save changes" : "Create"}</Button>
+          <Button type="submit" disabled={saving}>
+            {location ? "Save changes" : "Create"}
+          </Button>
         </DialogFooter>
       </form>
     </Dialog>

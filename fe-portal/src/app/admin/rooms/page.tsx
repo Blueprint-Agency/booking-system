@@ -19,6 +19,7 @@ import {
 } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { refusalMessage } from "@/lib/refusal-message";
 
 interface ApiRoom {
   id: string;
@@ -117,7 +118,7 @@ export default function RoomsPage() {
           toast.error("A room with that name already exists at this location.");
           return;
         }
-        toast.error(`Save failed (HTTP ${err.status}).`);
+        toast.error(refusalMessage(err, `Save failed (HTTP ${err.status}).`));
       } else {
         toast.error("Save failed.");
       }
@@ -389,6 +390,7 @@ function RoomDialog({
             id="room-name"
             required
             autoFocus
+            maxLength={120}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Studio A, Main Hall"

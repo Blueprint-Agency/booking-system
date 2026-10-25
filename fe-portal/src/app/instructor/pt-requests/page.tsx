@@ -5,7 +5,7 @@ import { Button, EmptyState, Label, PageHeader } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
-import { formatRelative } from "@/lib/formatters";
+import { LATEST_DATE, formatRelative } from "@/lib/formatters";
 import { scheduleErrorMessage } from "@/lib/schedule";
 import { withClashConfirm } from "@/lib/time-clash";
 import { toast } from "sonner";
@@ -281,6 +281,7 @@ function ScheduleForm({
           <input
             id={`date-${request.id}`}
             type="date"
+            max={LATEST_DATE}
             value={date}
             onChange={(e) => setDate(e.target.value)}
             className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"

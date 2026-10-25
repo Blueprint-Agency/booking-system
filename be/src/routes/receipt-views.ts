@@ -5,6 +5,11 @@ import { receiptHtmlPage } from '../services/receipts/html'
 import type { ReceiptRow } from '../services/receipts/issue'
 import { receiptPdf, receiptPdfFilename } from '../services/receipts/pdf'
 import { receiptStatus, type ReceiptSummary } from '../services/receipts/read'
+import { explainInvalid } from './explain-invalid'
+import { plainDate } from './plain-date'
+
+/** A Receipts filter refused for its shape, answered with the field's sentence. */
+export const explainReceiptsQuery = explainInvalid('That Receipts filter is not valid.')
 
 /**
  * How a Receipt goes over the wire, to the member (`/me/receipts`, #384) and
@@ -12,16 +17,14 @@ import { receiptStatus, type ReceiptSummary } from '../services/receipts/read'
  * one HTML and one PDF, so the two can never show the same Receipt differently.
  */
 
-/** A studio calendar day. */
-const plainDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'a date like 2026-01-31' })
 
 const RECEIPTS_PAGE_SIZE_DEFAULT = 20
 const RECEIPTS_PAGE_SIZE_MAX = 100
 
 /** The query every Receipts list takes: studio days, and the page. */
 export const receiptsListQuery = z.object({
-  from: plainDate.optional(),
-  to: plainDate.optional(),
+  from: plainDate('A from date').optional(),
+  to: plainDate('A to date').optional(),
   page: z.coerce.number().int().min(1).max(100000).default(1),
   page_size: z.coerce.number().int().min(1).max(RECEIPTS_PAGE_SIZE_MAX).default(RECEIPTS_PAGE_SIZE_DEFAULT),
 })
