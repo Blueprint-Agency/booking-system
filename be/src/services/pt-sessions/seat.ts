@@ -16,14 +16,19 @@
  *      sessions with a different coach from the session's;
  *  - refused, for a package that cannot pay at all, tested in this order:
  *      `not_a_pt_package`, `package_expired`, `insufficient_pt_credit`,
- *      `package_not_consumable` (Voided with sessions left), and for an
+ *      `package_not_consumable` (Voided with sessions left),
+ *      `package_expires_before_session` (it ends before the session starts,
+ *      or a Dormant one would by Activating now, #444), and for an
  *      Instructor `bound_to_other_instructor` — the same binding an Admin is
  *      only warned about (./binding.ts is its scheduling twin).
+ *
+ * Every refusal is tested before any warning, so staff are never asked to
+ * Add anyway for a seat that would then be refused.
  *
  * The member app never reaches this: a member requesting across types is
  * refused outright by ./request.ts.
  */
-import type { PackageKind } from '../packages/validity'
+import { effectiveExpiry, type PackageKind } from '../packages/validity'
 import type { PtSessionType } from './cost'
 
 /** What one seat costs on a manual session: one session, for every type. */
@@ -40,11 +45,16 @@ export interface SeatPackage {
   active: boolean
   /** The **Bound Instructor**. Null means open to anyone. */
   boundInstructorId: string | null
+  /** The length frozen at purchase, which dates a Dormant package's end. */
+  durationMonths: number | null
+  validityDays: number | null
 }
 
 export interface SeatSession {
   sessionType: PtSessionType
   instructorId: string
+  /** Null before staff have chosen a time: the package is then judged on the shape alone. */
+  startsAt: Date | null
 }
 
 export type SeatRefusal =
@@ -52,6 +62,7 @@ export type SeatRefusal =
   | 'package_expired'
   | 'insufficient_pt_credit'
   | 'package_not_consumable'
+  | 'package_expires_before_session'
   | 'bound_to_other_instructor'
 
 export type SeatWarning = 'session_type_mismatch' | 'bound_to_other_instructor'
@@ -72,6 +83,10 @@ export function mayPayForSeat(input: MayPayForSeatInput): SeatResult {
   if (pkg.expiresAt !== null && pkg.expiresAt <= now) return { ok: false, refusal: 'package_expired' }
   if ((pkg.creditsOrSessionsRemaining ?? 0) < SEAT_COST) return { ok: false, refusal: 'insufficient_pt_credit' }
   if (!pkg.active) return { ok: false, refusal: 'package_not_consumable' }
+  const until = effectiveExpiry(pkg, now)
+  if (session.startsAt && until && session.startsAt > until) {
+    return { ok: false, refusal: 'package_expires_before_session' }
+  }
 
   const boundElsewhere = pkg.boundInstructorId !== null && pkg.boundInstructorId !== session.instructorId
   if (boundElsewhere && !actorIsAdmin) return { ok: false, refusal: 'bound_to_other_instructor' }

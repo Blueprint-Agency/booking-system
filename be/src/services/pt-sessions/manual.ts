@@ -33,7 +33,7 @@ import { inboxItems } from '../../db/schema/inbox'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
 import { actorOfSource, debitCredits, recordMovement, refundCredits, type Tx } from '../packages/ledger'
-import { activateOnSchedule, reverseActivationOnCancel, sweepExpired } from '../packages/activation'
+import { activateOnSchedule, assertPackageCoversSession, reverseActivationOnCancel, sweepExpired } from '../packages/activation'
 import { activationExpiry } from '../packages/validity'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
 import type { CancelSource, RefundOutcome as BookingRefundOutcome } from '../bookings/refund-outcome'
@@ -97,9 +97,13 @@ export interface AddManualPtSessionMemberInput extends Actor, ManualSeatInput {
   requireOwnInstructorId?: string
 }
 
-/** A refusal's HTTP status. Only the binding is a 403: it is who asked, not the package. */
-function refuse(refusal: SeatRefusal): never {
+/**
+ * A refusal's HTTP status. Only the binding is a 403: it is who asked, not the
+ * package. An end before the session carries the sentence naming that end.
+ */
+function refuse(refusal: SeatRefusal, pkg: SeatPackage | undefined, startsAt: Date, now: Date): never {
   if (refusal === 'bound_to_other_instructor') throw new ForbiddenError(refusal)
+  if (refusal === 'package_expires_before_session' && pkg) assertPackageCoversSession(pkg, startsAt, now)
   throw new ConflictError(refusal)
 }
 
@@ -122,6 +126,8 @@ const packageColumns = {
   expiresAt: clientPackages.expiresAt,
   active: clientPackages.active,
   boundInstructorId: clientPackages.boundInstructorId,
+  durationMonths: clientPackages.durationMonths,
+  validityDays: clientPackages.validityDays,
   purchasedAt: clientPackages.purchasedAt,
 }
 
@@ -139,8 +145,10 @@ async function assertMember(reader: Tx | typeof db, tenantId: string, clientId: 
 /**
  * Which package pays for this member's seat: staff's pick, checked by the rule,
  * or else the Default payer — the first package the rule allows in
- * ./seat.ts's order. Nothing allowed refuses with the reason of the package
- * the member would have expected to pay. Every row read is locked.
+ * ./seat.ts's order, so one that ends before the session is passed over as a
+ * class booking passes over a plan that ends before the class. Nothing allowed
+ * refuses with the reason of the package the member would have expected to
+ * pay. Every row read is locked.
  */
 async function choosePackage(
   tx: Tx,
@@ -153,7 +161,7 @@ async function choosePackage(
   const judge = (pkg: LoadedPackage) =>
     mayPayForSeat({
       pkg,
-      session: { sessionType: session.sessionType, instructorId: session.instructorId },
+      session: { sessionType: session.sessionType, instructorId: session.instructorId, startsAt: session.startsAt },
       actorIsAdmin: actor.actorIsAdmin,
       now,
     })
@@ -175,7 +183,7 @@ async function choosePackage(
       .limit(1)
     if (!pkg) throw new NotFoundError('client_package_not_found')
     const verdict = judge(pkg)
-    if (!verdict.ok) refuse(verdict.refusal)
+    if (!verdict.ok) refuse(verdict.refusal, pkg, session.startsAt, now)
     return { pkg, warnings: verdict.warnings }
   }
 
@@ -198,7 +206,7 @@ async function choosePackage(
   const payer = ordered.find(c => c.verdict.ok)
   if (payer?.verdict.ok) return { pkg: payer.pkg, warnings: payer.verdict.warnings }
   const first = ordered[0]
-  refuse(first && !first.verdict.ok ? first.verdict.refusal : 'not_a_pt_package')
+  refuse(first && !first.verdict.ok ? first.verdict.refusal : 'not_a_pt_package', first?.pkg, session.startsAt, now)
 }
 
 /**
@@ -939,7 +947,10 @@ export interface SeatCandidate {
   eligible: boolean
   refusal: SeatRefusal | null
   warnings: SeatWarning[]
-  /** Dormant only: the end date a seat would stamp on it now. */
+  /**
+   * Dormant only: the end date a seat would stamp on it now — also on one
+   * refused because that end comes before the session.
+   */
   activateUntil: Date | null
 }
 
@@ -947,12 +958,19 @@ export interface SeatCandidate {
  * Every PT package the member holds, read against a session of this type with
  * this instructor, in the Default payer's order: each with whether it can pay,
  * why not, or what staff would be warned of — and for a Dormant one, the end
- * date adding the member would start. Takes the session's shape rather than
- * its id so the form can ask before the session exists.
+ * date adding the member would start. Takes the session's shape and, once
+ * staff have chosen one, its start rather than its id, so the form can ask
+ * before the session exists.
  */
 export async function listSeatCandidates(
   tenantId: string,
-  input: { clientId: string; sessionType: PtSessionType; instructorId: string; actorIsAdmin: boolean },
+  input: {
+    clientId: string
+    sessionType: PtSessionType
+    instructorId: string
+    startsAt: Date | null
+    actorIsAdmin: boolean
+  },
 ): Promise<{ defaultClientPackageId: string | null; packages: SeatCandidate[] }> {
   // Refused as adding them would be, so the form never offers a seat the add
   // turns down: another studio's member or a deleted one is not found, a
@@ -963,8 +981,6 @@ export async function listSeatCandidates(
     .select({
       ...packageColumns,
       name: ptPackages.name,
-      durationMonths: clientPackages.durationMonths,
-      validityDays: clientPackages.validityDays,
       boundInstructorName: staffUsers.name,
     })
     .from(clientPackages)
@@ -980,7 +996,7 @@ export async function listSeatCandidates(
     .orderBy(asc(clientPackages.purchasedAt))
 
   const now = clockNow()
-  const session = { sessionType: input.sessionType, instructorId: input.instructorId }
+  const session = { sessionType: input.sessionType, instructorId: input.instructorId, startsAt: input.startsAt }
   const ordered = orderSeatCandidates(
     rows.map(pkg => ({
       pkg,
@@ -1001,7 +1017,10 @@ export async function listSeatCandidates(
     eligible: verdict.ok,
     refusal: verdict.ok ? null : verdict.refusal,
     warnings: verdict.ok ? verdict.warnings : [],
-    activateUntil: verdict.ok && pkg.expiresAt === null ? activationExpiry(pkg, now) : null,
+    activateUntil:
+      pkg.expiresAt === null && (verdict.ok || verdict.refusal === 'package_expires_before_session')
+        ? activationExpiry(pkg, now)
+        : null,
   }))
   return {
     defaultClientPackageId: packages.find(p => p.eligible)?.id ?? null,

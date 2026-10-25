@@ -133,6 +133,7 @@ const app = new Hono()
       clientId: q.client_id,
       sessionType: q.session_type,
       instructorId: c.get('staffUserId') as string, // never from the query
+      startsAt: q.starts_at ? new Date(q.starts_at) : null,
       actorIsAdmin: false,
     })
     return c.json(seatCandidatesJson(res))

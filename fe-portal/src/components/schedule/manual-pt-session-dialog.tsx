@@ -28,6 +28,7 @@ import {
   seatChoice,
   seatLimit,
   seatReadErrorMessage,
+  sessionStartIso,
   sessionTypeLabel,
   type PtSessionType,
 } from "@/lib/pt-manual";
@@ -70,7 +71,8 @@ export function ManualPtSessionDialog({
 
   // An Instructor runs the session themselves; the route ignores anyone else.
   const sessionInstructorId = role === "admin" ? instructorId : (currentStaff?.id ?? "");
-  const shape = `${sessionType}|${sessionInstructorId}`;
+  const startsAt = sessionStartIso(date, startTime);
+  const shape = `${sessionType}|${sessionInstructorId}|${startsAt ?? ""}`;
 
   useEffect(() => {
     if (!api) return;
@@ -104,11 +106,11 @@ export function ManualPtSessionDialog({
 
   /**
    * Read one member's packages for the session as it is now. A reply for a
-   * shape since changed (the type or instructor moved on) is dropped: the
-   * re-read for the new shape is already on its way.
+   * shape since changed (the type, instructor or start moved on) is dropped:
+   * the re-read for the new shape is already on its way.
    */
   const read = useCallback(
-    async (member: MemberMatch, forShape: string, type: PtSessionType, forInstructor: string) => {
+    async (member: MemberMatch, forShape: string, type: PtSessionType, forInstructor: string, forStart: string | null) => {
       if (!api) return;
       if (!forInstructor) {
         setSeats((prev) =>
@@ -128,6 +130,7 @@ export function ManualPtSessionDialog({
           clientId: member.id,
           sessionType: type,
           instructorId: forInstructor,
+          startsAt: forStart,
         });
         const choice = seatChoice(candidates);
         setSeats((prev) =>
@@ -150,17 +153,17 @@ export function ManualPtSessionDialog({
     [api, role],
   );
 
-  // Changing the type or instructor changes what each package may pay for:
-  // re-read every member's candidates.
+  // Changing the type, instructor or start changes what each package may pay
+  // for: re-read every member's candidates.
   const seatsRef = useRef(seats);
   useEffect(() => {
     seatsRef.current = seats;
   }, [seats]);
   useEffect(() => {
     for (const r of seatsRef.current) {
-      if (r.shape !== shape) void read(r.member, shape, sessionType, sessionInstructorId);
+      if (r.shape !== shape) void read(r.member, shape, sessionType, sessionInstructorId, startsAt);
     }
-  }, [shape, sessionType, sessionInstructorId, read]);
+  }, [shape, sessionType, sessionInstructorId, startsAt, read]);
 
   function addMember(m: MemberMatch) {
     if (seats.some((r) => r.member.id === m.id) || seats.length >= seatLimit(sessionType)) return;
@@ -169,7 +172,7 @@ export function ManualPtSessionDialog({
       { member: m, shape, state: "loading", candidates: null, choice: null, chosen: null, accepted: false, error: null },
     ]);
     setErr(null);
-    void read(m, shape, sessionType, sessionInstructorId);
+    void read(m, shape, sessionType, sessionInstructorId, startsAt);
   }
 
   function removeMember(id: string) {
@@ -205,7 +208,7 @@ export function ManualPtSessionDialog({
       // row shows what it now needs.
       const refused = e instanceof ApiError ? (e.body as { client_id?: string } | null)?.client_id : undefined;
       const row = refused ? seats.find((r) => r.member.id === refused) : undefined;
-      if (row) void read(row.member, shape, sessionType, sessionInstructorId);
+      if (row) void read(row.member, shape, sessionType, sessionInstructorId, startsAt);
     } finally {
       setSaving(false);
     }
