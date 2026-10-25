@@ -930,29 +930,64 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.deepEqual(await returnedMovements(paid.clientPackageId), [])
   })
 
-  test('RFD-19 an admin setting a refunded package\'s credit balance or expiry leaves it voided: it pays for no later class', async () => {
-    const quin = await member(one, 'Quin Edited')
-    const paid = await buy(one, quin, 'bundle')
+  async function refunded(name: string, item: 'bundle' | 'plan' | 'pt') {
+    const who = await member(one, name)
+    const paid = await buy(one, who, item)
     const from = refundCalls().length
-    assert.equal((await refundPackage(adminAtOne, quin, paid)).status, 200)
+    assert.equal((await refundPackage(adminAtOne, who, paid)).status, 200)
     await settle(from)
     await assertRefunded(paid.purchaseId)
+    return { who, paid }
+  }
 
-    const balance = await post(
-      `/api/v1/portal/admin/clients/${quin.clientId}/packages/${paid.clientPackageId}/balance`,
-      adminAtOne.headers,
-      { balance: 12, reason: 'Goodwill' },
-    )
-    assert.equal(balance.status, 200, JSON.stringify(balance.body))
-    await assertStillVoided(quin, paid, 12)
+  /** Each edit is refused as `package_voided`, and the package and its ledger are as the Void left them. */
+  async function assertEditsRefused(who: Member, paid: Paid, edits: Record<string, unknown>) {
+    const before = await state(paid)
+    for (const [path, body] of Object.entries(edits)) {
+      const res = await post(
+        `/api/v1/portal/admin/clients/${who.clientId}/packages/${paid.clientPackageId}/${path}`,
+        adminAtOne.headers,
+        body,
+      )
+      assert.equal(res.status, 409, `${path}: ${JSON.stringify(res.body)}`)
+      assert.equal(res.body.error, 'package_voided', path)
+    }
+    assert.deepEqual(await state(paid), before, 'nothing written')
+  }
 
-    const expiry = await post(
-      `/api/v1/portal/admin/clients/${quin.clientId}/packages/${paid.clientPackageId}/expiry`,
-      adminAtOne.headers,
-      { expires_at: new Date(Date.now() + 30 * DAY).toISOString(), reason: 'Extended' },
+  test('RFD-19 an admin cannot set, adjust or re-date a refunded Credit Bundle: each edit is refused and nothing is written', async () => {
+    const { who: quin, paid } = await refunded('Quin Edited', 'bundle')
+
+    await assertEditsRefused(quin, paid, {
+      balance: { balance: 12, reason: 'Goodwill' },
+      adjust: { delta: 2, reason: 'Goodwill' },
+      expiry: { expires_at: new Date(Date.now() + 30 * DAY).toISOString(), reason: 'Extended' },
+    })
+    await assertStillVoided(quin, paid, 10)
+
+    const live = await buy(one, quin, 'bundle')
+    const profile = await reply(
+      await harness.app.request(`/api/v1/portal/admin/clients/${quin.clientId}`, { headers: adminAtOne.headers }),
     )
-    assert.equal(expiry.status, 200, JSON.stringify(expiry.body))
-    await assertStillVoided(quin, paid, 12)
+    assert.equal(profile.status, 200, JSON.stringify(profile.body))
+    const shown = [...profile.body.packages, ...profile.body.past_packages]
+    assert.equal(shown.find((p: { id: string }) => p.id === paid.clientPackageId)?.voided, true)
+    assert.equal(shown.find((p: { id: string }) => p.id === live.clientPackageId)?.voided, false)
+  })
+
+  test("RFD-31 an admin cannot change a refunded Unlimited Plan's Add-On or Home Location, or a refunded PT package's sessions or Bound Instructor: each is refused and nothing is written", async () => {
+    const plan = await refunded('Rae Plan Edited', 'plan')
+    await assertEditsRefused(plan.who, plan.paid, {
+      'cross-location': { paid_sgd: 50, reason: 'Paid at the desk' },
+      location: { location_id: one.locationId, reason: 'Picked the wrong studio' },
+      expiry: { expires_at: null, reason: 'Back to Dormant' },
+    })
+
+    const pt = await refunded('Sol PT Edited', 'pt')
+    await assertEditsRefused(pt.who, pt.paid, {
+      adjust: { delta: 1, reason: 'Goodwill' },
+      'bound-instructor': { instructor_id: teacherAtOne.staffId, reason: 'Moved coach' },
+    })
   })
 
   test("another studio's admin cannot refund a studio's package or workshop place, and no money moves", async () => {
