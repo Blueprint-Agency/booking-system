@@ -578,6 +578,52 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.deepEqual(await tierIds(), before, 'neither refused save changed a tier')
   })
 
+  test('WSP-25 a tier with a sale still open on it, unpaid on a live payment page or part-paid, cannot be removed, and one left unpaid past its payment page can', async () => {
+    const w = await workshop(one, adminAtOne, teacherAtOne, {
+      name: 'Open sale tier',
+      days: [{ capacity: 10 }],
+      tiers: [
+        { name: 'Full', price: '150.00', days: [0] },
+        { name: 'Other', price: '90.00', days: [0] },
+      ],
+    })
+    const cara = await member(one, 'Cara Open Sale')
+    const started = await checkout(cara, w)
+    assert.equal(started.status, 200, started.text)
+    const [sale] = await harness.db
+      .select({ id: schema.purchases.id })
+      .from(schema.purchases)
+      .where(and(eq(schema.purchases.clientId, cara.clientId), eq(schema.purchases.kind, 'workshop')))
+    assert.ok(sale, 'the checkout opened a Purchase')
+
+    const tiersPath = `/api/v1/portal/admin/workshops/${w.id}/tiers`
+    const remove = () => call(`${tiersPath}/${w.tierIds[0]}`, adminAtOne.headers, { method: 'DELETE' })
+    const tierIds = async () =>
+      ((await call(tiersPath, adminAtOne.headers)).body.tiers as { id: string }[]).map(t => t.id).sort()
+    const both = [...w.tierIds].sort()
+
+    const unpaid = await remove()
+    assert.equal(unpaid.status, 409, unpaid.text)
+    assert.equal(unpaid.body.error, 'workshop_tier_has_open_purchases')
+    assert.match(String(unpaid.body.message), /1 unfinished purchase\b/, unpaid.text)
+    assert.deepEqual(await tierIds(), both, 'the tier on an unpaid sale is still there')
+
+    await harness.db.execute(
+      sql`UPDATE purchases SET created_at = now() - interval '3 days', part_paid_at = now() - interval '3 days', amount_paid_sgd = '50.00' WHERE id = ${sale!.id}`,
+    )
+    const partPaid = await remove()
+    assert.equal(partPaid.status, 409, partPaid.text)
+    assert.equal(partPaid.body.error, 'workshop_tier_has_open_purchases')
+    assert.deepEqual(await tierIds(), both, 'the tier on a part-paid sale is still there')
+
+    await harness.db.execute(
+      sql`UPDATE purchases SET part_paid_at = null, amount_paid_sgd = '0.00' WHERE id = ${sale!.id}`,
+    )
+    const lapsed = await remove()
+    assert.equal(lapsed.status, 200, lapsed.text)
+    assert.deepEqual(await tierIds(), [w.tierIds[1]], 'a sale nobody can pay into any more holds no tier')
+  })
+
   test('WSP-21 removing one of two tiers while the other is being removed leaves the workshop one tier', async () => {
     const w = await workshop(one, adminAtOne, teacherAtOne, {
       name: 'Two tier race',
