@@ -45,6 +45,7 @@ import {
   writeInstructorPermissions,
 } from './instructor-permissions'
 import { recordStaffAct } from './staff-acts'
+import { assertBioWithin } from './staff-bio'
 import { isTopRank, STAFF_EDIT_REFUSAL_MESSAGE, staffEditRefusal, TOP_RANK_ROLES } from './staff-rank'
 
 export type StaffUserRow = typeof staffUsers.$inferSelect
@@ -352,6 +353,7 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
   // so "make them an admin and grant permissions" is refused as one request.
   // Before any write, so a refusal writes nothing.
   if (patch.permissions !== undefined) assertPermissionsTargetInstructor(patch.role ?? target.role)
+  assertBioWithin(patch.bio, target.bio)
   if (changingRole) {
     if (targetStaffId === actorStaffId) {
       throw new ForbiddenError('self_role_edit_forbidden', {

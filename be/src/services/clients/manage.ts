@@ -10,6 +10,7 @@ import { recordStaffAct } from '../auth/staff-acts'
 import { requireTenantUrl } from '../tenants/urls'
 import { sendTemplatedEmail } from '../notifications/send'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { clientPhone } from './phone'
 
 export type ClientRow = typeof clients.$inferSelect
 export type ManualAdjustmentRow = typeof manualAdjustments.$inferSelect
@@ -364,11 +365,10 @@ function buildClientLoginUrl(tenantId: string): Promise<string> {
 export async function createClient(input: CreateClientInput): Promise<ClientRow> {
   const name = input.name.trim()
   const email = input.email.trim().toLowerCase()
-  const phone = input.phone.trim()
   const sendInvite = input.sendInvite ?? true
   if (!name) throw new BadRequestError('name_required')
   if (!email) throw new BadRequestError('email_required')
-  if (!phone && !input.phoneUnknown) throw new BadRequestError('phone_required')
+  const phone = input.phoneUnknown && !input.phone.trim() ? '' : clientPhone(input.phone)
 
   // Resolved before anything is written: an invite email nobody can act on is
   // not worth an account and a member row to go with it.
@@ -383,7 +383,7 @@ export async function createClient(input: CreateClientInput): Promise<ClientRow>
     .limit(1)
   if (existing) {
     throw new ConflictError('email_in_use', {
-      message: 'A client with this email already exists.',
+      message: 'A customer with this email already exists.',
     })
   }
 

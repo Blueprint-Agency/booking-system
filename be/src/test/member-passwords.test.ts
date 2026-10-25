@@ -327,6 +327,29 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     )
   })
 
+  test('AUTH-21 sign-up refuses a phone that is not a phone number with a reason, writes nothing, and leaves the code usable', async () => {
+    const email = at('sign-up-phone')
+    const otp = await codeFor(one, email)
+    const details = { email, otp, first_name: 'Ada', last_name: 'Lovelace', password: PASSWORD }
+
+    const refused = await send('/api/v1/public/members/register', {
+      body: { ...details, phone: 'call me maybe' },
+      headers: memberHeaders(one),
+    })
+    const text = await refused.text()
+    assert.equal(refused.status, 400, text)
+    const body = JSON.parse(text) as { error?: string; message?: string }
+    assert.equal(body.error, 'invalid_request', text)
+    assert.match(String(body.message), /7 to 15 digits/, text)
+    const rows = await harness.db.select().from(schema.clients).where(eq(schema.clients.email, email))
+    assert.deepEqual(rows, [], 'no member is written')
+
+    await expectStatus(
+      await send('/api/v1/public/members/register', { body: { ...details, phone: '+65 9123 4567' }, headers: memberHeaders(one) }),
+      200,
+    )
+  })
+
   test('the emailed code no longer signs a member in', async () => {
     const email = at('code-only')
     await memberWithoutPassword(one, email)

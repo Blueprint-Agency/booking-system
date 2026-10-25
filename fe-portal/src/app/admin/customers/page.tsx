@@ -24,6 +24,7 @@ import type { ClientGender } from "@/components/clients/edit-profile-dialog";
 import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { addCustomerError } from "@/lib/add-customer";
 import { formatDate } from "@/lib/formatters";
 
 type StatusFilter = "all" | "active" | "trials" | "blocked";
@@ -590,12 +591,7 @@ function AddClientDialog({
       );
       onCreated();
     } catch (err) {
-      const msg =
-        err instanceof ApiError && err.status === 409
-          ? "A customer with this email already exists."
-          : err instanceof ApiError
-            ? `Could not create customer (HTTP ${err.status}).`
-            : "Could not create customer.";
+      const msg = addCustomerError(err);
       setError(msg);
       toast.error(msg);
     } finally {

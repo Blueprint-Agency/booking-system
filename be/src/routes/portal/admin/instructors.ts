@@ -11,7 +11,7 @@ const listQuery = z.object({ status: statusEnum.optional() })
 const createSchema = z.object({
   email: z.string().email().max(254),
   name: z.string().min(1).max(120),
-  bio: z.string().max(4000).nullish(),
+  bio: z.string().nullish(),
   phone: z.string().max(40).nullish(),
   photo_r2_key: z.string().max(500).nullish(),
 })

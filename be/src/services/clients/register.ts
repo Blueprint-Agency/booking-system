@@ -7,6 +7,7 @@ import { ensureAuthUser, setMemberPassword } from '../auth/auth-users'
 import { checkMemberCode, signInMemberWithPassword, spendMemberCode } from '../auth/better-auth'
 import { memberAuthError } from '../auth/member-passwords'
 import { BadRequestError, ConflictError, ForbiddenError } from '../../shared/errors'
+import { clientPhone } from './phone'
 
 type ClientGender = (typeof clientGenderEnum.enumValues)[number]
 
@@ -37,17 +38,19 @@ interface RegisterMemberInput {
  *
  * In order:
  *
- *   1. Already a member here — 409 `already_member`, before the code is looked
+ *   1. A phone that is not a phone number — 400 with a `message`
+ *      (`clientPhone`), before the code is looked at, so it costs no attempt.
+ *   2. Already a member here — 409 `already_member`, before the code is looked
  *      at. Signing in is the way back, and it does not need this code spent.
- *   2. The code is checked. A wrong one counts against the address and writes
+ *   3. The code is checked. A wrong one counts against the address and writes
  *      nothing else.
- *   3. User, password, row and session, in one savepoint, then the code spent.
+ *   4. User, password, row and session, in one savepoint, then the code spent.
  *      If the sign-in is refused (the limiter said no) everything goes with it.
  */
 export async function registerMember(input: RegisterMemberInput): Promise<{ token: string }> {
   const email = input.email.trim().toLowerCase()
   const name = `${input.firstName.trim()} ${input.lastName.trim()}`.trim()
-  const phone = input.phone.trim()
+  const phone = clientPhone(input.phone)
 
   const [existing] = await db
     .select({ id: clients.id })

@@ -4,6 +4,7 @@ import { AtSign, Pencil, RotateCcw, ShieldOff } from "lucide-react";
 import { ResendInvitationButton } from "@/components/access/resend-invitation-button";
 import { SessionsPanel } from "@/components/access/sessions-panel";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
+import { BIO_MAX } from "@/lib/instructor-profile";
 import {
   INSTRUCTOR_PERMISSIONS,
   PERMISSION_LABEL,
@@ -767,6 +768,7 @@ function StaffProfileForm({
         <Textarea
           id="edit-bio"
           rows={4}
+          maxLength={BIO_MAX}
           value={bio}
           onChange={e => setBio(e.target.value)}
         />

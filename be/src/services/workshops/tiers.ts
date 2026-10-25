@@ -217,7 +217,11 @@ export async function deleteTier(
       .select({ tiers: count() })
       .from(workshopTiers)
       .where(and(eq(workshopTiers.tenantId, tenantId), eq(workshopTiers.workshopId, workshopId)))
-    if (Number(tiers) <= 1) throw new ConflictError('workshop_tier_required')
+    if (Number(tiers) <= 1) {
+      throw new ConflictError('workshop_tier_required', {
+        message: "A workshop needs at least one tier, so its last tier can't be removed.",
+      })
+    }
 
     const rows = await db
       .select({ n: count() })
@@ -231,7 +235,10 @@ export async function deleteTier(
       )
     const n = Number(rows[0]?.n ?? 0)
     if (n > 0) {
-      throw new ConflictError('workshop_tier_has_bookings', { bookings: n })
+      throw new ConflictError('workshop_tier_has_bookings', {
+        bookings: n,
+        message: `This tier has ${n} confirmed booking${n === 1 ? '' : 's'}, so it can't be removed.`,
+      })
     }
 
     await db

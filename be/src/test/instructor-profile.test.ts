@@ -5,24 +5,41 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 
 describe('instructor profile edit', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
+  let schema!: typeof import('../db/schema')
   let headers!: Record<string, string>
+  let adminHeaders!: Record<string, string>
+  let instructorId!: string
 
   const run = Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36)
   const DOMAIN = `instructor-profile-${run}.test`
 
-  const profile = async (method: 'GET' | 'PATCH', body?: unknown) => {
-    const res = await harness.app.request('/api/v1/portal/instructor/profile', {
+  const request = async (path: string, method: string, as: Record<string, string>, body?: unknown) => {
+    const res = await harness.app.request(path, {
       method,
-      headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
+      headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...as },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
     const text = await res.text()
     return { status: res.status, text, body: (text ? JSON.parse(text) : {}) as Record<string, any> }
   }
 
+  const profile = (method: 'GET' | 'PATCH', body?: unknown) =>
+    request('/api/v1/portal/instructor/profile', method, headers, body)
+
+  const editStaff = (body: unknown) =>
+    request(`/api/v1/portal/admin/staff/${instructorId}`, 'PATCH', adminHeaders, body)
+
+  const storedBio = async () => {
+    const [row] = await harness.db
+      .select({ bio: schema.staffUsers.bio })
+      .from(schema.staffUsers)
+      .where(eq(schema.staffUsers.id, instructorId))
+    return row!.bio
+  }
+
   before(async () => {
     harness = await startTestApp()
-    const schema = await import('../db/schema')
+    schema = await import('../db/schema')
     const one = harness.tenants.one
     const email = `tara@${DOMAIN}`
     headers = await harness.signInAs('staff', email, one)
@@ -32,6 +49,17 @@ describe('instructor profile edit', { skip: integrationTestsEnabled ? false : SK
       .values({ tenantId: one.id, email, name: `Tara ${run}`, role: 'instructor', status: 'active', authUserId: user!.id })
       .returning()
     await harness.db.insert(schema.instructors).values({ tenantId: one.id, staffUserId: row!.id })
+    instructorId = row!.id
+
+    const adminEmail = `admin@${DOMAIN}`
+    adminHeaders = await harness.signInAs('staff', adminEmail, one)
+    const [adminUser] = await harness.db
+      .select()
+      .from(schema.staffAuthUsers)
+      .where(eq(schema.staffAuthUsers.email, adminEmail))
+    await harness.db
+      .insert(schema.staffUsers)
+      .values({ tenantId: one.id, email: adminEmail, name: `Admin ${run}`, role: 'admin', status: 'active', authUserId: adminUser!.id })
   })
 
   after(async () => {
@@ -69,5 +97,53 @@ describe('instructor profile edit', { skip: integrationTestsEnabled ? false : SK
     const longest = await profile('PATCH', { bio: 'y'.repeat(2000), phone: '9'.repeat(40) })
     assert.equal(longest.status, 200, longest.text)
     assert.equal(longest.body.bio, 'y'.repeat(2000))
+  })
+
+  test('STF-42 an Admin editing a staff bio or creating an Instructor is held to the same 2000-character bio as the Instructor, with the same sentence, and nothing is written', async () => {
+    const before = await storedBio()
+
+    const edited = await editStaff({ bio: 'z'.repeat(2001) })
+    assert.equal(edited.status, 400, edited.text)
+    assert.equal(edited.body.error, 'invalid_request', edited.text)
+    assert.match(String(edited.body.message), /bio/i, edited.text)
+    assert.match(String(edited.body.message), /2,?000/, edited.text)
+    assert.equal(await storedBio(), before, 'a refused staff edit changes nothing')
+
+    const email = `created@${DOMAIN}`
+    const created = await request('/api/v1/portal/admin/instructors', 'POST', adminHeaders, {
+      email,
+      name: 'Created Instructor',
+      bio: 'z'.repeat(2001),
+    })
+    assert.equal(created.status, 400, created.text)
+    assert.equal(created.body.error, 'invalid_request', created.text)
+    assert.match(String(created.body.message), /bio/i, created.text)
+    assert.match(String(created.body.message), /2,?000/, created.text)
+    const rows = await harness.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.email, email))
+    assert.deepEqual(rows, [], 'a refused create writes no staff member')
+
+    const longest = await editStaff({ bio: 'z'.repeat(2000) })
+    assert.equal(longest.status, 200, longest.text)
+    assert.equal(await storedBio(), 'z'.repeat(2000))
+  })
+
+  test('STF-43 a bio already stored past 2000 characters does not stop the Instructor or an Admin saving the rest of the profile, but cannot be replaced by another one past 2000', async () => {
+    const legacy = 'w'.repeat(3000)
+    await harness.db.update(schema.staffUsers).set({ bio: legacy }).where(eq(schema.staffUsers.id, instructorId))
+
+    const own = await profile('PATCH', { bio: legacy, phone: '+65 8111 2222' })
+    assert.equal(own.status, 200, own.text)
+    assert.equal(own.body.phone, '+65 8111 2222')
+    assert.equal(own.body.bio, legacy)
+
+    const byAdmin = await editStaff({ bio: legacy, address: '1 Studio Lane' })
+    assert.equal(byAdmin.status, 200, byAdmin.text)
+    assert.equal(byAdmin.body.address, '1 Studio Lane')
+
+    for (const res of [await profile('PATCH', { bio: 'v'.repeat(3000) }), await editStaff({ bio: 'v'.repeat(3000) })]) {
+      assert.equal(res.status, 400, res.text)
+      assert.match(String(res.body.message), /2,?000/, res.text)
+    }
+    assert.equal(await storedBio(), legacy, 'a refused change keeps the stored bio')
   })
 })

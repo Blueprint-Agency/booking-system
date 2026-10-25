@@ -237,6 +237,25 @@ describe('member profile edit', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(named.status, 200, named.text)
   })
 
+  test('CUS-27 Add customer refuses a phone that is not a phone number with the reason the profile edit gives, and adds no member', async () => {
+    const add = (email: string, phone: string) =>
+      call('POST', '/portal/admin/clients', adminOne.headers, { name: 'Phone Probe', email, phone, send_invite: false })
+
+    for (const [i, phone] of ['not a phone <script>', '+65 9123 4567 <b>', '12345', '+1234567890123456', '++6591234567'].entries()) {
+      const email = fixtures.at(`bad-phone-${i}`)
+      const res = await add(email, phone)
+      assert.equal(res.status, 400, `${phone}: ${res.text}`)
+      assert.equal(res.body.error, 'invalid_request', `${phone}: ${res.text}`)
+      assert.match(String(res.body.message), /7 to 15 digits/, `${phone} says why: ${res.text}`)
+      const rows = await harness.db.select().from(schema.clients).where(eq(schema.clients.email, email))
+      assert.deepEqual(rows, [], `${phone} adds no member`)
+    }
+
+    const added = await add(fixtures.at('good-phone'), '(65) 9123-4567')
+    assert.equal(added.status, 201, added.text)
+    assert.equal(added.body.phone, '(65) 9123-4567')
+  })
+
   test('ACC-20 a member saves their theme and text size to their account, one at a time, and an invalid or empty save is refused', async () => {
     const member = await newMember()
     const other = await newMember()
