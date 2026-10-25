@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
@@ -337,9 +338,11 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
 
   /**
    * The provider's `charge.refunded` delivery for a whole refund, as its
-   * dashboard sends it, to studio one's own endpoint.
+   * dashboard sends it, to studio one's own endpoint. `metadata` is what the
+   * charge carries from its intent: a checkout of this system's own writes the
+   * studio and the member there.
    */
-  async function deliverRefund(intent: string, capturedCents: number): Promise<Response> {
+  async function deliverRefund(intent: string, capturedCents: number, metadata: Record<string, string> = {}): Promise<Response> {
     refundedAtProvider.set(intent, capturedCents)
     const event = {
       id: `evt_${randomUUID()}`,
@@ -352,7 +355,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
           amount_captured: capturedCents,
           amount_refunded: capturedCents,
           refunded: true,
-          metadata: {},
+          metadata,
         },
       },
     }
@@ -926,6 +929,94 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal((await adminSees(o.who, granted!.id)).refundable, true)
   })
 
+  test('RFD-26 the refund of a late payment that reaches the studio before that payment is recorded is answered for redelivery without an error line, and its redelivery returns the payment', async () => {
+    const { who, purchaseId, firstIntent } = await midResume()
+    await expectStatus(await deliverRefund(firstIntent, 5000), 200)
+    const lateIntent = `pi_${randomUUID()}`
+    const chargeMetadata = { tenant_id: one.id, client_id: who.clientId }
+    // The provider's own delivery is a request of its own, outside the one
+    // whose payment is still landing.
+    const fromOutside = AsyncLocalStorage.snapshot()
+    let early: Response | undefined
+    fake.reply('refunds.create', async (params: unknown) => {
+      const intent = (params as { payment_intent: string }).payment_intent
+      early = await fromOutside(() => deliverRefund(intent, 10000, chargeMetadata))
+      return { id: `re_${intent}` }
+    })
+    harness.logs.clear()
+    try {
+      await expectStatus(await deliver({ intent: lateIntent }), 200)
+    } finally {
+      fake.reply('refunds.create', undefined)
+    }
+
+    assert.ok(early, 'the late payment was not given back')
+    assert.equal(early.status, 503, 'the refund was taken as handled before its payment existed')
+    assert.deepEqual(
+      harness.logs.lines().filter(l => l.level === 'error').map(l => l.msg),
+      [],
+      'a refund asked to come again raised an error line',
+    )
+    const landed = (await paymentsOf(who)).find(p => p.paymentIntentId === lateIntent)
+    assert.ok(landed, 'the late payment is recorded')
+    assert.ok(landed.refundRequestedAt)
+
+    await expectStatus(await deliverRefund(lateIntent, 10000, chargeMetadata), 200)
+    assert.equal((await paymentsOf(who)).find(p => p.paymentIntentId === lateIntent)!.status, 'refunded')
+    const [sale] = await purchasesOf(who)
+    assert.equal(sale!.id, purchaseId)
+    assert.equal(sale!.status, 'abandoned')
+    assert.equal(sale!.amountPaidSgd, '0.00')
+  })
+
+  test("PRM-21 a late payment on a Purchase already Abandoned leaves the Promo Code Hold of the member's newer Purchase Held, and the newer Purchase consumes it when paid", async () => {
+    const code = `LATE-${run.slice(-6).toUpperCase()}`
+    const [promo] = await harness.db
+      .insert(schema.promoCodes)
+      .values({ tenantId: one.id, code, label: 'Ten off', kind: 'amount', amountOffSgd: '10.00', appliesToAll: true, createdByStaffId: one.admin.id })
+      .returning({ id: schema.promoCodes.id })
+    const who = await member(one)
+    const redemptions = () =>
+      harness.db
+        .select()
+        .from(schema.promoCodeRedemptions)
+        .where(and(eq(schema.promoCodeRedemptions.promoCodeId, promo!.id), eq(schema.promoCodeRedemptions.clientId, who.clientId)))
+        .orderBy(schema.promoCodeRedemptions.createdAt)
+
+    await expectStatus(await buyClass(who, one.bundleId, { promo_code: code }), 200)
+    const firstIntent = `pi_${randomUUID()}`
+    await expectStatus(await deliver({ intent: firstIntent, amountTotal: 5000 }), 200)
+    const [older] = await purchasesOf(who)
+    await expectStatus(await resume(who, older!.id), 200)
+    const resumePage = lastSession().params.metadata
+    await expectStatus(await deliverRefund(firstIntent, 5000), 200)
+    assert.equal((await purchasesOf(who))[0]!.status, 'abandoned')
+
+    await expectStatus(await buyClass(who, one.bundleId, { promo_code: code }), 200)
+    const newer = lastSession().params
+    const [, held] = await redemptions()
+    assert.equal(held!.status, 'held', "the newer Purchase's checkout holds the code")
+
+    const lateIntent = `pi_${randomUUID()}`
+    await expectStatus(await deliver({ intent: lateIntent, metadata: resumePage, amountTotal: 9000 }), 200)
+    await expectStatus(await deliverRefund(lateIntent, 9000), 200)
+
+    const [, stillHeld] = await redemptions()
+    assert.equal(stillHeld!.id, held!.id)
+    assert.equal(stillHeld!.status, 'held', "the late payment consumed the newer Purchase's Hold")
+    assert.equal(stillHeld!.stripePaymentIntentId, null)
+
+    const newerIntent = `pi_${randomUUID()}`
+    await expectStatus(await deliver({ intent: newerIntent, metadata: newer.metadata, amountTotal: sessionTotal(newer) }), 200)
+    const [, consumed] = await redemptions()
+    assert.equal(consumed!.status, 'consumed')
+    assert.equal(consumed!.stripePaymentIntentId, newerIntent)
+    const [granted, ...more] = await packagesOf(who)
+    assert.equal(more.length, 0)
+    assert.equal(granted!.appliedPromoCodeId, promo!.id)
+    assert.equal(granted!.purchaseId, newer.metadata.purchase_id)
+  })
+
   test('PAY-62 a part-paid Purchase one of whose payments the studio returned from the provider dashboard can still be resumed for what is owed', async () => {
     const who = await member(one)
     await expectStatus(await buyClass(who, one.bundleId), 200)
@@ -1228,6 +1319,54 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.deepEqual(statuses, [201, 409], `expected one grant and one refusal, got ${statuses}`)
     const trials = (await packagesOf(tia)).filter(p => p.kind === 'trial')
     assert.equal(trials.length, 1, 'one trial')
+  })
+
+  test('PKG-43 a member who pays two Trial Pass checkouts opened side by side keeps the first trial, and the second payment is recorded, given back once and its Purchase closed Abandoned', async () => {
+    const kai = await member(one)
+    await expectStatus(await buyClass(kai, one.trialId), 200)
+    const first = lastSession().params.metadata
+    await expectStatus(await buyClass(kai, one.trialId), 200)
+    const second = lastSession().params.metadata
+    assert.notEqual(first.purchase_id, second.purchase_id)
+
+    const firstIntent = `pi_${randomUUID()}`
+    const secondIntent = `pi_${randomUUID()}`
+    await expectStatus(await deliver({ intent: firstIntent, metadata: first }), 200)
+    const asked = fake.callsTo('refunds.create').length
+    await expectStatus(await deliver({ intent: secondIntent, metadata: second }), 200)
+
+    const assertFirstTrialStands = async () => {
+      const [trial, ...more] = await packagesOf(kai)
+      assert.equal(more.length, 0, 'a second package was granted')
+      assert.equal(trial!.kind, 'trial')
+      assert.equal(trial!.purchaseId, first.purchase_id)
+      assert.equal(trial!.active, true)
+      const sales = await purchasesOf(kai)
+      assert.equal(sales.find(s => s.id === first.purchase_id)!.status, 'paid')
+      const duplicate = sales.find(s => s.id === second.purchase_id)!
+      assert.equal(duplicate.status, 'abandoned', 'the second sale is not closed: nothing was granted on it')
+      assert.equal(duplicate.amountPaidSgd, '0.00')
+    }
+    await assertFirstTrialStands()
+    const duplicate = (await paymentsOf(kai)).find(p => p.paymentIntentId === secondIntent)
+    assert.ok(duplicate, 'the second payment is recorded nowhere')
+    assert.equal(duplicate.purchaseId, second.purchase_id)
+    assert.equal(duplicate.amountSgd, '20.00')
+    assert.ok(duplicate.refundRequestedAt, 'its return is on its way')
+    const returned = fake.callsTo('refunds.create').slice(asked)
+    assert.deepEqual(
+      returned.map(c => (c.args[0] as { payment_intent: string }).payment_intent),
+      [secondIntent],
+      'the second payment, and only it, is given back',
+    )
+    assert.equal(returned[0]!.account, ownAccountId(one), 'on the account it was paid on')
+
+    await expectStatus(await deliver({ intent: secondIntent, metadata: second }), 200)
+    assert.equal(fake.callsTo('refunds.create').length, asked + 1, 'a redelivery asked for it twice')
+    await expectStatus(await deliverRefund(secondIntent, 2000), 200)
+    assert.equal((await paymentsOf(kai)).find(p => p.paymentIntentId === secondIntent)!.status, 'refunded')
+    assert.equal((await paymentsOf(kai)).find(p => p.paymentIntentId === firstIntent)!.status, 'succeeded')
+    await assertFirstTrialStands()
   })
 
   /* ── prices: Promotions and Promo Codes ─────────────────────────────── */
