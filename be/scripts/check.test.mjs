@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { test } from 'node:test'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -119,4 +122,32 @@ test('a test database that refuses the connection is named by host and port, nev
 test('a connection refused with no message is named by its code, never an empty reason', () => {
   const refused = Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' })
   assert.match(databaseRefusal('postgres://u:p@localhost:5434/t', connectionReason(refused)), /refused the connection: ECONNREFUSED\./)
+})
+
+test('a test file whose own code fails, after a test of its own passed, fails the run', () => {
+  const fixtures = {
+    'asserts-after-a-test.test.mjs':
+      "import assert from 'node:assert'\nimport { test } from 'node:test'\n" +
+      "test('passes', () => {})\nassert.strictEqual(1, 2)\ntest('below the assertion', () => {})\n",
+    'rejects-unawaited.test.mjs':
+      "import { test } from 'node:test'\n" +
+      "test('passes', () => {})\nPromise.reject(new Error('rejected at the top level'))\n",
+    'fails-to-load.test.mjs': "import { test } from 'node:test'\nimport { gone } from './missing.mjs'\ntest('passes', () => {})\n",
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'check-fixtures-'))
+  try {
+    const files = Object.entries(fixtures).map(([name, source]) => {
+      writeFileSync(join(dir, name), source)
+      return join(dir, name)
+    })
+    const beDir = join(dirname(fileURLToPath(import.meta.url)), '..')
+    const run = spawnSync(process.execPath, ['scripts/check.mjs', '--test-reporter=tap', ...files], { cwd: beDir, encoding: 'utf8' })
+    assert.equal(run.status, 1, `npm run check exits 1\n${run.stdout}\n${run.stderr}`)
+    assert.match(run.stdout, /^not ok \d+ - .*asserts-after-a-test\.test\.mjs$/m, 'the failed top-level assertion fails its file')
+    assert.match(run.stdout, /^not ok \d+ - .*fails-to-load\.test\.mjs$/m, 'the file that cannot load fails')
+    assert.match(run.stdout, /^# fail 2$/m, 'the TAP summary counts both files as failures')
+    assert.match(run.stdout, /rejected at the top level/, 'the unawaited rejection is reported')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
