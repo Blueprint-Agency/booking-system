@@ -264,12 +264,16 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
   test('NTF-18 a class still pending 24 hours after it ended emails its Instructor with every active Admin copied, once, and no other studio\'s staff', async () => {
     harness.clock.set(NOW)
     const archived = await staffAt(one.id, 'admin', 'archived')
-    await classEnded(one, 25 * HOUR, ['pending', 'pending', 'attended'])
+    const nagged = await classEnded(one, 25 * HOUR, ['pending', 'pending', 'attended'])
     sent.splice(0)
 
     await jobs.scheduledJobs.sendCheckInNags()
 
     const nags = drainNags()
+    // The class started 26 h before NOW; its day is the studio's own, not UTC's.
+    const [tenant] = await harness.db.select({ timezone: schema.tenants.timezone }).from(schema.tenants).where(eq(schema.tenants.id, one.id))
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: tenant!.timezone }).format(new Date(NOW.getTime() - 26 * HOUR))
+    const deskQuery = `\\?date=${day}&(amp;)?session=class:${nagged}`
     const expected = [one.instructor.email, ...(await activeAdmins(one)).filter(e => e !== one.instructor.email)].sort()
     assert.deepEqual(nags.map(m => m.to).sort(), expected, 'the Instructor and each active Admin of the studio, one email each')
     for (const m of nags) {
@@ -278,9 +282,9 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
       assert.ok((m.text ?? '').includes(one.instructor.name), 'the Instructor is named')
     }
     const toInstructor = nags.find(m => m.to === one.instructor.email)!
-    assert.match(toInstructor.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/instructor/check-in"`))
+    assert.match(toInstructor.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/instructor/check-in${deskQuery}"`))
     const toAdmin = nags.find(m => m.to === one.admin.email)!
-    assert.match(toAdmin.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/admin/check-in"`))
+    assert.match(toAdmin.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/admin/check-in${deskQuery}"`))
     assert.ok(!nags.some(m => m.to === two.admin.email || m.to === two.instructor.email), 'no other studio\'s staff')
     assert.ok(!nags.some(m => m.to === archived.email), 'no archived Admin')
 
@@ -437,6 +441,23 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
     assert.deepEqual(drainNags(), [], 'nobody is nagged about a class whose roster is decided')
     const [row] = await harness.db.select({ sentAt: schema.classes.checkinNagSentAt }).from(schema.classes).where(eq(schema.classes.id, cls))
     assert.equal(row!.sentAt, null, 'the class is not claimed')
+  })
+
+  test('NTF-37 the nag about an ended private session links the Instructor and an Admin to that session on the check-in desk, on its studio-local day', async () => {
+    harness.clock.set(NOW)
+    const session = await ptSessionEnded(one, 25 * HOUR)
+    sent.splice(0)
+
+    await jobs.scheduledJobs.sendCheckInNags()
+
+    const nags = drainNags()
+    const [tenant] = await harness.db.select({ timezone: schema.tenants.timezone }).from(schema.tenants).where(eq(schema.tenants.id, one.id))
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: tenant!.timezone }).format(new Date(NOW.getTime() - 26 * HOUR))
+    const deskQuery = `\\?date=${day}&(amp;)?session=pt:${session}`
+    const toInstructor = nags.find(m => m.to === one.instructor.email)!
+    assert.match(toInstructor.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/instructor/check-in${deskQuery}"`))
+    const toAdmin = nags.find(m => m.to === one.admin.email)!
+    assert.match(toAdmin.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/admin/check-in${deskQuery}"`))
   })
 
   test('NTF-30 a private session whose member is checked in while the nag job runs, before it claims the session, is not nagged', async () => {

@@ -4,7 +4,9 @@ import { ApiError } from "./api";
 import {
   checkInErrorMessage,
   createScanGate,
+  deskHref,
   nowLineIndex,
+  parseDeskParams,
   pickActiveSession,
   rosterRowMatches,
   sessionPhase,
@@ -120,4 +122,30 @@ test("rosterRowMatches: part of the name or the booking code, ignoring case", ()
   assert.equal(rosterRowMatches(row, "rt-3q9"), true);
   assert.equal(rosterRowMatches(row, " ling "), true);
   assert.equal(rosterRowMatches(row, "zou"), false);
+});
+
+test("parseDeskParams: reads ?date= and ?session= from a link, and drops what isn't one", () => {
+  const id = "0b1c2d3e-0000-4000-8000-000000000001";
+  assert.deepEqual(parseDeskParams(`?date=2026-10-24&session=class:${id}`), {
+    date: "2026-10-24",
+    session: `class:${id}`,
+  });
+  assert.deepEqual(parseDeskParams(new URLSearchParams(`date=2026-10-24&session=pt:${id}`)), {
+    date: "2026-10-24",
+    session: `pt:${id}`,
+  });
+  assert.deepEqual(parseDeskParams(""), { date: null, session: null });
+  assert.deepEqual(parseDeskParams("?date=2026-02-31"), { date: null, session: null });
+  assert.deepEqual(parseDeskParams("?date=yesterday&session=workshop:1"), { date: null, session: null });
+  assert.deepEqual(parseDeskParams("?session=class:"), { date: null, session: null });
+  // A session without a date is still a link to today's desk.
+  assert.deepEqual(parseDeskParams(`?session=class:${id}`), { date: null, session: `class:${id}` });
+});
+
+test("deskHref: today's desk has no query, another day's names the day and the session", () => {
+  assert.equal(deskHref("/admin/check-in", {}), "/admin/check-in");
+  assert.equal(
+    deskHref("/admin/check-in", { date: "2026-10-24", session: "pt:abc" }),
+    "/admin/check-in?date=2026-10-24&session=pt:abc",
+  );
 });
