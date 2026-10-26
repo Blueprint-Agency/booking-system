@@ -226,17 +226,19 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     ])
   })
 
+  /** A studio with settings and nothing else: no email templates, no switches. */
+  async function emptyStudio(label: string): Promise<string> {
+    const slug = `switches-${label}-${run}`
+    const [row] = await harness.db.execute<{ id: string }>(sql`
+      INSERT INTO tenants (slug, name, timezone, status) VALUES (${slug}, ${slug}, 'Asia/Singapore', 'active') RETURNING id
+    `)
+    await harness.db.execute(sql`INSERT INTO tenant_settings (tenant_id, display_name) VALUES (${row!.id}, ${slug})`)
+    return row!.id
+  }
+
   test("NTF-45 a studio's archive carries its switches, and restoring it switches the same emails off", async () => {
     const transfer = await import('../services/tenants/transfer')
     const { listStudioEmails } = await import('../services/notifications/switch-state')
-    async function emptyStudio(label: string): Promise<string> {
-      const slug = `switches-${label}-${run}`
-      const [row] = await harness.db.execute<{ id: string }>(sql`
-        INSERT INTO tenants (slug, name, timezone, status) VALUES (${slug}, ${slug}, 'Asia/Singapore', 'active') RETURNING id
-      `)
-      await harness.db.execute(sql`INSERT INTO tenant_settings (tenant_id, display_name) VALUES (${row!.id}, ${slug})`)
-      return row!.id
-    }
     const source = await emptyStudio('source')
     await harness.db.insert(schema.emailSwitches).values([
       { tenantId: source, slug: 'checkin_nag', enabled: false },
@@ -250,5 +252,25 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     const restored = await withTenant(target, () => listStudioEmails(target))
     const off = [...restored.member, ...restored.staff].filter(e => !e.enabled).map(e => e.slug)
     assert.deepEqual(off, ['checkin_nag'])
+  })
+
+  test('NTF-49 a switched-off email at a studio that has no template for it is logged skipped, not refused for the missing template', async () => {
+    const studio = { id: await emptyStudio('untemplated'), slug: '' }
+    await harness.db.insert(schema.emailSwitches).values({ tenantId: studio.id, slug: 'credit_expiry_reminder', enabled: false })
+
+    assert.deepEqual(await sendTo(studio, 'credit_expiry_reminder'), { mailed: 0, statuses: ['skipped'], slugs: ['credit_expiry_reminder'] })
+
+    const admin = address('admin')
+    await harness.db.insert(schema.emailSwitches).values({ tenantId: studio.id, slug: 'leave_request_submitted', enabled: false })
+    await harness.db.insert(schema.staffUsers).values({ tenantId: studio.id, email: admin, name: 'Admin', role: 'admin', status: 'active', authUserId: `untemplated-${run}` })
+    let built = false
+    await withTenant(studio.id, () =>
+      send.emailEveryAdmin(studio.id, 'leave_request_submitted', async () => {
+        built = true
+        return {}
+      }),
+    )
+    assert.deepEqual(await outcome(studio, admin), { mailed: 0, statuses: ['skipped'], slugs: ['leave_request_submitted'] })
+    assert.equal(built, false, 'a switched-off email builds no variables')
   })
 })
