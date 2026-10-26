@@ -172,6 +172,12 @@ export function ptRefundLabel(outcome: PtRefundOutcome): string | null {
   return null;
 }
 
+/** The tab a request sits on now: where a link to it has to open the list. */
+export function ptFilterFor(r: ApiPtRequest): PtFilter {
+  const tabs: PtFilter[] = ["pending", "scheduled", "cancelled", "attended"];
+  return tabs.find((f) => ptInFilter(r, f)) ?? "all";
+}
+
 export function ptInFilter(r: ApiPtRequest, f: PtFilter): boolean {
   if (f === "all") return true;
   if (f === "cancelled") {

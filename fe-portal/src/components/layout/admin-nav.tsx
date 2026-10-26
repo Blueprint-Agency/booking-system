@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { StudioMark } from "@/components/brand/studio-mark";
 import { runsStudio, visibleToRole } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
+import { useAttention } from "@/components/attention/attention-provider";
 import {
   SidebarBrand,
   SidebarFrame,
@@ -146,30 +147,11 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
   // while the shell bounces them out), so the admin-only counts wait for the role.
   const isAdmin = runsStudio(role);
 
-  // Live, workspace-scoped count of PENDING PT requests for the nav badge.
-  const [ptPending, setPtPending] = useState<number | undefined>(undefined);
-  useEffect(() => {
-    if (!api || !isAdmin || !activeLocationId) {
-      setPtPending(undefined);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await api.get<{ pt_requests: unknown[] }>(
-          "/portal/admin/pt-sessions",
-          { status: "pending", location_id: activeLocationId },
-        );
-        if (!cancelled) setPtPending(res.pt_requests?.length || undefined);
-      } catch {
-        if (!cancelled) setPtPending(undefined);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Re-count when the workspace changes or the route changes (e.g. after triaging).
-  }, [api, isAdmin, activeLocationId, pathname]);
+  // The PT badge is the attention provider's `by_group.pt_requests`: workspace-
+  // scoped like the page it points at, and one shared read for the sidebar, the
+  // mobile drawer and the bell, instead of downloading the pending list to count it.
+  const { byGroup } = useAttention();
+  const ptPending = isAdmin ? byGroup.pt_requests || undefined : undefined;
 
   // Live count of PENDING corporate requests for the nav badge. Workspace-AGNOSTIC
   // (no location_id until scheduled) — unlike PT, it's NOT filtered by the switcher.

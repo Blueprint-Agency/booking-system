@@ -1,5 +1,7 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRequestDeepLink } from "@/components/attention/deep-links";
+import { useAttention } from "@/components/attention/attention-provider";
 import { PageHeader, Badge, Pagination, usePaged } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { PtRequestDrawer } from "@/components/pt-requests/pt-request-drawer";
@@ -13,13 +15,25 @@ import {
   PT_FILTER_LABEL,
   PT_STATUS_TONE,
   PT_STATUS_SHORT,
+  ptFilterFor,
   ptInFilter,
   ptRequestSummary,
   ptStatusLabel,
 } from "@/lib/pt-requests";
 
+// `useSearchParams` (the bell's `?request=` link) needs a Suspense boundary.
 export default function PtRequestsPage() {
+  return (
+    <Suspense fallback={null}>
+      <PtRequestsView />
+    </Suspense>
+  );
+}
+
+function PtRequestsView() {
   const { api, activeLocation, loading: wsLoading } = useWorkspace();
+  // The bell's count follows what this page resolves, without waiting for the next poll.
+  const { refresh: refreshAttention } = useAttention();
 
   const [requests, setRequests] = useState<ApiPtRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +71,13 @@ export default function PtRequestsPage() {
     void load();
   }, [load]);
 
+  // A link from the bell (`?request=`) opens that request's drawer, on the tab
+  // for the status it has now.
+  useRequestDeepLink(requests, loading || wsLoading, (r) => {
+    setTab(ptFilterFor(r));
+    setActiveId(r.id);
+  });
+
   const filtered = useMemo(
     () =>
       requests
@@ -75,6 +96,7 @@ export default function PtRequestsPage() {
     await cancelSession(api, "admin", req.id, note);
     setActiveId(null);
     await load();
+    refreshAttention();
   }
 
   return (
@@ -205,6 +227,7 @@ export default function PtRequestsPage() {
             setSchedFor(null);
             setActiveId(null);
             void load();
+            refreshAttention();
           }}
         />
       )}

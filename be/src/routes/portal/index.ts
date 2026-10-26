@@ -7,6 +7,7 @@ import { audit } from '../../middleware/audit'
 import auth from './auth'
 import leaveCalendar from './leave-calendar'
 import leave from './leave'
+import attention from './attention'
 import admin from './admin'
 import instructor from './instructor'
 
@@ -16,6 +17,7 @@ import instructor from './instructor'
  *   /api/v1/portal/auth/*    — staff session + active gate only (no role gate)
  *   /api/v1/portal/leave-calendar — same: every staff member sees who is away
  *   /api/v1/portal/leave/*   — same: every staff member files their own leave
+ *   /api/v1/portal/attention/* — same: the bell's counts and panel, per role and permission
  *   /api/v1/portal/admin/*   — auth + active + admin role
  *   /api/v1/portal/instructor/* — auth + active + instructor/admin role
  *
@@ -31,6 +33,7 @@ const app = new Hono()
   .use('/admin/*', impersonate, audit)
   .use('/instructor/*', impersonate, audit)
   .route('/leave', leave)
+  .route('/attention', attention)
   .route('/admin', admin)
   .route('/instructor', instructor)
 

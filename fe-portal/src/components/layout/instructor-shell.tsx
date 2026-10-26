@@ -1,7 +1,10 @@
 "use client";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ContentLoading } from "@/components/ui/content-loading";
+import { AttentionProvider } from "@/components/attention/attention-provider";
+import { AttentionBell } from "@/components/attention/attention-bell";
+import { LocationParamSync } from "@/components/attention/deep-links";
 import { InstructorNav, InstructorMobileNavTrigger } from "./instructor-nav";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { DevRoleSwitcher } from "./dev-role-switcher";
@@ -16,6 +19,7 @@ function InstructorTopBar() {
         <WorkspaceSwitcher />
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <AttentionBell />
         <DevRoleSwitcher />
       </div>
     </header>
@@ -37,16 +41,22 @@ export function InstructorShell({ children }: { children: React.ReactNode }) {
   const ready = !loading && currentStaff !== null && !isStaffAdmin;
 
   return (
-    <div className="flex min-h-screen flex-col bg-paper">
-      <div className="flex flex-1">
-        <InstructorNav />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <InstructorTopBar />
-          <main className="flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
-            {ready ? children : <ContentLoading label="Loading workspace" />}
-          </main>
+    // One attention reader above the sidebar, the mobile drawer and the bell.
+    <AttentionProvider>
+      <Suspense fallback={null}>
+        <LocationParamSync />
+      </Suspense>
+      <div className="flex min-h-screen flex-col bg-paper">
+        <div className="flex flex-1">
+          <InstructorNav />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <InstructorTopBar />
+            <main className="flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
+              {ready ? children : <ContentLoading label="Loading workspace" />}
+            </main>
+          </div>
         </div>
       </div>
-    </div>
+    </AttentionProvider>
   );
 }
