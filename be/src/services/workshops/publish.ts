@@ -12,6 +12,7 @@ import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { assertOwnObjectKeys } from '../../lib/object-key'
 import { readRoster, readRosters, replaceRoster, type RosterAssignment } from '../schedule/roster'
 import { lineupOf, lineupsOf, type Lineup } from '../schedule/lineup'
+import { readInstructors, recordSessionChanged, workshopFacts } from '../attention/session-updates'
 
 export type WorkshopRow = typeof workshops.$inferSelect
 
@@ -145,6 +146,8 @@ export async function updateWorkshop(
   tenantId: string,
   id: string,
   patch: UpdateWorkshopInput,
+  /** Who made the edit: the instructors are told of a change by anyone else. */
+  actorStaffId?: string,
 ): Promise<WorkshopRow> {
   const existing = await getWorkshop(tenantId, id)
   if (existing.lifecycle === 'cancelled') {
@@ -163,6 +166,8 @@ export async function updateWorkshop(
     patch.supportingInstructorIds !== undefined
 
   await db.transaction(async tx => {
+    const factsBefore = await workshopFacts(tenantId, id)
+    const instructorsBefore = await readInstructors(tenantId, 'workshop', id)
     const set: Partial<typeof workshops.$inferInsert> = {}
     if (patch.name !== undefined) set.name = patch.name
     if (patch.locationId !== undefined) set.locationId = patch.locationId
@@ -206,6 +211,17 @@ export async function updateWorkshop(
         throw new BadRequestError('workshop_has_no_main_instructor')
       }
     }
+
+    // The instructors are told when someone else moved the workshop to another location or changed who teaches it (#493).
+    const factsAfter = await workshopFacts(tenantId, id)
+    await recordSessionChanged(tenantId, {
+      actorStaffId,
+      kind: 'workshop',
+      sessionId: id,
+      subject: factsAfter.subject,
+      before: { ...factsBefore, roomId: null, ...instructorsBefore },
+      after: { ...factsAfter, roomId: null, ...(await readInstructors(tenantId, 'workshop', id)) },
+    })
 
     if (patch.imageR2Keys !== undefined) {
       await tx

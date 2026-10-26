@@ -4,6 +4,14 @@ import type { StaffRole } from '../../db/enums'
 import { staffUpdates } from '../../db/schema/attention'
 import { now as clockNow } from '../../lib/clock'
 import { NotFoundError } from '../../shared/errors'
+import {
+  composePtSessionCancelledByMember,
+  composeSessionCancelledByAdmin,
+  composeSessionChanged,
+  type PtSessionCancelledByMemberPayload,
+  type SessionCancelledByAdminPayload,
+  type SessionChangedPayload,
+} from './session-update-copy'
 
 /**
  * Updates (#476, #490): events a staff member should know about, stored when
@@ -35,6 +43,9 @@ export interface LeaveDecidedPayload {
 
 export interface UpdatePayloads {
   leave_decided: LeaveDecidedPayload
+  session_changed: SessionChangedPayload
+  session_cancelled_by_admin: SessionCancelledByAdminPayload
+  pt_session_cancelled_by_member: PtSessionCancelledByMemberPayload
 }
 
 /** Write one update per recipient, in the caller's transaction. */
@@ -99,6 +110,9 @@ const compose: { [K in StaffUpdateKind]: (p: UpdatePayloads[K], role: StaffRole)
     }
     return { title: `${p.actorName} cancelled your approved ${what}`, detail: null, href }
   },
+  session_changed: composeSessionChanged,
+  session_cancelled_by_admin: composeSessionCancelledByAdmin,
+  pt_session_cancelled_by_member: composePtSessionCancelledByMember,
 }
 
 export const UPDATES_PAGE_SIZE = 20

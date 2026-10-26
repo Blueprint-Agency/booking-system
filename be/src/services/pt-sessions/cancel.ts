@@ -11,6 +11,7 @@ import { refuseOnceStarted } from './started'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
+import { recordPtSessionCancelled } from '../attention/session-updates'
 import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notifications/send-booking-email'
 
 /**
@@ -235,7 +236,7 @@ async function cancelPtRequestInTx(
     // A manual session has no debit on its request: each seat was paid on its
     // own booking, so each is settled on its own package (./manual.ts).
     if (req.origin === 'portal') {
-      return cancelManualSessionInTx(tx, tenantId, {
+      const manual = await cancelManualSessionInTx(tx, tenantId, {
         req,
         session,
         source,
@@ -244,6 +245,13 @@ async function cancelPtRequestInTx(
         now,
         mail,
       })
+      await recordPtSessionCancelled(tenantId, {
+        ptSessionId: session.id,
+        source,
+        actorStaffId: resolvedByStaffId,
+        memberClientId: clientId ?? req.clientId,
+      })
+      return manual
     }
 
     // Refund decision. Staff (and system) bypass window/cap (always full);
@@ -372,6 +380,14 @@ async function cancelPtRequestInTx(
       .update(ptRequests)
       .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId, cancelSource: source })
       .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+
+    // The session's instructors: told when a member left or an admin cancelled (#493).
+    await recordPtSessionCancelled(tenantId, {
+      ptSessionId: session.id,
+      source,
+      actorStaffId: resolvedByStaffId,
+      memberClientId: clientId ?? req.clientId,
+    })
 
     // NTF-11: every member the session booked is told — the requester with the
     // sessions returned to them, a 2-on-1 partner, who paid nothing, without.

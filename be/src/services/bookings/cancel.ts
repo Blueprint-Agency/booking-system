@@ -45,6 +45,7 @@ import { refuseOnceStarted } from '../pt-sessions/started'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
 import { sendMemberCancelReturnedEmail } from '../notifications/send-booking-email'
+import { recordPtSessionCancelled } from '../attention/session-updates'
 
 export type { CancelSource, StaffCancelSource, StaffCredit }
 
@@ -330,6 +331,13 @@ export async function cancelBookingInTx(
       source,
       cancelledByStaffId,
       now,
+    })
+    // The session's instructors: told when a member left or an admin ended the session (#493).
+    await recordPtSessionCancelled(tenantId, {
+      ptSessionId: bk.ptSessionId!,
+      source,
+      actorStaffId: cancelledByStaffId,
+      memberClientId: bk.clientId,
     })
   }
 

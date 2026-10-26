@@ -39,6 +39,7 @@ import { planPtTypeChange, ptSessionCost } from './cost'
 import { retypeManualSessionInTx } from './manual'
 import { maySchedulePtRequest } from './binding'
 import { assertPartnerEligible } from './request'
+import { ptSubject, readInstructors, recordSessionChanged } from '../attention/session-updates'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export interface SchedulePtRequestInput {
@@ -659,6 +660,9 @@ export async function updatePtSession(
       set.capacityOnline = ptSessionCost(patch.sessionType)
     }
 
+    // Who ran it before the edit, for the Updates it may owe them (#493).
+    const instructorsBefore = await readInstructors(tenantId, 'pt', id)
+
     let row = existing
     if (Object.keys(set).length) {
       const rows = await tx
@@ -694,6 +698,21 @@ export async function updatePtSession(
         .limit(1)
       if (fresh) row = fresh
     }
+
+    const snapshotOf = (s: typeof ptSessions.$inferSelect) => ({
+      startsAt: s.startsAt,
+      endsAt: s.endsAt,
+      locationId: s.locationId,
+      roomId: s.roomId,
+    })
+    await recordSessionChanged(tenantId, {
+      actorStaffId: patch.actorStaffId,
+      kind: 'pt',
+      sessionId: id,
+      subject: await ptSubject(tenantId, id),
+      before: { ...snapshotOf(existing), ...instructorsBefore },
+      after: { ...snapshotOf(row), ...(await readInstructors(tenantId, 'pt', id)) },
+    })
     return row
   })
 }
