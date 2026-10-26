@@ -252,6 +252,27 @@ describe('profile pictures over HTTP', { skip: integrationTestsEnabled ? false :
     assert.equal((await call(mia.headers, 'GET', '/me')).body.photo_url, kept.body.photo_url)
   })
 
+  test('ACC-62 with no public host for the bucket, an upload is refused with a sentence and nothing is stored', async () => {
+    const mia = await member()
+    const kept = await upload(mia.headers, '/me/photo', imageBytes(1000, 1), 'image/jpeg')
+    assert.equal(kept.status, 200, kept.text)
+    const objects = [...bucket.keys()].sort()
+
+    delete process.env.R2_PUBLIC_URL
+    let refused: Awaited<ReturnType<typeof upload>>
+    try {
+      refused = await upload(mia.headers, '/me/photo', imageBytes(1000, 2), 'image/jpeg')
+    } finally {
+      process.env.R2_PUBLIC_URL = PUBLIC_HOST
+    }
+
+    assert.equal(refused.status, 422, refused.text)
+    assert.equal(refused.body.error, 'image_storage_unavailable')
+    assert.match(String(refused.body.message), /not configured/)
+    assert.deepEqual([...bucket.keys()].sort(), objects, 'nothing reached the bucket')
+    assert.equal((await call(mia.headers, 'GET', '/me')).body.photo_url, kept.body.photo_url)
+  })
+
   test("ACC-57 deleting a member's account deletes their picture", async () => {
     const mia = await member()
     const uploaded = await upload(mia.headers, '/me/photo', imageBytes(1000), 'image/jpeg')
