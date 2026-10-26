@@ -11,6 +11,7 @@ import {
   startTestApp,
   type TestApp,
 } from './harness'
+import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
  * Staff attention (#476, #477): the bell's numbers and the panel's list, read
@@ -21,6 +22,7 @@ import {
  * what a count says is about the requests that test made and nobody else's.
  */
 describe('Staff attention', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  usePaymentKey()
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')
@@ -61,6 +63,7 @@ describe('Staff attention', { skip: integrationTestsEnabled ? false : SKIP_REASO
   const freshStudio = async (): Promise<Studio> => {
     const slug = `attn-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({ slug, name: 'Attention Studio', adminEmail: `owner@${slug}.test` })
+    await connectPayments(tenant.id)
     const [location] = await harness.db
       .insert(schema.locations)
       .values({ tenantId: tenant.id, name: `${slug} Studio`, address: '1 Test Street' })

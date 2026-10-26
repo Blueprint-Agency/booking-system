@@ -1,5 +1,5 @@
 {
-  "id": "52af68b9-2d2b-42e0-b24f-e910fe7b3702",
+  "id": "b4b30acf-3c5f-489b-8b95-06be6fe6e389",
   "prevId": "4cec141d-b445-41bf-acdb-0496b4773bc6",
   "version": "7",
   "dialect": "postgresql",
@@ -13065,6 +13065,127 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.attention_dismissals": {
+      "name": "attention_dismissals",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_id": {
+          "name": "subject_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dismissed_by_staff_id": {
+          "name": "dismissed_by_staff_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dismissed_at": {
+          "name": "dismissed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "attention_dismissals_dismissed_by_staff_id_fk_idx": {
+          "name": "attention_dismissals_dismissed_by_staff_id_fk_idx",
+          "columns": [
+            {
+              "expression": "dismissed_by_staff_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "attention_dismissals_tenant_kind_subject_uq": {
+          "name": "attention_dismissals_tenant_kind_subject_uq",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "attention_dismissals_tenant_id_tenants_id_fk": {
+          "name": "attention_dismissals_tenant_id_tenants_id_fk",
+          "tableFrom": "attention_dismissals",
+          "tableTo": "tenants",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "attention_dismissals_dismissed_by_staff_id_staff_users_id_fk": {
+          "name": "attention_dismissals_dismissed_by_staff_id_staff_users_id_fk",
+          "tableFrom": "attention_dismissals",
+          "tableTo": "staff_users",
+          "columnsFrom": [
+            "dismissed_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.staff_updates": {
       "name": "staff_updates",
       "schema": "",
@@ -16560,10 +16681,7 @@
       "name": "staff_update_kind",
       "schema": "public",
       "values": [
-        "leave_decided",
-        "session_changed",
-        "session_cancelled_by_admin",
-        "pt_session_cancelled_by_member"
+        "leave_decided"
       ]
     },
     "public.stripe_payment_kind": {

@@ -323,6 +323,8 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'GET /api/v1/portal/attention/summary': { gate: STUDIO_STAFF },
   'GET /api/v1/portal/attention': { gate: STUDIO_STAFF },
   // Updates (#490): a staff member reads their own.
+  // Dismissals (#482): an admin's studio-wide decision.
+  'POST /api/v1/portal/attention/dismissals': { gate: STUDIO_ADMIN },
   'POST /api/v1/portal/attention/updates/read-all': { gate: STUDIO_STAFF },
   'POST /api/v1/portal/attention/updates/:id/read': { gate: STUDIO_STAFF },
 }
