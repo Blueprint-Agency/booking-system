@@ -37,19 +37,24 @@ const emailChangeSchema = z.object({ email: emailField })
 
 // The three Instructor Permissions (be/docs/adr/0012), each at most once. A
 // duplicate is a malformed request, not a grant made twice.
+const PERMISSIONS_MESSAGE = 'Permissions are a list of the Instructor Permissions, each at most once.'
 const permissionsSchema = z
-  .array(z.enum(instructorPermissionEnum.enumValues))
-  .max(instructorPermissionEnum.enumValues.length)
-  .refine(keys => new Set(keys).size === keys.length, { message: 'each permission at most once' })
+  .array(z.enum(instructorPermissionEnum.enumValues, { message: PERMISSIONS_MESSAGE }), { message: PERMISSIONS_MESSAGE })
+  .max(instructorPermissionEnum.enumValues.length, PERMISSIONS_MESSAGE)
+  .refine(keys => new Set(keys).size === keys.length, { message: PERMISSIONS_MESSAGE })
+
+const roleField = z.enum(['admin', 'instructor'], { message: 'A role is either admin or instructor.' })
 
 const inviteSchema = z.object({
   email: emailField,
-  role: z.enum(['admin', 'instructor']).optional(), // default 'admin' in the service
+  role: roleField.optional(), // default 'admin' in the service
   // An Instructor's permissions from their first sign-in; omitted = all three.
   permissions: permissionsSchema.optional(),
 })
 
-const genderEnum = z.enum(['female', 'male', 'non_binary', 'prefer_not_to_say'])
+const genderEnum = z.enum(['female', 'male', 'non_binary', 'prefer_not_to_say'], {
+  message: 'A gender is female, male, non-binary or prefer not to say.',
+})
 
 const ASSIGNED_DAYS_MESSAGE = 'Assigned Days must be a whole number from 0 to 365.'
 const assignedDays = z.number({ message: ASSIGNED_DAYS_MESSAGE }).int(ASSIGNED_DAYS_MESSAGE).min(0, ASSIGNED_DAYS_MESSAGE).max(365, ASSIGNED_DAYS_MESSAGE)
@@ -79,9 +84,10 @@ const updateStaffSchema = z.object({
         .trim()
         .min(1, 'A language cannot be blank.')
         .max(60, 'A language can be at most 60 characters.'),
+      { message: 'Languages are a list of languages, each written as text.' },
     )
     .optional(),
-  role: z.enum(['admin', 'instructor']).optional(),
+  role: roleField.optional(),
   // The whole grant, replacing what is stored. An Instructor's only: on an
   // admin, or with a role change to admin, 400 `permissions_require_instructor`.
   permissions: permissionsSchema.optional(),

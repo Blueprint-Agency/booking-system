@@ -7,77 +7,51 @@ import {
   listManagedPromotionsFor,
   replacePromotionsForParent,
   serializePromotion,
-  type PromotionWriteInput,
 } from '../../../services/packages/promotions'
-import { MAX_DURATION_MONTHS, MAX_VALIDITY_DAYS } from '../../../services/packages/validity'
+import { MAX_DURATION_MONTHS } from '../../../services/packages/validity'
 import { tenantId } from '../../../middleware/tenant'
-import { BadRequestError } from '../../../shared/errors'
+import { explainInvalid } from '../../explain-invalid'
+import { nameField, priceField, promotionsField, toPromotionWriteInput, validityDaysField } from './package-fields'
 
-const kindEnum = z.enum(['credit_bundle', 'unlimited', 'trial'])
-const statusEnum = z.enum(['active', 'archived'])
-
-// SGD prices come in as either a string ("120.00") or a number (120).
-// Normalise to a 2dp string for the numeric column.
-const priceField = z.union([z.string(), z.number()]).transform(v => {
-  const n = typeof v === 'string' ? Number(v) : v
-  if (!Number.isFinite(n) || n < 0) throw new BadRequestError('invalid_price')
-  return n.toFixed(2)
+const kindEnum = z.enum(['credit_bundle', 'unlimited', 'trial'], {
+  message: 'A class package is a credit bundle, an unlimited plan or a trial.',
 })
+const statusEnum = z.enum(['active', 'archived'], { message: 'A status is active or archived.' })
 
 const listQuery = z.object({
   status: statusEnum.optional(),
   kind: kindEnum.optional(),
 })
 
-// Promotion wire shape — mirrors serializePromotion's snake_case output so write/read are symmetric.
-const promotionInputSchema = z.object({
-  id: z.string().uuid().nullish(),
-  label: z.string().min(1).max(160),
-  kind: z.enum(['percent', 'special_price']),
-  percent_off: z.number().int().min(1).max(99).nullish(),
-  special_price_sgd: priceField.nullish(),
-  starts_at: z.string().datetime({ offset: true }),
-  ends_at: z.string().datetime({ offset: true }),
-})
-
-function toPromotionWriteInput(p: z.infer<typeof promotionInputSchema>): PromotionWriteInput {
-  return {
-    id: p.id ?? null,
-    label: p.label,
-    kind: p.kind,
-    percentOff: p.percent_off ?? null,
-    specialPriceSgd: p.special_price_sgd ?? null,
-    startsAt: new Date(p.starts_at),
-    endsAt: new Date(p.ends_at),
-  }
-}
-
 const idParam = z.object({ id: z.string().uuid() })
 
-const nameField = z.string().trim().min(1).max(160)
-const validityDaysField = z.number().int().min(1).max(MAX_VALIDITY_DAYS)
-const durationMonthsField = z.number().int().min(1).max(MAX_DURATION_MONTHS)
+const DURATION_MESSAGE = `A plan runs a whole number of months from 1 to ${MAX_DURATION_MONTHS}.`
+const durationMonthsField = z.number({ message: DURATION_MESSAGE }).int(DURATION_MESSAGE).min(1, DURATION_MESSAGE).max(MAX_DURATION_MONTHS, DURATION_MESSAGE)
+const CREDITS_MESSAGE = 'Credits must be a whole number of at least 1.'
+const creditsField = z.number({ message: CREDITS_MESSAGE }).int(CREDITS_MESSAGE).min(1, CREDITS_MESSAGE)
+const descriptionField = z.string({ message: 'A description must be text.' }).max(2000, 'A description can be at most 2000 characters.')
+const explainPackage = explainInvalid('That class package is not valid.')
 
 const createSchema = z.object({
   name: nameField,
-  description: z.string().max(2000).nullish(),
+  description: descriptionField.nullish(),
   kind: kindEnum,
-  credits: z.number().int().min(1).nullish(),
+  credits: creditsField.nullish(),
   validity_days: validityDaysField.nullish(),
   duration_months: durationMonthsField.nullish(),
   price_sgd: priceField,
-  promotions: z.array(promotionInputSchema).optional(),
+  promotions: promotionsField.optional(),
 })
 
 const updateSchema = z.object({
   name: nameField.optional(),
-  description: z.string().max(2000).nullish().optional(),
-  credits: z.number().int().min(1).nullish().optional(),
+  description: descriptionField.nullish().optional(),
+  credits: creditsField.nullish().optional(),
   validity_days: validityDaysField.nullish().optional(),
   duration_months: durationMonthsField.nullish().optional(),
   price_sgd: priceField.optional(),
   status: statusEnum.optional(),
-  promotions: z.array(promotionInputSchema).optional(),
+  promotions: promotionsField.optional(),
 })
 
 function serialize(
@@ -132,7 +106,7 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     return c.json(await serializeWithPromos(tenantId(c), await svc.getClassPackage(tenantId(c), id)))
   })
-  .post('/', zValidator('json', createSchema), async c => {
+  .post('/', zValidator('json', createSchema, explainPackage), async c => {
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
     const row = await svc.createClassPackage(tenantId(c), {
@@ -156,7 +130,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'class_packages', id: row.id })
     return c.json(await serializeWithPromos(tenantId(c), row), 201)
   })
-  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
+  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema, explainPackage), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')

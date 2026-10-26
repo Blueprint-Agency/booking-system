@@ -22,8 +22,9 @@ import { classWaitlistRoutes } from '../class-waitlist'
 import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
 import { namedRuleJson } from '../../../services/schedule/package-rules'
 import { ptSessionDetailJson } from '../pt-session-detail'
+import { plainDate } from '../../plain-date'
 import {
-  plainDate,
+  explainSeries,
   previewJson,
   seriesRow,
   seriesTemplateFields,
@@ -134,11 +135,11 @@ const seriesSchema = seriesTemplateFields
   })
 
 const extendSchema = z.object({
-  last_date: plainDate,
-  excluded_dates: z.array(plainDate).default([]),
+  last_date: plainDate('A last date'),
+  excluded_dates: z.array(plainDate('A skipped date')).default([]),
 })
 
-const endSchema = z.object({ from_date: plainDate })
+const endSchema = z.object({ from_date: plainDate('An end date') })
 
 const adminSeriesInput = (b: z.infer<typeof seriesSchema>) =>
   toSeriesInput(b, {
@@ -399,11 +400,11 @@ const app = new Hono()
     },
   )
   // ── Class Series ── preview, then commit the same input; see services/schedule/series.ts.
-  .post('/series/preview', zValidator('json', seriesSchema), async c => {
+  .post('/series/preview', zValidator('json', seriesSchema, explainSeries), async c => {
     const dates = await seriesSvc.previewSeries(tenantId(c), adminSeriesInput(c.req.valid('json')))
     return c.json(previewJson(dates))
   })
-  .post('/series', zValidator('json', seriesSchema), async c => {
+  .post('/series', zValidator('json', seriesSchema, explainSeries), async c => {
     const res = await seriesSvc.createSeries(tenantId(c), {
       ...adminSeriesInput(c.req.valid('json')),
       createdByStaffId: c.get('staffUserId'),
@@ -415,7 +416,7 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     return c.json(seriesRow(await seriesSvc.getSeries(tenantId(c), id)))
   })
-  .post('/series/:id/extend/preview', seriesParam, zValidator('json', extendSchema), async c => {
+  .post('/series/:id/extend/preview', seriesParam, zValidator('json', extendSchema, explainSeries), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const dates = await seriesSvc.previewExtend(tenantId(c), id, {
@@ -424,7 +425,7 @@ const app = new Hono()
     })
     return c.json(previewJson(dates))
   })
-  .post('/series/:id/extend', seriesParam, zValidator('json', extendSchema), async c => {
+  .post('/series/:id/extend', seriesParam, zValidator('json', extendSchema, explainSeries), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const res = await seriesSvc.extendSeries(tenantId(c), id, {
@@ -443,7 +444,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'class_series', id })
     return c.json(seriesRow(series))
   })
-  .post('/series/:id/end', seriesParam, zValidator('json', endSchema), async c => {
+  .post('/series/:id/end', seriesParam, zValidator('json', endSchema, explainSeries), async c => {
     const { id } = c.req.valid('param')
     const res = await seriesSvc.endSeries(tenantId(c), id, {
       fromDate: c.req.valid('json').from_date,

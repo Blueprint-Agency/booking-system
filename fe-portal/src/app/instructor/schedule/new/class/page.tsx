@@ -25,7 +25,7 @@ import { weekdayOf, type OwnSeriesInput } from "@/lib/series";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useWaitlistsOn } from "@/lib/use-waitlists-on";
-import { todayIso, currentHourTime } from "@/lib/formatters";
+import { LATEST_DATE, todayIso, currentHourTime } from "@/lib/formatters";
 import { PERMISSION_REFUSED, permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
 import { scheduleErrorMessage } from "@/lib/schedule";
@@ -261,6 +261,7 @@ function InstructorNewClassForm() {
                 required
                 type="date"
                 min={todayIso()}
+                max={LATEST_DATE}
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
               />

@@ -7,20 +7,13 @@ import {
   listManagedPromotionsFor,
   replacePromotionsForParent,
   serializePromotion,
-  type PromotionWriteInput,
 } from '../../../services/packages/promotions'
-import { MAX_VALIDITY_DAYS } from '../../../services/packages/validity'
 import { tenantId } from '../../../middleware/tenant'
-import { BadRequestError } from '../../../shared/errors'
+import { explainInvalid } from '../../explain-invalid'
+import { nameField, priceField, promotionsField, toPromotionWriteInput, validityDaysField } from './package-fields'
 
-const sessionTypeEnum = z.enum(['1on1', '2on1'])
-const statusEnum = z.enum(['active', 'archived'])
-
-const priceField = z.union([z.string(), z.number()]).transform(v => {
-  const n = typeof v === 'string' ? Number(v) : v
-  if (!Number.isFinite(n) || n < 0) throw new BadRequestError('invalid_price')
-  return n.toFixed(2)
-})
+const sessionTypeEnum = z.enum(['1on1', '2on1'], { message: 'A PT package is 1-on-1 or 2-on-1.' })
+const statusEnum = z.enum(['active', 'archived'], { message: 'A status is active or archived.' })
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -29,54 +22,33 @@ const listQuery = z.object({
   session_type: sessionTypeEnum.optional(),
 })
 
-const promotionInputSchema = z.object({
-  id: z.string().uuid().nullish(),
-  label: z.string().min(1).max(160),
-  kind: z.enum(['percent', 'special_price']),
-  percent_off: z.number().int().min(1).max(99).nullish(),
-  special_price_sgd: priceField.nullish(),
-  starts_at: z.string().datetime({ offset: true }),
-  ends_at: z.string().datetime({ offset: true }),
-})
+const SESSIONS_MESSAGE = 'Sessions must be a whole number from 1 to 200.'
+const numSessionsField = z.number({ message: SESSIONS_MESSAGE }).int(SESSIONS_MESSAGE).min(1, SESSIONS_MESSAGE).max(200, SESSIONS_MESSAGE)
+const instructorBoundField = z.boolean({ message: 'Bound to an instructor is either on or off.' })
+const explainPackage = explainInvalid('That PT package is not valid.')
 
-function toPromotionWriteInput(p: z.infer<typeof promotionInputSchema>): PromotionWriteInput {
-  return {
-    id: p.id ?? null,
-    label: p.label,
-    kind: p.kind,
-    percentOff: p.percent_off ?? null,
-    specialPriceSgd: p.special_price_sgd ?? null,
-    startsAt: new Date(p.starts_at),
-    endsAt: new Date(p.ends_at),
-  }
-}
-
-// Required on create and never nullable: "never expires" has left the domain,
-// so a blank field cannot be how an admin creates an eternal PT package.
-// Ten years is the most: past that the admin means "no expiry" and may not.
-const validityDaysField = z.number().int().min(1).max(MAX_VALIDITY_DAYS)
-const nameField = z.string().trim().min(1).max(160)
-
+// Validity is required on create and never nullable: "never expires" has left
+// the domain, so a blank field cannot be how an admin creates an eternal PT package.
 const createSchema = z.object({
   name: nameField,
   session_type: sessionTypeEnum,
-  num_sessions: z.number().int().min(1).max(200),
+  num_sessions: numSessionsField,
   validity_days: validityDaysField,
   // Absent means off (#109) — a studio that has never heard of binding keeps
   // selling open packages without sending the field.
-  instructor_bound: z.boolean().optional(),
+  instructor_bound: instructorBoundField.optional(),
   price_sgd: priceField,
-  promotions: z.array(promotionInputSchema).optional(),
+  promotions: promotionsField.optional(),
 })
 
 const updateSchema = z.object({
   name: nameField.optional(),
-  num_sessions: z.number().int().min(1).max(200).optional(),
+  num_sessions: numSessionsField.optional(),
   validity_days: validityDaysField.optional(),
-  instructor_bound: z.boolean().optional(),
+  instructor_bound: instructorBoundField.optional(),
   price_sgd: priceField.optional(),
   status: statusEnum.optional(),
-  promotions: z.array(promotionInputSchema).optional(),
+  promotions: promotionsField.optional(),
 })
 
 function serialize(
@@ -132,7 +104,7 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     return c.json(await serializeWithPromos(tenantId(c), await svc.getPtPackage(tenantId(c), id)))
   })
-  .post('/', zValidator('json', createSchema), async c => {
+  .post('/', zValidator('json', createSchema, explainPackage), async c => {
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
     const row = await svc.createPtPackage(tenantId(c), {
@@ -155,7 +127,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'pt_packages', id: row.id })
     return c.json(await serializeWithPromos(tenantId(c), row), 201)
   })
-  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
+  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema, explainPackage), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')

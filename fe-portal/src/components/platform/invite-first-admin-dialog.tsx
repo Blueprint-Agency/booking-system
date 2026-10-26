@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { ApiError, type Api } from "@/lib/api";
 import { inviteFirstAdmin, type PlatformTenant } from "@/lib/platform";
+import { refusalMessage } from "@/lib/refusal-message";
 
 /**
  * The way out of a studio nobody can get into.
@@ -72,7 +73,7 @@ export function InviteFirstAdminDialog({
           ? `${tenant.name} already has staff — invite the rest from inside the studio.`
           : code === "admin_email_invalid"
             ? "That email doesn’t look like an address."
-            : `Could not invite an admin to ${tenant.name}.`,
+            : refusalMessage(err, `Could not invite an admin to ${tenant.name}.`),
       );
     } finally {
       setSubmitting(false);
@@ -111,6 +112,7 @@ export function InviteFirstAdminDialog({
           <Label htmlFor="first-admin-name">Name (optional)</Label>
           <Input
             id="first-admin-name"
+            maxLength={200}
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="Jane Tan"

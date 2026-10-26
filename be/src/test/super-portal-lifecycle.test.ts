@@ -555,4 +555,34 @@ describe('super portal studio lifecycle', { skip: integrationTestsEnabled ? fals
     assert.deepEqual({ start_date: row!.termStartDate, end_date: row!.termEndDate }, kept)
     assert.equal(row!.status, 'active')
   })
+
+  test('SUP-37 a New studio, first Admin or Term form with a studio or admin name past 200 characters, an email that is not one, or a start date with a five-digit year, is refused 400 invalid_request with a sentence naming the field, and nothing is written', async () => {
+    const studio = await throwawayStudio('life-sentences')
+    const sentence = (reply: Reply, says: RegExp, what: string) => {
+      expectReply(reply, 400, 'invalid_request', what)
+      assert.match(String(reply.body?.message), says, `${what}: ${JSON.stringify(reply.body)}`)
+    }
+    const create = (over: Record<string, unknown>) =>
+      platform('POST', '/tenants', { slug: `life-said-${run}`, name: 'Lifecycle said', admin_email: `said@${DOMAIN}`, term_months: 3, ...over })
+    await writesNothing('every refused form', async () => {
+      sentence(await create({ name: 'n'.repeat(201) }), /studio name.*200/i, 'a long studio name')
+      sentence(await create({ name: '' }), /studio name/i, 'a blank studio name')
+      sentence(await create({ admin_name: 'n'.repeat(201) }), /admin.*name.*200/i, 'a long admin name')
+      sentence(
+        await platform('POST', `/tenants/${studio.id}/admin`, { admin_email: 'not an email' }),
+        /email address/i,
+        'an invite to an address that is not one',
+      )
+      sentence(
+        await platform('POST', `/tenants/${studio.id}/admin`, { admin_email: `said@${DOMAIN}`, admin_name: 'n'.repeat(201) }),
+        /admin.*name.*200/i,
+        'an invite with a long name',
+      )
+      sentence(
+        await platform('PUT', `/tenants/${studio.id}/term`, { start_date: '20310-05-10', months: 3 }),
+        /date/i,
+        'a five-digit year',
+      )
+    })
+  })
 })

@@ -25,6 +25,12 @@ export function formatRelative(iso: string): string {
   return formatDistanceToNow(parseISO(iso), { addSuffix: true });
 }
 
+/**
+ * The `max` of every date input: a browser lets a year run to six digits, and
+ * the API takes only four.
+ */
+export const LATEST_DATE = "9999-12-31";
+
 /** Today's local date as `yyyy-MM-dd`, for use as the `min` of a date input. */
 export function todayIso(): string {
   return localDay();

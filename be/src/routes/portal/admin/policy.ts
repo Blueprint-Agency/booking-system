@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/policy/update'
-import { BadRequestError } from '../../../shared/errors'
+import { explainInvalid } from '../../explain-invalid'
 import { tenantId } from '../../../middleware/tenant'
 
 // A Leave Cap is a headcount of instructors on study leave at once, not a number
@@ -20,16 +20,9 @@ const MAX_WINDOW_HOURS = 365 * 24
 
 const LEAVE_CONFLICT_MESSAGE = 'A leave conflict must be a pair of instructors.'
 
-/** A rejected body answers with a reason an admin can read, not a raw zod dump. */
-const explainInvalid = (result: { success: boolean; error?: unknown }) => {
-  if (result.success) return
-  const issues = (result.error as z.ZodError | undefined)?.issues
-  throw new BadRequestError('invalid_policy', {
-    message: issues?.[0]?.message ?? 'That value is not allowed.',
-  })
-}
+const explainPolicy = explainInvalid('That value is not allowed.', 'invalid_policy')
 
-// Every field carries its own sentence, because `explainInvalid` below hands
+// Every field carries its own sentence, because `explainPolicy` hands
 // the first issue's message straight to an admin — a field left with zod's
 // default would answer them with "Number must be less than or equal to 365".
 const globalPatch = z.object({
@@ -131,7 +124,7 @@ const app = new Hono()
       leave_conflicts: await serializeConflicts(tenantId(c)),
     })
   })
-  .patch('/global', zValidator('json', globalPatch, explainInvalid), async c => {
+  .patch('/global', zValidator('json', globalPatch, explainPolicy), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
     const row = await svc.updateGlobalPolicy(

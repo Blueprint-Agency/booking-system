@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { tenantId } from '../../middleware/tenant'
 import { acceptInvitation, lookupInvitationByToken } from '../../services/auth/invitations'
+import { explainInvalid } from '../explain-invalid'
 
 /**
  * Public (unauthenticated) staff invitations, on the inviting studio's portal.
@@ -22,12 +23,19 @@ import { acceptInvitation, lookupInvitationByToken } from '../../services/auth/i
  * lookup said the invitee already has one.
  */
 const querySchema = z.object({ token: z.string().min(1) })
+const nameField = (label: string) =>
+  z
+    .string({ message: `A ${label} must be text.` })
+    .trim()
+    .min(1, `Enter your ${label}.`)
+    .max(100, `A ${label} can be at most 100 characters.`)
 const acceptSchema = z.object({
-  token: z.string().min(1),
-  password: z.string().optional(),
-  first_name: z.string().trim().min(1).max(100).optional(),
-  last_name: z.string().trim().min(1).max(100).optional(),
+  token: z.string({ message: 'This invitation link is missing its token.' }).min(1, 'This invitation link is missing its token.'),
+  password: z.string({ message: 'A password must be text.' }).optional(),
+  first_name: nameField('first name').optional(),
+  last_name: nameField('last name').optional(),
 })
+const explainAccept = explainInvalid('That sign-up is not valid.')
 
 const app = new Hono()
   .get('/staff-invitation', zValidator('query', querySchema), async c => {
@@ -40,7 +48,7 @@ const app = new Hono()
       password_set: result.passwordSet,
     })
   })
-  .post('/staff-invitation/accept', zValidator('json', acceptSchema), async c => {
+  .post('/staff-invitation/accept', zValidator('json', acceptSchema, explainAccept), async c => {
     const body = c.req.valid('json')
     const result = await acceptInvitation({
       tenantId: tenantId(c),

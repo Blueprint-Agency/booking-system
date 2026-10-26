@@ -180,6 +180,19 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
     assert.equal((await json(res, 400)).error, 'series_range_too_long')
   })
 
+  test('SCH-41 a series whose first, last or excluded date has a five-digit year is refused 400 invalid_request with a sentence naming the field', async () => {
+    for (const [over, says] of [
+      [{ first_date: '20260-01-05' }, /first date/i],
+      [{ last_date: '20260-01-05' }, /last date/i],
+      [{ excluded_dates: ['20260-01-05'] }, /skipped date|excluded date/i],
+    ] as const) {
+      const body = await json(await send('/series/preview', admin.headers, 'POST', { ...template(), ...over }), 400)
+      assert.equal(body.error, 'invalid_request', JSON.stringify(body))
+      assert.match(String(body.message), says, JSON.stringify(body))
+      assert.match(String(body.message), /date like/i, JSON.stringify(body))
+    }
+  })
+
   let seriesId!: string
 
   test('SCH-13 a clash on any date is listed, and a commit with it creates nothing', async () => {

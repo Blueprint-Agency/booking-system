@@ -3,14 +3,27 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/catalog/class-types'
 import { tenantId } from '../../../middleware/tenant'
+import { explainInvalid } from '../../explain-invalid'
 
 const createSchema = z.object({
-  name: z.string().min(1).max(120),
-  description: z.string().max(500).nullable().optional(),
-  difficulty: z.enum(['general', 'beginner', 'intermediate', 'advanced']).optional(),
-  parent_id: z.string().uuid().nullable().optional(),
+  name: z
+    .string({ message: 'A name must be text.' })
+    .min(1, 'A class type needs a name.')
+    .max(120, 'A name can be at most 120 characters.'),
+  description: z
+    .string({ message: 'A description must be text.' })
+    .max(500, 'A description can be at most 500 characters.')
+    .nullable()
+    .optional(),
+  difficulty: z
+    .enum(['general', 'beginner', 'intermediate', 'advanced'], {
+      message: 'A difficulty is general, beginner, intermediate or advanced.',
+    })
+    .optional(),
+  parent_id: z.string().uuid('That parent class type is not one of the studio’s.').nullable().optional(),
 })
 const updateSchema = createSchema.partial()
+const explainClassType = explainInvalid('That class type is not valid.')
 const idParam = z.object({ id: z.string().uuid() })
 const listQuery = z.object({ include_archived: z.string().optional() })
 
@@ -37,13 +50,13 @@ const app = new Hono()
     const row = await svc.getClassType(tenantId(c), id)
     return c.json(serialize(row))
   })
-  .post('/', zValidator('json', createSchema), async c => {
+  .post('/', zValidator('json', createSchema, explainClassType), async c => {
     const body = c.req.valid('json')
     const row = await svc.createClassType(tenantId(c), body)
     c.set('auditTarget' as any, { table: 'class_types', id: row.id })
     return c.json(serialize(row), 201)
   })
-  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
+  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema, explainClassType), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const row = await svc.updateClassType(tenantId(c), id, body)

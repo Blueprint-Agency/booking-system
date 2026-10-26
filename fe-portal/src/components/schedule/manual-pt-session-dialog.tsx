@@ -14,7 +14,7 @@ import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { InstructorOption, useInstructorsOnLeave } from "@/components/schedule/instructor-leave";
 import { MemberSearch, SeatRowView, toSeat, type SeatRow } from "@/components/schedule/pt-seat";
 import { useWorkspace } from "@/lib/workspace-context";
-import { currentHourTime, todayIso } from "@/lib/formatters";
+import { LATEST_DATE, currentHourTime, todayIso } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
 import { PAY_OPTIONAL_HINT } from "@/lib/pay";
 import { fetchActiveInstructors, fetchActiveRooms, type CatalogInstructor, type CatalogRoom } from "@/lib/catalog";
@@ -241,6 +241,7 @@ export function ManualPtSessionDialog({
               type="date"
               required
               min={todayIso()}
+              max={LATEST_DATE}
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />

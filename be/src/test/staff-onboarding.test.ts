@@ -268,6 +268,25 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.equal((await staffRow(one.id, email))?.status, 'pending')
   })
 
+  test('STF-46 a staff sign-up with a first or last name past 100 characters is refused 400 invalid_request with a sentence naming the field, and the invitation stays open', async () => {
+    const email = at('long-name')
+    await invite(email)
+    const { token } = invitationMail(email)
+
+    for (const [field, says] of [
+      ['first_name', /first name.*100/i],
+      ['last_name', /last name.*100/i],
+    ] as const) {
+      const body = await expectStatus(
+        await accept(one, token, 'a long enough password 1!', { first_name: 'Probe', last_name: 'Person', [field]: 'n'.repeat(101) }),
+        400,
+        'invalid_request',
+      )
+      assert.match(String(body.message), says, JSON.stringify(body))
+    }
+    assert.equal((await staffRow(one.id, email))?.status, 'pending')
+  })
+
   test('creating an instructor writes both rows and mails the same kind of link', async () => {
     const email = at('instructor')
     await expectStatus(

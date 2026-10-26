@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { leaveViewer, listLeaveCalendar } from '../../services/leave/requests'
+import { explainInvalid } from '../explain-invalid'
+import { plainDate } from '../plain-date'
 
 /**
  * GET /api/v1/portal/leave-calendar?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -17,11 +19,13 @@ import { leaveViewer, listLeaveCalendar } from '../../services/leave/requests'
  * the portal. This route only passes the caller's identity and role through.
  */
 
-const plainDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
-
 const app = new Hono().get(
   '/',
-  zValidator('query', z.object({ from: plainDate, to: plainDate })),
+  zValidator(
+    'query',
+    z.object({ from: plainDate('A from date'), to: plainDate('A to date') }),
+    explainInvalid('That calendar range is not valid.'),
+  ),
   async c => {
     const { from, to } = c.req.valid('query')
     const leave = await listLeaveCalendar(leaveViewer(c.get('staffRow')), from, to)

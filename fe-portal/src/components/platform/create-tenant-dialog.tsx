@@ -191,6 +191,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
           <Label htmlFor="tenant-name">Domain name</Label>
           <Input
             id="tenant-name"
+            maxLength={200}
             value={name}
             onChange={e => onNameChange(e.target.value)}
             placeholder="Acme Yoga"
@@ -308,6 +309,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
           <Label htmlFor="tenant-admin-name">First admin’s name (optional)</Label>
           <Input
             id="tenant-admin-name"
+            maxLength={200}
             value={adminName}
             onChange={e => setAdminName(e.target.value)}
             placeholder="Jane Tan"

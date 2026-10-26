@@ -21,6 +21,7 @@ import {
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
+import { refusalMessage } from "@/lib/refusal-message";
 import type { ClassType, ClassTypeDifficulty } from "@/types";
 
 // Shared difficulty presentation. `general` = "all levels".
@@ -131,7 +132,7 @@ export default function ClassTypesPage() {
           toast.error("A class type can't be its own parent.");
           return;
         }
-        toast.error(`Save failed (HTTP ${err.status}).`);
+        toast.error(refusalMessage(err, `Save failed (HTTP ${err.status}).`));
       } else {
         toast.error("Save failed.");
       }
@@ -435,6 +436,7 @@ function ClassTypeDialog({
             id="ct-name"
             required
             autoFocus
+            maxLength={120}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Vinyasa Flow, Aerial Yoga"
@@ -446,11 +448,12 @@ function ClassTypeDialog({
           <Textarea
             id="ct-description"
             rows={3}
+            maxLength={500}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Short blurb shown to customers on /classes and workshop cards."
           />
-          <p className="text-xs text-muted">Optional. Up to ~500 characters.</p>
+          <p className="text-xs text-muted">Optional. Up to 500 characters.</p>
         </div>
 
         <div className="space-y-1.5">

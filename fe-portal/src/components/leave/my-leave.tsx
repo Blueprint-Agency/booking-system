@@ -17,7 +17,7 @@ import { BalanceCard } from "@/components/leave/balance-card";
 import { DocumentButton, TransitionButton } from "@/components/leave/request-buttons";
 import { useWorkspace } from "@/lib/workspace-context";
 import { openSignedUrl } from "@/lib/api";
-import { todayIso } from "@/lib/formatters";
+import { LATEST_DATE, todayIso } from "@/lib/formatters";
 import {
   formatLeaveDayRange,
   leaveErrorMessage,
@@ -280,6 +280,7 @@ export function MyLeave() {
                   id="leave-start"
                   type="date"
                   required
+                  max={LATEST_DATE}
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                 />
@@ -290,6 +291,7 @@ export function MyLeave() {
                   id="leave-end"
                   type="date"
                   min={startDate || undefined}
+                  max={LATEST_DATE}
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
                   placeholder="Same day"

@@ -71,6 +71,7 @@ export function PtPackageDialog({
           <Input
             id="pt-name"
             required
+            maxLength={160}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. 5-Session 1-on-1 Pack"
@@ -85,6 +86,7 @@ export function PtPackageDialog({
               required
               type="number"
               min={1}
+              max={200}
               value={numSessions}
               onChange={(e) => setNumSessions(e.target.value)}
             />

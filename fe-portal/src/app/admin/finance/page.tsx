@@ -26,7 +26,7 @@ import {
   type CatalogInstructor,
   type CatalogLocation,
 } from "@/lib/catalog";
-import { formatDate, formatSgd, formatTime } from "@/lib/formatters";
+import { LATEST_DATE, formatDate, formatSgd, formatTime } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
 import { toast } from "sonner";
 import {
@@ -810,6 +810,7 @@ function ManualEntryDialog({
             id="me-date"
             type="date"
             required
+            max={LATEST_DATE}
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />

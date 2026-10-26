@@ -369,6 +369,22 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
 
   // ── who may file ────────────────────────────────────────────────────────
 
+  test('LEV-145 a leave request whose start or end date has a five-digit year is refused 400 invalid_request with a sentence naming the date, and nothing is filed', async () => {
+    const ivy = await instructor(one, 'Ivy Fiveyear')
+    for (const [over, says] of [
+      [{ start_date: '20260-01-05', end_date: dayOf(40) }, /start date/i],
+      [{ start_date: dayOf(40), end_date: '20260-01-05' }, /end date/i],
+    ] as const) {
+      const res = await submit(ivy, { type: 'annual', ...over })
+      assert.equal(res.status, 400, JSON.stringify(res.body))
+      assert.equal(res.body.error, 'invalid_request', JSON.stringify(res.body))
+      assert.match(String(res.body.message), says, JSON.stringify(res.body))
+      assert.match(String(res.body.message), /date like/i, JSON.stringify(res.body))
+    }
+    const mine = await call(ivy, 'GET', `/leave?year=${YEAR}`)
+    assert.deepEqual(mine.body.requests ?? [], [], 'nothing is filed')
+  })
+
   test('a member cannot reach the instructor leave route at all', async () => {
     const email = emailFor('Member Mo')
     const headers = await harness.signInAs('client', email, one)

@@ -103,6 +103,7 @@ export function RefundDialog({
           <textarea
             id="refund-reason"
             rows={3}
+            maxLength={2000}
             required
             autoFocus
             value={reason}

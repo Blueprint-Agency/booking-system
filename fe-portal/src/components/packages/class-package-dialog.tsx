@@ -84,6 +84,7 @@ export function ClassPackageDialog({
           <Input
             id="pkg-name"
             required
+            maxLength={160}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={

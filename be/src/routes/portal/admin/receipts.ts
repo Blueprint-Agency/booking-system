@@ -11,7 +11,14 @@ import {
   type StudioReceiptSummary,
 } from '../../../services/receipts/read'
 import { resendReceipt } from '../../../services/receipts/resend'
-import { receiptDetailView, receiptIdParam, receiptPdfResponse, receiptSummaryView, receiptsListQuery } from '../../receipt-views'
+import {
+  explainReceiptsQuery,
+  receiptDetailView,
+  receiptIdParam,
+  receiptPdfResponse,
+  receiptSummaryView,
+  receiptsListQuery,
+} from '../../receipt-views'
 
 /**
  * Every Receipt in the studio, for its admins (#389): `GET /`, searched by
@@ -41,7 +48,7 @@ const studioSummaryView =(r: StudioReceiptSummary) => ({
 })
 
 const app = new Hono()
-  .get('/', zValidator('query', listQuery), async c => {
+  .get('/', zValidator('query', listQuery, explainReceiptsQuery), async c => {
     const q = c.req.valid('query')
     const result = await listStudioReceipts(tenantId(c), {
       q: q.q,
@@ -56,7 +63,7 @@ const app = new Hono()
   })
   // The list as a file for the bookkeeper (#390): the same filters, every page.
   // Mounted before `/:id`, which would read `export.csv` as an id.
-  .get('/export.csv', zValidator('query', exportQuery), async c => {
+  .get('/export.csv', zValidator('query', exportQuery, explainReceiptsQuery), async c => {
     const q = c.req.valid('query')
     const rows = await exportStudioReceipts(tenantId(c), { q: q.q, from: q.from, to: q.to, kind: q.kind, status: q.status })
     return c.body(receiptsCsv(rows), 200, {

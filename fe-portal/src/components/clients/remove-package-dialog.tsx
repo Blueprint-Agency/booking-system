@@ -41,6 +41,7 @@ export function RemovePackageDialog({
           <textarea
             id="remove-reason"
             rows={3}
+            maxLength={2000}
             required
             value={reason}
             onChange={(e) => setReason(e.target.value)}

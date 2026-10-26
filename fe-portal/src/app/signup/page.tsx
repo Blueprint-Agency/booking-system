@@ -72,6 +72,11 @@ function acceptError(status: number, body: unknown): string {
       return "Password must be at least 8 characters.";
     case "password_too_long":
       return "Password must be at most 128 characters.";
+    case "invalid_request": {
+      const message = (body as { message?: unknown } | null)?.message;
+      if (typeof message === "string" && message) return message;
+      return "We couldn't set up your account. Please try again.";
+    }
     default:
       return status === 429
         ? "Too many attempts. Wait a minute, then try again."
@@ -153,6 +158,7 @@ function SetPasswordForm({ token, email }: { token: string; email: string }) {
             <Input
               id="firstName"
               autoComplete="given-name"
+              maxLength={100}
               value={firstName}
               onChange={ev => setFirstName(ev.target.value)}
             />
@@ -162,6 +168,7 @@ function SetPasswordForm({ token, email }: { token: string; email: string }) {
             <Input
               id="lastName"
               autoComplete="family-name"
+              maxLength={100}
               value={lastName}
               onChange={ev => setLastName(ev.target.value)}
             />

@@ -32,7 +32,7 @@ import {
 } from "@/components/schedule/instructor-leave";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useWaitlistsOn } from "@/lib/use-waitlists-on";
-import { todayIso, currentHourTime } from "@/lib/formatters";
+import { LATEST_DATE, todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
 import { scheduleErrorMessage, slotFromParams } from "@/lib/schedule";
 import { PAY_OPTIONAL_HINT, payOrNull } from "@/lib/pay";
@@ -354,6 +354,7 @@ function NewClassForm() {
                 required
                 type="date"
                 min={todayIso()}
+                max={LATEST_DATE}
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
               />

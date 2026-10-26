@@ -8,7 +8,8 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { currentEnv } from '../env'
-import { outbound, VENDOR_DEADLINE_MS } from './outbound'
+import { outbound, VENDOR_DEADLINE_MS, type RetryPolicy } from './outbound'
+import { tenantKey } from './object-key'
 
 /**
  * Every network call on this client goes through `outbound`. A signed URL is
@@ -46,7 +47,7 @@ export const r2 = new S3Client({
  * It is served by `R2_PUBLIC_URL`, so ANYTHING written here is readable by
  * anyone who holds the object key — including a Supporting Document. The key is
  * the only thing standing between a health document and the public, which is why
- * `supportingDocumentKey` uses two UUIDs and why no read path serialises it. The
+ * `supportingDocumentKey` uses three UUIDs and why no read path serialises it. The
  * signed URL below still expires, but it guards nothing an unsigned URL would
  * not also reach.
  *
@@ -84,9 +85,22 @@ export async function putObject(key: string, body: Uint8Array, contentType: stri
   )
 }
 
-export async function deleteObject(key: string): Promise<void> {
-  await outbound('storage', 'deleteObject', abortSignal =>
-    r2.send(new DeleteObjectCommand({ Bucket: r2Bucket(), Key: key }), { abortSignal }),
+/**
+ * Delete one object of `tenantId`'s. A key outside that studio's folder is
+ * refused rather than trusted, as `deleteObjectsUnder` refuses a prefix that
+ * is not a folder; a key from before the prefix is refused too.
+ */
+export async function deleteObject(tenantId: string, key: string, options: { retry?: RetryPolicy } = {}): Promise<void> {
+  const folder = tenantKey(tenantId, '')
+  // Invariant: callers delete a key their own studio's row stored.
+  if (!tenantId || !key.startsWith(folder) || key === folder) {
+    throw new Error(`refusing to delete "${key}": it is not under "${folder}"`)
+  }
+  await outbound(
+    'storage',
+    'deleteObject',
+    abortSignal => r2.send(new DeleteObjectCommand({ Bucket: r2Bucket(), Key: key }), { abortSignal }),
+    options,
   )
 }
 
