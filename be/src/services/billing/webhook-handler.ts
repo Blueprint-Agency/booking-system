@@ -980,18 +980,27 @@ async function dispatchStripeEvent(
       // studio to refund — which needs a way to refund a Purchase that granted
       // nothing, and there is none yet (see `refundStatesFor`).
       const hold = promoCodeId ? { promoCodeId, clientId } : null
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry, hold))) return
-
-      const booked = await bookWorkshopPaid(tenantId, {
-        clientId,
-        workshopId,
-        workshopTierId,
-        paymentIntentId,
-        purchaseId: purchase.id,
-        amountSgd,
-        appliedPromotionId,
-        appliedPromoCodeId: promoCodeId,
-      })
+      let booked: Awaited<ReturnType<typeof bookWorkshopPaid>> | null
+      try {
+        booked = await db.transaction(async () => {
+          if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry, hold))) return null
+          return bookWorkshopPaid(tenantId, {
+            clientId,
+            workshopId,
+            workshopTierId,
+            paymentIntentId,
+            purchaseId: purchase.id,
+            amountSgd,
+            appliedPromotionId,
+            appliedPromoCodeId: promoCodeId,
+          })
+        })
+      } catch (err) {
+        if (!(err instanceof NotFoundError && err.code === 'workshop_tier_not_found')) throw err
+        await returnRefusedSale(tenantId, purchase.id, paymentIntentId, providerAccountId, retry)
+        return
+      }
+      if (!booked) return
 
       // The clash check ran at checkout start. A class booked while the member
       // was paying is not refused here — the money is taken, and there is no

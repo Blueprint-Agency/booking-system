@@ -384,6 +384,7 @@ export const ERROR_CODES = {
   workshop_no_show_unsupported: "workshop_no_show_unsupported",
   workshop_not_active: "workshop_not_active",
   workshop_not_found: "workshop_not_found",
+  workshop_tier_has_booking_history: "workshop_tier_has_booking_history",
   workshop_tier_has_bookings: "workshop_tier_has_bookings",
   workshop_tier_has_open_purchases: "workshop_tier_has_open_purchases",
   workshop_tier_not_found: "workshop_tier_not_found",

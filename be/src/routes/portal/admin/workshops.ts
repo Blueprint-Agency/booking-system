@@ -147,6 +147,37 @@ function toPromotionWriteInput(p: z.infer<typeof promotionInputSchema>): Promoti
   }
 }
 
+function toScheduleInput(body: z.infer<typeof scheduleSchema>) {
+  return {
+    days: body.days.map(d => ({
+      id: d.id,
+      ref: d.ref,
+      roomId: d.room_id,
+      startsAt: new Date(d.starts_at),
+      endsAt: new Date(d.ends_at),
+      capacityOnline: d.capacity_online,
+      capacityWaitlist: d.capacity_waitlist,
+      capacityBuffer: d.capacity_buffer,
+    })),
+    tiers: body.tiers.map(t => ({
+      id: t.id,
+      name: t.name,
+      description: t.description ?? null,
+      regularPriceSgd: t.regular_price_sgd,
+      earlyBirdPriceSgd: t.early_bird_price_sgd ?? null,
+      earlyBirdQuota: t.early_bird_quota ?? null,
+      earlyBirdCutoffAt: t.early_bird_cutoff_at ? new Date(t.early_bird_cutoff_at) : null,
+      dayRefs: t.day_refs,
+    })),
+  }
+}
+
+const createSchema = createBasicsSchema.extend({
+  days: scheduleSchema.shape.days.default([]),
+  tiers: scheduleSchema.shape.tiers.default([]),
+  promotions: z.array(promotionInputSchema).default([]),
+})
+
 // ---------------------------------------------------------------------------
 // Serializers
 // ---------------------------------------------------------------------------
@@ -246,10 +277,12 @@ const app = new Hono()
       promotions: (promosMap[id] ?? []).map(serializePromotion),
     })
   })
-  .post('/', zValidator('json', createBasicsSchema), async c => {
+  .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
-    const row = await publish.createWorkshop(tenantId(c), {
+    const row = await scheduleSvc.createWorkshopWithSchedule(tenantId(c), {
+      ...toScheduleInput(body),
+      promotions: body.promotions.map(toPromotionWriteInput),
       name: body.name,
       locationId: body.location_id,
       descriptionHtml: body.description_html ?? null,
@@ -308,28 +341,7 @@ const app = new Hono()
   .put('/:id/schedule', zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    const saved = await scheduleSvc.saveWorkshopSchedule(tenantId(c), id, {
-      days: body.days.map(d => ({
-        id: d.id,
-        ref: d.ref,
-        roomId: d.room_id,
-        startsAt: new Date(d.starts_at),
-        endsAt: new Date(d.ends_at),
-        capacityOnline: d.capacity_online,
-        capacityWaitlist: d.capacity_waitlist,
-        capacityBuffer: d.capacity_buffer,
-      })),
-      tiers: body.tiers.map(t => ({
-        id: t.id,
-        name: t.name,
-        description: t.description ?? null,
-        regularPriceSgd: t.regular_price_sgd,
-        earlyBirdPriceSgd: t.early_bird_price_sgd ?? null,
-        earlyBirdQuota: t.early_bird_quota ?? null,
-        earlyBirdCutoffAt: t.early_bird_cutoff_at ? new Date(t.early_bird_cutoff_at) : null,
-        dayRefs: t.day_refs,
-      })),
-    })
+    const saved = await scheduleSvc.saveWorkshopSchedule(tenantId(c), id, toScheduleInput(body))
     c.set('auditTarget' as any, { table: 'workshops', id })
     return c.json({ days: saved.days.map(dayRow), tiers: saved.tiers.map(tierRow) })
   })

@@ -91,7 +91,7 @@ export async function ensureInstructors(
   tx?: Tx,
 ): Promise<void> {
   if (instructorIds.length === 0) return
-  const unique = Array.from(new Set(instructorIds))
+  const unique = Array.from(new Set(instructorIds.map(id => id.toLowerCase())))
   // Tenant-scoped, and this is the gate that matters most in this module: an
   // instructor id belonging to another studio has to read as
   // `invalid_instructor_id`, or one tenant could staff its classes with

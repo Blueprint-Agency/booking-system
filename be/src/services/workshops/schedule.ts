@@ -1,7 +1,8 @@
 import { db } from '../../db'
 import { BadRequestError } from '../../shared/errors'
 import { lockOccupancy } from '../schedule/occupancy'
-import { getWorkshop } from './publish'
+import { replacePromotionsForParent, type PromotionWriteInput } from '../packages/promotions'
+import { createWorkshop, getWorkshop, type CreateWorkshopInput, type WorkshopRow } from './publish'
 import { createDay, deleteDay, listDays, updateDay, type CreateDayInput, type WorkshopDayRow } from './days'
 import { createTier, deleteTier, listTiers, updateTier, type CreateTierInput, type TierWithDays } from './tiers'
 
@@ -13,6 +14,25 @@ export interface ScheduleDayInput extends Omit<CreateDayInput, 'ord' | 'basePric
 export interface ScheduleTierInput extends Omit<CreateTierInput, 'ord' | 'dayIds'> {
   id?: string
   dayRefs: string[]
+}
+
+export async function createWorkshopWithSchedule(
+  tenantId: string,
+  input: CreateWorkshopInput & {
+    days: ScheduleDayInput[]
+    tiers: ScheduleTierInput[]
+    promotions: PromotionWriteInput[]
+  },
+): Promise<WorkshopRow> {
+  const { days, tiers, promotions, ...basics } = input
+  return db.transaction(async () => {
+    const row = await createWorkshop(tenantId, basics)
+    if (days.length || tiers.length) await saveWorkshopSchedule(tenantId, row.id, { days, tiers })
+    if (promotions.length) {
+      await replacePromotionsForParent(tenantId, 'workshop', row.id, promotions, basics.createdByStaffId)
+    }
+    return row
+  })
 }
 
 export async function saveWorkshopSchedule(
