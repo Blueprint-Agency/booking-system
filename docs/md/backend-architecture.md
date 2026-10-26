@@ -27,7 +27,7 @@ The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is t
 | Auth | **Better Auth**, self-hosted — three pools on separate tables: `client`, `staff`, `platform` (per §15b session isolation). Bearer sessions. See `docs/adr/0004-self-hosted-auth-with-better-auth.md` |
 | File storage | **Cloudflare R2** (S3-compatible via `@aws-sdk/client-s3`) — server-side multipart upload for imagery (merch photos, Profile pictures) and private documents, signed GET for the documents (§6c) |
 | Background jobs | **`node-cron`** for non-critical periodic jobs (reminders, expiry sweeps); **BullMQ** (Redis-backed) added when the durable refund flow lands. Until then, no Redis dependency. |
-| Email | **Resend** HTTP API (transactional, 22 templates per §17). One API key, two envelope addresses on the platform's verified domain — see §6d. |
+| Email | **Resend** HTTP API (transactional; each studio's seeded templates, each switchable on or off by the studio unless locked — §4j `email_switches`). One API key, one envelope address on the platform's verified domain — see §6d. |
 | Payments | **Stripe** (Payment Intents + Refund API; no Subscriptions in v1) |
 
 ---
@@ -69,7 +69,7 @@ be/
     │   │   ├── # availability.ts      # REMOVED in v1 — see §4f (replaced by pt_requests)
     │   │   ├── bookings.ts            # bookings, cancellations, check_ins
     │   │   ├── ledger.ts              # manual_adjustments, credit_movements, audit_log, audit_log_archive, stripe_payments
-    │   │   ├── content.ts             # email_templates, email_log, waiver, waiver_signatures, marketing_content
+    │   │   ├── content.ts             # email_templates, email_switches, email_log, waiver, waiver_signatures, marketing_content
     │   │   ├── inbox.ts               # inbox_items
     │   │   ├── ops.ts                 # feature_flags
     │   │   └── relations.ts           # All Drizzle `relations()` declarations
@@ -101,7 +101,7 @@ be/
     │   │   │   ├── check-in.ts        # generic page + per-session (§11)
     │   │   │   ├── clients.ts         # list, profile, status toggle, adjustments (§16)
     │   │   │   ├── staff.ts           # list, invite, revoke, archive, resend invite (§15)
-    │   │   │   ├── notifications.ts   # email template editor (§17)
+    │   │   │   ├── emails.ts          # list the studio's emails, switch one on or off
     │   │   │   ├── marketing.ts       # edit hero / pricing / footer copy
     │   │   │   └── feature-flags.ts   # toggle ops flags
     │   │   └── instructor/            # gated by require-role('instructor'|'admin')
@@ -1011,9 +1011,15 @@ purchase_receipt                       # Merch (paid or free) and a standalone C
 A staff cancel of one booking (`/bookings/:id/cancel`) sends nothing (#320).
 | `workshop_waitlist_promoted` | deferred with waitlist behaviour itself. |
 
+#### `email_switches` (#467)
+
+id, slug (text, unique per Tenant), enabled (bool). A studio's switch for one of its emails. **No row is on**: a studio that never touched a switch sends everything, which is how migration 0129 left every existing studio. The first change an admin makes writes the row; switching back on keeps it, so every `email_switch_changed` audit row about that email targets one id. It travels in a studio archive by the catalogue rule (it has a `tenant_id`).
+
+Which emails exist, who receives each and which are locked is one map in code, `STUDIO_EMAILS` (`services/notifications/switches.ts`): 19 to members and 13 to staff, every slug some sender sends, the `email_templates` slugs with no sender left out. The send path takes only those slugs (`SentTemplateSlug`), so a sender cannot ship an unclassified email, and `switches.test.ts` fails when a new template slug is neither classified nor named as unsent. The admin API is `routes/portal/admin/emails.ts` (be-portal.md).
+
 #### `email_log`
 
-id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nullable), recipient_user_kind enum (`client`, `staff`), subject_rendered (text), body_rendered (text), status enum (`queued`, `sent`, `failed`, then Resend's webhook outcomes `delivery_delayed`, `delivered`, `bounced`, `complained`, `suppressed` — outcomes only move forward), smtp_message_id (text, nullable — the Resend email id the webhook matches on), smtp_response (text, nullable — last line of SMTP server response), error (text, nullable), queued_at, sent_at, outcome_at (nullable — when the webhook last moved status past `sent`).
+id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nullable), recipient_user_kind enum (`client`, `staff`), subject_rendered (text), body_rendered (text), status enum (`queued`, `sent`, `failed`, `skipped` — an email the studio switched off, logged and never handed to the mailer — then Resend's webhook outcomes `delivery_delayed`, `delivered`, `bounced`, `complained`, `suppressed` — outcomes only move forward, and never onto a `skipped` row), smtp_message_id (text, nullable — the Resend email id the webhook matches on), smtp_response (text, nullable — last line of SMTP server response), error (text, nullable), queued_at, sent_at, outcome_at (nullable — when the webhook last moved status past `sent`).
 
 **Indexes:** `(recipient_user_id, queued_at desc)`, `(status)`, `(template_slug, queued_at desc)`.
 
@@ -1096,7 +1102,7 @@ The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-
 
 | Job | Schedule | Handler |
 |---|---|---|
-| `email` send | Triggered (not scheduled) — invoked by any service via `services/notifications/send.ts:enqueueEmail()`, executed inline against the SMTP transport | Render template + variables → `lib/mailer.ts` (Nodemailer) → write `email_log`. In v1 this is synchronous (no queue); failures are logged and surfaced in `email_log.status='failed'` with `error` populated from the Nodemailer rejection |
+| `email` send | Triggered (not scheduled) — invoked by any service through `services/notifications/send.ts` (`sendTemplatedEmail`, `emailEveryAdmin`, `sendStudioSystemEmail`, all ending in `deliver`), usually after commit | Render template + variables → write `email_log` → `lib/mailer.ts` (Resend, through the send gate). An email the studio switched off (`email_switches`) is written `skipped` and never handed to the mailer; a locked one never reads its switch. Failures are logged and surfaced in `email_log.status='failed'` with `error` from the provider's refusal |
 | `sendCheckInNags` | Every 15 min, per Tenant (`jobs/index.ts`, `services/bookings/check-in-nag.ts`) | An active class or private session that ended at least 24 hours ago (and no more than 72 — older ones, which predate the job, are never nagged), with a roster row still undecided as the check-in desk counts it (`services/bookings/session-check-in.ts`), and no `checkin_nag_sent_at` yet. On a class, a row is undecided when its booking is `confirmed` or `no_show` and still `check_in_state='pending'`. On a private session, it is a member on the session whose seat (their confirmed booking, else their latest) is still `pending`, or who has no booking at all → stamp `checkin_nag_sent_at` (the claim, so each session is nagged once), then send `checkin_nag` to its Instructor (link: `/instructor/check-in`) and to every active Admin of the studio but them (link: `/admin/check-in`). A failed send is a failed `email_log` row, not retried. |
 | `credit-expiry` (`sendLapsingAlerts`) | Daily 08:00 in each Tenant's own `timezone` (`jobs/index.ts`) | Find the Tenant's active Credit Bundles and trials with credits left where `expires_at` between now+6.5d and now+7.5d → send `credit_expiry_reminder` email. The window is one day wide and the job runs once a day, so each package is reminded once. The renderer has no conditionals, so the kind branch happens in code: `remaining_line` is composed with `notifications/purchase-email.ts:contentsLine`, which says "2 classes" for a trial and "2 class credits" for a bundle. |
 | `pt-request-expiry` | Hourly (`node-cron`) | Find `pt_requests WHERE status='pending' AND expires_at < now()` → update `status='expired'`, set `resolved_at=now()`, `resolved_by_staff_id=NULL`, then `enqueueEmail('pt_request_expired', client.email, …)`. Stale requests must not linger in the admin queue. |
@@ -1104,7 +1110,7 @@ The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-
 | Workshop admin-cancel | Triggered (not scheduled) by admin route | `services/workshops/cancel.ts:cancelWorkshop`: each confirmed booking on the workshop → `state='cancelled'`, `refund_outcome='n_a'`. Nobody is refunded automatically (#272): an Admin refunds a paid booking from the member's page. After commit, every attendee is emailed (NTF-10). No Inbox item is written. |
 | Class waitlist promote | Triggered (not scheduled) — `services/bookings/cancel.ts` calls `services/waitlist/promote.ts:promoteFromWaitlist` inside the cancel transaction, under the class row lock, when a confirmed **online** seat is cancelled outside the Cancellation Window. Books the first member in line whose package can pay (same path as a member booking), skips the rest without dropping them, and sends `class_waitlist_promoted` after commit (`spec-waitlist.md` §5). | — |
 | `expireWaitlists` | Every 5 min, per Tenant (`jobs/index.ts`) | `waitlist_entries` still `waiting` on a class whose `starts_at` has passed → `expired`. Reads already treat them so. |
-| Workshop waitlist promote | **Deferred — not in v1.** Slug `workshop_waitlist_promoted` is seeded so the template editor surfaces it. When waitlist behaviour lands, this becomes a triggered handler on booking-cancel that picks the oldest waitlist row for each affected day and offers it. | — |
+| Workshop waitlist promote | **Deferred — not in v1.** Slug `workshop_waitlist_promoted` is seeded; it has no sender, so it is not on the studio's Emails page. When waitlist behaviour lands, this becomes a triggered handler on booking-cancel that picks the oldest waitlist row for each affected day and offers it. | — |
 
 ### BullMQ (added when refund durability is required)
 
@@ -1175,10 +1181,11 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
 - **The Receipt in an email (#387).** `withReceipt(input, receipt)` (`services/receipts/email.ts`) adds a Receipt to a templated send: `receipt_url` (the member's Receipt in the booking app) and `receipt_number` filled, the PDF attached, and the Receipt itself (`receiptHtml`, the one design every screen shows; see **One Receipt design** under the PDF) passed as `appendixHtml`, which the frame (`services/notifications/frame.ts`) draws under the studio's rendered body. The block is system markup, escaped where it is built, because the template renderer escapes every variable it substitutes; the studio's copy is untouched. The four purchase confirmations carry it, sent only by the delivery that issued the Receipt; the `purchase_receipt` email (#388) and the admin resend (#390) are to send through the same function. The resend (`services/receipts/resend.ts`) sends what `send-purchase-email.ts:purchaseEmail(tenantId, receipt)` composes, the one place that knows which email each kind of Purchase sends (`purchase_receipt` for Merch and a standalone Add-On), addressed to the member's current email; a free package carries no Purchase of its own, so a free package sale finds the package it granted from what every free sale has recorded since #169 (`packageGrantedBy`): the member's package of the product the sale's metadata names (`package_id`), with no Purchase and not complimentary, granted in the checkout's one transaction, so its `purchased_at` is the sale's `created_at`. A Receipt of any age, backfilled ones included, resends.
 - **Server-side rendering** via `services/notifications/render.ts`:
   - Parse template body for `{{variable}}` tokens
-  - Validate against `services/notifications/variables.ts` allow-list per slug (this is what powers the §17c amber flag in fe — same source of truth)
-  - Substitute values; sanitise (XSS safe — rich text from admin trusted, but variables themselves escaped)
+  - The variables each slug's copy may use are `services/notifications/variables.ts`; `db/seed/email-copy.test.ts` holds the seeded copy to it. A variable the sender does not supply renders blank.
+  - Substitute values; variables are escaped. The copy is the studio's seeded template, not editable (#467).
+- **Switches (#467).** A studio switches individual emails on or off (`email_switches`, `routes/portal/admin/emails.ts`). `deliver` checks the switch for every studio email: a switched-off, switchable email is filed `skipped` in `email_log` and never reaches `sendMail()`. A locked email (`STUDIO_EMAILS` in `services/notifications/switches.ts`) never reads its switch. The super portal's `platform_*` mail does not pass `deliver` and has no switch.
 - **After commit.** Mail that announces a write is queued with `afterCommit` and sent once the request's (or job's, or delivery's) transaction has committed — §7 After-commit work.
-- **Logging.** One `email_log` row per recipient per send. On send success, store Resend's email `id` in `smtp_message_id` (column name kept from the SMTP era; `smtp_response` is now always null). On a refused send, store the error in `error` and set `status='failed'`.
+- **Logging.** One `email_log` row per recipient per send. On send success, store Resend's email `id` in `smtp_message_id` (column name kept from the SMTP era; `smtp_response` is now always null). On a refused send, store the error in `error` and set `status='failed'`. A switched-off email's row is `status='skipped'`, with no `sent_at`.
 - **No bounce webhook.** Resend exposes `email.bounced` / `email.complained` webhooks; v1 does not consume them. Add as a route under `routes/webhooks/` later — out of scope for v1.
 - **Testing.** Local dev uses `SMTP_HOST=localhost` + `mailpit` or `mailhog` running on port 1025; staging uses the production provider with a sandboxed sender domain.
 

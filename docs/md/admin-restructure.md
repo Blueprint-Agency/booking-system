@@ -91,13 +91,13 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 **Clients & Content:**
 15. Clients
-16. Notifications (Email Templates)
+16. Emails (a switch per email)
 17. Waivers — not being built
 
 **Completed this phase:**
 - 14. Roles & Invitations
 - 15. Clients (list, profile, credit balance, history, manual adjustments)
-- 16. Notifications (email template management) — built against fixture templates, then hidden (#277); see §16
+- 16. Emails: the backend's switches and admin API are built (#469), the portal page is #470; the template editor is deleted (#467); see §16
 
 **Next phase (see §19):**
 - Dashboard
@@ -674,7 +674,7 @@ Two staff roles in the system: `admin` and `instructor`. The `staff_role` type h
 
 | Role | How created | Authority |
 |---|---|---|
-| **Admin** | A studio's first admin arrives with the studio (created or restored through the super portal); further admins are invited by an admin | Everything in the portal: Locations, Class Types, all Packages + Promotions, Promo Codes, Global Policy, Notifications, Marketing, feature flags, Staff (including other admins), Clients, Workshops, Rooms, and member impersonation. Sees every active location of the studio. |
+| **Admin** | A studio's first admin arrives with the studio (created or restored through the super portal); further admins are invited by an admin | Everything in the portal: Locations, Class Types, all Packages + Promotions, Promo Codes, Global Policy, Emails (§16), Marketing, feature flags, Staff (including other admins), Clients, Workshops, Rooms, and member impersonation. Sees every active location of the studio. |
 | **Instructor** | Invited by an admin | The instructor portal only, scoped to their own sessions. What they may do there beyond teaching is set per person by their **Instructor Permissions** (below). |
 
 - Roles are **mutually exclusive** — one email = one staff account = one role.
@@ -832,19 +832,33 @@ The actions on a client's active-package kebab, all written into the same immuta
 
 ---
 
-## 16. Notifications (Email Templates)
+## 16. Emails
 
-> **Hidden (#277).** The Notifications screen listed fixture templates, including `admin_cancel_*` emails no backend code sends, and omitted `purchase_refunded`, which it does send. It has been removed from the portal and its nav entry until the list can be read from the emails the backend actually sends — a separate ticket. The design below is the target for that work, not a description of the shipped portal.
+> **Switches, not a template editor (#467).** A studio turns individual emails on or off; it does not edit their wording. The template editor this section used to describe, and its `/portal/admin/notifications` stub routes, are deleted. The backend is built (#469); the portal page is #470.
 
 ### 16a. Overview
 
-- Every trigger event always fires its email — no per-template enable/disable toggle.
-- Each template ships with seeded default content (subject + body). Admin can customise; the seed is the fallback for a fresh deployment.
-- No rendered preview mode — admin edits and saves directly.
-- Body uses a **rich text editor** (headings, bold, italic, bullet points, links).
-- Variables use `{{variable_name}}` syntax. The editor **detects variables inline** — known variables are highlighted; unknown variables are flagged in amber. A reference panel alongside the editor lists all valid variables for that specific template.
+- An **Emails** page (admins only, beside Business details and Policy) lists every email the platform sends for the studio, in two groups: **To members** and **To staff**. Each has one switch for the whole studio.
+- **Every switch starts on**, for new and existing studios, so nothing changes until an admin turns one off.
+- **Some emails are always on.** They are listed greyed out with a locked switch: sign-in and account mail (sign-in code, password resets, staff 2FA, invitations, the staff email-change link and notice), money (purchase confirmations, receipts, refunds), and anything staff or the system did to a member's booking (the studio cancelled a class, PT session or workshop; an accepted-packages change cancelled a booking; a PT request was cancelled; a waitlist promotion booked and charged the member).
+- **A switched-off email leaves a trace.** It is not sent, and the email log records a `skipped` row, so support can answer "why didn't I get an email?".
+- **Every change is in the studio's audit log** (who, which email, from, to). Instructors cannot see or change the switches. Members never get email settings. The super portal has no controls over a studio's switches in v1.
+- The switches travel in a studio's archive and restore.
+- Each email's wording is the studio's seeded template copy (`email_templates`); it is not editable.
+
+The one classification of every email, which the send check, the API and the page all read, is `STUDIO_EMAILS` in `be/src/services/notifications/switches.ts`:
+
+| Group | Switchable | Locked |
+|---|---|---|
+| To members | `class_booking_confirmed`, `class_cancelled_credit_returned`, `pt_cancelled_session_returned`, `credit_expiry_reminder` | `sign_in_code`, `password_reset`, `client_invite`, `package_purchase_confirmed`, `trial_pass_purchase_confirmed`, `corporate_purchase_confirmed`, `purchase_receipt`, `workshop_purchase_confirmed`, `purchase_refunded`, `admin_cancel_class`, `admin_cancel_pt`, `admin_cancel_workshop`, `class_rule_cancelled`, `pt_request_cancelled`, `class_waitlist_promoted` |
+| To staff | `checkin_nag`, `instructor_cancel_class`, `classpass_overbooked`, `leave_request_submitted`, `leave_approved`, `leave_rejected`, `leave_revoked` | `staff_two_factor_code`, `staff_password_reset`, `admin_invite`, `instructor_invite`, `staff_email_change_link`, `staff_email_changed_notice` |
+
+- `pt_request_cancelled` is one email for a member's and a staff cancel, so it is locked whole. `checkin_nag` goes to the instructor and every admin; one switch covers both.
+- Template slugs no code sends (`welcome`, `class_cancelled_forfeited`, `pt_cancelled_forfeited`, `pt_session_approved`, `pt_session_declined`, `pt_request_expired`, `pt_request_submitted`, `workshop_waitlist_promoted`, `referral_credited`) are not listed. The super portal's own `platform_*` mail is not a studio's and is not listed.
 
 ### 16b. Template List
+
+The emails' triggers and variables, for reference. Some rows below (Welcome, the forfeited cancels, the PT request replies) are templates no code sends today; they are not on the Emails page.
 
 **Auth**
 
@@ -895,23 +909,6 @@ The actions on a client's active-package kebab, all written into the same immuta
 | 17 | Instructor invite | Admin creates instructor profile (§14b) | New instructor | `{{instructor_name}}`, `{{studio_name}}`, `{{invite_link}}`, `{{expiry_days}}` |
 | 18 | Admin invite | Admin sends admin invite (§14b) | Invitee | `{{studio_name}}`, `{{invite_link}}`, `{{expiry_days}}` |
 | 19 | Check-in nag | Check-in still `pending` 24h after event end (§11) | Assigned instructor (cc admin) | `{{instructor_name}}`, `{{session_name}}`, `{{date}}`, `{{pending_count}}`, `{{checkin_link}}` |
-
-### 16c. Template Editor
-
-**Fields:**
-- **Subject** — plain text input; supports variables.
-- **Body** — rich text editor; supports headings, bold, italic, bullet points, links, and variables.
-
-**Variable behaviour:**
-- Variables written as `{{variable_name}}`.
-- Editor highlights known variables inline as the admin types.
-- Unknown or misspelled variables flagged in amber with a tooltip ("Unrecognised variable — will render as blank").
-- Reference panel alongside the editor lists all valid variables for the open template with a short description of each.
-
-**Save behaviour:**
-- Save button active whenever unsaved changes exist.
-- Save replaces the current template body + subject for that trigger.
-- No versioning or rollback in v1 — admin can manually restore by re-typing or referencing the seeded defaults (documented externally).
 
 ---
 

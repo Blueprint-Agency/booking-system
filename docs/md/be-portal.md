@@ -51,7 +51,7 @@ Per `admin-restructure.md` Overview, admin surfaces partition into three buckets
 
 | Bucket | Surfaces | Gate |
 |---|---|---|
-| **Global** | Locations, Rooms, Class Types, Class Packages, Workshops, PT Packages, Promotions, Promo Codes, Global Policy, Notifications, Staff | `requireRole('admin')` on the entire router |
+| **Global** | Locations, Rooms, Class Types, Class Packages, Workshops, PT Packages, Promotions, Promo Codes, Global Policy, Emails, Staff | `requireRole('admin')` on the entire router |
 | **Workspace-scoped** | Schedule, Check-in | `requireRole('admin')`. Reads filter to the location the portal has selected as the active workspace; any active location may be selected. |
 | **Workspace-agnostic** | PT Requests, Clients | `requireRole('admin')`. No location filter. |
 
@@ -394,13 +394,13 @@ Block, unblock and sign-out are **per studio**: a login is one studio's own (ADR
 | POST | `/staff/:id/sessions/revoke` | **Sign out everywhere** at this studio; their next request is 401. Any admin may sign out any staff member, including another admin or themselves; the last-admin guard does not apply (the admin can sign in again). `{ revoked: n }`. Logs `sessions_revoked`. |
 | POST | `/staff/:id/resend-invitation` | Re-mails the set-password link: the pending invitation when there is one (as `/staff/invitations/:id/resend`), otherwise Better Auth's reset link on the studio's portal, which sets a first password as readily as it replaces one. `{ sent: 'invitation' \| 'set_password' }`. 409 `staff_archived`. Logs `invitation_resent`, as does `/staff/invitations/:id/resend`. |
 
-### `notifications.ts`
+### `emails.ts`
+The studio's emails and their switches (#467, admin-restructure §16). Studio admins only; instructors `403 forbidden_role`. The list is `STUDIO_EMAILS` (`services/notifications/switches.ts`): every email some code sends for a studio, each `member` or `staff`, locked or switchable. The switch state is `email_switches` (no row is on). There is no template editor: the old `/notifications` stub routes are deleted.
+
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/notifications/templates` | List 22 seeded templates |
-| GET | `/notifications/templates/:slug` | Body + variable allow-list |
-| PATCH | `/notifications/templates/:slug` | `{ subject, body_html }`. Render-time check: every `{{var}}` must appear in the slug's allow-list (`services/notifications/variables.ts`). Rejects with `400 unknown_variable` listing offenders — this is the source of the §17c amber flag in fe-portal. |
-| GET | `/notifications/log` | Read-only `email_log` view, paginated, filter by slug + status |
+| GET | `/emails` | `{ member: Email[], staff: Email[] }`, `Email` = `{ slug, audience, locked, enabled }`. A locked email always reads `enabled: true`. |
+| PATCH | `/emails/:slug` | `{ enabled: bool }` → the `Email`. Writes an `email_switch_changed` audit row (`{ slug, from, to }`, target `email_switches`) when the state changes; a PATCH to the state it already has writes none. `404 email_not_found` for a slug the studio does not send; `409 email_locked` with a `message` sentence for a locked one. |
 
 ### `marketing.ts`
 | Method | Path | Effect |

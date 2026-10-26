@@ -35,7 +35,7 @@ A **2-app product for a yoga studio** — as originally written, one studio with
 - Full client-side surface set per `fe-client-features.md` §1–§9
 - Schedule + roster + check-in + private-session inbox + member ops on admin side
 - Refund-request inbox, cancellation/membership-pause inbox (admin acts out-of-app)
-- Email-only outbound notifications, with admin-editable templates
+- Email-only outbound notifications, each switchable on or off by the studio's admin unless it is one that must always go out
 - v1 report set: attendance, finance (money in and out, netted), membership, inbox throughput, referral attribution
 - Audit trail across credit adjustments, refunds, session cancellations, waiver resets, impersonation
 - Two-location data model (cross-location packages, per-page location filter)
@@ -73,7 +73,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 | Role | Who | Default home | Authority shape |
 |---|---|---|---|
 | **Super-admin** | Teeko dev team / founder (platform operators) | `/super/health` | Platform/system ops + impersonation. **Does not touch business data directly** — when they need to act on a member or invoice, they impersonate a studio admin. |
-| **Studio admin** | A studio's staff (founder, manager, front-desk) | `/admin` | Full business authority within their own studio — schedule, packages, member profiles, refund inbox, settings, reports, notification templates. Single tier; no sub-roles in v1. |
+| **Studio admin** | A studio's staff (founder, manager, front-desk) | `/admin` | Full business authority within their own studio — schedule, packages, member profiles, refund inbox, settings, reports, email switches. Single tier; no sub-roles in v1. |
 | **Instructor** | A studio's instructors | `/admin/today` | Row-level scope: own classes, own roster (no member profiles), own private-session inbox, own availability, own profile, own teaching log. **Never sees other instructors or aggregates.** |
 
 ### 2.2 Permission matrix
@@ -102,7 +102,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 | Manage studio admin accounts (peer-add) | ✓ | ✓ | ✗ |
 | View finance / attendance / membership reports | ✓ read-only | ✓ | ✗ |
 | View own teaching log | ✓ read-only | ✓ all instructors | ✓ own only |
-| Edit notification templates (factory / override) | ✓ factory only | ✓ override only | ✗ |
+| Switch a studio's emails on or off | ✗ | ✓ | ✗ |
 | Resend a notification (support recovery) | via impersonation | ✓ | ✗ |
 | Toggle feature flags / view system health | ✓ | ✗ | ✗ |
 | Impersonate a studio admin (audit-logged) | ✓ | ✗ | ✗ |
@@ -271,8 +271,9 @@ Not a schema — disambiguates terms used throughout the PRD.
 ### 4.4 Operational
 
 - **Audit row** — per §3.9.
-- **Notification send** — one row per outbound email; recipient, event, template version, channel (email in v1), status, triggered-by.
-- **Notification template** — factory version (super-admin) + optional studio override (studio admin). Per event type.
+- **Notification send** — one row per outbound email; recipient, event, template version, channel (email in v1), status (`skipped` when the studio switched that email off), triggered-by.
+- **Notification template** — the studio's copy of one email, seeded when the studio is created. Not editable.
+- **Email switch** — the studio's on/off for one switchable email (§7.3). On unless an admin turned it off.
 - **Feature flag** — super-admin-owned platform toggle.
 - **Location** — `id`, name, address, hours; non-deletable in v1 (just two seeded rows).
 
@@ -297,7 +298,7 @@ Listed as **surface name → 1-line purpose → role visibility**. UX detail in 
 | **Private-session inbox** | All-instructors view, read-only by default; SLA chips; can take over any request (records "on behalf of"). | Studio admin |
 | **Refund-request inbox** | Open / resolved / declined queue; admin notes; out-of-app pattern (§1.4). | Studio admin |
 | **Membership-cancellation inbox** | Same shape as refund inbox; out-of-app. | Studio admin |
-| **Notification templates** | Per-event email template editor; factory vs override; resend audit + manual resend per booking/user. | Studio admin (override only) |
+| **Emails** | Every email the studio sends, to members and to staff, each switched on or off for the whole studio; the always-on ones shown locked (§7.3). | Studio admin |
 | **Reports** | v1 set per §8. Filter conventions: date range, location, CSV export. | Studio admin |
 | **Marketing copy** | Landing page hero, pricing page, footer, branding (single editable record set). | Studio admin |
 | **Settings** | Cancellation windows, validity window defaults, waiver text + version, locations metadata, working-hours defaults. | Studio admin |
@@ -323,7 +324,6 @@ Instructors do not see: any client profile beyond roster row, any other instruct
 |---|---|---|
 | **System health** | Service status, error rates, recent deploys, queue depths (notifications pending, audit ingestion). | Super-admin |
 | **Feature flags** | Platform-level toggles (e.g., enable WhatsApp-channel preview, enable v2 reports). | Super-admin |
-| **Notification factory templates** | Edit the canonical email template library; variable token catalog. | Super-admin |
 | **Studio-admin accounts** | Create, peer-add, force-logout, password reset, MFA enrollment. | Super-admin |
 | **Audit (read-only, including impersonation events)** | Read-only mirror of studio-admin audit log + super-admin own action log. | Super-admin |
 | **Impersonate** | Pick a studio admin account → enter their session with persistent banner. | Super-admin |
@@ -466,18 +466,19 @@ Admin-side **inbox surfaces** (refund / cancellation / private-session) are dash
 | `cancellation-request-received` | Client submits membership cancellation/pause | Studio admin | ✓ |
 | `private-sla-escalation` | Private request 6h to SLA, instructor unresponsive | Studio admin | ✓ |
 
-### 7.3 Template ownership (factory + override)
+### 7.3 Email switches (#467)
 
-- **Super-admin** owns the **factory** library — one entry per event per channel. Defines the variable tokens (`{{client.firstName}}`, `{{class.startTime}}`, `{{cancellation.window}}`, etc.). Variable schema is fixed; factory copy is editable by super-admin only.
-- **Studio admin** can author a **local override** for any event template. Override scope: copy + tone + branding. Cannot change variable schema, cannot change trigger logic.
-- **Reset to factory** action available on every override.
-- **Instructor** never edits templates.
+- A studio's wording is not editable. Each studio is seeded its copy of every email when it is created (`email_templates`); there is no template editor, factory library or override.
+- **Studio admin** switches individual emails on or off for the whole studio, on the portal's **Emails** page (`admin-restructure.md` §16). Every switch starts on.
+- **Some emails are locked on**: sign-in and account mail, money (purchase confirmations, receipts, refunds), and anything staff or the system did to a member's booking. They are listed but cannot be switched off.
+- A switched-off email is not sent; its send row records `skipped`. Each switch change writes an audit row.
+- **Instructor** cannot see or change the switches. **Members** never configure email. **Super-admin** has no controls over a studio's switches in v1.
 
 ### 7.4 Manual resend + audit
 
 - Studio admin can resend any past notification from a user-detail page or booking-detail page. Reason recorded.
 - Super-admin can resend only via impersonation.
-- Every send (system-triggered or manual resend) writes a **notification send** row: recipient, event, template version, channel, status (queued / sent / delivered / bounced / failed), triggered-by, timestamp.
+- Every send (system-triggered or manual resend) writes a **notification send** row: recipient, event, template version, channel, status (queued / sent / delivered / bounced / failed, or skipped when the studio has switched that email off), triggered-by, timestamp.
 - Searchable in admin by recipient + event type. Retention 12 months in-app.
 
 ---
@@ -549,8 +550,7 @@ Named explicitly so a reader does not infer them as v1 commitments:
 - **Per-booking QR** — QR scoped to a single booking, format `RT-BOOKING-{bookingId}-{sessionId}`. Not a per-user QR.
 - **Inbox surface** — admin-side queue for an out-of-app flow (refund / cancellation / private-session). State machine + admin notes + audit, never an in-app financial action.
 - **Mutex resolution** — the modal that fires when admin tries to issue a Bundle while user has Unlimited active (or vice versa). Choices: replace, queue.
-- **Factory template** — super-admin-owned canonical email template per event.
-- **Override** — studio admin's local edit of a factory template; copy + tone only, not variable schema.
+- **Email switch** — a studio's on/off for one of its emails; locked emails (sign-in, money, a booking staff or the system changed) cannot be switched off (§7.3).
 - **Impersonation** — super-admin enters a studio admin's session to act on business data; persistent banner; every action audit-logged with `impersonated_by`.
 - **Teaching log** — per-instructor, per-period record of classes scheduled / completed / cancelled. Powers external pay calc.
 

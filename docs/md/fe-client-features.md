@@ -819,7 +819,7 @@ For every fe-client feature above, admin must own at least the **write side** of
 | Receipts | Every Receipt in the studio; open, download, resend, CSV; receipt details and prefix (no void, no editing) |
 | Referral | Referral graph, attribution audit, reward config |
 | Layout / branding | Studio settings: branding, locations, marketing copy, footer |
-| Notifications & messages | Template library, channel routing, per-event toggles, send audit log |
+| Notifications & messages | Per-email on/off switches (the Emails page), send audit log |
 | Cross-cutting | Reports, feature flags |
 
 Anything in the right column without strong representation in `fe-portal` today is a candidate for the next planning pass.
@@ -850,6 +850,8 @@ These are the in-app and channel touchpoints triggered by booking and payment ev
 
 ### 11.2 Out-of-session events (push to email / WhatsApp / in-app inbox)
 
+A studio may switch some of these emails off (§11.3); a member of that studio then gets no email for that event.
+
 | Event | Channel(s) | Notes |
 |---|---|---|
 | Booking confirmation (any) | Email | Includes per-booking QR link |
@@ -865,10 +867,11 @@ These are the in-app and channel touchpoints triggered by booking and payment ev
 
 ### 11.3 Where admin comes in
 
-- Admin maintains the **template library** for every event row above (copy, brand voice, language).
-- Admin sets which channels are enabled per event (e.g., disable WhatsApp for receipts but keep it on for waitlist alerts).
-- Admin can resend any individual notification from a user-detail page (support recovery).
-- Admin needs an audit log of "what was sent to whom, when, with what result" — for compliance and ops debugging.
+- The wording of each email is the studio's seeded copy; nobody edits it (#467).
+- An admin switches individual emails on or off for the whole studio (`admin-restructure.md` §16). Every switch starts on. Of the member emails, only the booking confirmation, the own-cancel confirmations (credit or session returned) and the credit expiry reminder can be switched off; sign-in and account mail, purchase confirmations, receipts, refunds, and anything staff or the system did to a member's booking (a studio cancellation, a waitlist promotion) always go out.
+- A member has no email settings, now or later.
+- A switched-off email is not sent and is logged `skipped` in the studio's email log (`email_log`), beside what was sent, to whom, when and with what result, so support can answer "I never got the email".
+- Admin can resend a Receipt from the studio's Receipts list (support recovery).
 
 ---
 
