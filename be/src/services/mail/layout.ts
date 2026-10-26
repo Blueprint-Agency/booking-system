@@ -151,8 +151,8 @@ const decodeBasic = (s: string) =>
  * A stored template body as a fragment the layout can wrap, plus any footer
  * note it carries.
  *
- * Three shapes are accepted: a fragment (what is seeded now, and what the
- * portal's template editor holds); a fragment with an `emailFooterNote`; and a
+ * Three shapes are accepted: a fragment (what is seeded now); a fragment with
+ * an `emailFooterNote`; and a
  * whole document from the old shell, whose header and footer are dropped (the
  * layout draws its own) and whose premises line becomes the footer note.
  */

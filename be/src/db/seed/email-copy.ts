@@ -418,8 +418,8 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     `${link('{{qr_url}}', 'Show your QR code')}<br />${emailLink('{{receipt_url}}', 'View your purchase')}`,
   ])
 
-  // Waitlist promotion is deferred (backend-architecture.md §jobs), so this row
-  // exists for the template editor. The claim is time-bound and paid — both
+  // Workshop waitlist promotion is deferred (backend-architecture.md §jobs), so
+  // nothing sends this row yet. The claim is time-bound and paid — both
   // facts belong in the copy, or the member reads it as a place already theirs.
   const WORKSHOP_WAITLIST_PROMOTED_BODY = body(
     'A place has opened in {{workshop_name}}',

@@ -86,8 +86,8 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // §13: `contents_line` and `validity_line` REPLACE `credits_or_sessions` and
   // `expires_at`. Each is a whole composed sentence, built by kind in
   // ./purchase-email.ts — the fragment-shaped pair produced a wrong sentence for
-  // some kind whatever the template said around them, and leaving them in the
-  // allow-list would leave that footgun loaded for the portal template editor.
+  // some kind whatever the template said around them, so they are out of the
+  // allow-list.
   //
   // #387: on these four `receipt_url` is the member's Receipt in the booking
   // app, and `services/receipts/email.ts:withReceipt` also fills
