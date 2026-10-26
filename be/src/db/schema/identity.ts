@@ -41,6 +41,10 @@ export const clients = pgTable(
     // in on. Null until the member picks one: the app's default stands.
     theme: clientThemeEnum('theme'),
     fontSize: clientFontSizeEnum('font_size'),
+    // The member's own Profile picture: an object key under `t/<tenant>/avatars/`,
+    // new for every upload (`services/profile-pictures/pictures.ts`). Null shows
+    // initials.
+    photoR2Key: text('photo_r2_key'),
     status: clientStatusEnum('status').notNull().default('active'),
     suspendedAt: timestamp('suspended_at', { withTimezone: true }),
     // Soft-delete (admin-only). When set, the row is filtered out of every
@@ -130,6 +134,9 @@ export const staffUsers = pgTable(
     address: text('address'),
     gender: clientGenderEnum('gender'),
     bio: text('bio'),
+    // Their own Profile picture, as on `clients`: admins and instructors alike,
+    // set by nobody but them.
+    photoR2Key: text('photo_r2_key'),
     languages: text('languages').array().notNull().default(sql`'{}'`),
     role: staffRoleEnum('role').notNull(),
     status: staffStatusEnum('status').notNull().default('pending'),

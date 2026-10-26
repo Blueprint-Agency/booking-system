@@ -1,13 +1,22 @@
 import type { Context } from 'hono'
-import { BadRequestError } from '../../shared/errors'
-import type { ErrorCode } from '../../shared/error-codes'
+import { BadRequestError } from '../shared/errors'
+import type { ErrorCode } from '../shared/error-codes'
 
 const MULTIPART = /^multipart\/form-data\s*(;|$)/i
 
 /**
- * The file a portal upload route was sent, as the multipart field `file`.
+ * Headroom over a file limit for the multipart framing around the file. A
+ * route's `bodyLimit` is its file limit plus this: the body is always larger
+ * than the file it carries, so a cap at the file limit exactly would refuse a
+ * file just under it. The exact byte rule stays the service's.
+ */
+export const MULTIPART_ENVELOPE_BYTES = 16 * 1024
+
+/**
+ * The file an upload route was sent, as the multipart field `file`.
  *
- * One copy for every upload route (merch photo, Supporting Document), so they
+ * One copy for every upload route (merch photo, Supporting Document, Profile
+ * picture), so they
  * refuse a bad request the same way, before any service runs and with nothing
  * written:
  *

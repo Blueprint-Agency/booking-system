@@ -1,4 +1,5 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { clients } from '../../db/schema/identity'
@@ -17,6 +18,17 @@ import {
 } from '../../services/billing/payment-customers'
 import { tenantId } from '../../middleware/tenant'
 import { creditHistory, serializeCreditHistory } from '../../services/packages/credit-history'
+import {
+  PICTURE_TOO_LARGE,
+  PROFILE_PICTURE_MAX_BYTES,
+  removeProfilePicture,
+  setProfilePicture,
+  type PictureOwner,
+} from '../../services/profile-pictures/pictures'
+import { publicObjectUrl } from '../../lib/r2'
+import { ForbiddenError } from '../../shared/errors'
+import { ERROR_CODES } from '../../shared/error-codes'
+import { MULTIPART_ENVELOPE_BYTES, uploadedFile } from '../uploaded-file'
 
 /**
  * A payment method id as the provider writes it (`pm_…`). Not a uuid, so it is
@@ -43,6 +55,7 @@ function serializeProfile(row: typeof clients.$inferSelect) {
     email: row.email,
     phone: row.phone,
     gender: row.gender,
+    photo_url: publicObjectUrl(row.photoR2Key),
     joined_at: row.joinedAt,
     // General settings. A null field is one the member has not chosen: the
     // app's default stands.
@@ -103,6 +116,22 @@ const displayPrefsSchema = z
     message: 'at least one of theme/font_size is required',
   })
 
+const pictureBodyLimit = bodyLimit({
+  maxSize: PROFILE_PICTURE_MAX_BYTES + MULTIPART_ENVELOPE_BYTES,
+  onError: c => c.json({ error: ERROR_CODES.image_too_large, message: PICTURE_TOO_LARGE }, 413),
+})
+
+/**
+ * The member's own picture. An admin acting as the member is refused: a
+ * picture is only ever its owner's choice.
+ */
+function ownPicture(c: Context): PictureOwner {
+  if (c.get('impersonatedBy')) {
+    throw new ForbiddenError('forbidden', { message: 'Only the member can change their own picture.' })
+  }
+  return { tenantId: tenantId(c), kind: 'member', id: c.get('clientId') }
+}
+
 const app = new Hono()
   .get('/', c => {
     // clientRow is attached by clientAuth — middleware already loaded it.
@@ -112,6 +141,19 @@ const app = new Hono()
     const body = c.req.valid('json')
     const updated = await editOwnProfile(tenantId(c), c.get('clientId'), body)
     return c.json(serializeProfile(updated))
+  })
+  .post('/photo', pictureBodyLimit, async c => {
+    const owner = ownPicture(c)
+    const file = await uploadedFile(c, { code: 'image_required', message: 'Attach a JPG, PNG or WebP image.' })
+    const photoUrl = await setProfilePicture(owner, {
+      contentType: file.type,
+      bytes: new Uint8Array(await file.arrayBuffer()),
+    })
+    return c.json({ photo_url: photoUrl })
+  })
+  .delete('/photo', async c => {
+    await removeProfilePicture(ownPicture(c))
+    return c.json({ photo_url: null })
   })
   .patch('/display-prefs', zValidator('json', displayPrefsSchema), async c => {
     const { theme, font_size } = c.req.valid('json')

@@ -6,7 +6,7 @@ import * as svc from '../../services/leave/requests'
 import { SUPPORTING_DOCUMENT_MAX_BYTES } from '../../services/leave/rules'
 import { ERROR_CODES } from '../../shared/error-codes'
 import { tenantId } from '../../middleware/tenant'
-import { uploadedFile } from './uploaded-file'
+import { MULTIPART_ENVELOPE_BYTES, uploadedFile } from '../uploaded-file'
 import { explainInvalid } from '../explain-invalid'
 import { plainDate } from '../plain-date'
 
@@ -23,9 +23,6 @@ import { plainDate } from '../plain-date'
  * leave as someone else. Approve / reject / revoke are the admin queue's
  * (routes/portal/admin/leave.ts) and are not mounted here.
  */
-
-/** Headroom over the file limit for the multipart framing around the file. */
-const MULTIPART_ENVELOPE_BYTES = 16 * 1024
 
 const submitSchema = z.object({
   // The one place a new Leave Type fails at runtime instead of at compile time

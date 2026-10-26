@@ -161,6 +161,11 @@ export const instructors = pgTable('instructors', {
   staffUserId: uuid('staff_user_id')
     .primaryKey()
     .references(() => staffUsers.id, { onDelete: 'cascade' }),
+  // Retired: the picture is the staff member's own, on `staff_users`, where
+  // `instructor_photos_to_staff` copied it. Nothing reads or writes this one.
+  // It stays until a later deploy drops it, because the build before that
+  // migration still reads it while the deploy migrates
+  // (`src/db/migrations/README.md` rule 0).
   photoR2Key: text('photo_r2_key'),
   // The Instructor Permissions an Admin has granted (be/docs/adr/0012). The
   // default is all three, and it lives here so every path that makes an
