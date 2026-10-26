@@ -11,8 +11,10 @@ export { NO_ONLINE_PAYMENTS, blockedByPayments } from "./online-payments-rule";
  * One read shared by every button that asks, re-read quietly on each page
  * that mounts it (`resource-cache.ts`).
  *
- * `null` while loading or if the read fails — see `blockedByPayments`, which
- * never blocks on an unknown.
+ * `null` while loading — see `blockedByPayments`, which never blocks on an
+ * unknown. A failed read is thrown to the page's error state
+ * (`failed-read.ts`), not drawn as an answer either way: a member would read
+ * a guessed buy button, or a missing one, as the studio's own setting.
  */
 export function useOnlinePayments(): boolean | null {
   const { data, error } = useCachedResource("public:online-payments", () =>

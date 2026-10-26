@@ -486,6 +486,14 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(peek.status, 404, peek.text)
   })
 
+  test('WSP-32 a member opening a workshop by an id that is not one, or by one no workshop has, is answered 404 workshop_not_found', async () => {
+    const ana = await member(one, 'Ana Typo')
+    for (const id of ['not-a-uuid', '123', `${randomUUID()}x`, randomUUID()]) {
+      const reply = await call(`/api/v1/me/workshops/${id}`, ana.headers)
+      assert.deepEqual([reply.status, reply.body?.error], [404, 'workshop_not_found'], `${id}: ${reply.text}`)
+    }
+  })
+
   test('WSP-03 a workshop with no tier is not offered to members, and its last tier cannot be removed', async () => {
     const w = await workshop(one, adminAtOne, teacherAtOne, {
       name: 'Unpriced retreat',

@@ -57,8 +57,8 @@ same path and query on the new host. See `be/CONTEXT.md` § Former slug.
 A studio whose **Term** has ended still resolves — like a suspended one, so the
 frontends can show it paused — but it counts as suspended from the first moment
 of its end date on its own clock: the public slug lookup reports
-`status: 'suspended'`, and `requireActiveTenant` refuses `/me` and `/portal`
-with `403 tenant_suspended`. Both read `effectiveStatus`
+`status: 'suspended'`, and `requireActiveTenant` refuses `/me`, `/portal`, the
+public member surface and the member sign-in pool with `403 tenant_suspended`. Both read `effectiveStatus`
 (`be/src/services/tenants/term-dates.ts`), so there is no gap while the
 15-minute sweep catches the stored status up. See `be/CONTEXT.md` § Term.
 
@@ -118,7 +118,7 @@ check as staff:
 | Session's claim | Verdict |
 |---|---|
 | this tenant | proceed (not counted as corroboration — a sign-in may have resolved from the header alone) |
-| another tenant | **403 `tenant_mismatch`** |
+| another tenant | **403 `tenant_mismatch`** — a backstop only: logins are per studio (ADR 0006), so another studio's session is invisible under this tenant's RLS context and is refused **401 `invalid_token`** before its claim is read (TEN-43) |
 | none | **403 `tenant_required`** |
 
 There is no rollout seam: every studio-pool session is stamped, so a missing claim

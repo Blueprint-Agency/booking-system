@@ -126,11 +126,14 @@ export function useClasses(
  * Locations, class types and instructors barely change within a member's
  * visit: read once, shared by every mount, and drawn at once on the next
  * page that wants them (`resource-cache.ts`), re-read quietly behind it.
- * A failed read lands as an empty list, and the next mount retries.
  */
-function useCachedList<T>(key: string, fetcher: () => Promise<T[]>): { data: T[] | null; loading: boolean } {
-  const { data, loading, error } = useCachedResource(key, fetcher);
-  return { data: error && !data ? [] : data, loading };
+function useCachedList<T>(
+  key: string,
+  fetcher: () => Promise<T[]>,
+  options?: { optional?: boolean },
+): { data: T[] | null; loading: boolean } {
+  const { data, loading } = useCachedResource(key, fetcher, options);
+  return { data, loading };
 }
 
 const getLocations = async () => {
@@ -161,9 +164,6 @@ const getInstructors = async () => {
  * PT package. Deliberately the same listing the backend's binding rule checks a
  * pick against, so the picker can never offer somebody the purchase would then
  * be refused for.
- *
- * A failed fetch lands as an empty list, exactly as `useLocations` does; the
- * caller says so rather than leaving a disabled button above an empty picker.
  */
 export function useInstructors(): {
   data: ApiInstructorLite[] | null;
@@ -172,11 +172,11 @@ export function useInstructors(): {
   return useCachedList("public:instructors", getInstructors);
 }
 
-export function useLocations(): {
+export function useLocations(options?: { optional?: boolean }): {
   data: ApiLocationFull[] | null;
   loading: boolean;
 } {
-  return useCachedList("public:locations", getLocations);
+  return useCachedList("public:locations", getLocations, options);
 }
 
 export interface ApiClassType {
@@ -243,14 +243,13 @@ export function useCanBookClass(): {
 } {
   const { isLoaded, session } = useMemberSession();
   const api = useApi();
-  const { data, loading, error } = useCachedResource(
+  const { data: ent, loading } = useCachedResource(
     isLoaded && session ? `me:${session.userId}:class-entitlements` : null,
     () => api.get<{ entitlements: ClassEntitlements }>("/me/class-packages").then((res) => res.entitlements),
   );
 
   if (!isLoaded) return { canBook: false, loaded: false, entitlements: null };
   if (!session) return { canBook: false, loaded: true, entitlements: null };
-  const ent = error ? null : data;
   const canBook = !!ent && (ent.has_active_unlimited || ent.has_active_bundle_credits);
   return { canBook, loaded: !loading, entitlements: ent };
 }

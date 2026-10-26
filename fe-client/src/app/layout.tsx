@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
 import { Toaster } from "sonner";
-import { getBrand } from "@/lib/brand";
+import { getBrand, isStudioPaused } from "@/lib/brand";
 import { BrandProvider } from "@/components/brand/brand-provider";
+import { StudioGate } from "@/components/studio-gate";
 import { TelemetryUser } from "@/components/telemetry-user";
 import { ViewTransitionGuard } from "@/components/layout/view-transition-guard";
 import { DisplayPrefsSync } from "@/components/display-prefs-sync";
@@ -52,6 +53,7 @@ export default async function RootLayout({
   // render it — so the studio's name is on the first paint rather than
   // replacing the platform's after a fetch.
   const brand = await getBrand();
+  const paused = await isStudioPaused();
 
   return (
     // `data-scroll-behavior` tells Next the smooth scrolling in `globals.css` is
@@ -66,7 +68,9 @@ export default async function RootLayout({
         <DisplayPrefsSync />
         <ViewTransitionGuard />
         <BrandProvider brand={brand}>
-          <MaintenanceGate>{children}</MaintenanceGate>
+          <MaintenanceGate>
+            <StudioGate paused={paused}>{children}</StudioGate>
+          </MaintenanceGate>
         </BrandProvider>
         <TelemetryUser />
         <Toaster position="top-center" richColors />

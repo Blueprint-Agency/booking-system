@@ -9,7 +9,8 @@
  *
  * Errors: non-2xx responses throw an `ApiError` that carries `status` plus the
  * parsed JSON body (if any) so callers can render structured copy. A 401 on a
- * call that sent a token also signs the member out (`lib/session-expiry.ts`).
+ * call that sent a token also signs the member out (`lib/session-expiry.ts`),
+ * and a studio refusal shows its page (`lib/studio-refusal.ts`).
  *
  * Deadline and failure reporting: `lib/api-request.ts`. Pass `signal` to set
  * your own deadline in place of the default.
@@ -20,6 +21,7 @@ import { getMemberToken } from "@/lib/member-auth";
 import { reportError } from "@/lib/report-error";
 import { noteSessionExpiry } from "@/lib/session-expiry";
 import { noteMaintenance } from "@/lib/maintenance";
+import { noteStudioRefusal } from "@/lib/studio-refusal";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 import { currentImpersonationGrant, IMPERSONATION_GRANT_HEADER } from "@/lib/impersonation-handoff";
 
@@ -98,6 +100,7 @@ async function apiFetch<T = unknown>(
   if (!answer.ok) {
     // Only a call that actually sent `Authorization` (an empty token sends none).
     noteSessionExpiry(answer.status, Boolean(token), token || undefined);
+    noteStudioRefusal(answer.status, answer.body, token || undefined);
     noteMaintenance(answer.status, answer.body);
     throw new ApiError(answer.status, answer.body);
   }

@@ -13,8 +13,10 @@ export type { CancellationPolicy } from "./cancellation-copy";
  * each page that mounts it (`resource-cache.ts`) — an admin who changes the
  * window has members told the new one on their next page.
  *
- * `null` while loading or if the read fails. Callers word around the gap
- * rather than guess a number; the server's refusal stays the enforcement.
+ * `null` while loading; callers word around the gap rather than guess a
+ * number, and the server's refusal stays the enforcement. A failed read is
+ * thrown to the page's error state (`failed-read.ts`), not drawn as no policy:
+ * a member would read "no policy" as the studio's rule.
  */
 export function useCancellationPolicy(): CancellationPolicy | null {
   return useCancellationPolicyRead().policy;

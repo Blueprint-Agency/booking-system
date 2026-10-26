@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { afterFailedRead, type FailedReadOptions } from "@/lib/failed-read";
 
 /**
  * What the app has already read from the backend during this visit, keyed by
@@ -54,10 +55,13 @@ function fetchCached<T>(key: string, fetcher: () => Promise<T>, fresh = false): 
  *
  * Responses that land after the key has moved on are dropped, so a slow read
  * for the last filter never overwrites the current one.
+ *
+ * A read that fails with nothing cached is never drawn as data (`failed-read.ts`).
  */
 export function useCachedResource<T>(
   key: string | null,
   fetcher: () => Promise<T>,
+  failed: FailedReadOptions = {},
 ): {
   data: T | null;
   loading: boolean;
@@ -112,6 +116,9 @@ export function useCachedResource<T>(
   }, []);
 
   const hasValue = key !== null && values.has(key);
-  const loading = key === null || (!hasValue && current.error === null);
+  if (key !== null && !hasValue && current.error !== null) {
+    return { ...afterFailedRead(current.error, failed), error: current.error, refresh };
+  }
+  const loading = key === null || !hasValue;
   return { data: current.data, loading, error: current.error, refresh };
 }

@@ -123,6 +123,7 @@ export function useWorkshop(id: string | undefined): {
   const { data, loading, error } = useCachedResource(
     isLoaded && session && id ? `workshop:${session.userId}:${id}` : null,
     () => api.get<ApiWorkshopDetail>(`/me/workshops/${id}`),
+    { notFound: "answer" },
   );
   if (signedOut) return { data: null, loading: false, signedOut, error: null };
   // Another workshop's page is never drawn under this one's address.

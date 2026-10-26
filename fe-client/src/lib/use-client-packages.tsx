@@ -12,7 +12,9 @@ import {
   type ReactNode,
 } from "react";
 import { usePathname } from "next/navigation";
+import { ApiError } from "./api";
 import { fetchApi } from "./api-url";
+import { afterFailedRead } from "./failed-read";
 import { reportError } from "./report-error";
 import type { UnlimitedPlanCoverage } from "./package-picker";
 
@@ -228,6 +230,9 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
   // that branches on what the member owns (the checkout Home studio picker) must
   // not read "no live plan" out of an empty context and offer the wrong control.
   const [loading, setLoading] = useState(true);
+  // A read that failed, held until the next one lands. With nothing loaded it
+  // is never drawn as a zero balance (`failed-read.ts`).
+  const [failure, setFailure] = useState<unknown>(null);
   // Whose packages `data` holds. A re-read for the same member (a route
   // change, a refetch after checkout) keeps them on screen and updates them in
   // place: flipping `loading` back on would swap the page just arrived at back
@@ -243,6 +248,7 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
       latest.current++;
       loadedFor.current = null;
       setData(null);
+      setFailure(null);
       setLoading(false);
       return;
     }
@@ -264,15 +270,18 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
             status: res.status,
           });
         }
+        const body: unknown = await res.json().catch(() => null);
+        if (seq === latest.current) setFailure(new ApiError(res.status, body));
         return;
       }
       const mapped = mapPackagesResponse(await res.json());
       if (seq !== latest.current) return;
       loadedFor.current = userId;
       setData(mapped);
+      setFailure(null);
     } catch (err) {
-      // Non-fatal for the UI (falls back to zero values), but report so it's not silent.
       reportError(err, { scope: "load-packages" });
+      if (seq === latest.current) setFailure(err);
     } finally {
       if (seq === latest.current) setLoading(false);
     }
@@ -284,6 +293,7 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
       latest.current++;
       loadedFor.current = null;
       setData(null);
+      setFailure(null);
       setLoading(false);
       return;
     }
@@ -311,6 +321,8 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
   loadRef.current = load;
   const refetch = useCallback(() => loadRef.current(), []);
 
+  const settling = failure !== null && data === null && afterFailedRead(failure).loading;
+
   // One value per change, not per render: every page under the provider reads it.
   const value = useMemo<ClientPackagesValue>(
     () => ({
@@ -325,10 +337,10 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
       pt2on1: data?.ptSessions?.twoOnOne ?? 0,
       packages: data?.packages ?? [],
       endedPackages: data?.ended ?? [],
-      loading,
+      loading: loading || settling,
       refetch,
     }),
-    [data, loading, refetch],
+    [data, loading, settling, refetch],
   );
 
   return (

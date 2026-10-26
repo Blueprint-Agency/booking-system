@@ -36,8 +36,8 @@ export function SiteFooter() {
 
 function StudioFooter() {
   const brand = useBrand();
-  const { data: locations } = useLocations();
-  const { data: marketing } = useCachedResource("public:marketing", getMarketing);
+  const { data: locations } = useLocations({ optional: true });
+  const { data: marketing } = useCachedResource("public:marketing", getMarketing, { optional: true });
   const { legal, social } = footerLinks(brand.copy);
   const footerText = marketing?.footer_text?.trim() || null;
   const year = new Date().getFullYear();

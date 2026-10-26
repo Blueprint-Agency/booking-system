@@ -23,6 +23,7 @@ import { emailOTPClient } from "better-auth/client/plugins";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { onSessionExpired } from "@/lib/session-expiry";
 import { noteMaintenance } from "@/lib/maintenance";
+import { noteStudioRefusal } from "@/lib/studio-refusal";
 import { clearTelemetryUser } from "@/lib/telemetry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 import { memberSessionView, type MemberSessionView } from "@/lib/member-session-view";
@@ -80,6 +81,7 @@ export const memberAuth = createAuthClient({
     },
     // Better Auth spreads the refusal's body into `error`.
     onError: ({ response, error }) => {
+      noteStudioRefusal(response.status, error, readMemberToken() ?? undefined);
       noteMaintenance(response.status, error);
     },
   },
@@ -112,12 +114,13 @@ export async function signOutMember(): Promise<void> {
 }
 
 /**
- * The backend refused this hostname's token (a 401 on a signed-in call): the
- * session is already gone on its side, so there is nothing to sign out of.
+ * The backend refused this hostname's token (a 401 on a signed-in call, or a
+ * 403 `tenant_mismatch` for another studio's session, `studio-gate.tsx`): the
+ * session is no good here, so there is nothing to sign out of.
  * Forget the token and let the session store re-read — the member reads as
  * signed out, and the pages that need one send them to `/login`.
  */
-function handleExpiredSession(sentToken?: string): void {
+export function handleExpiredSession(sentToken?: string): void {
   const current = readMemberToken();
   if (!current) return;
   // A late 401 for a token this browser has since replaced (the member signed

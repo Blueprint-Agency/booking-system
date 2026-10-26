@@ -1,6 +1,7 @@
 import { DEFAULT_API_TIMEOUT_MS } from "@/lib/api-request";
 import { currentImpersonationGrant, IMPERSONATION_GRANT_HEADER } from "@/lib/impersonation-handoff";
 import { bearerToken, noteSessionExpiry } from "@/lib/session-expiry";
+import { noteStudioRefusal } from "@/lib/studio-refusal";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
 /** Backend API base URL, always ending with `/api/v1`. */
@@ -25,7 +26,8 @@ export function getApiBaseUrl(): string {
  * hung backend ends in an error rather than a spinner; pass `signal` to set your own.
  *
  * A 401 on a call that sent a bearer token signs the member out here
- * (`lib/session-expiry.ts`), so no call site has to remember to.
+ * (`lib/session-expiry.ts`), and a studio refusal shows its page
+ * (`lib/studio-refusal.ts`), so no call site has to remember to.
  */
 export async function fetchApi(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
@@ -42,5 +44,6 @@ export async function fetchApi(path: string, init: RequestInit = {}): Promise<Re
   });
   const sent = bearerToken(headers);
   noteSessionExpiry(res.status, sent !== undefined, sent);
+  if (res.status === 403) noteStudioRefusal(403, await res.clone().json().catch(() => null), sent);
   return res;
 }
