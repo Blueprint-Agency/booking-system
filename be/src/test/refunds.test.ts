@@ -782,8 +782,8 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
       .update(schema.ptSessions)
       .set({ startsAt: new Date(Date.now() - 2 * HOUR), endsAt: new Date(Date.now() - HOUR) })
       .where(eq(schema.ptSessions.id, sessionId))
-    const { completeEndedPtSessions } = await import('../services/pt-sessions/cancel')
-    await completeEndedPtSessions()
+    const { scheduledJobs } = await import('../jobs')
+    await scheduledJobs.completeEndedPtSessions()
     assert.equal((await mine())?.status, 'cancelled_after_scheduled')
   })
 

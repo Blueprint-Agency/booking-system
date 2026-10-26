@@ -185,7 +185,10 @@ export async function cancelClassInTx(
   }
 
   // Nobody is left queued for a class that will not run (spec-waitlist.md §6).
-  const waiting = await removeLineForCancelledClass(tx, tenantId, classId, actorStaffId, now)
+  // A member also booked on it (a ClassPass booking settles no Waitlist entry)
+  // is told once, by the booking's email.
+  const booked = new Set(confirmed.map(bk => bk.clientId))
+  const waiting = (await removeLineForCancelledClass(tx, tenantId, classId, actorStaffId, now)).filter(id => !booked.has(id))
 
   // Both once the request's transaction has committed (`afterCommit`), the
   // Admins first.
@@ -203,7 +206,7 @@ export async function cancelClassInTx(
   }
 
   afterCommit(() => sendClassCancelledByStudioEmails(tenantId, notices))
-  afterCommit(() => sendClassCancelledToWaitlistEmails(tenantId, classId, waiting))
+  if (waiting.length > 0) afterCommit(() => sendClassCancelledToWaitlistEmails(tenantId, classId, waiting))
 
   return { totalBookings: confirmed.length, refundedCount }
 }
