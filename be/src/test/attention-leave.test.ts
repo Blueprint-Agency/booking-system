@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { eq } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { connectPayments, usePaymentKey } from './attention-payments'
 import { sgToday } from '../lib/time'
 
 /**
@@ -10,6 +11,7 @@ import { sgToday } from '../lib/time'
  * count says only what that test filed.
  */
 describe('Staff attention: leave requests', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  usePaymentKey()
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')
@@ -38,6 +40,7 @@ describe('Staff attention: leave requests', { skip: integrationTestsEnabled ? fa
   const freshStudio = async (): Promise<Studio> => {
     const slug = `attl-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({ slug, name: 'Attention Leave Studio', adminEmail: `owner@${slug}.test` })
+    await connectPayments(tenant.id)
     return { id: tenant.id, slug }
   }
 

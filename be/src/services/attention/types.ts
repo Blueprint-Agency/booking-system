@@ -37,6 +37,8 @@ export type AttentionKind =
   | 'staff_invitation_expired'
   | 'staff_email_change_expired'
   | 'staff_without_email'
+  | 'studio_term_ending'
+  | 'payments_not_configured'
 
 /** Who is asking, and everything a provider needs to decide what they are owed. */
 export interface AttentionContext {
