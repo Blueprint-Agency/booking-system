@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertCircle, Download, Loader2, Plus, Trash2 } from "lucide-react";
 import {
   EmptyState,
@@ -42,6 +43,8 @@ import {
   fetchFinanceOverview,
   financeErrorMessage,
   financeNeedsReload,
+  financeSearch,
+  parseFinanceSearch,
   saveInstructorPay,
   type FinanceFilters,
   type FinanceOverview,
@@ -75,20 +78,46 @@ import { OverviewPanel } from "./overview";
  *      an invitation to make our books disagree with theirs.
  */
 
+// `useSearchParams` needs a Suspense boundary above it, or the build bails out
+// of prerendering the whole route.
 export default function FinancePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-16 text-muted">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      }
+    >
+      <FinanceScreen />
+    </Suspense>
+  );
+}
+
+function FinanceScreen() {
   const { api } = useWorkspace();
+  // Read once: afterwards the screen owns its filter and writes it back.
+  const searchParams = useSearchParams();
+  const [initial] = useState(() => parseFinanceSearch(searchParams.toString(), presetRange("month")));
 
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [locations, setLocations] = useState<CatalogLocation[]>([]);
 
   // The period is shared by both halves of the page; everything else narrows
   // the ledger alone.
-  const [range, setRange] = useState<DateRange>(() => presetRange("month"));
+  const [range, setRange] = useState<DateRange>(initial.range);
   const [type, setType] = useState("");
   const [q, setQ] = useState("");
   const [location, setLocation] = useState("");
-  const [needsPay, setNeedsPay] = useState(false);
+  const [needsPay, setNeedsPay] = useState(initial.needsPay);
   const [method, setMethod] = useState("");
+
+  // Needs pay and the period live in the address bar, so a bell link opens on
+  // them and a reload keeps them. After commit, not in an updater: Next patches
+  // `replaceState` to update its Router.
+  useEffect(() => {
+    window.history.replaceState(null, "", financeSearch({ needsPay, range }));
+  }, [needsPay, range]);
 
   const [overview, setOverview] = useState<FinanceOverview | null>(null);
   const [data, setData] = useState<FinanceResponse | null>(null);

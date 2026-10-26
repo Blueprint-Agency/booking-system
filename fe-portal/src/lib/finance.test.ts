@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert";
-import { UNATTRIBUTED, fetchFinance, saveInstructorPay, type FinanceRow } from "./finance";
+import {
+  UNATTRIBUTED,
+  fetchFinance,
+  financeSearch,
+  parseFinanceSearch,
+  saveInstructorPay,
+  type FinanceRow,
+} from "./finance";
 import { type Api } from "./api";
 
 // Captures the one request the module makes — no session, no React.
@@ -119,4 +126,43 @@ test("a row with no pay kind refuses to be saved", () => {
     () => saveInstructorPay(spyApi({}), row({ kind: "purchase", pay_kind: null }), 10),
     /carries no pay to edit/,
   );
+});
+
+// ── The Needs-pay filter and the period live in the URL (#486) ──────────────
+const MONTH = { from: "2026-10-01", to: "2026-10-15" };
+
+test("ATN-106 a bell link opens Finance on Needs pay over its date range", () => {
+  assert.deepEqual(parseFinanceSearch("?needs_pay=1&from=2026-09-01&to=2026-10-15", MONTH), {
+    needsPay: true,
+    range: { from: "2026-09-01", to: "2026-10-15" },
+  });
+});
+
+test("a bare Finance URL keeps today's defaults: this month, every row", () => {
+  assert.deepEqual(parseFinanceSearch("", MONTH), { needsPay: false, range: MONTH });
+});
+
+test("a malformed range falls back to the default rather than querying nonsense", () => {
+  assert.deepEqual(parseFinanceSearch("?from=soon&to=2026-10-15&needs_pay=1", MONTH), {
+    needsPay: true,
+    range: MONTH,
+  });
+});
+
+test("an empty from and to is All time", () => {
+  assert.equal(parseFinanceSearch("?from=&to=", MONTH).range, null);
+});
+
+test("the filter and range write back so a reload or a shared link reads the same", () => {
+  assert.equal(
+    financeSearch({ needsPay: true, range: { from: "2026-09-01", to: "2026-10-15" } }),
+    "?needs_pay=1&from=2026-09-01&to=2026-10-15",
+  );
+  assert.equal(financeSearch({ needsPay: false, range: MONTH }), "?from=2026-10-01&to=2026-10-15");
+  assert.equal(financeSearch({ needsPay: false, range: null }), "?from=&to=");
+});
+
+test("what is written is read back unchanged", () => {
+  const state = { needsPay: true, range: { from: "2026-09-01", to: "2026-10-15" } };
+  assert.deepEqual(parseFinanceSearch(financeSearch(state), MONTH), state);
 });
