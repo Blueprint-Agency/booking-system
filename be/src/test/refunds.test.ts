@@ -438,6 +438,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     await harness.db.execute(sql`DELETE FROM class_packages WHERE name IN (${BUNDLE_NAME}, ${PLAN_NAME})`)
     await harness.db.execute(sql`DELETE FROM pt_packages WHERE name = ${PT_PACKAGE_NAME}`)
     await harness.db.execute(sql`DELETE FROM classes WHERE created_by_staff_id IN (${staffIds})`)
+    await harness.db.execute(sql`DELETE FROM class_series WHERE created_by_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM workshop_tiers WHERE workshop_id IN (SELECT id FROM workshops WHERE name = ${WORKSHOP_NAME})`)
     await harness.db.execute(sql`DELETE FROM workshops WHERE name = ${WORKSHOP_NAME}`)
     await harness.db.execute(sql`DELETE FROM class_types WHERE name = ${CLASS_TYPE_NAME}`)
@@ -632,6 +633,73 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     const pkg = await packageRow(paid.clientPackageId)
     assert.equal(pkg.active, false)
     assert.equal(pkg.creditsOrSessionsRemaining, 10, 'the credit came back once, before the Void')
+  })
+
+  test('SCH-42 an Admin ending a Class Series while the Refund of a package booked on two of its classes unwinds: both go through, one after the other', async () => {
+    const una = await member(one, 'Una Series')
+    const paid = await buy(one, una, 'bundle')
+    const today = new Date().toISOString().slice(0, 10)
+    const [series] = await harness.db
+      .insert(schema.classSeries)
+      .values({
+        tenantId: one.id,
+        classTypeId: one.classTypeId,
+        mainInstructorId: teacherAtOne.staffId,
+        locationId: one.locationId,
+        roomId: one.roomId,
+        weekday: 1,
+        startTime: '07:00',
+        endTime: '08:00',
+        capacityOnline: 10,
+        creditCost: 1,
+        firstDate: today,
+        lastDate: today,
+        createdByStaffId: teacherAtOne.staffId,
+      })
+      .returning({ id: schema.classSeries.id })
+    // The earlier class has the larger id, so taking the classes by date and
+    // taking them by id are two different orders.
+    const [lowerId, higherId] = [randomUUID(), randomUUID()].sort()
+    const seriesClass = async (id: string, startsIn: number) => {
+      const startsAt = new Date(Date.now() + startsIn)
+      await harness.db.insert(schema.classes).values({
+        id,
+        tenantId: one.id,
+        seriesId: series!.id,
+        classTypeId: one.classTypeId,
+        mainInstructorId: teacherAtOne.staffId,
+        locationId: one.locationId,
+        roomId: one.roomId,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + HOUR),
+        capacityOnline: 10,
+        creditCost: 1,
+        createdByStaffId: teacherAtOne.staffId,
+      })
+      return id
+    }
+    const earlier = await seriesClass(higherId!, 3 * DAY)
+    const later = await seriesClass(lowerId!, 4 * DAY)
+    const bookingIds: string[] = []
+    for (const classId of [earlier, later]) {
+      const booked = await book(una, classId)
+      assert.equal(booked.status, 201, JSON.stringify(booked.body))
+      bookingIds.push(booked.body.booking_id as string)
+    }
+    harness.logs.clear()
+
+    const [ended, unwound] = await inFlightTogether(harness.db, sql`SELECT id FROM classes WHERE id = ${earlier}`, [
+      () => post(`/api/v1/portal/admin/schedule/series/${series!.id}/end`, adminAtOne.headers, { from_date: today }),
+      () => deliverRefund(paid.intents[0]!),
+    ])
+
+    assert.equal(ended!.status, 200, JSON.stringify(ended!.body))
+    assert.equal(unwound!.status, 200, JSON.stringify(unwound!.body))
+    const errors = harness.logs.lines().filter(l => l.level === 'error')
+    assert.deepEqual(errors, [], 'Postgres aborted neither the series end nor any step of the unwind')
+    await assertRefunded(paid.purchaseId)
+    assert.equal((await packageRow(paid.clientPackageId)).active, false)
+    for (const id of bookingIds) assert.equal((await bookingRow(id)).state, 'cancelled')
   })
 
   test('RFD-03 a refunded Purchase hands its Promo Code back to the member and to the pool', async () => {
