@@ -1,6 +1,8 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { purchaseParam, withWantedFirst } from "@/lib/attention";
 import { AlertTriangle, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
@@ -52,8 +54,22 @@ interface ApiSilentPurchase {
   grants_nothing: boolean;
 }
 
+// `useSearchParams` (the bell's `?purchase=` link) needs a Suspense boundary.
 export default function UnfinishedPurchasesPage() {
+  return (
+    <Suspense fallback={null}>
+      <UnfinishedPurchases />
+    </Suspense>
+  );
+}
+
+function UnfinishedPurchases() {
   const { api, role } = useWorkspace();
+  const search = useSearchParams();
+  // The purchase the bell linked to: listed first and highlighted. If it is gone
+  // (refunded, paid, dismissed) the page opens as normal.
+  const wanted = purchaseParam(`?${search.toString()}`);
+  const highlighted = useRef<HTMLDivElement | null>(null);
   // The same gate the member detail page puts on its Refund buttons — the role
   // split this was written against (superadmin) no longer exists.
   const canRefund = runsStudio(role);
@@ -88,7 +104,11 @@ export default function UnfinishedPurchasesPage() {
 
   // Count and held total cover every row, not just the page on screen.
   const heldTotal = rows.reduce((sum, r) => sum + Number(r.paid_sgd), 0);
-  const { visible, pagination } = usePaged(rows);
+  const { visible, pagination } = usePaged(withWantedFirst(rows, wanted));
+
+  useEffect(() => {
+    highlighted.current?.scrollIntoView({ block: "center" });
+  }, [loading, wanted]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -136,7 +156,11 @@ export default function UnfinishedPurchasesPage() {
             {visible.map((p) => (
               <div
                 key={p.id}
-                className="rounded-xl border border-warning/40 bg-warning/5 px-4 py-4 shadow-soft sm:px-5"
+                ref={p.id === wanted ? highlighted : undefined}
+                data-highlighted={p.id === wanted ? "true" : undefined}
+                className={`rounded-xl border border-warning/40 bg-warning/5 px-4 py-4 shadow-soft sm:px-5 ${
+                  p.id === wanted ? "ring-2 ring-accent" : ""
+                }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
                   {/* Wraps rather than truncates: on a phone the amount leaves

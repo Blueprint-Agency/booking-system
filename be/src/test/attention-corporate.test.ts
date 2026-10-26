@@ -10,6 +10,7 @@ import {
   startTestApp,
   type TestApp,
 } from './harness'
+import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
  * Staff attention (#476, #478): the three corporate kinds, all Admin-only.
@@ -18,6 +19,7 @@ import {
  * and each kind is resolved through the real portal routes.
  */
 describe('Staff attention: corporate requests', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  usePaymentKey()
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')
@@ -56,6 +58,7 @@ describe('Staff attention: corporate requests', { skip: integrationTestsEnabled 
   const freshStudio = async (): Promise<Studio> => {
     const slug = `corp-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({ slug, name: 'Corporate Studio', adminEmail: `owner@${slug}.test` })
+    await connectPayments(tenant.id)
     const [location] = await harness.db
       .insert(schema.locations)
       .values({ tenantId: tenant.id, name: `${slug} Studio`, address: '1 Test Street' })
