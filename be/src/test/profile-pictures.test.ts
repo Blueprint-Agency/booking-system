@@ -241,4 +241,86 @@ describe('profile pictures over HTTP', { skip: integrationTestsEnabled ? false :
     assert.ok(res.status < 300, await res.text())
     assert.equal(bucket.has(key), false)
   })
+
+  test('STF-47 an admin and an instructor each upload, replace and remove their own picture, which their own profile reads show', async () => {
+    for (const who of [admin, instructor]) {
+      const first = await upload(who.headers, '/portal/profile/photo', imageBytes(1000, 1), 'image/png', 'me.png')
+      assert.equal(first.status, 200, first.text)
+      const firstKey = keyOf(first.body.photo_url)
+      assert.match(firstKey, new RegExp(`^t/${one.id}/avatars/[0-9a-f-]{36}\\.png$`))
+      assert.equal((await call(who.headers, 'GET', '/portal/auth/me')).body.photo_url, urlOf(firstKey))
+
+      const second = await upload(who.headers, '/portal/profile/photo', imageBytes(1000, 2), 'image/jpeg')
+      assert.equal(second.status, 200, second.text)
+      assert.notEqual(keyOf(second.body.photo_url), firstKey)
+      assert.equal(bucket.has(firstKey), false, 'the replaced picture is deleted')
+      assert.equal((await call(who.headers, 'GET', '/portal/auth/me')).body.photo_url, second.body.photo_url)
+
+      const refused = await upload(who.headers, '/portal/profile/photo', imageBytes(1000), 'image/gif')
+      assert.equal(refused.status, 400, refused.text)
+      assert.match(String(refused.body.message), /JPG, PNG or WebP/)
+      const tooLarge = await upload(who.headers, '/portal/profile/photo', imageBytes(6 * MB), 'image/jpeg')
+      assert.equal(tooLarge.status, 413, tooLarge.text)
+      assert.match(String(tooLarge.body.message), /5MB/)
+
+      const removed = await call(who.headers, 'DELETE', '/portal/profile/photo')
+      assert.equal(removed.status, 200, removed.text)
+      assert.equal((await call(who.headers, 'GET', '/portal/auth/me')).body.photo_url, null)
+      assert.equal(bucket.has(keyOf(second.body.photo_url)), false)
+    }
+
+    const own = await upload(instructor.headers, '/portal/profile/photo', imageBytes(1000, 3), 'image/webp', 'me.webp')
+    const profile = await call(instructor.headers, 'GET', '/portal/instructor/profile')
+    assert.equal(profile.body.photo_url, own.body.photo_url, "the instructor's profile page shows it")
+    assert.equal('photo_r2_key' in profile.body, false, 'no object key is handed out')
+  })
+
+  test("STF-48 an admin has no route to change another person's picture: not by creating or editing them, nor acting as them", async () => {
+    const own = await upload(instructor.headers, '/portal/profile/photo', imageBytes(1000, 4), 'image/jpeg')
+    const theirs = own.body.photo_url
+    const planted = `t/${one.id}/avatars/chosen-by-an-admin.jpg`
+
+    const edited = await call(admin.headers, 'PATCH', `/portal/admin/staff/${instructor.row.id}`, { photo_r2_key: planted })
+    const actingAs = await upload(
+      { ...admin.headers, 'x-impersonate-staff-id': instructor.row.id },
+      '/portal/profile/photo',
+      imageBytes(1000, 5),
+      'image/jpeg',
+    )
+    const removedAs = await call({ ...admin.headers, 'x-impersonate-staff-id': instructor.row.id }, 'DELETE', '/portal/profile/photo')
+
+    assert.ok(edited.status < 500, edited.text)
+    for (const res of [actingAs, removedAs]) {
+      assert.equal(res.status, 403, res.text)
+      assert.match(String(res.body.message), /only .* their own picture/i)
+    }
+    assert.equal((await call(instructor.headers, 'GET', '/portal/auth/me')).body.photo_url, theirs)
+
+    const email = fixtures.at('created-with-photo')
+    const created = await call(admin.headers, 'POST', '/portal/admin/instructors', { email, name: 'Created With Photo', photo_r2_key: planted })
+    assert.equal(created.status, 201, created.text)
+    const listed = await call(admin.headers, 'GET', '/portal/admin/instructors')
+    const made = listed.body.instructors.find((i: { id: string }) => i.id === created.body.id)
+    assert.equal(made.photo_url, null, 'the new instructor has no picture until they upload one')
+    const [row] = await harness.db
+      .select({ key: schema.staffUsers.photoR2Key })
+      .from(schema.staffUsers)
+      .where(eq(schema.staffUsers.id, created.body.id))
+    assert.equal(row!.key, null)
+  })
+
+  test("STF-49 a picture key under another studio is never this studio's to delete", async () => {
+    const elsewhere = `t/${two.id}/avatars/${crypto.randomUUID()}.jpg`
+    bucket.set(elsewhere, { bytes: imageBytes(10, 9), contentType: 'image/jpeg' })
+    await harness.db.update(schema.staffUsers).set({ photoR2Key: elsewhere }).where(eq(schema.staffUsers.id, instructor.row.id))
+
+    const replaced = await upload(instructor.headers, '/portal/profile/photo', imageBytes(1000, 6), 'image/png', 'me.png')
+    assert.equal(replaced.status, 200, replaced.text)
+    await harness.db.update(schema.staffUsers).set({ photoR2Key: elsewhere }).where(eq(schema.staffUsers.id, instructor.row.id))
+    const removed = await call(instructor.headers, 'DELETE', '/portal/profile/photo')
+    assert.equal(removed.status, 200, removed.text)
+
+    assert.equal(bucket.get(elsewhere)?.bytes[0], 9, "the other studio's object is left where it is")
+    assert.ok(keyOf(replaced.body.photo_url).startsWith(`t/${one.id}/`), "the upload lands in this studio's own folder")
+  })
 })
