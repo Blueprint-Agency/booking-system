@@ -4,6 +4,7 @@ import {
   corporateRequestPending,
   corporateSessionUnmarked,
 } from './corporate-requests'
+import { leaveRequestPending } from './leave-request-pending'
 import { ptRequestPending } from './pt-request-pending'
 import type { AttentionProvider } from './types'
 
@@ -17,5 +18,6 @@ export const providers: readonly AttentionProvider[] = [
   corporateRequestPending,
   corporateSessionUnmarked,
   corporateRefundedStillScheduled,
+  leaveRequestPending,
   checkInUnfinished,
 ]

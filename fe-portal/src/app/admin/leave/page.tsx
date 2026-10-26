@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarOff, Loader2, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -13,6 +13,8 @@ import {
   Textarea,
 } from "@/components/ui";
 import { LeaveCalendar } from "@/components/leave-calendar";
+import { useAttention } from "@/components/attention/attention-provider";
+import { useRequestDeepLink } from "@/components/attention/deep-links";
 import { useWorkspace } from "@/lib/workspace-context";
 import { openSignedUrl } from "@/lib/api";
 import { todayIso } from "@/lib/formatters";
@@ -79,8 +81,21 @@ function Applicant({ applicant }: { applicant: ApiAdminLeaveRequest["applicant"]
   );
 }
 
+// `useSearchParams` (the bell's `?request=` link) needs a Suspense boundary.
 export default function AdminLeavePage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminLeaveView />
+    </Suspense>
+  );
+}
+
+function AdminLeaveView() {
   const { api, currentStaff } = useWorkspace();
+  // The bell's count and the Leave badge follow a decision without waiting for the next poll.
+  const { refresh: refreshAttention } = useAttention();
+  /** The request a bell link named: shown on its status's tab, ringed and scrolled to. */
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [requests, setRequests] = useState<ApiAdminLeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +130,24 @@ export default function AdminLeavePage() {
     void load();
   }, [load]);
 
+  // A link from the bell (`?request=`) shows that request: the list (the calendar
+  // is the other view), on the tab for the status it has now.
+  useRequestDeepLink(requests, loading, (r) => {
+    setView("list");
+    setTab(r.status);
+    setHighlightId(r.id);
+  });
+
+  useEffect(() => {
+    if (!highlightId) return;
+    document
+      .querySelectorAll(`[data-leave-id="${highlightId}"]`)
+      .forEach((el) => (el as HTMLElement).scrollIntoView?.({ block: "center" }));
+  }, [highlightId, tab, view, loading]);
+
+  const rowRing = (id: string) =>
+    id === highlightId ? " bg-accent/5 ring-1 ring-inset ring-accent" : "";
+
   const filtered = useMemo(
     () => requests.filter((r) => tab === "all" || r.status === tab),
     [requests, tab],
@@ -134,6 +167,7 @@ export default function AdminLeavePage() {
       await api.post(`/portal/admin/leave/${r.id}/${action}`);
       toast.success(action === "approve" ? "Leave approved." : "Leave revoked.");
       await load();
+      refreshAttention();
     } catch (err) {
       toast.error(leaveErrorMessage(err, "Couldn't update that request"));
     } finally {
@@ -157,6 +191,7 @@ export default function AdminLeavePage() {
       setRejecting(null);
       setRejectReason("");
       await load();
+      refreshAttention();
     } catch (err) {
       toast.error(leaveErrorMessage(err, "Couldn't reject that request"));
     } finally {
@@ -294,7 +329,7 @@ export default function AdminLeavePage() {
               sideways-scrolling table. */}
           <ul className="divide-y divide-border md:hidden">
             {filtered.map((r) => (
-              <li key={r.id} className="space-y-2 px-4 py-3 text-sm">
+              <li key={r.id} data-leave-id={r.id} className={`space-y-2 px-4 py-3 text-sm${rowRing(r.id)}`}>
                 <div className="flex items-start justify-between gap-3">
                   <Applicant applicant={r.applicant} />
                   <span className="shrink-0">
@@ -343,7 +378,7 @@ export default function AdminLeavePage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.map((r) => (
-                  <tr key={r.id} className="align-top hover:bg-warm/40">
+                  <tr key={r.id} data-leave-id={r.id} className={`align-top hover:bg-warm/40${rowRing(r.id)}`}>
                     <td className="px-3 py-2.5">
                       <Applicant applicant={r.applicant} />
                     </td>

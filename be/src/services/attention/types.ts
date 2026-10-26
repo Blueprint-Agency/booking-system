@@ -29,6 +29,7 @@ export type AttentionKind =
   | 'corporate_request_pending'
   | 'corporate_session_unmarked'
   | 'corporate_refunded_still_scheduled'
+  | 'leave_request_pending'
   | 'check_in_unfinished'
 
 /** Who is asking, and everything a provider needs to decide what they are owed. */

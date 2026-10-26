@@ -158,8 +158,12 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
   // AGNOSTIC (no location until scheduled), so the switcher doesn't narrow it.
   const corporatePending = isAdmin ? byGroup.corporate_requests || undefined : undefined;
 
+  // Leave is studio-wide, so its badge is the attention provider's `by_group.leave`.
+  const leavePending = isAdmin ? byGroup.leave || undefined : undefined;
+
   const badges: BadgeMap = {
     ptRequestsPending: ptPending,
+    leavePending,
     // Sessions with people still not marked: the attention provider's
     // `by_group.check_in`, workspace-scoped like the desk it points at.
     checkInUnfinished: isAdmin ? byGroup.check_in || undefined : undefined,
