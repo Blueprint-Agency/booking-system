@@ -269,14 +269,14 @@ describe('Staff attention', { skip: integrationTestsEnabled ? false : SKIP_REASO
 
     await json(await setPermissions(admin, tara.id, ['schedule_classes', 'manage_rosters']), 200)
     // The change is an Update to Tara now (#491); she reads it so the bubble counts requests only.
-    await json(await send('/portal/attention/updates/read-all', tara.headers, 'POST'), 200)
+    await json(await send('/portal/attention/updates/read-all', tara.headers, 'POST'), 204)
     const after = await summary(tara)
     assert.equal(after.total, 0)
     assert.equal(after.by_group.pt_requests ?? 0, 0)
     assert.deepEqual((await panel(tara)).needs_action.groups, [])
 
     await json(await setPermissions(admin, tara.id, ALL), 200)
-    await json(await send('/portal/attention/updates/read-all', tara.headers, 'POST'), 200)
+    await json(await send('/portal/attention/updates/read-all', tara.headers, 'POST'), 204)
     assert.equal((await summary(tara)).total, 1)
   })
 
@@ -289,7 +289,7 @@ describe('Staff attention', { skip: integrationTestsEnabled ? false : SKIP_REASO
     const toCancel = await ptRequest(studio, member)
     const toExpire = await ptRequest(studio, member)
     // Tara joining is an Update to the admin now (#491); read it so the bubble counts requests only.
-    await json(await send('/portal/attention/updates/read-all', admin.headers, 'POST'), 200)
+    await json(await send('/portal/attention/updates/read-all', admin.headers, 'POST'), 204)
     assert.equal((await summary(admin)).total, 3)
 
     await json(await schedule(studio, admin, toSchedule.id, tara), 201)
