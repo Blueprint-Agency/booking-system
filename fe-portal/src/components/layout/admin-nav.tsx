@@ -181,6 +181,9 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
 
   const badges: BadgeMap = {
     ptRequestsPending: ptPending,
+    // Sessions with people still not marked: the attention provider's
+    // `by_group.check_in`, workspace-scoped like the desk it points at.
+    checkInUnfinished: isAdmin ? byGroup.check_in || undefined : undefined,
     corporateRequestsPending: corporatePending,
     // Review items and overbooked classes both file under the ClassPass page.
     classpassPending: isAdmin ? byGroup.classpass || undefined : undefined,
