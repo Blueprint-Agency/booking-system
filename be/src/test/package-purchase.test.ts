@@ -365,7 +365,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
   }
 
   /** A studio Admin acting in the portal. */
-  const asAdmin = (method: 'GET' | 'POST', path: string, body?: unknown) =>
+  const asAdmin = (method: 'GET' | 'POST' | 'PATCH', path: string, body?: unknown) =>
     harness.app.request(`/api/v1/portal/admin${path}`, {
       method,
       headers: { ...one.admin.headers, ...json },
@@ -649,6 +649,122 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(granted!.boundInstructorId, leaver.id, 'bound to the instructor the member picked, archived and visibly so')
     assert.equal(payment!.clientPackageId, granted!.id)
     assert.equal((await adminSees(cy, granted!.id)).refundable, true)
+  })
+
+  test('PAY-71 a Credit Bundle whose credits, validity and price an Admin edits between checkout and payment is granted on the terms shown at checkout', async () => {
+    const edited = await catalogue(one.id, { kind: 'credit_bundle', credits: 10, validityDays: 90, name: `${NAME} edited bundle` })
+    const eve = await member(one)
+    await expectStatus(await buyClass(eve, edited), 200)
+    await expectStatus(await asAdmin('PATCH', `/class-packages/${edited}`, { credits: 5, validity_days: 30, price_sgd: '200.00' }), 200)
+
+    await expectStatus(await deliver(), 200)
+
+    const [granted, ...more] = await packagesOf(eve)
+    assert.equal(more.length, 0)
+    assert.equal(granted!.creditsOrSessionsRemaining, 10, 'the credits the member paid for')
+    assert.equal(granted!.validityDays, 90, 'the validity the member was shown')
+    assert.equal(granted!.listPriceSgd, '150.00', 'the List Price at checkout')
+    assert.equal(granted!.amountPaidSgd, '150.00')
+  })
+
+  test("PAY-71 an Unlimited Plan whose Duration, and a PT package whose sessions and validity, an Admin edits between checkout and payment are granted on the terms shown at checkout", async () => {
+    const plan = await catalogue(one.id, { kind: 'unlimited', durationMonths: 3, priceSgd: '300.00', name: `${NAME} edited plan` })
+    const [pt] = await harness.db
+      .insert(schema.ptPackages)
+      .values({ tenantId: one.id, name: `${NAME} edited pt`, sessionType: '1on1', numSessions: 5, validityDays: 90, priceSgd: '400.00' })
+      .returning({ id: schema.ptPackages.id })
+
+    const fay = await member(one)
+    await expectStatus(await buyClass(fay, plan, { location_id: one.locationId }), 200)
+    await expectStatus(await asAdmin('PATCH', `/class-packages/${plan}`, { duration_months: 12, price_sgd: '900.00' }), 200)
+    await expectStatus(await deliver(), 200)
+    const [granted] = await packagesOf(fay)
+    assert.equal(granted!.durationMonths, 3, 'the Duration the member was shown')
+    assert.equal(granted!.listPriceSgd, '300.00')
+
+    const gus = await member(one)
+    await expectStatus(await checkout(gus, { package_kind: 'pt', package_id: pt!.id }), 200)
+    await expectStatus(await asAdmin('PATCH', `/pt-packages/${pt!.id}`, { num_sessions: 2, validity_days: 30, price_sgd: '500.00' }), 200)
+    await expectStatus(await deliver(), 200)
+    const [sessions] = await packagesOf(gus)
+    assert.equal(sessions!.creditsOrSessionsRemaining, 5, 'the sessions the member paid for')
+    assert.equal(sessions!.validityDays, 90)
+    assert.equal(sessions!.listPriceSgd, '400.00')
+  })
+
+  test('PAY-72 a Part Payment whose package an Admin edits before the Balance is cleared is granted, on the payment that settles it, on the terms shown at checkout', async () => {
+    const edited = await catalogue(one.id, { kind: 'credit_bundle', credits: 10, validityDays: 90, name: `${NAME} edited part-paid bundle` })
+    const hal = await member(one)
+    await expectStatus(await buyClass(hal, edited), 200)
+    await expectStatus(await deliver({ intent: `pi_${randomUUID()}`, amountTotal: 5000 }), 200)
+    const [open] = await purchasesOf(hal)
+    assert.equal(open!.status, 'open')
+    assert.equal((await packagesOf(hal)).length, 0, 'nothing granted while a Balance is owed')
+
+    await expectStatus(await asAdmin('PATCH', `/class-packages/${edited}`, { credits: 5, validity_days: 30, price_sgd: '120.00' }), 200)
+
+    await expectStatus(await post(hal, `/api/v1/me/purchases/${open!.id}/resume`, {}), 200)
+    await expectStatus(await deliver(), 200)
+
+    const [sale] = await purchasesOf(hal)
+    assert.equal(sale!.status, 'paid')
+    assert.equal(sale!.amountPaidSgd, '150.00')
+    const [granted, ...more] = await packagesOf(hal)
+    assert.equal(more.length, 0)
+    assert.equal(granted!.purchaseId, sale!.id)
+    assert.equal(granted!.creditsOrSessionsRemaining, 10, 'the credits the member paid for')
+    assert.equal(granted!.validityDays, 90, 'the validity the member was shown')
+    assert.equal(granted!.listPriceSgd, '150.00', 'the List Price at checkout')
+  })
+
+  const keysAddedWhenTermsFroze = ['credits_or_sessions', 'validity_days', 'duration_months']
+
+  /** The last checkout as one made before it froze its terms: neither its session nor its Purchase carries them. */
+  async function checkedOutBeforeTermsFroze(purchaseId: string): Promise<Record<string, string>> {
+    for (const key of keysAddedWhenTermsFroze) {
+      await harness.db.execute(sql`UPDATE purchases SET metadata = metadata - ${key}::text WHERE id = ${purchaseId}::uuid`)
+    }
+    return Object.fromEntries(
+      Object.entries(lastSession().params.metadata).filter(([key]) => !keysAddedWhenTermsFroze.includes(key)),
+    )
+  }
+
+  test('PAY-73 a checkout from before its terms were frozen is granted from the catalogue row as it stands when the payment lands', async () => {
+    const edited = await catalogue(one.id, { kind: 'credit_bundle', credits: 10, validityDays: 90, name: `${NAME} edited legacy bundle` })
+    const ian = await member(one)
+    await expectStatus(await buyClass(ian, edited), 200)
+    const [open] = await purchasesOf(ian)
+    const metadata = await checkedOutBeforeTermsFroze(open!.id)
+    await expectStatus(await asAdmin('PATCH', `/class-packages/${edited}`, { credits: 5, validity_days: 30, price_sgd: '200.00' }), 200)
+
+    await expectStatus(await deliver({ metadata }), 200)
+
+    const [granted, ...more] = await packagesOf(ian)
+    assert.equal(more.length, 0)
+    assert.equal(granted!.creditsOrSessionsRemaining, 5)
+    assert.equal(granted!.validityDays, 30)
+    assert.equal(granted!.listPriceSgd, '200.00')
+    assert.equal(granted!.amountPaidSgd, '150.00')
+  })
+
+  test('PAY-73 a Part Payment checked out before its terms were frozen, whose Balance is cleared after an Admin edit, is granted from the catalogue row as it stands', async () => {
+    const edited = await catalogue(one.id, { kind: 'credit_bundle', credits: 10, validityDays: 90, name: `${NAME} edited legacy part-paid bundle` })
+    const jo = await member(one)
+    await expectStatus(await buyClass(jo, edited), 200)
+    const [open] = await purchasesOf(jo)
+    const metadata = await checkedOutBeforeTermsFroze(open!.id)
+    await expectStatus(await deliver({ intent: `pi_${randomUUID()}`, amountTotal: 5000, metadata }), 200)
+    await expectStatus(await asAdmin('PATCH', `/class-packages/${edited}`, { credits: 5, validity_days: 30 }), 200)
+
+    await expectStatus(await post(jo, `/api/v1/me/purchases/${open!.id}/resume`, {}), 200)
+    await expectStatus(await deliver(), 200)
+
+    const [sale] = await purchasesOf(jo)
+    assert.equal(sale!.status, 'paid')
+    const [granted, ...more] = await packagesOf(jo)
+    assert.equal(more.length, 0)
+    assert.equal(granted!.creditsOrSessionsRemaining, 5)
+    assert.equal(granted!.validityDays, 30)
   })
 
   test('PAY-60 a payment the studio refunded from the provider dashboard before this system recorded it grants nothing when its checkout-completed delivery lands', async () => {

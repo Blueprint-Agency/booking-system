@@ -29,6 +29,7 @@ import {
 import { tenantBusinessName } from '../tenants/mail-identity'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import { applyPromoCode, type AppliedPromoCode } from './promo-redemption'
+import { classPackageTerms, ptPackageTerms, soldTermsMetadata, type SoldTerms } from './sold-terms'
 import {
   assertPurchasableLocation,
   assertTrialEligible,
@@ -136,7 +137,6 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   const { tenantId, clientId, packageKind, packageId, locationId, instructorId } = input
 
   let packageName: string
-  let priceSgd: string
   let appliedPromotionId: string | null = null
   let effectivePriceSgd: string
   let productType: 'class_package' | 'pt_package'
@@ -144,6 +144,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   let promotion: LineReduction | null = null
   /** The Add-On bought alongside the plan — its own line item and its own money. */
   let crossLocation: { months: number; rateSgd: string; priceSgd: string } | null = null
+  let terms: SoldTerms
 
   if (packageKind === 'class') {
     const [pkg] = await db
@@ -208,10 +209,10 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     }
 
     packageName = pkg.name
-    priceSgd = pkg.priceSgd
     appliedPromotionId = eff.appliedPromotionId
     effectivePriceSgd = eff.effectivePriceSgd
     productType = 'class_package'
+    terms = classPackageTerms(pkg)
   } else {
     const [pkg] = await db
       .select()
@@ -237,10 +238,10 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
     promotion = promotionReduction(promos[pkg.id] ?? [], eff.appliedPromotionId, eff.effectivePriceSgd)
     packageName = pkg.name
-    priceSgd = pkg.priceSgd
     appliedPromotionId = eff.appliedPromotionId
     effectivePriceSgd = eff.effectivePriceSgd
     productType = 'pt_package'
+    terms = ptPackageTerms(pkg)
   }
 
   // The Promo Code stacks on top of the automatic Promotion, which is already
@@ -272,7 +273,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   })
   const lines = packageSaleLines({
     planName: packageName,
-    listPriceSgd: priceSgd,
+    listPriceSgd: terms.listPriceSgd,
     reductions: [promotion, promoCodeReduction(applied)],
     crossLocation,
   })
@@ -331,7 +332,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
       promo_code_id: applied?.promoCodeId ?? '',
       promo_discount_sgd: applied?.discountSgd ?? '0.00',
       applied_promotion_id: appliedPromotionId ?? '',
-      list_price_sgd: priceSgd,
+      ...soldTermsMetadata(terms),
       location_id: locationId ?? '',
       instructor_id: instructorId ?? '',
       // The plan's money and the Add-On's money, split without overlap: the two
