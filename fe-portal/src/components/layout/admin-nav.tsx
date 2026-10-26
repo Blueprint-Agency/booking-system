@@ -168,6 +168,8 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
     // `by_group.check_in`, workspace-scoped like the desk it points at.
     checkInUnfinished: isAdmin ? byGroup.check_in || undefined : undefined,
     corporateRequestsPending: corporatePending,
+    // Review items and overbooked classes both file under the ClassPass page.
+    classpassPending: isAdmin ? byGroup.classpass || undefined : undefined,
   };
 
   const visibleItems = NAV_ITEMS.filter((item) => visibleToRole(item, role));

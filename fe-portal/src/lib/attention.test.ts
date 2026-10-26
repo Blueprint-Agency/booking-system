@@ -9,6 +9,7 @@ import {
   locationParam,
   rememberAutoOpenDecided,
   requestParam,
+  reviewParam,
   wasAutoOpenDecided,
   withoutParams,
   type StorageLike,
@@ -33,6 +34,15 @@ test("ATN-11 the bubble is hidden at 0, shows the number up to 99 and reads 99+ 
   assert.equal(bellLabel(3), "Notifications, 3 need attention");
   assert.equal(bellLabel(150), "Notifications, 150 need attention", "the label is the real count, not the capped one");
   assert.equal(bellLabel(0), "Notifications");
+});
+
+test("ATN-84 the ClassPass page's ?review= is read only when it is an id", () => {
+  const id = "0f8fad5b-d9cb-469f-a165-70867728950e";
+  assert.equal(reviewParam(`?review=${id}`), id);
+  assert.equal(reviewParam(`?location=x&review=${id}`), id);
+  assert.equal(reviewParam(""), null);
+  assert.equal(reviewParam("?review=nope"), null);
+  assert.equal(reviewParam(`?request=${id}`), null);
 });
 
 test("ATN-12 a deep link's request and location are read from the query; a malformed or unreachable one is ignored", () => {

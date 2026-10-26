@@ -31,6 +31,8 @@ export type AttentionKind =
   | 'corporate_refunded_still_scheduled'
   | 'leave_request_pending'
   | 'check_in_unfinished'
+  | 'classpass_review'
+  | 'classpass_overbooked'
 
 /** Who is asking, and everything a provider needs to decide what they are owed. */
 export interface AttentionContext {

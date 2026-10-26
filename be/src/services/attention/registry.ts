@@ -1,4 +1,6 @@
 import { checkInUnfinished } from './check-in-unfinished'
+import { classpassOverbooked } from './classpass-overbooked'
+import { classpassReview } from './classpass-review'
 import {
   corporateRefundedStillScheduled,
   corporateRequestPending,
@@ -20,4 +22,6 @@ export const providers: readonly AttentionProvider[] = [
   corporateRefundedStillScheduled,
   leaveRequestPending,
   checkInUnfinished,
+  classpassReview,
+  classpassOverbooked,
 ]
