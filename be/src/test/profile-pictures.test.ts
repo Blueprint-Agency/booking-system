@@ -421,4 +421,35 @@ describe('profile pictures over HTTP', { skip: integrationTestsEnabled ? false :
     assert.equal(bucket.get(elsewhere)?.bytes[0], 9, "the other studio's object is left where it is")
     assert.ok(keyOf(replaced.body.photo_url).startsWith(`t/${one.id}/`), "the upload lands in this studio's own folder")
   })
+
+  test("STF-55 an instructor's picture change is written to instructors.photo_r2_key too, so the build before this one, which reads it, shows a picture that is still in the bucket", async () => {
+    const who = await fixtures.staffAt(one, fixtures.at('rolled-back'), 'instructor')
+    await harness.db.insert(schema.instructors).values({ tenantId: one.id, staffUserId: who.row.id })
+    const previousBuildReads = async () => {
+      const [row] = await harness.db
+        .select({ key: schema.instructors.photoR2Key })
+        .from(schema.instructors)
+        .where(eq(schema.instructors.staffUserId, who.row.id))
+      return row!.key
+    }
+
+    const first = await upload(who.headers, '/portal/profile/photo', imageBytes(1000, 1), 'image/jpeg')
+    assert.equal(first.status, 200, first.text)
+    assert.equal(await previousBuildReads(), keyOf(first.body.photo_url))
+
+    const second = await upload(who.headers, '/portal/profile/photo', imageBytes(1000, 2), 'image/png', 'me.png')
+    assert.equal(second.status, 200, second.text)
+    assert.equal(await previousBuildReads(), keyOf(second.body.photo_url))
+    assert.equal(bucket.has((await previousBuildReads())!), true, 'never the key of the object just deleted')
+
+    const removed = await call(who.headers, 'DELETE', '/portal/profile/photo')
+    assert.equal(removed.status, 200, removed.text)
+    assert.equal(await previousBuildReads(), null)
+
+    const instructorRows = async () => (await harness.db.select().from(schema.instructors).where(eq(schema.instructors.tenantId, one.id))).length
+    const before = await instructorRows()
+    const adminOwn = await upload(admin.headers, '/portal/profile/photo', imageBytes(1000, 3), 'image/jpeg')
+    assert.equal(adminOwn.status, 200, adminOwn.text)
+    assert.equal(await instructorRows(), before, 'a staff member who is not an instructor gets no instructors row')
+  })
 })
