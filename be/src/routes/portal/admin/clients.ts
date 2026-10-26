@@ -85,7 +85,7 @@ const listQuery = z.object({
   // Stringly-typed because Hono query params are strings; only "true" enables.
   include_deleted: z.enum(['true', 'false']).optional(),
   // The Customers page's pills. Absent is "all".
-  filter: z.enum(['active', 'trials', 'blocked']).optional(),
+  filter: z.enum(['active', 'trials', 'blocked', 'no_email']).optional(),
   sort: z.enum(['joined', 'name']).optional(),
   page: z.coerce.number().int().min(1).max(100000).default(1),
   page_size: z.coerce

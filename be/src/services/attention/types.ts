@@ -31,6 +31,9 @@ export type AttentionKind =
   | 'corporate_refunded_still_scheduled'
   | 'leave_request_pending'
   | 'check_in_unfinished'
+  | 'waitlist_seat_free'
+  | 'series_ending'
+  | 'series_ended_class_kept'
   | 'classpass_review'
   | 'classpass_overbooked'
   | 'instructor_pay_missing'
@@ -41,6 +44,8 @@ export type AttentionKind =
   | 'staff_invitation_expired'
   | 'staff_email_change_expired'
   | 'staff_without_email'
+  | 'members_without_email'
+  | 'email_bouncing'
   | 'studio_term_ending'
   | 'payments_not_configured'
 

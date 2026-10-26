@@ -6,6 +6,7 @@ import {
   corporateRequestPending,
   corporateSessionUnmarked,
 } from './corporate-requests'
+import { emailBouncing, membersWithoutEmail } from './email-delivery'
 import { instructorPayMissing } from './instructor-pay-missing'
 import { leaveRequestPending } from './leave-request-pending'
 import { partPaymentSilent } from './part-payment-silent'
@@ -13,7 +14,9 @@ import { ptRequestPending } from './pt-request-pending'
 import { refundIncomplete, refundUnconfirmed, workshopCancelledUnrefunded } from './refunds'
 import { staffEmailChangeExpired, staffInvitationExpired, staffWithoutEmail } from './staff-logins'
 import { paymentsNotConfigured, studioTermEnding } from './studio-account'
+import { seriesEnding, seriesEndedClassKept } from './series-follow-ups'
 import type { AttentionProvider } from './types'
+import { waitlistSeatFree } from './waitlist-seat-free'
 
 /**
  * Every Attention item kind the portal knows. A new kind is one provider file
@@ -27,6 +30,9 @@ export const providers: readonly AttentionProvider[] = [
   corporateRefundedStillScheduled,
   leaveRequestPending,
   checkInUnfinished,
+  waitlistSeatFree,
+  seriesEnding,
+  seriesEndedClassKept,
   classpassReview,
   classpassOverbooked,
   instructorPayMissing,
@@ -37,6 +43,8 @@ export const providers: readonly AttentionProvider[] = [
   staffInvitationExpired,
   staffEmailChangeExpired,
   staffWithoutEmail,
+  membersWithoutEmail,
+  emailBouncing,
   studioTermEnding,
   paymentsNotConfigured,
 ]

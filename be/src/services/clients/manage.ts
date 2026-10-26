@@ -93,7 +93,20 @@ export async function listClients(
   return rows.map(r => ({ ...r, attended: Number(r.attended) }))
 }
 
-export type ClientDirectoryFilter = 'active' | 'trials' | 'blocked'
+export type ClientDirectoryFilter = 'active' | 'trials' | 'blocked' | 'no_email'
+
+/**
+ * A member who cannot be written to: not blocked, and on a placeholder address
+ * (the reserved `.invalid` TLD, `isPlaceholderEmail` in services/auth/account-access.ts).
+ * The Customers `no_email` filter and the bell's `members_without_email` item
+ * both read this, so the bell's count and the list it links to cannot differ.
+ */
+export const memberWithoutEmail = (tenantId: string): SQL =>
+  and(
+    eq(clients.tenantId, tenantId),
+    isNull(clients.deletedAt),
+    sql`btrim(${clients.email}) ~* '\\.invalid$'`,
+  )!
 export type ClientDirectorySort = 'joined' | 'name'
 
 export interface ListClientsPageOptions extends ListClientsOptions {
@@ -172,6 +185,7 @@ export async function listClientsPage(
   if (opts.filter === 'blocked') conds.push(isNotNull(clients.deletedAt))
   else if (opts.filter === 'active' || !opts.includeDeleted) conds.push(isNull(clients.deletedAt))
   if (opts.filter === 'trials') conds.push(hasTrial(sql`${clients.id}`))
+  if (opts.filter === 'no_email') conds.push(memberWithoutEmail(tenantId))
   if (opts.status) conds.push(eq(clients.status, opts.status))
   const term = opts.q?.trim()
   if (term) {
