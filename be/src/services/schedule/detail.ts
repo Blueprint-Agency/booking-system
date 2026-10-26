@@ -30,6 +30,7 @@ import { staffCancelPreview, type StaffCancelPreview } from '../bookings/staff-c
 import { cancellationRecord, summarizeCancellation, type CancellationSummary } from '../bookings/cancellation-summary'
 import { classCancelWindow } from '../policy/cancel-window'
 import { now as clockNow } from '../../lib/clock'
+import { publicObjectUrl } from '../../lib/r2'
 import { nameRule, readClassRule, type NamedPackageRule } from './package-rules'
 
 export interface NamedRef {
@@ -39,7 +40,7 @@ export interface NamedRef {
 
 export interface ClassAttendee {
   bookingId: string
-  client: NamedRef
+  client: NamedRef & { photo_url: string | null }
   packageKind: ClientPackageKind | null
   creditsUsed: number
   checkInState: 'pending' | 'attended' | 'no_show' | 'n_a'
@@ -150,6 +151,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       bookingId: bookings.id,
       clientId: bookings.clientId,
       clientName: clients.name,
+      clientPhotoKey: clients.photoR2Key,
       packageKind: clientPackages.kind,
       packageName: classPackages.name,
       creditsUsed: bookings.creditsOrSessionsUsed,
@@ -182,7 +184,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     const checkInState = r.checkInState as ClassAttendee['checkInState']
     return {
       bookingId: r.bookingId,
-      client: { id: r.clientId, name: r.clientName ?? 'Member' },
+      client: { id: r.clientId, name: r.clientName ?? 'Member', photo_url: publicObjectUrl(r.clientPhotoKey) },
       packageKind: (r.packageKind as ClientPackageKind | null) ?? null,
       creditsUsed: r.creditsUsed ?? 0,
       checkInState,

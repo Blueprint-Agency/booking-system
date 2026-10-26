@@ -65,6 +65,7 @@ function dayView(d: CheckInDay) {
         booking_id: r.bookingId,
         client_id: r.clientId,
         name: r.name,
+        photo_url: r.photoUrl,
         code: r.code,
         state: r.state,
         check_in_state: r.checkInState,

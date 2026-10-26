@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
+import { publicObjectUrl } from '../../lib/r2'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { classTypes, locations, rooms } from '../../db/schema/catalog'
 import { ptRequests, ptRequestSlots, ptSessions } from '../../db/schema/schedule'
@@ -355,7 +356,7 @@ export interface AdminPtRequestView {
   /** Null on a manual session's request, which never waits pending. */
   expiresAt: Date | null
   resolvedAt: Date | null
-  client: { id: string; name: string; email: string }
+  client: { id: string; name: string; email: string; photo_url: string | null }
   /** Preferred class type; null when the member asked for "any". */
   classType: { id: string; name: string } | null
   location: { id: string; name: string }
@@ -405,6 +406,7 @@ function adminSelect() {
       clientId: clients.id,
       clientName: clients.name,
       clientEmail: clients.email,
+      clientPhotoKey: clients.photoR2Key,
       classTypeId: ptRequests.classTypeId,
       className: classTypes.name,
       locationId: ptRequests.locationId,
@@ -510,7 +512,7 @@ async function hydrateAdminRows(
       createdAt: r.createdAt,
       expiresAt: r.expiresAt,
       resolvedAt: r.resolvedAt,
-      client: { id: r.clientId, name: r.clientName, email: r.clientEmail },
+      client: { id: r.clientId, name: r.clientName, email: r.clientEmail, photo_url: publicObjectUrl(r.clientPhotoKey) },
       classType: r.classTypeId ? { id: r.classTypeId, name: r.className ?? 'Class' } : null,
       location: { id: r.locationId, name: r.locationName ?? 'Studio' },
       coClient,

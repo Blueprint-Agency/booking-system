@@ -65,6 +65,7 @@ import { exportMember } from '../../../services/clients/member-export'
 import { deleteMemberPermanently } from '../../../services/clients/member-delete'
 import { memberArchiveFilename, packArchive } from '../../../services/tenants/transfer-archive'
 import { sessionView } from '../session-view'
+import { publicObjectUrl } from '../../../lib/r2'
 import {
   listOpenPurchases,
   type OpenPurchaseView,
@@ -217,6 +218,7 @@ function clientRow(c: ClientRow) {
     email: c.email,
     phone: c.phone,
     gender: c.gender,
+    photo_url: publicObjectUrl(c.photoR2Key),
     status: c.status,
     joined_at: c.joinedAt,
     suspended_at: c.suspendedAt,
