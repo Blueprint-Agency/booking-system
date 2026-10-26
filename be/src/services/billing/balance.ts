@@ -11,6 +11,7 @@
  * and summing those as floats is how a purchase ends up one cent short of
  * settled and silently ungranted.
  */
+import { now as clockNow } from '../../lib/clock'
 import { toCents } from '../../shared/money'
 
 /** A payment row as this module needs to see it — the ledger's own columns. */
@@ -126,7 +127,7 @@ export function refundProgress(c: RefundProgressCounts): RefundProgress {
  */
 export const REFUND_IN_FLIGHT_MS = 24 * 60 * 60 * 1000
 
-export function refundInFlight(requestedAt: Date | null, now: Date = new Date()): boolean {
+export function refundInFlight(requestedAt: Date | null, now: Date = clockNow()): boolean {
   return requestedAt != null && now.getTime() - requestedAt.getTime() < REFUND_IN_FLIGHT_MS
 }
 

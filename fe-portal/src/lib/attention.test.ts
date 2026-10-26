@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert";
 import {
   dismissalBody,
+  isWantedPurchase,
   purchaseParam,
   removeItemLocally,
   withWantedFirst,
@@ -184,4 +185,20 @@ test("ATN-58 Partial payments reads ?purchase= and lists that purchase first", (
   assert.deepEqual(withWantedFirst(rows, id).map((r) => r.id), [id, "x", "y"]);
   assert.deepEqual(withWantedFirst(rows, null), rows);
   assert.deepEqual(withWantedFirst(rows, "missing"), rows, "a purchase that is gone opens the page as normal");
+});
+
+test("ATN-99 the member page lists the wanted purchase first, whichever field carries the purchase id, and knows which row to highlight", () => {
+  const id = "3f2b8c1e-5d4a-4b6c-9e7f-0a1b2c3d4e5f";
+  const places = [
+    { booking_id: "b1", purchase_id: "p1" },
+    { booking_id: "b2", purchase_id: id },
+    { booking_id: "b3", purchase_id: null },
+  ];
+  const byPurchase = (p: { purchase_id: string | null }) => p.purchase_id;
+  assert.deepEqual(withWantedFirst(places, id, byPurchase).map((p) => p.booking_id), ["b2", "b1", "b3"]);
+  assert.deepEqual(withWantedFirst(places, "p-gone", byPurchase), places, "a purchase that is gone opens the page as normal");
+  assert.equal(isWantedPurchase(id, id), true);
+  assert.equal(isWantedPurchase("p1", id), false);
+  assert.equal(isWantedPurchase(null, id), false);
+  assert.equal(isWantedPurchase(id, null), false);
 });

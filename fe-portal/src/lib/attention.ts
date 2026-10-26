@@ -166,10 +166,19 @@ export function purchaseParam(search: string): string | null {
 }
 
 /** A list with the wanted row first, so a deep link's row is on the first page. Unchanged if it isn't there. */
-export function withWantedFirst<T extends { id: string }>(rows: readonly T[], wanted: string | null): T[] {
-  const at = wanted ? rows.findIndex((r) => r.id === wanted) : -1;
+export function withWantedFirst<T>(
+  rows: readonly T[],
+  wanted: string | null,
+  idOf: (row: T) => string | null = (r) => (r as { id: string }).id,
+): T[] {
+  const at = wanted ? rows.findIndex((r) => idOf(r) === wanted) : -1;
   if (at < 0) return [...rows];
   return [rows[at]!, ...rows.slice(0, at), ...rows.slice(at + 1)];
+}
+
+/** Whether a row's purchase is the one the bell linked to (the row to highlight). */
+export function isWantedPurchase(purchaseId: string | null, wanted: string | null): boolean {
+  return purchaseId !== null && wanted !== null && purchaseId === wanted;
 }
 
 // ── Dismissals ──────────────────────────────────────────────────────────────
