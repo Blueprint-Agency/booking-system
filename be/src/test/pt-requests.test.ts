@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
-import { frontendOrigin, integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { frontendOrigin, harnessAddress, integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.pt.test`
@@ -110,9 +110,19 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     }
   }
 
+  /**
+   * `signedIn`'s session, sent from a client address no earlier request used.
+   * The app's limiters count per address before any sign-in is known (`app.ts`),
+   * and this file sends one Admin's 300-odd requests inside a minute in CI.
+   */
+  const fromFreshAddress = (signedIn: Record<string, string>) => ({
+    ...signedIn,
+    'X-Forwarded-For': harnessAddress(),
+  })
+
   async function staff(at: Studio, name: string, role: 'admin' | 'instructor'): Promise<Staff> {
     const email = emailFor(`${name}-${at.slug}`)
-    const headers = await harness.signInAs('staff', email, at)
+    const signedIn = await harness.signInAs('staff', email, at)
     const [authUser] = await harness.db
       .select({ id: schema.staffAuthUsers.id })
       .from(schema.staffAuthUsers)
@@ -124,12 +134,17 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     if (role === 'instructor') {
       await harness.db.insert(schema.instructors).values({ tenantId: at.id, staffUserId: row!.id })
     }
-    return { staffId: row!.id, headers }
+    return {
+      staffId: row!.id,
+      get headers() {
+        return fromFreshAddress(signedIn)
+      },
+    }
   }
 
   async function member(at: Studio, name: string): Promise<Member> {
     const email = emailFor(`${name}-${at.slug}`)
-    const headers = await harness.signInAs('client', email, at)
+    const signedIn = await harness.signInAs('client', email, at)
     const [user] = await harness.db
       .select({ id: schema.clientAuthUsers.id })
       .from(schema.clientAuthUsers)
@@ -138,7 +153,14 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       .insert(schema.clients)
       .values({ tenantId: at.id, email, name, phone: '+6580000000', authUserId: user!.id })
       .returning({ id: schema.clients.id })
-    return { clientId: client!.id, email, name, headers }
+    return {
+      clientId: client!.id,
+      email,
+      name,
+      get headers() {
+        return fromFreshAddress(signedIn)
+      },
+    }
   }
 
   /** A PT package held by `who`, Dormant as every purchase lands, with `sessions` left. */
