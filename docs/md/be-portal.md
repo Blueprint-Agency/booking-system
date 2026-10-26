@@ -395,11 +395,11 @@ Block, unblock and sign-out are **per studio**: a login is one studio's own (ADR
 | POST | `/staff/:id/resend-invitation` | Re-mails the set-password link: the pending invitation when there is one (as `/staff/invitations/:id/resend`), otherwise Better Auth's reset link on the studio's portal, which sets a first password as readily as it replaces one. `{ sent: 'invitation' \| 'set_password' }`. 409 `staff_archived`. Logs `invitation_resent`, as does `/staff/invitations/:id/resend`. |
 
 ### `emails.ts`
-The studio's emails and their switches (#467, admin-restructure §16). Studio admins only; instructors `403 forbidden_role`. The list is `STUDIO_EMAILS` (`services/notifications/switches.ts`): every email some code sends for a studio, each `member` or `staff`, locked or switchable. The switch state is `email_switches` (no row is on). There is no template editor: the old `/notifications` stub routes are deleted.
+The studio's emails and their switches (#467, admin-restructure §16). Studio admins only; instructors `403 forbidden_role`. The list is `STUDIO_EMAILS` (`services/notifications/switches.ts`): every email some code sends for a studio, each with its plain-language name, `member` or `staff`, locked or switchable. The switch state is `email_switches` (no row is on). There is no template editor: the old `/notifications` stub routes are deleted.
 
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/emails` | `{ member: Email[], staff: Email[] }`, `Email` = `{ slug, audience, locked, enabled }`. A locked email always reads `enabled: true`. |
+| GET | `/emails` | `{ member: Email[], staff: Email[] }`, `Email` = `{ slug, name, audience, locked, enabled }`, `name` being how the portal lists it ("Class booking confirmed"). A locked email always reads `enabled: true`. |
 | PATCH | `/emails/:slug` | `{ enabled: bool }` → the `Email`. Writes an `email_switch_changed` audit row (`{ slug, from, to }`, target `email_switches`) when the state changes; a PATCH to the state it already has writes none. `404 email_not_found` for a slug the studio does not send; `409 email_locked` with a `message` sentence for a locked one. |
 
 ### `marketing.ts`

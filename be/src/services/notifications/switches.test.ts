@@ -56,9 +56,8 @@ test('NTF-37 every email a studio sends is classified to members or staff, and l
 })
 
 test('NTF-37 every classified email has a plain-language name of its own, not its slug', () => {
-  const names = Object.entries(STUDIO_EMAILS).map(([slug, email]) => {
-    const name: unknown = (email as { name?: unknown }).name
-    assert.ok(typeof name === 'string' && name.trim() !== '', `${slug} has no name`)
+  const names = Object.entries(STUDIO_EMAILS).map(([slug, { name }]) => {
+    assert.ok(name.trim() !== '', `${slug} has no name`)
     assert.ok(!name.includes('_'), `${slug} is named ${name}`)
     return name
   })

@@ -8,6 +8,8 @@ import { isStudioEmailSlug, STUDIO_EMAILS, type EmailAudience, type StudioEmailS
 /** One of the studio's emails as its admin sees it. */
 export interface StudioEmail {
   slug: StudioEmailSlug
+  /** How the Emails page lists it. */
+  name: string
   audience: EmailAudience
   locked: boolean
   enabled: boolean
@@ -33,9 +35,10 @@ export async function listStudioEmails(tenantId: string): Promise<Record<EmailAu
     .where(eq(emailSwitches.tenantId, tenantId))
   const stored = new Map(rows.map(r => [r.slug, r.enabled]))
   const groups: Record<EmailAudience, StudioEmail[]> = { member: [], staff: [] }
-  for (const [slug, { audience, locked }] of Object.entries(STUDIO_EMAILS)) {
+  for (const [slug, { name, audience, locked }] of Object.entries(STUDIO_EMAILS)) {
     groups[audience].push({
       slug: slug as StudioEmailSlug,
+      name,
       audience,
       locked,
       enabled: locked || (stored.get(slug) ?? true),
@@ -56,7 +59,7 @@ export async function setEmailSwitch(
   actorStaffId: string,
 ): Promise<StudioEmail> {
   if (!isStudioEmailSlug(slug)) throw new NotFoundError('email_not_found')
-  const { audience, locked } = STUDIO_EMAILS[slug]
+  const { name, audience, locked } = STUDIO_EMAILS[slug]
   if (locked) throw new ConflictError('email_locked', { message: LOCKED_MESSAGE })
 
   // One statement, so two admins switching the same email at once take turns on
@@ -84,5 +87,5 @@ export async function setEmailSwitch(
       payload: { slug, from, to: enabled },
     })
   }
-  return { slug, audience, locked, enabled }
+  return { slug, name, audience, locked, enabled }
 }
