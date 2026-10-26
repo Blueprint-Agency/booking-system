@@ -60,8 +60,15 @@ function useInstructorNavItems(): BadgedNavItem[] {
   const { byGroup } = useAttention();
   const ptPending = may("take_pt_bookings") ? byGroup.pt_requests || undefined : undefined;
 
+  // The instructor's own unfinished check-ins (their classes and private sessions).
+  const unfinished = byGroup.check_in || undefined;
+
   return instructorNavItems(may).map((item) =>
-    item.permission === "take_pt_bookings" ? { ...item, badge: ptPending } : item
+    item.permission === "take_pt_bookings"
+      ? { ...item, badge: ptPending }
+      : item.href === "/instructor/check-in"
+        ? { ...item, badge: unfinished }
+        : item
   );
 }
 
