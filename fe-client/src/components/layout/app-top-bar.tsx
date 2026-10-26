@@ -6,6 +6,7 @@ import { useAppUser } from "@/lib/auth";
 import { authLinksFor } from "@/lib/auth-redirect";
 import { cn } from "@/lib/utils";
 import { useBrand } from "@/components/brand/brand-provider";
+import { Avatar } from "@/components/ui/avatar";
 
 export function AppTopBar({ impersonating = false }: { impersonating?: boolean }) {
   const brand = useBrand();
@@ -13,11 +14,6 @@ export function AppTopBar({ impersonating = false }: { impersonating?: boolean }
   // Log in and Sign up come back to this page, as the page's own sign-in
   // prompts do (AUTH-07), whichever of them the visitor taps.
   const authLinks = authLinksFor(usePathname() ?? "/");
-  const firstName = user?.firstName ?? "";
-  const lastName = user?.lastName ?? "";
-  const userInitials = isAuth
-    ? (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || (user?.email.charAt(0).toUpperCase() ?? "U")
-    : "";
 
   return (
     <header
@@ -43,14 +39,19 @@ export function AppTopBar({ impersonating = false }: { impersonating?: boolean }
             otherwise see Log in / Sign up on every load, then their avatar. */}
         {!isLoaded ? (
           <div className="h-9 w-9" aria-hidden />
-        ) : isAuth ? (
+        ) : isAuth && user ? (
           <div className="flex items-center">
             <Link
               href="/account"
               aria-label="Account"
-              className="w-9 h-9 rounded-full bg-accent/15 flex items-center justify-center text-[12px] font-bold text-accent-deep hover:bg-accent hover:text-inverse transition-colors"
+              className="group rounded-full"
             >
-              {userInitials}
+              <Avatar
+                name={`${user.firstName} ${user.lastName}`}
+                email={user.email}
+                photoUrl={user.photoUrl}
+                className="h-9 w-9 bg-accent/15 text-[12px] text-accent-deep ring-accent ring-offset-2 ring-offset-paper group-hover:bg-accent group-hover:text-inverse group-hover:ring-2 transition-colors"
+              />
             </Link>
           </div>
         ) : (

@@ -82,7 +82,9 @@ async function apiFetch<T = unknown>(
     ...tenantRequestHeaders(),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  // A form sets its own multipart Content-Type, boundary included.
+  const isForm = opts.body instanceof FormData;
+  if (opts.body !== undefined && !isForm) headers["Content-Type"] = "application/json";
 
   const impGrant = currentImpersonationGrant();
   if (impGrant) headers[IMPERSONATION_GRANT_HEADER] = impGrant;
@@ -92,7 +94,7 @@ async function apiFetch<T = unknown>(
     {
       method: opts.method ?? "GET",
       headers,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      body: isForm ? (opts.body as FormData) : opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal: opts.signal,
     },
     { report: reportError, label: "Client API", as: opts.as },
@@ -117,6 +119,9 @@ export function makeApi(getToken: TokenGetter) {
       apiFetch<T>(path, getToken, { method: "PATCH", body }),
     del: <T>(path: string) =>
       apiFetch<T>(path, getToken, { method: "DELETE" }),
+    /** A multipart upload, such as a Profile picture. */
+    upload: <T>(path: string, form: FormData) =>
+      apiFetch<T>(path, getToken, { method: "POST", body: form }),
     /** A file the backend serves, such as a Receipt PDF. */
     file: (path: string) =>
       apiFetch<Blob>(path, getToken, { method: "GET", as: "blob" }),
