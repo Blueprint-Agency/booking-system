@@ -443,6 +443,23 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
     assert.equal(row!.sentAt, null, 'the class is not claimed')
   })
 
+  test('NTF-37 the nag about an ended private session links the Instructor and an Admin to that session on the check-in desk, on its studio-local day', async () => {
+    harness.clock.set(NOW)
+    const session = await ptSessionEnded(one, 25 * HOUR)
+    sent.splice(0)
+
+    await jobs.scheduledJobs.sendCheckInNags()
+
+    const nags = drainNags()
+    const [tenant] = await harness.db.select({ timezone: schema.tenants.timezone }).from(schema.tenants).where(eq(schema.tenants.id, one.id))
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: tenant!.timezone }).format(new Date(NOW.getTime() - 26 * HOUR))
+    const deskQuery = `\\?date=${day}&(amp;)?session=pt:${session}`
+    const toInstructor = nags.find(m => m.to === one.instructor.email)!
+    assert.match(toInstructor.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/instructor/check-in${deskQuery}"`))
+    const toAdmin = nags.find(m => m.to === one.admin.email)!
+    assert.match(toAdmin.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/admin/check-in${deskQuery}"`))
+  })
+
   test('NTF-30 a private session whose member is checked in while the nag job runs, before it claims the session, is not nagged', async () => {
     harness.clock.set(NOW)
     const session = await ptSessionEnded(one, 25 * HOUR)
