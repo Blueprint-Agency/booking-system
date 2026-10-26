@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { eq } from 'drizzle-orm'
 import {
   integrationTestsEnabled,
+  inTenantContext,
   SKIP_REASON,
   startTestApp,
   type TestApp,
@@ -249,7 +250,49 @@ describe('Staff attention: ClassPass', { skip: integrationTestsEnabled ? false :
     assert.equal((await summary(admin)).by_group.classpass, 1)
   })
 
-  test('ATN-82 an overbooked upcoming class is one item with its seats, linked to the class, and goes when its overbooked bookings are cancelled or the class has ended', async () => {
+  test('ATN-85 mapping the ClassPass location of one review item books it and every other open item from that location, and both leave the bell', async () => {
+    const receiveSvc = inTenantContext(await import('../services/classpass/receive'))
+    const { classPassEmail } = await import('./classpass-email')
+    const studio = await freshStudio()
+    const admin = await staffAt(studio, 'admin', 'admin')
+    await json(await send('/portal/admin/classpass', admin.headers, 'PATCH', { enabled: true }), 200)
+    const [tenant] = await harness.db.select({ tz: schema.tenants.timezone }).from(schema.tenants).where(eq(schema.tenants.id, studio.id))
+    const startsAt = new Date(Math.floor((Date.now() + 5 * DAY) / HOUR) * HOUR + 30 * 60 * 1000)
+    const plain = (s: string) => s.replace(/\s/g, ' ')
+    const when = {
+      date: plain(new Intl.DateTimeFormat('en-US', { timeZone: tenant!.tz, month: 'short', day: 'numeric', year: 'numeric' }).format(startsAt)),
+      time: plain(new Intl.DateTimeFormat('en-US', { timeZone: tenant!.tz, hour: 'numeric', minute: '2-digit', hour12: true }).format(startsAt)),
+    }
+    await futureClass(studio, 10, startsAt)
+    const [type] = await harness.db.select({ name: schema.classTypes.name }).from(schema.classTypes).where(eq(schema.classTypes.id, studio.classTypeId))
+    const email = (location: string, who: string) =>
+      classPassEmail({
+        className: type!.name,
+        location,
+        ...when,
+        memberName: who,
+        memberEmail: `${who.toLowerCase()}@${studio.slug}.test`,
+      })
+    const first = await receiveSvc.receiveClassPassEmail(studio.id, email(`Northwind - Annex ${run}`, 'Alice'))
+    const second = await receiveSvc.receiveClassPassEmail(studio.id, email(`NORTHWIND-ANNEX ${run}`, 'Bella'))
+    const elsewhere = await receiveSvc.receiveClassPassEmail(studio.id, email(`Northwind - Elsewhere ${run}`, 'Cara'))
+    assert.equal(first.reason, 'unmapped_location')
+    assert.equal(second.reason, 'unmapped_location')
+    assert.equal((await summary(admin)).by_group.classpass, 3)
+
+    await json(
+      await send(`/portal/admin/classpass/review/${first.id}/location`, admin.headers, 'POST', { location_id: studio.locationId }),
+      200,
+    )
+
+    assert.equal((await summary(admin)).by_group.classpass, 1, 'the mapped item and the one it re-ran both leave the count')
+    assert.deepEqual(
+      itemsOf(await panel(admin)).map(i => i.id),
+      [`classpass_review:${elsewhere.id}`],
+    )
+  })
+
+  test('ATN-82an overbooked upcoming class is one item with its seats, linked to the class, and goes when its overbooked bookings are cancelled or the class has ended', async () => {
     const studio = await freshStudio()
     const admin = await staffAt(studio, 'admin', 'admin')
     const startsAt = new Date(Date.now() + 3 * DAY)
