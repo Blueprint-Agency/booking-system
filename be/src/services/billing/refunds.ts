@@ -51,6 +51,7 @@ import { toCents } from '../../shared/money'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { cancelBooking } from '../bookings/cancel'
 import { lockForCancel } from '../bookings/lock-for-cancel'
+import type { Tx } from '../schedule/roster'
 import { closeCorporateRequestsForRefund } from '../corporate/requests'
 import { refundPromoCodeRedemption } from '../packages/promo-redemption'
 import { sendTemplatedEmail } from '../notifications/send'
@@ -1006,10 +1007,10 @@ export async function unwindRefund(
  */
 export function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
   // One unit: a deadlock in any of its cancels starts the whole unwind over.
-  return retryingTransaction(() => unwindPayment(paymentIntentId))
+  return retryingTransaction(tx => unwindPayment(tx, paymentIntentId))
 }
 
-async function unwindPayment(paymentIntentId: string): Promise<void> {
+async function unwindPayment(tx: Tx, paymentIntentId: string): Promise<void> {
   const [payment] = await db
     .select({
       // The provider's event names an intent and nothing else, and the intent is
@@ -1039,7 +1040,7 @@ async function unwindPayment(paymentIntentId: string): Promise<void> {
   // last. A redelivery that arrives after this write still walks the whole
   // unwind, which is what makes a pass that died halfway simply get redone.
   await stampPaymentRefunded(tenantId, paymentIntentId)
-  await unwindPurchase(tenantId, payment.purchaseId)
+  await unwindPurchase(tx, tenantId, payment.purchaseId)
 }
 
 /**
@@ -1058,7 +1059,7 @@ async function unwindPayment(paymentIntentId: string): Promise<void> {
  * half-finished pass is simply redone, and the one non-repeatable act — the
  * member's email — rides on the one atomic write.
  */
-async function unwindPurchase(tenantId: string, purchaseId: string): Promise<void> {
+async function unwindPurchase(tx: Tx, tenantId: string, purchaseId: string): Promise<void> {
   const purchase = await purchaseById(tenantId, purchaseId)
   // Already refunded or already abandoned means a redelivery of an event that
   // completed.
@@ -1178,7 +1179,7 @@ async function unwindPurchase(tenantId: string, purchaseId: string): Promise<voi
     return
   }
 
-  await lockForCancel(tenantId, { bookingIds: (await futureBookingsOn(tenantId, pkg.id)).map(t => t.id) })
+  await lockForCancel(tx, tenantId, { bookingIds: (await futureBookingsOn(tenantId, pkg.id)).map(t => t.id) })
 
   // `active` is the same lever the nightly expiry sweep already pulls — no new
   // column, and the payment's status records *why* it went down.

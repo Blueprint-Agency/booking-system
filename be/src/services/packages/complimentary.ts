@@ -157,10 +157,11 @@ export async function removeComplimentaryPackage(
   if (!reason) throw new BadRequestError('reason_required')
   // One unit: a deadlock in any of its cancels starts the whole Remove over,
   // rather than leaving the cancels before it standing under a refusal.
-  return retryingTransaction(() => removeUntouched(tenantId, input, reason))
+  return retryingTransaction(tx => removeUntouched(tx, tenantId, input, reason))
 }
 
 async function removeUntouched(
+  tx: Tx,
   tenantId: string,
   input: RemoveComplimentaryInput,
   reason: string,
@@ -183,7 +184,7 @@ async function removeUntouched(
 
   await assertUntouched(tenantId, input.clientPackageId)
 
-  await lockForCancel(tenantId, {
+  await lockForCancel(tx, tenantId, {
     ptRequestIds: await openPtRequestsOn(tenantId, input.clientPackageId),
     bookingIds: await liveBookingsOn(tenantId, input.clientPackageId),
   })
