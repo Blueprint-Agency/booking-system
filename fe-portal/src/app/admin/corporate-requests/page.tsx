@@ -1,6 +1,10 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { useRequestDeepLink } from "@/components/attention/deep-links";
+import { useAttention } from "@/components/attention/attention-provider";
+import { requestParam } from "@/lib/attention";
 import { PageHeader, Badge, Pagination, usePaged } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { scheduleErrorMessage } from "@/lib/schedule";
@@ -76,8 +80,21 @@ function fromApi(r: ApiCorporateRequest): CorporateRequest {
   };
 }
 
+// `useSearchParams` (the bell's `?request=` link) needs a Suspense boundary.
 export default function CorporateRequestsPage() {
+  return (
+    <Suspense fallback={null}>
+      <CorporateRequestsView />
+    </Suspense>
+  );
+}
+
+function CorporateRequestsView() {
   const { api } = useWorkspace();
+  // The bell's count follows what this page resolves, without waiting for the next poll.
+  const { refresh: refreshAttention } = useAttention();
+  const search = useSearchParams();
+  const wanted = requestParam(`?${search.toString()}`);
   const [tab, setTab] = useState<Filter>("pending");
   const [requests, setRequests] = useState<CorporateRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,6 +125,28 @@ export default function CorporateRequestsPage() {
     void load();
   }, [load]);
 
+  // A link from the bell (`?request=`) opens that request's drawer. The list
+  // shows one status at a time, so first move to the tab for the status the
+  // request has now; the drawer opens once that tab's list holds it.
+  useEffect(() => {
+    if (!api || !wanted) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await api.get<{ corporate_request: ApiCorporateRequest }>(
+          `/portal/admin/corporate-requests/${wanted}`,
+        );
+        if (!cancelled) setTab(res.corporate_request.status);
+      } catch {
+        // Not found: the page opens as normal.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, wanted]);
+  useRequestDeepLink(requests, loading, (r) => setActiveId(r.id));
+
   const active = requests.find((r) => r.id === activeId) ?? null;
   const { visible, pagination } = usePaged(requests, tab);
 
@@ -123,6 +162,7 @@ export default function CorporateRequestsPage() {
       );
       setActiveId(null);
       await load();
+      refreshAttention();
     } catch (err) {
       setError(scheduleErrorMessage(err, "Failed"));
     } finally {
@@ -234,6 +274,7 @@ export default function CorporateRequestsPage() {
             setSchedFor(null);
             setActiveId(null);
             void load();
+            refreshAttention();
           }}
         />
       )}

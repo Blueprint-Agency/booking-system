@@ -24,7 +24,13 @@ export type AttentionGroupKey = (typeof ATTENTION_GROUPS)[number]['key']
 export type AttentionBadgeKey = 'pt_requests' | 'corporate_requests' | 'leave' | 'check_in' | 'classpass'
 
 /** The Attention item kinds, each the `kind` of one provider. */
-export type AttentionKind = 'pt_request_pending' | 'leave_request_pending' | 'check_in_unfinished'
+export type AttentionKind =
+  | 'pt_request_pending'
+  | 'corporate_request_pending'
+  | 'corporate_session_unmarked'
+  | 'corporate_refunded_still_scheduled'
+  | 'leave_request_pending'
+  | 'check_in_unfinished'
 
 /** Who is asking, and everything a provider needs to decide what they are owed. */
 export interface AttentionContext {
