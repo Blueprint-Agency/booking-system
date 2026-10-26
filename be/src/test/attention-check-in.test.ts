@@ -139,6 +139,8 @@ describe('Staff attention: unfinished check-ins', { skip: integrationTestsEnable
         capacityOnline: 10,
         creditCost: 1,
         createdByStaffId: admin.id,
+        // Priced, so the instructor-pay line (#486) stays out of these counts.
+        instructorPaySgd: '30.00',
       })
       .returning({ id: schema.classes.id })
     const bookingIds: string[] = []
@@ -176,6 +178,7 @@ describe('Staff attention: unfinished check-ins', { skip: integrationTestsEnable
         capacityOnline: seats.length,
         scheduledAt: new Date(endsAt.getTime() - 7 * DAY),
         scheduledByStaffId: admin.id,
+        instructorPaySgd: '30.00',
       })
       .returning({ id: schema.ptSessions.id })
     for (const seat of seats) {

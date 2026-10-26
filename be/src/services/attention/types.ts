@@ -33,6 +33,7 @@ export type AttentionKind =
   | 'check_in_unfinished'
   | 'classpass_review'
   | 'classpass_overbooked'
+  | 'instructor_pay_missing'
 
 /** Who is asking, and everything a provider needs to decide what they are owed. */
 export interface AttentionContext {
