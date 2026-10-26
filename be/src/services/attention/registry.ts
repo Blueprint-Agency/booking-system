@@ -9,6 +9,7 @@ import {
 import { emailBouncing, membersWithoutEmail } from './email-delivery'
 import { instructorPayMissing } from './instructor-pay-missing'
 import { leaveRequestPending } from './leave-request-pending'
+import { partPaymentSilent } from './part-payment-silent'
 import { ptRequestPending } from './pt-request-pending'
 import { staffEmailChangeExpired, staffInvitationExpired, staffWithoutEmail } from './staff-logins'
 import { paymentsNotConfigured, studioTermEnding } from './studio-account'
@@ -29,6 +30,7 @@ export const providers: readonly AttentionProvider[] = [
   classpassReview,
   classpassOverbooked,
   instructorPayMissing,
+  partPaymentSilent,
   staffInvitationExpired,
   staffEmailChangeExpired,
   staffWithoutEmail,
