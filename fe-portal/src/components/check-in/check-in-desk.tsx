@@ -1,6 +1,7 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowRight,
@@ -25,13 +26,16 @@ import {
   checkInBase,
   checkInErrorMessage,
   createScanGate,
+  deskHref,
   nowLineIndex,
+  parseDeskParams,
   pickActiveSession,
   rosterRowMatches,
   sessionKey,
   sessionPhase,
   type CheckInAudience,
   type CheckInDay,
+  type DeskParams,
   type CheckInRosterRow,
   type CheckInSession,
   type CheckInState,
@@ -39,6 +43,7 @@ import {
   type SessionPhase,
 } from "@/lib/check-in";
 import { formatDate, formatTime } from "@/lib/formatters";
+import { localDay } from "@/lib/local-day";
 import { untickConfirmCopy } from "@/lib/untick-confirm";
 import { useWorkspace } from "@/lib/workspace-context";
 
@@ -128,7 +133,24 @@ function refusalBanner(err: unknown): Banner {
   };
 }
 
+/**
+ * The desk reads `?date=&session=` (see `parseDeskParams`), so it sits under a
+ * Suspense boundary and starts afresh whenever the link changes.
+ */
 export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
+  return (
+    <Suspense fallback={null}>
+      <CheckInDeskFromLink audience={audience} />
+    </Suspense>
+  );
+}
+
+function CheckInDeskFromLink({ audience }: { audience: CheckInAudience }) {
+  const search = useSearchParams();
+  return <Desk key={search.toString()} audience={audience} params={parseDeskParams(search)} />;
+}
+
+function Desk({ audience, params }: { audience: CheckInAudience; params: DeskParams }) {
   const { api, accessibleLocations, activeLocationId } = useWorkspace();
   const base = checkInBase(audience);
 
@@ -137,11 +159,16 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
   // their own sessions.
   const locationId = audience === "admin" && accessibleLocations.length > 1 ? activeLocationId : null;
 
-  const [view, setView] = useState<View>("scan");
+  // A link may name another day and a session on it (an overdue check-in); the
+  // wrapper remounts this desk when the link changes.
+  const { date: linkDate, session: linkSession } = params;
+  const otherDay = linkDate !== null && linkDate !== localDay();
+
+  const [view, setView] = useState<View>(linkSession ? "rosters" : "scan");
   const [day, setDay] = useState<CheckInDay | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [pickedKey, setPickedKey] = useState<string | null>(null);
+  const [pickedKey, setPickedKey] = useState<string | null>(linkSession);
   const [now, setNow] = useState(() => new Date());
 
   const [code, setCode] = useState("");
@@ -163,7 +190,11 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
       if (!api) return;
       const seq = ++loadSeq.current;
       try {
-        const res = await api.get<CheckInDay>(base, locationId ? { location_id: locationId } : undefined);
+        const query = {
+          ...(locationId ? { location_id: locationId } : {}),
+          ...(otherDay && linkDate ? { date: linkDate } : {}),
+        };
+        const res = await api.get<CheckInDay>(base, Object.keys(query).length ? query : undefined);
         if (seq !== loadSeq.current) return;
         setDay(res);
         setLoadError(null);
@@ -175,7 +206,7 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
         if (seq === loadSeq.current) setLoading(false);
       }
     },
-    [api, base, locationId],
+    [api, base, locationId, otherDay, linkDate],
   );
 
   // Subscribe to the backend: read now, then every minute. Both reads land in
@@ -326,6 +357,20 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
         }
       />
 
+      {otherDay && linkDate && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm shadow-soft">
+          <span>
+            Showing {formatDate(`${linkDate}T00:00:00`)}, not today. You can still tick members in.
+          </span>
+          <Link
+            href={deskHref(`/${audience}/check-in`, {})}
+            className="font-medium text-accent hover:underline"
+          >
+            Back to today
+          </Link>
+        </div>
+      )}
+
       <ViewSwitch view={view} onChange={setView} sessionCount={day ? sessions.length : null} />
 
       <div
@@ -433,9 +478,11 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
           <div className="rounded-xl border border-border bg-card shadow-soft">
             <EmptyState
               icon={CalendarX}
-              title="No sessions today"
+              title={otherDay ? "No sessions that day" : "No sessions today"}
               description={
-                audience === "admin"
+                otherDay
+                  ? "Nothing here for that day. The session may have been cancelled."
+                  : audience === "admin"
                   ? "Nothing on the schedule here today. A scanned code still finds its own session."
                   : "You aren't teaching anything today."
               }
@@ -445,6 +492,7 @@ export function CheckInDesk({ audience }: { audience: CheckInAudience }) {
           <div className="grid items-start gap-4 md:grid-cols-[minmax(0,300px)_minmax(0,1fr)] lg:gap-6">
             <SessionRail
               day={day}
+              otherDay={otherDay}
               sessions={sessions}
               selectedKey={selectedKey}
               now={now}
@@ -640,7 +688,9 @@ function SessionRail({
   selectedKey,
   now,
   onPick,
+  otherDay,
 }: {
+  otherDay: boolean;
   day: CheckInDay | null;
   sessions: CheckInSession[];
   selectedKey: string | null;
@@ -657,7 +707,7 @@ function SessionRail({
     >
       <div className="mb-2 md:mb-0 md:border-b md:border-border md:px-4 md:py-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-          {day ? `Today · ${formatDate(`${day.date}T00:00:00`)}` : "Today"}
+          {day ? `${otherDay ? "" : "Today · "}${formatDate(`${day.date}T00:00:00`)}` : otherDay ? "Sessions" : "Today"}
         </h2>
         {day && (
           <p className="mt-0.5 text-xs text-muted">
