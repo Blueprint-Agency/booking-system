@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Plus,
   Mail,
@@ -28,6 +29,9 @@ import {
   TabsTrigger,
 } from "@/components/ui";
 import { ApiError } from "@/lib/api";
+import { useAttention } from "@/components/attention/attention-provider";
+import { withoutParams } from "@/lib/attention";
+import { staffLinkTarget, type StaffLinkTarget } from "@/lib/staff-deep-link";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatDate, formatRelative } from "@/lib/formatters";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
@@ -103,8 +107,24 @@ interface StaffListResponse {
 
 type StaffTab = "admin" | "instructors";
 
+// `useSearchParams` (the bell's `?invitation=` / `?staff=` links) needs a Suspense boundary.
 export default function StaffPage() {
+  return (
+    <Suspense fallback={null}>
+      <StaffView />
+    </Suspense>
+  );
+}
+
+function StaffView() {
   const { api, currentStaff } = useWorkspace();
+  // The bell follows a resend, a revoke or a new address without waiting for the next poll.
+  const { refresh: refreshAttention } = useAttention();
+  const search = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  /** The invitation a bell link named: ringed and scrolled to. */
+  const [highlightInviteId, setHighlightInviteId] = useState<string | null>(null);
   const [staff, setStaff] = useState<StaffApiRow[]>([]);
   const [invites, setInvites] = useState<InvitationApiRow[]>([]);
   const [tab, setTab] = useState<StaffTab>("admin");
@@ -139,6 +159,40 @@ export default function StaffPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Held in a ref, as `useRequestDeepLink` holds its callback: the effect below
+  // runs on the URL and the loaded lists, not on this function's identity.
+  const showRef = useRef<(target: StaffLinkTarget) => void>(() => {});
+  useEffect(() => {
+    showRef.current = (target: StaffLinkTarget) => {
+      setTab(target.tab);
+      setView(target.view);
+      if (target.kind === "staff") {
+        setEditTarget(staff.find(s => s.id === target.id) ?? null);
+      } else {
+        setHighlightInviteId(target.id);
+      }
+    };
+  });
+
+  // A link from the bell shows its row: the person's profile opens, or the
+  // invitation is ringed, on the tab (and Active/Archived view) it belongs to.
+  // The params are dropped once used, so following the same link again works.
+  useEffect(() => {
+    if (loading) return;
+    const query = `?${search.toString()}`;
+    if (!search.has("invitation") && !search.has("staff")) return;
+    const target = staffLinkTarget(query, staff, invites);
+    if (target) showRef.current(target);
+    router.replace(`${pathname}${withoutParams(query, ["invitation", "staff"])}`, { scroll: false });
+  }, [loading, staff, invites, search, pathname, router]);
+
+  useEffect(() => {
+    if (!highlightInviteId) return;
+    document
+      .querySelector(`[data-invitation-id="${highlightInviteId}"]`)
+      ?.scrollIntoView?.({ block: "center" });
+  }, [highlightInviteId, tab, view, loading]);
 
   // Mirrors the backend rank rule (be/src/services/auth/staff-rank.ts): an admin
   // manages everyone, other admins included. The BE is the enforcement point —
@@ -222,6 +276,7 @@ export default function StaffPage() {
       const updated = await api.patch<StaffApiRow>(`/portal/admin/staff/${id}`, patch);
       setStaff(prev => prev.map(s => (s.id === updated.id ? updated : s)));
       toast.success("Profile updated.");
+      void refreshAttention();
       return updated;
     } catch (err) {
       if (err instanceof ApiError) {
@@ -268,6 +323,7 @@ export default function StaffPage() {
       toast.success(`${target.name} has been archived.`);
       setArchiveTarget(null);
       await refresh();
+      void refreshAttention();
     } catch (err) {
       if (err instanceof ApiError) {
         const body = err.body as { error?: string; message?: string } | null;
@@ -339,6 +395,7 @@ export default function StaffPage() {
       await api.post(`/portal/admin/staff/invitations/${inv.id}/resend`);
       toast.success(`Invitation re-sent to ${inv.email}.`);
       await refresh();
+      void refreshAttention();
     } catch (err) {
       const msg = err instanceof ApiError ? `Resend failed (HTTP ${err.status}).` : "Resend failed.";
       toast.error(msg);
@@ -355,6 +412,7 @@ export default function StaffPage() {
       toast.success(`Invitation to ${inv.email} revoked.`);
       setRevokeTarget(null);
       await refresh();
+      void refreshAttention();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         toast.error("That invitation has already been accepted.");
@@ -432,7 +490,10 @@ export default function StaffPage() {
                   {pendingInvites.map(inv => (
                     <li
                       key={inv.id}
-                      className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5"
+                      data-invitation-id={inv.id}
+                      className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5${
+                        inv.id === highlightInviteId ? " bg-accent/5 ring-1 ring-inset ring-accent" : ""
+                      }`}
                     >
                       {/* basis-full below sm so the email and its sent/expires
                           line get the full row width; the badge and the two
@@ -612,6 +673,7 @@ export default function StaffPage() {
             // Nothing moves until the link is clicked — the sign-in, and any
             // pending invitation, follow the address then.
             if (pending) toast.success(`Confirmation link sent to ${pending.email}.`);
+            void refreshAttention();
           }}
           onClose={() => setEditTarget(null)}
         />
