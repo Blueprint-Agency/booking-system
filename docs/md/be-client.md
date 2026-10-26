@@ -391,7 +391,7 @@ tx commit
 
 `POST /pt-sessions/:id/cancel` emails `pt_request_cancelled` to the requester (and to a 2-on-1 partner whose seat went with it) after commit — the same email before and after scheduling, its `refund_line` present only when sessions came back (NTF-11). Leaving a manual session in time sends `pt_cancelled_session_returned`.
 
-Every cancel of a class booking goes through this service — admin single-cancel, and the Refund and complimentary-removal unwinds (`packageVoided`) — so each promotes the same way.
+Every cancel of a class booking goes through this service — admin single-cancel, and the Refund and complimentary-removal unwinds (`packageVoided`) — so each promotes the same way. Those two unwinds lock every PT request, session, class and booking they will cancel, each kind in id order, before the package (be-portal §3b), so a member's cancel of one of those bookings at the same moment waits at its class or request, or the unwind waits for it (RFD-24, PKG-42).
 
 **Where a cancel shows.** Whatever its kind, the member reads a cancellation on My bookings' Cancelled tab the moment it is made, with when, who and the outcome (fe-client-features §8.1): a class from `GET /me/bookings/cancelled` (#349); a PT request or seat, a workshop place and a corporate request from `GET /me/pt-sessions`, `/me/workshop-bookings` and `/me/corporate-requests`, each carrying `cancelled_at` and its outcome (#351). None of them is on Past.
 

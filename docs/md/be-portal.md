@@ -478,6 +478,8 @@ Both paths pass through `services/bookings/cancel.ts`. The branch is on the `sou
 
 A booking cancel on either path, a whole-class cancel (`/schedule/classes/:id/cancel`), a Package rule change, a Complimentary Remove and a Refund's unwind run again from the start when Postgres aborts them for a deadlock (40P01) or a serialization failure (40001), up to four attempts (`db/index.ts:retryingTransaction`, #439). An aborted attempt sends no email. A PT request cancel and a manual-session cancel do not retry.
 
+**Lock order of a Complimentary Remove and a Refund's unwind** (#447). Before its first cancel, each pass locks every PT request, PT session, class and booking it will cancel, each kind in id order (`services/bookings/lock-for-cancel.ts:lockForCancel`), and only then the package: the unwind's Void, or the Remove's first cancel that pays it back. A booking cancel takes the class, or the request and then the session, then the booking and then the packages, so a member's cancel of one of those bookings and the pass take turns at the first row they share (RFD-24, PKG-42). The unwind takes its Purchase and payment rows before all of these (RFD-23). Ending a Class Series (`/schedule/series/:id/end`) locks the series' future classes in id order too, so it takes turns with either pass (SCH-42). The pass takes these locks on the retried attempt's own transaction, so a deadlock Postgres breaks inside them starts the attempt over instead of failing the request (RFD-35).
+
 #### Workshop admin-cancel — refund fanout
 
 `POST /schedule/workshops/:id/cancel`:
