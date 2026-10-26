@@ -74,6 +74,27 @@ test("TEN-40 an archive from before #398 with no Legal name trades under its dis
   assert.deepEqual(unnamed.tenant_settings, [{ tenant_id: ADA, business_name: 'Northwind' }])
 })
 
+test("STF-50 an archive from before #471 restores each instructor's photo as their own picture, on their staff row", () => {
+  const photo = `t/${ADA}/avatars/ada.jpg`
+  const rows = upgradeArchiveRows({
+    staff_users: [
+      { id: ADA, role: 'instructor' },
+      { id: ANNA, role: 'admin' },
+    ],
+    instructors: [{ staff_user_id: ADA, photo_r2_key: photo }],
+  })
+  assert.deepEqual(rows.staff_users, [
+    { id: ADA, role: 'instructor', photo_r2_key: photo },
+    { id: ANNA, role: 'admin', photo_r2_key: null },
+  ])
+
+  const current = {
+    staff_users: [{ id: ADA, role: 'instructor', photo_r2_key: `t/${ADA}/avatars/newer.jpg` }],
+    instructors: [{ staff_user_id: ADA, photo_r2_key: photo }],
+  }
+  assert.deepEqual(upgradeArchiveRows(current).staff_users, current.staff_users, 'a picture of their own is kept')
+})
+
 test("the caller's archive is not changed", () => {
   const archive = { leave_pools: [{ instructor_id: ADA }] }
   upgradeArchiveRows(archive)
