@@ -868,7 +868,7 @@ A studio may switch some of these emails off (§11.3); a member of that studio t
 ### 11.3 Where admin comes in
 
 - The wording of each email is the studio's seeded copy; nobody edits it (#467).
-- An admin switches individual emails on or off for the whole studio (`admin-restructure.md` §16). Every switch starts on. Of the member emails, only the booking confirmation, the own-cancel confirmations (credit or session returned) and the credit expiry reminder can be switched off; sign-in and account mail, purchase confirmations, receipts, refunds, and anything staff or the system did to a member's booking (a studio cancellation, a waitlist promotion) always go out.
+- An admin switches individual emails on or off for the whole studio (`admin-restructure.md` §16). Every switch starts on. Of the member emails, only the booking confirmation, the own-cancel confirmations (credit or session returned) and the credit expiry reminder can be switched off; sign-in and account mail, purchase confirmations, receipts, refunds, and anything staff or the system did to a member's booking (a studio cancellation, a waitlist promotion, a booking staff made for the member) always go out.
 - A member has no email settings, now or later.
 - A switched-off email is not sent and is logged `skipped` in the studio's email log (`email_log`), beside what was sent, to whom, when and with what result, so support can answer "I never got the email".
 - Admin can resend a Receipt from the studio's Receipts list (support recovery).

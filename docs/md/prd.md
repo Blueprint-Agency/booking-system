@@ -471,6 +471,7 @@ Admin-side **inbox surfaces** (refund / cancellation / private-session) are dash
 - A studio's wording is not editable. Each studio is seeded its copy of every email when it is created (`email_templates`); there is no template editor, factory library or override.
 - **Studio admin** switches individual emails on or off for the whole studio, on the portal's **Emails** page (`admin-restructure.md` §16). Every switch starts on.
 - **Some emails are locked on**: sign-in and account mail, money (purchase confirmations, receipts, refunds), and anything staff or the system did to a member's booking. They are listed but cannot be switched off.
+- **A booking staff made always confirms.** Switching off the class booking confirmation stops it for the bookings members make themselves; a booking an admin or instructor made for a member is confirmed all the same.
 - A switched-off email is not sent; its send row records `skipped`. Each switch change writes an audit row.
 - **Instructor** cannot see or change the switches. **Members** never configure email. **Super-admin** has no controls over a studio's switches in v1.
 
