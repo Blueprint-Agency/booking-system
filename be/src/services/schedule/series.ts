@@ -355,7 +355,9 @@ export async function endSeries(
     const boundary = zonedInstant(endedFrom, '00:00', timezone)
     const cutoff = boundary > now ? boundary : now
     // Locked the way a booking locks its class (services/bookings/book.ts), so
-    // a booking cannot land between the count below and the cancel.
+    // a booking cannot land between the count below and the cancel. In id
+    // order, as a Refund's unwind and a Complimentary Remove take the classes
+    // they cancel bookings on (`lockForCancel`).
     const future = await tx
       .select({ id: classes.id, startsAt: classes.startsAt })
       .from(classes)
@@ -367,6 +369,7 @@ export async function endSeries(
           gte(classes.startsAt, cutoff),
         ),
       )
+      .orderBy(classes.id)
       .for('update')
     if (future.length === 0) return { endedFrom, cancelledClassIds: [], bookedClasses: [] }
 
