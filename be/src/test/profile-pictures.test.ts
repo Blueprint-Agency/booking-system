@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
-import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { frontendOrigin, harnessAddress, integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { memberFixtures, type Staff, type Tenant } from './member-fixtures'
 import { withEnv } from './with-env'
 
@@ -140,5 +140,105 @@ describe('profile pictures over HTTP', { skip: integrationTestsEnabled ? false :
       const profile = await call(mia.headers, 'GET', '/me')
       assert.equal(profile.body.photo_url, urlOf(key))
     }
+  })
+
+  test('ACC-53 a picture of another type, an empty file or one over 5MB is refused with a sentence, and the picture before it stays', async () => {
+    const mia = await member()
+    const kept = await upload(mia.headers, '/me/photo', imageBytes(1000), 'image/png', 'kept.png')
+    assert.equal(kept.status, 200, kept.text)
+    const objects = [...bucket.keys()]
+
+    const refusals = [
+      { bytes: imageBytes(1000), type: 'image/gif', status: 400, error: 'image_type_not_allowed', says: /JPG, PNG or WebP/ },
+      { bytes: imageBytes(1000), type: 'application/pdf', status: 400, error: 'image_type_not_allowed', says: /JPG, PNG or WebP/ },
+      { bytes: new Uint8Array(0), type: 'image/jpeg', status: 400, error: 'image_empty', says: /empty/ },
+      { bytes: imageBytes(5 * MB + 1), type: 'image/jpeg', status: 400, error: 'image_too_large', says: /5MB/ },
+      { bytes: imageBytes(6 * MB), type: 'image/jpeg', status: 413, error: 'image_too_large', says: /5MB/ },
+    ]
+    for (const { bytes, type, status, error, says } of refusals) {
+      const res = await upload(mia.headers, '/me/photo', bytes, type)
+      assert.equal(res.status, status, `${type} of ${bytes.byteLength} bytes: ${res.text}`)
+      assert.equal(res.body.error, error)
+      assert.match(String(res.body.message), says, res.text)
+    }
+
+    assert.equal((await call(mia.headers, 'GET', '/me')).body.photo_url, kept.body.photo_url, 'the picture before stays')
+    assert.deepEqual([...bucket.keys()], objects, 'nothing was written to the bucket')
+  })
+
+  test('ACC-54 a member replacing their picture gets a new key, and the old picture is deleted after the save, retried if the bucket fails', async () => {
+    const mia = await member()
+    const first = await upload(mia.headers, '/me/photo', imageBytes(1000, 1), 'image/jpeg')
+    const firstKey = keyOf(first.body.photo_url)
+
+    const second = await upload(mia.headers, '/me/photo', imageBytes(1000, 2), 'image/jpeg')
+
+    assert.equal(second.status, 200, second.text)
+    const secondKey = keyOf(second.body.photo_url)
+    assert.notEqual(secondKey, firstKey, 'a new key, never the old one overwritten')
+    assert.equal(bucket.has(firstKey), false, 'the old picture is deleted')
+    assert.equal(bucket.get(secondKey)?.bytes[0], 2)
+
+    failingDeletes = 1
+    const third = await upload(mia.headers, '/me/photo', imageBytes(1000, 3), 'image/jpeg')
+    assert.equal(third.status, 200, 'a failed delete does not fail the upload')
+    assert.equal((await call(mia.headers, 'GET', '/me')).body.photo_url, third.body.photo_url)
+    const deadline = Date.now() + 10_000
+    while (bucket.has(secondKey)) {
+      assert.ok(Date.now() < deadline, 'the failed delete was retried off the request')
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+  })
+
+  test('ACC-55 a member removing their picture clears it and deletes the object, and their initials show', async () => {
+    const mia = await member()
+    const uploaded = await upload(mia.headers, '/me/photo', imageBytes(1000), 'image/webp', 'me.webp')
+    const key = keyOf(uploaded.body.photo_url)
+
+    const res = await call(mia.headers, 'DELETE', '/me/photo')
+
+    assert.equal(res.status, 200, res.text)
+    assert.equal(res.body.photo_url, null)
+    assert.equal((await call(mia.headers, 'GET', '/me')).body.photo_url, null)
+    assert.equal(bucket.has(key), false)
+  })
+
+  test("ACC-56 an admin acting as a member cannot upload, replace or remove the member's picture", async () => {
+    const mia = await member()
+    const own = await upload(mia.headers, '/me/photo', imageBytes(1000, 7), 'image/jpeg')
+    const minted = await call(admin.headers, 'POST', `/portal/admin/clients/${mia.clientId}/impersonate`, {})
+    assert.equal(minted.status, 200, minted.text)
+    const actingAs = {
+      'X-Tenant-Slug': one.slug,
+      Origin: frontendOrigin('client', one),
+      'X-Forwarded-For': harnessAddress(),
+      Authorization: `Bearer ${minted.body.token}`,
+      'X-Impersonation-Grant': minted.body.grant,
+    }
+    assert.equal((await call(actingAs, 'GET', '/me')).status, 200, 'the admin is acting as the member')
+
+    const uploaded = await upload(actingAs, '/me/photo', imageBytes(1000, 8), 'image/jpeg')
+    const removed = await call(actingAs, 'DELETE', '/me/photo')
+
+    for (const res of [uploaded, removed]) {
+      assert.equal(res.status, 403, res.text)
+      assert.match(String(res.body.message), /only the member/i)
+    }
+    assert.equal((await call(mia.headers, 'GET', '/me')).body.photo_url, own.body.photo_url)
+    assert.equal(bucket.get(keyOf(own.body.photo_url))?.bytes[0], 7)
+  })
+
+  test("ACC-57 deleting a member's account deletes their picture", async () => {
+    const mia = await member()
+    const uploaded = await upload(mia.headers, '/me/photo', imageBytes(1000), 'image/jpeg')
+    const key = keyOf(uploaded.body.photo_url)
+
+    const res = await harness.app.request(`/api/v1/portal/admin/clients/${mia.clientId}/permanently`, {
+      method: 'DELETE',
+      headers: admin.headers,
+    })
+
+    assert.ok(res.status < 300, await res.text())
+    assert.equal(bucket.has(key), false)
   })
 })
