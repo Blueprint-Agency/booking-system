@@ -292,7 +292,7 @@ describe('Staff attention: ClassPass', { skip: integrationTestsEnabled ? false :
     )
   })
 
-  test('ATN-82an overbooked upcoming class is one item with its seats, linked to the class, and goes when its overbooked bookings are cancelled or the class has ended', async () => {
+  test('ATN-82 an overbooked upcoming class is one item with its seats, linked to the class, and goes when its overbooked bookings are cancelled or the class has ended', async () => {
     const studio = await freshStudio()
     const admin = await staffAt(studio, 'admin', 'admin')
     const startsAt = new Date(Date.now() + 3 * DAY)
