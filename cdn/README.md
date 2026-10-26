@@ -24,6 +24,11 @@ Cloudflare's. The bucket's `pub-<hash>.r2.dev` URL becomes a private origin and 
 `R2_ORIGIN` and streams it back with a one-year immutable `Cache-Control`. Assets are addressed by
 key and replaced by writing a new key rather than mutating one, so that TTL is safe.
 
+Profile pictures, the keys under `t/<tenant id>/avatars/`, are the exception: they are served
+`public, max-age=86400`, with no `immutable`. Each upload gets a new key too, but a picture its
+owner removed, or that went with an erased member, has to stop showing, and a day is how long a
+cached copy can outlive it.
+
 ```
 GET https://cdn.reservetoday.app/workshops/hatha-intro.jpg
   → /api/asset?key=workshops/hatha-intro.jpg
