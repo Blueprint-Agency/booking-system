@@ -182,6 +182,8 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
   const badges: BadgeMap = {
     ptRequestsPending: ptPending,
     corporateRequestsPending: corporatePending,
+    // Review items and overbooked classes both file under the ClassPass page.
+    classpassPending: isAdmin ? byGroup.classpass || undefined : undefined,
   };
 
   const visibleItems = NAV_ITEMS.filter((item) => visibleToRole(item, role));
