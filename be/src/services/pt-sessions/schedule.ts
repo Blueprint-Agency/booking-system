@@ -22,7 +22,7 @@ import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedu
 import { bookings } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
-import { debitCredits, refundCredits, type Tx } from '../packages/ledger'
+import { debitCredits, isVoided, refundCredits, type Tx } from '../packages/ledger'
 import { activateOnSchedule, assertPackageCoversSession } from '../packages/activation'
 import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
@@ -384,7 +384,7 @@ async function reconcileSessionType(
       actor: 'staff',
       actedByStaffId: args.actorStaffId,
     })
-  } else if (plan.delta > 0) {
+  } else if (plan.delta > 0 && !(await isVoided(tx, tenantId, req.debitedClientPackageId))) {
     await refundCredits(tx, {
       tenantId,
       clientId: req.clientId,

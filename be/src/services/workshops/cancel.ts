@@ -2,7 +2,6 @@ import { and, eq } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
 import { workshops } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
-import { inboxItems } from '../../db/schema/inbox'
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { sendWorkshopCancelledEmails } from '../notifications/send-booking-email'
 
@@ -83,18 +82,6 @@ export async function cancelWorkshop(
           ),
         )
     }
-
-    await tx.insert(inboxItems).values({
-      tenantId,
-      type: 'admin_cancel_workshop',
-      payload: {
-        workshopId,
-        cancelledByStaffId: staffId,
-        affectedBookings: affected.length,
-        refundOutcome: 'n_a',
-        at: now.toISOString(),
-      },
-    })
 
     return { row: row!, affected }
   })

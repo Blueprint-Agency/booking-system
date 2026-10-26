@@ -20,6 +20,7 @@ import {
   addMemberBody,
   addSessionMember,
   canAddMember,
+  canCancelSession,
   downgradeConfirm,
   isManual,
   removeSessionMember,
@@ -68,7 +69,7 @@ export function PtSessionMembers({
 
   function remove(cl: SchedulePtAttendee) {
     if (!api) return;
-    if (!confirm(`Remove ${cl.name} from this session? They get their session back on their own package.`)) return;
+    if (!confirm(`Remove ${cl.name} from this session? They get their session back on their own package, unless that package has been refunded.`)) return;
     void run(cl.id, () => removeSessionMember(api, role, data.id, cl.id), "Couldn't remove them");
   }
 
@@ -130,7 +131,7 @@ export function PtSessionMembers({
               <div className="ml-auto flex shrink-0 items-center gap-2">
                 <PtCheckInBadge state={cl.check_in_state} />
                 {/* The last member off is a cancel, not a removal: use Cancel session. */}
-                {editable && data.clients.length > 1 && cl.check_in_state !== "attended" && (
+                {editable && canCancelSession(data) && data.clients.length > 1 && cl.check_in_state !== "attended" && (
                   <Button
                     type="button"
                     variant="ghost"

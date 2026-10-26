@@ -163,7 +163,13 @@ Single entry point for client (`/me/pt-sessions/:id/cancel`, `source='client'`) 
   `now >= starts_at` → `422 session_already_started` (mirror class path). Built for staff
   (admin and instructor, member-origin and manual sessions alike, #241): a session that has
   begun, or ended with nobody checked in, was used, so nothing comes back. A member is refused
-  earlier, at the PT window (`cancellation_window_passed`).
+  earlier, at the PT window (`cancellation_window_passed`). The same refusal holds on the other
+  staff routes that cancel a session or a seat on it (#434): an Admin's cancel of one booking on
+  it (`bookings/cancel.ts`), removing a member from a manual session, and a cancel of a request
+  the completion job has already marked `attended`. One staff route is not refused yet: changing
+  a session already under way from 2on1 to 1on1 still gives a session back, to the requester of
+  a member request or to the partner who leaves a manual session (a follow-up to #434). Nothing
+  returns to a Voided package on any of these paths, the type change included (`n_a`).
   - `source='admin'` → always full refund (bypass window/cap), per `be-portal.md §3b`.
   - `source='client'` → `evaluateCancellation({ clientId, kind:'pt', sessionStartsAt, now })`
     then `decideOutcome('pt','client',evaluation)`; refund the session(s) **only on `full`**,
@@ -172,7 +178,6 @@ Single entry point for client (`/me/pt-sessions/:id/cancel`, `source='client'`) 
     `cancelled_*`; every booking `state='cancelled'`, `refund_outcome` per outcome.
   - Insert `cancellations` rows (`kind='pt'`, `source`, `was_within_window`, `was_within_cap`,
     `refund_fired`) — **admin rows excluded from cap**, consistent with the class path.
-  - Insert `inbox_items` (`type='admin_cancel_class_pt'` for admin; `client_cancellation` for client).
   - Email `pt_cancelled_session_returned` or `pt_cancelled_forfeited`.
 - **terminal** → idempotent no-op.
 

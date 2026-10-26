@@ -2,12 +2,12 @@ import { and, eq, inArray, lt } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
-import { inboxItems } from '../../db/schema/inbox'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
-import { actorOfSource, recordMovement, refundCredits } from '../packages/ledger'
+import { actorOfSource, isVoided, recordMovement, refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import { ptSessionCost } from './cost'
 import { cancelManualSessionInTx } from './manual'
+import { refuseOnceStarted } from './started'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
@@ -30,7 +30,8 @@ import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notif
  *               configured PT window + cap returns the session(s), otherwise the
  *               action is rejected outright (hard deadline, mirroring classes).
  *               Staff cancel only before the session starts
- *               (`session_already_started` after, #241).
+ *               (`session_already_started` after, #241), and nothing
+ *               returns to a Voided package (#434).
  *               If this session Activated the package and the cancel is not
  *               late, the package returns to Dormant (be/docs/adr/0011).
  *               A manual session (`origin = 'portal'`) is settled seat by
@@ -38,7 +39,8 @@ import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notif
  *               its own package; a member cancels only their own seat
  *               (./manual.ts:cancelManualSessionInTx).
  *
- * Terminal states are an idempotent no-op. Credit movements write a
+ * Terminal states are an idempotent no-op, except `attended` for an admin or
+ * instructor, who is refused `session_already_started`. Credit movements write a
  * manual_adjustments ledger row for traceability/parity with the class path.
  */
 /**
@@ -122,6 +124,10 @@ async function cancelPtRequestInTx(
       throw new ForbiddenError('not_your_request')
     }
 
+    const staff = source !== 'client'
+    const byPerson = source === 'admin' || source === 'instructor'
+
+    if (byPerson && req.status === 'attended') throw new AppError(422, 'session_already_started')
     const terminal =
       req.status === 'cancelled_before_scheduled' ||
       req.status === 'cancelled_after_scheduled' ||
@@ -138,9 +144,8 @@ async function cancelPtRequestInTx(
     }
 
     const cost = ptSessionCost(req.sessionType)
-    const staff = source !== 'client'
-    const byPerson = source === 'admin' || source === 'instructor'
     const resolvedByStaffId = staff ? (actorStaffId ?? null) : null
+    const voided = req.debitedClientPackageId !== null && (await isVoided(tx, tenantId, req.debitedClientPackageId))
 
     // Written first, in this transaction, so every branch below — the manual
     // session's included — carries it, and a refused cancel rolls it back.
@@ -172,8 +177,9 @@ async function cancelPtRequestInTx(
 
     // ---- pending → cancelled_before_scheduled (always refund) -------------
     if (req.status === 'pending') {
+      const returned = voided ? 0 : cost
       await refundToPackage(
-        cost,
+        returned,
         input.expired ? 'pt_request_expiry_refund' : 'pt_request_cancel_refund',
       )
       await tx
@@ -187,12 +193,12 @@ async function cancelPtRequestInTx(
       // NTF-11. An expiry or a Remove is the studio's machinery, not a cancel
       // anyone made, and tells the member its own way.
       if (source !== 'system') {
-        mail.request.push({ clientId: req.clientId, sessionsReturned: req.debitedClientPackageId ? cost : 0, ptSessionId: null })
+        mail.request.push({ clientId: req.clientId, sessionsReturned: req.debitedClientPackageId ? returned : 0, ptSessionId: null })
       }
       return {
         status: 'cancelled_before_scheduled',
-        refundedSessions: cost,
-        refundOutcome: 'session_returned',
+        refundedSessions: returned,
+        refundOutcome: voided ? 'n_a' : 'session_returned',
       }
     }
 
@@ -224,14 +230,7 @@ async function cancelPtRequestInTx(
 
     const now = clockNow()
 
-    // Staff cancel a session only before it starts (pt-session-lifecycle §3.2,
-    // #241). One that has begun is being held, and one that has ended unticked
-    // was held or no-showed: either way its session(s) were used, and a cancel
-    // would hand them back and take the instructor's pay off the session. The
-    // member is refused earlier still, at their PT window.
-    if (byPerson && now >= session.startsAt) {
-      throw new AppError(422, 'session_already_started')
-    }
+    if (byPerson) refuseOnceStarted(session.startsAt, now)
 
     // A manual session has no debit on its request: each seat was paid on its
     // own booking, so each is settled on its own package (./manual.ts).
@@ -290,12 +289,14 @@ async function cancelPtRequestInTx(
     // cancelled on its own (services/bookings/cancel.ts), that cancel settled the
     // session(s) — returned or forfeited — and returning them here would pay twice.
     const requesterStillBooked = sessionBookings.some(b => b.clientId === req.clientId)
-    if (!requesterStillBooked) refundSessions = 0
     const refundOutcome: CancelPtRequestResult['refundOutcome'] = !requesterStillBooked
       ? 'n_a'
-      : refundSessions > 0
-        ? 'session_returned'
-        : 'forfeited'
+      : refundSessions === 0
+        ? 'forfeited'
+        : voided
+          ? 'n_a'
+          : 'session_returned'
+    if (refundOutcome !== 'session_returned') refundSessions = 0
 
     const requesterBookingId = sessionBookings.find(b => b.clientId === req.clientId)?.id ?? null
     await refundToPackage(refundSessions, staff ? 'pt_admin_cancel_refund' : 'pt_cancel_refund', requesterBookingId)
@@ -314,7 +315,7 @@ async function cancelPtRequestInTx(
     // The session that Activated the package, cancelled in time, returns it to
     // Dormant (be/docs/adr/0011). Not when the requester's booking was already
     // cancelled on its own: that cancel settled it.
-    if (requesterStillBooked && req.debitedClientPackageId) {
+    if (requesterStillBooked && req.debitedClientPackageId && !voided) {
       await reverseActivationOnCancel(tx, {
         tenantId,
         clientId: req.clientId,
@@ -371,21 +372,6 @@ async function cancelPtRequestInTx(
       .update(ptRequests)
       .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId, cancelSource: source })
       .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
-
-    await tx.insert(inboxItems).values({
-      tenantId,
-      type: staff ? 'admin_cancel_class_pt' : 'client_cancellation',
-      payload: {
-        ptRequestId,
-        ptSessionId: session.id,
-        clientId: req.clientId,
-        kind: 'pt',
-        refundOutcome,
-        refundedSessions: refundSessions,
-        ...(actorStaffId ? { actorStaffId } : {}),
-        at: now.toISOString(),
-      },
-    })
 
     // NTF-11: every member the session booked is told — the requester with the
     // sessions returned to them, a 2-on-1 partner, who paid nothing, without.

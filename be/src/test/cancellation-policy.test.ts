@@ -1224,7 +1224,7 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     await assertLedger(bundle)
   })
 
-  test('CXL-26 an Instructor cancelling their own PT session returns it to the member’s package and raises an Inbox item', async () => {
+  test('CXL-26 an Instructor cancelling their own PT session returns it to the member’s package', async () => {
     const t0 = aWeekOut()
     harness.clock.set(t0)
     const { ptWindowHours } = await policyOf(one)
@@ -1260,14 +1260,6 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     // read `instructor` like the class path rather than today's `admin` is #239.
     assert.notEqual(record.source, 'client')
     assert.equal(record.refundFired, true)
-
-    const inbox = await harness.db
-      .select()
-      .from(schema.inboxItems)
-      .where(and(eq(schema.inboxItems.tenantId, one.id), sql`${schema.inboxItems.payload}->>'ptRequestId' = ${requestId}`))
-    assert.equal(inbox.length, 1)
-    assert.equal(inbox[0]!.type, 'admin_cancel_class_pt')
-    assert.equal((inbox[0]!.payload as Record<string, unknown>).actorStaffId, one.instructor.id)
   })
 
   test('CXL-28, CXL-29, CXL-30 an Admin cancelling a class stamps it and cancels every booking: credits back in full whatever the window or cap, Unlimited ones n_a', async () => {

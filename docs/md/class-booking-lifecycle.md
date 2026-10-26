@@ -194,8 +194,8 @@ ordered by `bookedAt`. Keep `bookedCount` for back-compat.
    - Return `creditsOrSessionsUsed` to its package (skip if 0 / unlimited → `n_a`).
    - `state='cancelled'`, `refundOutcome` per `decideOutcome('class','admin')` (always full).
    - Insert `cancellations` (`source='admin'`, `refundFired = creditsUsed>0`).
-4. Emit inbox notification + email per `admin-restructure.md §13`
-   (actor, session, time, count refunded).
+4. After commit, email each member whose booking was cancelled, and each member still on the
+   class's waitlist. No Inbox item is written: there is no admin Inbox (`admin-restructure.md §13`).
 5. (G8) `auditLog`.
 
 Admin cancel bypasses window/cap entirely (always full refund).
