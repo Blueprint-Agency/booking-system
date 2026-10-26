@@ -4,6 +4,7 @@ import { clientAuthUsers } from '../../db/schema/auth'
 import { endClientSessionsAt } from '../auth/auth-users'
 import { recordStaffAct } from '../auth/staff-acts'
 import { forgetProviderCustomers } from '../billing/payment-customers'
+import { forgetPicture } from '../profile-pictures/pictures'
 import { getClientById } from './manage'
 import { MEMBER_TABLES, eraseSteps } from './member-tables'
 
@@ -100,6 +101,9 @@ export async function deleteMemberPermanently(input: {
       }
     }
   }
+
+  // Their Profile picture, once the rows are gone for good.
+  forgetPicture(tenantId, member.photoR2Key)
 
   // Their credentials and sessions here cascade with it.
   await db
