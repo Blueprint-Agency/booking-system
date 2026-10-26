@@ -79,7 +79,7 @@ function pendingBySession(rows: ReadonlyArray<{ sessionId: string; checkInState:
 }
 
 /** A class's roster, as the check-in desk lists it: its confirmed attendees and its no-shows. */
-async function classPending(ids: string[]) {
+export async function classPending(ids: string[]) {
   if (!ids.length) return new Map<string, number>()
   const rows = await db
     .select({ sessionId: bookings.classId, checkInState: bookings.checkInState })
@@ -89,7 +89,7 @@ async function classPending(ids: string[]) {
 }
 
 /** A private session's roster, as the check-in desk lists it: every member on it, booked or not (`ptSeats`). */
-async function ptPending(ids: string[]) {
+export async function ptPending(ids: string[]) {
   if (!ids.length) return new Map<string, number>()
   const rows = await db
     .select({

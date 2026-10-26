@@ -39,7 +39,7 @@ export interface NavItem {
    * from `scope`, which is about role visibility.
    */
   workspaceScoped?: boolean;
-  badgeKey?: "ptRequestsPending" | "corporateRequestsPending";
+  badgeKey?: "ptRequestsPending" | "corporateRequestsPending" | "checkInUnfinished" | "leavePending";
 }
 
 export type NavGroup = "Finance" | "Config" | "Packages" | "People" | "Settings";
@@ -49,7 +49,7 @@ export const NAV_ITEMS: NavItem[] = [
   // group is ignored for workspaceScoped items (they render in the workspace zone),
   // but must still be a valid NavGroup for the type.
   { group: "Settings", label: "Schedule", href: "/admin/schedule", icon: CalendarDays, scope: "workspace", workspaceScoped: true },
-  { group: "Settings", label: "Check-in", href: "/admin/check-in", icon: QrCode, scope: "workspace", workspaceScoped: true },
+  { group: "Settings", label: "Check-in", href: "/admin/check-in", icon: QrCode, scope: "workspace", workspaceScoped: true, badgeKey: "checkInUnfinished" },
   // PT Requests IS location-scoped: pt_requests.location_id is set at request time
   // (the client picks a studio), so both this list and the pending badge filter by the
   // active workspace. Contrast Corporate below, which has no location until scheduled.
@@ -96,7 +96,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Leave is studio-wide and has no location, so it is not workspace-scoped.
   // The queue holds every staff member's requests, admins' among them, and any
   // admin decides any of them (spec-instructor-leave.md § Access and visibility).
-  { group: "People", label: "Leave", href: "/admin/leave", icon: CalendarOff, scope: "both" },
+  { group: "People", label: "Leave", href: "/admin/leave", icon: CalendarOff, scope: "both", badgeKey: "leavePending" },
   // An admin's own leave: the same balances, form and history instructors have.
   { group: "People", label: "My leave", href: "/admin/my-leave", icon: CalendarMinus, scope: "both" },
 
