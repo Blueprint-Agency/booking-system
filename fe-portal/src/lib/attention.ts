@@ -120,6 +120,12 @@ export function requestParam(search: string): string | null {
   return id && UUID.test(id) ? id : null;
 }
 
+/** The `?review=` a bell link carries to the ClassPass page, or null when absent or not an id. */
+export function reviewParam(search: string): string | null {
+  const id = new URLSearchParams(search).get("review");
+  return id && UUID.test(id) ? id : null;
+}
+
 /** The `?location=` a bell link carries, if it is one of the caller's own locations. */
 export function locationParam(search: string, accessibleIds: readonly string[]): string | null {
   const id = new URLSearchParams(search).get("location");

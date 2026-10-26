@@ -184,7 +184,7 @@ export async function readClassPassPage(tenantId: string): Promise<ClassPassPage
   return { ...(await readClassPass(tenantId)), rosterCheck: await checkClassPassRosters(tenantId) }
 }
 
-async function overbookedClassPassBookings(tenantId: string): Promise<OverbookedClassPassBooking[]> {
+export async function overbookedClassPassBookings(tenantId: string): Promise<OverbookedClassPassBooking[]> {
   return db
     .select({
       bookingId: bookings.id,
