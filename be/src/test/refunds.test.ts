@@ -267,6 +267,9 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
   const book = (who: Member, classId: string) =>
     post('/api/v1/me/bookings/class', who.headers, { class_id: classId })
 
+  /** Attempts `retryingTransaction` ran again since the logs were cleared, each after Postgres aborted one. */
+  const retriedAttempts = () => harness.logs.lines().filter(l => l.msg === 'transaction aborted by Postgres; retrying')
+
   /** The Refund button on the member's package. */
   const refundPackage = (by: { headers: Record<string, string> }, who: Member, paid: Paid, extra: object = {}) =>
     post(`/api/v1/portal/admin/clients/${who.clientId}/packages/${paid.clientPackageId}/refund`, by.headers, {
@@ -626,6 +629,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(unwound!.status, 200, JSON.stringify(unwound!.body))
     const errors = harness.logs.lines().filter(l => l.level === 'error')
     assert.deepEqual(errors, [], 'Postgres aborted neither the cancel nor any step of the unwind')
+    assert.deepEqual(retriedAttempts(), [], 'they took turns, so neither had to run again')
     assert.equal(cancelled!.body.refund_outcome, 'credit_returned', 'the member cancelled first, on a package still live')
     assert.equal((await bookingRow(bookingId)).state, 'cancelled')
     assert.equal((await cancellationsOf(bookingId)).length, 1, 'cancelled once')
@@ -700,6 +704,93 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     await assertRefunded(paid.purchaseId)
     assert.equal((await packageRow(paid.clientPackageId)).active, false)
     for (const id of bookingIds) assert.equal((await bookingRow(id)).state, 'cancelled')
+  })
+
+  test('RFD-35 a Refund of a private-session package while the member cancels the session that started it: Postgres aborts the unwind while it holds the Purchase, and it runs again, so both go through', async () => {
+    const pia = await member(one, 'Pia Private Race')
+    const paid = await buy(one, pia, 'pt')
+    const proposed = new Date(Date.now() + 5 * DAY).toISOString().slice(0, 10)
+    const requested = await post('/api/v1/me/pt-sessions/request', pia.headers, {
+      classTypeId: one.classTypeId,
+      locationId: one.locationId,
+      sessionType: '1on1',
+      clientPackageId: paid.clientPackageId,
+      slots: [{ proposedDate: proposed, startTime: '09:00', endTime: '10:00' }],
+    })
+    assert.equal(requested.status, 201, JSON.stringify(requested.body))
+    const requestId = requested.body.pt_request_id as string
+    const startsAt = new Date(Date.now() + 6 * DAY)
+    const scheduled = await post(`/api/v1/portal/admin/pt-sessions/${requestId}/schedule`, adminAtOne.headers, {
+      instructor_id: teacherAtOne.staffId,
+      location_id: one.locationId,
+      room_id: one.roomId,
+      starts_at: startsAt.toISOString(),
+      ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+    })
+    assert.equal(scheduled.status, 201, JSON.stringify(scheduled.body))
+    assert.equal((await packageRow(paid.clientPackageId)).activatedByPtSessionId, scheduled.body.pt_request.session.id, 'the session started the package')
+    harness.logs.clear()
+
+    // The member's cancel holds the request and waits on their own row; the
+    // unwind takes the Purchase and waits on the request. Let go, the member's
+    // cancel reaches the package, which waits on the Purchase.
+    const [cancelled, unwound] = await inFlightTogether(harness.db, sql`SELECT id FROM clients WHERE id = ${pia.clientId}`, [
+      () => post(`/api/v1/me/pt-sessions/${requestId}/cancel`, pia.headers, {}),
+      () => deliverRefund(paid.intents[0]!),
+    ])
+
+    assert.equal(cancelled!.status, 200, JSON.stringify(cancelled!.body))
+    assert.equal(unwound!.status, 200, JSON.stringify(unwound!.body))
+    const errors = harness.logs.lines().filter(l => l.level === 'error')
+    assert.deepEqual(errors, [], 'the unwind ran again rather than failing its delivery')
+    assert.equal(retriedAttempts().length, 1, 'Postgres aborted the unwind once')
+    await assertRefunded(paid.purchaseId)
+    assert.equal((await packageRow(paid.clientPackageId)).active, false)
+    const [request] = await harness.db.select().from(schema.ptRequests).where(eq(schema.ptRequests.id, requestId))
+    assert.equal(request?.status, 'cancelled_after_scheduled')
+  })
+
+  test('RFD-36 a Refund whose cancel of one of its bookings Postgres aborts as a deadlock runs again from the start: the booking is cancelled, not left confirmed on the voided package', async () => {
+    const ola = await member(one, 'Ola Aborted')
+    const paid = await buy(one, ola, 'bundle')
+    const booked = await book(ola, await addClass(one, 3 * DAY))
+    assert.equal(booked.status, 201, JSON.stringify(booked.body))
+    const bookingId = booked.body.booking_id as string
+    // The first cancel of this booking is aborted with Postgres's deadlock
+    // code, as if it lost a deadlock. A sequence counts it, because the abort
+    // rolls back anything the trigger writes.
+    const fault = `rfd36_${run}`
+    await harness.db.execute(sql.raw(`CREATE SEQUENCE ${fault}_seq`))
+    await harness.db.execute(
+      sql.raw(`CREATE FUNCTION ${fault}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+        BEGIN
+          IF NEW.state = 'cancelled' AND nextval('${fault}_seq') = 1 THEN
+            RAISE EXCEPTION 'deadlock detected' USING ERRCODE = '40P01';
+          END IF;
+          RETURN NEW;
+        END $$`),
+    )
+    await harness.db.execute(
+      sql.raw(`CREATE TRIGGER ${fault} BEFORE UPDATE ON bookings FOR EACH ROW WHEN (OLD.id = '${bookingId}') EXECUTE FUNCTION ${fault}()`),
+    )
+    try {
+      harness.logs.clear()
+      const unwound = await deliverRefund(paid.intents[0]!)
+
+      assert.equal(unwound.status, 200, JSON.stringify(unwound.body))
+      const [fired] = await harness.db.execute<{ n: string }>(sql.raw(`SELECT last_value::text AS n FROM ${fault}_seq`))
+      assert.equal(fired?.n, '2', 'the first cancel was aborted, and the second went through')
+      const errors = harness.logs.lines().filter(l => l.level === 'error')
+      assert.deepEqual(errors, [], 'nothing was reported as left standing')
+      assert.equal((await bookingRow(bookingId)).state, 'cancelled')
+      assert.equal((await cancellationsOf(bookingId)).length, 1, 'cancelled once')
+      await assertRefunded(paid.purchaseId)
+      assert.equal((await packageRow(paid.clientPackageId)).active, false)
+    } finally {
+      await harness.db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${fault} ON bookings`))
+      await harness.db.execute(sql.raw(`DROP FUNCTION IF EXISTS ${fault}()`))
+      await harness.db.execute(sql.raw(`DROP SEQUENCE IF EXISTS ${fault}_seq`))
+    }
   })
 
   test('RFD-03 a refunded Purchase hands its Promo Code back to the member and to the pool', async () => {
