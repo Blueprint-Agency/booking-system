@@ -39,7 +39,7 @@ export interface NavItem {
    * from `scope`, which is about role visibility.
    */
   workspaceScoped?: boolean;
-  badgeKey?: "ptRequestsPending" | "corporateRequestsPending" | "checkInUnfinished" | "leavePending";
+  badgeKey?: "ptRequestsPending" | "corporateRequestsPending" | "checkInUnfinished" | "leavePending" | "classpassPending";
 }
 
 export type NavGroup = "Finance" | "Config" | "Packages" | "People" | "Settings";
@@ -107,7 +107,7 @@ export const NAV_ITEMS: NavItem[] = [
   { group: "Settings", label: "Business details", href: "/admin/business-details", icon: ReceiptText, scope: "global" },
   { group: "Settings", label: "Features", href: "/admin/feature-flags", icon: ToggleRight, scope: "global" },
   // The studio's ClassPass address and the import of its ClassPass bookings (#407, #409).
-  { group: "Settings", label: "ClassPass", href: "/admin/classpass", icon: Mail, scope: "global" },
+  { group: "Settings", label: "ClassPass", href: "/admin/classpass", icon: Mail, scope: "global", badgeKey: "classpassPending" },
 ];
 
 export const NAV_GROUP_ORDER: NavGroup[] = ["Finance", "Config", "Packages", "People", "Settings"];

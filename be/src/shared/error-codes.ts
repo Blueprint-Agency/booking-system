@@ -365,6 +365,7 @@ export const ERROR_CODES = {
   unlimited_requires_duration_months: 'unlimited_requires_duration_months',
   unlimited_requires_location: 'unlimited_requires_location',
   unreadable_archive: 'unreadable_archive',
+  update_not_found: 'update_not_found',
   vendor_timeout: 'vendor_timeout',
   waitlist_closed: 'waitlist_closed',
   waitlist_disabled: 'waitlist_disabled',

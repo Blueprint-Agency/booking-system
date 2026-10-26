@@ -7,7 +7,18 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { formatRelative } from "@/lib/formatters";
 import { reportError } from "@/lib/report-error";
 import { cn } from "@/lib/utils";
-import { locationFromHref, type AttentionGroup, type AttentionItem, type AttentionPanelData } from "@/lib/attention";
+import {
+  appendOlder,
+  locationFromHref,
+  markAllReadLocally,
+  markUpdateReadLocally,
+  unreadCount,
+  updatesTabLabel,
+  type AttentionGroup,
+  type AttentionItem,
+  type AttentionPanelData,
+  type AttentionUpdate,
+} from "@/lib/attention";
 import { useAttention } from "./attention-provider";
 
 type Tab = "needs_action" | "updates";
@@ -31,9 +42,13 @@ export function AttentionPanel({
   returnFocusTo: RefObject<HTMLElement | null>;
 }) {
   const { api, accessibleLocations, setActiveLocationId } = useWorkspace();
-  const { summary } = useAttention();
+  const { summary, refresh } = useAttention();
   const [tab, setTab] = useState<Tab>("needs_action");
   const [data, setData] = useState<AttentionPanelData | null>(null);
+  const [older, setOlder] = useState<AttentionUpdate[]>([]);
+  // undefined: no older page loaded yet, so the first page's cursor leads.
+  const [olderCursor, setOlderCursor] = useState<string | null | undefined>(undefined);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [failed, setFailed] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
   const total = summary?.total ?? 0;
@@ -81,6 +96,59 @@ export function AttentionPanel({
   const groups = data?.needs_action.groups ?? [];
   const needsAction = summary?.needs_action ?? groups.reduce((n, g) => n + g.count, 0);
   const unread = summary?.unread_updates ?? 0;
+  // The first page comes with the panel; "Show older" appends pages after it.
+  const updates = appendOlder(data?.updates.items ?? [], older);
+  const cursor = olderCursor !== undefined ? olderCursor : (data?.updates.next_cursor ?? null);
+
+  async function showOlder() {
+    if (!api || !cursor || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const res = await api.get<AttentionPanelData>("/portal/attention", {
+        limit_per_group: 1,
+        updates_before: cursor,
+      });
+      setOlder((prev) => appendOlder(prev, res.updates.items));
+      setOlderCursor(res.updates.next_cursor);
+    } catch (err) {
+      reportError(err, { scope: "attention-updates-older" });
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  /** Opening an update marks it read (the row is bold until then), then follows its link. */
+  function openUpdate(u: AttentionUpdate) {
+    if (u.read_at === null) {
+      const at = new Date().toISOString();
+      setData((d) => (d ? { ...d, updates: { ...d.updates, items: markUpdateReadLocally(d.updates.items, u.id, at) } } : d));
+      setOlder((prev) => markUpdateReadLocally(prev, u.id, at));
+      void (async () => {
+        try {
+          await api?.post(`/portal/attention/updates/${u.id}/read`);
+        } catch (err) {
+          reportError(err, { scope: "attention-update-read" });
+        } finally {
+          refresh();
+        }
+      })();
+    }
+    follow(u.href);
+  }
+
+  async function markAllRead() {
+    if (!api) return;
+    const at = new Date().toISOString();
+    setData((d) => (d ? { ...d, updates: { ...d.updates, items: markAllReadLocally(d.updates.items, at) } } : d));
+    setOlder((prev) => markAllReadLocally(prev, at));
+    try {
+      await api.post("/portal/attention/updates/read-all");
+    } catch (err) {
+      reportError(err, { scope: "attention-update-read-all" });
+    } finally {
+      refresh();
+    }
+  }
   const showLocation = accessibleLocations.length > 1;
 
   /** Follow a link: switch the workspace first when it names another location, then close. */
@@ -115,7 +183,7 @@ export function AttentionPanel({
               Needs action ({needsAction})
             </TabButton>
             <TabButton active={tab === "updates"} onClick={() => setTab("updates")}>
-              Updates{unread > 0 ? ` (${unread} new)` : ""}
+              {updatesTabLabel(unread)}
             </TabButton>
           </div>
           <button
@@ -141,8 +209,39 @@ export function AttentionPanel({
                 <Group key={g.key} group={g} showLocation={showLocation} onFollow={follow} />
               ))
             )
-          ) : (
+          ) : !data ? (
+            <p className="px-4 py-8 text-center text-sm text-muted">Loading…</p>
+          ) : updates.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-muted">No updates yet</p>
+          ) : (
+            <>
+              {unreadCount(updates) > 0 && (
+                <div className="flex justify-end border-b border-border px-4 py-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void markAllRead()}
+                    className="rounded-md px-1 py-1.5 text-xs font-medium text-accent hover:underline"
+                  >
+                    Mark all as read
+                  </button>
+                </div>
+              )}
+              <ul>
+                {updates.map((u) => (
+                  <UpdateRow key={u.id} update={u} onOpen={openUpdate} />
+                ))}
+              </ul>
+              {cursor && (
+                <button
+                  type="button"
+                  disabled={loadingOlder}
+                  onClick={() => void showOlder()}
+                  className="block w-full px-4 py-3 text-center text-xs font-medium text-accent hover:underline disabled:opacity-60"
+                >
+                  {loadingOlder ? "Loading…" : "Show older"}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -207,6 +306,53 @@ function Group({
         </Link>
       )}
     </section>
+  );
+}
+
+function UpdateRow({
+  update,
+  onOpen,
+}: {
+  update: AttentionUpdate;
+  onOpen: (update: AttentionUpdate) => void;
+}) {
+  const unread = update.read_at === null;
+  const body = (
+    <span className="flex items-start gap-2">
+      <span
+        aria-hidden="true"
+        className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", unread ? "bg-accent" : "bg-transparent")}
+      />
+      <span className="min-w-0">
+        <span className={cn("block break-words text-sm text-ink", unread ? "font-semibold" : "font-normal")}>
+          {update.title}
+          {unread && <span className="sr-only"> (unread)</span>}
+        </span>
+        {update.detail && <span className="mt-0.5 block break-words text-xs text-muted">{update.detail}</span>}
+        <span className="mt-1 block text-[11px] text-muted">{formatRelative(update.created_at)}</span>
+      </span>
+    </span>
+  );
+  return (
+    <li>
+      {update.href ? (
+        <Link
+          href={update.href}
+          onClick={() => onOpen(update)}
+          className="block px-4 py-2.5 transition-colors hover:bg-paper focus-visible:bg-paper focus-visible:outline-none"
+        >
+          {body}
+        </Link>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onOpen(update)}
+          className="block w-full px-4 py-2.5 text-left transition-colors hover:bg-paper focus-visible:bg-paper focus-visible:outline-none"
+        >
+          {body}
+        </button>
+      )}
+    </li>
   );
 }
 

@@ -228,6 +228,13 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
     columns: ['payload'],
     where: m => sql`payload->>'clientId' = ${m.clientId}`,
   },
+  // A staff Update that names the member (#490). Deleted: it is a notice to a
+  // staff member, with no accounting value, and its snapshot may hold their name.
+  {
+    table: 'staff_updates',
+    columns: ['subject_client_id'],
+    where: m => sql`subject_client_id = ${m.clientId}`,
+  },
   {
     table: 'audit_log',
     // A staff action on their profile targets it; one on their packages or

@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert";
 import {
+  appendOlder,
+  markAllReadLocally,
+  markUpdateReadLocally,
+  unreadCount,
+  updatesTabLabel,
+  type AttentionUpdate,
   autoOpenDecision,
   autoOpenKey,
   bellLabel,
@@ -9,6 +15,7 @@ import {
   locationParam,
   rememberAutoOpenDecided,
   requestParam,
+  reviewParam,
   wasAutoOpenDecided,
   withoutParams,
   type StorageLike,
@@ -33,6 +40,15 @@ test("ATN-11 the bubble is hidden at 0, shows the number up to 99 and reads 99+ 
   assert.equal(bellLabel(3), "Notifications, 3 need attention");
   assert.equal(bellLabel(150), "Notifications, 150 need attention", "the label is the real count, not the capped one");
   assert.equal(bellLabel(0), "Notifications");
+});
+
+test("ATN-84 the ClassPass page's ?review= is read only when it is an id", () => {
+  const id = "0f8fad5b-d9cb-469f-a165-70867728950e";
+  assert.equal(reviewParam(`?review=${id}`), id);
+  assert.equal(reviewParam(`?location=x&review=${id}`), id);
+  assert.equal(reviewParam(""), null);
+  assert.equal(reviewParam("?review=nope"), null);
+  assert.equal(reviewParam(`?request=${id}`), null);
 });
 
 test("ATN-12 a deep link's request and location are read from the query; a malformed or unreachable one is ignored", () => {
@@ -91,4 +107,40 @@ test("ATN-14 the auto-open memory survives a blocked sessionStorage: reads say '
   assert.doesNotThrow(() => rememberAutoOpenDecided(blocked, key));
   assert.equal(wasAutoOpenDecided(null, key), false);
   assert.doesNotThrow(() => rememberAutoOpenDecided(null, key));
+});
+
+const update = (id: string, read_at: string | null = null): AttentionUpdate => ({
+  id,
+  kind: "leave_decided",
+  title: `t${id}`,
+  detail: null,
+  href: null,
+  created_at: "2026-10-27T00:00:00.000Z",
+  read_at,
+});
+
+test("ATN-149 the Updates tab: its label counts the unread, opening one or all marks them read in place, and an older page is appended without repeats", () => {
+  assert.equal(updatesTabLabel(0), "Updates");
+  assert.equal(updatesTabLabel(3), "Updates (3 new)");
+
+  const list = [update("a"), update("b"), update("c", "2026-10-26T00:00:00.000Z")];
+  assert.equal(unreadCount(list), 2);
+
+  const at = "2026-10-27T01:00:00.000Z";
+  const one = markUpdateReadLocally(list, "a", at);
+  assert.equal(one[0]!.read_at, at);
+  assert.equal(one[1]!.read_at, null);
+  assert.equal(list[0]!.read_at, null, "the original list is not mutated");
+  // Already read keeps its first time.
+  assert.equal(markUpdateReadLocally(list, "c", at)[2]!.read_at, "2026-10-26T00:00:00.000Z");
+
+  const all = markAllReadLocally(list, at);
+  assert.equal(unreadCount(all), 0);
+  assert.equal(all[2]!.read_at, "2026-10-26T00:00:00.000Z");
+
+  const merged = appendOlder(list, [update("c"), update("d")]);
+  assert.deepEqual(
+    merged.map((u) => u.id),
+    ["a", "b", "c", "d"],
+  );
 });
