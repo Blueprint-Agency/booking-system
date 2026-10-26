@@ -42,6 +42,7 @@ import {
 } from "@/components/clients/package-set-balance-dialog";
 import { RefundDialog } from "@/components/clients/refund-dialog";
 import { REFUND_REFUSALS } from "@/lib/refund-refusals";
+import { isWantedPurchase, purchaseParam, withWantedFirst } from "@/lib/attention";
 import { packageActions, type PackageAction } from "@/lib/package-actions";
 import { GivePackageDialog, type GivePackagePayload } from "@/components/clients/give-package-dialog";
 import { RemovePackageDialog } from "@/components/clients/remove-package-dialog";
@@ -76,6 +77,8 @@ type PackageKind = "credit_bundle" | "unlimited" | "trial" | "pt";
 
 interface ApiPackage {
   id: string;
+  /** The Purchase that paid for it: what the bell's `?purchase=` names. */
+  purchase_id: string | null;
   kind: PackageKind;
   source_package_id: string | null;
   package_name: string;
@@ -214,6 +217,8 @@ interface ApiPayment {
 
 interface ApiWorkshopPurchase {
   booking_id: string;
+  /** The Purchase that paid for it: what the bell's `?purchase=` names. */
+  purchase_id: string | null;
   workshop_name: string;
   tier_name: string | null;
   amount_paid_sgd: string;
@@ -324,6 +329,9 @@ const REFUSALS: Record<string, string> = {
   ...REFUND_REFUSALS,
 };
 
+/** The purchase the bell linked to (`?purchase=`): ringed so the eye lands on it. */
+const WANTED_RING = "ring-2 ring-accent ring-offset-2 ring-offset-background";
+
 /** List Price minus what was paid, as "S$12.34", or null when there's no discount. */
 function discountOff(listPriceSgd: string, amountPaidSgd: string): string | null {
   const off = Number(listPriceSgd) - Number(amountPaidSgd);
@@ -379,6 +387,25 @@ export default function ClientProfilePage({
   const [restoring, setRestoring] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [showPastPackages, setShowPastPackages] = useState(false);
+
+  // The purchase the bell linked to (`?purchase=`): scrolled to and highlighted
+  // once the profile is in. Read off the address after mount rather than with
+  // `useSearchParams`, which would need a Suspense boundary round the page. If
+  // the purchase is gone (refunded and settled), the page opens as normal.
+  const [wanted, setWanted] = useState<string | null>(null);
+  useEffect(() => {
+    setWanted(purchaseParam(window.location.search));
+  }, []);
+  const wantedInPast = !!profile && !!wanted && profile.past_packages.some((p) => isWantedPurchase(p.purchase_id, wanted));
+  useEffect(() => {
+    if (wantedInPast) setShowPastPackages(true);
+  }, [wantedInPast]);
+  useEffect(() => {
+    if (!profile || !wanted) return;
+    document.getElementById(`purchase-${wanted}`)?.scrollIntoView({ block: "center" });
+    // Once per link: later refreshes of the profile must not drag the page back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wanted, profile !== null, showPastPackages]);
 
   // Everything the studio holds about this member, for an access request (#143).
   // Logged as a staff act on the member.
@@ -626,6 +653,7 @@ export default function ClientProfilePage({
                     purchases={profile.open_purchases}
                     canEdit={canEdit}
                     onRefund={setOpenPurchaseRefundFor}
+                    wanted={wanted}
                   />
                 </Section>
               )}
@@ -646,7 +674,7 @@ export default function ClientProfilePage({
                 {profile.packages.length === 0 ? (
                   <EmptyLine>No current packages.</EmptyLine>
                 ) : (
-                  <PackageGrid list={profile.packages} canEdit={canEdit} onAction={onPackageAction} />
+                  <PackageGrid list={profile.packages} canEdit={canEdit} onAction={onPackageAction} wanted={wanted} />
                 )}
                 {/* Folded away until asked for. A past package keeps its
                     actions: an expired pack can still be extended or refunded. */}
@@ -672,6 +700,7 @@ export default function ClientProfilePage({
                           list={profile.past_packages}
                           canEdit={canEdit}
                           onAction={onPackageAction}
+                          wanted={wanted}
                         />
                       </div>
                     )}
@@ -694,6 +723,7 @@ export default function ClientProfilePage({
                     purchases={profile.workshop_purchases}
                     canEdit={canEdit}
                     onRefund={setWorkshopRefundFor}
+                    wanted={wanted}
                   />
                 </Section>
               )}
@@ -1233,17 +1263,19 @@ function PackageGrid({
   list,
   canEdit,
   onAction,
+  wanted,
 }: {
   list: ApiPackage[];
   canEdit: boolean;
   onAction: (action: PackageAction, p: ApiPackage) => void;
+  wanted: string | null;
 }) {
-  const { visible, pagination } = usePaged(list);
+  const { visible, pagination } = usePaged(withWantedFirst(list, wanted, (p) => p.purchase_id));
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-2">
         {visible.map((p) => (
-          <PackageCard key={p.id} p={p} canEdit={canEdit} onAction={onAction} />
+          <PackageCard key={p.id} p={p} canEdit={canEdit} onAction={onAction} wanted={wanted} />
         ))}
       </div>
       <Pagination {...pagination} noun="packages" className={GRID_PAGER} />
@@ -1262,10 +1294,12 @@ function PackageCard({
   p,
   canEdit,
   onAction,
+  wanted,
 }: {
   p: ApiPackage;
   canEdit: boolean;
   onAction: (action: PackageAction, p: ApiPackage) => void;
+  wanted: string | null;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -1304,9 +1338,11 @@ function PackageCard({
 
   return (
     <div
+      id={p.purchase_id ? `purchase-${p.purchase_id}` : undefined}
       className={cn(
         "relative flex flex-col rounded-xl border border-border bg-card p-4 shadow-soft",
         !current && "bg-card/70",
+        isWantedPurchase(p.purchase_id, wanted) && WANTED_RING,
       )}
     >
       <div className="flex items-start gap-2">
@@ -1449,19 +1485,25 @@ function OpenPurchaseList({
   purchases,
   canEdit,
   onRefund,
+  wanted,
 }: {
   purchases: ApiOpenPurchase[];
   canEdit: boolean;
   onRefund: (p: ApiOpenPurchase) => void;
+  wanted: string | null;
 }) {
-  const { visible, pagination } = usePaged(purchases);
+  const { visible, pagination } = usePaged(withWantedFirst(purchases, wanted));
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-2">
         {visible.map((p) => (
           <div
             key={p.id}
-            className="rounded-xl border border-warning/40 bg-warning/5 px-4 py-4 shadow-soft sm:px-5"
+            id={`purchase-${p.id}`}
+            className={cn(
+              "rounded-xl border border-warning/40 bg-warning/5 px-4 py-4 shadow-soft sm:px-5",
+              isWantedPurchase(p.id, wanted) && WANTED_RING,
+            )}
           >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
@@ -1513,17 +1555,26 @@ function WorkshopPurchaseList({
   purchases,
   canEdit,
   onRefund,
+  wanted,
 }: {
   purchases: ApiWorkshopPurchase[];
   canEdit: boolean;
   onRefund: (w: ApiWorkshopPurchase) => void;
+  wanted: string | null;
 }) {
-  const { visible, pagination } = usePaged(purchases);
+  const { visible, pagination } = usePaged(withWantedFirst(purchases, wanted, (w) => w.purchase_id));
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-2">
         {visible.map((w) => (
-          <div key={w.booking_id} className="rounded-xl border border-border bg-card p-4 shadow-soft">
+          <div
+            key={w.booking_id}
+            id={w.purchase_id ? `purchase-${w.purchase_id}` : undefined}
+            className={cn(
+              "rounded-xl border border-border bg-card p-4 shadow-soft",
+              isWantedPurchase(w.purchase_id, wanted) && WANTED_RING,
+            )}
+          >
             <div className="font-medium break-words text-ink">{w.workshop_name}</div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <Badge tone="cyan">Workshop</Badge>

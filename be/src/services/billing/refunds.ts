@@ -42,6 +42,7 @@ import {
 import { classes, ptSessions, workshops, workshopTiers, workshopTierDays, workshopDays } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { clients } from '../../db/schema/identity'
+import { now as clockNow } from '../../lib/clock'
 import { requireTenantUrl } from '../tenants/urls'
 import type Stripe from 'stripe'
 import { paymentOnPlatformAccount, stripeForProviderAccount, stripeForTenant } from '../../lib/stripe'
@@ -105,6 +106,8 @@ const holdsMoney = (amountPaidSgd: string | null): boolean =>
   amountPaidSgd != null && toCents(amountPaidSgd) > 0
 
 export interface RefundState {
+  /** The Purchase that paid for the package, which the bell links to (#485). */
+  purchaseId: string | null
   /** There is money at the provider to give back. */
   refundable: boolean
   attendedCount: number
@@ -198,6 +201,7 @@ export async function refundStatesFor(
     const count = Number(r.count ?? 0)
     const h = r.purchaseId ? held.get(r.purchaseId) : undefined
     out[r.id] = {
+      purchaseId: r.purchaseId,
       refundable: holdsMoney(r.amountPaidSgd),
       attendedCount: count,
       notice: attendedNotice(count, r.since ? new Date(r.since) : null),
@@ -239,7 +243,7 @@ export async function heldPaymentsFor(
   if (ids.length === 0) return new Map()
   // A string, not a Date: a raw `sql` parameter is not run through the column's
   // mapper, and postgres-js will not serialise a bare Date there.
-  const inFlightSince = new Date(Date.now() - REFUND_IN_FLIGHT_MS).toISOString()
+  const inFlightSince = new Date(clockNow().getTime() - REFUND_IN_FLIGHT_MS).toISOString()
   const held = sql`${stripePayments.status} in ('succeeded', 'pending')`
   const rows = await db
     .select({
@@ -267,6 +271,85 @@ export async function heldPaymentsFor(
       return [r.purchaseId, { count: counts.held, progress: refundProgress(counts) }]
     }),
   )
+}
+
+/**
+ * A Purchase whose Refund an admin has to look at (#485), read off the same
+ * payment rows, the same `refundProgress` and the same `REFUND_IN_FLIGHT_MS` as
+ * the Refund screens, but across the studio and at `now` (the app clock).
+ *
+ * `incomplete` is `refundProgress` saying so. `stale` is a payment a Refund
+ * asked for more than a day ago that is still held: Stripe never confirmed it,
+ * and `refundInFlight` has stopped believing it. A press of Refund re-issues
+ * those, which stamps them afresh, so the Purchase leaves the list.
+ */
+export interface RefundNeedingAdmin {
+  purchaseId: string
+  clientId: string
+  clientName: string
+  itemName: string
+  /** `incomplete`: how many payments are back or asked for, of how many in all. */
+  returnedCount: number
+  paymentCount: number
+  incomplete: boolean
+  /** The money still held with a day-old ask against it; null when none is. */
+  stale: { amountSgd: string; since: Date } | null
+  /** When the Refund last asked the provider for anything. */
+  lastAskedAt: Date
+}
+
+export async function refundsNeedingAdmin(tenantId: string, now: Date): Promise<RefundNeedingAdmin[]> {
+  // A string, not a Date: see `heldPaymentsFor`.
+  const cutoff = new Date(now.getTime() - REFUND_IN_FLIGHT_MS).toISOString()
+  const held = sql`${stripePayments.status} in ('succeeded', 'pending')`
+  const asked = sql`${stripePayments.refundRequestedAt} is not null`
+  const rows = await db
+    .select({
+      purchaseId: stripePayments.purchaseId,
+      clientId: purchases.clientId,
+      clientName: clients.name,
+      itemName: sql<string | null>`${purchases.metadata}->>'item_name'`,
+      held: sql<number>`count(*) filter (where ${held})::int`,
+      heldRequested: sql<number>`count(*) filter (where ${held} and ${stripePayments.refundRequestedAt} > ${cutoff})::int`,
+      refunded: sql<number>`count(*) filter (where ${stripePayments.status} = 'refunded')::int`,
+      staleCount: sql<number>`count(*) filter (where ${held} and ${stripePayments.refundRequestedAt} <= ${cutoff})::int`,
+      staleAmount: sql<string | null>`sum(${stripePayments.amountSgd}) filter (where ${held} and ${stripePayments.refundRequestedAt} <= ${cutoff})`,
+      staleSince: sql<string | null>`min(${stripePayments.refundRequestedAt}) filter (where ${held} and ${stripePayments.refundRequestedAt} <= ${cutoff})`,
+      lastAskedAt: sql<string | null>`max(${stripePayments.refundRequestedAt})`,
+    })
+    .from(stripePayments)
+    .innerJoin(purchases, eq(purchases.id, stripePayments.purchaseId))
+    .innerJoin(clients, eq(clients.id, purchases.clientId))
+    .where(
+      and(
+        eq(stripePayments.tenantId, tenantId),
+        inArray(stripePayments.status, ['succeeded', 'pending', 'refunded']),
+      ),
+    )
+    .groupBy(stripePayments.purchaseId, purchases.clientId, clients.name, purchases.metadata)
+    .having(
+      sql`count(*) filter (where ${held}) > 0 and (count(*) filter (where ${held} and ${asked}) > 0 or count(*) filter (where ${stripePayments.status} = 'refunded') > 0)`,
+    )
+
+  const out: RefundNeedingAdmin[] = []
+  for (const r of rows) {
+    if (!r.purchaseId || !r.clientId) continue
+    const incomplete = refundProgress({ held: r.held, heldRequested: r.heldRequested, refunded: r.refunded }) === 'incomplete'
+    const stale = r.staleCount > 0 && r.staleAmount && r.staleSince ? { amountSgd: r.staleAmount, since: new Date(r.staleSince) } : null
+    if (!incomplete && !stale) continue
+    out.push({
+      purchaseId: r.purchaseId,
+      clientId: r.clientId,
+      clientName: r.clientName,
+      itemName: r.itemName || 'Purchase',
+      returnedCount: r.refunded + r.heldRequested,
+      paymentCount: r.held + r.refunded,
+      incomplete,
+      stale,
+      lastAskedAt: new Date(r.lastAskedAt ?? r.staleSince ?? now),
+    })
+  }
+  return out
 }
 
 /**
@@ -416,6 +499,8 @@ export async function issueRefund(args: {
  */
 export interface WorkshopPurchase {
   bookingId: string
+  /** The Purchase that paid for it, which the bell links to (#485); null for a free place. */
+  purchaseId: string | null
   workshopName: string
   tierName: string | null
   amountPaidSgd: string
@@ -433,6 +518,65 @@ export interface WorkshopPurchase {
   refundAmountSgd: string
   /** The Promo Code the Refund hands back, or null when none was used. */
   promoCode: string | null
+}
+
+/** A place in a cancelled Workshop whose money has not come back (#272): the Purchase still holds money. */
+const cancelledAndUnrefunded = () =>
+  and(eq(bookings.state, 'cancelled'), eq(bookings.refundOutcome, 'n_a'), gt(purchases.amountPaidSgd, '0'))
+
+/**
+ * A paid place in a cancelled Workshop that nobody has refunded (#485), one per
+ * booking. A Refund already asked for is not "hasn't been refunded": it is on
+ * its way, or `refund_unconfirmed` once a day old.
+ */
+export interface UnrefundedWorkshopPlace {
+  bookingId: string
+  purchaseId: string
+  clientId: string
+  clientName: string
+  workshopName: string
+  amountSgd: string
+  cancelledAt: Date
+}
+
+export async function listUnrefundedWorkshopPlaces(tenantId: string): Promise<UnrefundedWorkshopPlace[]> {
+  const rows = await db
+    .select({
+      bookingId: bookings.id,
+      purchaseId: purchases.id,
+      clientId: bookings.clientId,
+      clientName: clients.name,
+      workshopName: workshops.name,
+      amountSgd: purchases.amountPaidSgd,
+      cancelledAt: bookings.cancelledAt,
+      bookedAt: bookings.bookedAt,
+    })
+    .from(bookings)
+    .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
+    .innerJoin(purchases, eq(purchases.id, bookings.purchaseId))
+    .innerJoin(clients, eq(clients.id, bookings.clientId))
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        eq(bookings.kind, 'workshop'),
+        cancelledAndUnrefunded(),
+        sql`not exists (
+          select 1 from ${stripePayments}
+          where ${stripePayments.purchaseId} = ${purchases.id}
+            and ${stripePayments.status} in ('succeeded', 'pending')
+            and ${stripePayments.refundRequestedAt} is not null
+        )`,
+      ),
+    )
+  return rows.map(r => ({
+    bookingId: r.bookingId,
+    purchaseId: r.purchaseId,
+    clientId: r.clientId,
+    clientName: r.clientName,
+    workshopName: r.workshopName,
+    amountSgd: r.amountSgd ?? '0.00',
+    cancelledAt: r.cancelledAt ?? r.bookedAt,
+  }))
 }
 
 export async function listWorkshopPurchases(
@@ -464,11 +608,7 @@ export async function listWorkshopPurchases(
         eq(bookings.kind, 'workshop'),
         or(
           eq(bookings.state, 'confirmed'),
-          and(
-            eq(bookings.state, 'cancelled'),
-            eq(bookings.refundOutcome, 'n_a'),
-            gt(purchases.amountPaidSgd, '0'),
-          ),
+          cancelledAndUnrefunded(),
         ),
       ),
     )
@@ -509,6 +649,7 @@ export async function listWorkshopPurchases(
       refundAmountSgd: r.purchasePaidSgd ?? '0.00',
       promoCode: (r.purchaseId && promos.get(r.purchaseId)) || null,
       bookingId: r.bookingId,
+      purchaseId: r.purchaseId,
       workshopName: r.workshopName,
       tierName: r.tierName,
       amountPaidSgd: r.amountPaidSgd ?? '0.00',
@@ -1318,7 +1459,7 @@ async function stampPaymentRefunded(tenantId: string, paymentIntentId: string): 
 async function stampRefundRequested(tenantId: string, paymentIntentId: string): Promise<void> {
   await db
     .update(stripePayments)
-    .set({ refundRequestedAt: new Date() })
+    .set({ refundRequestedAt: clockNow() })
     .where(
       and(
         eq(stripePayments.tenantId, tenantId),
