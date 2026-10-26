@@ -20,7 +20,7 @@ const req = (over: Partial<ApiPtRequest>): ApiPtRequest => ({
   expires_at: "2031-04-08T00:00:00.000Z",
   resolved_at: null,
   refund_outcome: null,
-  client: { id: "c1", name: "Sam", email: "sam@example.test" },
+  client: { id: "c1", name: "Sam", email: "sam@example.test", photo_url: null },
   class_type: { id: "t1", name: "Mobility" },
   location: { id: "l1", name: "Studio" },
   co_client: { clientId: null, name: "Kim", email: "kim@example.test" },

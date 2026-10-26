@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronRight, Loader2, Plus, Search, X } from "lucide-react";
-import { Badge, Button, Input } from "@/components/ui";
+import { Avatar, Badge, Button, Input } from "@/components/ui";
 import { CancelBookingDialog, type StaffCancelTarget } from "@/components/bookings/cancel-booking-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import {
@@ -183,6 +183,7 @@ export function ClassRoster({
                 key={a.booking_id}
                 className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2.5 text-sm"
               >
+                <Avatar name={a.client.name} src={a.client.photo_url} size={32} />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     {role === "admin" ? (

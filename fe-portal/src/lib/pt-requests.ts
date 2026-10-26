@@ -103,7 +103,7 @@ export interface ApiPtRequest {
   expires_at: string | null;
   resolved_at: string | null;
   refund_outcome: PtRefundOutcome;
-  client: { id: string; name: string; email: string };
+  client: { id: string; name: string; email: string; photo_url: string | null };
   // The member's preferred class type; null when they asked for "any".
   class_type: { id: string; name: string } | null;
   location: { id: string; name: string };

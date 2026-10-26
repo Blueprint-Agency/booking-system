@@ -58,7 +58,7 @@ export function CorporateRequestDrawer({
           <X className="h-4 w-4" />
         </button>
         <div className="mb-4 flex items-center gap-3 pr-10">
-          <Avatar name={client.name} size={40} />
+          <Avatar name={client.name} src={client.photo_url} size={40} />
           <div className="min-w-0">
             <h2 className="break-words text-base font-semibold text-ink">{client.name}</h2>
             <div className="text-xs text-muted">

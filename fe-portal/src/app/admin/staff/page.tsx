@@ -51,6 +51,8 @@ interface StaffApiRow {
   /** A new address awaiting its confirmation link; `email` signs in until then. */
   pending_email: PendingEmail | null;
   name: string;
+  /** Their own Profile picture; nobody else can change it. */
+  photo_url: string | null;
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
@@ -680,7 +682,7 @@ function StaffRow({
   // one-word-per-line column.
   const identity = (
     <div className="flex min-w-0 basis-full items-center gap-3 sm:flex-1 sm:basis-auto">
-      <Avatar name={staff.name} size={36} />
+      <Avatar name={staff.name} src={staff.photo_url} size={36} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-medium break-words text-ink">{staff.name}</span>
