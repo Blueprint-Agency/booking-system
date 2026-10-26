@@ -6,6 +6,7 @@ import {
   corporateRequestPending,
   corporateSessionUnmarked,
 } from './corporate-requests'
+import { emailBouncing, membersWithoutEmail } from './email-delivery'
 import { instructorPayMissing } from './instructor-pay-missing'
 import { leaveRequestPending } from './leave-request-pending'
 import { ptRequestPending } from './pt-request-pending'
@@ -31,6 +32,8 @@ export const providers: readonly AttentionProvider[] = [
   staffInvitationExpired,
   staffEmailChangeExpired,
   staffWithoutEmail,
+  membersWithoutEmail,
+  emailBouncing,
   studioTermEnding,
   paymentsNotConfigured,
 ]
