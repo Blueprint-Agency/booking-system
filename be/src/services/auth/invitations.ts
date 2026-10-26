@@ -29,6 +29,7 @@ import type { InstructorPermission } from '../../db/enums'
 import type * as schema from '../../db/schema'
 import { staffUsers, staffInvitations } from '../../db/schema/identity'
 import { instructors } from '../../db/schema/catalog'
+import { activeAdminIds, recordUpdate } from '../attention/updates'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { requireTenantUrl } from '../tenants/urls'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -388,6 +389,8 @@ export async function acceptInvitation(input: {
     // The account's name too, so mail the auth pool sends greets them by it.
     if (named.name) await renameStaffUser(tx, authUserId, named.name)
 
+    await tellAdminsOfJoiner(tenantId, { id: staff.id, name: named.name ?? staff.name, role: staff.role })
+
     return { email: staff.email }
   })
 }
@@ -444,7 +447,23 @@ export async function acceptInvitationOnPasswordReset(tenantId: string, authUser
       .update(staffUsers)
       .set({ status: 'active', acceptedAt: staff.acceptedAt ?? now, updatedAt: now })
       .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, staff.id)))
+    await tellAdminsOfJoiner(tenantId, staff)
     return true
+  })
+}
+
+/**
+ * The bell's Update for every active admin that someone has joined (#491), in
+ * the acceptance's transaction. The newcomer is the actor and is never told.
+ */
+async function tellAdminsOfJoiner(
+  tenantId: string,
+  joiner: { id: string; name: string; role: InvitableRole },
+): Promise<void> {
+  await recordUpdate(tenantId, 'staff_joined', await activeAdminIds(tenantId, joiner.id), {
+    staffId: joiner.id,
+    name: joiner.name,
+    role: joiner.role,
   })
 }
 

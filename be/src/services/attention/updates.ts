@@ -1,7 +1,10 @@
-import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, lt, ne, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import type { StaffRole } from '../../db/enums'
+import type { InstructorPermission, StaffRole } from '../../db/enums'
 import { staffUpdates } from '../../db/schema/attention'
+import { staffUsers } from '../../db/schema/identity'
+import { loadTenantById } from '../tenants/tenants'
+import { formatWhen } from './format'
 import { now as clockNow } from '../../lib/clock'
 import { NotFoundError } from '../../shared/errors'
 
@@ -33,9 +36,88 @@ export interface LeaveDecidedPayload {
   actorName: string
 }
 
+/** `class_cancelled_by_instructor`: the class, who cancelled it, why, and what it cost. */
+export interface ClassCancelledByInstructorPayload {
+  classId: string
+  className: string
+  instructorName: string
+  /** The class's start, in the studio's zone: "Tue 28 Oct, 7:00 pm". */
+  when: string
+  reason: string
+  refundedCount: number
+}
+
+/** `pt_session_cancelled_by_instructor`. */
+export interface PtSessionCancelledByInstructorPayload {
+  ptSessionId: string
+  instructorName: string
+  memberName: string
+  when: string
+}
+
+/** `staff_joined`. */
+export interface StaffJoinedPayload {
+  staffId: string
+  name: string
+  role: StaffRole
+}
+
+/** `permissions_changed`: which Instructor Permissions were switched on and off. */
+export interface PermissionsChangedPayload {
+  actorName: string
+  granted: InstructorPermission[]
+  revoked: InstructorPermission[]
+}
+
 export interface UpdatePayloads {
   leave_decided: LeaveDecidedPayload
+  class_cancelled_by_instructor: ClassCancelledByInstructorPayload
+  pt_session_cancelled_by_instructor: PtSessionCancelledByInstructorPayload
+  staff_joined: StaffJoinedPayload
+  permissions_changed: PermissionsChangedPayload
 }
+
+/** Every active admin of the studio but `exceptStaffId`: the actor, who is never told of their own act. */
+export async function activeAdminIds(tenantId: string, exceptStaffId?: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: staffUsers.id })
+    .from(staffUsers)
+    .where(
+      and(
+        eq(staffUsers.tenantId, tenantId),
+        eq(staffUsers.role, 'admin'),
+        eq(staffUsers.status, 'active'),
+        isNull(staffUsers.deletedAt),
+        ...(exceptStaffId ? [ne(staffUsers.id, exceptStaffId)] : []),
+      ),
+    )
+  return rows.map(r => r.id)
+}
+
+/** A staff member's name for a payload, with `fallback` if the row is gone. */
+export async function staffNameFor(tenantId: string, staffId: string, fallback: string): Promise<string> {
+  const [row] = await db
+    .select({ name: staffUsers.name })
+    .from(staffUsers)
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, staffId)))
+    .limit(1)
+  return row?.name ?? fallback
+}
+
+/** `at` as the studio writes it ("Tue 28 Oct, 7:00 pm"), for a payload. */
+export async function studioWhen(tenantId: string, at: Date): Promise<string> {
+  const tenant = await loadTenantById(tenantId)
+  return formatWhen(at, tenant?.timezone ?? 'UTC')
+}
+
+const PERMISSION_PHRASE: Record<InstructorPermission, string> = {
+  take_pt_bookings: 'take PT bookings',
+  schedule_classes: 'schedule classes',
+  manage_rosters: 'manage rosters',
+}
+
+const phraseList = (items: readonly string[]) =>
+  items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 
 /** Write one update per recipient, in the caller's transaction. */
 export async function recordUpdate<K extends StaffUpdateKind>(
@@ -98,6 +180,36 @@ const compose: { [K in StaffUpdateKind]: (p: UpdatePayloads[K], role: StaffRole)
       }
     }
     return { title: `${p.actorName} cancelled your approved ${what}`, detail: null, href }
+  },
+  class_cancelled_by_instructor: p => ({
+    title: `${p.instructorName} cancelled ${p.className} on ${p.when}`,
+    detail: `“${p.reason}” · ${
+      p.refundedCount === 0
+        ? 'No bookings to refund'
+        : `${p.refundedCount} ${p.refundedCount === 1 ? 'booking' : 'bookings'} refunded`
+    }`,
+    href: `/admin/schedule/class/${p.classId}`,
+  }),
+  pt_session_cancelled_by_instructor: p => ({
+    title: `${p.instructorName} cancelled the private session with ${p.memberName} on ${p.when}`,
+    detail: null,
+    href: `/admin/schedule/pt/${p.ptSessionId}`,
+  }),
+  staff_joined: p => ({
+    title: `${p.name} joined as ${p.role}`,
+    detail: null,
+    href: `/admin/staff?staff=${p.staffId}`,
+  }),
+  permissions_changed: p => {
+    const parts = [
+      ...(p.granted.length ? [`now ${phraseList(p.granted.map(k => PERMISSION_PHRASE[k]))}`] : []),
+      ...(p.revoked.length ? [`no longer ${phraseList(p.revoked.map(k => PERMISSION_PHRASE[k]))}`] : []),
+    ]
+    return {
+      title: `${p.actorName} changed what you can do: you can ${parts.join(' and ')}`,
+      detail: null,
+      href: '/instructor/profile',
+    }
   },
 }
 

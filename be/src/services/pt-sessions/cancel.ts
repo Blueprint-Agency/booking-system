@@ -2,6 +2,8 @@ import { and, eq, inArray, lt } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
+import { clients } from '../../db/schema/identity'
+import { activeAdminIds, recordUpdate, staffNameFor, studioWhen } from '../attention/updates'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
 import { actorOfSource, isVoided, recordMovement, refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
@@ -235,7 +237,7 @@ async function cancelPtRequestInTx(
     // A manual session has no debit on its request: each seat was paid on its
     // own booking, so each is settled on its own package (./manual.ts).
     if (req.origin === 'portal') {
-      return cancelManualSessionInTx(tx, tenantId, {
+      const settled = await cancelManualSessionInTx(tx, tenantId, {
         req,
         session,
         source,
@@ -244,6 +246,10 @@ async function cancelPtRequestInTx(
         now,
         mail,
       })
+      if (source === 'instructor' && settled.status === 'cancelled_after_scheduled') {
+        await tellAdminsOfInstructorCancel(tenantId, req.clientId, session, resolvedByStaffId)
+      }
+      return settled
     }
 
     // Refund decision. Staff (and system) bypass window/cap (always full);
@@ -388,8 +394,40 @@ async function cancelPtRequestInTx(
       }
     }
 
+    if (source === 'instructor') await tellAdminsOfInstructorCancel(tenantId, req.clientId, session, resolvedByStaffId)
+
     return { status: 'cancelled_after_scheduled', refundedSessions: refundSessions, refundOutcome }
   })
+}
+
+/**
+ * The bell's Update for every active admin but the instructor, written in the
+ * cancel's own transaction (#491). An admin's cancel tells no one.
+ */
+async function tellAdminsOfInstructorCancel(
+  tenantId: string,
+  memberId: string,
+  session: { id: string; startsAt: Date },
+  instructorStaffId: string | null,
+): Promise<void> {
+  if (!instructorStaffId) return
+  const [member] = await db
+    .select({ name: clients.name })
+    .from(clients)
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.id, memberId)))
+    .limit(1)
+  await recordUpdate(
+    tenantId,
+    'pt_session_cancelled_by_instructor',
+    await activeAdminIds(tenantId, instructorStaffId),
+    {
+      ptSessionId: session.id,
+      instructorName: await staffNameFor(tenantId, instructorStaffId, 'An instructor'),
+      memberName: member?.name ?? 'a member',
+      when: await studioWhen(tenantId, session.startsAt),
+    },
+    memberId,
+  )
 }
 
 /**
