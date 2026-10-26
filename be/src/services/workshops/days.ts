@@ -14,6 +14,7 @@ import { assertAvailable, eventSubjects } from '../schedule/occupancy'
 // `workshop_not_found` before any day is read, written or deleted. One
 // definition, shared with ./tiers.ts.
 import { getWorkshop as ensureWorkshop } from './publish'
+import { readInstructors, recordSessionChanged } from '../attention/session-updates'
 
 export type WorkshopDayRow = typeof workshopDays.$inferSelect
 
@@ -84,6 +85,8 @@ export async function updateDay(
   workshopId: string,
   dayId: string,
   patch: Partial<CreateDayInput>,
+  /** Who made the edit: the workshop's instructors are told of a change by anyone else. */
+  actorStaffId?: string,
 ): Promise<WorkshopDayRow> {
   const w = await ensureWorkshop(tenantId, workshopId)
   const [existing] = await db
@@ -139,6 +142,23 @@ export async function updateDay(
       })
       .where(and(eq(workshopDays.tenantId, tenantId), eq(workshopDays.id, dayId)))
       .returning()
+    // The instructors are told when someone else moved the day or its room (#493).
+    const instructors = await readInstructors(tenantId, 'workshop', workshopId)
+    const snapshotOf = (d: { startsAt: Date; endsAt: Date; roomId: string | null }) => ({
+      startsAt: d.startsAt,
+      endsAt: d.endsAt,
+      roomId: d.roomId,
+      locationId: w.locationId,
+      ...instructors,
+    })
+    await recordSessionChanged(tenantId, {
+      actorStaffId,
+      kind: 'workshop',
+      sessionId: workshopId,
+      subject: w.name,
+      before: snapshotOf(existing),
+      after: snapshotOf(row!),
+    })
     return row!
   })
 }

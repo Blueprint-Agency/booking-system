@@ -13,6 +13,7 @@ import { refuseOnceStarted } from './started'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
+import { recordPtSessionCancelled } from '../attention/session-updates'
 import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notifications/send-booking-email'
 
 /**
@@ -249,6 +250,12 @@ async function cancelPtRequestInTx(
       if (source === 'instructor' && settled.status === 'cancelled_after_scheduled') {
         await tellAdminsOfInstructorCancel(tenantId, req.clientId, session, resolvedByStaffId)
       }
+      await recordPtSessionCancelled(tenantId, {
+        ptSessionId: session.id,
+        source,
+        actorStaffId: resolvedByStaffId,
+        memberClientId: clientId ?? req.clientId,
+      })
       return settled
     }
 
@@ -378,6 +385,14 @@ async function cancelPtRequestInTx(
       .update(ptRequests)
       .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId, cancelSource: source })
       .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+
+    // The session's instructors: told when a member left or an admin cancelled (#493).
+    await recordPtSessionCancelled(tenantId, {
+      ptSessionId: session.id,
+      source,
+      actorStaffId: resolvedByStaffId,
+      memberClientId: clientId ?? req.clientId,
+    })
 
     // NTF-11: every member the session booked is told — the requester with the
     // sessions returned to them, a 2-on-1 partner, who paid nothing, without.

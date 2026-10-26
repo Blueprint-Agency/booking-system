@@ -385,7 +385,7 @@ const app = new Hono()
         ...(body.capacity_online !== undefined ? { capacityOnline: body.capacity_online } : {}),
         ...(body.capacity_waitlist !== undefined ? { capacityWaitlist: body.capacity_waitlist } : {}),
         ...(body.capacity_buffer !== undefined ? { capacityBuffer: body.capacity_buffer } : {}),
-      })
+      }, c.get('staffUserId'))
       c.set('auditTarget' as any, { table: 'workshop_days', id: day_id })
       return c.json(dayRow(row))
     },

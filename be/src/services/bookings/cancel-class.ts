@@ -31,6 +31,7 @@ import { sgFormat } from '../../lib/time'
 import { activeAdminIds, recordUpdate, staffNameFor, studioWhen } from '../attention/updates'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import type { Tx } from '../schedule/roster'
+import { classSubject, readInstructors, recordSessionCancelledByAdmin } from '../attention/session-updates'
 
 type CancelClassSource = 'admin' | 'instructor'
 
@@ -108,6 +109,19 @@ export async function cancelClassInTx(
     .update(classes)
     .set({ lifecycle: 'cancelled', cancelledAt: now, cancelledByStaffId: actorStaffId })
     .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
+
+  // Everyone teaching it is told an admin cancelled it (#493). An instructor
+  // cancelling their own class tells the admins by email, not the instructors.
+  if (source === 'admin') {
+    await recordSessionCancelledByAdmin(tenantId, {
+      actorStaffId,
+      kind: 'class',
+      sessionId: classId,
+      subject: await classSubject(tenantId, cls.classTypeId),
+      startsAt: cls.startsAt,
+      instructorIds: (await readInstructors(tenantId, 'class', classId)).instructorIds,
+    })
+  }
 
   // All confirmed bookings → cancel + refund.
   const confirmed = await tx

@@ -216,6 +216,9 @@ export const staffUpdateKindEnum = pgEnum('staff_update_kind', [
   'pt_session_cancelled_by_instructor',
   'staff_joined',
   'permissions_changed',
+  'session_changed',
+  'session_cancelled_by_admin',
+  'pt_session_cancelled_by_member',
 ])
 
 // Ledger
