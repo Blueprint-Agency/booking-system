@@ -141,7 +141,7 @@ function CollapsibleNavGroup({
 }
 
 function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
-  const { role, activeLocationId, accessibleLocations, api } = useWorkspace();
+  const { role, activeLocationId, accessibleLocations } = useWorkspace();
 
   // The nav draws before the staff member is known (and, for an instructor,
   // while the shell bounces them out), so the admin-only counts wait for the role.
@@ -153,31 +153,10 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
   const { byGroup } = useAttention();
   const ptPending = isAdmin ? byGroup.pt_requests || undefined : undefined;
 
-  // Live count of PENDING corporate requests for the nav badge. Workspace-AGNOSTIC
-  // (no location_id until scheduled) — unlike PT, it's NOT filtered by the switcher.
-  const [corporatePending, setCorporatePending] = useState<number | undefined>(undefined);
-  useEffect(() => {
-    if (!api || !isAdmin) {
-      setCorporatePending(undefined);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await api.get<{ corporate_requests: unknown[] }>(
-          "/portal/admin/corporate-requests",
-          { status: "pending" },
-        );
-        if (!cancelled) setCorporatePending(res.corporate_requests?.length || undefined);
-      } catch {
-        if (!cancelled) setCorporatePending(undefined);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Re-count when the route changes (e.g. after triaging a request).
-  }, [api, isAdmin, pathname]);
+  // The Corporate Requests badge is `by_group.corporate_requests`: every corporate
+  // request an Admin owes (waiting, unmarked, refunded but booked). Workspace-
+  // AGNOSTIC (no location until scheduled), so the switcher doesn't narrow it.
+  const corporatePending = isAdmin ? byGroup.corporate_requests || undefined : undefined;
 
   const badges: BadgeMap = {
     ptRequestsPending: ptPending,
