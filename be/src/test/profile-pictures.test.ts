@@ -228,6 +228,30 @@ describe('profile pictures over HTTP', { skip: integrationTestsEnabled ? false :
     assert.equal(bucket.get(keyOf(own.body.photo_url))?.bytes[0], 7)
   })
 
+  test('ACC-61 an upload whose save fails after the picture reached the bucket deletes that picture, and the one before it stays', async () => {
+    const mia = await member()
+    const kept = await upload(mia.headers, '/me/photo', imageBytes(1000, 1), 'image/jpeg')
+    assert.equal(kept.status, 200, kept.text)
+    const objects = [...bucket.keys()].sort()
+
+    await harness.db.execute(sql`
+      CREATE FUNCTION acc_61_refuse_picture() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'the save fails'; END $$`)
+    await harness.db.execute(sql.raw(`
+      CREATE TRIGGER acc_61_refuse_picture BEFORE UPDATE OF photo_r2_key ON clients
+      FOR EACH ROW WHEN (NEW.id = '${mia.clientId}') EXECUTE FUNCTION acc_61_refuse_picture()`))
+    try {
+      const failed = await upload(mia.headers, '/me/photo', imageBytes(1000, 2), 'image/jpeg')
+      assert.equal(failed.status, 500, failed.text)
+    } finally {
+      await harness.db.execute(sql`DROP TRIGGER acc_61_refuse_picture ON clients`)
+      await harness.db.execute(sql`DROP FUNCTION acc_61_refuse_picture()`)
+    }
+
+    assert.deepEqual([...bucket.keys()].sort(), objects, 'the uploaded picture is not left in the bucket')
+    assert.equal((await call(mia.headers, 'GET', '/me')).body.photo_url, kept.body.photo_url)
+  })
+
   test("ACC-57 deleting a member's account deletes their picture", async () => {
     const mia = await member()
     const uploaded = await upload(mia.headers, '/me/photo', imageBytes(1000), 'image/jpeg')

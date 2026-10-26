@@ -1171,6 +1171,7 @@ one entry point, `receiveClassPassEmail`, driven in tests with fixture emails fr
 | ACC-58 | ACC | member | **Given** instructors with pictures **When** a member reads the class list, class detail, workshop detail, the PT checkout's instructors and their PT packages **Then** each instructor carries their `photo_url` _(#471)_ | happy | integration | `be/src/test/profile-pictures.test.ts` | covered |
 | ACC-59 | ACC | member | **Given** a member who picked a picture of any shape or type **When** they crop it on the profile page **Then** the crop is a square that never leaves the picture, starting as the largest one in its middle, and the file sent is 512×512 and a JPG, PNG or WebP _(fe-client-features §8.2; #472)_ | UX | unit | `fe-client/src/lib/square-crop.test.ts` | covered |
 | ACC-60 | ACC | member | **Given** a member, or an instructor shown to one **When** the top bar, account header, class list, class detail, PT checkout or private-sessions sheet draws them **Then** it shows their picture, or their initials (first and last name, else the email's first letter) when they have none or removed it _(fe-client-features §9.1; #472)_ | UX | unit | `fe-client/src/lib/avatar.test.ts` | covered |
+| ACC-61 | ACC | member | **Given** a member with a picture **When** they upload a new one and the save fails after the file reached the bucket **Then** the uploaded file is deleted, and the picture before it stays _(review of #475)_ | data-loss | integration | `be/src/test/profile-pictures.test.ts` | covered |
 
 ## CUS — Admin customer list & customer profile
 
