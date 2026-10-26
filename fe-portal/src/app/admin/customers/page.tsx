@@ -26,8 +26,9 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { addCustomerError } from "@/lib/add-customer";
 import { formatDate } from "@/lib/formatters";
+import { CUSTOMER_FILTER_LABEL, parseCustomerFilter, type CustomerFilter } from "@/lib/customer-filter";
 
-type StatusFilter = "all" | "active" | "trials" | "blocked";
+type StatusFilter = CustomerFilter;
 type SortKey = "joined" | "name";
 
 /** Wait this long after the last keystroke before searching the whole studio. */
@@ -91,7 +92,7 @@ function readState(search: string): ListState {
   const size = Number(p.get("size"));
   return {
     q: p.get("q") ?? "",
-    status: status === "active" || status === "trials" || status === "blocked" ? status : "all",
+    status: parseCustomerFilter(status),
     sort: sort === "name" ? "name" : "joined",
     page: Number.isInteger(page) && page > 0 ? page : 1,
     pageSize: isPageSize(size) ? size : DEFAULT_PAGE_SIZE,
@@ -250,7 +251,7 @@ function CustomersList() {
           className="-mx-1 flex max-w-full gap-1.5 overflow-x-auto px-1 text-xs [scrollbar-width:none]"
         >
           {((isAdmin
-            ? ["all", "active", "trials", "blocked"]
+            ? ["all", "active", "trials", "blocked", "no_email"]
             : ["all", "active", "trials"]) as StatusFilter[]).map((s) => (
             <button
               key={s}
@@ -263,7 +264,7 @@ function CustomersList() {
                   : "border-border bg-card text-muted hover:bg-paper hover:text-ink"
               }`}
             >
-              {s}
+              {CUSTOMER_FILTER_LABEL[s]}
             </button>
           ))}
         </div>
