@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert";
 import {
+  dismissalBody,
+  purchaseParam,
+  removeItemLocally,
+  withWantedFirst,
+  type AttentionGroup,
+  type AttentionItem,
   appendOlder,
   markAllReadLocally,
   markUpdateReadLocally,
@@ -143,4 +149,39 @@ test("ATN-149 the Updates tab: its label counts the unread, opening one or all m
     merged.map((u) => u.id),
     ["a", "b", "c", "d"],
   );
+});
+
+test("ATN-57 a dismissal is posted with the item's kind and subject, the row goes at once, and the group count and emptiness follow", () => {
+  const id = "3f2b8c1e-5d4a-4b6c-9e7f-0a1b2c3d4e5f";
+  assert.deepEqual(dismissalBody(`part_payment_silent:${id}`), { kind: "part_payment_silent", subject_id: id });
+
+  const item = (n: string): AttentionItem => ({
+    id: `part_payment_silent:${n}`,
+    kind: "part_payment_silent",
+    title: n,
+    detail: "",
+    href: null,
+    location: null,
+    occurred_at: "2026-10-26T00:00:00.000Z",
+    dismissable: true,
+  });
+  const groups: AttentionGroup[] = [
+    { key: "payments_refunds", label: "Payments & refunds", count: 2, see_all_href: null, items: [item("a"), item("b")] },
+    { key: "requests", label: "Requests", count: 1, see_all_href: null, items: [item("c")] },
+  ];
+  const after = removeItemLocally(groups, "part_payment_silent:a");
+  assert.deepEqual(after[0]!.items.map((i) => i.id), ["part_payment_silent:b"]);
+  assert.equal(after[0]!.count, 1);
+  assert.equal(removeItemLocally(after, "part_payment_silent:b").length, 1, "an emptied group is dropped");
+});
+
+test("ATN-58 Partial payments reads ?purchase= and lists that purchase first", () => {
+  const id = "3f2b8c1e-5d4a-4b6c-9e7f-0a1b2c3d4e5f";
+  assert.equal(purchaseParam(`?purchase=${id}`), id);
+  assert.equal(purchaseParam("?purchase=nope"), null);
+  assert.equal(purchaseParam(""), null);
+  const rows = [{ id: "x" }, { id }, { id: "y" }];
+  assert.deepEqual(withWantedFirst(rows, id).map((r) => r.id), [id, "x", "y"]);
+  assert.deepEqual(withWantedFirst(rows, null), rows);
+  assert.deepEqual(withWantedFirst(rows, "missing"), rows, "a purchase that is gone opens the page as normal");
 });

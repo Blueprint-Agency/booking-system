@@ -8,6 +8,7 @@ import {
 } from './corporate-requests'
 import { instructorPayMissing } from './instructor-pay-missing'
 import { leaveRequestPending } from './leave-request-pending'
+import { partPaymentSilent } from './part-payment-silent'
 import { ptRequestPending } from './pt-request-pending'
 import type { AttentionProvider } from './types'
 
@@ -26,4 +27,5 @@ export const providers: readonly AttentionProvider[] = [
   classpassReview,
   classpassOverbooked,
   instructorPayMissing,
+  partPaymentSilent,
 ]

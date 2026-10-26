@@ -204,6 +204,7 @@ export const ERROR_CODES = {
   not_cancellable: "not_cancellable",
   not_complimentary: "not_complimentary",
   not_confirmed: "not_confirmed",
+  not_dismissable: "not_dismissable",
   not_found: "not_found",
   not_found_or_already_cancelled: "not_found_or_already_cancelled",
   not_main_instructor: "not_main_instructor",
