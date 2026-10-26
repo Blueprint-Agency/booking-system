@@ -72,7 +72,13 @@ export async function deleteMemberPermanently(input: {
     const table = sql.identifier(entry.table)
     for (const step of eraseSteps(entry)) {
       if ('delete' in step) {
-        await db.execute(sql`DELETE FROM ${table} WHERE tenant_id = ${tenantId} AND ${step.delete(key)}`)
+        // The member's own row hands back its Profile picture as it goes, so a
+        // picture changed since the read above is the one deleted.
+        const picture = entry.table === 'clients' ? sql` RETURNING photo_r2_key` : sql``
+        const gone = await db.execute<{ photo_r2_key?: string | null }>(
+          sql`DELETE FROM ${table} WHERE tenant_id = ${tenantId} AND ${step.delete(key)}${picture}`,
+        )
+        for (const row of gone) forgetPicture(tenantId, row.photo_r2_key ?? null)
       } else if ('anonymise' in step) {
         // Each row is rewritten from its own contents, so it is read whole and
         // rewritten here — then every row goes back in one statement, however
@@ -101,9 +107,6 @@ export async function deleteMemberPermanently(input: {
       }
     }
   }
-
-  // Their Profile picture, once the rows are gone for good.
-  forgetPicture(tenantId, member.photoR2Key)
 
   // Their credentials and sessions here cascade with it.
   await db
