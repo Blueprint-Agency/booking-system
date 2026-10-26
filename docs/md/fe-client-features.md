@@ -788,6 +788,12 @@ The names and addresses the member's Receipts are made out to: up to **three** s
 - Footer copy is editable from admin.
 - Logo, favicon, and brand colours live under Settings → Branding in fe-portal.
 
+### 9.3 Paused studio and refused sessions (as built, #250)
+
+- **Paused page.** While the studio is suspended (by the super portal, or because its Term has ended), every page of its address shows only the studio's logo or name and "This studio is closed right now", with a line saying nothing on the member's account has changed and a "Check again" button that reloads. No balance, timetable, Book Now, Sign up or login is drawn. The root layout decides it from the status the slug lookup reports (`lib/brand.ts` `isStudioPaused`), so the first paint is already the paused page; any `403 tenant_suspended` answer later in the visit swaps the app for it too (`components/studio-gate.tsx`, `lib/studio-refusal.ts`). The copy names no studio. The backend refuses the studio's whole member surface meanwhile (multi-tenancy-plan § Suspension).
+- **Another studio's session.** A `403 tenant_mismatch` answer forgets this address's token and shows "You were signed in at a different studio", with Sign in (`/login`) and Browse classes. Another studio's token is normally answered `401 invalid_token` (TEN-43), which signs the member out as any expired session does.
+- **A failed load is not data.** A read that fails with nothing to show is never drawn as 0 credits or an empty list (`lib/failed-read.ts`): a refusal answered elsewhere (session expiry, the two above, maintenance) keeps it loading, a `404` lets the page draw its own not-found state ("Workshop not found"), the footer's reads are drawn as nothing, and any other failure shows the app's error page (`app/error.tsx`).
+
 ---
 
 ## 10. Admin-side surface map (derived)

@@ -491,8 +491,9 @@ exists. See `be/src/services/tenants/platform-admin.ts`.
 and the member sign-in pool for that tenant with `403 tenant_suspended`
 (`middleware/require-active-tenant.ts`), and retains every row. Slug resolution
 still succeeds, so the studio's hostnames stay live rather than becoming a 404.
-On the public side only the slug lookup, the maintenance re-check and the staff
-steps (portal sign-in step, staff invitation, staff email change) still answer,
+On the public side only the slug lookup, the maintenance re-check, the staff
+steps (portal sign-in step, staff invitation, staff email change) and the member
+reset-link redirect (opened from an inbox, in no Tenant context) still answer,
 so staff reach the portal's own closed-studio page. The member app shows a
 paused page from the status the slug lookup reports, and from any
 `tenant_suspended` answer (`fe-client/src/components/studio-gate.tsx`, #250).

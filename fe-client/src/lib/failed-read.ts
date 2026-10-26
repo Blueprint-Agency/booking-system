@@ -5,23 +5,34 @@
  * failure no relay answers is thrown during render, to the route's error
  * boundary (`app/error.tsx`).
  *
+ * A 404 is not a failure but an answer: the read settles with nothing and its
+ * error, and the page draws its own not-found state ("Workshop not found").
+ *
  * No `@/` imports, so `node --test` can load it.
  */
 import { maintenanceMessage } from "./maintenance.ts";
 import { studioRefusal } from "./studio-refusal.ts";
 
-function answeredElsewhere(err: unknown): boolean {
-  if (!err || typeof err !== "object" || !("status" in err)) return false;
+function statusOf(err: unknown): { status: number; body: unknown } | null {
+  if (!err || typeof err !== "object" || !("status" in err)) return null;
   const { status, body } = err as { status: unknown; body?: unknown };
-  if (typeof status !== "number") return false;
-  return status === 401 || studioRefusal(status, body) !== null || maintenanceMessage(status, body) !== null;
+  return typeof status === "number" ? { status, body } : null;
 }
 
 export function afterFailedRead(
   err: unknown,
   { optional = false }: { optional?: boolean } = {},
 ): { data: null; loading: boolean } {
-  if (answeredElsewhere(err)) return { data: null, loading: true };
+  const answer = statusOf(err);
+  if (answer?.status === 404) return { data: null, loading: false };
+  if (
+    answer &&
+    (answer.status === 401 ||
+      studioRefusal(answer.status, answer.body) !== null ||
+      maintenanceMessage(answer.status, answer.body) !== null)
+  ) {
+    return { data: null, loading: true };
+  }
   if (optional) return { data: null, loading: false };
   throw err;
 }
