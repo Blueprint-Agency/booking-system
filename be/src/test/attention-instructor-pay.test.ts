@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test'
 import { eq } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { sgInstant, sgToday } from '../lib/time'
+import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
  * Staff attention, instructor pay (#476, #486): `instructor_pay_missing`, one
@@ -11,6 +12,7 @@ import { sgInstant, sgToday } from '../lib/time'
  * own and holds the clock at one instant.
  */
 describe('Staff attention: instructor pay missing', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  usePaymentKey()
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')
@@ -34,6 +36,7 @@ describe('Staff attention: instructor pay missing', { skip: integrationTestsEnab
   const freshStudio = async (): Promise<Studio> => {
     const slug = `atp-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({ slug, name: 'Attention Pay Studio', adminEmail: `owner@${slug}.test` })
+    await connectPayments(tenant.id)
     const [location] = await harness.db
       .insert(schema.locations)
       .values({ tenantId: tenant.id, name: `${slug} Studio`, address: '1 Test Street' })

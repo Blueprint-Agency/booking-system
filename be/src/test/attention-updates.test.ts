@@ -10,6 +10,7 @@ import {
   startTestApp,
   type TestApp,
 } from './harness'
+import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
  * Staff attention, the Updates tab (#476, #490): `leave_decided` is written in
@@ -21,6 +22,7 @@ import {
  * updates that test made and nobody else's.
  */
 describe('Staff attention: Updates', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  usePaymentKey()
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')
@@ -56,6 +58,7 @@ describe('Staff attention: Updates', { skip: integrationTestsEnabled ? false : S
   const freshStudio = async (): Promise<Studio> => {
     const slug = `upd-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({ slug, name: 'Updates Studio', adminEmail: `owner@${slug}.test` })
+    await connectPayments(tenant.id)
     return { id: tenant.id, slug }
   }
 
