@@ -120,6 +120,7 @@ export const ERROR_CODES = {
   email_required: 'email_required',
   email_was_archived: 'email_was_archived',
   ends_at_must_be_after_starts_at: 'ends_at_must_be_after_starts_at',
+  expiry_before_paid_booking: 'expiry_before_paid_booking',
   forbidden: 'forbidden',
   forbidden_permission: 'forbidden_permission',
   forbidden_role: 'forbidden_role',

@@ -18,10 +18,12 @@ const pkg = (over: Partial<SeatPackage> = {}): SeatPackage => ({
   expiresAt: null,
   active: true,
   boundInstructorId: null,
+  durationMonths: null,
+  validityDays: 90,
   ...over,
 })
-const oneOnOne = { sessionType: '1on1' as const, instructorId: COACH_X }
-const twoOnOne = { sessionType: '2on1' as const, instructorId: COACH_X }
+const oneOnOne = { sessionType: '1on1' as const, instructorId: COACH_X, startsAt: null }
+const twoOnOne = { sessionType: '2on1' as const, instructorId: COACH_X, startsAt: null }
 const asAdmin = { actorIsAdmin: true, now: NOW }
 const asInstructor = { actorIsAdmin: false, now: NOW }
 

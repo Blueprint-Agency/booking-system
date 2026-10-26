@@ -266,6 +266,7 @@ export function AddSeatForm<T>({
   role,
   sessionType,
   instructorId,
+  startsAt,
   exclude,
   submitLabel,
   hint,
@@ -278,6 +279,8 @@ export function AddSeatForm<T>({
   /** The type the seat is read and paid for — the new one on an upgrade. */
   sessionType: PtSessionType;
   instructorId: string;
+  /** The session's start: a package ending before it can't pay. */
+  startsAt: string;
   /** Members already on the session. */
   exclude: string[];
   submitLabel: string;
@@ -306,7 +309,12 @@ export function AddSeatForm<T>({
         error: null,
       });
       try {
-        const candidates = await fetchSeatCandidates(api, role, { clientId: member.id, sessionType, instructorId });
+        const candidates = await fetchSeatCandidates(api, role, {
+          clientId: member.id,
+          sessionType,
+          instructorId,
+          startsAt,
+        });
         const choice = seatChoice(candidates);
         setRow((r) =>
           r?.member.id === member.id ? { ...r, state: "ready", candidates, choice, chosen: choice.defaultId } : r,
@@ -315,7 +323,7 @@ export function AddSeatForm<T>({
         setRow((r) => (r?.member.id === member.id ? { ...r, state: "error", error: seatReadErrorMessage(e) } : r));
       }
     },
-    [api, role, sessionType, instructorId],
+    [api, role, sessionType, instructorId, startsAt],
   );
 
   async function submit() {

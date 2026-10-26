@@ -162,6 +162,7 @@ export function PtSessionMembers({
             role={role}
             sessionType="2on1"
             instructorId={data.main_instructor_id}
+            startsAt={data.starts_at}
             exclude={onIt}
             submitLabel="Change to 2-on-1"
             hint="Add the partner who joins. They pay one session from their own package; nobody else's balance moves."
@@ -183,6 +184,7 @@ export function PtSessionMembers({
               role={role}
               sessionType={data.session_type}
               instructorId={data.main_instructor_id}
+              startsAt={data.starts_at}
               exclude={onIt}
               submitLabel="Add member"
               build={addMemberBody}

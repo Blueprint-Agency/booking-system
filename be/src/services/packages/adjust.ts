@@ -5,13 +5,17 @@
  * manual_adjustments ledger row and its Credit movement (`recordAdjustment`;
  * delta=0 for every edit that moves no credits). See be-portal.md §3d.
  */
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNull, max } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
+import { bookings } from '../../db/schema/bookings'
+import { classes, ptSessions } from '../../db/schema/schedule'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
-import { isVoided, recordAdjustment } from './ledger'
+import { now as clockNow } from '../../lib/clock'
+import { sgFormat } from '../../lib/time'
+import { isVoided, recordAdjustment, type Tx } from './ledger'
 import { listActiveInstructors } from '../schedule/client-catalog'
 import { computeActive } from './validity'
 import { boundInstructorChange, homeLocationMove, liveUnlimited } from './purchase'
@@ -382,14 +386,61 @@ export interface SetExpiryInput {
 }
 
 /**
+ * The latest start among the confirmed class bookings and the scheduled PT
+ * sessions this package pays for that are still to come. Null when there are none.
+ */
+async function latestPaidStart(tx: Tx, tenantId: string, clientPackageId: string, now: Date): Promise<Date | null> {
+  const paid = and(
+    eq(bookings.tenantId, tenantId),
+    eq(bookings.clientPackageId, clientPackageId),
+    eq(bookings.state, 'confirmed'),
+  )
+  const [klass] = await tx
+    .select({ at: max(classes.startsAt) })
+    .from(bookings)
+    .innerJoin(classes, and(eq(classes.tenantId, bookings.tenantId), eq(classes.id, bookings.classId)))
+    .where(and(paid, eq(classes.lifecycle, 'active'), gt(classes.startsAt, now)))
+  const [pt] = await tx
+    .select({ at: max(ptSessions.startsAt) })
+    .from(bookings)
+    .innerJoin(ptSessions, and(eq(ptSessions.tenantId, bookings.tenantId), eq(ptSessions.id, bookings.ptSessionId)))
+    .where(and(paid, eq(ptSessions.lifecycle, 'active'), gt(ptSessions.startsAt, now)))
+  const starts = [klass?.at, pt?.at].filter((d): d is Date => d instanceof Date)
+  return starts.length ? new Date(Math.max(...starts.map(d => d.getTime()))) : null
+}
+
+const startDay = sgFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+const startTime = sgFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+
+/**
  * Change a package's expiry (duration). Logged as a delta-0 manual_adjustment
  * with a human-readable reason so it shows in the audit trail.
+ *
+ * A date before a class or PT session the package already pays for would
+ * leave that booking paid by a package that has ended, so it is refused,
+ * naming the earliest date allowed (#444 holds scheduling to the same rule).
+ * The row is locked first, so a booking made meanwhile is seen.
  */
 export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPackageRow> {
   if (!input.reason.trim()) throw new BadRequestError('reason_required')
 
   return db.transaction(async tx => {
+    await tx
+      .select({ id: clientPackages.id })
+      .from(clientPackages)
+      .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, input.clientPackageId)))
+      .for('update')
     const pkg = await editablePackage(tx, input)
+
+    if (input.expiresAt) {
+      const earliest = await latestPaidStart(tx, input.tenantId, pkg.id, clockNow())
+      if (earliest && input.expiresAt < earliest) {
+        throw new ConflictError('expiry_before_paid_booking', {
+          earliest_expires_at: earliest.toISOString(),
+          message: `This package pays for a booking at ${startTime.format(earliest)} on ${startDay.format(earliest)}. Set its expiry no earlier than that.`,
+        })
+      }
+    }
 
     // A blank expiry returns the package to Dormant (§8) — the escape hatch the
     // one-way activation rule depends on, the way an admin undoes an Activation

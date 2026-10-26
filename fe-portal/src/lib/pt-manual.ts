@@ -20,6 +20,7 @@ export type SeatRefusal =
   | "package_expired"
   | "insufficient_pt_credit"
   | "package_not_consumable"
+  | "package_expires_before_session"
   | "bound_to_other_instructor";
 
 export type SeatWarning = "session_type_mismatch" | "bound_to_other_instructor";
@@ -36,7 +37,7 @@ export interface SeatCandidate {
   eligible: boolean;
   reason: SeatRefusal | null;
   warnings: SeatWarning[];
-  /** Dormant only: the end date a seat would stamp on it now. */
+  /** Dormant only: the end date a seat would stamp on it now, also when that end is why it can't pay. */
   activation_end_if_picked: string | null;
 }
 
@@ -48,24 +49,35 @@ export interface SeatCandidates {
 }
 
 /**
- * The member's packages for a seat on a session of this type. The admin names
- * the session's instructor; the instructor route reads against the caller.
+ * The member's packages for a seat on a session of this type, and from this
+ * start once one is chosen. The admin names the session's instructor; the
+ * instructor route reads against the caller.
  */
 export function fetchSeatCandidates(
   api: Api,
   role: StaffRole,
-  input: { clientId: string; sessionType: PtSessionType; instructorId: string },
+  input: { clientId: string; sessionType: PtSessionType; instructorId: string; startsAt: string | null },
 ): Promise<SeatCandidates> {
+  const start = input.startsAt ? { starts_at: input.startsAt } : {};
   return role === "admin"
     ? api.get<SeatCandidates>("/portal/admin/pt-sessions/seat-candidates", {
         client_id: input.clientId,
         session_type: input.sessionType,
         instructor_id: input.instructorId,
+        ...start,
       })
     : api.get<SeatCandidates>("/portal/instructor/pt-requests/seat-candidates", {
         client_id: input.clientId,
         session_type: input.sessionType,
+        ...start,
       });
+}
+
+/** The form's date and start time as the instant the create call sends, or null while either is unset. */
+export function sessionStartIso(date: string, startTime: string): string | null {
+  if (!date || !startTime) return null;
+  const at = new Date(`${date}T${startTime}:00`);
+  return Number.isNaN(at.getTime()) ? null : at.toISOString();
 }
 
 /** A member booked elsewhere at the session's time is asked about first (`./time-clash`). */
@@ -91,8 +103,20 @@ const REFUSAL_NOTE: Record<SeatRefusal, string> = {
   package_expired: "Expired",
   insufficient_pt_credit: "No sessions left",
   package_not_consumable: "Voided",
+  package_expires_before_session: "Ends before this session",
   bound_to_other_instructor: "Bound to another instructor",
 };
+
+/** Why a greyed package can't pay; one that ends too soon names its end. */
+function refusalNote(p: SeatCandidate): string {
+  if (p.reason === "package_expires_before_session") {
+    if (p.expires_at) return `Ends ${formatDate(p.expires_at, "d MMM yyyy")}, before this session`;
+    if (p.activation_end_if_picked) {
+      return `Would run until ${formatDate(p.activation_end_if_picked, "d MMM yyyy")}, before this session`;
+    }
+  }
+  return p.reason ? REFUSAL_NOTE[p.reason] : "Can't pay for this session";
+}
 
 function optionLabel(p: SeatCandidate): string {
   const parts = [p.name ?? "PT package"];
@@ -135,9 +159,7 @@ export function seatChoice(res: SeatCandidates): SeatChoice {
       label: optionLabel(p),
       disabled: !p.eligible,
       note: !p.eligible
-        ? p.reason
-          ? REFUSAL_NOTE[p.reason]
-          : "Can't pay for this session"
+        ? refusalNote(p)
         : p.activation_end_if_picked
           ? `Starts today, runs until ${formatDate(p.activation_end_if_picked, "d MMM yyyy")}`
           : null,

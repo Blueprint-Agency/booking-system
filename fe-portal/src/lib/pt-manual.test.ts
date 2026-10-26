@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert";
-import { ApiError } from "./api";
+import { ApiError, type Api } from "./api";
 import {
   addMemberBody,
   canCancelSession,
   canAddMember,
   downgradeConfirm,
   downgradeLeaving,
+  fetchSeatCandidates,
   isManual,
   ptCancelConfirm,
   retypeBody,
@@ -16,6 +17,7 @@ import {
   seatChoice,
   seatLimit,
   seatWarnings,
+  sessionStartIso,
   type ManualSeat,
   type SeatCandidate,
 } from "./pt-manual";
@@ -336,5 +338,53 @@ test("PT-151 staff are offered Cancel session only before the session starts", (
     canCancelSession({ ...s, lifecycle: "cancelled" }, at("2031-04-30T09:00:00.000Z")),
     false,
     "already cancelled",
+  );
+});
+
+test("PT-159 the package read sends the chosen start, and a package that ends before it is greyed with its end", async () => {
+  const startsAt = sessionStartIso("2031-05-02", "09:00");
+  assert.strictEqual(startsAt, new Date("2031-05-02T09:00:00").toISOString());
+  assert.strictEqual(sessionStartIso("", "09:00"), null);
+
+  const asked: [string, unknown][] = [];
+  const api = {
+    get: async (path: string, query: unknown) => {
+      asked.push([path, query]);
+      return { default_client_package_id: null, packages: [] };
+    },
+  } as unknown as Api;
+  await fetchSeatCandidates(api, "admin", { clientId: "c", sessionType: "1on1", instructorId: "i", startsAt });
+  await fetchSeatCandidates(api, "instructor", { clientId: "c", sessionType: "1on1", instructorId: "i", startsAt });
+  assert.deepStrictEqual(asked, [
+    [
+      "/portal/admin/pt-sessions/seat-candidates",
+      { client_id: "c", session_type: "1on1", instructor_id: "i", starts_at: startsAt },
+    ],
+    ["/portal/instructor/pt-requests/seat-candidates", { client_id: "c", session_type: "1on1", starts_at: startsAt }],
+  ]);
+
+  const choice = seatChoice({
+    default_client_package_id: "long",
+    packages: [
+      cand({ id: "run", eligible: false, reason: "package_expires_before_session", expires_at: "2031-05-01T04:00:00.000Z" }),
+      cand({
+        id: "short",
+        eligible: false,
+        reason: "package_expires_before_session",
+        expires_at: null,
+        activation_end_if_picked: "2031-04-30T04:00:00.000Z",
+      }),
+      cand({ id: "long", expires_at: null, activation_end_if_picked: "2031-07-29T04:00:00.000Z" }),
+    ],
+  });
+  assert.strictEqual(choice.defaultId, "long");
+  assert.strictEqual(choice.choosable, false);
+  assert.deepStrictEqual(
+    choice.options.map((o) => [o.id, o.disabled, o.note]),
+    [
+      ["run", true, "Ends 1 May 2031, before this session"],
+      ["short", true, "Would run until 30 Apr 2031, before this session"],
+      ["long", false, "Starts today, runs until 29 Jul 2031"],
+    ],
   );
 });

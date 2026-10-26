@@ -308,8 +308,9 @@ export async function listSchedule(
   }
 
   // ---- pt sessions -----------------------------------------------------------
+  // A cancelled one stays listed, marked by its event state, as a cancelled class does.
   if (wantPt) {
-    const conds = [eq(ptSessions.tenantId, tenantId), eq(ptSessions.lifecycle, 'active')]
+    const conds = [eq(ptSessions.tenantId, tenantId)]
     if (opts.from) conds.push(gte(ptSessions.endsAt, opts.from))
     if (opts.to) conds.push(lt(ptSessions.startsAt, opts.to))
     if (opts.instructorId) conds.push(eq(ptSessions.instructorId, opts.instructorId))

@@ -96,12 +96,14 @@ export function removedMemberJson(res: { refundOutcome: string; refundedSessions
 
 /**
  * `GET …/seat-candidates`: the member's PT packages read against a session's
- * shape, so the form can ask before the session exists. The instructor route
- * drops `instructor_id` and reads against the caller.
+ * shape and, once chosen, its start, so the form can ask before the session
+ * exists. The instructor route drops `instructor_id` and reads against the
+ * caller.
  */
 const seatCandidateFields = {
   client_id: z.string().uuid(),
   session_type: z.enum(['1on1', '2on1']),
+  starts_at: z.string().datetime({ offset: true }).optional(),
 }
 
 export const adminSeatCandidatesQuery = z.object({ ...seatCandidateFields, instructor_id: z.string().uuid() })
