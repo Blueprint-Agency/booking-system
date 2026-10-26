@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Loader2 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Portal } from "@/components/ui/portal";
@@ -8,9 +8,13 @@ import { BTN_PRIMARY, BTN_SECONDARY, CARD, SHEET_ACTIONS, SHEET_BACKDROP, SHEET_
 import { ApiError, useApi } from "@/lib/api";
 import { setAppUserPhoto, useAppUser } from "@/lib/auth";
 import { croppedFile, drawCrop, loadImage } from "@/lib/avatar-image";
+import { currentImpersonationGrant } from "@/lib/impersonation-handoff";
 import { cropPlan, initialCrop, MAX_ZOOM, panCrop, zoomCrop, type Crop, type ImageSize } from "@/lib/square-crop";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+
+/** The grant cookie is set before the page loads and gone after it, so there is nothing to subscribe to. */
+const noSubscription = () => () => {};
 
 interface Picked {
   image: HTMLImageElement;
@@ -34,6 +38,14 @@ export function ProfilePictureCard() {
   const [picked, setPicked] = useState<Picked | null>(null);
   const [busy, setBusy] = useState<"upload" | "remove" | null>(null);
   const [status, setStatus] = useState<{ tone: "error" | "done"; text: string } | null>(null);
+
+  // An admin impersonating the member sees the picture but cannot change it:
+  // the API refuses them, as a picture is only ever its owner's choice.
+  const impersonating = useSyncExternalStore(
+    noSubscription,
+    () => currentImpersonationGrant() !== null,
+    () => false,
+  );
 
   const photoUrl = user?.photoUrl ?? null;
   const name = user ? `${user.firstName} ${user.lastName}` : "";
@@ -92,39 +104,43 @@ export function ProfilePictureCard() {
           photoUrl={photoUrl}
           className="h-20 w-20 bg-accent text-inverse text-2xl"
         />
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            disabled={!isLoaded || busy !== null}
-            className={BTN_SECONDARY}
-          >
-            {photoUrl ? "Replace picture" : "Upload picture"}
-          </button>
-          {photoUrl && (
+        {impersonating ? (
+          <p className="text-sm text-muted">Only the member can change their own picture.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => void remove()}
-              disabled={busy !== null}
+              onClick={() => inputRef.current?.click()}
+              disabled={!isLoaded || busy !== null}
               className={BTN_SECONDARY}
             >
-              {busy === "remove" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-              {busy === "remove" ? "Removing…" : "Remove"}
+              {photoUrl ? "Replace picture" : "Upload picture"}
             </button>
-          )}
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            className="sr-only"
-            tabIndex={-1}
-            aria-hidden
-            onChange={(e) => {
-              void pick(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-        </div>
+            {photoUrl && (
+              <button
+                type="button"
+                onClick={() => void remove()}
+                disabled={busy !== null}
+                className={BTN_SECONDARY}
+              >
+                {busy === "remove" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+                {busy === "remove" ? "Removing…" : "Remove"}
+              </button>
+            )}
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden
+              onChange={(e) => {
+                void pick(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        )}
       </div>
       <p role="status" className="mt-3 text-sm font-medium empty:hidden">
         {status && <span className={status.tone === "error" ? "text-error" : "text-sage"}>{status.text}</span>}
@@ -159,14 +175,17 @@ function CropDialog({
   useBodyScrollLock(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drag = useRef<{ x: number; y: number } | null>(null);
-  const size: ImageSize = { width: picked.image.naturalWidth, height: picked.image.naturalHeight };
+  const size = useMemo<ImageSize>(
+    () => ({ width: picked.image.naturalWidth, height: picked.image.naturalHeight }),
+    [picked.image],
+  );
   const [crop, setCrop] = useState<Crop>(() => initialCrop(size));
   const [failed, setFailed] = useState(false);
-  const plan = cropPlan(size, crop, picked.type);
+  const plan = useMemo(() => cropPlan(size, crop, picked.type), [size, crop, picked.type]);
 
   useEffect(() => {
     if (canvasRef.current) drawCrop(canvasRef.current, picked.image, plan);
-  });
+  }, [picked.image, plan]);
 
   function pan(dx: number, dy: number) {
     const viewport = canvasRef.current?.getBoundingClientRect().width || 1;
