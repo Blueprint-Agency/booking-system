@@ -11,6 +11,7 @@ import {
   startTestApp,
   type TestApp,
 } from './harness'
+import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
  * Staff attention (#476, #481): the `check_in_unfinished` kind. A session that
@@ -21,6 +22,7 @@ import {
  * test so the window's two edges are exact.
  */
 describe('Staff attention: unfinished check-ins', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  usePaymentKey()
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')
@@ -59,6 +61,7 @@ describe('Staff attention: unfinished check-ins', { skip: integrationTestsEnable
   const freshStudio = async (): Promise<Studio> => {
     const slug = `chk-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({ slug, name: 'Check-in Studio', adminEmail: `owner@${slug}.test` })
+    await connectPayments(tenant.id)
     const [location] = await harness.db
       .insert(schema.locations)
       .values({ tenantId: tenant.id, name: `${slug} Studio`, address: '1 Test Street' })
