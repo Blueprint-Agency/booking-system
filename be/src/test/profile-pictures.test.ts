@@ -309,6 +309,104 @@ describe('profile pictures over HTTP', { skip: integrationTestsEnabled ? false :
     assert.equal(row!.key, null)
   })
 
+  /** An instructor of studio one with a picture of their own, and the picture's URL. */
+  const pictured = async (name: string) => {
+    const who = await fixtures.staffAt(one, fixtures.at(name), 'instructor')
+    await harness.db.insert(schema.instructors).values({ tenantId: one.id, staffUserId: who.row.id })
+    const res = await upload(who.headers, '/portal/profile/photo', imageBytes(1000), 'image/jpeg')
+    assert.equal(res.status, 200, res.text)
+    return { id: who.row.id, photoUrl: res.body.photo_url as string }
+  }
+
+  test("ACC-58 a member sees each instructor's picture on the class list and detail, workshop detail, PT checkout and private sessions", async () => {
+    const teacher = await pictured('teacher-member-app')
+    const supporter = await pictured('supporter-member-app')
+    const mia = await member()
+    const startsAt = new Date(Date.now() + 30 * 60_000)
+    const cls = await fixtures.insertRow('classes', one.id, {
+      main_instructor_id: teacher.id,
+      starts_at: startsAt.toISOString(),
+      ends_at: new Date(startsAt.getTime() + 3_600_000).toISOString(),
+      capacity_online: 5,
+      lifecycle: 'active',
+    })
+    await fixtures.insertRow('class_supporting_instructors', one.id, { class_id: cls.id, instructor_id: supporter.id })
+    const workshop = await fixtures.insertRow('workshops', one.id)
+    await fixtures.insertRow('workshop_tiers', one.id, { workshop_id: workshop.id, regular_price_sgd: '50.00', ord: 0 })
+    await fixtures.insertRow('workshop_instructors', one.id, { workshop_id: workshop.id, instructor_id: teacher.id, role: 'main' })
+    await fixtures.insertRow('client_packages', one.id, { client_id: mia.clientId, kind: 'pt', bound_instructor_id: teacher.id })
+
+    const feed = await call(mia.headers, 'GET', '/me/classes')
+    const card = feed.body.classes.find((c: { id: string }) => c.id === cls.id)
+    assert.ok(card, feed.text)
+    assert.equal(card.instructor.photo_url, teacher.photoUrl, 'the class list row')
+
+    const detail = await call(mia.headers, 'GET', `/me/classes/${cls.id}`)
+    assert.equal(detail.body.instructor.photo_url, teacher.photoUrl, detail.text)
+    assert.deepEqual(
+      detail.body.supporting_instructors.map((s: { photo_url: string }) => s.photo_url),
+      [supporter.photoUrl],
+      'the class detail',
+    )
+
+    const workshopDetail = await call(mia.headers, 'GET', `/me/workshops/${workshop.id}`)
+    assert.equal(workshopDetail.body.instructors?.[0]?.photo_url, teacher.photoUrl, workshopDetail.text)
+
+    const roster = await call(mia.headers, 'GET', '/public/instructors')
+    const listed = roster.body.instructors.find((i: { id: string }) => i.id === teacher.id)
+    assert.equal(listed.photo_url, teacher.photoUrl, 'the PT checkout picker')
+
+    const packages = await call(mia.headers, 'GET', '/me/packages')
+    const pt = packages.body.client_packages.find((p: { kind: string }) => p.kind === 'pt')
+    assert.equal(pt?.bound_instructor?.photo_url, teacher.photoUrl, `private sessions: ${packages.text}`)
+  })
+
+  test("STF-51 staff see a member's picture on the customers list and detail, check-in desk, PT and corporate request drawers and class roster, and a colleague's on the staff list", async () => {
+    const teacher = await pictured('teacher-portal')
+    const mia = await member()
+    const own = await upload(mia.headers, '/me/photo', imageBytes(1000), 'image/png', 'me.png')
+    const miaPhoto = own.body.photo_url as string
+    const startsAt = new Date(Date.now() + 30 * 60_000)
+    const cls = await fixtures.insertRow('classes', one.id, {
+      main_instructor_id: teacher.id,
+      starts_at: startsAt.toISOString(),
+      ends_at: new Date(startsAt.getTime() + 3_600_000).toISOString(),
+      capacity_online: 5,
+      lifecycle: 'active',
+    })
+    await fixtures.insertRow('bookings', one.id, { kind: 'class', class_id: cls.id, client_id: mia.clientId, state: 'confirmed' })
+    await fixtures.insertRow('pt_requests', one.id, { client_id: mia.clientId, status: 'pending' })
+    await fixtures.insertRow('corporate_requests', one.id, { client_id: mia.clientId })
+
+    const list = await call(admin.headers, 'GET', `/portal/admin/clients?q=${encodeURIComponent(fixtures.at(`member-${memberCount}`))}`)
+    assert.equal(list.body.clients.find((c: { id: string }) => c.id === mia.clientId)?.photo_url, miaPhoto, list.text)
+    const detail = await call(admin.headers, 'GET', `/portal/admin/clients/${mia.clientId}`)
+    assert.equal(detail.body.photo_url, miaPhoto, 'the customer page')
+
+    const desk = await call(admin.headers, 'GET', '/portal/admin/check-in')
+    const row = desk.body.sessions
+      .flatMap((s: { roster: { client_id: string; photo_url: string }[] }) => s.roster)
+      .find((r: { client_id: string }) => r.client_id === mia.clientId)
+    assert.equal(row?.photo_url, miaPhoto, `the check-in desk: ${desk.text}`)
+
+    const pt = await call(admin.headers, 'GET', '/portal/admin/pt-sessions?status=pending')
+    const ptRow = pt.body.pt_requests.find((r: { client: { id: string } }) => r.client.id === mia.clientId)
+    assert.equal(ptRow?.client.photo_url, miaPhoto, `the PT request drawer: ${pt.text}`)
+
+    const corporate = await call(admin.headers, 'GET', '/portal/admin/corporate-requests')
+    const corporateRow = (corporate.body.corporate_requests ?? corporate.body.requests ?? []).find(
+      (r: { client: { id: string } }) => r.client.id === mia.clientId,
+    )
+    assert.equal(corporateRow?.client.photo_url, miaPhoto, `the corporate request drawer: ${corporate.text}`)
+
+    const classDetail = await call(admin.headers, 'GET', `/portal/admin/schedule/classes/${cls.id}`)
+    const attendee = classDetail.body.attendees.find((a: { client: { id: string } }) => a.client.id === mia.clientId)
+    assert.equal(attendee?.client.photo_url, miaPhoto, `the class roster: ${classDetail.text}`)
+
+    const staff = await call(admin.headers, 'GET', '/portal/admin/staff')
+    assert.equal(staff.body.staff.find((s: { id: string }) => s.id === teacher.id)?.photo_url, teacher.photoUrl, 'the staff list')
+  })
+
   test("STF-49 a picture key under another studio is never this studio's to delete", async () => {
     const elsewhere = `t/${two.id}/avatars/${crypto.randomUUID()}.jpg`
     bucket.set(elsewhere, { bytes: imageBytes(10, 9), contentType: 'image/jpeg' })
