@@ -172,7 +172,7 @@ export interface CorporateRequest {
   message: string | null;
   createdAt: string;
   resolvedAt: string | null;
-  client: { id: string; name: string; email: string };
+  client: { id: string; name: string; email: string; photo_url: string | null };
   package: { id: string; name: string };
   session: null | {
     id: string;
@@ -194,4 +194,6 @@ export interface StaffUser {
   email: string;
   role: StaffRole;
   status: StaffStatus;
+  /** Their own Profile picture, or null for initials. */
+  photoUrl: string | null;
 }

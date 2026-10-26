@@ -6,6 +6,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
 import { BIO_MAX, PHONE_MAX, profileSaveError } from "@/lib/instructor-profile";
+import { ProfilePictureField } from "@/components/profile/profile-picture-field";
 import { toast } from "sonner";
 
 interface InstructorProfile {
@@ -73,7 +74,7 @@ export default function InstructorProfilePage() {
     <div className="mx-auto max-w-2xl">
       <PageHeader
         title="My profile"
-        description="Your account details and the bio members can see."
+        description="Your account details, and the picture and bio members can see."
       />
 
       {error && (
@@ -118,6 +119,10 @@ export default function InstructorProfilePage() {
           <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
             <h2 className="mb-4 text-sm font-semibold text-ink">Public profile</h2>
             <div className="space-y-4">
+              <div className="space-y-1.5">
+                <span className="text-sm font-medium text-ink">Picture</span>
+                <ProfilePictureField />
+              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="bio">Bio</Label>
                 <Textarea

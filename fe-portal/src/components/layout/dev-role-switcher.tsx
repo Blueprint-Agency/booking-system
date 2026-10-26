@@ -1,8 +1,11 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, LogOut, User } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Avatar } from "@/components/ui";
 import { signOutPortal } from "@/lib/portal-auth";
+import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace, STORAGE_KEY_LOC } from "@/lib/workspace-context";
 
 /**
@@ -26,18 +29,22 @@ export function DevRoleSwitcher() {
   }, [open]);
 
   if (!currentStaff) return null;
-  const initial = currentStaff.name?.charAt(0) || currentStaff.email.charAt(0);
+  const profileHref = runsStudio(currentStaff.role) ? "/admin/profile" : "/instructor/profile";
 
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
         className="flex h-10 items-center gap-2 rounded-full border border-border bg-paper px-2 text-xs sm:h-auto sm:px-3 sm:py-1.5"
       >
-        <div className="h-6 w-6 rounded-full bg-accent text-center text-[11px] font-semibold leading-6 text-white">
-          {initial.toUpperCase()}
-        </div>
+        <Avatar
+          name={currentStaff.name || currentStaff.email}
+          src={currentStaff.photoUrl}
+          size={24}
+          className="text-[11px]"
+        />
         <div className="hidden leading-tight sm:block">
           <div className="font-medium text-ink">{currentStaff.name}</div>
           <div className="text-muted capitalize">{currentStaff.role}</div>
@@ -56,13 +63,13 @@ export function DevRoleSwitcher() {
           </div>
           <ul className="p-1">
             <li>
-              <button
-                type="button"
-                disabled
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted"
+              <Link
+                href={profileHref}
+                onClick={() => setOpen(false)}
+                className="flex min-h-10 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-ink hover:bg-paper"
               >
-                <User className="h-4 w-4" /> Account (v1)
-              </button>
+                <User className="h-4 w-4" /> My profile
+              </Link>
             </li>
             <li>
               <button
