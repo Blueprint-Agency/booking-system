@@ -15,7 +15,7 @@
  * transaction; the class row is locked FOR UPDATE so it can't race in-flight bookings/cancels.
  */
 import { and, eq } from 'drizzle-orm'
-import { afterCommit, db } from '../../db'
+import { afterCommit, db, retryingTransaction } from '../../db'
 import { classes } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
@@ -53,7 +53,9 @@ export async function cancelClass(
   tenantId: string,
   input: CancelClassInput,
 ): Promise<CancelClassResult> {
-  return db.transaction(tx => cancelClassInTx(tx, tenantId, input))
+  // A promotion that passes the head of a line by locks the next member's
+  // packages only once it reaches them, after the class's own (#439).
+  return retryingTransaction(tx => cancelClassInTx(tx, tenantId, input))
 }
 
 export async function cancelClassInTx(
