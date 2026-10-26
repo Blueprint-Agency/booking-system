@@ -412,7 +412,8 @@ function Row({
             {item.location.name}
           </span>
         )}
-        <span>{formatRelative(item.occurred_at)}</span>
+        {/* A row with no link is a standing fact about the studio's account, not an event with an age. */}
+        {item.href && <span>{formatRelative(item.occurred_at)}</span>}
       </span>
     </>
   );

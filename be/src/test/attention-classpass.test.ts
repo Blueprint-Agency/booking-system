@@ -9,6 +9,7 @@ import {
   startTestApp,
   type TestApp,
 } from './harness'
+import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
  * Staff attention, the ClassPass kinds (#476, #484): `classpass_review` and
@@ -16,6 +17,7 @@ import {
  * Each test makes a studio of its own, so a count is about its own rows only.
  */
 describe('Staff attention: ClassPass', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  usePaymentKey()
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')
@@ -45,6 +47,7 @@ describe('Staff attention: ClassPass', { skip: integrationTestsEnabled ? false :
   const freshStudio = async (): Promise<Studio> => {
     const slug = `atncp-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({ slug, name: 'ClassPass Attention', adminEmail: `owner@${slug}.test` })
+    await connectPayments(tenant.id)
     const [location] = await harness.db
       .insert(schema.locations)
       .values({ tenantId: tenant.id, name: `${slug} Studio`, address: '1 Test Street' })

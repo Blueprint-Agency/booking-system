@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { connectPayments, usePaymentKey } from './attention-payments'
 import { ownAccountId, stripeWebhookPath, type StripeFake } from './stripe-fake'
 
 /**
@@ -15,6 +16,7 @@ import { ownAccountId, stripeWebhookPath, type StripeFake } from './stripe-fake'
  * Every test makes a studio of its own, so the items a test sees are its own.
  */
 describe('Staff attention: dismissals', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  usePaymentKey()
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')
@@ -46,6 +48,7 @@ describe('Staff attention: dismissals', { skip: integrationTestsEnabled ? false 
     const slug = `dsm-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({ slug, name: 'Dismissal Studio', adminEmail: `owner@${slug}.test` })
     fake.ownAccount({ id: tenant.id, slug })
+    await connectPayments(tenant.id)
     return { id: tenant.id, slug }
   }
 
