@@ -7,6 +7,7 @@ import { staffUsers } from '../../db/schema/identity'
 import { and, eq, ne } from 'drizzle-orm'
 import { reportError } from '../../shared/logger'
 import { STUDIO_NAME_VARIABLE } from './variables'
+import type { StudioEmailSlug } from './switches'
 
 export type TemplateSlug =
   | 'welcome'
@@ -59,6 +60,9 @@ export type TemplateSlug =
   | 'staff_two_factor_code'
   | 'staff_password_reset'
 
+/** A template some sender sends: one classified in `./switches.ts`. */
+export type SentTemplateSlug = Extract<TemplateSlug, StudioEmailSlug>
+
 export interface TemplateRecipient {
   email: string
   /** staff_users.id or clients.id — nullable when we don't yet have a row. */
@@ -70,7 +74,7 @@ export interface SendInput {
   /** Whose words these are — the template is resolved within this tenant, and
    *  the `email_log` row is filed under it. */
   tenantId: string
-  slug: TemplateSlug
+  slug: SentTemplateSlug
   recipient: TemplateRecipient
   variables: Record<string, string>
   /**
@@ -182,7 +186,7 @@ export async function sendStudioSystemEmail(input: {
 /** File the `email_log` row, send, and record how the send went. True when it went. */
 async function deliver(input: {
   tenantId: string
-  slug: TemplateSlug | SystemMailSlug
+  slug: StudioEmailSlug
   recipient: TemplateRecipient
   identity: Awaited<ReturnType<typeof tenantMailIdentity>>
   email: FramedEmail
@@ -273,7 +277,7 @@ async function deliver(input: {
  */
 export async function emailEveryAdmin(
   tenantId: string,
-  slug: TemplateSlug,
+  slug: SentTemplateSlug,
   variables: () => Promise<Record<string, string>>,
   context?: Record<string, unknown>,
   options: { exceptStaffId?: string } = {},

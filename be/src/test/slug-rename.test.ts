@@ -299,7 +299,7 @@ describe('slug rename', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     await withTenant(tenant.id, () =>
       send.sendTemplatedEmail({
         tenantId: tenant.id,
-        slug: 'welcome',
+        slug: 'class_rule_cancelled',
         recipient: { email: to, userKind: 'client' },
         variables: {},
       }),
