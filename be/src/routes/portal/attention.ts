@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { tenantId } from '../../middleware/tenant'
 import { attentionPanel, attentionSummary, type AttentionCaller } from '../../services/attention'
+import { isUpdatesCursor, markAllUpdatesRead, markUpdateRead } from '../../services/attention/updates'
 import { explainInvalid } from '../explain-invalid'
 
 /**
@@ -13,14 +14,17 @@ import { explainInvalid } from '../explain-invalid'
  * roles read it, and what each is owed is decided per kind in the service from
  * the caller's role and Instructor Permissions, both re-resolved by `staffAuth`
  * on every request. The parent's staffAuth + requireActiveStaff is the access
- * control (routes/portal/index.ts). Read-only, so it needs no audit row.
+ * control (routes/portal/index.ts). Outside the audit middleware's prefixes: the
+ * only writes are a person marking their own updates read, which is no decision
+ * worth an audit row.
  */
 const summaryQuery = z.object({ location_id: z.string().uuid().optional() })
 const listQuery = z.object({
   limit_per_group: z.coerce.number().int().min(1).max(50).optional(),
-  // The Updates tab pages by this (#490); no Updates exist yet, so it is read and unused.
-  updates_before: z.string().max(100).optional(),
+  // The Updates tab pages by this: the `next_cursor` of the page before.
+  updates_before: z.string().max(100).refine(isUpdatesCursor, 'Not an updates cursor.').optional(),
 })
+const idParam = z.object({ id: z.string().uuid() })
 const explain = explainInvalid('That attention request is not valid.')
 
 const caller = (c: Context): AttentionCaller => ({
@@ -35,8 +39,22 @@ const app = new Hono()
     c.json(await attentionSummary(caller(c), c.req.valid('query').location_id)),
   )
   .get('/', zValidator('query', listQuery, explain), async c => {
-    const { limit_per_group } = c.req.valid('query')
-    return c.json(await attentionPanel(caller(c), limit_per_group ? { limitPerGroup: limit_per_group } : {}))
+    const { limit_per_group, updates_before } = c.req.valid('query')
+    return c.json(
+      await attentionPanel(caller(c), {
+        ...(limit_per_group ? { limitPerGroup: limit_per_group } : {}),
+        ...(updates_before ? { updatesBefore: updates_before } : {}),
+      }),
+    )
+  })
+  // Static before the :id route, or "read-all" would be read as an id.
+  .post('/updates/read-all', async c => {
+    await markAllUpdatesRead(caller(c))
+    return c.body(null, 204)
+  })
+  .post('/updates/:id/read', zValidator('param', idParam, explain), async c => {
+    await markUpdateRead(caller(c), c.req.valid('param').id)
+    return c.body(null, 204)
   })
 
 export default app

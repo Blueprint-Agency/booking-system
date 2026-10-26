@@ -322,6 +322,9 @@ const EXPECTATIONS: Record<string, Expectation> = {
   // The bell (#477): the counts and the panel, for both staff roles.
   'GET /api/v1/portal/attention/summary': { gate: STUDIO_STAFF },
   'GET /api/v1/portal/attention': { gate: STUDIO_STAFF },
+  // Updates (#490): a staff member reads their own.
+  'POST /api/v1/portal/attention/updates/read-all': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/attention/updates/:id/read': { gate: STUDIO_STAFF },
 }
 
 /** The prefixes the matrix speaks for: every route under them needs a line above. */
