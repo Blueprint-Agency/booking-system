@@ -397,7 +397,7 @@ describe('class-cancelled email to the waitlist', { skip: integrationTestsEnable
     ], 'every class was already cancelled outside the transaction when each email went')
   })
 
-  test('NTF-35 a class cancel emails nobody whose place in its line was already left, expired or promoted, nor a line on a class that has started', async () => {
+  test('NTF-35 a class cancel emails nobody whose place in its line was already left, expired or promoted, nor a line on a class that has started, whose entry the sweep then expires', async () => {
     const still = await member(one)
     const left = await member(one)
     const expired = await member(one)
@@ -411,7 +411,7 @@ describe('class-cancelled email to the waitlist', { skip: integrationTestsEnable
 
     const late = await member(one)
     const started = await addClass(one, new Date(Date.now() - 10 * 60 * 1000))
-    await inLine(one, late, started)
+    const lateEntry = await inLine(one, late, started)
     drain()
 
     await expectStatus(await adminCancel(one, classId), 200)
@@ -428,5 +428,32 @@ describe('class-cancelled email to the waitlist', { skip: integrationTestsEnable
     )
     assert.match(mail.find(m => m.to === still.email)!.text, WAITLIST_LINE)
     assert.doesNotMatch(mail.find(m => m.to === promoted.email)!.text, WAITLIST_LINE)
+
+    const resolution = async () =>
+      (
+        await harness.db
+          .select({ status: schema.waitlistEntries.status, resolvedBy: schema.waitlistEntries.resolvedBy })
+          .from(schema.waitlistEntries)
+          .where(eq(schema.waitlistEntries.id, lateEntry))
+      )[0]!
+    assert.deepEqual(await resolution(), { status: 'waiting', resolvedBy: null }, 'the cancel leaves a started class\'s line alone')
+    await (await import('../jobs')).scheduledJobs.expireWaitlists()
+    assert.deepEqual(await resolution(), { status: 'expired', resolvedBy: 'system' })
+    assert.deepEqual(drain(), [], 'the sweep emails nobody')
+  })
+
+  test('NTF-36 a member waiting on a class and seated on it by a ClassPass import is emailed once when it is cancelled, about the booking', async () => {
+    const both = await member(one)
+    const classId = await addClass(one)
+    await inLine(one, both, classId)
+    const { classPassBookClass } = await import('../services/bookings/book')
+    await dbModule.withTenant(one.id, () => classPassBookClass(one.id, { clientId: both.clientId, classId, reservationId: `cp-${run}-36` }))
+    drain()
+
+    await expectStatus(await adminCancel(one, classId), 200)
+
+    const mail = drain()
+    assert.deepEqual(mail.map(m => [m.to, m.template]), [[both.email, 'admin_cancel_class']])
+    assert.doesNotMatch(mail[0]!.text, WAITLIST_LINE)
   })
 })
