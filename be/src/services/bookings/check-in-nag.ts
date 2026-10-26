@@ -35,6 +35,8 @@ import { staffUsers } from '../../db/schema/identity'
 import { emailEveryAdmin, sendTemplatedEmail } from '../notifications/send'
 import { sessionTimeFormat } from '../notifications/send-booking-email'
 import { requireTenantUrl } from '../tenants/urls'
+import { loadTenantById } from '../tenants/tenants'
+import { localDate } from '../tenants/term-dates'
 import { reportError } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
 import { classHasUndecidedRow, pendingCheckIns, ptSeats, ptSessionHasUndecidedSeat, type RowCheckInState } from './session-check-in'
@@ -45,6 +47,8 @@ const NAG_AFTER_MS = 24 * 60 * 60 * 1000
 const LOOK_BACK_MS = 3 * NAG_AFTER_MS
 
 interface Claimed {
+  /** The check-in desk's name for the session: `class:<id>` or `pt:<id>`. */
+  session: string
   tenantId: string
   instructorId: string
   startsAt: Date
@@ -131,6 +135,7 @@ async function claimClasses(endedBy: Date, endedAfter: Date, now: Date): Promise
       : [],
   )
   return rows.map(r => ({
+    session: `class:${r.id}`,
     tenantId: r.tenantId,
     instructorId: r.instructorId,
     startsAt: r.startsAt,
@@ -155,6 +160,7 @@ async function claimPtSessions(endedBy: Date, endedAfter: Date, now: Date): Prom
     .returning({ id: ptSessions.id, tenantId: ptSessions.tenantId, instructorId: ptSessions.instructorId, startsAt: ptSessions.startsAt })
   const pending = await ptPending(rows.map(r => r.id))
   return rows.map(r => ({
+    session: `pt:${r.id}`,
     tenantId: r.tenantId,
     instructorId: r.instructorId,
     startsAt: r.startsAt,
@@ -166,7 +172,8 @@ async function claimPtSessions(endedBy: Date, endedAfter: Date, now: Date): Prom
 /**
  * Email the Instructor, then every active Admin but them (an Instructor who is
  * also an Admin gets one email). Each link opens the recipient's own check-in
- * desk. Never throws: the claim is already committed.
+ * desk, opened on the session's studio-local day with that session selected
+ * (the `?date=&session=` link the desk reads). Never throws: the claim is already committed.
  */
 async function nag(c: Claimed): Promise<void> {
   try {
@@ -177,12 +184,14 @@ async function nag(c: Claimed): Promise<void> {
       .from(staffUsers)
       .where(and(eq(staffUsers.tenantId, c.tenantId), eq(staffUsers.id, c.instructorId)))
       .limit(1)
+    const day = localDate((await loadTenantById(c.tenantId))?.timezone ?? 'UTC', c.startsAt)
+    const deskLink = (path: string) => `${portal}${path}?date=${day}&session=${c.session}`
     const variables = (checkinPath: string) => ({
       instructor_name: instructor?.name || 'The instructor',
       session_label: c.label,
       date,
       pending_count: String(c.pending),
-      checkin_url: `${portal}${checkinPath}`,
+      checkin_url: deskLink(checkinPath),
     })
     if (instructor && instructor.status === 'active') {
       await sendTemplatedEmail({

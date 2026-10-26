@@ -264,12 +264,16 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
   test('NTF-18 a class still pending 24 hours after it ended emails its Instructor with every active Admin copied, once, and no other studio\'s staff', async () => {
     harness.clock.set(NOW)
     const archived = await staffAt(one.id, 'admin', 'archived')
-    await classEnded(one, 25 * HOUR, ['pending', 'pending', 'attended'])
+    const nagged = await classEnded(one, 25 * HOUR, ['pending', 'pending', 'attended'])
     sent.splice(0)
 
     await jobs.scheduledJobs.sendCheckInNags()
 
     const nags = drainNags()
+    // The class started 26 h before NOW; its day is the studio's own, not UTC's.
+    const [tenant] = await harness.db.select({ timezone: schema.tenants.timezone }).from(schema.tenants).where(eq(schema.tenants.id, one.id))
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: tenant!.timezone }).format(new Date(NOW.getTime() - 26 * HOUR))
+    const deskQuery = `\\?date=${day}&(amp;)?session=class:${nagged}`
     const expected = [one.instructor.email, ...(await activeAdmins(one)).filter(e => e !== one.instructor.email)].sort()
     assert.deepEqual(nags.map(m => m.to).sort(), expected, 'the Instructor and each active Admin of the studio, one email each')
     for (const m of nags) {
@@ -278,9 +282,9 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
       assert.ok((m.text ?? '').includes(one.instructor.name), 'the Instructor is named')
     }
     const toInstructor = nags.find(m => m.to === one.instructor.email)!
-    assert.match(toInstructor.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/instructor/check-in"`))
+    assert.match(toInstructor.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/instructor/check-in${deskQuery}"`))
     const toAdmin = nags.find(m => m.to === one.admin.email)!
-    assert.match(toAdmin.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/admin/check-in"`))
+    assert.match(toAdmin.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/admin/check-in${deskQuery}"`))
     assert.ok(!nags.some(m => m.to === two.admin.email || m.to === two.instructor.email), 'no other studio\'s staff')
     assert.ok(!nags.some(m => m.to === archived.email), 'no archived Admin')
 
