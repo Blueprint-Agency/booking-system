@@ -17,18 +17,22 @@ test("SUP-36 a read the studio or the session refused stays loading while the ap
   }
 });
 
-test("SUP-36 a 404 is an answer, not a failed load: the read settles with nothing, so the page draws its own not-found state", () => {
+test("SUP-36 a read that has a not-found state and opts in reads a 404 as an answer: it settles with nothing, so the page draws its own not-found state", () => {
   for (const err of [answered(404, { error: "workshop_not_found" }), answered(404, { error: "not_found" }), answered(404, null)]) {
-    assert.deepEqual(afterFailedRead(err), { data: null, loading: false }, err.message);
-    assert.deepEqual(afterFailedRead(err, { optional: true }), { data: null, loading: false }, err.message);
+    assert.deepEqual(afterFailedRead(err, { notFound: "answer" }), { data: null, loading: false }, err.message);
+    assert.deepEqual(afterFailedRead(err, { notFound: "answer", optional: true }), { data: null, loading: false }, err.message);
   }
+  assert.throws(() => afterFailedRead(answered(500, { error: "internal_error" }), { notFound: "answer" }), /API error 500/);
 });
 
-test("SUP-36 any other failed read is thrown to the page's error state, never drawn as an empty list or a zero", () => {
+test("SUP-36 any other failed read is thrown to the page's error state, never drawn as an empty list or a zero, a 404 included on a read that has not opted in", () => {
   const failures = [
     answered(500, { error: "internal_error" }),
     answered(502, null),
     answered(403, { error: "client_blocked" }),
+    answered(404, { error: "client_not_found" }),
+    answered(404, { error: "not_found" }),
+    answered(404, null),
     answered(503, "Service Unavailable"),
     new TypeError("Failed to fetch"),
     Object.assign(new Error("The operation timed out."), { name: "TimeoutError" }),
