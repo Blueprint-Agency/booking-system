@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
+import { instructors } from '../../db/schema/catalog'
 import { deleteObject, publicObjectUrl, putObject, r2Bucket } from '../../lib/r2'
 import { tenantKey } from '../../lib/object-key'
 import { OFF_REQUEST_RETRY } from '../../lib/outbound'
@@ -91,6 +92,15 @@ async function replaceKey(owner: PictureOwner, key: string | null): Promise<void
     RETURNING was.photo_r2_key AS replaced`)
   // Invariant: the owner is the signed-in caller, whose row exists.
   if (!row) throw new Error(`no ${TABLES[owner.kind]} row ${owner.id} to hold a picture`)
+  if (owner.kind === 'staff') {
+    // The build before this one reads an instructor's picture here. Written in
+    // the same save, it still shows after a rollback, and never names the
+    // object deleted below.
+    await db
+      .update(instructors)
+      .set({ photoR2Key: key })
+      .where(and(eq(instructors.tenantId, owner.tenantId), eq(instructors.staffUserId, owner.id)))
+  }
   forgetPicture(owner.tenantId, row.replaced)
 }
 
