@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { emailSwitches } from '../../db/schema/content'
 import { auditLog } from '../../db/schema/ledger'
@@ -59,27 +59,29 @@ export async function setEmailSwitch(
   const { audience, locked } = STUDIO_EMAILS[slug]
   if (locked) throw new ConflictError('email_locked', { message: LOCKED_MESSAGE })
 
-  // The row exists before it is locked, so two admins switching the same email
-  // at once take turns and each audit row's `from` is what that admin changed.
-  await db.insert(emailSwitches).values({ tenantId, slug, enabled: true }).onConflictDoNothing()
-  const [row] = await db
-    .select()
-    .from(emailSwitches)
-    .where(and(eq(emailSwitches.tenantId, tenantId), eq(emailSwitches.slug, slug)))
-    .for('update')
-  // Invariant: the insert above leaves this studio a row for the slug.
-  if (!row) throw new Error('email_switch_missing')
+  // One statement, so two admins switching the same email at once take turns on
+  // the row. It returns a row only when it wrote one: an insert (no row was on),
+  // or an update that changed the value. `xmax = 0` marks the insert.
+  const [written] = await db
+    .insert(emailSwitches)
+    .values({ tenantId, slug, enabled })
+    .onConflictDoUpdate({
+      target: [emailSwitches.tenantId, emailSwitches.slug],
+      set: { enabled },
+      setWhere: sql`${emailSwitches.enabled} <> ${enabled}`,
+    })
+    .returning({ id: emailSwitches.id, inserted: sql<boolean>`xmax = 0` })
 
-  if (row.enabled !== enabled) {
-    await db.update(emailSwitches).set({ enabled }).where(and(eq(emailSwitches.tenantId, tenantId), eq(emailSwitches.id, row.id)))
+  const from = written?.inserted ? true : !enabled
+  if (written && from !== enabled) {
     await db.insert(auditLog).values({
       tenantId,
       actorStaffId,
       actorType: 'staff',
       action: 'email_switch_changed',
       targetTable: 'email_switches',
-      targetId: row.id,
-      payload: { slug, from: row.enabled, to: enabled },
+      targetId: written.id,
+      payload: { slug, from, to: enabled },
     })
   }
   return { slug, audience, locked, enabled }
