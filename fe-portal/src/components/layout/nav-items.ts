@@ -39,7 +39,7 @@ export interface NavItem {
    * from `scope`, which is about role visibility.
    */
   workspaceScoped?: boolean;
-  badgeKey?: "ptRequestsPending" | "corporateRequestsPending";
+  badgeKey?: "ptRequestsPending" | "corporateRequestsPending" | "leavePending";
 }
 
 export type NavGroup = "Finance" | "Config" | "Packages" | "People" | "Settings";
@@ -96,7 +96,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Leave is studio-wide and has no location, so it is not workspace-scoped.
   // The queue holds every staff member's requests, admins' among them, and any
   // admin decides any of them (spec-instructor-leave.md § Access and visibility).
-  { group: "People", label: "Leave", href: "/admin/leave", icon: CalendarOff, scope: "both" },
+  { group: "People", label: "Leave", href: "/admin/leave", icon: CalendarOff, scope: "both", badgeKey: "leavePending" },
   // An admin's own leave: the same balances, form and history instructors have.
   { group: "People", label: "My leave", href: "/admin/my-leave", icon: CalendarMinus, scope: "both" },
 
