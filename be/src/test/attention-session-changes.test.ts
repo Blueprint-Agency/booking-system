@@ -238,9 +238,14 @@ describe('Staff attention: session Updates', { skip: integrationTestsEnabled ? f
     return { id: w!.id, dayId: day!.id, startsAt }
   }
 
+  // Inviting an Instructor and granting their permissions legitimately tells them `permissions_changed` and the
+  // Admins `staff_joined` (#491), so both helpers read only this ticket's kinds.
+  const SESSION_KINDS = ['session_changed', 'session_cancelled_by_admin', 'pt_session_cancelled_by_member']
   const updatesOf = async (who: Staff) =>
-    (await json(await send('/portal/attention', who.headers), 200)).updates.items as Array<Record<string, any>>
-  const unread = async (who: Staff) => (await json(await send('/portal/attention/summary', who.headers), 200)).unread_updates as number
+    (
+      (await json(await send('/portal/attention', who.headers), 200)).updates.items as Array<Record<string, any>>
+    ).filter(u => SESSION_KINDS.includes(u.kind))
+  const unread = async (who: Staff) => (await updatesOf(who)).filter(u => !u.read_at).length
 
   const patchClass = (admin: Staff, id: string, body: Record<string, unknown>) =>
     send(`/portal/admin/schedule/classes/${id}`, admin.headers, 'PATCH', body)
