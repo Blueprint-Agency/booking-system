@@ -30,7 +30,7 @@ export const PICTURE_TOO_LARGE = `A profile picture can be at most ${PROFILE_PIC
 export async function setProfilePicture(
   owner: PictureOwner,
   file: { contentType: string; bytes: Uint8Array },
-): Promise<string | null> {
+): Promise<string> {
   const extension = IMAGE_EXTENSIONS[file.contentType]
   if (!extension) {
     throw new BadRequestError('image_type_not_allowed', { message: 'A profile picture must be a JPG, PNG or WebP.' })
@@ -41,13 +41,15 @@ export async function setProfilePicture(
   if (file.bytes.byteLength > PROFILE_PICTURE_MAX_BYTES) {
     throw new BadRequestError('image_too_large', { message: PICTURE_TOO_LARGE })
   }
-  if (!r2Bucket()) {
+  const key = tenantKey(owner.tenantId, `avatars/${randomUUID()}.${extension}`)
+  // Null when the bucket has no public host: a picture nobody could see.
+  const url = publicObjectUrl(key)
+  if (!r2Bucket() || !url) {
     throw new AppError(422, 'image_storage_unavailable', {
       message: 'Picture storage is not configured. Ask an admin to set it up.',
     })
   }
 
-  const key = tenantKey(owner.tenantId, `avatars/${randomUUID()}.${extension}`)
   await putObject(key, file.bytes, file.contentType)
   try {
     await replaceKey(owner, key)
@@ -58,7 +60,7 @@ export async function setProfilePicture(
     })
     throw err
   }
-  return publicObjectUrl(key)
+  return url
 }
 
 /** Clear the owner's picture: their initials show instead. */
