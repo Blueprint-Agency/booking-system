@@ -85,7 +85,7 @@ test("STF-50 an archive from before #471 restores each instructor's photo as the
   })
   assert.deepEqual(rows.staff_users, [
     { id: ADA, role: 'instructor', photo_r2_key: photo },
-    { id: ANNA, role: 'admin', photo_r2_key: null },
+    { id: ANNA, role: 'admin' },
   ])
 
   const current = {

@@ -54,6 +54,17 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
     }
   }
 
+  // #471: a Profile picture is the staff member's own, on `staff_users`. A
+  // staff row with no picture column predates it, and the instructor's photo
+  // becomes their picture. The photo stays where it was on `instructors` too,
+  // a column nothing reads.
+  const photos = new Map((rows.instructors ?? []).flatMap(r => (r.photo_r2_key ? [[r.staff_user_id, r.photo_r2_key]] : [])))
+  if (photos.size > 0 && out.staff_users) {
+    out.staff_users = out.staff_users.map(row =>
+      'photo_r2_key' in row || !photos.has(row.id) ? row : { ...row, photo_r2_key: photos.get(row.id) },
+    )
+  }
+
   // Migration 0115 (#398): the Legal name became the Business name, and a
   // studio named as 0115 named it: its Legal name, else its display name, else
   // the studio's name as the archive recorded it (`tenants.name`). A Receipt's
