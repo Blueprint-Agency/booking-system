@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge, Button, Select } from "@/components/ui";
@@ -7,6 +7,7 @@ import { ApiError, type Api } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { formatDateTime } from "@/lib/formatters";
 import { mappableLocations } from "@/lib/classpass";
+import { reviewParam, withoutParams } from "@/lib/attention";
 import {
   bookClassPassReviewItem,
   canBook,
@@ -72,6 +73,20 @@ export function ClassPassReview({
   const [busy, setBusy] = useState(false);
   const [version, setVersion] = useState(0);
   const load = useCallback(() => setVersion((n) => n + 1), []);
+  // The item a bell link (`?review=<id>`) names: scrolled to and opened once the list has loaded.
+  // Read once, on arrival. An id that is no longer open (someone dealt with it) matches no item.
+  const [wanted] = useState(() => (typeof window === "undefined" ? null : reviewParam(window.location.search)));
+  const focusId = wanted && items?.some((i) => i.id === wanted) ? wanted : null;
+
+  useEffect(() => {
+    if (!wanted || items === null) return;
+    // Drop the param so closing the item and following the same link again opens it again.
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${withoutParams(window.location.search, ["review"])}${window.location.hash}`,
+    );
+  }, [wanted, items === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +150,7 @@ export function ClassPassReview({
               api={api}
               item={item}
               locations={locations}
+              focused={item.id === focusId}
               busy={busy}
               onBook={(classId) => run(() => bookClassPassReviewItem(api, item.id, classId), () => "Booked.")}
               onDismiss={() => run(() => dismissClassPassReviewItem(api, item.id), () => "Dismissed.")}
@@ -153,6 +169,7 @@ function ReviewItem({
   api,
   item,
   locations,
+  focused,
   busy,
   onBook,
   onDismiss,
@@ -161,12 +178,21 @@ function ReviewItem({
   api: Api;
   item: ClassPassReviewItem;
   locations: { id: string; name: string; archivedAt: string | null }[];
+  /** A bell link named this item: scroll to it and open the email. */
+  focused: boolean;
   busy: boolean;
   onBook: (classId: string) => void;
   onDismiss: () => void;
   onMap: (locationId: string) => void;
 }) {
-  const [showEmail, setShowEmail] = useState(false);
+  // The email is open for the item a bell link named, until the Admin says otherwise.
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  const showEmail = chosen ?? focused;
+  const rowRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (!focused) return;
+    rowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [focused]);
   const [classes, setClasses] = useState<ApiScheduleEntry[] | null>(null);
   const [picking, setPicking] = useState(false);
   const [classId, setClassId] = useState("");
@@ -195,7 +221,11 @@ function ReviewItem({
   ];
 
   return (
-    <li className="rounded-md border border-border p-3">
+    <li
+      ref={rowRef}
+      id={`classpass-review-${item.id}`}
+      className={`rounded-md border p-3 ${focused ? "border-accent" : "border-border"}`}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={item.reason === "unparsed" || item.reason === "import_error" ? "error" : "warning"}>
           {reviewReasonLabel(item.reason)}
@@ -212,7 +242,7 @@ function ReviewItem({
         ))}
       </dl>
 
-      <button type="button" className="mt-2 text-xs text-accent underline" onClick={() => setShowEmail((v) => !v)}>
+      <button type="button" className="mt-2 text-xs text-accent underline" onClick={() => setChosen(!showEmail)}>
         {showEmail ? "Hide the email" : "Show the email"}
       </button>
       {showEmail &&

@@ -178,6 +178,8 @@ export function memberFixtures(harness: TestApp, schema: typeof Schema, domain: 
         return { client_id: m.clientId }
       case 'email_log':
         return { recipient_user_kind: 'client', recipient_user_id: m.clientId }
+      case 'staff_updates':
+        return { subject_client_id: m.clientId, payload: {} }
       case 'inbox_items':
         return { payload: { clientId: m.clientId } }
       case 'audit_log':

@@ -26,8 +26,13 @@ export type AttentionBadgeKey = 'pt_requests' | 'corporate_requests' | 'leave' |
 /** The Attention item kinds, each the `kind` of one provider. */
 export type AttentionKind =
   | 'pt_request_pending'
+  | 'corporate_request_pending'
+  | 'corporate_session_unmarked'
+  | 'corporate_refunded_still_scheduled'
   | 'leave_request_pending'
   | 'check_in_unfinished'
+  | 'classpass_review'
+  | 'classpass_overbooked'
   | 'staff_invitation_expired'
   | 'staff_email_change_expired'
   | 'staff_without_email'

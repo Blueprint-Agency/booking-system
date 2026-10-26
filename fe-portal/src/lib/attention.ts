@@ -47,6 +47,39 @@ export interface AttentionPanelData {
   updates: { items: AttentionUpdate[]; next_cursor: string | null };
 }
 
+// ── The Updates tab ─────────────────────────────────────────────────────────
+
+/** The tab's label: the unread count beside it, nothing when all are read. */
+export function updatesTabLabel(unread: number): string {
+  return unread > 0 ? `Updates (${unread} new)` : "Updates";
+}
+
+export function unreadCount(updates: readonly AttentionUpdate[]): number {
+  return updates.filter((u) => u.read_at === null).length;
+}
+
+/** Opening an update marks it read: the list shows that at once, without a refetch. */
+export function markUpdateReadLocally(
+  updates: readonly AttentionUpdate[],
+  id: string,
+  at: string,
+): AttentionUpdate[] {
+  return updates.map((u) => (u.id === id && u.read_at === null ? { ...u, read_at: at } : u));
+}
+
+export function markAllReadLocally(updates: readonly AttentionUpdate[], at: string): AttentionUpdate[] {
+  return updates.map((u) => (u.read_at === null ? { ...u, read_at: at } : u));
+}
+
+/** "Show older": the next page goes on the end, and an update already shown is not shown twice. */
+export function appendOlder(
+  shown: readonly AttentionUpdate[],
+  older: readonly AttentionUpdate[],
+): AttentionUpdate[] {
+  const have = new Set(shown.map((u) => u.id));
+  return [...shown, ...older.filter((u) => !have.has(u.id))];
+}
+
 /** The red bubble's text: nothing at 0, the number to 99, then "99+". */
 export function bubbleText(total: number): string | null {
   if (!(total > 0)) return null;
@@ -117,6 +150,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The `?request=` a bell link carries, or null when absent or not an id. */
 export function requestParam(search: string): string | null {
   const id = new URLSearchParams(search).get("request");
+  return id && UUID.test(id) ? id : null;
+}
+
+/** The `?review=` a bell link carries to the ClassPass page, or null when absent or not an id. */
+export function reviewParam(search: string): string | null {
+  const id = new URLSearchParams(search).get("review");
   return id && UUID.test(id) ? id : null;
 }
 
