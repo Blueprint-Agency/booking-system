@@ -9,7 +9,7 @@ const PUBLIC_HOST = 'https://pictures.cdn.test'
 const MB = 1024 * 1024
 
 /**
- * Profile pictures over HTTP (#471): a member, an instructor and an admin each
+ * Profile pictures over HTTP: a member, an instructor and an admin each
  * upload, replace and remove their own picture, and nobody can set anyone
  * else's.
  *

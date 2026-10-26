@@ -1,4 +1,4 @@
--- A Profile picture is the staff member's own (#471), on `staff_users`, which
+-- A Profile picture is the staff member's own, on `staff_users`, which
 -- the migration before this one added. Copy each instructor's photo across.
 --
 -- `instructors.photo_r2_key` is not dropped here: the build before this one

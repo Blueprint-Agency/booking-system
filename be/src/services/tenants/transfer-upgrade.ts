@@ -54,10 +54,10 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
     }
   }
 
-  // #471: a Profile picture is the staff member's own, on `staff_users`. A
-  // staff row with no picture column predates it, and the instructor's photo
-  // becomes their picture. The photo stays where it was on `instructors` too,
-  // a column nothing reads.
+  // Migration `instructor_photos_to_staff`: a Profile picture is the staff
+  // member's own, on `staff_users`. A staff row with no picture column
+  // predates it, and the instructor's photo becomes their picture. The photo
+  // stays where it was on `instructors` too, a column nothing reads.
   const photos = new Map((rows.instructors ?? []).flatMap(r => (r.photo_r2_key ? [[r.staff_user_id, r.photo_r2_key]] : [])))
   if (photos.size > 0 && out.staff_users) {
     out.staff_users = out.staff_users.map(row =>
