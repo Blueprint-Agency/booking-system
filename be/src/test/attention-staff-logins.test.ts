@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, afterEach, before, describe, test } from 'node:test'
 import { and, eq } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
  * Staff attention, staff logins (#476, #487): `staff_invitation_expired`,
@@ -9,6 +10,7 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
  * Every test makes a studio of its own, so a count says only what it filed.
  */
 describe('Staff attention: staff logins', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+  usePaymentKey()
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')
@@ -39,6 +41,7 @@ describe('Staff attention: staff logins', { skip: integrationTestsEnabled ? fals
   const freshStudio = async (): Promise<Studio> => {
     const slug = `attsl-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({ slug, name: 'Attention Logins Studio', adminEmail: `owner@${slug}.test` })
+    await connectPayments(tenant.id)
     // The studio's first admin was invited and never arrived; settle that invitation so a test counts only its own.
     await harness.db
       .update(schema.staffInvitations)
