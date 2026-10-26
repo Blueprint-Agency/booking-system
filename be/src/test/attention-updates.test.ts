@@ -151,8 +151,12 @@ describe('Staff attention: Updates', { skip: integrationTestsEnabled ? false : S
     assert.ok(u!.created_at)
 
     // The admin who decided it is told nothing.
-    assert.equal((await summary(admin)).unread_updates, 0)
-    assert.deepEqual(await updatesOf(admin), [])
+    // (Ada joining did tell the admin, `staff_joined`, #491; the leave is not it.)
+    assert.deepEqual(
+      (await updatesOf(admin)).map(x => x.kind),
+      ['staff_joined'],
+    )
+    assert.equal((await summary(admin)).unread_updates, 1)
   })
 
   test('ATN-141 declining leave gives the applicant the reason and the admin’s name; an admin applicant is linked to My leave', async () => {
@@ -304,7 +308,8 @@ describe('Staff attention: Updates', { skip: integrationTestsEnabled ? false : S
     const left = await harness.db
       .select({ subject: schema.staffUpdates.subjectClientId })
       .from(schema.staffUpdates)
-      .where(eq(schema.staffUpdates.tenantId, studio.id))
+      // Not the admin's `staff_joined` for Ada (#491), which names no member either.
+      .where(and(eq(schema.staffUpdates.tenantId, studio.id), eq(schema.staffUpdates.recipientStaffId, ada.id)))
     assert.deepEqual(left, [{ subject: null }], 'only the update that named no one is left')
   })
 })
