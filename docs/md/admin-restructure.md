@@ -39,6 +39,13 @@ Locations are workspaces. Surfaces are partitioned as follows:
   - Anyone else with no location to open → "No workspace access — contact an admin" empty state.
   - Otherwise pass-through.
 
+### Account menu and My profile (topbar)
+
+- The topbar's right-hand button shows the signed-in staff member's own **Profile picture**, or their initials when they have none (`photo_url` on `/portal/auth/me`). It opens the account menu: **My profile** and **Sign out**.
+- **My profile** goes to `/admin/profile` for an admin and `/instructor/profile` for an instructor. An admin who also teaches is still an admin, with one staff row and so one picture: they use `/admin/profile`.
+- `/admin/profile` (#468) shows the admin's name, email and role, read-only (an admin edits their own details from the Staff page), and the **Picture** field. The instructor's profile page carries the same Picture field above their bio.
+- **Picture field.** Upload (or Change) picks a photo; the browser opens it in a framing dialog, where the staff member drags it and zooms (up to 4×) until the circle shows what they want. **Use picture** draws the framed square onto a 512×512 JPEG in the browser and uploads it to `POST /portal/profile/photo`; the server only checks type and size. **Remove** calls `DELETE /portal/profile/photo` and the initials come back. A refusal shows the API's own sentence. The topbar picture changes at once. The field only ever acts on the caller's own picture: no portal control changes anyone else's.
+
 ### Sidebar structure
 
 **Visual layout** (top to bottom):
@@ -162,7 +169,7 @@ Locations are the workspace boundary — every scoped surface (Schedule, Rooms, 
 - Email
 - Eligible class types (multi-select from the shared Class Types catalogue)
 
-**All fields but the picture are editable.** A Profile picture is set only by its owner: the instructor on their own profile page, an admin on their own **My profile** page (#468). No admin can upload, replace or remove anyone else's, and **Add instructor** takes no photo.
+**All fields but the picture are editable.** A Profile picture is set only by its owner: the instructor on their own profile page, an admin on their own **My profile** page (#468). No admin can upload, replace or remove anyone else's, and **Add instructor** takes no photo. The staff dialog shows the person's picture read-only, with "Only {first name} can change this picture." (on the admin's own row, a link to My profile instead). Pictures also show on the staff list, and members' pictures on the customers list and profile, the check-in desk, the PT and corporate request drawers and class rosters, each with initials when there is none.
 No location assignment in v1. No pay rate in app (handled externally).
 
 **Page behaviour:**
