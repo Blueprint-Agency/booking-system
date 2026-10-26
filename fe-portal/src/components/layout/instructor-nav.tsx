@@ -5,6 +5,7 @@ import { Menu, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { StudioMark } from "@/components/brand/studio-mark";
 import { useWorkspace } from "@/lib/workspace-context";
+import { useAttention } from "@/components/attention/attention-provider";
 import { SidebarBrand, SidebarFrame, SidebarLink } from "./sidebar";
 import { instructorNavItems, type InstructorNavItem } from "./instructor-nav-items";
 
@@ -52,33 +53,12 @@ function NavLinkList({
 }
 
 function useInstructorNavItems(): BadgedNavItem[] {
-  const { api, may } = useWorkspace();
-  const pathname = usePathname() ?? "";
-  const [ptPending, setPtPending] = useState<number | undefined>(undefined);
-  const takesPt = may("take_pt_bookings");
-
-  // Live count of the shared pending PT queue for the nav badge. Not asked
-  // for without Take PT bookings: the backend would refuse it.
-  useEffect(() => {
-    if (!api || !takesPt) {
-      setPtPending(undefined);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await api.get<{ pt_requests: unknown[] }>(
-          "/portal/instructor/pt-requests"
-        );
-        if (!cancelled) setPtPending(res.pt_requests?.length || undefined);
-      } catch {
-        if (!cancelled) setPtPending(undefined);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [api, pathname, takesPt]);
+  const { may } = useWorkspace();
+  // The attention provider's count for this instructor's own PT queue: the
+  // backend already leaves it at 0 without Take PT bookings, so nothing is
+  // asked for here (and no whole list is downloaded to count it).
+  const { byGroup } = useAttention();
+  const ptPending = may("take_pt_bookings") ? byGroup.pt_requests || undefined : undefined;
 
   return instructorNavItems(may).map((item) =>
     item.permission === "take_pt_bookings" ? { ...item, badge: ptPending } : item

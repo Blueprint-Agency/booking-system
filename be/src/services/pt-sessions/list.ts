@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
 import { clients, staffUsers } from '../../db/schema/identity'
@@ -548,13 +548,14 @@ export interface ListPtRequestsForAdminOpts {
    * which sees everything with the binding shown.
    */
   visibleToInstructorId?: string
+  /** Oldest first instead of newest first (the attention panel works the oldest first). */
+  oldestFirst?: boolean
+  /** At most this many rows. */
+  limit?: number
 }
 
-/** Portal triage queue. Optional status + location-scope filters; newest first. */
-export async function listPtRequestsForAdmin(
-  tenantId: string,
-  opts: ListPtRequestsForAdminOpts = {},
-): Promise<AdminPtRequestView[]> {
+/** The filter the queue and its count share, so a badge never disagrees with the list behind it. */
+function queueConds(tenantId: string, opts: ListPtRequestsForAdminOpts) {
   const conds = [eq(ptRequests.tenantId, tenantId)]
   if (opts.status) conds.push(eq(ptRequests.status, opts.status))
   if (opts.locationIds && opts.locationIds.length) {
@@ -570,10 +571,32 @@ export async function listPtRequestsForAdmin(
       )!,
     )
   }
-  const rows = await adminSelect()
-    .where(and(...conds))
-    .orderBy(desc(ptRequests.createdAt))
+  return and(...conds)
+}
+
+/** Portal triage queue. Optional status + location-scope filters; newest first. */
+export async function listPtRequestsForAdmin(
+  tenantId: string,
+  opts: ListPtRequestsForAdminOpts = {},
+): Promise<AdminPtRequestView[]> {
+  const query = adminSelect()
+    .where(queueConds(tenantId, opts))
+    .orderBy(opts.oldestFirst ? asc(ptRequests.createdAt) : desc(ptRequests.createdAt))
+  const rows = await (opts.limit ? query.limit(opts.limit) : query)
   return hydrateAdminRows(tenantId, rows)
+}
+
+/** How many requests `listPtRequestsForAdmin` would return for the same filter: one indexed count, no rows. */
+export async function countPtRequestsForAdmin(
+  tenantId: string,
+  opts: Pick<ListPtRequestsForAdminOpts, 'status' | 'locationIds' | 'visibleToInstructorId'> = {},
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(ptRequests)
+    .leftJoin(clientPackages, eq(clientPackages.id, ptRequests.debitedClientPackageId))
+    .where(queueConds(tenantId, opts))
+  return row?.n ?? 0
 }
 
 export async function getPtRequestForAdmin(

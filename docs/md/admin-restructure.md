@@ -655,6 +655,8 @@ Every staff cancel asks, in one shared dialog, with **neither option pre-selecte
 
 > **Not being built** (product decision, 2026-10-24; #237 closed as not planned). There is no `/admin/inbox` page, no unread count and no `/portal/admin/inbox` route. A cancellation shows on the session's roster and the member's profile. PT request triage has its own page (`/admin/pt-requests`, §9).
 
+> **The bell is a different thing** (#476). Both portal shells carry a notification bell for work waiting on the signed-in person and the few changes they need to hear about. It is not this Inbox: it is not a shared feed of cancellations, and nothing in it is shared read state. See `be/docs/adr/0015-staff-attention-is-derived-updates-are-per-recipient.md` and `be/CONTEXT.md` § Staff (Attention item, Update, Dismissal).
+
 ---
 
 ## 14. Roles & Invitations

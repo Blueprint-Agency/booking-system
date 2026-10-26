@@ -132,6 +132,22 @@ const STUDIO_ADMIN: Gate = {
 }
 
 /**
+ * `/portal/attention/*`: any signed-in staff member of the studio named, Admin
+ * or Instructor. What each is owed is decided per kind in the service, so the
+ * gate admits both roles and nobody who is not staff here.
+ */
+const STUDIO_STAFF: Gate = {
+  allowed: ['adminOfOne', 'instructorOfOne'],
+  refused: {
+    anonymous: [401, 'missing_bearer_token'],
+    memberOfOne: [401, 'invalid_token'],
+    memberOfTwo: [401, 'invalid_token'],
+    platformAdmin: [401, 'invalid_token'],
+    noStudio: [400, 'tenant_required'],
+  },
+}
+
+/**
  * Every refusal any gate gives. An admitted caller's response must be none of
  * them: a business refusal on this surface always names its own code
  * (`booking_not_found`, `card_not_found`, a validation failure, …).
@@ -303,10 +319,14 @@ const EXPECTATIONS: Record<string, Expectation> = {
     gate: STUDIO_ADMIN,
     probe: { body: { location_id: '00000000-0000-4000-8000-000000000000' } },
   },
+  // The bell (#477): the counts and the panel, for both staff roles.
+  'GET /api/v1/portal/attention/summary': { gate: STUDIO_STAFF },
+  'GET /api/v1/portal/attention': { gate: STUDIO_STAFF },
 }
 
 /** The prefixes the matrix speaks for: every route under them needs a line above. */
-const UNDER_THE_MATRIX = /^\/api\/v1\/(me|public|platform|portal\/admin\/receipts|portal\/admin\/classpass)(\/|$)/
+const UNDER_THE_MATRIX =
+  /^\/api\/v1\/(me|public|platform|portal\/admin\/receipts|portal\/admin\/classpass|portal\/attention)(\/|$)/
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH'])
 
 describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
@@ -551,7 +571,7 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
     }
   })
 
-  test('INV-54 a refused caller gets the gate’s own refusal, and the refused calls write nothing', async () => {
+  test('INV-54 a refused caller gets the gate’s own refusal, and the refused calls write nothing (ATN-09: and nobody else reaches the bell’s routes)', async () => {
     const before = await snapshot()
     const wrong: string[] = []
     for (const key of declaredRoutes()) {
@@ -566,7 +586,7 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
     assert.deepEqual(await snapshot(), before, 'a refused call wrote something')
   })
 
-  test('an admitted caller gets past the gate', async () => {
+  test('an admitted caller gets past the gate (ATN-09: Admins and Instructors reach the bell’s routes)', async () => {
     const wrong: string[] = []
     for (const key of declaredRoutes()) {
       for (const caller of EXPECTATIONS[key]!.gate.allowed) {

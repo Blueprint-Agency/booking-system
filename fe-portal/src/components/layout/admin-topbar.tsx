@@ -2,6 +2,7 @@
 import { AdminMobileNavTrigger } from "./admin-nav";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { DevRoleSwitcher } from "./dev-role-switcher";
+import { AttentionBell } from "@/components/attention/attention-bell";
 
 export function AdminTopBar() {
   return (
@@ -10,7 +11,8 @@ export function AdminTopBar() {
         <AdminMobileNavTrigger />
         <WorkspaceSwitcher />
       </div>
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <AttentionBell />
         <DevRoleSwitcher />
       </div>
     </header>
