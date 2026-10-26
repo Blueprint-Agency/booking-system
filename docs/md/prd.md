@@ -7,6 +7,11 @@
 > studio is named anywhere in the repo. Read §1.1 with that correction, and see
 > `multi-tenancy-plan.md` and `spec-tenant-resolution.md` for what replaced it.
 
+> **Superseded on waivers.** Waivers are not being built (#233). Every waiver
+> line below (signing, resets, the annual expiry, the bulk reset, the waiver
+> emails, settings and reports) describes nothing in the code. See
+> `admin-restructure.md` §17.
+
 **Status:** v1 scope, post-redo (2026-05-01)
 **Owner:** Teeko (Christopher Kwek)
 **Companion docs:** [`fe-client-features.md`](./fe-client-features.md) (canonical client-surface spec)

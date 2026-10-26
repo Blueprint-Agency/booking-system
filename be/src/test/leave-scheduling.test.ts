@@ -762,7 +762,7 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
 
   /* ── the instructor cancels his own class ──────────────────────────── */
 
-  test('LEV-112 the main instructor cancels his class with a reason: every booking cancelled and refunded exactly as an admin cancel', async () => {
+  test('LEV-112, LEV-143 the main instructor cancels his class with a reason: every booking cancelled and refunded exactly as an admin cancel, and the studio is emailed his reason', async () => {
     const byInstructor = await soonClass(teacher, 3 * DAY)
     const byAdmin = await soonClass(teacher, 3 * DAY + 2 * HOUR)
     const ana = await member('ana')
@@ -818,6 +818,18 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
       refunds.map(r => [r.delta, r.reason]),
       [[1, 'instructor_class_cancellation_refund']],
     )
+
+    const told = await harness.db
+      .select({ status: schema.emailLog.status })
+      .from(schema.emailLog)
+      .where(
+        and(
+          eq(schema.emailLog.recipientEmail, at(`admin-${one.slug}`)),
+          eq(schema.emailLog.templateSlug, 'instructor_cancel_class'),
+          like(schema.emailLog.bodyRendered, `%Reason given: ${reason}%`),
+        ),
+      )
+    assert.deepEqual(told.map(t => t.status), ['sent'])
   })
 
   test('LEV-114 there is no notice window: he cancels his class ten minutes before it starts', async () => {

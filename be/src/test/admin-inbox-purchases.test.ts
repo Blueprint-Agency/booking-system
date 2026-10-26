@@ -474,7 +474,7 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     assert.equal(ptItem.payload.refundOutcome, ptCancelled.refundOutcome)
   })
 
-  test('INB-08 a refused cancel writes no Inbox item: wrong role, another instructor’s class, or another studio', async () => {
+  test('INB-08 a refused cancel leaves the class active and its booking confirmed, with no cancellation recorded: wrong role, another instructor’s class, or another studio', async () => {
     const classId = await addClass(one, 3 * DAY)
     const mo = await bookedMember(one, 'Mo Refused', classId)
 
@@ -500,8 +500,9 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     const crossed = { ...adminAtTwo.headers, 'X-Tenant-Slug': one.slug }
     assert.ok([401, 403].includes((await send(`/portal/admin/schedule/classes/${classId}/cancel`, crossed)).status))
 
-    assert.deepEqual(await inboxNaming('classId', classId), [])
-    assert.deepEqual(await inboxNaming('bookingId', mo.bookingId), [])
+    const [cls] = await harness.db.select().from(schema.classes).where(eq(schema.classes.id, classId))
+    assert.equal(cls!.lifecycle, 'active')
+    assert.deepEqual(await harness.db.select().from(schema.cancellations).where(eq(schema.cancellations.bookingId, mo.bookingId)), [])
     const [booking] = await harness.db.select().from(schema.bookings).where(eq(schema.bookings.id, mo.bookingId))
     assert.equal(booking!.state, 'confirmed')
   })

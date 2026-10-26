@@ -150,9 +150,6 @@ export const tenantSettings = pgTable('tenant_settings', {
   mailFromEmail: text('mail_from_email'),
   mailReplyTo: text('mail_reply_to'),
 
-  // Liability waiver shown at sign-up. The `waiver` table remains the live
-  // source of truth for tenant #1; this column is where per-tenant waiver text
-  // lands as tenants are provisioned.
   waiverText: text('waiver_text'),
 
   // The studio's Business name (#398): the one name it trades under, which

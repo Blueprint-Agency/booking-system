@@ -193,6 +193,30 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
     }
   })
 
+  test('SCH-39 an instructor id sent in capitals is that instructor: a series naming them twice, or as main and supporting, is refused and nothing is created', async () => {
+    const twice = {
+      ...template(),
+      supporting_instructors: [
+        { instructor_id: helper.id, pay_sgd: 30 },
+        { instructor_id: helper.id.toUpperCase(), pay_sgd: 30 },
+      ],
+    }
+    const mainToo = { ...template(), supporting_instructors: [{ instructor_id: teacher.id.toUpperCase(), pay_sgd: 30 }] }
+    for (const path of ['/series/preview', '/series']) {
+      assert.equal((await json(await send(path, admin.headers, 'POST', twice), 400)).error, 'duplicate_supporting_instructor')
+      assert.equal((await json(await send(path, admin.headers, 'POST', mainToo), 400)).error, 'supporting_instructor_duplicates_main')
+    }
+    const made = await harness.db.select().from(schema.classSeries).where(eq(schema.classSeries.classTypeId, classTypeId))
+    assert.deepEqual(made, [])
+
+    const capitals = {
+      ...template(),
+      main_instructor_id: teacher.id.toUpperCase(),
+      supporting_instructors: [{ instructor_id: helper.id.toUpperCase(), pay_sgd: 30 }],
+    }
+    assert.equal((await json(await send('/series/preview', admin.headers, 'POST', capitals), 200)).dates.length, 4)
+  })
+
   let seriesId!: string
 
   test('SCH-13 a clash on any date is listed, and a commit with it creates nothing', async () => {
