@@ -17,11 +17,18 @@ test("SUP-36 a read the studio or the session refused stays loading while the ap
   }
 });
 
+test("SUP-36 a 404 is an answer, not a failed load: the read settles with nothing, so the page draws its own not-found state", () => {
+  for (const err of [answered(404, { error: "workshop_not_found" }), answered(404, { error: "not_found" }), answered(404, null)]) {
+    assert.deepEqual(afterFailedRead(err), { data: null, loading: false }, err.message);
+    assert.deepEqual(afterFailedRead(err, { optional: true }), { data: null, loading: false }, err.message);
+  }
+});
+
 test("SUP-36 any other failed read is thrown to the page's error state, never drawn as an empty list or a zero", () => {
   const failures = [
     answered(500, { error: "internal_error" }),
+    answered(502, null),
     answered(403, { error: "client_blocked" }),
-    answered(404, { error: "client_not_found" }),
     answered(503, "Service Unavailable"),
     new TypeError("Failed to fetch"),
     Object.assign(new Error("The operation timed out."), { name: "TimeoutError" }),

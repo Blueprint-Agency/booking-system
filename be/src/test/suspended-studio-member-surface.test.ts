@@ -121,7 +121,7 @@ describe('a suspended studio refuses its member surface', { skip: integrationTes
     )
   })
 
-  test("SUP-32 a suspended studio refuses its signed-in member's account, checkout and booking 403 tenant_suspended, and their session reads as none", async () => {
+  test("SUP-32 a suspended studio refuses its signed-in member's account, checkout, booking and session read 403 tenant_suspended", async () => {
     const held = await rowsHeldBy(studio.id)
     const calls: Array<[what: string, method: string, path: string, body?: unknown]> = [
       ['their account', 'GET', '/api/v1/me'],
