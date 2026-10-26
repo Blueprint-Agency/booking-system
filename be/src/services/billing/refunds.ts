@@ -50,6 +50,8 @@ import { logger, reportError } from '../../shared/logger'
 import { toCents } from '../../shared/money'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { cancelBooking } from '../bookings/cancel'
+import { lockForCancel } from '../bookings/lock-for-cancel'
+import type { Tx } from '../schedule/roster'
 import { closeCorporateRequestsForRefund } from '../corporate/requests'
 import { refundPromoCodeRedemption } from '../packages/promo-redemption'
 import { sendTemplatedEmail } from '../notifications/send'
@@ -65,6 +67,7 @@ import {
   markPurchaseRefunded,
   paymentsForPurchase,
   purchaseById,
+  restateBalanceOnPartRefund,
   type PurchasePayment,
   type PurchaseRow,
 } from './purchases'
@@ -1004,10 +1007,10 @@ export async function unwindRefund(
  */
 export function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
   // One unit: a deadlock in any of its cancels starts the whole unwind over.
-  return retryingTransaction(() => unwindPayment(paymentIntentId))
+  return retryingTransaction(tx => unwindPayment(tx, paymentIntentId))
 }
 
-async function unwindPayment(paymentIntentId: string): Promise<void> {
+async function unwindPayment(tx: Tx, paymentIntentId: string): Promise<void> {
   const [payment] = await db
     .select({
       // The provider's event names an intent and nothing else, and the intent is
@@ -1037,7 +1040,7 @@ async function unwindPayment(paymentIntentId: string): Promise<void> {
   // last. A redelivery that arrives after this write still walks the whole
   // unwind, which is what makes a pass that died halfway simply get redone.
   await stampPaymentRefunded(tenantId, paymentIntentId)
-  await unwindPurchase(tenantId, payment.purchaseId)
+  await unwindPurchase(tx, tenantId, payment.purchaseId)
 }
 
 /**
@@ -1056,7 +1059,7 @@ async function unwindPayment(paymentIntentId: string): Promise<void> {
  * half-finished pass is simply redone, and the one non-repeatable act — the
  * member's email — rides on the one atomic write.
  */
-async function unwindPurchase(tenantId: string, purchaseId: string): Promise<void> {
+async function unwindPurchase(tx: Tx, tenantId: string, purchaseId: string): Promise<void> {
   const purchase = await purchaseById(tenantId, purchaseId)
   // Already refunded or already abandoned means a redelivery of an event that
   // completed.
@@ -1065,6 +1068,7 @@ async function unwindPurchase(tenantId: string, purchaseId: string): Promise<voi
   const payments = await paymentsForPurchase(tenantId, purchaseId)
   const outstanding = heldPayments(payments)
   if (outstanding.length > 0) {
+    await restateBalanceOnPartRefund(tenantId, purchaseId, payments)
     reportError(
       new Error(`purchase ${purchaseId} is part-refunded: ${outstanding.length} payment(s) still held`),
       'refund not complete — some payments not returned',
@@ -1175,6 +1179,8 @@ async function unwindPurchase(tenantId: string, purchaseId: string): Promise<voi
     return
   }
 
+  await lockForCancel(tx, tenantId, { bookingIds: (await futureBookingsOn(tenantId, pkg.id)).map(t => t.id) })
+
   // `active` is the same lever the nightly expiry sweep already pulls — no new
   // column, and the payment's status records *why* it went down.
   await db
@@ -1190,7 +1196,9 @@ async function unwindPurchase(tenantId: string, purchaseId: string): Promise<voi
 
   // Every FUTURE booking the purchase paid for is cancelled. Attended
   // and no-showed bookings stand as history: un-attending a class would rewrite
-  // instructor payroll and the studio's attendance record.
+  // instructor payroll and the studio's attendance record. Read again now the
+  // Void holds the package, so a booking that paid with it just before is
+  // cancelled too.
   const cancelled = await cancelFutureBookings(tenantId, pkg.id)
 
   // The Purchase's status becomes refunded and its Balance goes to zero. Last,
@@ -1324,15 +1332,34 @@ async function stampRefundRequested(tenantId: string, paymentIntentId: string): 
  * Cancel every future booking the voided purchase paid for, through the existing
  * cancel service with a `system` source — so waitlist promotion comes free and
  * there is one cancellation path rather than two.
- *
- * Only `confirmed` and `pending` bookings whose session is still ahead are
- * touched, which is both the history rule and the idempotency: a second pass
- * finds none.
  */
 async function cancelFutureBookings(
   tenantId: string,
   clientPackageId: string,
 ): Promise<CancelledSession[]> {
+  const cancelled: CancelledSession[] = []
+  for (const t of await futureBookingsOn(tenantId, clientPackageId)) {
+    try {
+      // A Voided package takes nothing back whichever way `credit` points: `n_a`.
+      await cancelBooking(tenantId, { bookingId: t.id, source: 'system', credit: 'return', packageVoided: true })
+      cancelled.push({ name: t.name, startsAt: t.startsAt })
+    } catch (err) {
+      if (isRetryableAbort(err)) throw err
+      // One booking that will not cancel — checked in between the read and the
+      // write, most likely — must not strand the rest, nor hold back the email
+      // telling the member their plan has ended. It is reported, loudly: a
+      // confirmed booking left on a Voided package is a seat someone was
+      // refunded for, and a human has to settle it.
+      reportError(err, 'refund could not cancel booking', { scope: 'refunds', bookingId: t.id })
+    }
+  }
+  return cancelled
+}
+
+async function futureBookingsOn(
+  tenantId: string,
+  clientPackageId: string,
+): Promise<Array<{ id: string; name: string; startsAt: Date }>> {
   const now = new Date()
   const [classRows, ptRows] = await Promise.all([
     db
@@ -1364,26 +1391,8 @@ async function cancelFutureBookings(
       ),
   ])
 
-  const targets: Array<{ id: string; name: string; startsAt: Date }> = [
+  return [
     ...classRows.map(r => ({ id: r.id, name: String(r.name), startsAt: r.startsAt })),
     ...ptRows.map(r => ({ id: r.id, name: 'Private session', startsAt: r.startsAt })),
   ].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
-
-  const cancelled: CancelledSession[] = []
-  for (const t of targets) {
-    try {
-      // A Voided package takes nothing back whichever way `credit` points: `n_a`.
-      await cancelBooking(tenantId, { bookingId: t.id, source: 'system', credit: 'return', packageVoided: true })
-      cancelled.push({ name: t.name, startsAt: t.startsAt })
-    } catch (err) {
-      if (isRetryableAbort(err)) throw err
-      // One booking that will not cancel — checked in between the read and the
-      // write, most likely — must not strand the rest, nor hold back the email
-      // telling the member their plan has ended. It is reported, loudly: a
-      // confirmed booking left on a Voided package is a seat someone was
-      // refunded for, and a human has to settle it.
-      reportError(err, 'refund could not cancel booking', { scope: 'refunds', bookingId: t.id })
-    }
-  }
-  return cancelled
 }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { frontendOrigin, harnessAddress, integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { inFlightTogether, type Holder } from './in-flight'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.pt.test`
@@ -3695,6 +3696,57 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       [[booking!.id, 'staff', 'pt-admin', 'credit_kept']],
     )
     assert.equal(profile.attendance.late_cancels, 0)
+  })
+
+  test('PKG-42 a member cancelling a pending request on a Complimentary Package while an Admin removes it: both go through, and the package is gone', async () => {
+    const ivo = await member(one, 'Ivo Racing')
+    const comp = (
+      await expectStatus(
+        await harness.app.request(`/api/v1/portal/admin/clients/${ivo.clientId}/packages/issue`, {
+          method: 'POST',
+          headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ package_kind: 'pt', package_id: one.pt['1on1'], reason: 'Given by mistake' }),
+        }),
+        201,
+      )
+    ).client_package_id as string
+    const requests = [
+      await requestOk(one, ivo, { sessionType: '1on1', clientPackageId: comp }),
+      await requestOk(one, ivo, {
+        sessionType: '1on1',
+        clientPackageId: comp,
+        slots: [{ proposedDate, startTime: '11:00', endTime: '12:00' }],
+      }),
+    ]
+    const ids = sql.join(requests.map(id => sql`${id}`), sql`, `)
+    const requestsNobodyHolds = async (holder: Holder) => {
+      await holder.execute(sql`SAVEPOINT probe`)
+      const free = await holder.execute<{ id: string }>(
+        sql`SELECT id FROM pt_requests WHERE id IN (${ids}) ORDER BY id FOR KEY SHARE SKIP LOCKED`,
+      )
+      await holder.execute(sql`ROLLBACK TO SAVEPOINT probe`)
+      return free.map(r => r.id)
+    }
+
+    const [removed, cancelled] = await inFlightTogether(harness.db, sql`SELECT id FROM clients WHERE id = ${ivo.clientId}`, [
+      () =>
+        harness.app.request(`/api/v1/portal/admin/clients/${ivo.clientId}/packages/${comp}/remove`, {
+          method: 'POST',
+          headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Given to the wrong member' }),
+        }),
+      async holder => memberCancel(ivo, (await requestsNobodyHolds(holder))[0] ?? requests[1]!),
+    ])
+
+    await expectStatus(removed!, 200)
+    await expectStatus(cancelled!, 200)
+    const left = await harness.db.select().from(schema.clientPackages).where(eq(schema.clientPackages.id, comp))
+    assert.deepEqual(left, [], 'the package is removed')
+    const statuses = await harness.db
+      .select({ status: schema.ptRequests.status })
+      .from(schema.ptRequests)
+      .where(sql`${schema.ptRequests.id} IN (${ids})`)
+    assert.deepEqual(statuses.map(r => r.status), ['cancelled_before_scheduled', 'cancelled_before_scheduled'])
   })
 
   test('CUS-26 a pending private session request cancelled by removing its Complimentary Package reads Automatic on the profile, not as the admin’s cancel', async () => {

@@ -24,6 +24,7 @@ import { classes, ptRequests, ptSessions } from '../../db/schema/schedule'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { reportError } from '../../shared/logger'
 import { cancelBooking } from '../bookings/cancel'
+import { lockForCancel } from '../bookings/lock-for-cancel'
 import { cancelPtRequest } from '../pt-sessions/cancel'
 import { removalRefusal } from './complimentary-removal'
 import { recordAdjustment, type Tx } from './ledger'
@@ -156,10 +157,11 @@ export async function removeComplimentaryPackage(
   if (!reason) throw new BadRequestError('reason_required')
   // One unit: a deadlock in any of its cancels starts the whole Remove over,
   // rather than leaving the cancels before it standing under a refusal.
-  return retryingTransaction(() => removeUntouched(tenantId, input, reason))
+  return retryingTransaction(tx => removeUntouched(tx, tenantId, input, reason))
 }
 
 async function removeUntouched(
+  tx: Tx,
   tenantId: string,
   input: RemoveComplimentaryInput,
   reason: string,
@@ -181,6 +183,11 @@ async function removeUntouched(
   if (!pkg.complimentary) throw new BadRequestError('not_complimentary')
 
   await assertUntouched(tenantId, input.clientPackageId)
+
+  await lockForCancel(tx, tenantId, {
+    ptRequestIds: await openPtRequestsOn(tenantId, input.clientPackageId),
+    bookingIds: await liveBookingsOn(tenantId, input.clientPackageId),
+  })
 
   // PT first: cancelling a request cancels the session and the booking under
   // it, so doing the bookings first would leave a request pointing at a class
@@ -324,6 +331,41 @@ async function cancelPtRequestsOn(
   clientPackageId: string,
   actorStaffId: string,
 ): Promise<void> {
+  for (const id of await openPtRequestsOn(tenantId, clientPackageId)) {
+    // A system cancel (#350): the Remove cancelled them, not a person
+    // cancelling a session. The admin who took the package back is still
+    // named on the request and the ledger, like every other row it writes.
+    await cancelPtRequest(tenantId, { ptRequestId: id, source: 'system', actorStaffId })
+  }
+}
+
+/** Cancel the classes the package paid for that have not been held yet. */
+async function cancelFutureBookingsOn(
+  tenantId: string,
+  clientPackageId: string,
+): Promise<number> {
+  let cancelled = 0
+  for (const id of await liveBookingsOn(tenantId, clientPackageId)) {
+    try {
+      // `packageVoided` is the same arm a refund's unwind uses: the credit is
+      // not handed back, because the package it would go to is being removed.
+      await cancelBooking(tenantId, { bookingId: id, source: 'system', credit: 'return', packageVoided: true })
+      cancelled += 1
+    } catch (err) {
+      if (isRetryableAbort(err)) throw err
+      // A booking that will not cancel is reported and left: the transaction
+      // below refuses the removal while any confirmed booking stands, so a
+      // failure here ends as a refusal rather than as an orphaned seat.
+      reportError(err, 'complimentary removal could not cancel booking', {
+        scope: 'complimentary',
+        bookingId: id,
+      })
+    }
+  }
+  return cancelled
+}
+
+async function openPtRequestsOn(tenantId: string, clientPackageId: string): Promise<string[]> {
   const rows = await db
     .select({ id: ptRequests.id })
     .from(ptRequests)
@@ -334,24 +376,13 @@ async function cancelPtRequestsOn(
         inArray(ptRequests.status, ['pending', 'scheduled']),
       ),
     )
-  for (const r of rows) {
-    // A system cancel (#350): the Remove cancelled them, not a person
-    // cancelling a session. The admin who took the package back is still
-    // named on the request and the ledger, like every other row it writes.
-    await cancelPtRequest(tenantId, { ptRequestId: r.id, source: 'system', actorStaffId })
-  }
+  return rows.map(r => r.id)
 }
 
-/** Cancel the classes the package paid for that have not been held yet. */
-async function cancelFutureBookingsOn(
-  tenantId: string,
-  clientPackageId: string,
-): Promise<number> {
+async function liveBookingsOn(tenantId: string, clientPackageId: string): Promise<string[]> {
   const rows = await db
     .select({ id: bookings.id })
     .from(bookings)
-    .leftJoin(classes, eq(classes.id, bookings.classId))
-    .leftJoin(ptSessions, eq(ptSessions.id, bookings.ptSessionId))
     .where(
       and(
         eq(bookings.tenantId, tenantId),
@@ -359,24 +390,5 @@ async function cancelFutureBookingsOn(
         eq(bookings.state, 'confirmed'),
       ),
     )
-
-  let cancelled = 0
-  for (const r of rows) {
-    try {
-      // `packageVoided` is the same arm a refund's unwind uses: the credit is
-      // not handed back, because the package it would go to is being removed.
-      await cancelBooking(tenantId, { bookingId: r.id, source: 'system', credit: 'return', packageVoided: true })
-      cancelled += 1
-    } catch (err) {
-      if (isRetryableAbort(err)) throw err
-      // A booking that will not cancel is reported and left: the transaction
-      // below refuses the removal while any confirmed booking stands, so a
-      // failure here ends as a refusal rather than as an orphaned seat.
-      reportError(err, 'complimentary removal could not cancel booking', {
-        scope: 'complimentary',
-        bookingId: r.id,
-      })
-    }
-  }
-  return cancelled
+  return rows.map(r => r.id)
 }

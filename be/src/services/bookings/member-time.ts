@@ -147,14 +147,20 @@ export async function memberClash(
 
 /**
  * Hold these members' time for the rest of the transaction: a second booking
- * for one of them waits here until the first commits, then sees it. Keys are
- * taken in one order, so two bookings of the same pair cannot deadlock. Take it
- * after the event's own lock (the class row, the PT request) and its room and
+ * for one of them waits here until the first commits, then sees it. Ids are
+ * read in lower case, as Postgres stores them, so an id sent in capitals is the
+ * same member and the same lock. The locks are taken in the order of their lock
+ * ids, so two bookings of the same pair cannot deadlock. Take it after the
+ * event's own lock (the class row, the PT request) and its room and
  * instructors' (`lockOccupancy`).
  */
 export async function lockMemberTime(tx: Tx, tenantId: string, clientIds: readonly string[]): Promise<void> {
-  const keys = [...new Set(clientIds)].map(id => `member-time:${tenantId}:${id}`).sort()
-  for (const key of keys) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`)
+  if (clientIds.length === 0) return
+  const keys = clientIds.map(id => sql`(${`member-time:${tenantId.toLowerCase()}:${id.toLowerCase()}`})`)
+  const locks = await tx.execute<{ lock: number }>(
+    sql`select distinct hashtext(v.key) as lock from (values ${sql.join(keys, sql`, `)}) as v(key) order by lock`,
+  )
+  for (const { lock } of locks) await tx.execute(sql`select pg_advisory_xact_lock(${lock}::bigint)`)
 }
 
 /** The `clash` a `time_clash` refusal carries: what the member already holds, and when. */
