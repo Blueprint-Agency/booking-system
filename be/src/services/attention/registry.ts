@@ -6,6 +6,7 @@ import {
 } from './corporate-requests'
 import { leaveRequestPending } from './leave-request-pending'
 import { ptRequestPending } from './pt-request-pending'
+import { paymentsNotConfigured, studioTermEnding } from './studio-account'
 import type { AttentionProvider } from './types'
 
 /**
@@ -20,4 +21,6 @@ export const providers: readonly AttentionProvider[] = [
   corporateRefundedStillScheduled,
   leaveRequestPending,
   checkInUnfinished,
+  studioTermEnding,
+  paymentsNotConfigured,
 ]
