@@ -46,9 +46,23 @@ test('NTF-37 every email a studio sends is classified to members or staff, and l
     ...STAFF_LOCKED.map(slug => [slug, { audience: 'staff', locked: true }] as const),
   ]
   assert.deepEqual(
-    Object.fromEntries(Object.entries(STUDIO_EMAILS).sort(([a], [b]) => a.localeCompare(b))),
+    Object.fromEntries(
+      Object.entries(STUDIO_EMAILS)
+        .map(([slug, { audience, locked }]) => [slug, { audience, locked }] as const)
+        .sort(([a], [b]) => a.localeCompare(b)),
+    ),
     Object.fromEntries(expected.sort(([a], [b]) => a.localeCompare(b))),
   )
+})
+
+test('NTF-37 every classified email has a plain-language name of its own, not its slug', () => {
+  const names = Object.entries(STUDIO_EMAILS).map(([slug, email]) => {
+    const name: unknown = (email as { name?: unknown }).name
+    assert.ok(typeof name === 'string' && name.trim() !== '', `${slug} has no name`)
+    assert.ok(!name.includes('_'), `${slug} is named ${name}`)
+    return name
+  })
+  assert.equal(new Set(names).size, names.length, 'two emails share a name')
 })
 
 test('NTF-37 a template slug is either classified or one no sender uses, so a new email cannot ship unclassified', () => {

@@ -22,7 +22,7 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
 
   type Tenant = { id: string; slug: string }
   type Staff = { id: string; email: string; headers: Record<string, string> }
-  type Email = { slug: string; audience: 'member' | 'staff'; locked: boolean; enabled: boolean }
+  type Email = { slug: string; name: string; audience: 'member' | 'staff'; locked: boolean; enabled: boolean }
 
   const json = { 'Content-Type': 'application/json' }
   async function expectStatus(res: Response, status: number, error?: string): Promise<Record<string, any>> {
@@ -130,12 +130,15 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     assert.equal(byslug.get('sign_in_code')?.locked, true)
     assert.equal(byslug.get('checkin_nag')?.locked, false)
     assert.equal(byslug.get('welcome'), undefined, 'an email no sender sends is not listed')
+    assert.equal(byslug.get('class_booking_confirmed')?.name, 'Class booking confirmed')
+    assert.equal(byslug.get('checkin_nag')?.name, 'Check-in reminder to instructor and admins')
+    for (const email of byslug.values()) assert.ok(email.name, `${email.slug} is listed without a name`)
   })
 
   test('NTF-39 a switched-off email is not sent and its log row is skipped; switched back on, it sends', async () => {
     const { one } = harness.tenants
     const off = await expectStatus(await change(admin, 'class_booking_confirmed', false), 200)
-    assert.deepEqual(off, { slug: 'class_booking_confirmed', audience: 'member', locked: false, enabled: false })
+    assert.deepEqual(off, { slug: 'class_booking_confirmed', name: 'Class booking confirmed', audience: 'member', locked: false, enabled: false })
     const listed = await expectStatus(await list(admin), 200)
     assert.equal(listed.member.find((e: Email) => e.slug === 'class_booking_confirmed').enabled, false)
 
