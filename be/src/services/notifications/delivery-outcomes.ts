@@ -48,6 +48,8 @@ const RANK: Record<Status, number> = {
   bounced: 4,
   complained: 4,
   suppressed: 4,
+  // Switched off by the studio and never handed to the provider, so no outcome replaces it.
+  skipped: Infinity,
 }
 
 const below = (outcome: Outcome): Status[] =>

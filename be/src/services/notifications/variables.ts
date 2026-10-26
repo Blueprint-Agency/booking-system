@@ -11,15 +11,12 @@ import type { TemplateSlug } from './send'
  * anyone rewriting a template. The seeder writes it into every default
  * (`db/seed/email-templates.ts`), and migration 0117 swapped it in for the
  * provisioned name in the studios created before.
- *
- * A template editor allowing variables must allow this one on every slug.
  */
 export const STUDIO_NAME_VARIABLE = 'studio_name'
 
 /**
- * Per-template variable allow-list. Powers the §17c amber flag in the fe-portal
- * template editor: PATCH /portal/admin/notifications/templates/:slug rejects
- * any {{var}} not in this list.
+ * Per-template variable allow-list: the variables each template's copy may
+ * use (`db/seed/email-copy.test.ts` holds the seeded copy to it).
  */
 export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   welcome: ['client_name'],

@@ -212,7 +212,13 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     const rows = await harness.db
       .select({ actor: schema.auditLog.actorStaffId, action: schema.auditLog.action, payload: schema.auditLog.payload })
       .from(schema.auditLog)
-      .where(and(eq(schema.auditLog.tenantId, one.id), eq(schema.auditLog.actorStaffId, otherAdmin.id)))
+      .where(
+        and(
+          eq(schema.auditLog.tenantId, one.id),
+          eq(schema.auditLog.actorStaffId, otherAdmin.id),
+          eq(schema.auditLog.targetTable, 'email_switches'),
+        ),
+      )
       .orderBy(schema.auditLog.createdAt)
     assert.deepEqual(rows, [
       { actor: otherAdmin.id, action: 'email_switch_changed', payload: { slug: 'checkin_nag', from: true, to: false } },

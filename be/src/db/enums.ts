@@ -279,6 +279,8 @@ export const emailRecipientKindEnum = pgEnum('email_recipient_kind', ['client', 
 // — we rename here to track the spec. The column reference is updated in `content.ts`.
 // The last four are what Resend's webhook reports after a send (#154); see
 // services/notifications/delivery-outcomes.ts for the order they move in.
+// `skipped` is an email the studio switched off: logged, never handed to the
+// mailer (services/notifications/switches.ts).
 export const emailLogStatusEnum = pgEnum('email_log_status', [
   'queued',
   'sent',
@@ -288,6 +290,7 @@ export const emailLogStatusEnum = pgEnum('email_log_status', [
   'complained',
   'delivery_delayed',
   'suppressed',
+  'skipped',
 ])
 
 // Inbox — `pt_request` value REMOVED per §4l. PT triage moved to `/admin/pt-requests`.

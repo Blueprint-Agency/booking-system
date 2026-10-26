@@ -8,6 +8,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import { reportError } from '../../shared/logger'
 import { STUDIO_NAME_VARIABLE } from './variables'
 import type { StudioEmailSlug } from './switches'
+import { emailEnabled } from './switch-state'
 
 export type TemplateSlug =
   | 'welcome'
@@ -183,7 +184,11 @@ export async function sendStudioSystemEmail(input: {
   })
 }
 
-/** File the `email_log` row, send, and record how the send went. True when it went. */
+/**
+ * File the `email_log` row, send, and record how the send went. True when it
+ * went. An email the studio has switched off is filed `skipped` and never
+ * reaches the mailer.
+ */
 async function deliver(input: {
   tenantId: string
   slug: StudioEmailSlug
@@ -194,6 +199,7 @@ async function deliver(input: {
   attachments?: readonly MailAttachment[]
 }): Promise<boolean> {
   const { tenantId, slug, recipient, identity, email, loggedEmail, attachments } = input
+  const enabled = await emailEnabled(tenantId, slug)
   const [logRow] = await db
     .insert(emailLog)
     .values({
@@ -204,11 +210,12 @@ async function deliver(input: {
       recipientUserKind: recipient.userKind,
       subjectRendered: loggedEmail.subject,
       bodyRendered: loggedEmail.html,
-      status: 'queued',
+      status: enabled ? 'queued' : 'skipped',
     })
     .returning()
   // Invariant: an insert that succeeds returns its row; a refused one throws.
   if (!logRow) throw new Error('email_log_insert_failed')
+  if (!enabled) return false
 
   try {
     // The log row's id is the idempotency key, so a retry at the send gate can
