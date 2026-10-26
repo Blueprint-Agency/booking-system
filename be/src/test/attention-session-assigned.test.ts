@@ -206,7 +206,8 @@ describe('Staff attention: session assigned', { skip: integrationTestsEnabled ? 
     assert.equal(u!.title, `boss scheduled you to teach Vinyasa on ${WHEN}`)
     assert.equal(u!.href, `/instructor/schedule/class/${res.id}`)
     assert.equal(u!.read_at, null)
-    assert.deepEqual(await updatesOf(admin), [])
+    // The admin is told nothing of the scheduling (a newcomer's staff_joined is #491's, not this ticket's).
+    assert.deepEqual((await updatesOf(admin)).filter(x => x.kind === 'session_assigned'), [])
   })
 
   test('ATN-171 a supporting instructor added at creation is told "as a supporting instructor", and the main instructor is not told that', async () => {

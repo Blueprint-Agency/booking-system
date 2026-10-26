@@ -345,7 +345,8 @@ describe('Staff attention: admin and permission Updates', { skip: integrationTes
       assert.equal(told[0]!.detail, null)
       assert.equal(told[0]!.href, `/admin/schedule/pt/${byInstructor.sessionId}`)
     }
-    assert.equal((await updatesOf(ada)).length, 0)
+    // Scheduling ada to teach the sessions told her (#492); her own cancel told her nothing.
+    assert.equal((await ofKind(ada, 'pt_session_cancelled_by_instructor')).length, 0)
   })
 
   test('ATN-165 an invited instructor accepting tells every active admin "{Name} joined as instructor", linking their staff row; the newcomer and pending admins are told nothing', async () => {
