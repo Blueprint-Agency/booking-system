@@ -225,4 +225,30 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
       { actor: otherAdmin.id, action: 'email_switch_changed', payload: { slug: 'checkin_nag', from: false, to: true } },
     ])
   })
+
+  test("NTF-45 a studio's archive carries its switches, and restoring it switches the same emails off", async () => {
+    const transfer = await import('../services/tenants/transfer')
+    const { listStudioEmails } = await import('../services/notifications/switch-state')
+    async function emptyStudio(label: string): Promise<string> {
+      const slug = `switches-${label}-${run}`
+      const [row] = await harness.db.execute<{ id: string }>(sql`
+        INSERT INTO tenants (slug, name, timezone, status) VALUES (${slug}, ${slug}, 'Asia/Singapore', 'active') RETURNING id
+      `)
+      await harness.db.execute(sql`INSERT INTO tenant_settings (tenant_id, display_name) VALUES (${row!.id}, ${slug})`)
+      return row!.id
+    }
+    const source = await emptyStudio('source')
+    await harness.db.insert(schema.emailSwitches).values([
+      { tenantId: source, slug: 'checkin_nag', enabled: false },
+      { tenantId: source, slug: 'class_booking_confirmed', enabled: true },
+    ])
+
+    const archive = await transfer.exportTenant(source)
+    const target = await emptyStudio('target')
+    await transfer.importTenant(target, archive)
+
+    const restored = await withTenant(target, () => listStudioEmails(target))
+    const off = [...restored.member, ...restored.staff].filter(e => !e.enabled).map(e => e.slug)
+    assert.deepEqual(off, ['checkin_nag'])
+  })
 })
