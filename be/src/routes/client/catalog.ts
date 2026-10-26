@@ -21,6 +21,12 @@ import {
   type HydratedCorporateRequest,
 } from '../../services/corporate/requests'
 
+const idParam = z.object({ id: z.string().uuid() })
+
+const unknownWorkshop = (result: { success: boolean }): void => {
+  if (!result.success) throw new NotFoundError('workshop_not_found')
+}
+
 function serializeCorporateRequest(r: HydratedCorporateRequest) {
   return {
     id: r.id,
@@ -125,8 +131,9 @@ const app = new Hono()
     const cards = await workshopsSvc.listActiveWorkshopCards(tenantId(c))
     return c.json({ workshops: cards })
   })
-  .get('/workshops/:id', async c => {
-    const id = c.req.param('id')
+  // A mistyped or truncated link names no workshop, as an unknown id does.
+  .get('/workshops/:id', zValidator('param', idParam, unknownWorkshop), async c => {
+    const { id } = c.req.valid('param')
     const detail = await workshopsSvc.getWorkshopDetailPayload(tenantId(c), id)
     return c.json(detail)
   })

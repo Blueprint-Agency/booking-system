@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { afterFailedRead } from "@/lib/failed-read";
+import { afterFailedRead, type FailedReadOptions } from "@/lib/failed-read";
 
 /**
  * What the app has already read from the backend during this visit, keyed by
@@ -61,7 +61,7 @@ function fetchCached<T>(key: string, fetcher: () => Promise<T>, fresh = false): 
 export function useCachedResource<T>(
   key: string | null,
   fetcher: () => Promise<T>,
-  { optional = false }: { optional?: boolean } = {},
+  failed: FailedReadOptions = {},
 ): {
   data: T | null;
   loading: boolean;
@@ -117,7 +117,7 @@ export function useCachedResource<T>(
 
   const hasValue = key !== null && values.has(key);
   if (key !== null && !hasValue && current.error !== null) {
-    return { ...afterFailedRead(current.error, { optional }), error: current.error, refresh };
+    return { ...afterFailedRead(current.error, failed), error: current.error, refresh };
   }
   const loading = key === null || !hasValue;
   return { data: current.data, loading, error: current.error, refresh };
