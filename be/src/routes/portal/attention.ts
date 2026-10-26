@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { tenantId } from '../../middleware/tenant'
 import { attentionPanel, attentionSummary, type AttentionCaller } from '../../services/attention'
 import { isUpdatesCursor, markAllUpdatesRead, markUpdateRead } from '../../services/attention/updates'
+import { requireRole } from '../../middleware/require-role'
+import { dismissItem } from '../../services/attention/dismissals'
 import { explainInvalid } from '../explain-invalid'
 
 /**
@@ -24,7 +26,8 @@ const listQuery = z.object({
   // The Updates tab pages by this: the `next_cursor` of the page before.
   updates_before: z.string().max(100).refine(isUpdatesCursor, 'Not an updates cursor.').optional(),
 })
-const idParam = z.object({ id: z.string().uuid() })
+const dismissalBody = z.object({ kind: z.string().min(1).max(64), subject_id: z.string().uuid() })
+const idParam =z.object({ id: z.string().uuid() })
 const explain = explainInvalid('That attention request is not valid.')
 
 const caller = (c: Context): AttentionCaller => ({
@@ -46,6 +49,13 @@ const app = new Hono()
         ...(updates_before ? { updatesBefore: updates_before } : {}),
       }),
     )
+  })
+  // An admin's studio-wide "do nothing is fine" on a dismissable item. The service
+  // files its own audit row (this route is outside the audit prefixes).
+  .post('/dismissals', requireRole('admin'), zValidator('json', dismissalBody, explain), async c => {
+    const { kind, subject_id } = c.req.valid('json')
+    await dismissItem(caller(c), { kind, subjectId: subject_id })
+    return c.body(null, 204)
   })
   // Static before the :id route, or "read-all" would be read as an id.
   .post('/updates/read-all', async c => {

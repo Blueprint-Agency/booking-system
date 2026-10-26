@@ -159,6 +159,38 @@ export function reviewParam(search: string): string | null {
   return id && UUID.test(id) ? id : null;
 }
 
+/** The `?purchase=` a bell link carries to Partial payments, or null when absent or not an id. */
+export function purchaseParam(search: string): string | null {
+  const id = new URLSearchParams(search).get("purchase");
+  return id && UUID.test(id) ? id : null;
+}
+
+/** A list with the wanted row first, so a deep link's row is on the first page. Unchanged if it isn't there. */
+export function withWantedFirst<T extends { id: string }>(rows: readonly T[], wanted: string | null): T[] {
+  const at = wanted ? rows.findIndex((r) => r.id === wanted) : -1;
+  if (at < 0) return [...rows];
+  return [rows[at]!, ...rows.slice(0, at), ...rows.slice(at + 1)];
+}
+
+// ── Dismissals ──────────────────────────────────────────────────────────────
+
+/** The body of `POST /portal/attention/dismissals` for an item id (`kind:subject_id`). */
+export function dismissalBody(itemId: string): { kind: string; subject_id: string } {
+  const at = itemId.indexOf(":");
+  return { kind: itemId.slice(0, at), subject_id: itemId.slice(at + 1) };
+}
+
+/** A dismissed item leaves the panel at once; its group's count follows, and an empty group goes. */
+export function removeItemLocally(groups: readonly AttentionGroup[], itemId: string): AttentionGroup[] {
+  return groups
+    .map((g) =>
+      g.items.some((i) => i.id === itemId)
+        ? { ...g, count: Math.max(0, g.count - 1), items: g.items.filter((i) => i.id !== itemId) }
+        : g,
+    )
+    .filter((g) => g.count > 0);
+}
+
 /** The `?location=` a bell link carries, if it is one of the caller's own locations. */
 export function locationParam(search: string, accessibleIds: readonly string[]): string | null {
   const id = new URLSearchParams(search).get("location");

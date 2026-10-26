@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
+import { ApiError } from "@/lib/api";
 import { X } from "lucide-react";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatRelative } from "@/lib/formatters";
@@ -9,6 +11,8 @@ import { reportError } from "@/lib/report-error";
 import { cn } from "@/lib/utils";
 import {
   appendOlder,
+  dismissalBody,
+  removeItemLocally,
   locationFromHref,
   markAllReadLocally,
   markUpdateReadLocally,
@@ -151,6 +155,28 @@ export function AttentionPanel({
   }
   const showLocation = accessibleLocations.length > 1;
 
+  /**
+   * An admin's studio-wide "do nothing is fine". The row goes at once; a 404
+   * means it was already gone (resolved or dismissed by someone else), which is
+   * the same outcome. Either way the bubble is re-read.
+   */
+  async function dismissItem(item: AttentionItem) {
+    if (!api) return;
+    setData((d) =>
+      d ? { ...d, needs_action: { groups: removeItemLocally(d.needs_action.groups, item.id) } } : d,
+    );
+    try {
+      await api.post("/portal/attention/dismissals", dismissalBody(item.id));
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 404)) {
+        reportError(err, { scope: "attention-dismiss" });
+        toast.error("Couldn't dismiss that. Try again.");
+      }
+    } finally {
+      refresh();
+    }
+  }
+
   /** Follow a link: switch the workspace first when it names another location, then close. */
   function follow(href: string | null) {
     const target = locationFromHref(href);
@@ -206,7 +232,13 @@ export function AttentionPanel({
               <p className="px-4 py-8 text-center text-sm text-muted">Nothing needs your attention</p>
             ) : (
               groups.map((g) => (
-                <Group key={g.key} group={g} showLocation={showLocation} onFollow={follow} />
+                <Group
+                  key={g.key}
+                  group={g}
+                  showLocation={showLocation}
+                  onFollow={follow}
+                  onDismiss={(item) => void dismissItem(item)}
+                />
               ))
             )
           ) : !data ? (
@@ -279,10 +311,12 @@ function Group({
   group,
   showLocation,
   onFollow,
+  onDismiss,
 }: {
   group: AttentionGroup;
   showLocation: boolean;
   onFollow: (href: string | null) => void;
+  onDismiss: (item: AttentionItem) => void;
 }) {
   const more = group.count - group.items.length;
   return (
@@ -293,7 +327,7 @@ function Group({
       </h3>
       <ul>
         {group.items.map((item) => (
-          <Row key={item.id} item={item} showLocation={showLocation} onFollow={onFollow} />
+          <Row key={item.id} item={item} showLocation={showLocation} onFollow={onFollow} onDismiss={onDismiss} />
         ))}
       </ul>
       {more > 0 && group.see_all_href && (
@@ -360,11 +394,14 @@ function Row({
   item,
   showLocation,
   onFollow,
+  onDismiss,
 }: {
   item: AttentionItem;
   showLocation: boolean;
   onFollow: (href: string | null) => void;
+  onDismiss: (item: AttentionItem) => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
   const body = (
     <>
       <span className="block break-words text-sm font-semibold text-ink">{item.title}</span>
@@ -392,6 +429,37 @@ function Row({
         </Link>
       ) : (
         <div className="px-4 py-2.5">{body}</div>
+      )}
+      {item.dismissable && (
+        <div className="flex items-center justify-end gap-3 px-4 pb-2 text-xs">
+          {confirming ? (
+            <>
+              <span className="text-muted">Dismiss for every admin?</span>
+              <button
+                type="button"
+                onClick={() => setConfirming(false)}
+                className="rounded-md px-1 py-1.5 font-medium text-muted hover:text-ink"
+              >
+                Keep
+              </button>
+              <button
+                type="button"
+                onClick={() => onDismiss(item)}
+                className="rounded-md px-1 py-1.5 font-medium text-error hover:underline"
+              >
+                Yes, dismiss
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="rounded-md px-1 py-1.5 font-medium text-accent hover:underline"
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
       )}
     </li>
   );
