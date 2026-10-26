@@ -15,12 +15,12 @@
  * transaction; the class row is locked FOR UPDATE so it can't race in-flight bookings/cancels.
  */
 import { and, eq } from 'drizzle-orm'
-import { afterCommit, db } from '../../db'
+import { afterCommit, db, retryingTransaction } from '../../db'
 import { classes } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { bookings, cancellations } from '../../db/schema/bookings'
-import { isVoided, refundCredits } from '../packages/ledger'
+import { isVoided, lockPackages, refundCredits } from '../packages/ledger'
 import { computeEventState } from '../policy/event-state'
 import { staffCancelInTime } from '../policy/evaluate-cancellation'
 import { now as clockNow } from '../../lib/clock'
@@ -53,7 +53,9 @@ export async function cancelClass(
   tenantId: string,
   input: CancelClassInput,
 ): Promise<CancelClassResult> {
-  return db.transaction(tx => cancelClassInTx(tx, tenantId, input))
+  // A promotion that passes the head of a line by locks the next member's
+  // packages only once it reaches them, after the class's own (#439).
+  return retryingTransaction(tx => cancelClassInTx(tx, tenantId, input))
 }
 
 export async function cancelClassInTx(
@@ -123,6 +125,7 @@ export async function cancelClassInTx(
       ),
     )
     .for('update')
+  await lockPackages(tx, tenantId, { packageIds: confirmed.flatMap(b => (b.clientPackageId ? [b.clientPackageId] : [])) })
 
   // Whether the cancel came before the class window, as a staff cancel of
   // one booking records it (#350): never acted on, every credit comes back.

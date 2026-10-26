@@ -19,6 +19,8 @@ import { classTypes, locations } from '../../db/schema/catalog'
 import { clients, staffUsers } from '../../db/schema/identity'
 import type { Tx } from '../schedule/roster'
 import { holdsSeat, lockClass, payAndBook } from '../bookings/book'
+import { lockMemberTime } from '../bookings/member-time'
+import { lockPackages } from '../packages/ledger'
 import { countSeats } from '../bookings/seats'
 import { sendTemplatedEmail } from '../notifications/send'
 import { loadTenantById } from '../tenants/tenants'
@@ -47,11 +49,9 @@ export async function promoteFromWaitlist(
   classId: string,
   now: Date,
 ): Promise<Promotion[]> {
-  const cls = await lockClass(tx, tenantId, classId)
-  if (!cls || cls.lifecycle !== 'active') return []
-  if (!beforeWindow(cls.startsAt, await classCancelWindow(tenantId), now)) return []
-
-  const line = await waitingLine(tx, tenantId, classId, now)
+  const promotable = await promotableLine(tx, tenantId, classId, now)
+  if (!promotable) return []
+  const { cls, line } = promotable
   const outcomes = new Map<string, PromotionOutcome>()
   const promoted: Promotion[] = []
 
@@ -68,6 +68,22 @@ export async function promoteFromWaitlist(
       continue
     }
 
+    const stillWaiting = and(
+      eq(waitlistEntries.tenantId, tenantId),
+      eq(waitlistEntries.id, next.id),
+      eq(waitlistEntries.status, 'waiting'),
+    )
+    const [claimed] = await tx
+      .select({ id: waitlistEntries.id })
+      .from(waitlistEntries)
+      .where(stillWaiting)
+      .for('update', { skipLocked: true })
+      .limit(1)
+    if (!claimed) {
+      outcomes.set(next.id, 'not_waiting')
+      continue
+    }
+
     // Nobody is there to pick, so the Default payer pays. A member who has
     // since booked something at an overlapping time is skipped, not moved:
     // nobody is there to say "book anyway".
@@ -80,12 +96,33 @@ export async function promoteFromWaitlist(
     await tx
       .update(waitlistEntries)
       .set({ status: 'promoted', bookingId: paid.booking.bookingId, resolvedAt: now, resolvedBy: 'system' })
-      .where(and(eq(waitlistEntries.tenantId, tenantId), eq(waitlistEntries.id, next.id)))
+      .where(stillWaiting)
     outcomes.set(next.id, 'promoted')
     promoted.push({ entryId: next.id, bookingId: paid.booking.bookingId, clientId: next.clientId, classId })
   }
 
   return promoted
+}
+
+async function promotableLine(tx: Tx, tenantId: string, classId: string, now: Date) {
+  const cls = await lockClass(tx, tenantId, classId)
+  if (!cls || cls.lifecycle !== 'active') return null
+  if (!beforeWindow(cls.startsAt, await classCancelWindow(tenantId), now)) return null
+  return { cls, line: await waitingLine(tx, tenantId, classId, now) }
+}
+
+export async function lockPromotionHead(
+  tx: Tx,
+  tenantId: string,
+  classId: string,
+  refundPackageId: string | null,
+  now: Date,
+): Promise<void> {
+  const promotable = await promotableLine(tx, tenantId, classId, now)
+  const head = promotable && nextToPromote(promotable.line, new Map())
+  if (!head) return
+  await lockMemberTime(tx, tenantId, [head.clientId])
+  await lockPackages(tx, tenantId, { clientIds: [head.clientId], packageIds: refundPackageId ? [refundPackageId] : [] })
 }
 
 /**

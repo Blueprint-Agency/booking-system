@@ -14,7 +14,8 @@
  * "your purchase is confirmed" for something nobody bought is not that message.
  */
 import { and, eq, inArray } from 'drizzle-orm'
-import { db } from '../../db'
+import { db, retryingTransaction } from '../../db'
+import { isRetryableAbort } from '../../db/retryable-abort'
 import { bookings } from '../../db/schema/bookings'
 import { auditLog, manualAdjustments } from '../../db/schema/ledger'
 import { clients } from '../../db/schema/identity'
@@ -153,7 +154,16 @@ export async function removeComplimentaryPackage(
 ): Promise<RemoveComplimentaryResult> {
   const reason = input.reason.trim()
   if (!reason) throw new BadRequestError('reason_required')
+  // One unit: a deadlock in any of its cancels starts the whole Remove over,
+  // rather than leaving the cancels before it standing under a refusal.
+  return retryingTransaction(() => removeUntouched(tenantId, input, reason))
+}
 
+async function removeUntouched(
+  tenantId: string,
+  input: RemoveComplimentaryInput,
+  reason: string,
+): Promise<RemoveComplimentaryResult> {
   const [pkg] = await db
     .select()
     .from(clientPackages)
@@ -358,6 +368,7 @@ async function cancelFutureBookingsOn(
       await cancelBooking(tenantId, { bookingId: r.id, source: 'system', credit: 'return', packageVoided: true })
       cancelled += 1
     } catch (err) {
+      if (isRetryableAbort(err)) throw err
       // A booking that will not cancel is reported and left: the transaction
       // below refuses the removal while any confirmed booking stands, so a
       // failure here ends as a refusal rather than as an orphaned seat.

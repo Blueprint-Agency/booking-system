@@ -344,10 +344,12 @@ Free workshops do not insert a `stripe_payments` row. Since #383 the place opens
 services/bookings/cancel.ts:cancel({ booking_id, source: 'client' })
   ↓
 tx start
+0. Lock what the booking is for, before the booking, as every writer of its seats does (#439):
+   kind='class': the class FOR UPDATE; kind='pt': the session's pt_request, then the pt_session
 1. SELECT booking FOR UPDATE WHERE id=X AND client_id=me AND state='confirmed'
    a booking with source='classpass' → 409 classpass_booking_cancel_on_classpass
    (the member cancels it on ClassPass, whose email cancels it here; staff still can)
-2. session = load class | pt_session by booking.kind
+2. session = the class or pt_session locked in 0
 3. evaluation = services/policy/evaluate-cancellation({
      clientId: me, kind: booking.kind,
      sessionStartsAt: session.starts_at,
@@ -359,6 +361,10 @@ tx start
    A class cancel inside its window is NOT refused: it is a Late cancel (#318) —
    refund='forfeit', wasWithinWindow=false. In time, refund='full' while under the
    cap, or always when cancel_cap_enabled is false.
+3b. kind='class' AND booking.seat='online' AND the class would promote (step 10): lock the head
+   of the line's time, then the booking's package and every package of the head's, in id order,
+   before any package is written — so two cancels that each promote the other take turns (#439).
+   Only the head: a member further back is locked if step 10 reaches them, as on any booking
 4. Settle (services/bookings/refund-outcome.ts:settleCancel — the preview's settlement too):
    - refund='full', something spent, a package to return it to: credits_or_sessions_used
      go back; refund_outcome='credit_returned' | 'session_returned'
@@ -373,6 +379,9 @@ tx start
     order through the same booking path as POST /bookings/class; a member whose package cannot pay
     stays `waiting`. A buffer or overbook seat promotes nobody.
 tx commit
+   Postgres aborting 0-10 for a deadlock (40P01) or a serialization failure (40001) runs them again
+   from 0, up to four attempts (db/index.ts:retryingTransaction): an Admin act that holds this
+   booking's package can reach the same head further on (#439). An aborted attempt sends nothing.
 11. 'class_waitlist_promoted' email to each promoted member (after commit, best-effort)
 12. refund fired (an in-time cancel that returned what the booking used): 'class_cancelled_credit_returned'
     (class) or 'pt_cancelled_session_returned' (private session) to the member, after commit and

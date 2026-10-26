@@ -476,6 +476,8 @@ Both paths pass through `services/bookings/cancel.ts`. The branch is on the `sou
 | 4. Cancellation row | Insert `cancellations` row with `source='client'`, `was_within_window`, `was_within_cap`, `refund_fired` | Insert `cancellations` row with `source='admin'` or `'instructor'` (excluded from cap calc), `was_within_window` recorded truthfully against the class's effective window, `was_within_cap=true` |
 | 5. Email | After commit: `class_cancelled_credit_returned` / `pt_cancelled_session_returned` to the member when the refund fired (NTF-09). The forfeited pair is not sent yet. | None for a staff cancel of one booking (#320). A whole-session cancel sends, after commit, to every member booked: `admin_cancel_class` (`/schedule/classes/:id/cancel`, admin or main instructor, with the credits returned; also to each member still waiting in the class's line, saying their place cost nothing, spec-waitlist §6), `admin_cancel_pt` (a staff cancel of a manual session, with the session returned), `admin_cancel_workshop` (with the amount paid); a member's PT Request cancelled by staff sends `pt_request_cancelled` (NTF-10, NTF-11; §3c.cancel) |
 
+A booking cancel on either path, a whole-class cancel (`/schedule/classes/:id/cancel`), a Package rule change, a Complimentary Remove and a Refund's unwind run again from the start when Postgres aborts them for a deadlock (40P01) or a serialization failure (40001), up to four attempts (`db/index.ts:retryingTransaction`, #439). An aborted attempt sends no email. A PT request cancel and a manual-session cancel do not retry.
+
 #### Workshop admin-cancel — refund fanout
 
 `POST /schedule/workshops/:id/cancel`:

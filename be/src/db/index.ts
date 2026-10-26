@@ -4,7 +4,8 @@ import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { sql } from 'drizzle-orm'
 import postgres from 'postgres'
 import * as schema from './schema'
-import { reportError } from '../shared/logger'
+import { isRetryableAbort } from './retryable-abort'
+import { logger, reportError } from '../shared/logger'
 
 /**
  * The app connects as `booking_app`, NOT as the owner in `DATABASE_URL`.
@@ -154,6 +155,45 @@ export const db: Db = new Proxy({} as Db, {
     return typeof value === 'function' ? value.bind(active) : value
   },
 })
+
+const RETRY_ATTEMPTS = 4
+const retrying = new AsyncLocalStorage<true>()
+
+/**
+ * `db.transaction(fn)`, run again from the start when Postgres aborts it to
+ * break a deadlock or a serialization conflict (`isRetryableAbort`): up to
+ * four attempts, a short random pause between them. Once they run out, the
+ * last attempt's error is thrown, as `db.transaction` would have thrown it.
+ *
+ * Inside a Tenant context this is a savepoint of the outer transaction. Rolling
+ * back to it lets go of every lock the attempt took, so the transaction it
+ * deadlocked with can finish, and drops the after-commit work the attempt
+ * registered, so an aborted attempt mails nobody.
+ *
+ * `fn` must not reach outside the database (a payment provider, storage, mail)
+ * except through `afterCommit`: a retry runs it again.
+ *
+ * Only the outermost of nested calls retries. An inner one is a plain
+ * savepoint, and its abort reaches the outer one, which starts over: the inner
+ * attempt alone could not go through while the outer one keeps the locks it
+ * took before it.
+ */
+export function retryingTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  if (retrying.getStore()) return db.transaction(fn)
+  return retrying.run(true, async () => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await db.transaction(fn)
+      } catch (err) {
+        if (attempt >= RETRY_ATTEMPTS || !isRetryableAbort(err)) throw err
+        logger.warn({ scope: 'db', attempt, tenantId: currentTenantId() }, 'transaction aborted by Postgres; retrying')
+        await new Promise(resolve => setTimeout(resolve, 10 + Math.random() * 40 * attempt))
+      }
+    }
+  })
+}
+
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 
 /** `db.transaction` inside a Tenant context: a savepoint whose rollback drops its after-commit work. */
 function savepoint(store: TenantScope): Db['transaction'] {
