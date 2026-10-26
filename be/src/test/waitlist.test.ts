@@ -1167,6 +1167,34 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     assert.ok(cycled, 'in some round the rule change held the member’s package while both waited on the head’s time')
   })
 
+  test('WTL-46 a member frees a seat whose head of the line cannot pay while an Admin cancels whole a class the member and the next in line are booked on: both go through, the next in line is booked once, and each credit moves once', async () => {
+    const full = await addClass(one, { online: 1, waitlist: 3 })
+    const other = await addClass(one, { online: 2, waitlist: 0 }, 5 * DAY)
+    const { lower: next, higher: canceller, pkg } = await byPackageOrder(grantOf('class', one.classPackageId))
+    const seat = await booked(canceller, full)
+    await booked(next, other)
+    await booked(canceller, other)
+    const unpaid = await member(one)
+    await joined(unpaid, full)
+    const nextEntry = await joined(next, full)
+    await harness.db.update(schema.clientPackages).set({ creditsOrSessionsRemaining: 0 }).where(eq(schema.clientPackages.clientId, unpaid.clientId))
+
+    const [byMember, byAdmin] = (await inTurn(
+      () => holdPackage(pkg.get(canceller)!),
+      [() => cancel(canceller, seat), () => send('POST', `/portal/admin/schedule/classes/${other}/cancel`, one.admin.headers)],
+    )) as [Reply, Reply]
+
+    assert.equal(byMember.status, 200, JSON.stringify(byMember.body))
+    assert.equal(byMember.body.refund_outcome, 'credit_returned')
+    assert.equal(byAdmin.status, 200, JSON.stringify(byAdmin.body))
+    assert.equal((await confirmedOn(next, full)).length, 1, 'the next in line holds the freed seat, the member who cannot pay passed by')
+    assert.equal((await entryStatus(nextEntry.entry_id)).status, 'promoted')
+    assert.equal((await confirmedOn(unpaid, full)).length, 0)
+    assert.equal((await confirmedOn(next, other)).length + (await confirmedOn(canceller, other)).length, 0)
+    assert.deepEqual([await creditsLeft(canceller), await creditsLeft(next)], [10, 9], 'each credit moved once')
+    assert.equal((await promotedMails(next)).length, 1)
+  })
+
   test('WTL-45 a Complimentary Remove that Postgres aborts after it has promoted a member, to break a deadlock with that member’s own cancel, runs again: the member is booked and emailed once, and both go through', async () => {
     let cycled = false
     for (let round = 1; round <= 6 && !cycled; round++) {
