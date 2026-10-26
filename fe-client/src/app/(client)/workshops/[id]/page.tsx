@@ -238,10 +238,10 @@ export default function WorkshopDetailPage() {
               <div className={cn(CARD, "divide-y divide-ink/5")}>
                 {[mainInstructor, ...supportingInstructors].map((instructor, i) => (
                   <div key={instructor.id} className="flex items-start gap-3 sm:gap-4 p-4">
-                    {instructor.avatar_url ? (
+                    {instructor.photo_url ? (
                       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full">
                         <Image
-                          src={instructor.avatar_url}
+                          src={instructor.photo_url}
                           alt=""
                           fill
                           className="object-cover"

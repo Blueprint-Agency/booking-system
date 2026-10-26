@@ -77,6 +77,8 @@ Resolution is server-side via `services/promotions/resolve.ts:bestPriceFor(paren
 
 **Cancellation Window** — one for every class: the studio's `class_window_hours` from `GET /cancellation-policy`, read when the member acts (`be/CONTEXT.md` § Cancellation Window). A class carries no window of its own; the per-class window of #313 and its `effective_cancel_window_hours` field were removed. Booking rows carry `cancel_deadline` (below).
 
+**Instructor pictures** (#471) — a class's `instructor` and `supporting_instructors[]`, a workshop detail's `instructors[]`, every row of `/instructors` (the PT checkout picker) and a PT package's `bound_instructor` on `/me/packages` (private sessions) each carry `photo_url`: the instructor's own Profile picture as a public URL, or null for initials. A picture is public, whoever reads it.
+
 **Package rule** (`be/CONTEXT.md` § Package rule) — every class in `/classes` and `/me/classes` carries only `restricted: boolean` (its rule is not *accepts all*), so a row can say "Some packages". `/classes/:id` and the authenticated `/me/classes/:id` carry the rule itself: `package_rule: { mode: 'all' | 'only' | 'except', packages: [{ id, name, kind, archived }] }`, the packages named Unlimited Plans first, then Credit Bundles, then Trials, each by name. Booking with a package the rule refuses, or with nothing it accepts, is `409 not_accepted`; so is joining the waitlist.
 
 **Waitlist shape** — every class in `/classes`, `/classes/:id` and the authenticated `/me/classes` carries its line (`spec-waitlist.md` §9):
@@ -117,7 +119,9 @@ All endpoints prefixed with `/api/v1/me`.
 ### `me.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/` | Own profile: `{ name, email, phone, gender, dob, joined_at, status, display_prefs: { theme, font_size } }`. A null `display_prefs` field is one the member has not chosen. |
+| GET | `/` | Own profile: `{ name, email, phone, gender, photo_url, dob, joined_at, status, display_prefs: { theme, font_size } }`. A null `display_prefs` field is one the member has not chosen. `photo_url` is the member's Profile picture, or null for initials. |
+| POST | `/photo` | The member's own Profile picture (#471). Multipart, field `file`: a JPG, PNG or WebP of at most 5 MB, cropped square and shrunk by the browser. `{ photo_url }`. Another type is `400 image_type_not_allowed`, an empty file `400 image_empty`, over 5 MB `400 image_too_large`, a body past the limit `413 image_too_large`, each with a `message`. A new key every upload, `t/<tenant id>/avatars/<random uuid>.<ext>`; the replaced object is deleted after commit. An admin acting as the member is refused `403 forbidden`. |
+| DELETE | `/photo` | Clear the picture and delete its object: `{ photo_url: null }`. Refused to an admin acting as the member, as above. Deleting the member's account deletes the object too. |
 | PATCH | `/` | Update `name`, `phone`, `gender`, `dob`. The password is changed through the auth pool (§4f), not here, and changing the email is not offered. |
 | PATCH | `/display-prefs` | General settings (fe-client §8.2a): `{ theme?: 'light' \| 'dark', font_size?: 'small' \| 'medium' \| 'large' }`, at least one; a field left out keeps its value. Stored on `clients.theme` / `clients.font_size`, not audited. Returns the profile. |
 | GET | `/dashboard` | Aggregated home payload: next-up booking, package balances (credits + sessions remaining + days to expiry), referral conversions count. One round-trip for the `/account` landing page. |

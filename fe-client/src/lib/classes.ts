@@ -151,7 +151,7 @@ export interface ApiInstructorLite {
   id: string;
   name: string;
   bio: string | null;
-  avatar_url: string | null;
+  photo_url: string | null;
 }
 
 const getInstructors = async () => {

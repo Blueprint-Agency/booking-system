@@ -25,7 +25,7 @@ The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is t
 | Database | **Postgres** |
 | Validation | **Zod** |
 | Auth | **Better Auth**, self-hosted — three pools on separate tables: `client`, `staff`, `platform` (per §15b session isolation). Bearer sessions. See `docs/adr/0004-self-hosted-auth-with-better-auth.md` |
-| File storage | **Cloudflare R2** (S3-compatible via `@aws-sdk/client-s3`) — presigned PUT for public imagery, server-side upload + signed GET for private documents (§6c) |
+| File storage | **Cloudflare R2** (S3-compatible via `@aws-sdk/client-s3`) — server-side multipart upload for imagery (merch photos, Profile pictures) and private documents, signed GET for the documents (§6c) |
 | Background jobs | **`node-cron`** for non-critical periodic jobs (reminders, expiry sweeps); **BullMQ** (Redis-backed) added when the durable refund flow lands. Until then, no Redis dependency. |
 | Email | **Resend** HTTP API (transactional, 22 templates per §17). One API key, two envelope addresses on the platform's verified domain — see §6d. |
 | Payments | **Stripe** (Payment Intents + Refund API; no Subscriptions in v1) |
@@ -111,7 +111,7 @@ be/
     │   │       ├── check-in.ts        # own (QR + code + manual)
     │   │       ├── pt-requests.ts     # PT requests for own sessions
     │   │       │  # availability.ts   # REMOVED — Availability system gone (§4f)
-    │   │       └── profile.ts         # own bio / photo
+    │   │       └── profile.ts         # own bio (the picture is portal/profile.ts, every staff member's)
     │   │
     │   ├── client/                    # Owned by fe-client dev — client pool session + require-active
     │   │   ├── index.ts               # Mounts all client routers under /api/v1/me
@@ -274,6 +274,7 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 | name | text | not null |
 | phone | text | not null |
 | gender | enum `client_gender` | nullable — values: `female`, `male`, `non_binary`, `prefer_not_to_say`. Optional at registration. |
+| photo_r2_key | text | nullable — the member's own **Profile picture**, `t/<tenant id>/avatars/<uuid>.<ext>`, set only by the member (§6c). Served as `photo_url`. |
 | dob | date | nullable — optional at registration; client may add later via `/account/profile`. |
 | status | enum `client_status` | not null, default `'active'` — values: `active`, `suspended` |
 | suspended_at | timestamptz | nullable |
@@ -296,6 +297,7 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 | name | text | not null |
 | role | enum `staff_role` | not null — `admin`, `instructor`. Rank is admin > instructor: nobody edits a staff member who outranks them, and only an admin changes a role (`services/auth/staff-rank.ts`). See `be/docs/adr/0006-two-staff-roles.md`. |
 | status | enum `staff_status` | not null, default `'pending'` — `pending`, `active`, `archived` |
+| photo_r2_key | text | nullable — the staff member's own **Profile picture**, admins and instructors alike, set only by them (§6c). Moved here from `instructors` (#471). Served as `photo_url`. |
 | annual_leave_days | int | not null, default 14 — **Assigned Days**, annual. Per staff member, admins included, set on the staff profile by an admin. The input to next year's Pool, not a balance (#315). |
 | medical_leave_days | int | not null, default 14 — Assigned Days, medical. |
 | study_leave_days | int | not null, default 7 — Assigned Days, study. |
@@ -356,7 +358,7 @@ id, name (text, not null), description (text, nullable — short blurb shown to 
 | Column | Type | Constraints |
 |---|---|---|
 | staff_user_id | uuid | PK + FK → staff_users.id, on delete cascade |
-| photo_r2_key | text | nullable |
+| photo_r2_key | text | nullable — **retired** (#471): the picture is on `staff_users.photo_r2_key`, where migration `instructor_photos_to_staff` copied it. Nothing reads or writes it; a later deploy drops it. |
 | bio | text | nullable |
 | phone | text | nullable — overrides staff_users.phone if needed (admin doc §3 lists this) |
 
@@ -1153,11 +1155,12 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
 ### 6c. Cloudflare R2
 
 - S3-compatible. `@aws-sdk/client-s3` with R2 endpoint and credentials.
-- **One bucket** (`R2_BUCKET_NAME`, optional in env like the rest of the storage settings), served by `R2_PUBLIC_URL`. It holds workshop covers, instructor photos **and** instructor Supporting Documents.
+- **One bucket** (`R2_BUCKET_NAME`, optional in env like the rest of the storage settings), served by `R2_PUBLIC_URL`. It holds workshop covers, merch photos, Profile pictures **and** Supporting Documents.
 - **Everything in it is public.** An object is readable by anyone who holds its key, with no expiry. There is no private bucket: `R2_PRIVATE_BUCKET_NAME` existed briefly and was removed. Read this before you put anything else in here.
   - For a Supporting Document the key is the only protection, which is why `supportingDocumentKey` is `supporting-documents/{instructorId}/{requestId}/{uploadId}.{ext}` — three UUIDs — and why no read path serialises it. That is obscurity, not access control. Splitting the documents back into a bucket with public access disabled is the fix if this is ever judged insufficient. Objects written before the rename keep their `medical-certificates/…` path: the key is stored per request, never recomputed.
 - **Two upload flows.** Which one applies is a property of the caller, not of the bucket.
-- **Imagery — presigned PUT (intended, not yet built).** Backend issues presigned PUT URL with content-type and 5 MB cap → fe uploads directly → fe POSTs the returned key back to backend, backend stores in `instructors.photo_r2_key` / `workshops.cover_r2_key` / `workshop_images.r2_key`. No code writes these keys yet; instructor photo upload is deferred (`spec-instructor-leave.md` Out of Scope).
+- **Imagery — server-side upload.** There is no presigned PUT; it was planned and never built. A merch photo (`POST /portal/admin/merch/:id/image`) and a **Profile picture** (`POST /me/photo` for a member, `POST /portal/profile/photo` for any staff member) are POSTed to the API as multipart, field `file`, through `routes/uploaded-file.ts`, and checked on the server: JPG, PNG or WebP, at most 5 MB, not empty, with `bodyLimit` answering `413` with a sentence first. The server does no image processing; the apps crop a picture square and shrink it to 512×512 before upload. Workshop cover and gallery keys are still sent as strings by an admin and checked by `assertOwnObjectKeys`.
+  - **Profile pictures** (`services/profile-pictures/pictures.ts`, #471) live on `clients.photo_r2_key` and `staff_users.photo_r2_key`, set only by their owner: no route takes a key or a file for someone else, and an admin acting as a member or a colleague is refused. Every upload is a new key, `t/<tenant id>/avatars/<random uuid>.<ext>`, because the CDN caches an object for a year and staging and production share the bucket, so a key is never overwritten or reused. The row is swapped under a lock, and the replaced object is deleted after commit, retried off the request as a Supporting Document's is; a key outside the studio's own folder is never deleted. Removing a picture, and deleting a member's account, delete the object the same way. Every read path serialises the key as `photo_url` (`publicObjectUrl`), never as a key. A studio archive carries the keys on the rows, so a restored studio shows the same pictures; an archive from before #471 has its instructors' photos moved onto their staff rows (`transfer-upgrade.ts`).
 - **Supporting Documents — server-side upload (implemented).** The file is POSTed to the API as multipart, field `file` (`POST /portal/leave/:id/document`, the self-service mount both roles share since #315), and is accepted on a medical or study request and never on an annual one → Hono's `bodyLimit` refuses an oversized body before it is buffered at all → the service validates the declared content type and the *real* byte length against the allow-list (`image/jpeg`, `image/png`, `application/pdf`; 5 MB) → `lib/r2.ts#putObject` writes the object → the key is written to `leave_requests.supporting_document_r2_key` only once the object is safely in the bucket.
   - **Only a pending or approved request takes one** (`rules.checkRequestTakesDocument`). A rejected, withdrawn, cancelled or revoked request is refused `409 document_request_closed` with a sentence naming its status. The rule is checked before the upload and again after it: no row lock is held across the R2 call, so the row is locked (`FOR UPDATE`) only once the object is in the bucket, and its status read again. When a reject, withdraw, cancel or revoke committed during the upload, the new object is deleted and the upload is refused the same way.
   - **Each upload has a key of its own** (`supporting-documents/{instructorId}/{requestId}/{uploadId}.{ext}`), so a refused upload never writes over the file its request holds, even one of the same type. The row only ever points at a key its own upload committed. A second upload that is taken deletes the file it replaced once the request commits (`afterCommit`); a key from before the studio prefix is left in place. `lib/r2.ts#deleteObject` refuses any key outside the studio's `t/<tenant id>/` folder. A delete the bucket fails is retried off the request (`OFF_REQUEST_RETRY`), and reported only if every try fails.
