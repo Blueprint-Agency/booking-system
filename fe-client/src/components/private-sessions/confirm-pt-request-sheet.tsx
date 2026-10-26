@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { CalendarClock, Loader2, MapPin, Sparkles, UsersRound } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
 import { Portal } from "@/components/ui/portal";
 import {
   BTN_PRIMARY,
@@ -152,7 +153,12 @@ export function ConfirmPtRequestSheet({
                         <span className="block text-sm font-medium text-ink break-words">{pkg.name}</span>
                         <span className="block text-xs text-muted">{meta}</span>
                         {pkg.boundInstructor && (
-                          <span className="mt-0.5 block text-xs font-medium text-accent-deep">
+                          <span className="mt-1 flex items-center gap-1.5 text-xs font-medium text-accent-deep">
+                            <Avatar
+                              name={pkg.boundInstructor.name}
+                              photoUrl={pkg.boundInstructor.photo_url}
+                              className="h-6 w-6 bg-accent/15 text-[10px]"
+                            />
                             Sessions with {pkg.boundInstructor.name}
                           </span>
                         )}

@@ -44,7 +44,7 @@ export interface LivePackage {
    * The instructor this PT package's sessions are with; null means open to any
    * of them. Backend-derived — never re-tested here as "PT and bound".
    */
-  boundInstructor: { id: string; name: string } | null;
+  boundInstructor: { id: string; name: string; photo_url: string | null } | null;
 }
 
 /** The one Location a live Unlimited Plan Covers. Null when there is no live plan. */
@@ -114,7 +114,7 @@ interface RawClientPackage {
   cross_location_paid_sgd: string | null;
   unlimited_location: UnlimitedLocation | null;
   session_type: "1on1" | "2on1" | null;
-  bound_instructor: { id: string; name: string } | null;
+  bound_instructor: { id: string; name: string; photo_url: string | null } | null;
 }
 interface RawPackagesResponse {
   client_packages: RawClientPackage[];

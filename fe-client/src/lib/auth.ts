@@ -12,6 +12,8 @@ export type AppUser = {
   firstName: string;
   lastName: string;
   email: string;
+  /** The member's own Profile picture, or null for their initials. */
+  photoUrl: string | null;
 };
 
 /**
@@ -24,7 +26,7 @@ export type AppUser = {
  * One read per session, shared by every caller; `refreshAppUser()` re-reads it
  * after the profile page saves, so the top bar follows the edit.
  */
-type Profile = { name: string; email: string };
+type Profile = { name: string; email: string; photo_url: string | null };
 
 /**
  * The same read carries the member's General settings, saved to their account
@@ -53,7 +55,7 @@ async function loadProfile(userId: string): Promise<void> {
     // Another member has signed in on this tab since the read set off: this
     // answer is theirs to ignore, name and display settings alike.
     if (requestedFor !== userId) return;
-    profile = { name: res.name, email: res.email };
+    profile = { name: res.name, email: res.email, photo_url: res.photo_url ?? null };
     adoptAccountDisplayPrefs(api, res.display_prefs, picksAtRead);
     profileFor = userId;
     emit();
@@ -71,6 +73,16 @@ function ensureProfile(userId: string): void {
 /** Re-read the member's profile, after an edit. */
 export async function refreshAppUser(): Promise<void> {
   if (requestedFor) await loadProfile(requestedFor);
+}
+
+/**
+ * The member's picture as the profile page just saved or removed it. Each
+ * upload has a new URL, so the top bar draws the new picture at once.
+ */
+export function setAppUserPhoto(photoUrl: string | null): void {
+  if (!profile) return;
+  profile = { ...profile, photo_url: photoUrl };
+  emit();
 }
 
 function splitName(full: string): { firstName: string; lastName: string } {
@@ -98,12 +110,14 @@ export function useAppUser(): { user: AppUser | null; isLoaded: boolean; isSigne
 
   if (!isLoaded) return { user: null, isLoaded: false, isSignedIn: false };
   if (!session) return { user: null, isLoaded: true, isSignedIn: false };
-  const named = profileFor === session.userId && current ? splitName(current.name) : null;
+  const own = profileFor === session.userId ? current : null;
+  const named = own ? splitName(own.name) : null;
   return {
     user: {
       firstName: named?.firstName ?? "",
       lastName: named?.lastName ?? "",
       email: session.email,
+      photoUrl: own?.photo_url ?? null,
     },
     isLoaded: true,
     isSignedIn: true,

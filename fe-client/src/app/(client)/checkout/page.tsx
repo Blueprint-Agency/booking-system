@@ -4,8 +4,9 @@ import { useState, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ContentLoading } from "@/components/ui/content-loading";
-import { Lock, ShoppingCart, Tag, Check, AlertCircle, MapPin, UserRound } from "lucide-react";
+import { Lock, ShoppingCart, Tag, Check, AlertCircle, MapPin } from "lucide-react";
 import { cn, formatCurrency, formatDurationMonths } from "@/lib/utils";
+import { Avatar } from "@/components/ui/avatar";
 import { CheckoutFrame, checkoutCardClass } from "@/components/checkout/checkout-frame";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getMemberToken, useMemberSession } from "@/lib/member-auth";
@@ -564,13 +565,15 @@ function CheckoutContent() {
                             onChange={() => setInstructorId(ins.id)}
                             className="mt-0.5 h-4 w-4 border-ink/30 text-accent focus:ring-accent"
                           />
+                          <Avatar
+                            name={ins.name}
+                            photoUrl={ins.photo_url}
+                            className="h-10 w-10 bg-ink/[0.08] text-xs text-ink/60"
+                          />
                           <span className="min-w-0">
                             <span className="block text-sm font-medium text-ink">{ins.name}</span>
                             {ins.bio && (
-                              <span className="mt-0.5 flex items-start gap-1 text-xs text-muted line-clamp-2">
-                                <UserRound className="h-3 w-3 shrink-0 mt-0.5" />
-                                {ins.bio}
-                              </span>
+                              <span className="mt-0.5 block text-xs text-muted line-clamp-2">{ins.bio}</span>
                             )}
                           </span>
                         </label>

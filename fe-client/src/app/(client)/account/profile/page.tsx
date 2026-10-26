@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Lock } from "lucide-react";
 import { ChangePasswordCard } from "@/components/account/change-password-card";
 import { AccountPageHeader } from "@/components/account/account-page-header";
+import { ProfilePictureCard } from "@/components/account/profile-picture-card";
 import { Select } from "@/components/ui/select";
 import { ApiError, useApi } from "@/lib/api";
 import { refreshAppUser } from "@/lib/auth";
@@ -151,6 +152,8 @@ export default function ProfilePage() {
       />
 
       <div className="max-w-3xl space-y-5">
+        <ProfilePictureCard />
+
         {/* Name + contact */}
         <form onSubmit={handleSave} aria-busy={loading}>
           <section className={cardClass} aria-labelledby="personal-info-heading">

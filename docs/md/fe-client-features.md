@@ -203,7 +203,7 @@ _As built:_ there is no separate pricing page: `/pricing` redirects (308) to `/p
 **Layout & controls**
 - _As built:_ a signed-in member's next booking leads the schedule as the same ticket "Your bookings" opens with (§8.1, `ComingUp`), Cancel included; a cancel there re-reads the feed.
 - _As built:_ the cancellation rules sit under the filters in a **yellow-framed "Cancellation policy" notice**, collapsed to its title with a chevron — a tap opens it — one short line each, led by a bold label (`classPolicyPoints`): **Early cancellation** (at least 2 hours before class): you get your credit back. **Late cancellation** (under 2 hours before class): you lose the credit. **Limit**: 3 cancellations every 30 days. Past that, you lose the credit even if you cancel early. The window stated is the studio's class window (`class_window_hours` from `GET /cancellation-policy`), the one every class is judged by. A cancel dialog whose credit comes back names it ("You're cancelling at least 4 hours before class, so you'll get your 1 credit back."). The Book sheet keeps the full sentence (`classBookingPolicy`). The cancel dialog frames its notice amber whenever the credit will stay spent — late, or over the cap — and names the cap.
-- _As built:_ each row is time · class and instructor · location · cost · action; from `md` up the location and the cost are columns of their own, so they line up down the day whatever the instructor's name. Every **Book Now** (row, class detail, Book sheet's "Book class", workshop "Book now") wears the studio accent (`BTN_BOOK`).
+- _As built:_ each row is time · class and instructor · location · cost · action; the instructor's name sits beside their Profile picture, or their initials when they have none (`components/ui/avatar.tsx`). From `md` up the location and the cost are columns of their own, so they line up down the day whatever the instructor's name. Every **Book Now** (row, class detail, Book sheet's "Book class", workshop "Book now") wears the studio accent (`BTN_BOOK`).
 - The schedule shows the next **10 days** (today and the nine after it), grouped by day. Past classes and days with no classes are left out.
 - The days are an **accordion, at most one open**. The soonest day with classes opens by default; each collapsed day shows its label ("Today", "Tomorrow", or the weekday, with the date) and its class count. Tapping a collapsed day opens it and closes the one that was open; tapping the open day closes it, leaving none open. Days slide open and shut (no slide with reduced motion). The open day's header stays pinned under the top bar while its classes scroll.
 - After a day opens, the page scrolls so its first class sits a quarter of the way down the screen (or as near as the foot of the page allows). After the open day is closed, if its header is above the screen, the page scrolls it back to just under the top bar.
@@ -256,7 +256,7 @@ There is no other way to choose: the old "use N credits" shortcut on a blocked r
 **Class detail overlay.** Tapping anywhere on a class row opens the class's detail — the row's own Book / Join waitlist button still acts directly and does not open it. A wide panel from `sm`, a full-height sheet on phones; rendered on `document.body`, focus-trapped, closing on Escape and on the backdrop, and fitting 360px with its own scroll. It reads `GET /public/classes/:id` signed out and `GET /me/classes/:id` signed in, for the class opened only, and shows:
 
 - the class type and its description; the date, start, end and length;
-- the instructor and every supporting instructor;
+- the instructor and every supporting instructor, each with their Profile picture or initials;
 - the Location with its address and a map link, and the room;
 - the credit cost, and **Availability**: "Available", or, full, "Full · waitlist open", "Full · waitlist closed" or "Full" (`lib/class-detail.ts` `seatsLine`) — never a count;
 - the effective Cancellation Window;
@@ -417,7 +417,7 @@ The studio can write back on the request: when it schedules a time none of the p
 **User journey**
 1. From `/private-sessions`, tap "Request a Private Session".
 2. Fill the form: location, session type, preferred class type, one or more proposed start times, optional note, partner (if 2-on-1).
-3. **Send request · N sessions** checks the form, then opens the **request sheet** — the PT request's Book sheet (§3.1), where nothing is debited yet (`components/private-sessions/confirm-pt-request-sheet.tsx`). The form itself has no package field. *"Request a {1-on-1 \| 2-on-1} session?"* states the Location, preferred class type (or "Any class type"), the partner and each proposed time, then **Pay with**: every PT package of that session type as a radio list, each with its sessions left and its clock ("starts when your first session is scheduled" while Dormant, else "until {date}"), and "Sessions with {instructor}" on a bound one. The first that can pay starts ticked; one with fewer sessions than the request needs is greyed with *"Only N sessions left — this request needs M"*, and one that runs out before the last proposed time with *"Runs until {time} on {date}, before one of your times"*. The cost line reads "Uses N sessions from {package}". With none able to pay, the sheet says so and offers **See packages**. **Send request** submits with the picked package; a refusal shows inside the sheet. A member with no PT package of that type at all still gets the "Buy a private session package" prompt on the form. Helpers: `lib/pt-package-picker.ts`.
+3. **Send request · N sessions** checks the form, then opens the **request sheet** — the PT request's Book sheet (§3.1), where nothing is debited yet (`components/private-sessions/confirm-pt-request-sheet.tsx`). The form itself has no package field. *"Request a {1-on-1 \| 2-on-1} session?"* states the Location, preferred class type (or "Any class type"), the partner and each proposed time, then **Pay with**: every PT package of that session type as a radio list, each with its sessions left and its clock ("starts when your first session is scheduled" while Dormant, else "until {date}"), and "Sessions with {instructor}" beside the instructor's Profile picture (or initials) on a bound one. The first that can pay starts ticked; one with fewer sessions than the request needs is greyed with *"Only N sessions left — this request needs M"*, and one that runs out before the last proposed time with *"Runs until {time} on {date}, before one of your times"*. The cost line reads "Uses N sessions from {package}". With none able to pay, the sheet says so and offers **See packages**. **Send request** submits with the picked package; a refusal shows inside the sheet. A member with no PT package of that type at all still gets the "Buy a private session package" prompt on the form. Helpers: `lib/pt-package-picker.ts`.
 4. Sent → the **"Request sent!"** celebration (as §3.1's, without a calendar — there is no time yet): a light line about hearing back on WhatsApp, and what was asked for, when and where. **Done** goes to `/account/private-sessions`, the new request in the **Pending** group.
 5. Studio takes over on WhatsApp, then schedules in `/admin/pt-requests` → the member's app shows the **"Approved!"** celebration with the final time, place and instructor and Add to Google Calendar (§11.2), and the row moves to **Confirmed** on `/account/private-sessions`. _(No approval email is sent yet.)_
 6. If the studio can't accommodate any proposed slot and the WhatsApp negotiation fails, either side can **cancel** the request from their UI. While `pending`, cancel refunds credits.
@@ -425,7 +425,7 @@ The studio can write back on the request: when it schedules a time none of the p
 **Where admin comes in**
 - **`/admin/pt-requests`** triage page is the single surface — see admin-restructure.md §9.
 - The system enforces the invariant: **no `PtSession` exists without a backing `PtRequest`** in v1.
-- Instructor profile pages on the staff side manage bio, photo, and eligible class types (no `available` flag, no availability slots — the surface was removed).
+- Instructor profile pages on the staff side manage bio, Profile picture (the instructor's own upload; an admin cannot set it), and eligible class types (no `available` flag, no availability slots — the surface was removed).
 
 ---
 
@@ -529,6 +529,8 @@ The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a re
 5. **Breakdown** — the Add-On is its own line, never folded into the plan; a Promo Code discounts the plan line only and can never touch the Add-On, which is a rate on Global Policy rather than a discountable product.
 6. **Home studio, restated** *(unlimited)* — "Your home studio is Harbour Studio for the next 6 months." directly above Pay, so the member passes the irreversible choice twice before money moves.
 7. **Pay.** A discount that takes the total to $0 skips the payment step entirely and grants immediately, the same free path packages and free workshop tiers already use.
+
+**Your instructor** *(Instructor-Bound PT package)* — the studio's active instructors as radios (`GET /public/instructors`), each with their Profile picture (or initials), name and bio; Pay stays disabled and reads "Choose your instructor to continue" until one is picked.
 
 **Two entry points for a standalone Add-On purchase** against a plan the member already holds — no new Unlimited purchase involved: the nudge on a blocked class (below), and the plan card on the account page. Same review page, entered with the target plan's id instead of a catalogue item.
 
@@ -656,7 +658,9 @@ What the member attended in a week, month or year, from `GET /me/bookings/attend
 - Errors inline, submit disabled until dirty.
 
 **Where admin comes in**
-- Admin can edit any of these fields on a user (including email override) for support cases.
+- Admin can edit any of these fields on a user (including email override) for support cases. Not the Profile picture: only the member sets it.
+
+**Profile picture (as built, #472).** A card above Personal info shows the member's picture, or their initials when they have none, with **Upload picture** (**Replace picture** once they have one) and **Remove** (`components/account/profile-picture-card.tsx`). The picked file opens a crop dialog: the picture in a square box under a circle mask, dragged (or moved with the arrow keys) and zoomed (up to 4×) inside it, never past its edges. **Save picture** draws the square onto a canvas at 512×512 and uploads it (`POST /me/photo`, field `file`): a PNG or WebP stays one, anything else becomes a JPG, so the file sent is always a type the server takes (`lib/square-crop.ts`, `lib/avatar-image.ts`). A file the browser cannot read is refused before upload with *"We couldn't read that picture. Choose a JPG, PNG or WebP."*; an upload the server refuses shows its own sentence. **Remove** sends `DELETE /me/photo`. Either way the top bar and the account header redraw from the answer at once: each upload has a new URL, so no cached old picture shows.
 
 ### 8.2a General settings `/account/settings` (as built)
 
@@ -776,7 +780,7 @@ The names and addresses the member's Receipts are made out to: up to **three** s
 - **Authenticated**: Logo | Classes | Workshops | Private Sessions | Packages | Corporate | My Bookings | Avatar dropdown (Account, My QR, Logout).
 - Mobile: hamburger drawer with the same items.
 - Sticky top, transparent on landing hero, solid on scroll/interior pages.
-- No credit balance in the top bar: the avatar alone, which opens `/account`, where each package shows its own balance.
+- No credit balance in the top bar: the avatar alone, which opens `/account`, where each package shows its own balance. The avatar is the member's Profile picture, or their initials when they have none or it will not load (`lib/avatar.ts`); the account header draws the same.
 
 ### 9.2 Footer
 
