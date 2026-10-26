@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { afterCommit, db, retryingTransaction } from '../../db'
 import { classes } from '../../db/schema'
+import { recordSessionAssigned } from '../attention/session-assigned'
 import { countSeats } from '../bookings/seats'
 import { assertRoomInLocation } from './room-conflicts'
 import { assertAvailable, eventSubjects, plannedInstructorIds } from './occupancy'
@@ -130,8 +131,17 @@ export async function createClass(tenantId: string, input: CreateClassInput): Pr
             ? { supportingInstructorIds: input.supportingInstructorIds }
             : {}),
         },
+        { actorStaffId: input.createdByStaffId },
       )
     }
+    // The main instructor is on the row itself, not added through the roster.
+    await recordSessionAssigned(
+      tenantId,
+      input.createdByStaffId,
+      { kind: 'class', id: row.id },
+      { main: [input.mainInstructorId] },
+      { tx },
+    )
     return row
   })
 }
@@ -301,7 +311,7 @@ export async function updateClass(
     }
 
     if (touchesRoster) {
-      await replaceRoster(tx, tenantId, { kind: 'class', id }, rosterPatch)
+      await replaceRoster(tx, tenantId, { kind: 'class', id }, rosterPatch, actorStaffId ? { actorStaffId } : undefined)
       // main_instructor_id / instructor_pay_sgd may have moved under us.
       const [fresh] = await tx
         .select()

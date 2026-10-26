@@ -124,6 +124,8 @@ export interface UpdateWorkshopInput {
   supportingInstructors?: WorkshopInstructorInput[]
   supportingInstructorIds?: string[]
   imageR2Keys?: string[]
+  /** Who made the edit: an instructor it adds is told, unless it was them. */
+  actorStaffId?: string
 }
 
 export async function getWorkshop(
@@ -200,6 +202,7 @@ export async function updateWorkshop(
             ? { supportingInstructorIds: patch.supportingInstructorIds }
             : {}),
         },
+        patch.actorStaffId ? { actorStaffId: patch.actorStaffId } : undefined,
       )
       // A workshop with no main row is a broken row, not a state to save into.
       if (!roster.some(r => r.role === 'main')) {

@@ -21,14 +21,32 @@ export function formatWhen(at: Date, timezone: string): string {
   return `${parts.weekday} ${parts.day} ${parts.month}, ${parts.hour}:${parts.minute} ${String(parts.dayPeriod).toLowerCase()}`
 }
 
+const zoned = (at: Date, timezone: string, opts: Intl.DateTimeFormatOptions) =>
+  Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { timeZone: timezone, ...opts }).formatToParts(at).map(p => [p.type, p.value]),
+  )
+
 /** "Tue 28 Oct", in `timezone`. */
 export function formatDay(at: Date, timezone: string): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-GB', { timeZone: timezone, weekday: 'short', day: 'numeric', month: 'short' })
-      .formatToParts(at)
-      .map(p => [p.type, p.value]),
-  )
-  return `${parts.weekday} ${parts.day} ${parts.month}`
+  const p = zoned(at, timezone, { weekday: 'short', day: 'numeric', month: 'short' })
+  return `${p.weekday} ${p.day} ${p.month}`
+}
+
+/** "7:00 pm", in `timezone`. */
+export function formatClock(at: Date, timezone: string): string {
+  const p = zoned(at, timezone, { hour: 'numeric', minute: '2-digit', hour12: true })
+  return `${p.hour}:${p.minute} ${String(p.dayPeriod).toLowerCase()}`
+}
+
+/** "Tuesday", in `timezone`. */
+export function formatWeekday(at: Date, timezone: string): string {
+  return String(zoned(at, timezone, { weekday: 'long' }).weekday)
+}
+
+/** "2031-06-10": the calendar day in `timezone`. */
+export function localDate(at: Date, timezone: string): string {
+  const p = zoned(at, timezone, { year: 'numeric', month: '2-digit', day: '2-digit' })
+  return `${p.year}-${p.month}-${p.day}`
 }
 
 /** "just now", "5 min ago", "3 h ago", "2 d ago". */

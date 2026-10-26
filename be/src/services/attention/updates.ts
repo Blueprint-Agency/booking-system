@@ -33,8 +33,27 @@ export interface LeaveDecidedPayload {
   actorName: string
 }
 
+/** What `session_assigned` snapshots: the sentence's parts, and where it links. */
+export interface SessionAssignedPayload {
+  sessionKind: 'class' | 'pt' | 'workshop' | 'corporate'
+  /** The class or PT session the link opens; a workshop or corporate session has no page. */
+  sessionId: string
+  actorName: string
+  /** "Vinyasa", "a private session", a workshop's name. */
+  what: string
+  /** "Tue 28 Oct, 7:00 pm" in the studio's zone; null when a workshop has no day yet. */
+  when: string | null
+  /** The session's day in the studio's zone, `YYYY-MM-DD`: where a page-less session links. */
+  date: string | null
+  /** Added as a supporting instructor rather than the main one. */
+  supporting: boolean
+  /** Set for a series: "every Tuesday at 7:00 pm from Tue 28 Oct". Its `sessionId` is the first class. */
+  series: { weekday: string; time: string; from: string } | null
+}
+
 export interface UpdatePayloads {
   leave_decided: LeaveDecidedPayload
+  session_assigned: SessionAssignedPayload
 }
 
 /** Write one update per recipient, in the caller's transaction. */
@@ -98,6 +117,24 @@ const compose: { [K in StaffUpdateKind]: (p: UpdatePayloads[K], role: StaffRole)
       }
     }
     return { title: `${p.actorName} cancelled your approved ${what}`, detail: null, href }
+  },
+  session_assigned: p => {
+    const href =
+      p.sessionKind === 'class'
+        ? `/instructor/schedule/class/${p.sessionId}`
+        : p.sessionKind === 'pt'
+          ? `/instructor/schedule/pt/${p.sessionId}`
+          : `/instructor/schedule${p.date ? `?date=${p.date}` : ''}`
+    const timing = p.series
+      ? ` every ${p.series.weekday} at ${p.series.time} from ${p.series.from}`
+      : p.when
+        ? ` on ${p.when}`
+        : ''
+    return {
+      title: `${p.actorName} scheduled you to teach ${p.what}${timing}${p.supporting ? ' as a supporting instructor' : ''}`,
+      detail: null,
+      href,
+    }
   },
 }
 

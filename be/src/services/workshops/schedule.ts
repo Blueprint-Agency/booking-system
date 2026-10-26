@@ -1,5 +1,6 @@
 import { db } from '../../db'
 import { BadRequestError } from '../../shared/errors'
+import { recordSessionAssigned } from '../attention/session-assigned'
 import { lockOccupancy } from '../schedule/occupancy'
 import { replacePromotionsForParent, type PromotionWriteInput } from '../packages/promotions'
 import { createWorkshop, getWorkshop, type CreateWorkshopInput, type WorkshopRow } from './publish'
@@ -28,6 +29,16 @@ export async function createWorkshopWithSchedule(
   return db.transaction(async () => {
     const row = await createWorkshop(tenantId, basics)
     if (days.length || tiers.length) await saveWorkshopSchedule(tenantId, row.id, { days, tiers })
+    // Told last, so the update can name the workshop's first day.
+    await recordSessionAssigned(
+      tenantId,
+      basics.createdByStaffId,
+      { kind: 'workshop', id: row.id },
+      {
+        main: [basics.mainInstructorId],
+        supporting: (basics.supportingInstructors ?? []).map(s => s.instructorId),
+      },
+    )
     if (promotions.length) {
       await replacePromotionsForParent(tenantId, 'workshop', row.id, promotions, basics.createdByStaffId)
     }
