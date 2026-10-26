@@ -1,4 +1,4 @@
-import { pgTable, uuid, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, jsonb, text, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
@@ -37,6 +37,38 @@ export const staffUpdates = pgTable(
       table.recipientStaffId,
       table.readAt,
       table.createdAt,
+    ),
+  }),
+)
+
+/**
+ * Dismissals (#476, #482): an admin's studio-wide decision that an Attention
+ * item of a dismissable kind needs nothing done ("keep waiting", "keep the
+ * class"). It is not a read flag: it hides the item for every admin.
+ *
+ * `subject_id` is the item's subject (a Purchase, a class), with no FK because
+ * what it points at depends on `kind`. `kind` is text, not an enum, so a new
+ * dismissable kind needs no migration: the registry says which kinds exist. The
+ * row names no member, so permanent deletion of a member leaves it alone.
+ */
+export const attentionDismissals = pgTable(
+  'attention_dismissals',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    kind: text('kind').notNull(),
+    subjectId: uuid('subject_id').notNull(),
+    dismissedByStaffId: uuid('dismissed_by_staff_id')
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: 'restrict' }),
+    dismissedAt: timestamp('dismissed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    dismissedByFkIdx: index('attention_dismissals_dismissed_by_staff_id_fk_idx').on(table.dismissedByStaffId),
+    itemUnique: uniqueIndex('attention_dismissals_tenant_kind_subject_uq').on(
+      table.tenantId,
+      table.kind,
+      table.subjectId,
     ),
   }),
 )

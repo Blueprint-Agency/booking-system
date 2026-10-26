@@ -34,6 +34,7 @@ export type AttentionKind =
   | 'classpass_review'
   | 'classpass_overbooked'
   | 'instructor_pay_missing'
+  | 'part_payment_silent'
   | 'staff_invitation_expired'
   | 'staff_email_change_expired'
   | 'staff_without_email'
@@ -88,6 +89,12 @@ export interface AttentionProvider {
   badge?: AttentionBadgeKey
   /** Whether an admin may dismiss an item of this kind for the whole studio. */
   dismissable: boolean
+  /**
+   * Dismissable kinds only: whether the item for `subjectId` is open right now
+   * (its predicate holds and it is not dismissed). A dismissal of one that is
+   * not is a 404.
+   */
+  isOpen?(ctx: AttentionContext, subjectId: string): Promise<boolean>
   /** Whether this caller is owed this kind at all (their role, their permissions). */
   appliesTo(ctx: AttentionContext): boolean
   /** A cheap SQL count of the open items this caller is owed. */

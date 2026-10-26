@@ -25,7 +25,7 @@ export interface AttentionCaller {
 
 export const DEFAULT_LIMIT_PER_GROUP = 5
 
-async function contextFor(caller: AttentionCaller): Promise<AttentionContext> {
+export async function contextFor(caller: AttentionCaller): Promise<AttentionContext> {
   const [tenant, active] = await Promise.all([
     loadTenantById(caller.tenantId),
     db
