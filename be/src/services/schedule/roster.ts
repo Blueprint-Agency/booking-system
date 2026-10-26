@@ -43,6 +43,7 @@ import { instructors } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import type { ErrorCode } from '../../shared/error-codes'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { recordSessionAssigned } from '../attention/session-assigned'
 import { mergeRoster, type RosterEntry, type RosterPatch } from './roster-merge'
 
 export type { RosterAssignment, RosterPatch } from './roster-merge'
@@ -293,6 +294,8 @@ export async function replaceRoster(
   tenantId: string,
   ref: RosterRef,
   patch: RosterPatch,
+  /** Who made the change: the instructors it adds are told (`session_assigned`), unless it was them. */
+  announceFor?: { actorStaffId: string },
 ): Promise<RosterEntry[]> {
   // An event belonging to another tenant reads back as absent, so this is also
   // the "not yours" refusal — indistinguishable from "no such event", as it
@@ -303,6 +306,23 @@ export async function replaceRoster(
   const merged = mergeRoster(existing, patch)
   if (!merged.ok) throw new BadRequestError(merged.refusal)
   const roster = merged.roster
+
+  // Told once the write below is done, so the session they link to reads as it now stands.
+  const announce = async () => {
+    if (!announceFor) return
+    const before = new Set(existing.map(r => `${r.role}:${r.instructorId}`))
+    const added = roster.filter(r => !before.has(`${r.role}:${r.instructorId}`))
+    await recordSessionAssigned(
+      tenantId,
+      announceFor.actorStaffId,
+      ref,
+      {
+        main: added.filter(r => r.role === 'main').map(r => r.instructorId),
+        supporting: added.filter(r => r.role === 'supporting').map(r => r.instructorId),
+      },
+      { tx },
+    )
+  }
 
   // Anyone may join a roster without pay: they are stored Unpriced (null), never
   // S$0, and priced later from Finance's "Needs pay" filter. An explicit 0 is a
@@ -346,6 +366,7 @@ export async function replaceRoster(
           })),
         )
     }
+    await announce()
     return roster
   }
 
@@ -442,6 +463,7 @@ export async function replaceRoster(
     }
   }
 
+  await announce()
   return roster
 }
 

@@ -36,6 +36,7 @@ import { assertRoomInLocation } from './room-conflicts'
 import { assertHasCapacity } from './classes'
 import { cancelClassInTx } from '../bookings/cancel-class'
 import { eventSubjects, findClash, lockOccupancy, type SubjectClash } from './occupancy'
+import { recordSessionAssigned } from '../attention/session-assigned'
 import { ensureInstructors, exec, replaceRoster, type Tx } from './roster'
 import {
   ACCEPTS_ALL,
@@ -186,6 +187,16 @@ export async function createSeries(
       { ...input, packageRule },
       occurrences,
       input.createdByStaffId,
+    )
+    // One update per instructor for the whole series, linked to its first class
+    // (the classes are in date order). Extending it later tells no one: they
+    // already teach it.
+    await recordSessionAssigned(
+      tenantId,
+      input.createdByStaffId,
+      { kind: 'class', id: classIds[0]! },
+      { main: [input.mainInstructorId], supporting: input.supportingInstructors.map(s => s.instructorId) },
+      { series: true, tx },
     )
     return { id: row.id, classIds }
   })

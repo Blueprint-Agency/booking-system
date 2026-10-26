@@ -18,6 +18,7 @@
  */
 import { and, eq, ne } from 'drizzle-orm'
 import { db } from '../../db'
+import { recordSessionAssigned } from '../attention/session-assigned'
 import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
@@ -246,6 +247,13 @@ export async function schedulePtRequest(
       })
       .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
 
+    await recordSessionAssigned(
+      tenantId,
+      input.actorStaffId,
+      { kind: 'pt_session', id: sessionId },
+      { main: [input.instructorId] },
+      { tx },
+    )
     return sessionId
   })
   if (!ptSessionId) return { ok: false, error: 'not_pending' }
@@ -685,7 +693,7 @@ export async function updatePtSession(
     }
 
     if (touchesRoster) {
-      await replaceRoster(tx, tenantId, { kind: 'pt_session', id }, rosterPatch)
+      await replaceRoster(tx, tenantId, { kind: 'pt_session', id }, rosterPatch, { actorStaffId: patch.actorStaffId })
       // instructor_id / instructor_pay_sgd may have moved under us.
       const [fresh] = await tx
         .select()

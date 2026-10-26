@@ -100,7 +100,7 @@ const app = new Hono()
     if (body.starts_at !== undefined) patch.startsAt = new Date(body.starts_at)
     if (body.ends_at !== undefined) patch.endsAt = new Date(body.ends_at)
 
-    const result = await svc.rescheduleCorporateSession(tenantId(c), id, patch)
+    const result = await svc.rescheduleCorporateSession(tenantId(c), id, patch, c.get('staffUserId'))
     if (!result.ok) {
       if (result.error === ERROR_CODES.not_found) return c.json({ error: ERROR_CODES.not_found }, 404)
       return c.json({ error: result.error }, statusFor(result.error))

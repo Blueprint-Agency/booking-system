@@ -326,6 +326,7 @@ const app = new Hono()
         ? { supportingInstructorIds: body.supporting_instructor_ids }
         : {}),
       ...(body.image_r2_keys !== undefined ? { imageR2Keys: body.image_r2_keys } : {}),
+      actorStaffId: c.get('staffUserId'),
     })
     c.set('auditTarget' as any, { table: 'workshops', id })
     return c.json(workshopRow(row))

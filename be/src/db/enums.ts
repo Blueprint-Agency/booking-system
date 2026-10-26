@@ -209,7 +209,7 @@ export const leaveHalfDayEnum = pgEnum('leave_half_day', ['none', 'morning', 'af
 
 // Staff Updates (#476): the kinds of event a staff member is told about. A new
 // kind adds a value here and a composer in services/attention/updates.ts.
-export const staffUpdateKindEnum = pgEnum('staff_update_kind', ['leave_decided'])
+export const staffUpdateKindEnum = pgEnum('staff_update_kind', ['leave_decided', 'session_assigned'])
 
 // Ledger
 export const auditActorTypeEnum = pgEnum('audit_actor_type', ['staff', 'system'])
