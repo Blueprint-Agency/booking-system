@@ -17,11 +17,18 @@ export interface ApiClassLocation {
   gmaps_url: string | null;
 }
 
+/** An instructor as a class names them: `photo_url` is their Profile picture, or null for initials. */
+export interface ApiInstructorRef {
+  id: string;
+  name: string;
+  photo_url: string | null;
+}
+
 export interface ApiClassCard {
   id: string;
   class_type: { id: string; name: string };
   /** Main instructor — kept for back-compat alongside `main_instructor_id`. */
-  instructor: { id: string; name: string };
+  instructor: ApiInstructorRef;
   main_instructor_id: string;
   supporting_instructor_ids: string[];
   /** Back-compat — [main, ...supporting]. */
@@ -57,7 +64,7 @@ export interface ApiClassCard {
 export interface ApiClassDetail extends Omit<ApiClassCard, "class_type" | "location"> {
   class_type: { id: string; name: string; difficulty: string; description: string | null };
   location: ApiClassLocation | null;
-  supporting_instructors: { id: string; name: string }[];
+  supporting_instructors: ApiInstructorRef[];
   package_rule: ApiPackageRule;
 }
 

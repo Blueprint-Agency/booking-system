@@ -18,6 +18,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
 import { Portal } from "@/components/ui/portal";
 import {
   BTN_BOOK,
@@ -38,6 +39,7 @@ import {
   formatClassTime,
   type ApiClassCard,
   type ApiClassDetail,
+  type ApiInstructorRef,
   type ApiMemberClassDetail,
 } from "@/lib/classes";
 import { classLength, seatsLine } from "@/lib/class-detail";
@@ -215,10 +217,13 @@ export function ClassDetailOverlay({
 
             <dl className="mt-5 grid gap-x-6 gap-y-4 sm:grid-cols-2">
               <Fact icon={<UserRound />} label="Instructor">
-                {cls.instructor.name}
-                {supporting.length > 0 && (
-                  <span className="block text-muted">with {supporting.map((s) => s.name).join(", ")}</span>
-                )}
+                <span className="mt-1 flex flex-col gap-1.5">
+                  <InstructorLine instructor={cls.instructor} />
+                  {supporting.length > 0 && <span className="text-xs text-muted">with</span>}
+                  {supporting.map((s) => (
+                    <InstructorLine key={s.id} instructor={s} />
+                  ))}
+                </span>
               </Fact>
               {location && (
                 <Fact icon={<MapPin />} label="Location">
@@ -283,6 +288,19 @@ export function ClassDetailOverlay({
 }
 
 /** One labelled fact about the class, with its icon. Booked-class detail on My bookings wears the same. */
+function InstructorLine({ instructor }: { instructor: ApiInstructorRef }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <Avatar
+        name={instructor.name}
+        photoUrl={instructor.photo_url}
+        className="h-8 w-8 bg-ink/[0.08] text-[11px] text-ink/60"
+      />
+      <span className="min-w-0 break-words">{instructor.name}</span>
+    </span>
+  );
+}
+
 export function Fact({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
   return (
     <div className="flex min-w-0 gap-3">
