@@ -8,7 +8,8 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { currentEnv } from '../env'
-import { outbound, VENDOR_DEADLINE_MS, type RetryPolicy } from './outbound'
+import { reportError } from '../shared/logger'
+import { OFF_REQUEST_RETRY, outbound, VENDOR_DEADLINE_MS, type RetryPolicy } from './outbound'
 import { tenantKey } from './object-key'
 
 /**
@@ -102,6 +103,24 @@ export async function deleteObject(tenantId: string, key: string, options: { ret
     abortSignal => r2.send(new DeleteObjectCommand({ Bucket: r2Bucket(), Key: key }), { abortSignal }),
     options,
   )
+}
+
+/**
+ * Delete an object no row points at any more: a refused or failed upload, or
+ * the object a later one replaced. A failed delete is retried off the request,
+ * so the reply does not wait on the bucket, and a delete that still fails is
+ * reported with `context`, which names what it belonged to.
+ */
+export async function deleteUnreferencedObject(
+  tenantId: string,
+  key: string,
+  failure: { message: string; context: Record<string, unknown> },
+): Promise<void> {
+  await deleteObject(tenantId, key).catch(() => {
+    void deleteObject(tenantId, key, { retry: OFF_REQUEST_RETRY }).catch(err =>
+      reportError(err, failure.message, failure.context),
+    )
+  })
 }
 
 /**
