@@ -1,3 +1,4 @@
+import { checkInUnfinished } from './check-in-unfinished'
 import { ptRequestPending } from './pt-request-pending'
 import type { AttentionProvider } from './types'
 
@@ -6,4 +7,4 @@ import type { AttentionProvider } from './types'
  * and one line here; the summary, the panel, the groups and the sidebar badge
  * keys are all built from this list.
  */
-export const providers: readonly AttentionProvider[] = [ptRequestPending]
+export const providers: readonly AttentionProvider[] = [ptRequestPending, checkInUnfinished]
