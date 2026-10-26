@@ -275,7 +275,8 @@ describe('Staff attention: ClassPass', { skip: integrationTestsEnabled ? false :
 
     const past = await futureClass(studio, 1, new Date(Date.now() - 3 * HOUR))
     await book(studio, past, 'e', 'overbook', 'classpass')
-    assert.equal((await summary(admin)).needs_action, 0, 'a class that has ended is not listed')
+    // (An ended class may still owe a check-in; that is another kind, so look at ClassPass only.)
+    assert.equal((await summary(admin)).by_group.classpass ?? 0, 0, 'a class that has ended is not listed')
   })
 
   test('ATN-83 an instructor never sees either ClassPass kind, and one studio never sees another studio', async () => {
