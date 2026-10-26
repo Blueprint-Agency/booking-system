@@ -5,6 +5,7 @@ import { locations } from '../../db/schema/catalog'
 import { now as clockNow } from '../../lib/clock'
 import { loadTenantById } from '../tenants/tenants'
 import { providers } from './registry'
+import { listUpdates, unreadUpdateCount, type UpdateView } from './updates'
 import {
   ATTENTION_GROUPS,
   type AttentionBadgeKey,
@@ -67,8 +68,7 @@ export async function attentionSummary(caller: AttentionCaller, locationId?: str
       byGroup[p.badge] = (byGroup[p.badge] ?? 0) + scoped
     }),
   )
-  // Updates arrive with their table (#490); until then there are none to count.
-  const unreadUpdates = 0
+  const unreadUpdates = await unreadUpdateCount(caller)
   return { needs_action: needsAction, unread_updates: unreadUpdates, total: needsAction + unreadUpdates, by_group: byGroup }
 }
 
@@ -98,8 +98,11 @@ export interface AttentionGroupView {
 /** The panel's Needs action tab: the groups that have something, most urgent first. */
 export async function attentionPanel(
   caller: AttentionCaller,
-  opts: { limitPerGroup?: number } = {},
-): Promise<{ needs_action: { groups: AttentionGroupView[] }; updates: { items: never[]; next_cursor: null } }> {
+  opts: { limitPerGroup?: number; updatesBefore?: string } = {},
+): Promise<{
+  needs_action: { groups: AttentionGroupView[] }
+  updates: { items: UpdateView[]; next_cursor: string | null }
+}> {
   const limit = opts.limitPerGroup ?? DEFAULT_LIMIT_PER_GROUP
   const ctx = await contextFor(caller)
   const mine = providers.filter(p => p.appliesTo(ctx))
@@ -133,7 +136,7 @@ export async function attentionPanel(
   // The studio's account is the one thing only ReserveToday can act on, so it leads.
   groups.sort((a, b) => Number(b.key === 'studio_account') - Number(a.key === 'studio_account'))
 
-  return { needs_action: { groups }, updates: { items: [], next_cursor: null } }
+  return { needs_action: { groups }, updates: await listUpdates(caller, { before: opts.updatesBefore }) }
 }
 
 function view(provider: AttentionProvider, item: ProviderItem): AttentionItemView {

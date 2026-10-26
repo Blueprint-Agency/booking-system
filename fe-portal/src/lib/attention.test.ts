@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert";
 import {
+  appendOlder,
+  markAllReadLocally,
+  markUpdateReadLocally,
+  unreadCount,
+  updatesTabLabel,
+  type AttentionUpdate,
   autoOpenDecision,
   autoOpenKey,
   bellLabel,
@@ -101,4 +107,40 @@ test("ATN-14 the auto-open memory survives a blocked sessionStorage: reads say '
   assert.doesNotThrow(() => rememberAutoOpenDecided(blocked, key));
   assert.equal(wasAutoOpenDecided(null, key), false);
   assert.doesNotThrow(() => rememberAutoOpenDecided(null, key));
+});
+
+const update = (id: string, read_at: string | null = null): AttentionUpdate => ({
+  id,
+  kind: "leave_decided",
+  title: `t${id}`,
+  detail: null,
+  href: null,
+  created_at: "2026-10-27T00:00:00.000Z",
+  read_at,
+});
+
+test("ATN-149 the Updates tab: its label counts the unread, opening one or all marks them read in place, and an older page is appended without repeats", () => {
+  assert.equal(updatesTabLabel(0), "Updates");
+  assert.equal(updatesTabLabel(3), "Updates (3 new)");
+
+  const list = [update("a"), update("b"), update("c", "2026-10-26T00:00:00.000Z")];
+  assert.equal(unreadCount(list), 2);
+
+  const at = "2026-10-27T01:00:00.000Z";
+  const one = markUpdateReadLocally(list, "a", at);
+  assert.equal(one[0]!.read_at, at);
+  assert.equal(one[1]!.read_at, null);
+  assert.equal(list[0]!.read_at, null, "the original list is not mutated");
+  // Already read keeps its first time.
+  assert.equal(markUpdateReadLocally(list, "c", at)[2]!.read_at, "2026-10-26T00:00:00.000Z");
+
+  const all = markAllReadLocally(list, at);
+  assert.equal(unreadCount(all), 0);
+  assert.equal(all[2]!.read_at, "2026-10-26T00:00:00.000Z");
+
+  const merged = appendOlder(list, [update("c"), update("d")]);
+  assert.deepEqual(
+    merged.map((u) => u.id),
+    ["a", "b", "c", "d"],
+  );
 });
