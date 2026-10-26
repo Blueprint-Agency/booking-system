@@ -1,9 +1,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
-import { instructors } from '../../db/schema/catalog'
 import { ConflictError, NotFoundError, BadRequestError } from '../../shared/errors'
-import { assertOwnObjectKeys } from '../../lib/object-key'
 import { inviterNameFor, mailInvitation, writePendingStaff } from '../auth/invitations'
 import { assertBioWithin } from '../auth/staff-bio'
 import { requireTenantUrl } from '../tenants/urls'
@@ -23,14 +21,25 @@ export interface InstructorView {
   photoR2Key: string | null
 }
 
+function toView(staff: StaffRow): InstructorView {
+  return {
+    id: staff.id,
+    email: staff.email,
+    name: staff.name,
+    status: staff.status,
+    archivedAt: staff.archivedAt,
+    invitedAt: staff.invitedAt,
+    acceptedAt: staff.acceptedAt,
+    bio: staff.bio,
+    phone: staff.phone,
+    photoR2Key: staff.photoR2Key,
+  }
+}
+
 async function loadById(tenantId: string, id: string): Promise<InstructorView> {
   const [row] = await db
-    .select({
-      staff: staffUsers,
-      ins: instructors,
-    })
+    .select()
     .from(staffUsers)
-    .leftJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
     .where(
       and(
         eq(staffUsers.tenantId, tenantId),
@@ -41,19 +50,7 @@ async function loadById(tenantId: string, id: string): Promise<InstructorView> {
     )
     .limit(1)
   if (!row) throw new NotFoundError('instructor_not_found')
-
-  return {
-    id: row.staff.id,
-    email: row.staff.email,
-    name: row.staff.name,
-    status: row.staff.status,
-    archivedAt: row.staff.archivedAt,
-    invitedAt: row.staff.invitedAt,
-    acceptedAt: row.staff.acceptedAt,
-    bio: row.staff.bio,
-    phone: row.staff.phone,
-    photoR2Key: row.ins?.photoR2Key ?? null,
-  }
+  return toView(row)
 }
 
 export async function listInstructors(
@@ -69,24 +66,8 @@ export async function listInstructors(
   ]
   if (opts.status) filters.push(eq(staffUsers.status, opts.status))
 
-  const rows = await db
-    .select({ staff: staffUsers, ins: instructors })
-    .from(staffUsers)
-    .leftJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
-    .where(and(...filters))
-
-  return rows.map(r => ({
-    id: r.staff.id,
-    email: r.staff.email,
-    name: r.staff.name,
-    status: r.staff.status,
-    archivedAt: r.staff.archivedAt,
-    invitedAt: r.staff.invitedAt,
-    acceptedAt: r.staff.acceptedAt,
-    bio: r.staff.bio,
-    phone: r.staff.phone,
-    photoR2Key: r.ins?.photoR2Key ?? null,
-  }))
+  const rows = await db.select().from(staffUsers).where(and(...filters))
+  return rows.map(toView)
 }
 
 export const getInstructor = loadById
@@ -96,7 +77,6 @@ interface CreateInstructorInput {
   name: string
   bio?: string | null
   phone?: string | null
-  photoR2Key?: string | null
   /** The admin creating them, who signs the invitation. */
   invitedByStaffId: string
 }
@@ -118,9 +98,6 @@ export async function createInstructor(
   const email = input.email.trim().toLowerCase()
   if (!email) throw new BadRequestError('email_required')
   assertBioWithin(input.bio)
-  // The photo is an object key an admin sends as a string, not an upload made
-  // here, so without this a profile is a way to point at another studio's file.
-  assertOwnObjectKeys(tenantId, [input.photoR2Key])
 
   // Before the writes, as in `inviteAdmin`: the invitation is only worth
   // anything if there is a portal of this studio's own to point it at.
@@ -146,7 +123,6 @@ export async function createInstructor(
       invitedByStaffId: input.invitedByStaffId,
       bio: input.bio,
       phone: input.phone,
-      photoR2Key: input.photoR2Key,
     })
 
     const view: InstructorView = {
@@ -159,7 +135,7 @@ export async function createInstructor(
       acceptedAt: staff.acceptedAt,
       bio: input.bio ?? null,
       phone: input.phone ?? null,
-      photoR2Key: input.photoR2Key ?? null,
+      photoR2Key: null,
     }
     return { view, invitation }
   })
@@ -189,7 +165,6 @@ interface UpdateInstructorInput {
   name?: string
   bio?: string | null
   phone?: string | null
-  photoR2Key?: string | null
 }
 
 export async function updateInstructor(
@@ -198,29 +173,19 @@ export async function updateInstructor(
   patch: UpdateInstructorInput,
 ): Promise<InstructorView> {
   const current = await loadById(tenantId, id)
-  assertOwnObjectKeys(tenantId, [patch.photoR2Key])
   assertBioWithin(patch.bio, current.bio)
   assertWithin(patch.phone, 'A phone number', PHONE_MAX)
 
-  await db.transaction(async tx => {
-    const staffPatch: Partial<StaffRow> = {}
-    if (patch.name !== undefined) staffPatch.name = patch.name
-    if (patch.bio !== undefined) staffPatch.bio = patch.bio
-    if (patch.phone !== undefined) staffPatch.phone = patch.phone
-    if (Object.keys(staffPatch).length) {
-      await tx
-        .update(staffUsers)
-        .set({ ...staffPatch, updatedAt: new Date() })
-        .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, id)))
-    }
-
-    if (patch.photoR2Key !== undefined) {
-      await tx
-        .update(instructors)
-        .set({ photoR2Key: patch.photoR2Key })
-        .where(and(eq(instructors.tenantId, tenantId), eq(instructors.staffUserId, id)))
-    }
-  })
+  const staffPatch: Partial<StaffRow> = {}
+  if (patch.name !== undefined) staffPatch.name = patch.name
+  if (patch.bio !== undefined) staffPatch.bio = patch.bio
+  if (patch.phone !== undefined) staffPatch.phone = patch.phone
+  if (Object.keys(staffPatch).length) {
+    await db
+      .update(staffUsers)
+      .set({ ...staffPatch, updatedAt: new Date() })
+      .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, id)))
+  }
 
   return loadById(tenantId, id)
 }

@@ -3,6 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { locations } from '../../db/schema/catalog'
 import { tenantId } from '../../middleware/tenant'
+import { publicObjectUrl } from '../../lib/r2'
 
 /**
  * GET /api/v1/portal/auth/me
@@ -31,6 +32,7 @@ const app = new Hono().get('/me', async c => {
     name: row.name,
     role: row.role,
     status: row.status,
+    photo_url: publicObjectUrl(row.photoR2Key),
     permissions: [...c.get('staffPermissions')],
     locations: activeLocations
       .filter(l => l.archivedAt === null)

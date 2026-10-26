@@ -16,7 +16,7 @@ interface InstructorProfile {
   status: string;
   bio: string | null;
   phone: string | null;
-  photo_r2_key: string | null;
+  photo_url: string | null;
 }
 
 export default function InstructorProfilePage() {
