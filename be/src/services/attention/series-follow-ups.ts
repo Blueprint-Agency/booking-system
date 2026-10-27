@@ -132,7 +132,15 @@ export const seriesEndedClassKept: AttentionProvider = {
   dismissable: true,
   appliesTo: ctx => ctx.role === 'admin',
   isOpen: async (ctx, subjectId) => (await kept(ctx, await keptFilter(ctx, {}, [subjectId]))).length > 0,
-  count: async (ctx, scope) => (await kept(ctx, await keptFilter(ctx, scope))).length,
+  // A SQL count over the same filter and joins the list reads.
+  count: async (ctx, scope) => {
+    const [row] = await db
+      .select({ n: count() })
+      .from(classes)
+      .innerJoin(classSeries, and(eq(classSeries.tenantId, classes.tenantId), eq(classSeries.id, classes.seriesId)))
+      .where(await keptFilter(ctx, scope))
+    return Number(row?.n ?? 0)
+  },
   list: async (ctx, limit) => {
     const rows = await kept(ctx, await keptFilter(ctx, {})).orderBy(asc(classes.startsAt)).limit(limit)
     return rows.map(

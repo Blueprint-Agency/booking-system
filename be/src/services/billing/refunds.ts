@@ -26,7 +26,7 @@
  * sale never settled. It closes as **abandoned** rather than refunded — money
  * that was never revenue must not be subtracted from Net as though it had been.
  */
-import { and, eq, gt, inArray, ne, or, sql } from 'drizzle-orm'
+import { and, count, eq, gt, inArray, ne, or, sql, type SQL } from 'drizzle-orm'
 import { afterCommit, db, retryingTransaction, withTenant } from '../../db'
 import { isRetryableAbort } from '../../db/retryable-abort'
 import { tenantForPaymentIntent } from '../../db/routing'
@@ -60,6 +60,7 @@ import {
   heldPayments,
   REFUND_IN_FLIGHT_MS,
   refundInFlight,
+  refundIncompleteSql,
   refundProgress,
   type RefundProgress,
 } from './balance'
@@ -278,7 +279,7 @@ export async function heldPaymentsFor(
  * payment rows, the same `refundProgress` and the same `REFUND_IN_FLIGHT_MS` as
  * the Refund screens, but across the studio and at `now` (the app clock).
  *
- * `incomplete` is `refundProgress` saying so. `stale` is a payment a Refund
+ * `incomplete` is `refundProgress` saying so (as `refundIncompleteSql`, its SQL twin). `stale` is a payment a Refund
  * asked for more than a day ago that is still held: Stripe never confirmed it,
  * and `refundInFlight` has stopped believing it. A press of Refund re-issues
  * those, which stamps them afresh, so the Purchase leaves the list.
@@ -298,24 +299,38 @@ export interface RefundNeedingAdmin {
   lastAskedAt: Date
 }
 
-export async function refundsNeedingAdmin(tenantId: string, now: Date): Promise<RefundNeedingAdmin[]> {
+/**
+ * The Purchases whose Refund an admin has to look at, one grouped row each, with
+ * `incomplete` and `staleCount` computed in SQL: `refundsNeedingAdmin` reads the
+ * rows and `countRefundsNeedingAdmin` counts them, so what needs an admin is
+ * written once. A Purchase is a candidate when some payment is held and a Refund
+ * has asked for one or one is back; it needs an admin when it is `incomplete`
+ * (`refundIncompleteSql`, the twin of `refundProgress`) or has a stale ask.
+ */
+function refundCandidates(tenantId: string, now: Date) {
   // A string, not a Date: see `heldPaymentsFor`.
   const cutoff = new Date(now.getTime() - REFUND_IN_FLIGHT_MS).toISOString()
   const held = sql`${stripePayments.status} in ('succeeded', 'pending')`
   const asked = sql`${stripePayments.refundRequestedAt} is not null`
-  const rows = await db
+  const heldN = sql<number>`count(*) filter (where ${held})::int`
+  const heldRequestedN = sql<number>`count(*) filter (where ${held} and ${stripePayments.refundRequestedAt} > ${cutoff})::int`
+  const refundedN = sql<number>`count(*) filter (where ${stripePayments.status} = 'refunded')::int`
+  const staleN = sql<number>`count(*) filter (where ${held} and ${stripePayments.refundRequestedAt} <= ${cutoff})::int`
+  const incomplete = refundIncompleteSql({ held: heldN, heldRequested: heldRequestedN, refunded: refundedN })
+  return db
     .select({
       purchaseId: stripePayments.purchaseId,
       clientId: purchases.clientId,
       clientName: clients.name,
-      itemName: sql<string | null>`${purchases.metadata}->>'item_name'`,
-      held: sql<number>`count(*) filter (where ${held})::int`,
-      heldRequested: sql<number>`count(*) filter (where ${held} and ${stripePayments.refundRequestedAt} > ${cutoff})::int`,
-      refunded: sql<number>`count(*) filter (where ${stripePayments.status} = 'refunded')::int`,
-      staleCount: sql<number>`count(*) filter (where ${held} and ${stripePayments.refundRequestedAt} <= ${cutoff})::int`,
-      staleAmount: sql<string | null>`sum(${stripePayments.amountSgd}) filter (where ${held} and ${stripePayments.refundRequestedAt} <= ${cutoff})`,
-      staleSince: sql<string | null>`min(${stripePayments.refundRequestedAt}) filter (where ${held} and ${stripePayments.refundRequestedAt} <= ${cutoff})`,
-      lastAskedAt: sql<string | null>`max(${stripePayments.refundRequestedAt})`,
+      itemName: sql<string | null>`${purchases.metadata}->>'item_name'`.as('item_name'),
+      held: heldN.as('held'),
+      heldRequested: heldRequestedN.as('held_requested'),
+      refunded: refundedN.as('refunded'),
+      staleCount: staleN.as('stale_count'),
+      incomplete: sql<boolean>`${incomplete}`.as('incomplete'),
+      staleAmount: sql<string | null>`sum(${stripePayments.amountSgd}) filter (where ${held} and ${stripePayments.refundRequestedAt} <= ${cutoff})`.as('stale_amount'),
+      staleSince: sql<string | null>`min(${stripePayments.refundRequestedAt}) filter (where ${held} and ${stripePayments.refundRequestedAt} <= ${cutoff})`.as('stale_since'),
+      lastAskedAt: sql<string | null>`max(${stripePayments.refundRequestedAt})`.as('last_asked_at'),
     })
     .from(stripePayments)
     .innerJoin(purchases, eq(purchases.id, stripePayments.purchaseId))
@@ -324,19 +339,38 @@ export async function refundsNeedingAdmin(tenantId: string, now: Date): Promise<
       and(
         eq(stripePayments.tenantId, tenantId),
         inArray(stripePayments.status, ['succeeded', 'pending', 'refunded']),
+        // A payment with no purchase or a purchase with no member has nobody to name.
+        sql`${stripePayments.purchaseId} is not null and ${purchases.clientId} is not null`,
       ),
     )
     .groupBy(stripePayments.purchaseId, purchases.clientId, clients.name, purchases.metadata)
     .having(
-      sql`count(*) filter (where ${held}) > 0 and (count(*) filter (where ${held} and ${asked}) > 0 or count(*) filter (where ${stripePayments.status} = 'refunded') > 0)`,
+      sql`count(*) filter (where ${held}) > 0
+        and (count(*) filter (where ${held} and ${asked}) > 0 or count(*) filter (where ${stripePayments.status} = 'refunded') > 0)
+        and (${incomplete} or ${staleN} > 0)`,
     )
+}
 
+/** How many Purchases have a Refund stopped part-way (`incomplete`) or a day-old ask Stripe never confirmed (`stale`). */
+export async function countRefundsNeedingAdmin(
+  tenantId: string,
+  now: Date,
+  which: 'incomplete' | 'stale',
+): Promise<number> {
+  const candidates = refundCandidates(tenantId, now).as('refund_candidates')
+  const [row] = await db
+    .select({ n: count() })
+    .from(candidates)
+    .where(which === 'incomplete' ? eq(candidates.incomplete, true) : gt(candidates.staleCount, 0))
+  return Number(row?.n ?? 0)
+}
+
+export async function refundsNeedingAdmin(tenantId: string, now: Date): Promise<RefundNeedingAdmin[]> {
+  const rows = await refundCandidates(tenantId, now)
   const out: RefundNeedingAdmin[] = []
   for (const r of rows) {
     if (!r.purchaseId || !r.clientId) continue
-    const incomplete = refundProgress({ held: r.held, heldRequested: r.heldRequested, refunded: r.refunded }) === 'incomplete'
     const stale = r.staleCount > 0 && r.staleAmount && r.staleSince ? { amountSgd: r.staleAmount, since: new Date(r.staleSince) } : null
-    if (!incomplete && !stale) continue
     out.push({
       purchaseId: r.purchaseId,
       clientId: r.clientId,
@@ -344,7 +378,7 @@ export async function refundsNeedingAdmin(tenantId: string, now: Date): Promise<
       itemName: r.itemName || 'Purchase',
       returnedCount: r.refunded + r.heldRequested,
       paymentCount: r.held + r.refunded,
-      incomplete,
+      incomplete: r.incomplete,
       stale,
       lastAskedAt: new Date(r.lastAskedAt ?? r.staleSince ?? now),
     })
@@ -539,7 +573,41 @@ export interface UnrefundedWorkshopPlace {
   cancelledAt: Date
 }
 
-export async function listUnrefundedWorkshopPlaces(tenantId: string): Promise<UnrefundedWorkshopPlace[]> {
+/**
+ * The one rule for an unrefunded place: a workshop place cancelled with money
+ * still on it and no Refund already asked for. The list and the count both read
+ * it; `extra` narrows both alike (a dismissal, one booking).
+ */
+const unrefundedPlaceWhere = (tenantId: string, extra?: SQL) =>
+  and(
+    eq(bookings.tenantId, tenantId),
+    eq(bookings.kind, 'workshop'),
+    cancelledAndUnrefunded(),
+    sql`not exists (
+      select 1 from ${stripePayments}
+      where ${stripePayments.purchaseId} = ${purchases.id}
+        and ${stripePayments.status} in ('succeeded', 'pending')
+        and ${stripePayments.refundRequestedAt} is not null
+    )`,
+    extra,
+  )
+
+/** How many unrefunded places there are, in SQL, by the rule the list reads. */
+export async function countUnrefundedWorkshopPlaces(tenantId: string, extra?: SQL): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(bookings)
+    .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
+    .innerJoin(purchases, eq(purchases.id, bookings.purchaseId))
+    .innerJoin(clients, eq(clients.id, bookings.clientId))
+    .where(unrefundedPlaceWhere(tenantId, extra))
+  return Number(row?.n ?? 0)
+}
+
+export async function listUnrefundedWorkshopPlaces(
+  tenantId: string,
+  extra?: SQL,
+): Promise<UnrefundedWorkshopPlace[]> {
   const rows = await db
     .select({
       bookingId: bookings.id,
@@ -555,19 +623,7 @@ export async function listUnrefundedWorkshopPlaces(tenantId: string): Promise<Un
     .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
     .innerJoin(purchases, eq(purchases.id, bookings.purchaseId))
     .innerJoin(clients, eq(clients.id, bookings.clientId))
-    .where(
-      and(
-        eq(bookings.tenantId, tenantId),
-        eq(bookings.kind, 'workshop'),
-        cancelledAndUnrefunded(),
-        sql`not exists (
-          select 1 from ${stripePayments}
-          where ${stripePayments.purchaseId} = ${purchases.id}
-            and ${stripePayments.status} in ('succeeded', 'pending')
-            and ${stripePayments.refundRequestedAt} is not null
-        )`,
-      ),
-    )
+    .where(unrefundedPlaceWhere(tenantId, extra))
   return rows.map(r => ({
     bookingId: r.bookingId,
     purchaseId: r.purchaseId,

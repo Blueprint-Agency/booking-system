@@ -1,10 +1,14 @@
+import { and, eq } from 'drizzle-orm'
+import { bookings } from '../../db/schema/bookings'
 import {
+  countRefundsNeedingAdmin,
+  countUnrefundedWorkshopPlaces,
   listUnrefundedWorkshopPlaces,
   refundsNeedingAdmin,
   type RefundNeedingAdmin,
   type UnrefundedWorkshopPlace,
 } from '../billing/refunds'
-import { dismissedSubjects } from './dismissed-subjects'
+import { notDismissed } from './dismissed-subjects'
 import { formatWhen } from './format'
 import type { AttentionContext, AttentionProvider, ProviderItem } from './types'
 
@@ -50,7 +54,7 @@ export const refundIncomplete: AttentionProvider = {
   group: 'payments_refunds',
   dismissable: false,
   appliesTo: isAdmin,
-  count: async ctx => (await refundsNeedingAdmin(ctx.tenantId, ctx.now)).filter(r => r.incomplete).length,
+  count: ctx => countRefundsNeedingAdmin(ctx.tenantId, ctx.now, 'incomplete'),
   list: async (ctx, limit) =>
     (await refundsNeedingAdmin(ctx.tenantId, ctx.now))
       .filter(r => r.incomplete)
@@ -64,7 +68,7 @@ export const refundUnconfirmed: AttentionProvider = {
   group: 'payments_refunds',
   dismissable: false,
   appliesTo: isAdmin,
-  count: async ctx => (await refundsNeedingAdmin(ctx.tenantId, ctx.now)).filter(r => r.stale).length,
+  count: ctx => countRefundsNeedingAdmin(ctx.tenantId, ctx.now, 'stale'),
   list: async (ctx, limit) =>
     (await refundsNeedingAdmin(ctx.tenantId, ctx.now))
       .filter(r => r.stale)
@@ -73,21 +77,20 @@ export const refundUnconfirmed: AttentionProvider = {
   seeAllHref: () => null,
 }
 
-async function openPlaces(ctx: AttentionContext): Promise<UnrefundedWorkshopPlace[]> {
-  const [places, dismissed] = await Promise.all([
-    listUnrefundedWorkshopPlaces(ctx.tenantId),
-    dismissedSubjects(ctx.tenantId, 'workshop_cancelled_unrefunded'),
-  ])
-  return places.filter(p => !dismissed.has(p.bookingId))
-}
+/** Not dismissed, as SQL: the count and the list leave the same ones out. */
+const undismissed = (ctx: AttentionContext) => notDismissed(ctx.tenantId, 'workshop_cancelled_unrefunded', bookings.id)
+
+const openPlaces = (ctx: AttentionContext): Promise<UnrefundedWorkshopPlace[]> =>
+  listUnrefundedWorkshopPlaces(ctx.tenantId, undismissed(ctx))
 
 export const workshopCancelledUnrefunded: AttentionProvider = {
   kind: 'workshop_cancelled_unrefunded',
   group: 'payments_refunds',
   dismissable: true,
   appliesTo: isAdmin,
-  isOpen: async (ctx, subjectId) => (await openPlaces(ctx)).some(p => p.bookingId === subjectId),
-  count: async ctx => (await openPlaces(ctx)).length,
+  isOpen: async (ctx, subjectId) =>
+    (await countUnrefundedWorkshopPlaces(ctx.tenantId, and(undismissed(ctx), eq(bookings.id, subjectId)))) > 0,
+  count: ctx => countUnrefundedWorkshopPlaces(ctx.tenantId, undismissed(ctx)),
   list: async (ctx, limit) =>
     (await openPlaces(ctx))
       .sort((a, b) => a.cancelledAt.getTime() - b.cancelledAt.getTime())

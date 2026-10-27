@@ -19,7 +19,7 @@
  *   3. **Nothing is granted here.** This takes money. The webhook decides what
  *      that money has bought, by the one question in `balance.ts`.
  */
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm'
 
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
@@ -43,7 +43,7 @@ import { attachCheckoutSession, paymentsForPurchase, type PurchaseRow } from './
 import { heldPaymentsFor, type HeldPayments } from './refunds'
 import { checkoutSessionParams, type CheckoutLine } from './checkout-session'
 import { createSessionSurvivingStaleCustomer, providerCustomerFor } from './payment-customers'
-import { daysSilent, isSilent, silenceNotice } from './refund-notice'
+import { daysSilent, silenceNotice, silentCutoff } from './refund-notice'
 
 /** An unfinished Purchase, as every screen that shows one needs to see it. */
 export interface OpenPurchaseView {
@@ -548,38 +548,59 @@ export interface SilentPurchaseView extends OpenPurchaseView {
  * because a member who put a second card down last week is mid-purchase. See
  * `isSilent` for the threshold and why the number is a judgement.
  */
+// The held set — `succeeded` and `pending` — because that is what a refund will
+// call the provider about, so the count the admin reads is the number of lines
+// the statement will grow by.
+const heldPaymentJoin = and(
+  eq(stripePayments.purchaseId, purchases.id),
+  inArray(stripePayments.status, ['succeeded', 'pending']),
+)
+
+/** Part-paid and still open: the Purchases that can go silent. `extra` narrows further (e.g. not dismissed). */
+const partPaidOpen = (tenantId: string, extra?: SQL) =>
+  and(eq(purchases.tenantId, tenantId), eq(purchases.status, 'open'), sql`${purchases.partPaidAt} is not null`, extra)
+
+/** Silent: the last held payment is no later than `silentCutoff(now)`, the threshold `isSilent` reads. */
+const lastPaymentIsSilent = (now: Date) => sql`max(${stripePayments.createdAt}) <= ${silentCutoff(now).toISOString()}`
+
+/**
+ * How many part-paid Purchases are silent at `now`, in SQL, through the same
+ * predicate `listSilentPartPaidPurchases` lists by (`partPaidOpen`, the held-payment
+ * join and `lastPaymentIsSilent`). `extra` narrows it, as for the list.
+ */
+export async function countSilentPartPaidPurchases(tenantId: string, now: Date, extra?: SQL): Promise<number> {
+  const silent = db
+    .select({ id: purchases.id })
+    .from(purchases)
+    .innerJoin(clients, eq(clients.id, purchases.clientId))
+    .innerJoin(stripePayments, heldPaymentJoin)
+    .where(partPaidOpen(tenantId, extra))
+    .groupBy(purchases.id)
+    .having(lastPaymentIsSilent(now))
+    .as('silent_purchases')
+  const [row] = await db.select({ n: count() }).from(silent)
+  return Number(row?.n ?? 0)
+}
+
 export async function listSilentPartPaidPurchases(
   tenantId: string,
   now: Date = new Date(),
+  extra?: SQL,
 ): Promise<SilentPurchaseView[]> {
   const rows = await db
     .select({
       purchase: purchases,
       clientName: clients.name,
       clientEmail: clients.email,
-      // The held set — `succeeded` and `pending` — because that is what a refund
-      // will call the provider about, so the count the admin reads is the number
-      // of lines the statement will grow by.
       lastPaymentAt: sql<string | null>`max(${stripePayments.createdAt})`,
       paymentCount: sql<number>`count(${stripePayments.id})::int`,
     })
     .from(purchases)
     .innerJoin(clients, eq(clients.id, purchases.clientId))
-    .innerJoin(
-      stripePayments,
-      and(
-        eq(stripePayments.purchaseId, purchases.id),
-        inArray(stripePayments.status, ['succeeded', 'pending']),
-      ),
-    )
-    .where(
-      and(
-        eq(purchases.tenantId, tenantId),
-        eq(purchases.status, 'open'),
-        sql`${purchases.partPaidAt} is not null`,
-      ),
-    )
+    .innerJoin(stripePayments, heldPaymentJoin)
+    .where(partPaidOpen(tenantId, extra))
     .groupBy(purchases.id, purchases.tenantId, clients.name, clients.email)
+    .having(lastPaymentIsSilent(now))
     .orderBy(purchases.createdAt)
 
   // Whether a Refund of each is already on its way (#275) — the same read the
@@ -596,7 +617,6 @@ export async function listSilentPartPaidPurchases(
     // whose whole purpose is telling an admin who to contact.
     if (!row.purchase.clientId) continue
     const lastPaymentAt = new Date(row.lastPaymentAt)
-    if (!isSilent(lastPaymentAt, now)) continue
     const outstanding = outstandingCents(
       toCents(row.purchase.totalSgd),
       toCents(row.purchase.amountPaidSgd),
