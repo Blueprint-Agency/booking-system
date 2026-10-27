@@ -76,14 +76,21 @@ describe('Staff attention: studio account', { skip: integrationTestsEnabled ? fa
       .flatMap(g => g.items)
       .filter(i => i.kind === kind)
 
-  const savePayments = (studio: Studio) =>
-    withTenant(studio.id, () =>
+  // The test database is shared by every file: the credentials this file saves
+  // are cleared when it ends, so a file that counts the studios with an account
+  // (`payment-credentials.test.ts`) does not meet them.
+  const saved: string[] = []
+
+  const savePayments = (studio: Studio) => {
+    saved.push(studio.id)
+    return withTenant(studio.id, () =>
       credentials.saveProviderCredentials(studio.id, {
         accountId: 'acct_attention_secret_id',
         secretKey: 'sk_test_attention_secret_key',
         webhookSecret: 'whsec_attention_secret',
       }),
     )
+  }
 
   before(async () => {
     harness = await startTestApp()
@@ -96,6 +103,7 @@ describe('Staff attention: studio account', { skip: integrationTestsEnabled ? fa
   })
 
   after(async () => {
+    for (const id of saved) await credentials?.clearProviderCredentials(id)
     await harness?.close()
   })
 

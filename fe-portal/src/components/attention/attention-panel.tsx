@@ -81,7 +81,12 @@ export function AttentionPanel({
   }, [api, total]);
 
   // Escape closes it; focus moves in on open and returns to the bell on close.
+  // A press outside the panel closes it too. It is a listener, not a backdrop,
+  // so the press still reaches what was pressed (the panel opens by itself at
+  // sign-in and must never stand between the page and the person), and focus is
+  // left where the press put it. The bell is left to its own click, which toggles.
   const close = useRef(onClose);
+  const pressedOutside = useRef(false);
   useEffect(() => {
     close.current = onClose;
   });
@@ -91,10 +96,19 @@ export function AttentionPanel({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close.current();
     };
+    const onPress = (e: PointerEvent) => {
+      const target = e.target;
+      if (!(target instanceof Node)) return;
+      if (panel.current?.contains(target) || back?.contains(target)) return;
+      pressedOutside.current = true;
+      close.current();
+    };
     window.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPress, true);
     return () => {
       window.removeEventListener("keydown", onKey);
-      back?.focus();
+      document.removeEventListener("pointerdown", onPress, true);
+      if (!pressedOutside.current) back?.focus();
     };
   }, [returnFocusTo]);
 
@@ -187,12 +201,9 @@ export function AttentionPanel({
 
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-50">
-      <div
-        className="absolute inset-0 bg-overlay lg:bg-transparent"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+    <div className="pointer-events-none fixed inset-0 z-50">
+      {/* Below `lg` the sheet fills the screen over a dimmed page; from `lg` there is no backdrop at all. */}
+      <div className="pointer-events-auto absolute inset-0 bg-overlay lg:hidden" onClick={onClose} aria-hidden="true" />
       <div
         ref={panel}
         role="dialog"
@@ -200,7 +211,7 @@ export function AttentionPanel({
         tabIndex={-1}
         data-testid="attention-panel"
         className={cn(
-          "absolute inset-0 flex flex-col bg-card shadow-modal outline-none",
+          "pointer-events-auto absolute inset-0 flex flex-col bg-card shadow-modal outline-none",
           "lg:inset-auto lg:right-6 lg:top-[3.75rem] lg:max-h-[min(36rem,calc(100vh-5rem))] lg:w-[26rem] lg:rounded-xl lg:border lg:border-border",
         )}
       >
