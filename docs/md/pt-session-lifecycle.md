@@ -26,11 +26,11 @@ Verified with `npx tsc --noEmit` in `be/` (EXIT=0; no test infra per project con
 (`evaluateCancellation(kind='pt')`); admin cancels are always full refund. `be-portal.md §3c`'s
 "v1 = always forfeit" wording is superseded by this change and should be updated.
 
-The PT lifecycle has two halves. The **client request + pending-cancel + refund** half is
-built and live. The **admin-schedules → session materialises → scheduled-cancel** half is
-entirely stubbed (501 / `throw not implemented`). The lifecycle is therefore severed in the
-middle: a client can submit a request and be debited, but no request can ever be scheduled,
-and no scheduled session can be cancelled.
+The PT lifecycle has two halves, and both are now built: the **client request +
+pending-cancel + refund** half, and the **admin-schedules → session materialises →
+scheduled-cancel** half (scheduling, cancelling a scheduled session, and the stale-request
+expiry all exist in `services/pt-sessions/`). The gap analysis below (§2) is the record of what
+was missing when this spec was written; the lifecycle map in §1 shows the current state.
 
 Sources of truth: `be-client.md §4d` (request/cancel contract), `be-portal.md §3c` (schedule +
 cancel cascade), `admin-restructure.md §6/§9` (packages, triage, scheduling), `backend-architecture.md §5`
@@ -52,12 +52,12 @@ Verify each step with `npx tsc --noEmit` in `be/` (no test infra per project con
 | Partner email lookup (2on1 autocomplete) | ✅ done | `services/pt-sessions/list.ts:lookupPartnerByEmail` |
 | Client lists own requests / sessions | ✅ done | `services/pt-sessions/list.ts` |
 | Client cancels **pending** request (refund) | ✅ done | `services/pt-sessions/cancel.ts:cancelPtRequest` (`pending` branch only) |
-| Client cancels **scheduled** session | ❌ throws `cannot_cancel_non_pending` | `services/pt-sessions/cancel.ts:47` |
-| Admin triage queue (list requests) | ❌ 501 stub | `routes/portal/admin/pt-sessions.ts` |
-| Admin schedules a request → creates session | ❌ `throw not implemented` | `services/pt-sessions/schedule.ts:schedulePtRequest` |
-| Admin cancels (pending or scheduled) | ❌ 501 stub | `routes/portal/admin/pt-sessions.ts` |
-| Instructor list / schedule / cancel | ❌ all 501 | `routes/portal/instructor/pt-requests.ts` |
-| Stale-request auto-expiry cron | ❌ empty TODO | `services/pt-sessions/cancel.ts:89 expireStaleSessions` |
+| Client cancels **scheduled** session | ✅ done | `services/pt-sessions/cancel.ts:cancelPtRequest` (`scheduled` branch) |
+| Admin triage queue (list requests) | ✅ done | `routes/portal/admin/pt-sessions.ts`, `services/pt-sessions/list.ts` |
+| Admin schedules a request → creates session | ✅ done | `services/pt-sessions/schedule.ts:schedulePtRequest` |
+| Admin cancels (pending or scheduled) | ✅ done | `routes/portal/admin/pt-sessions.ts`, `services/pt-sessions/cancel.ts` |
+| Instructor list / schedule / cancel | ✅ done | `routes/portal/instructor/pt-requests.ts` |
+| Stale-request auto-expiry cron | ✅ done | `services/pt-sessions/cancel.ts:expireStaleSessions` (every 5 min, `jobs/index.ts`) |
 | Cancellation policy engine (window + shared cap) | ✅ **already PT-aware** | `services/policy/evaluate-cancellation.ts` (`kind:'pt'`, `ptWindowHours`) |
 
 ### What already works
@@ -82,6 +82,9 @@ needs is **built but unwired**.
 ---
 
 ## 2. Gaps
+
+Historical: P1 to P6 below are built (see the status table at the top); the text is kept as the
+reasoning behind the design.
 
 ### Critical (lifecycle-severing)
 

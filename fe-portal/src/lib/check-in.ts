@@ -84,6 +84,35 @@ export const checkInBase = (audience: CheckInAudience) => `/portal/${audience}/c
 
 export const sessionKey = (s: Pick<CheckInSession, "kind" | "id">) => `${s.kind}:${s.id}`;
 
+/** What a desk link names: a studio-local day and a session on it. Null is "not given". */
+export interface DeskParams {
+  date: string | null;
+  session: string | null;
+}
+
+/**
+ * Reads `?date=YYYY-MM-DD&session=class:<id>|pt:<id>`. Anything that is not a
+ * real calendar day or a `class:`/`pt:` key is dropped, so a mangled link
+ * opens today's desk rather than an error.
+ */
+export function parseDeskParams(search: string | URLSearchParams): DeskParams {
+  const p = typeof search === "string" ? new URLSearchParams(search) : search;
+  const rawDate = p.get("date");
+  const date =
+    rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && new Date(`${rawDate}T00:00:00Z`).toISOString().startsWith(rawDate)
+      ? rawDate
+      : null;
+  const rawSession = p.get("session");
+  const session = rawSession && /^(class|pt):[^\s&?#]+$/.test(rawSession) ? rawSession : null;
+  return { date, session };
+}
+
+/** The desk's own link: no query for today, else the day and the session. */
+export function deskHref(path: string, { date, session }: Partial<DeskParams>): string {
+  const q = [date ? `date=${date}` : "", session ? `session=${session}` : ""].filter(Boolean).join("&");
+  return q ? `${path}?${q}` : path;
+}
+
 export type SessionPhase = "not_open" | "open" | "ongoing" | "ended";
 
 /** Where a session stands against the clock, for its badge. */

@@ -18,6 +18,7 @@
  */
 import { and, eq, ne } from 'drizzle-orm'
 import { db } from '../../db'
+import { recordSessionAssigned } from '../attention/session-assigned'
 import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
@@ -39,6 +40,7 @@ import { planPtTypeChange, ptSessionCost } from './cost'
 import { retypeManualSessionInTx } from './manual'
 import { maySchedulePtRequest } from './binding'
 import { assertPartnerEligible } from './request'
+import { ptSubject, readInstructors, recordSessionChanged } from '../attention/session-updates'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export interface SchedulePtRequestInput {
@@ -246,6 +248,13 @@ export async function schedulePtRequest(
       })
       .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
 
+    await recordSessionAssigned(
+      tenantId,
+      input.actorStaffId,
+      { kind: 'pt_session', id: sessionId },
+      { main: [input.instructorId] },
+      { tx },
+    )
     return sessionId
   })
   if (!ptSessionId) return { ok: false, error: 'not_pending' }
@@ -659,6 +668,9 @@ export async function updatePtSession(
       set.capacityOnline = ptSessionCost(patch.sessionType)
     }
 
+    // Who ran it before the edit, for the Updates it may owe them (#493).
+    const instructorsBefore = await readInstructors(tenantId, 'pt', id)
+
     let row = existing
     if (Object.keys(set).length) {
       const rows = await tx
@@ -685,7 +697,7 @@ export async function updatePtSession(
     }
 
     if (touchesRoster) {
-      await replaceRoster(tx, tenantId, { kind: 'pt_session', id }, rosterPatch)
+      await replaceRoster(tx, tenantId, { kind: 'pt_session', id }, rosterPatch, { actorStaffId: patch.actorStaffId })
       // instructor_id / instructor_pay_sgd may have moved under us.
       const [fresh] = await tx
         .select()
@@ -694,6 +706,21 @@ export async function updatePtSession(
         .limit(1)
       if (fresh) row = fresh
     }
+
+    const snapshotOf = (s: typeof ptSessions.$inferSelect) => ({
+      startsAt: s.startsAt,
+      endsAt: s.endsAt,
+      locationId: s.locationId,
+      roomId: s.roomId,
+    })
+    await recordSessionChanged(tenantId, {
+      actorStaffId: patch.actorStaffId,
+      kind: 'pt',
+      sessionId: id,
+      ...(await ptSubject(tenantId, id)),
+      before: { ...snapshotOf(existing), ...instructorsBefore },
+      after: { ...snapshotOf(row), ...(await readInstructors(tenantId, 'pt', id)) },
+    })
     return row
   })
 }

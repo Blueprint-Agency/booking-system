@@ -416,16 +416,19 @@ export interface CheckInDay {
  */
 export async function listCheckInDay(
   tenantId: string,
-  input: { staffId: string; source: CheckInSource; locationId?: string; now?: Date },
+  input: { staffId: string; source: CheckInSource; locationId?: string; now?: Date; date?: string },
 ): Promise<CheckInDay> {
   const now = input.now ?? clockNow()
   const timezone = await timezoneOf(tenantId)
-  const date = localDateOf(now, timezone)
+  const today = localDateOf(now, timezone)
+  // A chosen day (`YYYY-MM-DD`, the studio's own) lists just that day; none is today.
+  const date = input.date ?? today
   const dayStart = zonedInstant(date, '00:00', timezone)
   const dayEnd = zonedInstant(addDays(date, 1), '00:00', timezone)
   const minutes = await windowMinutes(db, tenantId)
-  // Tomorrow's first sessions, once their Check-in Window is open.
-  const windowOpenUntil = new Date(now.getTime() + minutes * 60_000)
+  // Tomorrow's first sessions, once their Check-in Window is open: only on
+  // today's desk. Another day's list is that day alone.
+  const windowOpenUntil = date === today ? new Date(now.getTime() + minutes * 60_000) : dayStart
   const mine = input.source === 'instructor'
 
   const classRows = await db

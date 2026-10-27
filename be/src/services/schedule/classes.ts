@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { afterCommit, db, retryingTransaction } from '../../db'
 import { classes } from '../../db/schema'
+import { recordSessionAssigned } from '../attention/session-assigned'
 import { countSeats } from '../bookings/seats'
 import { assertRoomInLocation } from './room-conflicts'
 import { assertAvailable, eventSubjects, plannedInstructorIds } from './occupancy'
@@ -18,6 +19,15 @@ import {
 import { ACCEPTS_ALL, validateRule, writeClassRule, type PackageRule } from './package-rules'
 import { applyRuleChange, previewRuleChange, sendRuleCancelledEmails } from './package-rule-change'
 import { sendPromotionEmails } from '../waitlist/promote'
+import { classSubject, readInstructors, recordSessionChanged } from '../attention/session-updates'
+
+/** What an instructor would notice changing about a class row. */
+const snapshotOf = (c: Pick<typeof classes.$inferSelect, 'startsAt' | 'endsAt' | 'locationId' | 'roomId'>) => ({
+  startsAt: c.startsAt,
+  endsAt: c.endsAt,
+  locationId: c.locationId,
+  roomId: c.roomId,
+})
 
 export type { RosterAssignment } from './roster'
 
@@ -130,8 +140,17 @@ export async function createClass(tenantId: string, input: CreateClassInput): Pr
             ? { supportingInstructorIds: input.supportingInstructorIds }
             : {}),
         },
+        { actorStaffId: input.createdByStaffId },
       )
     }
+    // The main instructor is on the row itself, not added through the roster.
+    await recordSessionAssigned(
+      tenantId,
+      input.createdByStaffId,
+      { kind: 'class', id: row.id },
+      { main: [input.mainInstructorId] },
+      { tx },
+    )
     return row
   })
 }
@@ -290,6 +309,9 @@ export async function updateClass(
     if (patch.capacityBuffer !== undefined) set.capacityBuffer = patch.capacityBuffer
     if (patch.creditCost !== undefined) set.creditCost = patch.creditCost
 
+    // Who taught it before the edit, for the Updates it may owe them (#493).
+    const instructorsBefore = await readInstructors(tenantId, 'class', id)
+
     let row = existing
     if (Object.keys(set).length) {
       const rows = await tx
@@ -301,7 +323,7 @@ export async function updateClass(
     }
 
     if (touchesRoster) {
-      await replaceRoster(tx, tenantId, { kind: 'class', id }, rosterPatch)
+      await replaceRoster(tx, tenantId, { kind: 'class', id }, rosterPatch, actorStaffId ? { actorStaffId } : undefined)
       // main_instructor_id / instructor_pay_sgd may have moved under us.
       const [fresh] = await tx
         .select()
@@ -318,6 +340,17 @@ export async function updateClass(
       ruleChange = await applyRuleChange(tx, tenantId, id, rule, actorStaffId ?? null)
       row = { ...row, packageRuleMode: rule.mode }
     }
+
+    // The instructors are told when someone else moved the class or changed who teaches it (#493).
+    const instructorsAfter = await readInstructors(tenantId, 'class', id)
+    await recordSessionChanged(tenantId, {
+      actorStaffId,
+      kind: 'class',
+      sessionId: id,
+      subject: await classSubject(tenantId, row.classTypeId),
+      before: { ...snapshotOf(existing), ...instructorsBefore },
+      after: { ...snapshotOf(row), ...instructorsAfter },
+    })
     return { row, ruleChange }
   })
 

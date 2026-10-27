@@ -24,6 +24,7 @@ The tables and what deletion does to each are one list, `MEMBER_TABLES` in `be/s
 | Their PT requests and proposed slots, and their place on PT sessions | `pt_requests`, `pt_request_slots`, `pt_session_clients` |
 | Corporate enquiries | `corporate_requests` |
 | Mail sent to them — by member id, or by address for mail sent before one existed, such as a sign-in code — and notifications about them | `email_log`, `inbox_items` |
+| Staff Updates that name them (the bell's Updates tab). These name a member and are stored with their id: a private session cancelled by the member or by an instructor, a private session an admin moved, handed over or cancelled, and a corporate session scheduled from their request. A row holds one id, so a 2-on-1 private session's Updates name neither member ("the 2-on-1 private session") and carry none. Updates about classes, workshops, leave and permissions name no member | `staff_updates`, by `subject_client_id` |
 | Their sign-ins and staff acts on their account, at this studio | `auth_events` |
 | Their sessions at this studio | `client_auth_sessions` with this studio's claim |
 | Their login at this studio — a login at another studio is that studio's (ADR 0006) | `client_auth_users`, with its sessions and credentials |

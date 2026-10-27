@@ -12,6 +12,7 @@ import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { assertOwnObjectKeys } from '../../lib/object-key'
 import { readRoster, readRosters, replaceRoster, type RosterAssignment } from '../schedule/roster'
 import { lineupOf, lineupsOf, type Lineup } from '../schedule/lineup'
+import { readInstructors, recordSessionChanged, workshopFacts } from '../attention/session-updates'
 
 export type WorkshopRow = typeof workshops.$inferSelect
 
@@ -124,6 +125,8 @@ export interface UpdateWorkshopInput {
   supportingInstructors?: WorkshopInstructorInput[]
   supportingInstructorIds?: string[]
   imageR2Keys?: string[]
+  /** Who made the edit: the instructors are told of a change by anyone else, and one it adds is told, unless it was them. */
+  actorStaffId?: string
 }
 
 export async function getWorkshop(
@@ -163,6 +166,8 @@ export async function updateWorkshop(
     patch.supportingInstructorIds !== undefined
 
   await db.transaction(async tx => {
+    const factsBefore = await workshopFacts(tenantId, id)
+    const instructorsBefore = await readInstructors(tenantId, 'workshop', id)
     const set: Partial<typeof workshops.$inferInsert> = {}
     if (patch.name !== undefined) set.name = patch.name
     if (patch.locationId !== undefined) set.locationId = patch.locationId
@@ -200,12 +205,24 @@ export async function updateWorkshop(
             ? { supportingInstructorIds: patch.supportingInstructorIds }
             : {}),
         },
+        patch.actorStaffId ? { actorStaffId: patch.actorStaffId } : undefined,
       )
       // A workshop with no main row is a broken row, not a state to save into.
       if (!roster.some(r => r.role === 'main')) {
         throw new BadRequestError('workshop_has_no_main_instructor')
       }
     }
+
+    // The instructors are told when someone else moved the workshop to another location or changed who teaches it (#493).
+    const factsAfter = await workshopFacts(tenantId, id)
+    await recordSessionChanged(tenantId, {
+      actorStaffId: patch.actorStaffId,
+      kind: 'workshop',
+      sessionId: id,
+      subject: factsAfter.subject,
+      before: { ...factsBefore, roomId: null, ...instructorsBefore },
+      after: { ...factsAfter, roomId: null, ...(await readInstructors(tenantId, 'workshop', id)) },
+    })
 
     if (patch.imageR2Keys !== undefined) {
       await tx

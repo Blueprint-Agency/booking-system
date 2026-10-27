@@ -35,6 +35,8 @@ import { staffUsers } from '../../db/schema/identity'
 import { emailEveryAdmin, sendTemplatedEmail } from '../notifications/send'
 import { sessionTimeFormat } from '../notifications/send-booking-email'
 import { requireTenantUrl } from '../tenants/urls'
+import { loadTenantById } from '../tenants/tenants'
+import { localDate } from '../tenants/term-dates'
 import { reportError } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
 import { classHasUndecidedRow, pendingCheckIns, ptSeats, ptSessionHasUndecidedSeat, type RowCheckInState } from './session-check-in'
@@ -45,6 +47,8 @@ const NAG_AFTER_MS = 24 * 60 * 60 * 1000
 const LOOK_BACK_MS = 3 * NAG_AFTER_MS
 
 interface Claimed {
+  /** The check-in desk's name for the session: `class:<id>` or `pt:<id>`. */
+  session: string
   tenantId: string
   instructorId: string
   startsAt: Date
@@ -62,31 +66,43 @@ export async function sendCheckInNags(): Promise<void> {
   for (const c of claimed) if (c.pending) afterCommit(() => nag(c))
 }
 
-/** Rows still undecided per session, counted from each roster's check-in states. */
-function pendingBySession(rows: ReadonlyArray<{ sessionId: string; checkInState: RowCheckInState }>) {
+/** How many people are on a session's roster, and how many of them are still undecided. */
+export interface RosterCheckIns {
+  total: number
+  pending: number
+}
+
+/** Each session's roster size and undecided rows, counted from the roster's check-in states. */
+function rosterBySession(rows: ReadonlyArray<{ sessionId: string; checkInState: RowCheckInState }>) {
   const states = new Map<string, RowCheckInState[]>()
   for (const r of rows) states.set(r.sessionId, [...(states.get(r.sessionId) ?? []), r.checkInState])
+  const roster = new Map<string, RosterCheckIns>()
+  for (const [id, rowStates] of states) roster.set(id, { total: rowStates.length, pending: pendingCheckIns(rowStates) })
+  return roster
+}
+
+/** Rows still undecided per session: only the sessions that have any. */
+function pendingOnly(roster: ReadonlyMap<string, RosterCheckIns>) {
   const pending = new Map<string, number>()
-  for (const [id, rowStates] of states) {
-    const n = pendingCheckIns(rowStates)
-    if (n > 0) pending.set(id, n)
-  }
+  for (const [id, r] of roster) if (r.pending > 0) pending.set(id, r.pending)
   return pending
 }
 
 /** A class's roster, as the check-in desk lists it: its confirmed attendees and its no-shows. */
-async function classPending(ids: string[]) {
-  if (!ids.length) return new Map<string, number>()
+export async function classRoster(ids: string[]) {
+  if (!ids.length) return new Map<string, RosterCheckIns>()
   const rows = await db
     .select({ sessionId: bookings.classId, checkInState: bookings.checkInState })
     .from(bookings)
     .where(and(inArray(bookings.classId, ids), inArray(bookings.state, ['confirmed', 'no_show'])))
-  return pendingBySession(rows.map(r => ({ sessionId: r.sessionId!, checkInState: r.checkInState as RowCheckInState })))
+  return rosterBySession(rows.map(r => ({ sessionId: r.sessionId!, checkInState: r.checkInState as RowCheckInState })))
 }
 
+export const classPending = async (ids: string[]) => pendingOnly(await classRoster(ids))
+
 /** A private session's roster, as the check-in desk lists it: every member on it, booked or not (`ptSeats`). */
-async function ptPending(ids: string[]) {
-  if (!ids.length) return new Map<string, number>()
+export async function ptRoster(ids: string[]) {
+  if (!ids.length) return new Map<string, RosterCheckIns>()
   const rows = await db
     .select({
       sessionId: ptSessionClients.ptSessionId,
@@ -102,8 +118,10 @@ async function ptPending(ids: string[]) {
     )
     .where(inArray(ptSessionClients.ptSessionId, ids))
   const seats = ptSeats(rows, r => `${r.sessionId}:${r.clientId}`)
-  return pendingBySession(seats.map(s => ({ sessionId: s.sessionId, checkInState: (s.checkInState as RowCheckInState) ?? null })))
+  return rosterBySession(seats.map(s => ({ sessionId: s.sessionId, checkInState: (s.checkInState as RowCheckInState) ?? null })))
 }
+
+export const ptPending = async (ids: string[]) => pendingOnly(await ptRoster(ids))
 
 async function claimClasses(endedBy: Date, endedAfter: Date, now: Date): Promise<Claimed[]> {
   const rows = await db
@@ -131,6 +149,7 @@ async function claimClasses(endedBy: Date, endedAfter: Date, now: Date): Promise
       : [],
   )
   return rows.map(r => ({
+    session: `class:${r.id}`,
     tenantId: r.tenantId,
     instructorId: r.instructorId,
     startsAt: r.startsAt,
@@ -155,6 +174,7 @@ async function claimPtSessions(endedBy: Date, endedAfter: Date, now: Date): Prom
     .returning({ id: ptSessions.id, tenantId: ptSessions.tenantId, instructorId: ptSessions.instructorId, startsAt: ptSessions.startsAt })
   const pending = await ptPending(rows.map(r => r.id))
   return rows.map(r => ({
+    session: `pt:${r.id}`,
     tenantId: r.tenantId,
     instructorId: r.instructorId,
     startsAt: r.startsAt,
@@ -166,7 +186,8 @@ async function claimPtSessions(endedBy: Date, endedAfter: Date, now: Date): Prom
 /**
  * Email the Instructor, then every active Admin but them (an Instructor who is
  * also an Admin gets one email). Each link opens the recipient's own check-in
- * desk. Never throws: the claim is already committed.
+ * desk, opened on the session's studio-local day with that session selected
+ * (the `?date=&session=` link the desk reads). Never throws: the claim is already committed.
  */
 async function nag(c: Claimed): Promise<void> {
   try {
@@ -177,12 +198,14 @@ async function nag(c: Claimed): Promise<void> {
       .from(staffUsers)
       .where(and(eq(staffUsers.tenantId, c.tenantId), eq(staffUsers.id, c.instructorId)))
       .limit(1)
+    const day = localDate((await loadTenantById(c.tenantId))?.timezone ?? 'UTC', c.startsAt)
+    const deskLink = (path: string) => `${portal}${path}?date=${day}&session=${c.session}`
     const variables = (checkinPath: string) => ({
       instructor_name: instructor?.name || 'The instructor',
       session_label: c.label,
       date,
       pending_count: String(c.pending),
-      checkin_url: `${portal}${checkinPath}`,
+      checkin_url: deskLink(checkinPath),
     })
     if (instructor && instructor.status === 'active') {
       await sendTemplatedEmail({

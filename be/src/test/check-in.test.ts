@@ -621,6 +621,67 @@ describe('check-in over HTTP', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.ok(!list.sessions.some(s => s.id === later), "a class whose window has not opened stays tomorrow's")
   })
 
+  test("CHK-29 a past day's desk lists that day's session, an instructor sees only their own, and either can finish its check-in", async () => {
+    const [tenant] = await harness.db
+      .select({ timezone: schema.tenants.timezone })
+      .from(schema.tenants)
+      .where(eq(schema.tenants.id, one.id))
+    const tz = tenant!.timezone
+    const past = dates.addDays(dates.localDateOf(new Date(), tz), -3)
+    // Midday, three studio-days ago: no other test's class shares the day.
+    const startsAt = dates.zonedInstant(past, '12:00', tz)
+    // Booked while still ahead, as a member can, then moved back in time.
+    const mine = await addClass(one, 5 * MINUTE, teacherAtOne)
+    const theirs = await addClass(one, 5 * MINUTE, otherTeacherAtOne)
+    const ida = await member(one, 'Ida Overdue')
+    const jon = await member(one, 'Jon Overdue')
+    const idaBooking = await book(ida, mine)
+    const jonBooking = await book(jon, mine)
+    await book(await member(one, 'Kit Overdue'), theirs)
+    for (const id of [mine, theirs]) {
+      await harness.db
+        .update(schema.classes)
+        .set({ startsAt, endsAt: new Date(startsAt.getTime() + HOUR) })
+        .where(eq(schema.classes.id, id))
+    }
+
+    const listFor = async (who: Staff, audience: 'admin' | 'instructor', query: string) => {
+      const res = await harness.app.request(`/api/v1/portal/${audience}/check-in${query}`, { headers: who.headers })
+      return { status: res.status, body: (await res.json()) as any }
+    }
+
+    const asAdmin = await listFor(adminAtOne, 'admin', `?date=${past}`)
+    assert.equal(asAdmin.status, 200, JSON.stringify(asAdmin.body))
+    assert.equal(asAdmin.body.date, past)
+    const ids = asAdmin.body.sessions.map((s: any) => s.id)
+    assert.ok(ids.includes(mine) && ids.includes(theirs), 'the admin sees every session of that day')
+
+    const asTeacher = await listFor(teacherAtOne, 'instructor', `?date=${past}`)
+    assert.deepEqual(
+      asTeacher.body.sessions.map((s: any) => s.id),
+      [mine],
+      'the instructor sees only what they teach',
+    )
+
+    // With no date the desk is today's, which carries neither.
+    const todays = await today(adminAtOne)
+    assert.ok(!todays.sessions.some(s => s.id === mine))
+
+    const byAdmin = await tick(adminAtOne, idaBooking.bookingId, true)
+    assert.equal(byAdmin.status, 200, JSON.stringify(byAdmin.body))
+    const byTeacher = await tick(teacherAtOne, jonBooking.bookingId, true, 'instructor')
+    assert.equal(byTeacher.status, 200, JSON.stringify(byTeacher.body))
+    const after = await listFor(adminAtOne, 'admin', `?date=${past}`)
+    const roster = after.body.sessions.find((s: any) => s.id === mine).roster
+    assert.deepEqual(
+      roster.map((r: any) => r.check_in_state),
+      ['attended', 'attended'],
+    )
+
+    const bad = await listFor(adminAtOne, 'admin', '?date=2026-02-31')
+    assert.equal(bad.status, 400)
+  })
+
   test("CHK-28 the Check-in Window and a no-show's start both turn on the app's clock: a scan is refused before the window opens and taken once it has, the desk lists the class on its day, and a no-show is taken once it starts", async () => {
     const minutes = await windowOf(one)
     assert.ok(minutes > 1, 'the seeded window is wide enough to test inside')

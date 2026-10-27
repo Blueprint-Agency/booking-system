@@ -207,6 +207,20 @@ export const leaveStatusEnum = pgEnum('leave_status', [
 // at submission until half days land (ticket 05).
 export const leaveHalfDayEnum = pgEnum('leave_half_day', ['none', 'morning', 'afternoon'])
 
+// Staff Updates (#476): the kinds of event a staff member is told about. A new
+// kind adds a value here and a composer in services/attention/updates.ts.
+export const staffUpdateKindEnum = pgEnum('staff_update_kind', [
+  'leave_decided',
+  'session_assigned',
+  'class_cancelled_by_instructor',
+  'pt_session_cancelled_by_instructor',
+  'staff_joined',
+  'permissions_changed',
+  'session_changed',
+  'session_cancelled_by_admin',
+  'pt_session_cancelled_by_member',
+])
+
 // Ledger
 export const auditActorTypeEnum = pgEnum('audit_actor_type', ['staff', 'system'])
 export const stripePaymentKindEnum = pgEnum('stripe_payment_kind', ['workshop', 'class_package', 'pt_package', 'corporate_package', 'merch'])

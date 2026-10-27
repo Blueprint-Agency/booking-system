@@ -1,5 +1,7 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRequestDeepLink } from "@/components/attention/deep-links";
+import { useAttention } from "@/components/attention/attention-provider";
 import { CalendarCheck, Loader2, X } from "lucide-react";
 import { Button, EmptyState, Label, PageHeader } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -45,8 +47,19 @@ interface ApiRoom {
   name: string;
 }
 
+// `useSearchParams` (the bell's `?request=` link) needs a Suspense boundary.
 export default function InstructorPtRequestsPage() {
+  return (
+    <Suspense fallback={null}>
+      <InstructorPtRequestsView />
+    </Suspense>
+  );
+}
+
+function InstructorPtRequestsView() {
   const { api } = useWorkspace();
+  // The bell's count follows what this page resolves, without waiting for the next poll.
+  const { refresh: refreshAttention } = useAttention();
   const [requests, setRequests] = useState<InstructorPtRequest[]>([]);
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,6 +94,15 @@ export default function InstructorPtRequestsPage() {
     void load();
   }, [load]);
 
+  // A link from the bell (`?request=`): this page has no drawer, so it opens
+  // that request's scheduling form and brings it into view.
+  useRequestDeepLink(requests, loading, (r) => {
+    setSchedId(r.id);
+    requestAnimationFrame(() =>
+      document.getElementById(`pt-request-${r.id}`)?.scrollIntoView({ block: "center", behavior: "smooth" }),
+    );
+  });
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader
@@ -110,6 +132,7 @@ export default function InstructorPtRequestsPage() {
             return (
               <li
                 key={r.id}
+                id={`pt-request-${r.id}`}
                 className="rounded-xl border border-border bg-card shadow-soft"
               >
                 {/* Stacked on a phone: the details get the full width and the
@@ -164,6 +187,7 @@ export default function InstructorPtRequestsPage() {
                     onScheduled={() => {
                       setSchedId(null);
                       void load();
+                      refreshAttention();
                     }}
                   />
                 )}

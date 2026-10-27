@@ -15,7 +15,10 @@ import {
 import { LeaveCalendar } from "@/components/leave-calendar";
 import { BalanceCard } from "@/components/leave/balance-card";
 import { DocumentButton, TransitionButton } from "@/components/leave/request-buttons";
+import { useSearchParams } from "next/navigation";
 import { useWorkspace } from "@/lib/workspace-context";
+import { requestParam } from "@/lib/attention";
+import { cn } from "@/lib/utils";
 import { openSignedUrl } from "@/lib/api";
 import { LATEST_DATE, todayIso } from "@/lib/formatters";
 import {
@@ -102,6 +105,20 @@ export function MyLeave() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // A link from the bell (`?request=<id>`) lands on that request: it is
+  // scrolled to and highlighted. An id that isn't in the list leaves the page
+  // as it is.
+  const wanted = requestParam(`?${useSearchParams().toString()}`);
+  const focusId = wanted && data?.requests.some((r) => r.id === wanted) ? wanted : null;
+  useEffect(() => {
+    if (!focusId || view !== "requests") return;
+    // The phone list and the desktop table both render; scroll to the one on screen.
+    const shown = Array.from(document.querySelectorAll<HTMLElement>(`[data-request-id="${focusId}"]`)).find(
+      (el) => el.offsetParent !== null,
+    );
+    shown?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [focusId, view, data]);
 
   /** The upload is its own call, so a document that is refused (wrong type,
    *  too big) never costs the request that was already filed. */
@@ -376,7 +393,11 @@ export function MyLeave() {
                   phone, and a sideways-scrolling table hid the action off-screen. */}
               <ul className="divide-y divide-border md:hidden">
                 {data.requests.map((r) => (
-                  <li key={r.id} className="space-y-1.5 px-4 py-3 text-sm">
+                  <li
+                    key={r.id}
+                    data-request-id={r.id}
+                    className={cn("space-y-1.5 px-4 py-3 text-sm", focusId === r.id && "bg-accent/10")}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <span className="min-w-0 break-words text-ink">
                         {formatLeaveDayRange(r.start_date, r.end_date)}
@@ -435,7 +456,11 @@ export function MyLeave() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {data.requests.map((r) => (
-                    <tr key={r.id} className="align-top hover:bg-warm/40">
+                    <tr
+                      key={r.id}
+                      data-request-id={r.id}
+                      className={cn("align-top hover:bg-warm/40", focusId === r.id && "bg-accent/10")}
+                    >
                       <td className="px-3 py-2.5">
                         <span className="text-ink">
                           {formatLeaveDayRange(r.start_date, r.end_date)}

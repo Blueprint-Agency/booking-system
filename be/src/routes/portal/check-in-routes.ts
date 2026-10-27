@@ -24,6 +24,16 @@ const scanBody = z
   .object({ qr_token: z.string().min(1).max(200).optional(), code: z.string().min(1).max(40).optional() })
   .refine(b => (b.qr_token === undefined) !== (b.code === undefined))
 
+// A real calendar day in the studio's own time; none means today.
+const dayQuery = z.object({
+  location_id: z.string().uuid().optional(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine(d => new Date(`${d}T00:00:00Z`).toISOString().startsWith(d))
+    .optional(),
+})
+
 const refuseScanBody = (result: { success: boolean }) => {
   if (!result.success) {
     throw new BadRequestError('bad_request', { message: 'Scan a QR code or type a booking code.' })
@@ -87,12 +97,13 @@ function dayView(d: CheckInDay) {
 
 export function checkInRoutes(source: CheckInSource) {
   return new Hono()
-    .get('/', zValidator('query', z.object({ location_id: z.string().uuid().optional() })), async c => {
-      const { location_id } = c.req.valid('query')
+    .get('/', zValidator('query', dayQuery), async c => {
+      const { location_id, date } = c.req.valid('query')
       const day = await listCheckInDay(tenantId(c), {
         staffId: c.get('staffUserId'),
         source,
         ...(location_id ? { locationId: location_id } : {}),
+        ...(date ? { date } : {}),
       })
       return c.json(dayView(day))
     })

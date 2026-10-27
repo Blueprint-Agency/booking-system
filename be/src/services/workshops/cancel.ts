@@ -4,6 +4,7 @@ import { workshops } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { sendWorkshopCancelledEmails } from '../notifications/send-booking-email'
+import { readInstructors, recordSessionCancelledByAdmin, workshopFacts } from '../attention/session-updates'
 
 /**
  * Cancel a workshop and all confirmed workshop bookings. **Nobody is refunded
@@ -50,6 +51,17 @@ export async function cancelWorkshop(
       })
       .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, workshopId)))
       .returning()
+
+    // Everyone teaching it is told (#493).
+    const facts = await workshopFacts(tenantId, workshopId)
+    await recordSessionCancelledByAdmin(tenantId, {
+      actorStaffId: staffId,
+      kind: 'workshop',
+      sessionId: workshopId,
+      subject: facts.subject,
+      startsAt: facts.startsAt,
+      instructorIds: (await readInstructors(tenantId, 'workshop', workshopId)).instructorIds,
+    })
 
     const affected = await tx
       .select({ id: bookings.id })

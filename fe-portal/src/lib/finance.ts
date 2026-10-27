@@ -198,6 +198,39 @@ export interface FinanceFilters {
   range: DateRange;
 }
 
+/* --------------------------- Filter in the URL ---------------------------- */
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * What the address bar carries of the screen: the Needs-pay filter and the
+ * period, as `?needs_pay=1&from=&to=` (plain local days). A staff bell link
+ * opens Finance already on them. A bare URL is today's screen: `fallback`
+ * period, every row. An empty `from` and `to` is All time.
+ */
+export function parseFinanceSearch(
+  search: string,
+  fallback: DateRange,
+): { needsPay: boolean; range: DateRange } {
+  const p = new URLSearchParams(search);
+  const needsPay = p.get("needs_pay") === "1";
+  if (!p.has("from") && !p.has("to")) return { needsPay, range: fallback };
+  const from = p.get("from") ?? "";
+  const to = p.get("to") ?? "";
+  if (from === "" && to === "") return { needsPay, range: null };
+  if (DAY.test(from) && DAY.test(to)) return { needsPay, range: { from, to } };
+  return { needsPay, range: fallback };
+}
+
+/** The query string for `parseFinanceSearch` to read back. */
+export function financeSearch(state: { needsPay: boolean; range: DateRange }): string {
+  const p = new URLSearchParams();
+  if (state.needsPay) p.set("needs_pay", "1");
+  p.set("from", state.range?.from ?? "");
+  p.set("to", state.range?.to ?? "");
+  return `?${p.toString()}`;
+}
+
 /** Empty strings mean "no filter" — that is what a picker's "All" option is. */
 const toParams = (f: FinanceFilters) => ({
   type: f.type || undefined,

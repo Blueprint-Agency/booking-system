@@ -41,6 +41,7 @@ import type { PtCancelMail } from '../notifications/send-booking-email'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertRoomInLocation } from '../schedule/room-conflicts'
 import { assertAvailable, eventSubjects } from '../schedule/occupancy'
+import { recordSessionAssigned } from '../attention/session-assigned'
 import { ensureInstructors } from '../schedule/roster'
 import { assertMemberFree, lockMemberTime } from '../bookings/member-time'
 import { ptSessionCost, type PtSessionType } from './cost'
@@ -391,6 +392,13 @@ export async function createManualPtSession(
     for (const member of input.members) {
       await seatMember(tx, tenantId, seatSession, member, input)
     }
+    await recordSessionAssigned(
+      tenantId,
+      input.actorStaffId,
+      { kind: 'pt_session', id: session!.id },
+      { main: [input.instructorId] },
+      { tx },
+    )
     return { ptSessionId: session!.id, ptRequestId: req!.id }
   })
 }

@@ -8,6 +8,7 @@ import { globalPolicy } from '../../db/schema/policy'
 import { staffUsers } from '../../db/schema/identity'
 import { conflictMessage, findOccupancyConflicts, leaveDaysPhrase, lockOccupancy } from '../schedule/occupancy'
 import type { Tx } from '../schedule/roster'
+import { recordUpdate } from '../attention/updates'
 import { emailEveryAdmin, sendTemplatedEmail } from '../notifications/send'
 import { reportError } from '../../shared/logger'
 import {
@@ -1218,6 +1219,16 @@ export async function decideLeaveRequest(
   // exists, so it names who took it back and when. An admin deciding their own
   // request already knows, and is not emailed about it.
   if (updated.staffUserId !== input.actorStaffId) {
+    // The same person gets an Update in the bell, written in this transaction so
+    // it exists exactly when the decision does (#490).
+    await recordUpdate(tenantId, 'leave_decided', [updated.staffUserId], {
+      leaveRequestId: updated.id,
+      outcome: updated.status === 'approved' ? 'approved' : updated.status === 'revoked' ? 'revoked' : 'rejected',
+      leaveType: updated.type,
+      range: formatDates(updated),
+      reason: reason || null,
+      actorName: await staffName(tenantId, input.actorStaffId, 'An admin'),
+    })
     const revokedBy = revoking ? { staffId: input.actorStaffId, at: now } : undefined
     afterCommit(() => emailApplicantOfDecision(tenantId, updated, reason, revokedBy))
   }

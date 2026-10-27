@@ -356,7 +356,7 @@ When admin cancels a class, workshop, or PT session from the Schedule, all booke
 
 - **Class cancelled by admin** → full credit returned to each booked client's package. In-app, automatic.
 - **PT cancelled by admin** → full session returned to client's PT package. In-app, automatic.
-- **Workshop cancelled by admin** → automatic Stripe money refund to each attendee, fired immediately on cancellation. No manual settlement.
+- **Workshop cancelled by admin** → nobody is refunded automatically (#272). An admin refunds each paid place from the member's Workshop purchases card, and the bell lists the unrefunded ones (`workshop_cancelled_unrefunded`).
 
 ### 7b. Create Schedule — Class Instance
 
@@ -392,7 +392,7 @@ Workshops are still *configured* under Packages (§7e) — the scheduler only pi
 
 - The scheduler's **"+ Workshop"** button arms the timetable grid (§7f). Clicking a slot opens the Packages workshop editor at `/admin/packages/workshops/new` with that slot as the workshop's **first day** — date, start and end pre-filled, range mode ready to extend across further days. Nothing is saved until the admin completes the editor.
 - Existing workshops are never re-picked from the scheduler: their `WorkshopDay` tiles already render on the timetable automatically (one tile per day, `Day N/M` chip).
-- Cancelling a workshop still happens from the Schedule detail page (cancellation rules unchanged — full automatic Stripe refund to all attendees per §7a).
+- Cancelling a workshop still happens from the Schedule detail page (nobody is refunded automatically — an admin refunds each paid place, per §7a).
 
 **"+ Corporate" picker (replaces the old direct-create).** The scheduler's **"+ Corporate"** button opens a picker of **pending corporate requests** — selecting one opens the schedule dialog (instructor, location, room, date/time). The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` direct-create page (which took a freeform client name) are **removed**: a `corporate_session` is now created **only** by scheduling a corporate request, and its client name is derived from the member record. See §9b.
 
@@ -633,7 +633,7 @@ Consolidated reference for all cancellation paths.
 |---|---|
 | Class | Full credit return to all booked clients (in-app, automatic) |
 | PT | Full session return to client (in-app, automatic) |
-| Workshop | Full Stripe money refund to all attendees (in-app, automatic, immediate) |
+| Workshop | Nobody is refunded automatically (#272); an admin refunds each paid place, and the bell lists the unrefunded ones |
 
 - Always 100%, overrides cap and window.
 - Nothing goes back to a package that has been refunded (be/CONTEXT.md § Void), so the confirmation says "unless that package has been refunded" rather than promising credits back. A private session is cancellable only before it starts (`session_already_started`, #241), so Cancel session is not offered on one that has.
@@ -661,6 +661,8 @@ Every staff cancel asks, in one shared dialog, with **neither option pre-selecte
 ## 13. Inbox
 
 > **Not being built** (product decision, 2026-10-24; #237 closed as not planned). There is no `/admin/inbox` page, no unread count and no `/portal/admin/inbox` route. A cancellation shows on the session's roster and the member's profile. PT request triage has its own page (`/admin/pt-requests`, §9).
+
+> **The bell is a different thing** (#476). Both portal shells carry a notification bell for work waiting on the signed-in person and the few changes they need to hear about. It is not this Inbox: it is not a shared feed of cancellations, and nothing in it is shared read state. See `be/docs/adr/0015-staff-attention-is-derived-updates-are-per-recipient.md` and `be/CONTEXT.md` § Staff (Attention item, Update, Dismissal).
 
 ---
 
@@ -969,7 +971,7 @@ In the scheduler, each `WorkshopDay` auto-renders as one tile with a `Day N/M` c
 
 ### 18e. Cancellation
 
-Unchanged from prior spec: workshops are non-refundable and non-cancellable by clients. Only admin can cancel a workshop (full automatic Stripe refund to all attendees per §7a).
+Unchanged from prior spec: workshops are non-refundable and non-cancellable by clients. Only admin can cancel a workshop (nobody is refunded automatically; an admin refunds each paid place, per §7a).
 
 ---
 

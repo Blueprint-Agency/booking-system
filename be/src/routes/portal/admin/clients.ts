@@ -86,7 +86,7 @@ const listQuery = z.object({
   // Stringly-typed because Hono query params are strings; only "true" enables.
   include_deleted: z.enum(['true', 'false']).optional(),
   // The Customers page's pills. Absent is "all".
-  filter: z.enum(['active', 'trials', 'blocked']).optional(),
+  filter: z.enum(['active', 'trials', 'blocked', 'no_email']).optional(),
   sort: z.enum(['joined', 'name']).optional(),
   page: z.coerce.number().int().min(1).max(100000).default(1),
   page_size: z.coerce
@@ -234,6 +234,8 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
     // works nothing out for itself.
     refundable: refund?.refundable ?? false,
     refund_notice: refund?.notice ?? null,
+    // The Purchase the bell's refund items link to (`?purchase=`).
+    purchase_id: refund?.purchaseId ?? null,
     // How many returns the Refund will put on the statement (#93).
     refund_payment_count: refund?.paymentCount ?? 0,
     // What the Refund dialog states before the admin commits (#275): whether one
@@ -346,6 +348,7 @@ function paymentView(p: MemberPaymentView) {
 function workshopPurchaseView(w: WorkshopPurchase) {
   return {
     booking_id: w.bookingId,
+    purchase_id: w.purchaseId,
     workshop_name: w.workshopName,
     tier_name: w.tierName,
     amount_paid_sgd: w.amountPaidSgd,

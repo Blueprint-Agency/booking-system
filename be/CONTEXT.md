@@ -128,6 +128,18 @@ _Avoid_: teacher, coach, trainer
 One of a fixed, small set of switches an Admin sets per Instructor, each granting a job-shaped bundle of actions: **Schedule classes** (`schedule_classes` — create a class, preview and create a Class Series, cancel a class they lead), **Take PT bookings** (`take_pt_bookings` — the pending PT Request queue, scheduling a request to themselves, cancelling a PT session they lead) and **Manage rosters** (`manage_rosters` — member search, booking a member in, the Waitlist actions, cancelling a member's booking). Stored as an enum array on the `instructors` profile row, defaulting to all three, so every new or existing Instructor has everything until an Admin decides otherwise. Never gates an Admin, who resolves to all of them; never a role. Resolved on every request, so a change is felt on the Instructor's next request. Everything an Instructor needs to teach — their own timetable and rosters, check-in, their leave, teaching log and profile — is role membership, not a permission. The backend refuses `403 forbidden_permission`; the portal hides. See `be/docs/adr/0012-instructor-permissions.md`.
 _Avoid_: role, access level, capability, grant (the leave word), per-feature toggle
 
+**Attention item**:
+One thing waiting on a particular staff member, shown in the portal bell's Needs action tab. It is derived on read from the studio's live rows: no table holds the list, an item exists exactly while its predicate holds, and it disappears by itself when someone resolves the situation, so it has no read state. Its identity is its kind plus its subject (`pt_request_pending:<pt request id>`). Each kind is one provider in `services/attention/` — a count, a list and whether it is dismissable — filtered by the caller's role, Instructor Permissions and locations; its title and detail are written in the backend in the studio's timezone. Served at `/api/v1/portal/attention`. See `be/docs/adr/0015-staff-attention-is-derived-updates-are-per-recipient.md`.
+_Avoid_: inbox, alert, notification (in this codebase "notification" means email)
+
+**Update**:
+Something that happened which a staff member should know but need not act on ("Your annual leave was approved"), shown in the bell's Updates tab. Unlike an Attention item it is stored, written in the same transaction as the act, one row per recipient with a snapshot payload, and never for the staff member who did the act; it counts until the recipient reads it and is deleted after 90 days. Arrives with the `staff_updates` table. See ADR 0015.
+_Avoid_: inbox item, alert, notification
+
+**Dismissal**:
+An admin's studio-wide decision that a dismissable Attention item (one where doing nothing is a legitimate answer) should stop counting. One row per kind and subject, not per person, so it clears the item for every admin; audited with the dismissing admin's name; never undone. Arrives with the first dismissable kind. See ADR 0015.
+_Avoid_: read, mute, snooze
+
 **Last-admin guard**:
 The rule that a studio always keeps one active Admin. Archiving a staff member, or changing their role away from Admin, is refused when they are the studio's only active Admin — role Admin, status active, not soft-deleted. The count and the write share one transaction, so two concurrent removals cannot both pass. Deleting needs an already-archived row, so it needs no check of its own; signing someone out is not guarded, because they can sign back in. Separately, nobody may change their own role or archive themselves.
 _Avoid_: owner lock

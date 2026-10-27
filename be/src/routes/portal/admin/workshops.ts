@@ -326,6 +326,7 @@ const app = new Hono()
         ? { supportingInstructorIds: body.supporting_instructor_ids }
         : {}),
       ...(body.image_r2_keys !== undefined ? { imageR2Keys: body.image_r2_keys } : {}),
+      actorStaffId: c.get('staffUserId'),
     })
     c.set('auditTarget' as any, { table: 'workshops', id })
     return c.json(workshopRow(row))
@@ -384,7 +385,7 @@ const app = new Hono()
         ...(body.capacity_online !== undefined ? { capacityOnline: body.capacity_online } : {}),
         ...(body.capacity_waitlist !== undefined ? { capacityWaitlist: body.capacity_waitlist } : {}),
         ...(body.capacity_buffer !== undefined ? { capacityBuffer: body.capacity_buffer } : {}),
-      })
+      }, c.get('staffUserId'))
       c.set('auditTarget' as any, { table: 'workshop_days', id: day_id })
       return c.json(dayRow(row))
     },

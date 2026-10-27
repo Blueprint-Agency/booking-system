@@ -36,11 +36,13 @@ import {
   withLeaveFigures,
   type StaffLeaveFigures,
 } from '../leave/requests'
-import type { InstructorPermission } from '../../db/enums'
+import { ALL_INSTRUCTOR_PERMISSIONS, type InstructorPermission } from '../../db/enums'
+import { recordUpdate } from '../attention/updates'
 import { endStaffSessionsAt } from './auth-users'
 import {
   assertPermissionsTargetInstructor,
   ensureInstructorProfile,
+  resolveInstructorPermissions,
   withInstructorPermissions,
   writeInstructorPermissions,
 } from './instructor-permissions'
@@ -421,7 +423,21 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
   // change of role to Admin leaves the row alone, permissions included.
   if (changingRole && row.role === 'instructor') await ensureInstructorProfile(db, tenantId, targetStaffId)
   if (patch.permissions !== undefined) {
+    // What they held before this save: their row, or the default of all three.
+    const held = await resolveInstructorPermissions({ id: targetStaffId, tenantId, role: 'instructor' })
     await writeInstructorPermissions(db, tenantId, targetStaffId, patch.permissions)
+    // Told what changed, in this transaction (#491); a save that changes
+    // nothing, or an admin editing themselves, tells no one.
+    const now = new Set(patch.permissions)
+    const granted = ALL_INSTRUCTOR_PERMISSIONS.filter(k => now.has(k) && !held.has(k))
+    const revoked = ALL_INSTRUCTOR_PERMISSIONS.filter(k => !now.has(k) && held.has(k))
+    if ((granted.length > 0 || revoked.length > 0) && targetStaffId !== actorStaffId) {
+      await recordUpdate(tenantId, 'permissions_changed', [targetStaffId], {
+        actorName: actor.name,
+        granted,
+        revoked,
+      })
+    }
   }
   const [profile] = await withInstructorPermissions(tenantId, await withLeaveFigures(tenantId, [row]))
   return profile ?? row

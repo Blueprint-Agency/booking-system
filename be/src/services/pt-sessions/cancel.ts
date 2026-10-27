@@ -2,6 +2,8 @@ import { and, eq, inArray, lt } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
+import { clients } from '../../db/schema/identity'
+import { activeAdminIds, recordUpdate, staffNameFor, studioWhen } from '../attention/updates'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
 import { actorOfSource, isVoided, recordMovement, refundCredits } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
@@ -11,6 +13,7 @@ import { refuseOnceStarted } from './started'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
+import { recordPtSessionCancelled } from '../attention/session-updates'
 import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notifications/send-booking-email'
 
 /**
@@ -235,7 +238,7 @@ async function cancelPtRequestInTx(
     // A manual session has no debit on its request: each seat was paid on its
     // own booking, so each is settled on its own package (./manual.ts).
     if (req.origin === 'portal') {
-      return cancelManualSessionInTx(tx, tenantId, {
+      const settled = await cancelManualSessionInTx(tx, tenantId, {
         req,
         session,
         source,
@@ -244,6 +247,16 @@ async function cancelPtRequestInTx(
         now,
         mail,
       })
+      if (source === 'instructor' && settled.status === 'cancelled_after_scheduled') {
+        await tellAdminsOfInstructorCancel(tenantId, req.clientId, session, resolvedByStaffId)
+      }
+      await recordPtSessionCancelled(tenantId, {
+        ptSessionId: session.id,
+        source,
+        actorStaffId: resolvedByStaffId,
+        memberClientId: clientId ?? req.clientId,
+      })
+      return settled
     }
 
     // Refund decision. Staff (and system) bypass window/cap (always full);
@@ -373,6 +386,14 @@ async function cancelPtRequestInTx(
       .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId, cancelSource: source })
       .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
 
+    // The session's instructors: told when a member left or an admin cancelled (#493).
+    await recordPtSessionCancelled(tenantId, {
+      ptSessionId: session.id,
+      source,
+      actorStaffId: resolvedByStaffId,
+      memberClientId: clientId ?? req.clientId,
+    })
+
     // NTF-11: every member the session booked is told — the requester with the
     // sessions returned to them, a 2-on-1 partner, who paid nothing, without.
     // Returned only when there was a package to return them to, as on the
@@ -388,8 +409,40 @@ async function cancelPtRequestInTx(
       }
     }
 
+    if (source === 'instructor') await tellAdminsOfInstructorCancel(tenantId, req.clientId, session, resolvedByStaffId)
+
     return { status: 'cancelled_after_scheduled', refundedSessions: refundSessions, refundOutcome }
   })
+}
+
+/**
+ * The bell's Update for every active admin but the instructor, written in the
+ * cancel's own transaction (#491). An admin's cancel tells no one.
+ */
+async function tellAdminsOfInstructorCancel(
+  tenantId: string,
+  memberId: string,
+  session: { id: string; startsAt: Date },
+  instructorStaffId: string | null,
+): Promise<void> {
+  if (!instructorStaffId) return
+  const [member] = await db
+    .select({ name: clients.name })
+    .from(clients)
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.id, memberId)))
+    .limit(1)
+  await recordUpdate(
+    tenantId,
+    'pt_session_cancelled_by_instructor',
+    await activeAdminIds(tenantId, instructorStaffId),
+    {
+      ptSessionId: session.id,
+      instructorName: await staffNameFor(tenantId, instructorStaffId, 'An instructor'),
+      memberName: member?.name ?? 'a member',
+      when: await studioWhen(tenantId, session.startsAt),
+    },
+    memberId,
+  )
 }
 
 /**

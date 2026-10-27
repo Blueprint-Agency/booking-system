@@ -28,8 +28,10 @@ import { removeLineForCancelledClass } from '../waitlist/line'
 import { emailEveryAdmin } from '../notifications/send'
 import { sendClassCancelledByStudioEmails, sendClassCancelledToWaitlistEmails, type StudioCancelNotice } from '../notifications/send-booking-email'
 import { sgFormat } from '../../lib/time'
+import { activeAdminIds, recordUpdate, staffNameFor, studioWhen } from '../attention/updates'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import type { Tx } from '../schedule/roster'
+import { classSubject, readInstructors, recordSessionCancelledByAdmin } from '../attention/session-updates'
 
 type CancelClassSource = 'admin' | 'instructor'
 
@@ -107,6 +109,19 @@ export async function cancelClassInTx(
     .update(classes)
     .set({ lifecycle: 'cancelled', cancelledAt: now, cancelledByStaffId: actorStaffId })
     .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
+
+  // Everyone teaching it is told an admin cancelled it (#493). An instructor
+  // cancelling their own class tells the admins by email, not the instructors.
+  if (source === 'admin') {
+    await recordSessionCancelledByAdmin(tenantId, {
+      actorStaffId,
+      kind: 'class',
+      sessionId: classId,
+      subject: await classSubject(tenantId, cls.classTypeId),
+      startsAt: cls.startsAt,
+      instructorIds: (await readInstructors(tenantId, 'class', classId)).instructorIds,
+    })
+  }
 
   // All confirmed bookings → cancel + refund.
   const confirmed = await tx
@@ -193,6 +208,22 @@ export async function cancelClassInTx(
   // Both once the request's transaction has committed (`afterCommit`), the
   // Admins first.
   if (source === 'instructor') {
+    // The bell's Update, in this transaction so it exists exactly when the
+    // cancel does (#491). The admin who cancelled their own class through the
+    // instructor route is the actor and is left out.
+    const [type] = await tx
+      .select({ name: classTypes.name })
+      .from(classTypes)
+      .where(and(eq(classTypes.tenantId, tenantId), eq(classTypes.id, cls.classTypeId)))
+      .limit(1)
+    await recordUpdate(tenantId, 'class_cancelled_by_instructor', await activeAdminIds(tenantId, actorStaffId), {
+      classId,
+      className: type?.name ?? 'Class',
+      instructorName: await staffNameFor(tenantId, actorStaffId, 'An instructor'),
+      when: await studioWhen(tenantId, cls.startsAt),
+      reason,
+      refundedCount,
+    })
     afterCommit(() =>
       emailAdmins({
         tenantId,

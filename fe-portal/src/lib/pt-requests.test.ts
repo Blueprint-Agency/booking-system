@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert";
 import {
   ptBookingWindowProblem,
+  ptFilterFor,
   ptNoteOrNull,
   ptOffProposal,
   ptRequestSummary,
@@ -91,4 +92,12 @@ test("PT-123 a Book in advance window is saved only with a minimum no later than
 test("PT-121 a note of only spaces is no note", () => {
   assert.strictEqual(ptNoteOrNull("  Coach is away.  "), "Coach is away.");
   assert.strictEqual(ptNoteOrNull("   "), null);
+});
+
+test("ATN-15 a bell link opens a request on the tab for its current status, so an item followed after it was handled still shows", () => {
+  assert.strictEqual(ptFilterFor(req({ status: "pending" })), "pending");
+  assert.strictEqual(ptFilterFor(req({ status: "scheduled" })), "scheduled");
+  assert.strictEqual(ptFilterFor(req({ status: "cancelled_before_scheduled" })), "cancelled");
+  assert.strictEqual(ptFilterFor(req({ status: "cancelled_after_scheduled" })), "cancelled");
+  assert.strictEqual(ptFilterFor(req({ status: "attended" })), "attended");
 });

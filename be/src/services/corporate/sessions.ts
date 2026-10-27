@@ -4,6 +4,7 @@ import { corporateRequests, corporateSessions } from '../../db/schema/schedule'
 import { corporatePackages } from '../../db/schema/packages'
 import { assertRoomInLocation } from '../schedule/room-conflicts'
 import { assertAvailable, eventSubjects, plannedInstructorIds } from '../schedule/occupancy'
+import { recordSessionAssigned } from '../attention/session-assigned'
 import { ensureInstructors, readRoster, replaceRoster } from '../schedule/roster'
 import { NotFoundError } from '../../shared/errors'
 
@@ -12,6 +13,12 @@ export type CorporateSessionRow = typeof corporateSessions.$inferSelect
 export interface CreateCorporateSessionInput {
   corporatePackageId: string
   clientName: string
+  /**
+   * The member `clientName` was copied from, when the session is scheduled from
+   * their request. The instructor's Update names them, so it is stored with their
+   * id and permanent deletion removes it.
+   */
+  subjectClientId?: string
   mainInstructorId: string
   supportingInstructorIds: string[]
   // Either a studio location (locationId, optionally with a roomId) OR a free-text
@@ -129,6 +136,14 @@ export async function createCorporateSession(
       tenantId,
       { kind: 'corporate_session', id: row.id },
       { supportingInstructorIds: input.supportingInstructorIds },
+      { actorStaffId: input.createdByStaffId },
+    )
+    await recordSessionAssigned(
+      tenantId,
+      input.createdByStaffId,
+      { kind: 'corporate_session', id: row.id },
+      { main: [input.mainInstructorId] },
+      { tx, ...(input.subjectClientId ? { subjectClientId: input.subjectClientId } : {}) },
     )
     return row
   })
@@ -237,6 +252,8 @@ export async function rescheduleCorporateSession(
   tenantId: string,
   id: string,
   patch: RescheduleCorporateSessionPatch,
+  /** Who made the edit: an instructor it adds is told, unless it was them. */
+  actorStaffId?: string,
 ): Promise<CreateCorporateSessionResult | { ok: false; error: 'not_found' }> {
   const [existing] = await db
     .select()
@@ -356,6 +373,7 @@ export async function rescheduleCorporateSession(
             ? { supportingInstructorIds: patch.supportingInstructorIds }
             : {}),
         },
+        actorStaffId ? { actorStaffId } : undefined,
       )
       // main_instructor_id may have moved under us.
       const [fresh] = await tx

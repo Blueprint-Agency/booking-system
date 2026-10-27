@@ -1,0 +1,1 @@
+ALTER TYPE "public"."staff_update_kind" ADD VALUE 'session_assigned';

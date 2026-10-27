@@ -11,6 +11,8 @@
  * and summing those as floats is how a purchase ends up one cent short of
  * settled and silently ungranted.
  */
+import { sql, type SQL } from 'drizzle-orm'
+import { now as clockNow } from '../../lib/clock'
 import { toCents } from '../../shared/money'
 
 /** A payment row as this module needs to see it — the ledger's own columns. */
@@ -115,6 +117,16 @@ export function refundProgress(c: RefundProgressCounts): RefundProgress {
 }
 
 /**
+ * `refundProgress(...) === 'incomplete'` as a SQL expression over the three
+ * counts, for a query that counts Purchases whose Refund stopped part-way
+ * without loading them. It is the same rule written for a query, kept right
+ * beside it, and a test (ATN-200) runs both over every small combination of
+ * counts so they cannot drift.
+ */
+export const refundIncompleteSql = (c: { held: SQL; heldRequested: SQL; refunded: SQL }): SQL =>
+  sql`(${c.held} > 0 and ${c.heldRequested} < ${c.held} and (${c.heldRequested} > 0 or ${c.refunded} > 0))`
+
+/**
  * How long a Refund the provider accepted counts as on its way.
  *
  * `charge.refunded` normally lands within seconds. A stamp older than this means
@@ -126,7 +138,7 @@ export function refundProgress(c: RefundProgressCounts): RefundProgress {
  */
 export const REFUND_IN_FLIGHT_MS = 24 * 60 * 60 * 1000
 
-export function refundInFlight(requestedAt: Date | null, now: Date = new Date()): boolean {
+export function refundInFlight(requestedAt: Date | null, now: Date = clockNow()): boolean {
   return requestedAt != null && now.getTime() - requestedAt.getTime() < REFUND_IN_FLIGHT_MS
 }
 

@@ -110,7 +110,17 @@ export function daysSilent(lastActivityAt: Date, now: Date): number {
  * going.
  */
 export function isSilent(lastActivityAt: Date, now: Date): boolean {
-  return daysSilent(lastActivityAt, now) >= SILENT_AFTER_DAYS
+  return lastActivityAt.getTime() <= silentCutoff(now).getTime()
+}
+
+/**
+ * The instant a Purchase's last payment must be at or before to be silent at
+ * `now`: `isSilent` is exactly "no later than this". It is the one threshold the
+ * JS rule and the SQL that counts silent Purchases (`last payment <= cutoff`)
+ * both read, so the two cannot disagree.
+ */
+export function silentCutoff(now: Date): Date {
+  return new Date(now.getTime() - SILENT_AFTER_DAYS * DAY_MS)
 }
 
 /** What the portal prints beside a silent Purchase. */
