@@ -6,7 +6,7 @@ import { classes, classSeries } from '../../db/schema/schedule'
 import { addDays } from '../schedule/series-dates'
 import { localDate } from '../tenants/term-dates'
 import { dismissedSubjects } from './dismissed-subjects'
-import { formatDay, formatWhen } from './format'
+import { formatPlainDay, formatWhen, withLocation } from './format'
 import type { AttentionContext, AttentionProvider, CountScope, ProviderItem } from './types'
 
 /**
@@ -35,9 +35,6 @@ function formatTime(time: string): string {
   const hour = Number(h)
   return `${hour % 12 || 12}:${m} ${hour < 12 ? 'am' : 'pm'}`
 }
-
-/** "Tue 28 Oct" from a plain `YYYY-MM-DD` date. */
-const formatPlainDay = (date: string) => formatDay(new Date(`${date}T12:00:00Z`), 'UTC')
 
 // ---------------------------------------------------------------------------
 // series_ending
@@ -87,7 +84,7 @@ export const seriesEnding: AttentionProvider = {
         deadlineAt: new Date(`${r.lastDate}T00:00:00Z`),
         title: `The ${r.label} series on ${WEEKDAYS[r.weekday - 1]} at ${formatTime(r.startTime)} runs out after ${formatPlainDay(r.lastDate)}`,
         detail: 'Extend it to keep classes on the timetable',
-        href: r.lastClassId ? classPage(r.lastClassId) : null,
+        href: r.lastClassId ? withLocation(classPage(r.lastClassId), r.locationId) : null,
       }),
     )
   },
@@ -146,7 +143,7 @@ export const seriesEndedClassKept: AttentionProvider = {
         deadlineAt: r.startsAt,
         title: `${r.label} on ${formatWhen(r.startsAt, ctx.timezone)} is after the end of its series but still has ${Number(r.bookings)} ${Number(r.bookings) === 1 ? 'booking' : 'bookings'}`,
         detail: 'Cancel it, or dismiss to keep it',
-        href: classPage(r.id),
+        href: withLocation(classPage(r.id), r.locationId),
       }),
     )
   },

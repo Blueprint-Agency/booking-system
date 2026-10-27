@@ -1,5 +1,6 @@
 import { sgDayWindow, sgToday } from '../../lib/time'
 import { getFinance } from '../finance/list'
+import { formatPlainDay } from './format'
 import type { AttentionContext, AttentionProvider, ProviderItem } from './types'
 
 /**
@@ -48,7 +49,7 @@ export const instructorPayMissing: AttentionProvider = {
       location: null,
       occurredAt: ctx.now,
       title: `${n} completed ${n === 1 ? 'session has' : 'sessions have'} no instructor pay`,
-      detail: 'Set their pay in Finance',
+      detail: `Since ${formatPlainDay(from)}. Set pay so Finance is right`,
       href: `${FINANCE_PAGE}?needs_pay=1&from=${from}&to=${to}`,
     }
     return [item]

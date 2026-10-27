@@ -166,12 +166,37 @@ describe('Staff attention: unfinished check-ins', { skip: integrationTestsEnable
   }
 
   /** A private session that ended `endedAgo` ago; `seats` are its members, a booking row for each marked one. */
-  const ptEnded = async (studio: Studio, instructor: Staff, admin: Staff, endedAgo: number, seats: Array<Row | 'no_booking'>) => {
+  const ptEnded = async (
+    studio: Studio,
+    instructor: Staff,
+    admin: Staff,
+    endedAgo: number,
+    seats: Array<Row | 'no_booking'>,
+    /** Whether the session's request named a class type (`pt_requests.class_type_id` is optional). */
+    withClassType = false,
+  ) => {
     const endsAt = new Date(harness.clock.now().getTime() - endedAgo)
+    let ptRequestId: string | undefined
+    if (withClassType) {
+      const [request] = await harness.db
+        .insert(schema.ptRequests)
+        .values({
+          tenantId: studio.id,
+          clientId: await memberOf(studio),
+          locationId: studio.locationId,
+          classTypeId: studio.classTypeId,
+          sessionType: seats.length > 1 ? '2on1' : '1on1',
+          status: 'scheduled',
+          expiresAt: new Date(endsAt.getTime() + DAY),
+        })
+        .returning({ id: schema.ptRequests.id })
+      ptRequestId = request!.id
+    }
     const [session] = await harness.db
       .insert(schema.ptSessions)
       .values({
         tenantId: studio.id,
+        ...(ptRequestId ? { ptRequestId } : {}),
         instructorId: instructor.id,
         locationId: studio.locationId,
         roomId: studio.roomId,
@@ -237,15 +262,20 @@ describe('Staff attention: unfinished check-ins', { skip: integrationTestsEnable
     const [item] = group.items
     assert.equal(item.id, `check_in_unfinished:class:${cls.id}`)
     assert.equal(item.kind, 'check_in_unfinished')
-    assert.match(item.title, /^2 people not marked in Hatha, \w{3} \d{1,2} \w{3}, \d{1,2}:\d{2} [ap]m$/)
-    assert.match(item.detail, /^Ended 3 h ago$/)
-    assert.equal(item.href, `/admin/check-in?date=2031-06-10&session=class:${cls.id}`)
+    // Copy as spec #476 words it: "Finish check-in for {class} on {date}" / "{n} of {m} people not marked · {time} · {location}".
+    assert.match(item.title, /^Finish check-in for Hatha on \w{3} \d{1,2} \w{3}$/)
+    assert.match(item.detail, new RegExp(`^2 of 4 people not marked · \\d{1,2}:\\d{2} [ap]m · ${studio.slug} Studio$`))
+    assert.equal(item.href, `/admin/check-in?date=2031-06-10&session=class:${cls.id}&location=${studio.locationId}`)
     assert.deepEqual(item.location, { id: studio.locationId, name: `${studio.slug} Studio` })
     assert.equal(item.dismissable, false)
 
     const mine = await unfinished(tara)
     assert.equal(mine.length, 1)
-    assert.equal(mine[0]!.href, `/instructor/check-in?date=2031-06-10&session=class:${cls.id}`, 'the link opens the viewer’s own desk')
+    assert.equal(
+      mine[0]!.href,
+      `/instructor/check-in?date=2031-06-10&session=class:${cls.id}&location=${studio.locationId}`,
+      'the link opens the viewer’s own desk',
+    )
   })
 
   test('ATN-41 an item appears from an hour after the session ends and is left out after thirty days, both edges on the app’s clock', async () => {
@@ -290,8 +320,9 @@ describe('Staff attention: unfinished check-ins', { skip: integrationTestsEnable
     assert.equal((await summary(tara)).by_group.check_in, 2)
     assert.equal((await summary(admin)).by_group.check_in, 4)
     const pt = (await unfinished(tara)).find(i => i.id.includes(':pt:'))!
-    assert.match(pt.title, /^1 person not marked in Private session, /)
-    assert.equal(pt.href, `/instructor/check-in?date=2031-06-10&session=pt:${taraPt.id}`)
+    assert.match(pt.title, /^Finish check-in for Private session on /)
+    assert.match(pt.detail, /^1 of 1 person not marked · /)
+    assert.equal(pt.href, `/instructor/check-in?date=2031-06-10&session=pt:${taraPt.id}&location=${studio.locationId}`)
   })
 
   test('ATN-43 a private session counts a member with no booking as unmarked, as the desk does', async () => {
@@ -302,7 +333,19 @@ describe('Staff attention: unfinished check-ins', { skip: integrationTestsEnable
 
     const [item] = await unfinished(admin)
     assert.equal(item!.id, `check_in_unfinished:pt:${pt.id}`)
-    assert.match(item!.title, /^1 person not marked in Private session, /)
+    assert.match(item!.title, /^Finish check-in for Private session on /)
+    assert.match(item!.detail, /^1 of 2 people not marked · /)
+  })
+
+  test('ATN-193 a private session booked for a class type is named by it, as its request item is', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    const tara = await instructorAt(studio, admin, 'tara')
+    const pt = await ptEnded(studio, tara, admin, 2 * HOUR, ['pending'], true)
+
+    const [item] = await unfinished(admin)
+    assert.equal(item!.id, `check_in_unfinished:pt:${pt.id}`)
+    assert.match(item!.title, /^Finish check-in for Hatha on /)
   })
 
   test('ATN-44 the item goes once every row is attended or no-show, and a cancelled session never shows', async () => {
@@ -317,7 +360,7 @@ describe('Staff attention: unfinished check-ins', { skip: integrationTestsEnable
     assert.equal((await summary(admin)).by_group.check_in, 1)
 
     await harness.db.update(schema.bookings).set({ checkInState: 'attended' }).where(eq(schema.bookings.id, cls.bookingIds[0]!))
-    assert.match((await unfinished(admin))[0]!.title, /^1 person not marked/)
+    assert.match((await unfinished(admin))[0]!.detail, /^1 of 2 people not marked/)
     await harness.db.update(schema.bookings).set({ checkInState: 'no_show' }).where(eq(schema.bookings.id, cls.bookingIds[1]!))
     assert.deepEqual(await unfinished(admin), [])
     assert.equal((await summary(admin)).by_group.check_in ?? 0, 0)

@@ -167,7 +167,7 @@ describe('Staff attention: ClassPass', { skip: integrationTestsEnabled ? false :
     const startsAt = new Date(Date.now() + 2 * DAY)
     const [tenant] = await harness.db.select({ tz: schema.tenants.timezone }).from(schema.tenants).where(eq(schema.tenants.id, studio.id))
     const parts = Object.fromEntries(
-      new Intl.DateTimeFormat('en-GB', {
+      new Intl.DateTimeFormat('en-US', {
         timeZone: tenant!.tz,
         weekday: 'short',
         day: 'numeric',
@@ -323,6 +323,30 @@ describe('Staff attention: ClassPass', { skip: integrationTestsEnabled ? false :
     await book(studio, past, 'e', 'overbook', 'classpass')
     // (An ended class may still owe a check-in; that is another kind, so look at ClassPass only.)
     assert.equal((await summary(admin)).by_group.classpass ?? 0, 0, 'a class that has ended is not listed')
+  })
+
+  test('ATN-194 the ClassPass badge counts only the open location’s overbooked classes, while the bubble counts them all and a review item with no location counts at both', async () => {
+    const studio = await freshStudio()
+    const admin = await staffAt(studio, 'admin', 'admin')
+    const [second] = await harness.db
+      .insert(schema.locations)
+      .values({ tenantId: studio.id, name: `${studio.slug} Annex`, address: '2 Test Street' })
+      .returning({ id: schema.locations.id })
+    const annex = { ...studio, locationId: second!.id }
+    for (const at of [studio, annex, annex]) {
+      const classId = await futureClass(at, 1)
+      await book(at, classId, `p${randomUUID().slice(0, 6)}`, 'online', 'direct')
+      await book(at, classId, `q${randomUUID().slice(0, 6)}`, 'overbook', 'classpass')
+    }
+    await reviewItem(studio, 'unparsed')
+
+    const at = async (locationId?: string) =>
+      json(await send(`/portal/attention/summary${locationId ? `?location_id=${locationId}` : ''}`, admin.headers), 200)
+    assert.equal((await at()).needs_action, 4, 'three overbooked classes and one review item, across the studio')
+    assert.equal((await at()).by_group.classpass, 4)
+    assert.equal((await at(studio.locationId)).by_group.classpass, 2, 'one class here, plus the review item that belongs to no location')
+    assert.equal((await at(annex.locationId)).by_group.classpass, 3, 'two classes at the annex, plus the review item')
+    assert.equal((await at(annex.locationId)).needs_action, 4, 'the bubble does not move with the workspace')
   })
 
   test('ATN-83 an instructor never sees either ClassPass kind, and one studio never sees another studio', async () => {

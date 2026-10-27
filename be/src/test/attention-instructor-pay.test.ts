@@ -124,6 +124,7 @@ describe('Staff attention: instructor pay missing', { skip: integrationTestsEnab
     const item = items[0]!
     assert.equal(item.id, 'instructor_pay_missing:window')
     assert.equal(item.title, '3 completed sessions have no instructor pay')
+    assert.equal(item.detail, 'Since Tue 1 Sep. Set pay so Finance is right', 'the first day of last month, in the spec’s date style')
     assert.equal(item.href, '/admin/finance?needs_pay=1&from=2026-09-01&to=2026-10-15')
     assert.equal(item.location, null)
     assert.equal(item.dismissable, false)

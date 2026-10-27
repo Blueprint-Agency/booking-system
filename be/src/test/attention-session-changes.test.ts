@@ -253,7 +253,7 @@ describe('Staff attention: session Updates', { skip: integrationTestsEnabled ? f
   /** "Tue 28 Oct, 7:00 pm" in Singapore, the studio's default zone. */
   const when = (at: Date) => {
     const p = Object.fromEntries(
-      new Intl.DateTimeFormat('en-GB', {
+      new Intl.DateTimeFormat('en-US', {
         timeZone: 'Asia/Singapore',
         weekday: 'short',
         day: 'numeric',

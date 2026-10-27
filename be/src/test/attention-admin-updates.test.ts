@@ -168,7 +168,7 @@ describe('Staff attention: admin and permission Updates', { skip: integrationTes
   /** The studio's own wording of an instant, as the Updates quote it: "Tue 28 Oct, 7:00 pm". */
   const studioWhen = (at: Date) => {
     const parts = Object.fromEntries(
-      new Intl.DateTimeFormat('en-GB', {
+      new Intl.DateTimeFormat('en-US', {
         timeZone: 'Asia/Singapore',
         weekday: 'short',
         day: 'numeric',

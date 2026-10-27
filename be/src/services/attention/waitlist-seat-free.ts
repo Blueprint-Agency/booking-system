@@ -5,7 +5,7 @@ import { classTypes } from '../../db/schema/catalog'
 import { classes } from '../../db/schema/schedule'
 import { classCancelWindow } from '../policy/cancel-window'
 import { waitlistClosesAt } from '../waitlist/rules'
-import { formatWhen } from './format'
+import { formatWhen, withLocation } from './format'
 import type { AttentionContext, AttentionProvider, CountScope, ProviderItem } from './types'
 
 /**
@@ -83,7 +83,7 @@ export const waitlistSeatFree: AttentionProvider = {
         deadlineAt: r.startsAt,
         title: `${r.label} on ${formatWhen(r.startsAt, ctx.timezone)} has ${seats(r.capacityOnline - Number(r.used))} and ${line(Number(r.waiting))}`,
         detail: "The waitlist doesn't fill seats this close to class. Add someone from the waitlist",
-        href: classPage(ctx, r.id),
+        href: withLocation(classPage(ctx, r.id), r.locationId),
       }),
     )
   },

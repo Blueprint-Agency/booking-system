@@ -1,12 +1,15 @@
 /**
  * The wording the Attention copy shares. Dates are written in the studio's own
  * zone and look like "Tue 28 Oct, 7:00 pm"; ages look like "3 h ago".
+ *
+ * Only the parts of an `Intl` format are read, never its string, and the locale
+ * is `en-US` because `en-GB` abbreviates September to "Sept".
  */
 
 /** "Tue 28 Oct, 7:00 pm", in `timezone`. */
 export function formatWhen(at: Date, timezone: string): string {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-GB', {
+    new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       weekday: 'short',
       day: 'numeric',
@@ -23,7 +26,7 @@ export function formatWhen(at: Date, timezone: string): string {
 
 const zoned = (at: Date, timezone: string, opts: Intl.DateTimeFormatOptions) =>
   Object.fromEntries(
-    new Intl.DateTimeFormat('en-GB', { timeZone: timezone, ...opts }).formatToParts(at).map(p => [p.type, p.value]),
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone, ...opts }).formatToParts(at).map(p => [p.type, p.value]),
   )
 
 /** "Tue 28 Oct", in `timezone`. */
@@ -41,6 +44,16 @@ export function formatClock(at: Date, timezone: string): string {
 /** "Tuesday", in `timezone`. */
 export function formatWeekday(at: Date, timezone: string): string {
   return String(zoned(at, timezone, { weekday: 'long' }).weekday)
+}
+
+/** "Tue 28 Oct" from a plain `YYYY-MM-DD` date, which has no zone to convert. */
+export function formatPlainDay(date: string): string {
+  return formatDay(new Date(`${date}T12:00:00Z`), 'UTC')
+}
+
+/** A portal path with `location={id}` on its query, so the shell opens it on that location. */
+export function withLocation(path: string, locationId: string): string {
+  return `${path}${path.includes('?') ? '&' : '?'}location=${locationId}`
 }
 
 /** "just now", "5 min ago", "3 h ago", "2 d ago". */
