@@ -175,7 +175,7 @@ Promotions are nested under their parent (class package, PT package, or workshop
 | POST | `/schedule/series/:id/extend/preview` | `{ last_date, excluded_dates? }` → the new dates after the current last date, with clashes. Dates that already have a class of the series are never offered. |
 | POST | `/schedule/series/:id/extend` | Commit the extend, all or nothing. Safe to repeat. `409 series_ended` once ended. |
 | POST | `/schedule/series/:id/end` | `{ from_date }` → cancels the series' unbooked classes from that date, each as `/schedule/classes/:id/cancel` cancels a class (its waitlist entries `removed`, and each member still waiting emailed `admin_cancel_class` after commit), and returns `{ ended_from, cancelled_class_ids, booked_classes: [{ class_id, starts_at, booked_count }] }` for the admin to cancel through `/schedule/classes/:id/cancel`. |
-| POST | `/schedule/workshops/:id/cancel` | Admin cancellation of an entire workshop (all days, all tiers) + Stripe refund fanout to attendees — see §3b. **No** workshop create/edit here; those live in `workshops.ts`. |
+| POST | `/schedule/workshops/:id/cancel` | Admin cancellation of an entire workshop (all days, all tiers) . Nobody is refunded automatically (#272): an admin refunds each paid place, and the bell lists the unrefunded ones (`workshop_cancelled_unrefunded`) — see §3b. **No** workshop create/edit here; those live in `workshops.ts`. |
 | GET | `/schedule/workshops/picker` | Lists workshops in the active workspace that have at least one future `workshop_day`. Powers the "+ Workshop" picker in the scheduler per `admin-restructure.md` §7c — selecting from this list **does not create anything**; it just navigates to the workshop's days. |
 
 Series create (preview and commit) is also on the instructor schedule (§4); extend and end are admin only. The body's wire shape is shared by both mounts in `routes/portal/class-series.ts`.
@@ -480,22 +480,21 @@ A booking cancel on either path, a whole-class cancel (`/schedule/classes/:id/ca
 
 **Lock order of a Complimentary Remove and a Refund's unwind** (#447). Before its first cancel, each pass locks every PT request, PT session, class and booking it will cancel, each kind in id order (`services/bookings/lock-for-cancel.ts:lockForCancel`), and only then the package: the unwind's Void, or the Remove's first cancel that pays it back. A booking cancel takes the class, or the request and then the session, then the booking and then the packages, so a member's cancel of one of those bookings and the pass take turns at the first row they share (RFD-24, PKG-42). The unwind takes its Purchase and payment rows before all of these (RFD-23). Ending a Class Series (`/schedule/series/:id/end`) locks the series' future classes in id order too, so it takes turns with either pass (SCH-42). The pass takes these locks on the retried attempt's own transaction, so a deadlock Postgres breaks inside them starts the attempt over instead of failing the request (RFD-35).
 
-#### Workshop admin-cancel — refund fanout
+#### Workshop admin-cancel — nobody is refunded automatically
 
 `POST /schedule/workshops/:id/cancel`:
 
 ```
-services/workshops/refund-fanout.ts:cancelWorkshop(workshop_id, actor_staff_id)
+services/workshops/cancel.ts:cancelWorkshop(workshop_id, actor_staff_id)
   ↓
 tx start
 1. Update workshops.lifecycle='cancelled', cancelled_at, cancelled_by_staff_id
 2. SELECT bookings WHERE workshop_id=X AND state='confirmed' FOR UPDATE
 3. For each booking:
-   - Set state='cancelled', refund_outcome='stripe_refunded', cancelled_at
-   - Enqueue stripe-refund job with idempotency key = booking.id
-     (v1: enqueue is a synchronous Stripe Refund API call; failures retry inline 3x with exponential backoff;
-      worst case the booking is left cancelled with refund_outcome unchanged, surfaced in admin alerts)
-     (future: BullMQ — durable retry across restarts)
+   - Set state='cancelled', refund_outcome='n_a', cancelled_at. No Stripe refund is issued:
+     nobody is refunded automatically (#272). An admin refunds each paid place from the
+     member's Workshop purchases card, and until then the place shows in the bell as
+     `workshop_cancelled_unrefunded` (dismissable by an admin who decides not to refund).
 tx commit
 4. 'admin_cancel_workshop' email to each attendee, after commit and best-effort (NTF-10):
    { client_name, workshop_name, amount_paid, workshops_url } — amount_paid in the shared money
@@ -504,7 +503,7 @@ tx commit
    email states what they paid and that the refund is being arranged.
 ```
 
-The Stripe webhook `charge.refunded` arrives separately and updates `stripe_payments.status='refunded'`, `refunded_at`. If a refund call fails, the booking is still marked cancelled but `refund_outcome` stays as the optimistic `'stripe_refunded'` until reconciliation — admin sees the discrepancy via the failed `email` log + a future reports view.
+When the admin later refunds a place, the Stripe webhook `charge.refunded` arrives separately and updates `stripe_payments.status='refunded'`, `refunded_at`.
 
 ### 3c. PT session scheduling (from a PT Request)
 

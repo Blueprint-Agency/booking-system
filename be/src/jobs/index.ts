@@ -137,11 +137,12 @@ export const scheduledJobs = {
   // Daily 01:00 tenant-local — package expiry
   expirePackages: dailyTenantJob('expirePackages', 1, expirePackages),
 
-  // Daily 08:00 tenant-local — lapsing + expired notifications
-  // Daily — staff Updates older than 90 days are deleted (#476); the list stays
-  // relevant and the table small. Needs action items need no job: they are derived.
+  // Daily 03:00 tenant-local — staff Updates older than 90 days are deleted (#476);
+  // the list stays relevant and the table small. Needs action items need no job:
+  // they are derived.
   pruneStaffUpdates: dailyTenantJob('pruneStaffUpdates', 3, pruneStaffUpdates),
 
+  // Daily 08:00 tenant-local — lapsing + expired notifications
   sendLapsingAlerts: dailyTenantJob('sendLapsingAlerts', 8, sendLapsingAlerts),
   sendExpiredNotifications: dailyTenantJob('sendExpiredNotifications', 8, sendExpiredNotifications),
 
