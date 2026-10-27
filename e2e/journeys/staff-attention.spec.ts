@@ -6,9 +6,11 @@ import { signInStaff, studio } from '../src/studio'
  * Journey: the bell tells an admin what is waiting, and the click lands on it (#477).
  *
  * A member asks for a private session. The admin signs in and the bell already
- * reads 1, the panel opens by itself with the request in a sentence, and
+ * counts it, the panel opens by itself with the request in a sentence, and
  * clicking it lands on PT Requests with that request's drawer open. Scheduling
- * it takes it off the admin's list, and the bubble goes.
+ * it takes it off the admin's list, and the bubble is one lower. The studio is
+ * shared with the other journeys, so the journey follows its own request rather
+ * than a hard-coded number.
  *
  * The member's request is sent as the member app sends it (the request form's
  * own call, signed in as the studio's holder); the journey is about what the
@@ -62,12 +64,21 @@ test('ATN-16 a member requests a private session, the admin sees the bell and th
   await signInStaff(page, staff.admin)
   await page.waitForURL(/\/admin/)
   const bell = page.getByTestId('attention-bell')
-  await expect(bell).toHaveAttribute('aria-label', 'Notifications, 1 need attention')
-  await expect(page.getByTestId('attention-bubble')).toHaveText('1')
   const panel = page.getByTestId('attention-panel')
   await expect(panel).toBeVisible()
   const item = panel.getByRole('link', { name: new RegExp(`${profile.name} asked for a 1-on-1 session`) })
   await expect(item).toBeVisible()
+  // The studio is shared with the other journeys, so the bell may already count
+  // things they left (a member's team-session request, say): the journey follows its own
+  // request, not a number. The bubble reads what the bell says, and the bell
+  // counts the request: it is at least 1, and one lower once it is scheduled.
+  const countOf = async () => {
+    const label = (await bell.getAttribute('aria-label')) ?? ''
+    return Number(/^Notifications, (\d+) need attention$/.exec(label)?.[1] ?? 0)
+  }
+  const counted = await countOf()
+  expect(counted, 'the bell counts the request').toBeGreaterThanOrEqual(1)
+  if (counted <= 99) await expect(page.getByTestId('attention-bubble')).toHaveText(String(counted))
 
   // Clicking it closes the panel and opens PT Requests on that request.
   await item.click()
@@ -88,9 +99,15 @@ test('ATN-16 a member requests a private session, the admin sees the bell and th
   await dialog.getByRole('button', { name: 'Schedule session' }).click()
   await expect(dialog).toBeHidden()
 
-  // The page asks for the count again as soon as it has scheduled: the bubble is gone.
-  await expect(bell).toHaveAttribute('aria-label', 'Notifications')
-  await expect(page.getByTestId('attention-bubble')).toHaveCount(0)
+  // The page asks for the count again as soon as it has scheduled: the bubble
+  // is one lower (gone, if the request was all there was), and the request has
+  // left the panel.
+  const remaining = counted - 1
+  await expect(bell).toHaveAttribute('aria-label', remaining > 0 ? `Notifications, ${remaining} need attention` : 'Notifications')
+  if (remaining === 0) await expect(page.getByTestId('attention-bubble')).toHaveCount(0)
   await bell.click()
-  await expect(page.getByTestId('attention-panel').getByText('Nothing needs your attention')).toBeVisible()
+  const reopened = page.getByTestId('attention-panel')
+  await expect(reopened).toBeVisible()
+  await expect(reopened.getByRole('link', { name: new RegExp(`${profile.name} asked for a 1-on-1 session`) })).toHaveCount(0)
+  if (remaining === 0) await expect(reopened.getByText('Nothing needs your attention')).toBeVisible()
 })
