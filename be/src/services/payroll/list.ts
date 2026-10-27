@@ -22,7 +22,7 @@
  * window and the filters); it WRITES none of them — a pay edit is a roster write
  * and goes through services/schedule/roster.
  */
-import { and, eq, gte, lt, lte, sql } from 'drizzle-orm'
+import { and, count, eq, gte, isNull, lt, lte, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { now as clockNow } from '../../lib/clock'
 import {
@@ -100,27 +100,28 @@ export interface PayrollRow {
  * money-in sources and totals the lot itself. Every other caller goes through
  * `getPayroll` so ordering and totalling can't drift.
  */
-export async function listPayroll(
-  tenantId: string,
-  filter: PayrollFilter,
-): Promise<PayrollRow[]> {
-  const now = clockNow()
+// ---------------------------------------------------------------------------
+// The five completed-session sources, one builder each. `listPayroll` selects the
+// rows through them and `countUnpricedPayroll` counts through them, with
+// `extra` naming the pay column that is null, so what counts as a payroll line
+// (its window, filters and joins) is written once and the count cannot drift
+// from the list. Every arm is scoped on the table it reads FROM — the sessions,
+// the join rows and the manual entries each carry the Tenant, so one predicate
+// per source is enough and the joins inherit it.
+// ---------------------------------------------------------------------------
 
-  // Every arm below is scoped on the table it reads FROM — the sessions, the
-  // join rows and the manual entries each carry the Tenant, so one predicate
-  // per source is enough and the joins inherit it.
-  // -- main class pay --------------------------------------------------------
-  const classConds = [
-    eq(classes.tenantId, tenantId),
-    eq(classes.lifecycle, 'active'),
-    lt(classes.endsAt, now),
-  ]
-  if (filter.instructorId) classConds.push(eq(classes.mainInstructorId, filter.instructorId))
-  if (filter.classTypeId) classConds.push(eq(classes.classTypeId, filter.classTypeId))
-  if (filter.from) classConds.push(gte(classes.startsAt, filter.from))
-  if (filter.to) classConds.push(lte(classes.startsAt, filter.to))
+// A PT line is labelled with the member's preferred class type, or generically
+// when they asked for "any".
+const ptLabel = sql<string>`coalesce(${classTypes.name}, 'Private session')`
 
-  const classRows = await db
+/** Main class pay. */
+function mainClassLines(tenantId: string, filter: PayrollFilter, now: Date, extra?: SQL) {
+  const conds = [eq(classes.tenantId, tenantId), eq(classes.lifecycle, 'active'), lt(classes.endsAt, now)]
+  if (filter.instructorId) conds.push(eq(classes.mainInstructorId, filter.instructorId))
+  if (filter.classTypeId) conds.push(eq(classes.classTypeId, filter.classTypeId))
+  if (filter.from) conds.push(gte(classes.startsAt, filter.from))
+  if (filter.to) conds.push(lte(classes.startsAt, filter.to))
+  return db
     .select({
       id: classes.id,
       instructorId: classes.mainInstructorId,
@@ -137,21 +138,21 @@ export async function listPayroll(
     .innerJoin(staffUsers, eq(staffUsers.id, classes.mainInstructorId))
     .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
     .innerJoin(locations, eq(locations.id, classes.locationId))
-    .where(and(...classConds))
+    .where(and(...conds, extra))
+}
 
-  // -- supporting class pay ---------------------------------------------------
-  const classSupportingConds = [
+/** Supporting class pay. */
+function supportingClassLines(tenantId: string, filter: PayrollFilter, now: Date, extra?: SQL) {
+  const conds = [
     eq(classSupportingInstructors.tenantId, tenantId),
     eq(classes.lifecycle, 'active'),
     lt(classes.endsAt, now),
   ]
-  if (filter.instructorId)
-    classSupportingConds.push(eq(classSupportingInstructors.instructorId, filter.instructorId))
-  if (filter.classTypeId) classSupportingConds.push(eq(classes.classTypeId, filter.classTypeId))
-  if (filter.from) classSupportingConds.push(gte(classes.startsAt, filter.from))
-  if (filter.to) classSupportingConds.push(lte(classes.startsAt, filter.to))
-
-  const classSupportingRows = await db
+  if (filter.instructorId) conds.push(eq(classSupportingInstructors.instructorId, filter.instructorId))
+  if (filter.classTypeId) conds.push(eq(classes.classTypeId, filter.classTypeId))
+  if (filter.from) conds.push(gte(classes.startsAt, filter.from))
+  if (filter.to) conds.push(lte(classes.startsAt, filter.to))
+  return db
     .select({
       id: classes.id,
       instructorId: classSupportingInstructors.instructorId,
@@ -169,23 +170,17 @@ export async function listPayroll(
     .innerJoin(staffUsers, eq(staffUsers.id, classSupportingInstructors.instructorId))
     .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
     .innerJoin(locations, eq(locations.id, classes.locationId))
-    .where(and(...classSupportingConds))
+    .where(and(...conds, extra))
+}
 
-  // -- main PT pay --------------------------------------------------------
-  // A PT line is labelled with the member's preferred class type, or generically
-  // when they asked for "any".
-  const ptLabel = sql<string>`coalesce(${classTypes.name}, 'Private session')`
-  const ptConds = [
-    eq(ptSessions.tenantId, tenantId),
-    eq(ptSessions.lifecycle, 'active'),
-    lt(ptSessions.endsAt, now),
-  ]
-  if (filter.instructorId) ptConds.push(eq(ptSessions.instructorId, filter.instructorId))
-  if (filter.classTypeId) ptConds.push(eq(ptRequests.classTypeId, filter.classTypeId))
-  if (filter.from) ptConds.push(gte(ptSessions.startsAt, filter.from))
-  if (filter.to) ptConds.push(lte(ptSessions.startsAt, filter.to))
-
-  const ptRows = await db
+/** Main PT pay. */
+function mainPtLines(tenantId: string, filter: PayrollFilter, now: Date, extra?: SQL) {
+  const conds = [eq(ptSessions.tenantId, tenantId), eq(ptSessions.lifecycle, 'active'), lt(ptSessions.endsAt, now)]
+  if (filter.instructorId) conds.push(eq(ptSessions.instructorId, filter.instructorId))
+  if (filter.classTypeId) conds.push(eq(ptRequests.classTypeId, filter.classTypeId))
+  if (filter.from) conds.push(gte(ptSessions.startsAt, filter.from))
+  if (filter.to) conds.push(lte(ptSessions.startsAt, filter.to))
+  return db
     .select({
       id: ptSessions.id,
       instructorId: ptSessions.instructorId,
@@ -205,21 +200,21 @@ export async function listPayroll(
     // Left: a request for "any" class type has none, and is still paid.
     .leftJoin(classTypes, eq(classTypes.id, ptRequests.classTypeId))
     .innerJoin(locations, eq(locations.id, ptSessions.locationId))
-    .where(and(...ptConds))
+    .where(and(...conds, extra))
+}
 
-  // -- supporting PT pay ----------------------------------------------------
-  const ptSupportingConds = [
+/** Supporting PT pay. */
+function supportingPtLines(tenantId: string, filter: PayrollFilter, now: Date, extra?: SQL) {
+  const conds = [
     eq(ptSessionSupportingInstructors.tenantId, tenantId),
     eq(ptSessions.lifecycle, 'active'),
     lt(ptSessions.endsAt, now),
   ]
-  if (filter.instructorId)
-    ptSupportingConds.push(eq(ptSessionSupportingInstructors.instructorId, filter.instructorId))
-  if (filter.classTypeId) ptSupportingConds.push(eq(ptRequests.classTypeId, filter.classTypeId))
-  if (filter.from) ptSupportingConds.push(gte(ptSessions.startsAt, filter.from))
-  if (filter.to) ptSupportingConds.push(lte(ptSessions.startsAt, filter.to))
-
-  const ptSupportingRows = await db
+  if (filter.instructorId) conds.push(eq(ptSessionSupportingInstructors.instructorId, filter.instructorId))
+  if (filter.classTypeId) conds.push(eq(ptRequests.classTypeId, filter.classTypeId))
+  if (filter.from) conds.push(gte(ptSessions.startsAt, filter.from))
+  if (filter.to) conds.push(lte(ptSessions.startsAt, filter.to))
+  return db
     .select({
       id: ptSessions.id,
       instructorId: ptSessionSupportingInstructors.instructorId,
@@ -240,68 +235,110 @@ export async function listPayroll(
     // Left: a request for "any" class type has none, and is still paid.
     .leftJoin(classTypes, eq(classTypes.id, ptRequests.classTypeId))
     .innerJoin(locations, eq(locations.id, ptSessions.locationId))
-    .where(and(...ptSupportingConds))
+    .where(and(...conds, extra))
+}
+
+/**
+ * Workshop pay. Workshops have no single starts_at/ends_at — min/max over
+ * workshop_days stands in for "when it happened". class_type_id doesn't apply to
+ * workshops, so a class_type_id filter simply excludes them (callers skip this).
+ */
+function workshopLines(tenantId: string, filter: PayrollFilter, now: Date, extra?: SQL) {
+  const conds = [eq(workshopInstructors.tenantId, tenantId), eq(workshops.lifecycle, 'active')]
+  if (filter.instructorId) conds.push(eq(workshopInstructors.instructorId, filter.instructorId))
+
+  // Bare JS Dates can't be serialized inside a raw sql`` fragment (unlike the
+  // typed lt()/gte() helpers the other arms use), so pass ISO strings — Postgres
+  // coerces them to the timestamp of the aggregate they're compared against.
+  const havingParts = [sql`max(${workshopDays.endsAt}) < ${now.toISOString()}`]
+  if (filter.from) havingParts.push(sql`min(${workshopDays.startsAt}) >= ${filter.from.toISOString()}`)
+  if (filter.to) havingParts.push(sql`min(${workshopDays.startsAt}) <= ${filter.to.toISOString()}`)
+
+  return db
+    .select({
+      id: workshopInstructors.workshopId,
+      instructorId: workshopInstructors.instructorId,
+      instructorName: staffUsers.name,
+      label: workshops.name,
+      instructorPaySgd: workshopInstructors.paySgd,
+      // mapWith, or the driver hands the aggregate back as a string and every
+      // caller that treats it as the Date it is typed as throws. Aliased, so the
+      // count can read this query as a subquery.
+      startsAt: sql<Date>`min(${workshopDays.startsAt})`.mapWith(workshopDays.startsAt).as('starts_at'),
+      endsAt: sql<Date>`max(${workshopDays.endsAt})`.mapWith(workshopDays.endsAt).as('ends_at'),
+      locationId: workshops.locationId,
+      locationName: locations.name,
+    })
+    .from(workshopInstructors)
+    .innerJoin(workshops, eq(workshops.id, workshopInstructors.workshopId))
+    .innerJoin(staffUsers, eq(staffUsers.id, workshopInstructors.instructorId))
+    .innerJoin(workshopDays, eq(workshopDays.workshopId, workshops.id))
+    .innerJoin(locations, eq(locations.id, workshops.locationId))
+    .where(and(...conds, extra))
+    .groupBy(
+      workshopInstructors.workshopId,
+      workshopInstructors.instructorId,
+      staffUsers.name,
+      workshops.name,
+      workshopInstructors.paySgd,
+      workshops.locationId,
+      locations.name,
+    )
+    .having(sql.join(havingParts, sql` AND `))
+}
+
+/**
+ * How many completed payroll lines have no pay set, counted in SQL through the
+ * same builders `listPayroll` reads. It is Finance's `unpriced_count` for the
+ * same window (`finance/totals.ts:isUnpriced`: a session line with no pay; a
+ * manual entry is its amount and is never one, so it is not counted).
+ */
+export async function countUnpricedPayroll(tenantId: string, filter: PayrollFilter): Promise<number> {
+  const now = clockNow()
+  // Each source is counted as a subquery of the very query the list runs, with
+  // its pay column required to be null.
+  const counted = [
+    db.select({ n: count() }).from(mainClassLines(tenantId, filter, now, isNull(classes.instructorPaySgd)).as('lines')),
+    db
+      .select({ n: count() })
+      .from(supportingClassLines(tenantId, filter, now, isNull(classSupportingInstructors.paySgd)).as('lines')),
+    db.select({ n: count() }).from(mainPtLines(tenantId, filter, now, isNull(ptSessions.instructorPaySgd)).as('lines')),
+    db
+      .select({ n: count() })
+      .from(supportingPtLines(tenantId, filter, now, isNull(ptSessionSupportingInstructors.paySgd)).as('lines')),
+    // Workshops have no class type, so a class-type filter leaves them out (as the list does).
+    ...(filter.classTypeId
+      ? []
+      : [
+          db
+            .select({ n: count() })
+            .from(workshopLines(tenantId, filter, now, isNull(workshopInstructors.paySgd)).as('lines')),
+        ]),
+  ]
+  const rows = await Promise.all(counted)
+  return rows.reduce((sum, [row]) => sum + Number(row?.n ?? 0), 0)
+}
+
+export async function listPayroll(
+  tenantId: string,
+  filter: PayrollFilter,
+): Promise<PayrollRow[]> {
+  const now = clockNow()
+
+  // -- main class pay --------------------------------------------------------
+  const classRows = await mainClassLines(tenantId, filter, now)
+
+  // -- supporting class pay ---------------------------------------------------
+  const classSupportingRows = await supportingClassLines(tenantId, filter, now)
+
+  // -- main PT pay --------------------------------------------------------
+  const ptRows = await mainPtLines(tenantId, filter, now)
+
+  // -- supporting PT pay ----------------------------------------------------
+  const ptSupportingRows = await supportingPtLines(tenantId, filter, now)
 
   // -- workshop pay (NEW payroll source) --------------------------------------
-  // Workshops have no single starts_at/ends_at — min/max over workshop_days
-  // stands in for "when it happened". class_type_id doesn't apply to workshops,
-  // so a class_type_id filter simply excludes them (nothing to skip further).
-  let workshopRows: {
-    id: string
-    instructorId: string
-    instructorName: string
-    label: string
-    instructorPaySgd: string | null
-    startsAt: Date
-    endsAt: Date
-    locationId: string | null
-    locationName: string | null
-  }[] = []
-  if (!filter.classTypeId) {
-    const workshopConds = [
-      eq(workshopInstructors.tenantId, tenantId),
-      eq(workshops.lifecycle, 'active'),
-    ]
-    if (filter.instructorId) workshopConds.push(eq(workshopInstructors.instructorId, filter.instructorId))
-
-    // Bare JS Dates can't be serialized inside a raw sql`` fragment (unlike the
-    // typed lt()/gte() helpers the other arms use), so pass ISO strings — Postgres
-    // coerces them to the timestamp of the aggregate they're compared against.
-    const havingParts = [sql`max(${workshopDays.endsAt}) < ${now.toISOString()}`]
-    if (filter.from) havingParts.push(sql`min(${workshopDays.startsAt}) >= ${filter.from.toISOString()}`)
-    if (filter.to) havingParts.push(sql`min(${workshopDays.startsAt}) <= ${filter.to.toISOString()}`)
-
-    workshopRows = await db
-      .select({
-        id: workshopInstructors.workshopId,
-        instructorId: workshopInstructors.instructorId,
-        instructorName: staffUsers.name,
-        label: workshops.name,
-        instructorPaySgd: workshopInstructors.paySgd,
-        // mapWith, or the driver hands the aggregate back as a string and every
-        // caller that treats it as the Date it is typed as throws.
-        startsAt: sql<Date>`min(${workshopDays.startsAt})`.mapWith(workshopDays.startsAt),
-        endsAt: sql<Date>`max(${workshopDays.endsAt})`.mapWith(workshopDays.endsAt),
-        locationId: workshops.locationId,
-        locationName: locations.name,
-      })
-      .from(workshopInstructors)
-      .innerJoin(workshops, eq(workshops.id, workshopInstructors.workshopId))
-      .innerJoin(staffUsers, eq(staffUsers.id, workshopInstructors.instructorId))
-      .innerJoin(workshopDays, eq(workshopDays.workshopId, workshops.id))
-      .innerJoin(locations, eq(locations.id, workshops.locationId))
-      .where(and(...workshopConds))
-      .groupBy(
-        workshopInstructors.workshopId,
-        workshopInstructors.instructorId,
-        staffUsers.name,
-        workshops.name,
-        workshopInstructors.paySgd,
-        workshops.locationId,
-        locations.name,
-      )
-      .having(sql.join(havingParts, sql` AND `))
-  }
+  const workshopRows = filter.classTypeId ? [] : await workshopLines(tenantId, filter, now)
 
   // -- manual payroll entries (NEW payroll source) ----------------------------
   // Ad-hoc bonus/adjustment/one-off lines, not tied to a class/PT/workshop —

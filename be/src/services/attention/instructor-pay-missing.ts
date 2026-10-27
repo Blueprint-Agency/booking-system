@@ -1,14 +1,15 @@
 import { sgDayWindow, sgToday } from '../../lib/time'
-import { getFinance } from '../finance/list'
+import { countUnpricedPayroll } from '../payroll/list'
 import { formatPlainDay } from './format'
 import type { AttentionContext, AttentionProvider, ProviderItem } from './types'
 
 /**
  * Completed sessions with no instructor pay, as ONE line for admins: the count
  * is in the sentence, and the line counts as one in the bubble. It is Finance's
- * own Needs-pay answer (`getFinance`'s `unpriced_count`, which uses the one
- * `isUnpriced` rule), over the window from the first day of the previous month
- * to today, so the line and the Finance page agree for the same range.
+ * own Needs-pay answer (`getFinance`'s `unpriced_count`), counted in SQL through
+ * the payroll query Finance itself reads (`countUnpricedPayroll`), over the
+ * window from the first day of the previous month to today, so the line and the
+ * Finance page agree for the same range.
  *
  * The line carries the same range in the link, so Finance opens on it. It is
  * studio-wide: no location narrows it.
@@ -25,12 +26,10 @@ export function payWindow(now: Date): { from: string; to: string } {
 
 async function unpricedCount(ctx: AttentionContext): Promise<number> {
   const { from, to } = payWindow(ctx.now)
-  const { unpriced_count } = await getFinance(ctx.tenantId, {
-    needsPayOnly: true,
+  return countUnpricedPayroll(ctx.tenantId, {
     from: sgDayWindow(from).startsAt,
     to: new Date(sgDayWindow(to).endsAt.getTime() - 1),
   })
-  return unpriced_count
 }
 
 export const instructorPayMissing: AttentionProvider = {
