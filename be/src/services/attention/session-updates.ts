@@ -4,6 +4,7 @@ import { classTypes } from '../../db/schema/catalog'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { ptSessionClients, ptSessions, workshopDays, workshops } from '../../db/schema/schedule'
 import { readRoster, type RosterEventKind } from '../schedule/roster'
+import { localDate } from '../tenants/term-dates'
 import { loadTenantById } from '../tenants/tenants'
 import { formatWhen } from './format'
 import type { SessionChangedPayload, SessionKind } from './session-update-copy'
@@ -49,8 +50,7 @@ export async function readInstructors(
 const timezoneOf = async (tenantId: string) => (await loadTenantById(tenantId))?.timezone ?? 'UTC'
 
 /** "2026-10-28": the day in the studio's zone. */
-const dayOf = (at: Date, timezone: string) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at)
+const dayOf = (at: Date, timezone: string) => localDate(timezone, at)
 
 async function nameOf(tenantId: string, staffId: string | null | undefined, fallback: string): Promise<string> {
   if (!staffId) return fallback

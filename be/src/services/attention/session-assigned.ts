@@ -5,7 +5,8 @@ import { staffUsers } from '../../db/schema/identity'
 import { classes, corporateSessions, ptSessions, workshopDays, workshops } from '../../db/schema/schedule'
 import type { RosterEventKind } from '../schedule/roster'
 import { loadTenantById } from '../tenants/tenants'
-import { formatClock, formatDay, formatWeekday, formatWhen, localDate } from './format'
+import { localDate } from '../tenants/term-dates'
+import { formatClock, formatDay, formatWeekday, formatWhen } from './format'
 import { recordUpdate, type SessionAssignedPayload } from './updates'
 
 /**
@@ -108,7 +109,7 @@ export async function recordSessionAssigned(
     actorName: actor?.name ?? 'An admin',
     what: what.what,
     when: at ? formatWhen(at, timezone) : null,
-    date: at ? localDate(at, timezone) : null,
+    date: at ? localDate(timezone, at) : null,
     series:
       opts.series && at
         ? { weekday: formatWeekday(at, timezone), time: formatClock(at, timezone), from: formatDay(at, timezone) }

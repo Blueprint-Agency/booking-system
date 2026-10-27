@@ -27,6 +27,7 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
   let tenantDb!: typeof import('../db')
   let ensureAuthUser!: typeof import('../services/auth/auth-users').ensureAuthUser
   let cancelBooking!: typeof import('../services/bookings/cancel').cancelBooking
+  let localDate!: typeof import('../services/tenants/term-dates').localDate
 
   type Staff = { id: string; email: string; name: string }
   type Studio = { id: string; slug: string; locationId: string; roomId: string; classTypeId: string; instructor: Staff; admin: Staff }
@@ -47,6 +48,11 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
   let restoreMail: () => void = () => {}
   const templateOf = (m: OutboundMessage) => m.tags.find(t => t.name === 'template')?.value
   const drainNags = () => sent.splice(0).filter(m => templateOf(m) === 'checkin_nag')
+  /** `at`'s calendar day on `studio`'s own clock, not UTC's. */
+  const studioDay = async (studio: Studio, at: Date) => {
+    const [tenant] = await harness.db.select({ timezone: schema.tenants.timezone }).from(schema.tenants).where(eq(schema.tenants.id, studio.id))
+    return localDate(tenant!.timezone, at)
+  }
 
   let people = 0
   async function staffAt(tenantId: string, role: 'admin' | 'instructor', status: 'active' | 'archived' = 'active'): Promise<Staff> {
@@ -230,6 +236,7 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
     tenantDb = await import('../db')
     ;({ ensureAuthUser } = await import('../services/auth/auth-users'))
     ;({ cancelBooking } = await import('../services/bookings/cancel'))
+    ;({ localDate } = await import('../services/tenants/term-dates'))
     restoreMail = (await import('../lib/mailer')).useTransport(recording)
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
@@ -271,8 +278,7 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
 
     const nags = drainNags()
     // The class started 26 h before NOW; its day is the studio's own, not UTC's.
-    const [tenant] = await harness.db.select({ timezone: schema.tenants.timezone }).from(schema.tenants).where(eq(schema.tenants.id, one.id))
-    const day = new Intl.DateTimeFormat('en-CA', { timeZone: tenant!.timezone }).format(new Date(NOW.getTime() - 26 * HOUR))
+    const day = await studioDay(one, new Date(NOW.getTime() - 26 * HOUR))
     const deskQuery = `\\?date=${day}&(amp;)?session=class:${nagged}`
     const expected = [one.instructor.email, ...(await activeAdmins(one)).filter(e => e !== one.instructor.email)].sort()
     assert.deepEqual(nags.map(m => m.to).sort(), expected, 'the Instructor and each active Admin of the studio, one email each')
@@ -451,8 +457,7 @@ describe('the check-in nag job', { skip: integrationTestsEnabled ? false : SKIP_
     await jobs.scheduledJobs.sendCheckInNags()
 
     const nags = drainNags()
-    const [tenant] = await harness.db.select({ timezone: schema.tenants.timezone }).from(schema.tenants).where(eq(schema.tenants.id, one.id))
-    const day = new Intl.DateTimeFormat('en-CA', { timeZone: tenant!.timezone }).format(new Date(NOW.getTime() - 26 * HOUR))
+    const day = await studioDay(one, new Date(NOW.getTime() - 26 * HOUR))
     const deskQuery = `\\?date=${day}&(amp;)?session=pt:${session}`
     const toInstructor = nags.find(m => m.to === one.instructor.email)!
     assert.match(toInstructor.html, new RegExp(`href="http://${one.slug}\\.portal\\.localhost:3001/instructor/check-in${deskQuery}"`))

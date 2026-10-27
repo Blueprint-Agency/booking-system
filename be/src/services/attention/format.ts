@@ -43,12 +43,6 @@ export function formatWeekday(at: Date, timezone: string): string {
   return String(zoned(at, timezone, { weekday: 'long' }).weekday)
 }
 
-/** "2031-06-10": the calendar day in `timezone`. */
-export function localDate(at: Date, timezone: string): string {
-  const p = zoned(at, timezone, { year: 'numeric', month: '2-digit', day: '2-digit' })
-  return `${p.year}-${p.month}-${p.day}`
-}
-
 /** "just now", "5 min ago", "3 h ago", "2 d ago". */
 export function formatAge(since: Date, now: Date): string {
   const minutes = Math.max(0, Math.floor((now.getTime() - since.getTime()) / 60_000))
