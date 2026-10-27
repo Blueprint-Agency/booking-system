@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { AtSign, Pencil, RotateCcw, ShieldOff } from "lucide-react";
 import { ResendInvitationButton } from "@/components/access/resend-invitation-button";
 import { SessionsPanel } from "@/components/access/sessions-panel";
@@ -14,6 +15,7 @@ import {
 import { PermissionSwitches } from "./permission-switches";
 import { PendingEmailNotice, StaffEmailChange } from "./staff-email-change";
 import {
+  Avatar,
   Badge,
   Button,
   Dialog,
@@ -69,6 +71,8 @@ export interface StaffEditableFields {
   email: string;
   /** A new address awaiting its confirmation link — shown as Unverified. */
   pending_email?: PendingEmail | null;
+  /** Shown, never changed here: only its owner sets a Profile picture. */
+  photo_url: string | null;
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
@@ -241,6 +245,22 @@ export function StaffEditDialog({
       {/* Kept mounted while the email changes, so the edits typed so far survive
           the detour — hidden, not unmounted. */}
       <div className={changingEmail ? "hidden" : undefined}>
+        <div className="mb-4 flex items-center gap-3">
+          <Avatar name={name || shownEmail} src={current.photo_url} size={56} className="text-sm" />
+          <p className="min-w-0 text-xs text-muted">
+            {isSelf ? (
+              <>
+                Change your picture on{" "}
+                <Link href="/admin/profile" className="text-accent underline-offset-2 hover:underline">
+                  My profile
+                </Link>
+                .
+              </>
+            ) : (
+              `Only ${current.first_name || "this staff member"} can change this picture.`
+            )}
+          </p>
+        </div>
         {editing ? (
           <StaffProfileForm
             staff={current}

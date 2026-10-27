@@ -43,6 +43,7 @@ interface ApiClient {
   name: string;
   email: string;
   phone: string;
+  photo_url: string | null;
   joined_at: string;
   /** Set = blocked. Only returned when the caller asked to include them. */
   deleted_at: string | null;
@@ -309,7 +310,7 @@ function CustomersList() {
                     href={`/admin/customers/${c.id}`}
                     className="flex min-w-0 flex-1 items-start gap-3 py-3.5 pl-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                   >
-                    <Avatar name={c.name} size={36} />
+                    <Avatar name={c.name} src={c.photo_url} size={36} />
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 items-center gap-2">
                         <span className="truncate font-medium text-ink">{c.name}</span>
@@ -371,7 +372,7 @@ function CustomersList() {
                           href={`/admin/customers/${c.id}`}
                           className="flex min-w-0 max-w-[22rem] items-center gap-3 rounded-md hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
-                          <Avatar name={c.name} size={32} />
+                          <Avatar name={c.name} src={c.photo_url} size={32} />
                           <div className="min-w-0">
                             <div className="truncate font-medium text-ink">{c.name}</div>
                             <div className="truncate text-xs text-muted" title={c.email}>

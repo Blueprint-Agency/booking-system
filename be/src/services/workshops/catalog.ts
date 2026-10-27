@@ -26,7 +26,7 @@ interface InstructorLite {
   id: string
   name: string
   bio: string | null
-  avatar_url: string | null
+  photo_url: string | null
 }
 
 interface LocationLite {
@@ -321,7 +321,7 @@ export async function getWorkshopDetailPayload(
       .select({
         id: instructors.staffUserId,
         bio: staffUsers.bio,
-        photoR2Key: instructors.photoR2Key,
+        photoR2Key: staffUsers.photoR2Key,
         name: staffUsers.name,
       })
       .from(instructors)
@@ -342,7 +342,7 @@ export async function getWorkshopDetailPayload(
         id: r.id,
         name: r.name || 'Instructor',
         bio: r.bio,
-        avatar_url: publicObjectUrl(r.photoR2Key),
+        photo_url: publicObjectUrl(r.photoR2Key),
       }))
   }
 

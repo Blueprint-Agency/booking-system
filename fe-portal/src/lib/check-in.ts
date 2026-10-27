@@ -22,6 +22,7 @@ export interface CheckInRosterRow {
   booking_id: string;
   client_id: string;
   name: string;
+  photo_url: string | null;
   code: string;
   state: "confirmed" | "no_show";
   check_in_state: CheckInState;

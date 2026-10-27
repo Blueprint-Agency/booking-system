@@ -7,11 +7,12 @@ import {
   type InstructorView,
 } from '../../../services/catalog/instructors'
 import { tenantId } from '../../../middleware/tenant'
+import { publicObjectUrl } from '../../../lib/r2'
 
 /**
  * Instructor profile — the caller's own row only (id is taken from the auth
- * context, never the body). View identity + edit bio/phone. Photo upload needs
- * R2 (deferred project-wide) — photo_r2_key is read-only here for now.
+ * context, never the body). View identity + edit bio/phone. The picture is set
+ * through `/portal/profile/photo`, the route every staff member shares.
  */
 
 const patchSchema = z.object({
@@ -28,7 +29,7 @@ function serialize(v: InstructorView, role: string, email: string) {
     status: v.status,
     bio: v.bio,
     phone: v.phone,
-    photo_r2_key: v.photoR2Key,
+    photo_url: publicObjectUrl(v.photoR2Key),
   }
 }
 

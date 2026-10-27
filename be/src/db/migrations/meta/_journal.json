@@ -904,6 +904,20 @@
       "when": 1792494244586,
       "tag": "0128_classpass_gmail_confirmation_link",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1793037298952,
+      "tag": "0129_profile_pictures",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1793037313796,
+      "tag": "0130_instructor_photos_to_staff",
+      "breakpoints": true
     }
   ]
 }

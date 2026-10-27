@@ -17,9 +17,8 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../../shared/errors'
-import { deleteObject, r2Bucket, putObject, signedObjectUrl } from '../../lib/r2'
+import { deleteUnreferencedObject, r2Bucket, putObject, signedObjectUrl } from '../../lib/r2'
 import { tenantKey } from '../../lib/object-key'
-import { OFF_REQUEST_RETRY } from '../../lib/outbound'
 import { sgFormat } from '../../lib/time'
 import * as rules from './rules'
 
@@ -880,17 +879,11 @@ export async function attachSupportingDocument(input: {
   return updated!
 }
 
-/**
- * Delete a Supporting Document no request points at: a refused upload, or the
- * file a later upload replaced. A failed delete is retried off the request, so
- * neither the refusal nor the reply waits on the bucket and the file is not left
- * behind without a word.
- */
-async function removeUnreferencedObject(tenantId: string, key: string, leaveRequestId: string): Promise<void> {
-  await deleteObject(tenantId, key).catch(() => {
-    void deleteObject(tenantId, key, { retry: OFF_REQUEST_RETRY }).catch(err =>
-      reportError(err, 'leave document: removing a file no request points at failed', { leaveRequestId }),
-    )
+/** Delete a Supporting Document no request points at: a refused upload, or the file a later upload replaced. */
+function removeUnreferencedObject(tenantId: string, key: string, leaveRequestId: string): Promise<void> {
+  return deleteUnreferencedObject(tenantId, key, {
+    message: 'leave document: removing a file no request points at failed',
+    context: { leaveRequestId },
   })
 }
 

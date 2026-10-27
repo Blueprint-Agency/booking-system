@@ -1,3 +1,5 @@
+"use client";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 function initials(name: string): string {
@@ -15,6 +17,7 @@ function hashHue(name: string): number {
   return h;
 }
 
+/** A person's Profile picture, or their initials when they have none or it fails to load. */
 export function Avatar({
   name,
   src,
@@ -22,24 +25,31 @@ export function Avatar({
   className,
 }: {
   name: string;
-  src?: string;
+  src?: string | null;
   size?: number;
   className?: string;
 }) {
-  const style = src
+  const [failed, setFailed] = useState<string | null>(null);
+  const picture = src && src !== failed ? src : null;
+  const style = picture
     ? undefined
     : { background: `hsl(${hashHue(name)}, 35%, 80%)`, color: "#0d1a3e" };
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center overflow-hidden rounded-full text-xs font-semibold",
+        "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-semibold",
         className
       )}
       style={{ width: size, height: size, ...style }}
     >
-      {src ? (
+      {picture ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={name} className="h-full w-full object-cover" />
+        <img
+          src={picture}
+          alt={name}
+          className="h-full w-full object-cover"
+          onError={() => setFailed(picture)}
+        />
       ) : (
         initials(name)
       )}

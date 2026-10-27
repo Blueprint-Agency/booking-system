@@ -96,7 +96,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 | View membership-cancellation inbox + mark resolved | ✗ | ✓ | ✗ |
 | View any client profile (membership, invoices, credits, history) | ✗ | ✓ | ✗ |
 | View own roster on a class (name + check-in state only) | ✗ | ✓ | ✓ own classes only |
-| Edit own profile (bio, photo) | n/a | ✓ | ✓ |
+| Edit own profile (bio, photo) — a picture is only ever its owner's; an admin sets their own on My profile and nobody else's | n/a | ✓ | ✓ |
 | Edit own availability + working-hours blocks | n/a | ✓ (any instructor) | ✓ own only |
 | Manage instructor accounts (create / archive / set rate metadata) | ✗ | ✓ | ✗ |
 | Manage studio admin accounts (peer-add) | ✓ | ✓ | ✗ |
@@ -312,7 +312,7 @@ Listed as **surface name → 1-line purpose → role visibility**. UX detail in 
 | **Roster** | Per-class roster: client name + check-in state. **No** membership / invoice / credit info. | Instructor (own classes) |
 | **Availability** | Editable working-hours blocks + per-day overrides; constrains private-session request slots. | Instructor (own) |
 | **Private-session inbox** | Own pending requests; approve (optional note) / decline (mandatory reason). | Instructor (own) |
-| **Profile** | Editable bio, photo, per-session rate (subject to admin override). | Instructor (own) |
+| **Profile** | Editable bio, photo, per-session rate (subject to admin override). The photo is the instructor's own: no admin sets it. Admins have a **My profile** page for their own photo. | Instructor (own); admin (own photo) |
 | **Teaching log** | History of own classes by state (scheduled / completed / cancelled); informs external pay. | Instructor (own) |
 
 Instructors do not see: any client profile beyond roster row, any other instructor, any aggregate report, any financial surface, any settings page, any notification editor.

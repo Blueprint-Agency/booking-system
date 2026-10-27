@@ -20,6 +20,11 @@ const ORIGIN = process.env.R2_ORIGIN
 // key, never by mutating one, so a long immutable TTL is safe.
 const CACHE_CONTROL = 'public, max-age=31536000, immutable'
 
+// A Profile picture also gets a new key every upload, but a removed or erased
+// one has to stop showing: a day, not a year.
+const AVATAR = /^t\/[^/]+\/avatars\//
+const AVATAR_CACHE_CONTROL = 'public, max-age=86400'
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, HEAD' } })
@@ -65,7 +70,7 @@ export default async function handler(req: Request): Promise<Response> {
     'last-modified',
     'accept-ranges',
   ])
-  headers.set('cache-control', CACHE_CONTROL)
+  headers.set('cache-control', AVATAR.test(key) ? AVATAR_CACHE_CONTROL : CACHE_CONTROL)
 
   return new Response(req.method === 'HEAD' ? null : upstream.body, {
     status: upstream.status,

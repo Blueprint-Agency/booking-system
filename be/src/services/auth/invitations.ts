@@ -105,7 +105,6 @@ export interface PendingStaffInput {
   invitedByStaffId: string | null
   bio?: string | null
   phone?: string | null
-  photoR2Key?: string | null
   /** Written onto the instructors row an Instructor invitation makes; omitted takes the default. */
   permissions?: InstructorPermission[]
 }
@@ -150,16 +149,14 @@ export async function writePendingStaff(
   // Invariant: an insert that succeeds returns its row; a refused one throws.
   if (!staff) throw new Error('staff_users_insert_failed')
 
-  // Instructor role requires a profile row so the catalog INNER JOIN in
-  // listInstructors/loadById matches. Profile fields are populated later
-  // when the instructor edits their bio/photo. The permissions the invitation
+  // Instructor role requires a profile row, which holds their Instructor
+  // Permissions. The permissions the invitation
   // stated go on it now, so a teach-only instructor is teach-only from their
   // first sign-in; unstated, the column's default gives all three.
   if (input.role === 'instructor') {
     await tx.insert(instructors).values({
       tenantId: input.tenantId,
       staffUserId: staff.id,
-      photoR2Key: input.photoR2Key ?? null,
       ...(input.permissions !== undefined ? { permissions: input.permissions } : {}),
     })
   }

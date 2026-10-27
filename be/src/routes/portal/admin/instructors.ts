@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/catalog/instructors'
 import { tenantId } from '../../../middleware/tenant'
+import { publicObjectUrl } from '../../../lib/r2'
 
 const statusEnum = z.enum(['pending', 'active', 'archived'])
 
@@ -13,7 +14,6 @@ const createSchema = z.object({
   name: z.string().min(1).max(120),
   bio: z.string().nullish(),
   phone: z.string().max(40).nullish(),
-  photo_r2_key: z.string().max(500).nullish(),
 })
 
 function serialize(v: svc.InstructorView) {
@@ -27,7 +27,7 @@ function serialize(v: svc.InstructorView) {
     accepted_at: v.acceptedAt,
     bio: v.bio,
     phone: v.phone,
-    photo_r2_key: v.photoR2Key,
+    photo_url: publicObjectUrl(v.photoR2Key),
   }
 }
 
@@ -44,7 +44,6 @@ const app = new Hono()
       name: body.name,
       bio: body.bio ?? null,
       phone: body.phone ?? null,
-      photoR2Key: body.photo_r2_key ?? null,
       invitedByStaffId: c.get('staffUserId'),
     })
     c.set('auditTarget' as any, { table: 'staff_users', id: view.id })

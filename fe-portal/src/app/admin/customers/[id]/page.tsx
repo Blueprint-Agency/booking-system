@@ -269,6 +269,7 @@ interface ApiProfile {
   name: string;
   email: string;
   phone: string;
+  photo_url: string | null;
   status: "active" | "suspended";
   joined_at: string;
   suspended_at: string | null;
@@ -570,7 +571,7 @@ export default function ClientProfilePage({
               side column, away from the name. */}
           <header className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
             <div className="flex flex-wrap items-start gap-4 p-5 sm:p-6">
-              <Avatar name={profile.name} size={56} className="text-sm" />
+              <Avatar name={profile.name} src={profile.photo_url} size={56} className="text-sm" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-xl font-semibold break-words text-ink sm:text-2xl">

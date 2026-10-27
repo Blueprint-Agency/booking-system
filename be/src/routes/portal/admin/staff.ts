@@ -28,6 +28,7 @@ import {
 } from '../../../services/auth/staff-email-change'
 import { sessionView } from '../session-view'
 import { explainInvalid } from '../../explain-invalid'
+import { publicObjectUrl } from '../../../lib/r2'
 
 const EMAIL_MESSAGE = 'Enter a full email address, like name@example.com.'
 const emailField = z.string({ message: EMAIL_MESSAGE }).email(EMAIL_MESSAGE).max(254, 'An email address can be at most 254 characters.')
@@ -147,6 +148,7 @@ function serializeStaff(row: StaffProfileRow, pendingEmail: PendingStaffEmail | 
     address: row.address,
     gender: row.gender,
     bio: row.bio,
+    photo_url: publicObjectUrl(row.photoR2Key),
     languages: row.languages,
     role: row.role,
     status: row.status,

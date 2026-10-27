@@ -3,8 +3,9 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarX, Check, UserRound, MapPin, Loader2, Lock, Ticket, X } from "lucide-react";
+import { CalendarX, Check, MapPin, Loader2, Lock, Ticket, X } from "lucide-react";
 import { cn, formatDate, formatSgd } from "@/lib/utils";
+import { Avatar } from "@/components/ui/avatar";
 import { Select } from "@/components/ui/select";
 import { Portal } from "@/components/ui/portal";
 import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
@@ -519,8 +520,12 @@ export function ClassRow({
             {cls.class_type.name}
           </h3>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-            <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
-              <UserRound className="h-3.5 w-3.5 shrink-0 text-ink/30" aria-hidden />
+            <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
+              <Avatar
+                name={cls.instructor.name}
+                photoUrl={cls.instructor.photo_url}
+                className="h-5 w-5 bg-ink/[0.08] text-[9px] text-ink/60"
+              />
               <span className="truncate">{cls.instructor.name}</span>
             </span>
             {showLocation && locationName && (

@@ -2,6 +2,7 @@ import { and, asc, eq, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { merch } from '../../db/schema/catalog'
 import { publicObjectUrl, putObject, r2Bucket } from '../../lib/r2'
+import { IMAGE_EXTENSIONS } from '../../lib/image-types'
 import { tenantKey } from '../../lib/object-key'
 import { AppError, BadRequestError, NotFoundError } from '../../shared/errors'
 
@@ -9,11 +10,6 @@ export type MerchRow = typeof merch.$inferSelect
 
 /** 5MB, and only real image types — the client app renders these inline. */
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024
-const IMAGE_TYPES: Readonly<Record<string, string>> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-}
 
 export function serializeMerch(row: MerchRow) {
   return {
@@ -96,7 +92,7 @@ export async function setMerchImage(input: {
   bytes: Uint8Array
 }): Promise<MerchRow> {
   const row = await getMerch(input.tenantId, input.id)
-  const extension = IMAGE_TYPES[input.contentType]
+  const extension = IMAGE_EXTENSIONS[input.contentType]
   if (!extension) {
     throw new BadRequestError('image_type_not_allowed', {
       message: 'A merch photo must be a JPG, PNG or WebP.',

@@ -14,6 +14,7 @@ import {
 } from './validity'
 import { readCrossLocationRateSgd } from './purchase'
 import { now as clockNow } from '../../lib/clock'
+import { publicObjectUrl } from '../../lib/r2'
 
 export interface ClientEntitlements {
   trialUsed: boolean
@@ -220,7 +221,7 @@ export interface ClientPackageWithSource {
    * on an open package and on every other kind. Named here rather than left as
    * a bare id, because every surface that shows a binding shows the person.
    */
-  boundInstructor: { id: string; name: string } | null
+  boundInstructor: { id: string; name: string; photo_url: string | null } | null
   /** The Promo Code the member typed at purchase, as text; null if none (§11). */
   promoCode: string | null
   /**
@@ -298,6 +299,7 @@ export async function listClientPackages(
       locationName: locations.name,
       boundInstructorId: clientPackages.boundInstructorId,
       boundInstructorName: staffUsers.name,
+      boundInstructorPhotoKey: staffUsers.photoR2Key,
       classPackageName: classPackages.name,
       ptPackageName: ptPackages.name,
       classPackageCredits: classPackages.credits,
@@ -339,7 +341,11 @@ export async function listClientPackages(
     crossLocationPaidSgd: r.crossLocationPaidSgd,
     sessionType: (r.ptSessionType ?? null) as '1on1' | '2on1' | null,
     boundInstructor: r.boundInstructorId
-      ? { id: r.boundInstructorId, name: r.boundInstructorName || 'Instructor' }
+      ? {
+          id: r.boundInstructorId,
+          name: r.boundInstructorName || 'Instructor',
+          photo_url: publicObjectUrl(r.boundInstructorPhotoKey),
+        }
       : null,
     promoCode: r.promoCode ?? null,
     complimentary: r.complimentary,

@@ -29,6 +29,18 @@ const portalRoutes = new Hono()
 
 `auditMiddleware` writes one `audit_log` row per successful mutating request (`POST | PUT | PATCH | DELETE`). Idempotent reads do not audit.
 
+### Profile picture — `routes/portal/profile.ts` (#471)
+
+Any staff member, admin or instructor, sets their own picture here. No role gate: the row is always the caller's own (`staffUserId`), never one named in the request. Super portal operators have no picture.
+
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/auth/me` | The caller's own staff row, which the top bar reads, now with `photo_url` (null shows initials). |
+| POST | `/profile/photo` | Multipart, field `file`: a JPG, PNG or WebP of at most 5 MB, which the browser has already cropped square and shrunk. `{ photo_url }`. Another type is `400 image_type_not_allowed`, an empty file `400 image_empty`, over 5 MB `400 image_too_large`, and a body past the limit `413 image_too_large`, each with a `message` sentence; a form with no file is `400 image_required`; no bucket or no public host for it (`R2_BUCKET_NAME` or `R2_PUBLIC_URL` unset) is `422 image_storage_unavailable`, before anything is stored. Stored at `t/<tenant id>/avatars/<random uuid>.<ext>`, a new key every upload; the replaced object is deleted after commit (`backend-architecture.md` §6c). |
+| DELETE | `/profile/photo` | Clear the picture and delete its object. `{ photo_url: null }`. |
+
+An admin acting as a colleague (`x-impersonate-staff-id`) is refused `403 forbidden` on both, with a `message`: there is no route by which anyone sets another person's picture. `photo_url` is returned wherever the portal shows a person: the customers list and detail, the check-in desk roster (and a scan's `member`), the PT and corporate request lists (`client.photo_url`), a class roster (`attendees[].client.photo_url`) and the staff list (`staff[].photo_url`).
+
 ### Workspace scoping & role gates
 
 There are exactly two staff roles, **admin** and **instructor**, ranked admin > instructor. Every router under `/portal/admin/*` is gated `requireRole('admin')`: there is no higher staff role and no read-only admin mode, so admins write to Clients, Workshops and Rooms like every other surface. A 403 from a role gate carries `required: ['admin']`. (The **platform administrator** who signs in to the super portal and calls `/api/v1/platform/*` is not a staff role and never reaches these routes.)
@@ -98,8 +110,8 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 ### `instructors.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/instructors` | List with `?status=pending|active|archived`, joins `staff_users` |
-| POST | `/instructors` | Create `staff_users` row (role=`instructor`, status=`pending`) + `instructors` row + `instructor_class_types` rows + auto-fires staff invitation (see §3a). A bio past 2000 characters is `400 invalid_request` with a `message`, and nothing is written: the one bio limit, as on `PATCH /staff/:id` and the Instructor's own `PATCH /profile` (`services/auth/staff-bio.ts`). |
+| GET | `/instructors` | List with `?status=pending|active|archived`, from `staff_users`. Each row carries `photo_url`, the instructor's own Profile picture or null. |
+| POST | `/instructors` | Create `staff_users` row (role=`instructor`, status=`pending`) + `instructors` row + `instructor_class_types` rows + auto-fires staff invitation (see §3a). It takes no photo: a picture is only ever set by its owner (#471). A bio past 2000 characters is `400 invalid_request` with a `message`, and nothing is written: the one bio limit, as on `PATCH /staff/:id` and the Instructor's own `PATCH /profile` (`services/auth/staff-bio.ts`). |
 | POST | `/instructors/:id/resend-invite` | Re-issue invitation (§3a) — only if `status='pending'` |
 
 ### `policy.ts`
@@ -736,8 +748,8 @@ Per `admin-restructure.md` §8, the Availability system is gone. Conflict checks
 ### `profile.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/profile` | Own `instructors` row + name from `staff_users` |
-| PATCH | `/profile` | Update bio, phone override, photo (R2 presigned upload). Eligible class types not editable — that's an admin operation. A bio past 2000 characters or a phone past 40 is `400 invalid_request` with a `message` naming the field and its limit (#256). The bio limit is the one every bio write holds (`PATCH /staff/:id`, `POST /instructors`); a bio already stored past it saves when it is sent back unchanged, so the rest of the profile still saves. |
+| GET | `/profile` | Own profile from `staff_users`: `{ id, name, email, role, status, bio, phone, photo_url }`. `photo_url` is the public URL of their Profile picture, or null; no object key is returned. |
+| PATCH | `/profile` | Update bio, phone override. The picture is not set here: it is `POST /portal/profile/photo` (§1, Profile picture), the route every staff member shares. Eligible class types not editable — that's an admin operation. A bio past 2000 characters or a phone past 40 is `400 invalid_request` with a `message` naming the field and its limit (#256). The bio limit is the one every bio write holds (`PATCH /staff/:id`, `POST /instructors`); a bio already stored past it saves when it is sent back unchanged, so the rest of the profile still saves. |
 
 ---
 

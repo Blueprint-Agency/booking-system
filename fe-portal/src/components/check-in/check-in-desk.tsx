@@ -992,7 +992,7 @@ function RosterRow({
       }`}
     >
       <MemberName name={row.name} href={href} className="flex min-w-0 flex-1 items-center gap-3">
-        <Avatar name={row.name} size={36} className="hidden min-[400px]:flex" />
+        <Avatar name={row.name} src={row.photo_url} size={36} className="hidden min-[400px]:flex" />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-sm font-medium text-ink group-hover:text-accent group-hover:underline">

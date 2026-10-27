@@ -14,7 +14,7 @@ interface ApiCorporateRequest {
   message: string | null;
   created_at: string;
   resolved_at: string | null;
-  client: { id: string; name: string; email: string };
+  client: { id: string; name: string; email: string; photo_url: string | null };
   package: { id: string; name: string };
   session: null;
 }

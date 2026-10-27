@@ -29,7 +29,7 @@ interface LocationLite {
 interface ClassCardPayload {
   id: string
   class_type: { id: string; name: string; difficulty: ClassLevel }
-  instructor: { id: string; name: string }
+  instructor: { id: string; name: string; photo_url: string | null }
   main_instructor_id: string
   supporting_instructor_ids: string[]
   /** Back-compat — [main, ...supporting]. */
@@ -64,7 +64,7 @@ interface ClassCardPayload {
 interface ClassDetailPayload extends ClassCardPayload {
   class_type: { id: string; name: string; difficulty: ClassLevel; description: string | null }
   location: { id: string; name: string; address: string | null; gmaps_url: string | null } | null
-  supporting_instructors: { id: string; name: string }[]
+  supporting_instructors: { id: string; name: string; photo_url: string | null }[]
   /** Which packages may pay for the class, each named (be/CONTEXT.md § Package rule). */
   package_rule: ReturnType<typeof namedRuleJson>
 }
@@ -155,6 +155,7 @@ export async function listClassCards(
       classDifficulty: classTypes.difficulty,
       instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
+      instructorPhotoKey: staffUsers.photoR2Key,
       locationId: classes.locationId,
       locationName: locations.name,
       locationAddress: locations.address,
@@ -206,7 +207,11 @@ export async function listClassCards(
     return {
       id: r.id,
       class_type: { id: r.classTypeId, name: r.className, difficulty: r.classDifficulty },
-      instructor: { id: r.instructorId, name: r.instructorName || 'Instructor' },
+      instructor: {
+        id: r.instructorId,
+        name: r.instructorName || 'Instructor',
+        photo_url: publicObjectUrl(r.instructorPhotoKey),
+      },
       main_instructor_id: r.instructorId,
       supporting_instructor_ids: supporting,
       instructor_ids: [r.instructorId, ...supporting],
@@ -251,6 +256,7 @@ export async function getClassDetail(
       classDescription: classTypes.description,
       instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
+      instructorPhotoKey: staffUsers.photoR2Key,
       locationId: classes.locationId,
       locationName: locations.name,
       locationAddress: locations.address,
@@ -290,6 +296,7 @@ export async function getClassDetail(
     .select({
       instructorId: classSupportingInstructors.instructorId,
       name: staffUsers.name,
+      photoKey: staffUsers.photoR2Key,
     })
     .from(classSupportingInstructors)
     .leftJoin(staffUsers, eq(staffUsers.id, classSupportingInstructors.instructorId))
@@ -300,14 +307,18 @@ export async function getClassDetail(
       ),
     )
   const supporting = supportingRows
-    .map(s => ({ id: s.instructorId, name: s.name ?? 'Instructor' }))
+    .map(s => ({ id: s.instructorId, name: s.name ?? 'Instructor', photo_url: publicObjectUrl(s.photoKey) }))
     .sort((a, b) => a.id.localeCompare(b.id))
   const supportingIds = supporting.map(s => s.id)
 
   return {
     id: r.id,
     class_type: { id: r.classTypeId, name: r.className, difficulty: r.classDifficulty, description: r.classDescription },
-    instructor: { id: r.instructorId, name: r.instructorName || 'Instructor' },
+    instructor: {
+      id: r.instructorId,
+      name: r.instructorName || 'Instructor',
+      photo_url: publicObjectUrl(r.instructorPhotoKey),
+    },
     main_instructor_id: r.instructorId,
     supporting_instructor_ids: supportingIds,
     supporting_instructors: supporting,
@@ -413,7 +424,7 @@ interface InstructorLite {
   id: string
   name: string
   bio: string | null
-  avatar_url: string | null
+  photo_url: string | null
 }
 
 /**
@@ -429,7 +440,7 @@ export async function listActiveInstructors(
     .select({
       staffUserId: instructors.staffUserId,
       bio: staffUsers.bio,
-      photoR2Key: instructors.photoR2Key,
+      photoR2Key: staffUsers.photoR2Key,
       name: staffUsers.name,
       status: staffUsers.status,
       archivedAt: staffUsers.archivedAt,
@@ -450,7 +461,7 @@ export async function listActiveInstructors(
     id: r.staffUserId,
     name: r.name || 'Instructor',
     bio: r.bio,
-    avatar_url: publicObjectUrl(r.photoR2Key),
+    photo_url: publicObjectUrl(r.photoR2Key),
   }))
 }
 

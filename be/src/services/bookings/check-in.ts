@@ -18,6 +18,7 @@
 import { and, asc, eq, gte, inArray, lt, lte, ne, or } from 'drizzle-orm'
 import { db } from '../../db'
 import { now as clockNow } from '../../lib/clock'
+import { publicObjectUrl } from '../../lib/r2'
 import type { BookingSource } from '../../db/enums'
 import { bookings, checkIns, waitlistEntries } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
@@ -282,7 +283,7 @@ export interface ScanCheckInResult {
   outcome: 'checked_in' | 'already_checked_in'
   bookingId: string
   method: CheckInMethod
-  member: { id: string; name: string }
+  member: { id: string; name: string; photo_url: string | null }
   session: {
     kind: 'class' | 'pt'
     id: string
@@ -320,11 +321,11 @@ export async function scanCheckIn(tenantId: string, input: ScanCheckInInput): Pr
     refuseIneligible(bk, ses, source, staffId)
 
     const [client] = await tx
-      .select({ id: clients.id, name: clients.name })
+      .select({ id: clients.id, name: clients.name, photoKey: clients.photoR2Key })
       .from(clients)
       .where(and(eq(clients.tenantId, tenantId), eq(clients.id, bk.clientId)))
       .limit(1)
-    const member = { id: bk.clientId, name: client?.name ?? 'Member' }
+    const member = { id: bk.clientId, name: client?.name ?? 'Member', photo_url: publicObjectUrl(client?.photoKey) }
     const session = { kind: ses.kind, id: ses.id, name: ses.name, startsAt: ses.startsAt, location: ses.location }
 
     if (bk.checkInState === 'attended') {
@@ -357,6 +358,7 @@ export interface CheckInRosterEntry {
   bookingId: string
   clientId: string
   name: string
+  photoUrl: string | null
   code: string
   state: 'confirmed' | 'no_show'
   checkInState: 'pending' | 'attended' | 'no_show' | 'n_a'
@@ -494,6 +496,7 @@ export async function listCheckInDay(
             ptSessionId: bookings.ptSessionId,
             clientId: bookings.clientId,
             name: clients.name,
+            photoKey: clients.photoR2Key,
             code: bookings.code,
             state: bookings.state,
             checkInState: bookings.checkInState,
@@ -529,6 +532,7 @@ export async function listCheckInDay(
         bookingId: r.bookingId,
         clientId: r.clientId,
         name: r.name,
+        photoUrl: publicObjectUrl(r.photoKey),
         code: r.code,
         state: r.state as 'confirmed' | 'no_show',
         checkInState: r.checkInState,

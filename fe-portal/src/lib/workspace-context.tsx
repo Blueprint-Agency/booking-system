@@ -34,6 +34,7 @@ interface AuthMePayload {
   name: string;
   role: StaffRole;
   status: "pending" | "active" | "archived";
+  photo_url: string | null;
   /** The Instructor Permissions held: all three for an Admin (be/docs/adr/0012). */
   permissions?: string[];
   locations: Array<{ id: string; name: string; address: string | null }>;
@@ -84,6 +85,8 @@ interface WorkspaceContextValue {
   allStaff: StaffUser[]; // unused in prod; kept for DevRoleSwitcher compat
   api: Api | null;
   refresh: () => Promise<void>;
+  /** After the signed-in staff member uploads or removes their own picture. */
+  setOwnPhoto: (photoUrl: string | null) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -175,6 +178,7 @@ export function WorkspaceProvider({
         email: me.email,
         role: me.role,
         status: me.status,
+        photoUrl: me.photo_url,
       });
       setPermissions(knownPermissions(me.permissions));
       setLocations(accessible);
@@ -367,6 +371,10 @@ export function WorkspaceProvider({
   const switchStaff = useCallback(() => {}, []);
   const updateStaffGrants = useCallback(() => {}, []);
 
+  const setOwnPhoto = useCallback((photoUrl: string | null) => {
+    setCurrentStaff(staff => (staff ? { ...staff, photoUrl } : staff));
+  }, []);
+
   const activeLocation = useMemo(
     () => accessibleLocations.find(l => l.id === activeLocationId) ?? null,
     [accessibleLocations, activeLocationId],
@@ -398,6 +406,7 @@ export function WorkspaceProvider({
     allStaff: currentStaff ? [currentStaff] : [],
     api,
     refresh: loadMe,
+    setOwnPhoto,
   };
 
   // Replaces the shell rather than rendering inside it: every page under this

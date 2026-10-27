@@ -6,7 +6,7 @@ import * as svc from '../../../services/catalog/merch'
 import { BadRequestError } from '../../../shared/errors'
 import { ERROR_CODES } from '../../../shared/error-codes'
 import { tenantId } from '../../../middleware/tenant'
-import { uploadedFile } from '../uploaded-file'
+import { uploadedFile } from '../../uploaded-file'
 import { explainInvalid } from '../../explain-invalid'
 
 /**

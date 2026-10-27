@@ -75,7 +75,7 @@ export type ClassDifficulty = "general" | "beginner" | "intermediate" | "advance
 
 export interface ScheduleClassAttendee {
   booking_id: string;
-  client: NamedRef;
+  client: NamedRef & { photo_url: string | null };
   package_kind: "credit_bundle" | "unlimited" | "trial" | "pt" | null;
   credits_used: number;
   check_in_state: "pending" | "attended" | "no_show" | "n_a";

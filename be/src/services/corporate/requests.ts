@@ -12,6 +12,7 @@
  */
 import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../../db'
+import { publicObjectUrl } from '../../lib/r2'
 import { corporateRequests, corporateSessions } from '../../db/schema/schedule'
 import { corporatePackages } from '../../db/schema/packages'
 import { clients, staffUsers } from '../../db/schema/identity'
@@ -49,7 +50,7 @@ export interface HydratedCorporateRequest {
   cancelledAt: Date | null
   /** A cancelled request's lines, as the member reads them; null unless cancelled. */
   cancellation: CancellationLines | null
-  client: { id: string; name: string; email: string }
+  client: { id: string; name: string; email: string; photo_url: string | null }
   package: { id: string; name: string }
   /** Populated once the request has been scheduled (else null). */
   session: CorporateRequestSessionDetail | null
@@ -150,6 +151,7 @@ function hydratedSelect() {
       clientId: clients.id,
       clientName: clients.name,
       clientEmail: clients.email,
+      clientPhotoKey: clients.photoR2Key,
       packageId: corporatePackages.id,
       packageName: corporatePackages.name,
       sessionId: corporateSessions.id,
@@ -195,7 +197,7 @@ function mapRow(r: HydratedRow): HydratedCorporateRequest {
             by: { actor: 'studio' },
           }).member
         : null,
-    client: { id: r.clientId, name: r.clientName, email: r.clientEmail },
+    client: { id: r.clientId, name: r.clientName, email: r.clientEmail, photo_url: publicObjectUrl(r.clientPhotoKey) },
     package: { id: r.packageId, name: r.packageName },
     session: r.sessionId
       ? {

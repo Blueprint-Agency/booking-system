@@ -7,6 +7,7 @@ import { ArrowDown, CalendarDays, MapPin, CalendarX } from "lucide-react";
 import { BookingSurface, SurfaceCentre } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { DateStub } from "@/components/account/date-stub";
+import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { BTN_BOOK, BTN_PRIMARY, CARD } from "@/components/ui/styles";
@@ -238,24 +239,11 @@ export default function WorkshopDetailPage() {
               <div className={cn(CARD, "divide-y divide-ink/5")}>
                 {[mainInstructor, ...supportingInstructors].map((instructor, i) => (
                   <div key={instructor.id} className="flex items-start gap-3 sm:gap-4 p-4">
-                    {instructor.avatar_url ? (
-                      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full">
-                        <Image
-                          src={instructor.avatar_url}
-                          alt=""
-                          fill
-                          className="object-cover"
-                          sizes="48px"
-                        />
-                      </div>
-                    ) : (
-                      <div
-                        aria-hidden
-                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent/8 font-bold text-accent-deep"
-                      >
-                        {instructor.name.charAt(0)}
-                      </div>
-                    )}
+                    <Avatar
+                      name={instructor.name}
+                      photoUrl={instructor.photo_url}
+                      className="h-12 w-12 bg-accent/8 text-accent-deep"
+                    />
                     <div className="min-w-0">
                       <p className="font-semibold text-ink">
                         {instructor.name}

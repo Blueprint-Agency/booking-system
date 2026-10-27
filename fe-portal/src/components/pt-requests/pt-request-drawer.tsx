@@ -51,7 +51,7 @@ export function PtRequestDrawer({
           <X className="h-4 w-4" />
         </button>
         <div className="mb-4 flex items-center gap-3 pr-10 sm:pr-8">
-          <Avatar name={request.client.name} size={40} />
+          <Avatar name={request.client.name} src={request.client.photo_url} size={40} />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="break-words text-base font-semibold text-ink">{request.client.name}</h2>

@@ -39,6 +39,13 @@ Locations are workspaces. Surfaces are partitioned as follows:
   - Anyone else with no location to open → "No workspace access — contact an admin" empty state.
   - Otherwise pass-through.
 
+### Account menu and My profile (topbar)
+
+- The topbar's right-hand button shows the signed-in staff member's own **Profile picture**, or their initials when they have none (`photo_url` on `/portal/auth/me`). It opens the account menu: **My profile** and **Sign out**.
+- **My profile** goes to `/admin/profile` for an admin and `/instructor/profile` for an instructor. An admin who also teaches is still an admin, with one staff row and so one picture: they use `/admin/profile`.
+- `/admin/profile` (#468) shows the admin's name, email and role, read-only (an admin edits their own details from the Staff page), and the **Picture** field. The instructor's profile page carries the same Picture field above their bio.
+- **Picture field.** Upload (or Change) picks a photo; the browser opens it in a framing dialog, where the staff member drags it and zooms (up to 4×) until the circle shows what they want. **Use picture** draws the framed square onto a 512×512 JPEG in the browser and uploads it to `POST /portal/profile/photo`; the server only checks type and size. **Remove** calls `DELETE /portal/profile/photo` and the initials come back. A refusal shows the API's own sentence. The topbar picture changes at once. The field only ever acts on the caller's own picture: no portal control changes anyone else's.
+
 ### Sidebar structure
 
 **Visual layout** (top to bottom):
@@ -47,7 +54,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 - **Config**: Class Types, Promo Codes. **A Promo Code sits in Config, not Packages**: it crosses products, so it belongs with the building blocks rather than inside any one catalogue (contrast a Promotion, which belongs to exactly one product and is edited there).
 - **Packages**: Classes, Workshops, Private Sessions, Corporate, Merch (global, shared across locations). Merch is shop-floor stock (mats, props, apparel) rather than catalogue governance, but like the rest of Packages it is managed by admins.
 - **People**: Customers, Corporate Requests, Staff, Leave, My leave (members + staff accounts). **Leave** is the queue of every staff member's requests, each labelled with the applicant's role, where any admin decides any request, their own included. **My leave** (`/admin/my-leave`) is the admin's own balances, request form, documents and history, the same page instructors have at `/instructor/leave` (#315). **Corporate Requests sits here, not in the workspace zone** — a request records no `location_id` until it is scheduled, so there is nothing for the switcher to filter it by; it is a person asking, which is what People is.
-- **Settings**: Global Policy, Business details, ClassPass (location-independent policy + config). **ClassPass** (#407, `/admin/classpass`, admins only) is where the studio sets up importing its ClassPass bookings from the emails ClassPass sends it — see §21. **Business details** (#391, #398, `/admin/business-details`, admins only) sets what the studio's business documents say about it: first its **Business name** (required), the name it trades under, then the registration number, address and footer note its Receipts print, and the Receipt number prefix (default `R`), with a live preview of the number the next Receipt will take under the prefix being typed. A save applies to Receipts issued afterwards; earlier ones keep what they were issued with. The super portal's New studio form takes the same fields, optional: its "Domain name" field is `tenants.name`, the platform's own label, and a blank Business name is that Domain name. **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
+- **Settings**: Global Policy, Business details, ClassPass (location-independent policy + config). **ClassPass** (#407, `/admin/classpass`, admins only) is where the studio sets up importing its ClassPass bookings from the emails ClassPass sends it — see §21. **Business details** (#391, #398, `/admin/business-details`, admins only) sets what the studio's business documents say about it: first its **Business name** (required), the name it trades under, then the registration number, address and footer note its Receipts print, and the Receipt number prefix (default `R`), with a live preview of the number the next Receipt will take under the prefix being typed. A save applies to Receipts issued afterwards; earlier ones keep what they were issued with. The super portal's New studio form takes the same fields, optional: its "Domain name" field is `tenants.name`, the platform's own label, and a blank Business name is that Domain name. **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio and eligible class types, and no photo: the instructor sets their own picture). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
 - **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
 
 `NavItem.workspaceScoped` marks the workspace-zone items; it is distinct from `NavItem.scope`, which only governs role visibility (admin vs instructor). The build-order below is the recommended *setup* sequence, not the visual order.
@@ -156,13 +163,13 @@ Locations are the workspace boundary — every scoped surface (Schedule, Rooms, 
 
 **Fields per instructor:**
 - Name
-- Profile photo
+- Profile picture (shown, never edited here)
 - Bio
 - Phone number
 - Email
 - Eligible class types (multi-select from the shared Class Types catalogue)
 
-**All fields are editable.**
+**All fields but the picture are editable.** A Profile picture is set only by its owner: the instructor on their own profile page, an admin on their own **My profile** page (#468). No admin can upload, replace or remove anyone else's, and **Add instructor** takes no photo. The staff dialog shows the person's picture read-only, with "Only {first name} can change this picture." (on the admin's own row, a link to My profile instead). Pictures also show on the staff list, and members' pictures on the customers list and profile, the check-in desk, the PT and corporate request drawers and class rosters, each with initials when there is none.
 No location assignment in v1. No pay rate in app (handled externally).
 
 **Page behaviour:**

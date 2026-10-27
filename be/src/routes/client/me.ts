@@ -17,6 +17,9 @@ import {
 } from '../../services/billing/payment-customers'
 import { tenantId } from '../../middleware/tenant'
 import { creditHistory, serializeCreditHistory } from '../../services/packages/credit-history'
+import { publicObjectUrl } from '../../lib/r2'
+import { ForbiddenError } from '../../shared/errors'
+import { profilePictureRoutes } from '../profile-picture'
 
 /**
  * A payment method id as the provider writes it (`pm_…`). Not a uuid, so it is
@@ -43,6 +46,7 @@ function serializeProfile(row: typeof clients.$inferSelect) {
     email: row.email,
     phone: row.phone,
     gender: row.gender,
+    photo_url: publicObjectUrl(row.photoR2Key),
     joined_at: row.joinedAt,
     // General settings. A null field is one the member has not chosen: the
     // app's default stands.
@@ -113,6 +117,16 @@ const app = new Hono()
     const updated = await editOwnProfile(tenantId(c), c.get('clientId'), body)
     return c.json(serializeProfile(updated))
   })
+  // An admin acting as the member is refused: a picture is its owner's choice.
+  .route(
+    '/',
+    profilePictureRoutes(c => {
+      if (c.get('impersonatedBy')) {
+        throw new ForbiddenError('forbidden', { message: 'Only the member can change their own picture.' })
+      }
+      return { tenantId: tenantId(c), kind: 'member', id: c.get('clientId') }
+    }),
+  )
   .patch('/display-prefs', zValidator('json', displayPrefsSchema), async c => {
     const { theme, font_size } = c.req.valid('json')
     const updated = await setDisplayPrefs(tenantId(c), c.get('clientId'), { theme, fontSize: font_size })
