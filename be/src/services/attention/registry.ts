@@ -15,7 +15,7 @@ import { refundIncomplete, refundUnconfirmed, workshopCancelledUnrefunded } from
 import { staffEmailChangeExpired, staffInvitationExpired, staffWithoutEmail } from './staff-logins'
 import { paymentsNotConfigured, studioTermEnding } from './studio-account'
 import { seriesEnding, seriesEndedClassKept } from './series-follow-ups'
-import type { AttentionProvider } from './types'
+import type { AttentionKind, AttentionProvider } from './types'
 import { waitlistSeatFree } from './waitlist-seat-free'
 
 /**
@@ -48,3 +48,10 @@ export const providers: readonly AttentionProvider[] = [
   studioTermEnding,
   paymentsNotConfigured,
 ]
+
+/**
+ * Every kind in the registry, as the non-empty tuple `z.enum` takes: the route
+ * validates a dismissal's `kind` against it, so a kind added above is known to
+ * the API without a second list.
+ */
+export const attentionKinds = providers.map(p => p.kind) as [AttentionKind, ...AttentionKind[]]
