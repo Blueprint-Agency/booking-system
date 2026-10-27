@@ -302,6 +302,39 @@ describe('Staff attention: session Updates', { skip: integrationTestsEnabled ? f
     assert.equal(await unread(admin), 0)
   })
 
+  test('ATN-195 an admin who also teaches is linked to the admin portal for every session Update, never to the instructor one', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    const dual = await adminAt(studio, 'dual')
+    await harness.db.insert(schema.instructors).values({ tenantId: studio.id, staffUserId: dual.id })
+    const ada = await instructorAt(studio, admin, 'ada')
+    const mia = await memberOf(studio, 'Mia')
+
+    // Moved: the class page.
+    const moved = await classOf(studio, admin, dual)
+    const newStart = new Date(moved.startsAt.getTime() + DAY)
+    await json(
+      await patchClass(admin, moved.id, { starts_at: newStart.toISOString(), ends_at: new Date(newStart.getTime() + HOUR).toISOString() }),
+      200,
+    )
+    // Cancelled: the class page.
+    const cancelled = await classOf(studio, admin, dual)
+    await json(await send(`/portal/admin/schedule/classes/${cancelled.id}/cancel`, admin.headers, 'POST', {}), 200)
+    // Handed to someone else: the schedule on that day.
+    const handed = await classOf(studio, admin, dual)
+    await json(await patchClass(admin, handed.id, { main_instructor_id: ada.id }), 200)
+    // A member cancelling their private session: the session page.
+    const pt = await ptOf(studio, admin, dual, mia)
+    await json(await send(`/me/pt-sessions/${pt.requestId}/cancel`, mia.headers, 'POST', {}), 200)
+
+    const hrefs = new Map((await updatesOf(dual)).map(u => [u.kind + (u.title.includes(' gave ') ? ':handed' : ''), u.href as string]))
+    assert.equal(hrefs.get('session_cancelled_by_admin'), `/admin/schedule/class/${cancelled.id}`)
+    assert.equal(hrefs.get('session_changed:handed'), `/admin/schedule?date=${dayOf(handed.startsAt)}`)
+    assert.equal(hrefs.get('session_changed'), `/admin/schedule/class/${moved.id}`)
+    assert.equal(hrefs.get('pt_session_cancelled_by_member'), `/admin/schedule/pt/${pt.id}`)
+    for (const href of hrefs.values()) assert.ok(href.startsWith('/admin/'), href)
+  })
+
   test('ATN-181 changing only a class’s room tells the instructors it changed, and an edit that changes nothing they teach tells nobody', async () => {
     const studio = await freshStudio()
     const admin = await adminAt(studio)
