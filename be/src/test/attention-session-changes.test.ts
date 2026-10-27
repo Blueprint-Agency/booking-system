@@ -335,6 +335,60 @@ describe('Staff attention: session Updates', { skip: integrationTestsEnabled ? f
     for (const href of hrefs.values()) assert.ok(href.startsWith('/admin/'), href)
   })
 
+  test('ATN-197 every session Update that names a member is stored with that member, so permanently deleting them removes it; a session with two members names neither', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    const ada = await instructorAt(studio, admin, 'ada')
+    const ben = await instructorAt(studio, admin, 'ben')
+    const mia = await memberOf(studio, 'Mia')
+    const noor = await memberOf(studio, 'Noor')
+    const omar = await memberOf(studio, 'Omar')
+
+    // Mia's one-on-one is moved and then cancelled by an admin; her other one she cancels herself.
+    const moved = await ptOf(studio, admin, ada, mia)
+    const newStart = new Date(moved.startsAt.getTime() + DAY)
+    await json(
+      await send(`/portal/admin/pt-sessions/sessions/${moved.id}`, admin.headers, 'PATCH', {
+        starts_at: newStart.toISOString(),
+        ends_at: new Date(newStart.getTime() + HOUR).toISOString(),
+      }),
+      200,
+    )
+    await json(await send(`/portal/admin/pt-sessions/${moved.requestId}/cancel`, admin.headers, 'POST', {}), 200)
+    const hers = await ptOf(studio, admin, ben, mia, 7)
+    await json(await send(`/me/pt-sessions/${hers.requestId}/cancel`, mia.headers, 'POST', {}), 200)
+
+    // A 2-on-1 of Noor and Omar is moved: the Update names neither.
+    const pair = await ptOf(studio, admin, ada, noor, 9)
+    await harness.db.insert(schema.ptSessionClients).values({ tenantId: studio.id, ptSessionId: pair.id, clientId: omar.clientId })
+    const pairStart = new Date(pair.startsAt.getTime() + DAY)
+    await json(
+      await send(`/portal/admin/pt-sessions/sessions/${pair.id}`, admin.headers, 'PATCH', {
+        starts_at: pairStart.toISOString(),
+        ends_at: new Date(pairStart.getTime() + HOUR).toISOString(),
+      }),
+      200,
+    )
+
+    const rows = await harness.db.select().from(schema.staffUpdates).where(eq(schema.staffUpdates.tenantId, studio.id))
+    const sessionRows = rows.filter(r => SESSION_KINDS.includes(r.kind))
+    const named = (r: (typeof sessionRows)[number]) => JSON.stringify(r.payload).includes('Mia')
+    assert.ok(sessionRows.filter(named).length >= 3, 'moved, cancelled by an admin, and cancelled by the member all name Mia')
+    for (const r of sessionRows.filter(named)) assert.equal(r.subjectClientId, mia.clientId, r.kind)
+    const pairRow = sessionRows.find(r => (r.payload as { sessionId?: string }).sessionId === pair.id)
+    assert.equal((pairRow!.payload as { subject: string }).subject, 'the 2-on-1 private session')
+    assert.equal(pairRow!.subjectClientId, null)
+    for (const name of ['Noor', 'Omar']) assert.ok(!JSON.stringify(pairRow!.payload).includes(name), name)
+
+    await json(
+      await harness.app.request(`/api/v1/portal/admin/clients/${mia.clientId}/permanently`, { method: 'DELETE', headers: admin.headers }),
+      200,
+    )
+    const after = await harness.db.select().from(schema.staffUpdates).where(eq(schema.staffUpdates.tenantId, studio.id))
+    assert.ok(!after.some(r => JSON.stringify(r.payload).includes('Mia')), 'nothing left names Mia')
+    assert.ok(after.some(r => r.id === pairRow!.id), 'the 2-on-1 Update is not Mia’s to take')
+  })
+
   test('ATN-181 changing only a class’s room tells the instructors it changed, and an edit that changes nothing they teach tells nobody', async () => {
     const studio = await freshStudio()
     const admin = await adminAt(studio)

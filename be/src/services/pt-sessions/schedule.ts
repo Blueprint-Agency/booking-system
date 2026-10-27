@@ -717,7 +717,7 @@ export async function updatePtSession(
       actorStaffId: patch.actorStaffId,
       kind: 'pt',
       sessionId: id,
-      subject: await ptSubject(tenantId, id),
+      ...(await ptSubject(tenantId, id)),
       before: { ...snapshotOf(existing), ...instructorsBefore },
       after: { ...snapshotOf(row), ...(await readInstructors(tenantId, 'pt', id)) },
     })

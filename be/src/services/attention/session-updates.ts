@@ -72,15 +72,28 @@ export async function classSubject(tenantId: string, classTypeId: string): Promi
   return row?.name ?? 'your class'
 }
 
-/** A private session is called by whom it is with: "the private session with Mia". */
-export async function ptSubject(tenantId: string, ptSessionId: string): Promise<string> {
+/**
+ * A private session is called by whom it is with: "the private session with Mia".
+ *
+ * An Update can name only one member, because `staff_updates.subject_client_id`
+ * holds one id and that id is what permanent deletion removes the row by (story
+ * 78). So the member is named only when there is exactly one, and the id comes
+ * back to be stored with the Update. A session with two (a 2-on-1) names neither
+ * and is "the 2-on-1 private session": no name is written that a deletion could
+ * not reach.
+ */
+export async function ptSubject(
+  tenantId: string,
+  ptSessionId: string,
+): Promise<{ subject: string; subjectClientId?: string }> {
   const people = await db
-    .select({ name: clients.name })
+    .select({ id: clients.id, name: clients.name })
     .from(ptSessionClients)
     .innerJoin(clients, and(eq(clients.tenantId, ptSessionClients.tenantId), eq(clients.id, ptSessionClients.clientId)))
     .where(and(eq(ptSessionClients.tenantId, tenantId), eq(ptSessionClients.ptSessionId, ptSessionId)))
     .orderBy(asc(clients.name))
-  return people.length ? `the private session with ${people.map(p => p.name).join(' and ')}` : 'the private session'
+  if (people.length === 1) return { subject: `the private session with ${people[0]!.name}`, subjectClientId: people[0]!.id }
+  return { subject: people.length > 1 ? 'the 2-on-1 private session' : 'the private session' }
 }
 
 /** A workshop is called by its name, and starts when its first day does. */
@@ -125,11 +138,13 @@ export async function recordSessionChanged(
     kind: SessionKind
     sessionId: string
     subject: string
+    /** The member `subject` names, if it names one: permanent deletion removes the Update by it. */
+    subjectClientId?: string | undefined
     before: SessionSnapshot
     after: SessionSnapshot
   },
 ): Promise<void> {
-  const { actorStaffId, kind, sessionId, subject, before, after } = input
+  const { actorStaffId, kind, sessionId, subject, subjectClientId, before, after } = input
   const timeMoved = before.startsAt.getTime() !== after.startsAt.getTime()
   const placeChanged =
     before.endsAt.getTime() !== after.endsAt.getTime() ||
@@ -154,12 +169,18 @@ export async function recordSessionChanged(
   const write = (recipients: string[], change: SessionChangedPayload['change'], otherInstructor: string | null) =>
     recipients.length === 0
       ? undefined
-      : recordUpdate(tenantId, 'session_changed', recipients, {
-          ...base,
-          change,
-          from: change === 'moved' ? formatWhen(before.startsAt, timezone) : null,
-          otherInstructor,
-        })
+      : recordUpdate(
+          tenantId,
+          'session_changed',
+          recipients,
+          {
+            ...base,
+            change,
+            from: change === 'moved' ? formatWhen(before.startsAt, timezone) : null,
+            otherInstructor,
+          },
+          subjectClientId,
+        )
 
   if (timeMoved || placeChanged) {
     await write(stays, timeMoved ? 'moved' : 'changed', null)
@@ -184,6 +205,8 @@ export async function recordSessionCancelledByAdmin(
     kind: SessionKind
     sessionId: string
     subject: string
+    /** The member `subject` names, if it names one: permanent deletion removes the Update by it. */
+    subjectClientId?: string | undefined
     startsAt: Date
     instructorIds: string[]
   },
@@ -191,14 +214,20 @@ export async function recordSessionCancelledByAdmin(
   const recipients = input.instructorIds.filter(id => id !== input.actorStaffId)
   if (recipients.length === 0) return
   const timezone = await timezoneOf(tenantId)
-  await recordUpdate(tenantId, 'session_cancelled_by_admin', recipients, {
-    sessionKind: input.kind,
-    sessionId: input.sessionId,
-    subject: input.subject,
-    when: formatWhen(input.startsAt, timezone),
-    date: dayOf(input.startsAt, timezone),
-    actorName: await nameOf(tenantId, input.actorStaffId, 'An admin'),
-  })
+  await recordUpdate(
+    tenantId,
+    'session_cancelled_by_admin',
+    recipients,
+    {
+      sessionKind: input.kind,
+      sessionId: input.sessionId,
+      subject: input.subject,
+      when: formatWhen(input.startsAt, timezone),
+      date: dayOf(input.startsAt, timezone),
+      actorName: await nameOf(tenantId, input.actorStaffId, 'An admin'),
+    },
+    input.subjectClientId,
+  )
 }
 
 /**
@@ -231,7 +260,7 @@ export async function recordPtSessionCancelled(
       actorStaffId: input.actorStaffId,
       kind: 'pt',
       sessionId: ptSessionId,
-      subject: await ptSubject(tenantId, ptSessionId),
+      ...(await ptSubject(tenantId, ptSessionId)),
       startsAt: session.startsAt,
       instructorIds: (await readInstructors(tenantId, 'pt', ptSessionId)).instructorIds,
     })

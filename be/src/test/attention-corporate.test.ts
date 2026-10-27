@@ -354,6 +354,31 @@ describe('Staff attention: corporate requests', { skip: integrationTestsEnabled 
     ])
   })
 
+  test('ATN-198 the instructor’s Update about a corporate session names the member whose request it was, and permanently deleting that member removes it', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    const tara = await instructorAt(studio, admin, 'tara')
+    const ann = await pending(studio, 'Ann')
+    await scheduleOver(studio, admin, tara, ann.id, 3 * DAY)
+
+    const updates = async () =>
+      (await json(await send('/portal/attention', tara.headers), 200)).updates.items as Array<Record<string, any>>
+    const assigned = (await updates()).filter(u => u.kind === 'session_assigned')
+    assert.equal(assigned.length, 1)
+    assert.match(assigned[0]!.title, /a corporate session for Ann on /)
+    const [row] = await harness.db
+      .select({ subject: schema.staffUpdates.subjectClientId })
+      .from(schema.staffUpdates)
+      .where(and(eq(schema.staffUpdates.recipientStaffId, tara.id), eq(schema.staffUpdates.kind, 'session_assigned')))
+    assert.equal(row!.subject, ann.clientId)
+
+    await json(
+      await harness.app.request(`/api/v1/portal/admin/clients/${ann.clientId}/permanently`, { method: 'DELETE', headers: admin.headers }),
+      200,
+    )
+    assert.deepEqual((await updates()).filter(u => u.kind === 'session_assigned'), [])
+  })
+
   test('ATN-27 another studio’s Admin sees none of it', async () => {
     const studio = await freshStudio()
     const other = await freshStudio()

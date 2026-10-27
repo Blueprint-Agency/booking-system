@@ -85,7 +85,12 @@ export async function recordSessionAssigned(
   ref: SessionRef,
   added: AddedInstructors,
   /** `tx`: the act's transaction handle, to read the session it just wrote. */
-  opts: { series?: boolean; tx?: unknown } = {},
+  opts: {
+    series?: boolean
+    tx?: unknown
+    /** The member the copy names (a corporate session's client), so deleting them removes the Update. */
+    subjectClientId?: string
+  } = {},
 ): Promise<void> {
   const main = (added.main ?? []).filter(id => id !== actorStaffId)
   const supporting = (added.supporting ?? []).filter(id => id !== actorStaffId && !main.includes(id))
@@ -115,6 +120,6 @@ export async function recordSessionAssigned(
         ? { weekday: formatWeekday(at, timezone), time: formatClock(at, timezone), from: formatDay(at, timezone) }
         : null,
   }
-  await recordUpdate(tenantId, 'session_assigned', main, { ...payload, supporting: false })
-  await recordUpdate(tenantId, 'session_assigned', supporting, { ...payload, supporting: true })
+  await recordUpdate(tenantId, 'session_assigned', main, { ...payload, supporting: false }, opts.subjectClientId)
+  await recordUpdate(tenantId, 'session_assigned', supporting, { ...payload, supporting: true }, opts.subjectClientId)
 }

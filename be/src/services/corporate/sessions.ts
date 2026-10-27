@@ -13,6 +13,12 @@ export type CorporateSessionRow = typeof corporateSessions.$inferSelect
 export interface CreateCorporateSessionInput {
   corporatePackageId: string
   clientName: string
+  /**
+   * The member `clientName` was copied from, when the session is scheduled from
+   * their request. The instructor's Update names them, so it is stored with their
+   * id and permanent deletion removes it.
+   */
+  subjectClientId?: string
   mainInstructorId: string
   supportingInstructorIds: string[]
   // Either a studio location (locationId, optionally with a roomId) OR a free-text
@@ -137,7 +143,7 @@ export async function createCorporateSession(
       input.createdByStaffId,
       { kind: 'corporate_session', id: row.id },
       { main: [input.mainInstructorId] },
-      { tx },
+      { tx, ...(input.subjectClientId ? { subjectClientId: input.subjectClientId } : {}) },
     )
     return row
   })
