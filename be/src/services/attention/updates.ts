@@ -211,13 +211,14 @@ const compose: { [K in StaffUpdateKind]: (p: UpdatePayloads[K], role: StaffRole)
     }
     return { title: `${p.actorName} cancelled your approved ${what}`, detail: null, href }
   },
-  session_assigned: p => {
+  session_assigned: (p, role) => {
+    // A workshop or corporate session has no page of its own: the schedule on its day.
     const href =
       p.sessionKind === 'class'
-        ? `/instructor/schedule/class/${p.sessionId}`
+        ? `/${role}/schedule/class/${p.sessionId}`
         : p.sessionKind === 'pt'
-          ? `/instructor/schedule/pt/${p.sessionId}`
-          : `/instructor/schedule${p.date ? `?date=${p.date}` : ''}`
+          ? `/${role}/schedule/pt/${p.sessionId}`
+          : `/${role}/schedule${p.date ? `?date=${p.date}` : ''}`
     const timing = p.series
       ? ` every ${p.series.weekday} at ${p.series.time} from ${p.series.from}`
       : p.when

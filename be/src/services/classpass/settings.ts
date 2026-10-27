@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { and, asc, count, eq, gt, inArray, max, min, ne, sql } from 'drizzle-orm'
+import { and, asc, count, countDistinct, eq, gt, inArray, max, min, ne, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   bookings,
@@ -184,6 +184,34 @@ export async function readClassPassPage(tenantId: string): Promise<ClassPassPage
   return { ...(await readClassPass(tenantId)), rosterCheck: await checkClassPassRosters(tenantId) }
 }
 
+/**
+ * The one rule for an overbooked ClassPass booking: confirmed, in an overbook
+ * seat, on an active class that has not ended. The page's list and the bell's
+ * count both read it, so they cannot drift. `locationId` narrows it to one
+ * location's classes.
+ */
+function overbookedWhere(tenantId: string, locationId?: string) {
+  return and(
+    eq(bookings.tenantId, tenantId),
+    eq(bookings.source, 'classpass'),
+    eq(bookings.state, 'confirmed'),
+    eq(bookings.seat, 'overbook'),
+    eq(classes.lifecycle, 'active'),
+    gt(classes.endsAt, clockNow()),
+    locationId ? eq(classes.locationId, locationId) : undefined,
+  )
+}
+
+/** How many classes have an overbooked ClassPass booking, in SQL: the bell's count. */
+export async function countOverbookedClassPassClasses(tenantId: string, locationId?: string): Promise<number> {
+  const [row] = await db
+    .select({ n: countDistinct(classes.id) })
+    .from(bookings)
+    .innerJoin(classes, eq(classes.id, bookings.classId))
+    .where(overbookedWhere(tenantId, locationId))
+  return Number(row?.n ?? 0)
+}
+
 export async function overbookedClassPassBookings(tenantId: string): Promise<OverbookedClassPassBooking[]> {
   return db
     .select({
@@ -197,16 +225,7 @@ export async function overbookedClassPassBookings(tenantId: string): Promise<Ove
     .innerJoin(classes, eq(classes.id, bookings.classId))
     .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
     .innerJoin(clients, eq(clients.id, bookings.clientId))
-    .where(
-      and(
-        eq(bookings.tenantId, tenantId),
-        eq(bookings.source, 'classpass'),
-        eq(bookings.state, 'confirmed'),
-        eq(bookings.seat, 'overbook'),
-        eq(classes.lifecycle, 'active'),
-        gt(classes.endsAt, clockNow()),
-      ),
-    )
+    .where(overbookedWhere(tenantId))
     .orderBy(asc(classes.startsAt), asc(clients.name))
 }
 

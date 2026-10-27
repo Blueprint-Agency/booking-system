@@ -1,6 +1,21 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql, type SQL } from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
 import { attentionDismissals } from '../../db/schema/attention'
+
+/**
+ * "This row's id has not been dismissed", as SQL, so a count and a list can both
+ * leave dismissed items out without loading the dismissals: `subjectId` is the
+ * column the kind's subject id is taken from (the purchase, the booking).
+ */
+export function notDismissed(tenantId: string, kind: string, subjectId: AnyPgColumn): SQL {
+  return sql`not exists (
+    select 1 from ${attentionDismissals}
+    where ${attentionDismissals.tenantId} = ${tenantId}
+      and ${attentionDismissals.kind} = ${kind}
+      and ${attentionDismissals.subjectId} = ${subjectId}
+  )`
+}
 
 /**
  * The subject ids of `kind` the studio has dismissed (#482): what a dismissable

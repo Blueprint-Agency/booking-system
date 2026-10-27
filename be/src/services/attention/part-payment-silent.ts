@@ -1,5 +1,11 @@
-import { listSilentPartPaidPurchases, type SilentPurchaseView } from '../billing/open-purchases'
-import { dismissedSubjects } from './dismissed-subjects'
+import { and, eq } from 'drizzle-orm'
+import { purchases } from '../../db/schema/ledger'
+import {
+  countSilentPartPaidPurchases,
+  listSilentPartPaidPurchases,
+  type SilentPurchaseView,
+} from '../billing/open-purchases'
+import { notDismissed } from './dismissed-subjects'
 import { formatWhen } from './format'
 import type { AttentionContext, AttentionProvider, ProviderItem } from './types'
 
@@ -12,13 +18,8 @@ import type { AttentionContext, AttentionProvider, ProviderItem } from './types'
  */
 const PAGE = '/admin/purchases'
 
-async function open(ctx: AttentionContext): Promise<SilentPurchaseView[]> {
-  const [silent, dismissed] = await Promise.all([
-    listSilentPartPaidPurchases(ctx.tenantId, ctx.now),
-    dismissedSubjects(ctx.tenantId, 'part_payment_silent'),
-  ])
-  return silent.filter(p => !dismissed.has(p.id))
-}
+/** Not dismissed, as SQL: the count and the list leave the same ones out. */
+const undismissed = (ctx: AttentionContext) => notDismissed(ctx.tenantId, 'part_payment_silent', purchases.id)
 
 function itemFor(ctx: AttentionContext, p: SilentPurchaseView): ProviderItem {
   return {
@@ -36,8 +37,11 @@ export const partPaymentSilent: AttentionProvider = {
   group: 'payments_refunds',
   dismissable: true,
   appliesTo: ctx => ctx.role === 'admin',
-  isOpen: async (ctx, subjectId) => (await open(ctx)).some(p => p.id === subjectId),
-  count: async ctx => (await open(ctx)).length,
-  list: async (ctx, limit) => (await open(ctx)).slice(0, limit).map(p => itemFor(ctx, p)),
+  isOpen: async (ctx, subjectId) =>
+    (await countSilentPartPaidPurchases(ctx.tenantId, ctx.now, and(undismissed(ctx), eq(purchases.id, subjectId)))) > 0,
+  count: ctx => countSilentPartPaidPurchases(ctx.tenantId, ctx.now, undismissed(ctx)),
+  list: async (ctx, limit) =>
+    (await listSilentPartPaidPurchases(ctx.tenantId, ctx.now, undismissed(ctx))).slice(0, limit).map(p => itemFor(ctx, p)),
   seeAllHref: () => PAGE,
+  seeAllLabel: 'Partial payments',
 }

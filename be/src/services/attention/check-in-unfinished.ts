@@ -1,11 +1,11 @@
 import { and, asc, count, eq, gt, lte, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { classTypes } from '../../db/schema/catalog'
-import { classes, ptSessions } from '../../db/schema/schedule'
-import { classPending, ptPending } from '../bookings/check-in-nag'
+import { classes, ptRequests, ptSessions } from '../../db/schema/schedule'
+import { classRoster as classRosterOf, ptRoster as ptRosterOf, type RosterCheckIns } from '../bookings/check-in-nag'
 import { classHasUndecidedRow, ptSessionHasUndecidedSeat } from '../bookings/session-check-in'
 import { localDate } from '../tenants/term-dates'
-import { formatAge, formatWhen } from './format'
+import { formatClock, formatDay, withLocation } from './format'
 import type { AttentionContext, AttentionProvider, CountScope, ProviderItem } from './types'
 
 /**
@@ -91,37 +91,56 @@ export const checkInUnfinished: AttentionProvider = {
         .orderBy(asc(classes.endsAt))
         .limit(limit),
       db
-        .select({ id: ptSessions.id, locationId: ptSessions.locationId, startsAt: ptSessions.startsAt, endsAt: ptSessions.endsAt })
+        .select({
+          id: ptSessions.id,
+          locationId: ptSessions.locationId,
+          startsAt: ptSessions.startsAt,
+          endsAt: ptSessions.endsAt,
+          // Named by its request's class type, as the PT request item names it; a request need not have one.
+          label: classTypes.name,
+        })
         .from(ptSessions)
+        .leftJoin(ptRequests, and(eq(ptRequests.tenantId, ptSessions.tenantId), eq(ptRequests.id, ptSessions.ptRequestId)))
+        .leftJoin(classTypes, eq(classTypes.id, ptRequests.classTypeId))
         .where(ptFilter(ctx, {}))
         .orderBy(asc(ptSessions.endsAt))
         .limit(limit),
     ])
-    const [classCounts, ptCounts] = await Promise.all([
-      classPending(classRows.map(r => r.id)),
-      ptPending(ptRows.map(r => r.id)),
+    const [classRoster, ptRoster] = await Promise.all([
+      classRosterOf(classRows.map(r => r.id)),
+      ptRosterOf(ptRows.map(r => r.id)),
     ])
 
     const toItem = (
       key: string,
       r: { id: string; locationId: string; startsAt: Date; endsAt: Date },
       label: string,
-      unmarked: number,
-    ): ProviderItem => ({
-      subjectId: key,
-      location: ctx.locations.find(l => l.id === r.locationId) ?? null,
-      occurredAt: r.endsAt,
-      title: `${people(unmarked)} not marked in ${label}, ${formatWhen(r.startsAt, ctx.timezone)}`,
-      detail: `Ended ${formatAge(r.endsAt, ctx.now)}`,
-      href: `${desk(ctx)}?date=${localDate(ctx.timezone, r.startsAt)}&session=${key}`,
-    })
+      roster: RosterCheckIns | undefined,
+    ): ProviderItem => {
+      const location = ctx.locations.find(l => l.id === r.locationId) ?? null
+      return {
+        subjectId: key,
+        location,
+        occurredAt: r.endsAt,
+        title: `Finish check-in for ${label} on ${formatDay(r.startsAt, ctx.timezone)}`,
+        detail: [
+          `${roster?.pending ?? 0} of ${people(roster?.total ?? 0)} not marked`,
+          formatClock(r.startsAt, ctx.timezone),
+          location?.name,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        href: withLocation(`${desk(ctx)}?date=${localDate(ctx.timezone, r.startsAt)}&session=${key}`, r.locationId),
+      }
+    }
 
     return [
-      ...classRows.map(r => toItem(`class:${r.id}`, r, r.label, classCounts.get(r.id) ?? 0)),
-      ...ptRows.map(r => toItem(`pt:${r.id}`, r, 'Private session', ptCounts.get(r.id) ?? 0)),
+      ...classRows.map(r => toItem(`class:${r.id}`, r, r.label, classRoster.get(r.id))),
+      ...ptRows.map(r => toItem(`pt:${r.id}`, r, r.label ?? 'Private session', ptRoster.get(r.id))),
     ]
       .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
       .slice(0, limit)
   },
   seeAllHref: desk,
+  seeAllLabel: 'Check-in',
 }

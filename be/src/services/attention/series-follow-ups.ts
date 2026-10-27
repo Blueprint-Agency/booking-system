@@ -6,7 +6,7 @@ import { classes, classSeries } from '../../db/schema/schedule'
 import { addDays } from '../schedule/series-dates'
 import { localDate } from '../tenants/term-dates'
 import { dismissedSubjects } from './dismissed-subjects'
-import { formatDay, formatWhen } from './format'
+import { formatPlainDay, formatWhen, withLocation } from './format'
 import type { AttentionContext, AttentionProvider, CountScope, ProviderItem } from './types'
 
 /**
@@ -35,9 +35,6 @@ function formatTime(time: string): string {
   const hour = Number(h)
   return `${hour % 12 || 12}:${m} ${hour < 12 ? 'am' : 'pm'}`
 }
-
-/** "Tue 28 Oct" from a plain `YYYY-MM-DD` date. */
-const formatPlainDay = (date: string) => formatDay(new Date(`${date}T12:00:00Z`), 'UTC')
 
 // ---------------------------------------------------------------------------
 // series_ending
@@ -87,7 +84,7 @@ export const seriesEnding: AttentionProvider = {
         deadlineAt: new Date(`${r.lastDate}T00:00:00Z`),
         title: `The ${r.label} series on ${WEEKDAYS[r.weekday - 1]} at ${formatTime(r.startTime)} runs out after ${formatPlainDay(r.lastDate)}`,
         detail: 'Extend it to keep classes on the timetable',
-        href: r.lastClassId ? classPage(r.lastClassId) : null,
+        href: r.lastClassId ? withLocation(classPage(r.lastClassId), r.locationId) : null,
       }),
     )
   },
@@ -135,7 +132,15 @@ export const seriesEndedClassKept: AttentionProvider = {
   dismissable: true,
   appliesTo: ctx => ctx.role === 'admin',
   isOpen: async (ctx, subjectId) => (await kept(ctx, await keptFilter(ctx, {}, [subjectId]))).length > 0,
-  count: async (ctx, scope) => (await kept(ctx, await keptFilter(ctx, scope))).length,
+  // A SQL count over the same filter and joins the list reads.
+  count: async (ctx, scope) => {
+    const [row] = await db
+      .select({ n: count() })
+      .from(classes)
+      .innerJoin(classSeries, and(eq(classSeries.tenantId, classes.tenantId), eq(classSeries.id, classes.seriesId)))
+      .where(await keptFilter(ctx, scope))
+    return Number(row?.n ?? 0)
+  },
   list: async (ctx, limit) => {
     const rows = await kept(ctx, await keptFilter(ctx, {})).orderBy(asc(classes.startsAt)).limit(limit)
     return rows.map(
@@ -146,7 +151,7 @@ export const seriesEndedClassKept: AttentionProvider = {
         deadlineAt: r.startsAt,
         title: `${r.label} on ${formatWhen(r.startsAt, ctx.timezone)} is after the end of its series but still has ${Number(r.bookings)} ${Number(r.bookings) === 1 ? 'booking' : 'bookings'}`,
         detail: 'Cancel it, or dismiss to keep it',
-        href: classPage(r.id),
+        href: withLocation(classPage(r.id), r.locationId),
       }),
     )
   },

@@ -66,31 +66,43 @@ export async function sendCheckInNags(): Promise<void> {
   for (const c of claimed) if (c.pending) afterCommit(() => nag(c))
 }
 
-/** Rows still undecided per session, counted from each roster's check-in states. */
-function pendingBySession(rows: ReadonlyArray<{ sessionId: string; checkInState: RowCheckInState }>) {
+/** How many people are on a session's roster, and how many of them are still undecided. */
+export interface RosterCheckIns {
+  total: number
+  pending: number
+}
+
+/** Each session's roster size and undecided rows, counted from the roster's check-in states. */
+function rosterBySession(rows: ReadonlyArray<{ sessionId: string; checkInState: RowCheckInState }>) {
   const states = new Map<string, RowCheckInState[]>()
   for (const r of rows) states.set(r.sessionId, [...(states.get(r.sessionId) ?? []), r.checkInState])
+  const roster = new Map<string, RosterCheckIns>()
+  for (const [id, rowStates] of states) roster.set(id, { total: rowStates.length, pending: pendingCheckIns(rowStates) })
+  return roster
+}
+
+/** Rows still undecided per session: only the sessions that have any. */
+function pendingOnly(roster: ReadonlyMap<string, RosterCheckIns>) {
   const pending = new Map<string, number>()
-  for (const [id, rowStates] of states) {
-    const n = pendingCheckIns(rowStates)
-    if (n > 0) pending.set(id, n)
-  }
+  for (const [id, r] of roster) if (r.pending > 0) pending.set(id, r.pending)
   return pending
 }
 
 /** A class's roster, as the check-in desk lists it: its confirmed attendees and its no-shows. */
-export async function classPending(ids: string[]) {
-  if (!ids.length) return new Map<string, number>()
+export async function classRoster(ids: string[]) {
+  if (!ids.length) return new Map<string, RosterCheckIns>()
   const rows = await db
     .select({ sessionId: bookings.classId, checkInState: bookings.checkInState })
     .from(bookings)
     .where(and(inArray(bookings.classId, ids), inArray(bookings.state, ['confirmed', 'no_show'])))
-  return pendingBySession(rows.map(r => ({ sessionId: r.sessionId!, checkInState: r.checkInState as RowCheckInState })))
+  return rosterBySession(rows.map(r => ({ sessionId: r.sessionId!, checkInState: r.checkInState as RowCheckInState })))
 }
 
+export const classPending = async (ids: string[]) => pendingOnly(await classRoster(ids))
+
 /** A private session's roster, as the check-in desk lists it: every member on it, booked or not (`ptSeats`). */
-export async function ptPending(ids: string[]) {
-  if (!ids.length) return new Map<string, number>()
+export async function ptRoster(ids: string[]) {
+  if (!ids.length) return new Map<string, RosterCheckIns>()
   const rows = await db
     .select({
       sessionId: ptSessionClients.ptSessionId,
@@ -106,8 +118,10 @@ export async function ptPending(ids: string[]) {
     )
     .where(inArray(ptSessionClients.ptSessionId, ids))
   const seats = ptSeats(rows, r => `${r.sessionId}:${r.clientId}`)
-  return pendingBySession(seats.map(s => ({ sessionId: s.sessionId, checkInState: (s.checkInState as RowCheckInState) ?? null })))
+  return rosterBySession(seats.map(s => ({ sessionId: s.sessionId, checkInState: (s.checkInState as RowCheckInState) ?? null })))
 }
+
+export const ptPending = async (ids: string[]) => pendingOnly(await ptRoster(ids))
 
 async function claimClasses(endedBy: Date, endedAfter: Date, now: Date): Promise<Claimed[]> {
   const rows = await db

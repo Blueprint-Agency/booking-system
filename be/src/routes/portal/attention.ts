@@ -6,6 +6,7 @@ import { attentionPanel, attentionSummary, type AttentionCaller } from '../../se
 import { isUpdatesCursor, markAllUpdatesRead, markUpdateRead } from '../../services/attention/updates'
 import { requireRole } from '../../middleware/require-role'
 import { dismissItem } from '../../services/attention/dismissals'
+import { attentionKinds } from '../../services/attention/registry'
 import { explainInvalid } from '../explain-invalid'
 
 /**
@@ -26,7 +27,8 @@ const listQuery = z.object({
   // The Updates tab pages by this: the `next_cursor` of the page before.
   updates_before: z.string().max(100).refine(isUpdatesCursor, 'Not an updates cursor.').optional(),
 })
-const dismissalBody = z.object({ kind: z.string().min(1).max(64), subject_id: z.string().uuid() })
+// A known kind that cannot be dismissed still gets the service's 422 not_dismissable.
+const dismissalBody = z.object({ kind: z.enum(attentionKinds), subject_id: z.string().uuid() })
 const idParam =z.object({ id: z.string().uuid() })
 const explain = explainInvalid('That attention request is not valid.')
 

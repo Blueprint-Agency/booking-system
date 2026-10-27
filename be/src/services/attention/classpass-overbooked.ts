@@ -1,8 +1,8 @@
 import { and, count, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings, classes, locations } from '../../db/schema'
-import { overbookedClassPassBookings } from '../classpass/settings'
-import { formatWhen } from './format'
+import { countOverbookedClassPassClasses, overbookedClassPassBookings } from '../classpass/settings'
+import { formatWhen, withLocation } from './format'
 import type { AttentionProvider, ProviderItem } from './types'
 
 /**
@@ -18,7 +18,8 @@ export const classpassOverbooked: AttentionProvider = {
   badge: 'classpass',
   dismissable: false,
   appliesTo: ctx => ctx.role === 'admin',
-  count: async ctx => new Set((await overbookedClassPassBookings(ctx.tenantId)).map(b => b.classId)).size,
+  // A SQL count over the same rule the list reads, narrowed to a location when the badge asks.
+  count: (ctx, scope) => countOverbookedClassPassClasses(ctx.tenantId, scope.locationId),
   list: async (ctx, limit) => {
     const perClass = new Map<string, { className: string; startsAt: Date; over: number }>()
     for (const b of await overbookedClassPassBookings(ctx.tenantId)) {
@@ -55,9 +56,10 @@ export const classpassOverbooked: AttentionProvider = {
         deadlineAt: c.startsAt,
         title: `${c.className} on ${formatWhen(c.startsAt, ctx.timezone)} is over capacity: ClassPass booked ${c.over} more ${c.over === 1 ? 'person' : 'people'} than it has seats`,
         detail: `Expect ${people} ${people === 1 ? 'person' : 'people'}`,
-        href: `/admin/schedule/class/${id}${at ? `?location=${at.locationId}` : ''}`,
+        href: at ? withLocation(`/admin/schedule/class/${id}`, at.locationId) : `/admin/schedule/class/${id}`,
       }
     })
   },
   seeAllHref: () => '/admin/classpass',
+  seeAllLabel: 'ClassPass',
 }

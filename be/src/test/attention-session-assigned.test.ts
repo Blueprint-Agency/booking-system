@@ -349,6 +349,39 @@ describe('Staff attention: session assigned', { skip: integrationTestsEnabled ? 
     assert.equal(support!.href, '/instructor/schedule?date=2031-06-10')
   })
 
+  test('ATN-196 an admin who also teaches is linked to the admin portal for the session they are scheduled on, and for the schedule on a workshop’s day', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    // The scheduling roster takes instructors only, so the teaching admin is an instructor scheduled
+    // first and promoted to admin after (their Updates and sessions stay theirs).
+    const dual = await instructorAt(studio, admin, 'dual')
+
+    const res = await json(await send('/portal/admin/schedule/classes', admin.headers, 'POST', classBody(studio, dual)), 201)
+    await json(
+      await send('/portal/admin/workshops', admin.headers, 'POST', {
+        name: 'Backbend Intensive',
+        location_id: studio.locationId,
+        main_instructor_id: dual.id,
+        days: [
+          {
+            ref: 'd1',
+            room_id: studio.roomId,
+            starts_at: new Date(TUE.getTime() + 24 * HOUR).toISOString(),
+            ends_at: new Date(TUE.getTime() + 26 * HOUR).toISOString(),
+            capacity_online: 10,
+          },
+        ],
+        tiers: [{ name: 'Full', regular_price_sgd: '100.00', day_refs: ['d1'] }],
+      }),
+      201,
+    )
+    await harness.db.update(schema.staffUsers).set({ role: 'admin' }).where(eq(schema.staffUsers.id, dual.id))
+
+    const mine = await assigned(dual)
+    assert.equal(mine.find(u => u.title.includes('Vinyasa'))!.href, `/admin/schedule/class/${res.id}`)
+    assert.equal(mine.find(u => u.title.includes('Backbend Intensive'))!.href, '/admin/schedule?date=2031-06-11')
+  })
+
   test('ATN-176 scheduling a corporate request tells its instructors, linked to the schedule on that date', async () => {
     const studio = await freshStudio()
     const admin = await adminAt(studio)

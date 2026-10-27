@@ -309,6 +309,7 @@ export async function scheduleCorporateRequest(
   const result = await createCorporateSession(tenantId, {
     corporatePackageId: req.corporatePackageId,
     clientName: client.name,
+    subjectClientId: req.clientId,
     mainInstructorId: input.mainInstructorId,
     supportingInstructorIds: input.supportingInstructorIds,
     locationId: input.locationId,

@@ -244,7 +244,7 @@ describe('Staff attention: waitlist and series', { skip: integrationTestsEnabled
     assert.equal(item.id, `${kind}:${cls.id}`)
     assert.match(item.title, /^Hatha on \w{3} \d{1,2} \w{3}, \d{1,2}:\d{2} [ap]m has 2 free seats and 2 people waiting$/)
     assert.equal(item.detail, "The waitlist doesn't fill seats this close to class. Add someone from the waitlist")
-    assert.equal(item.href, `/admin/schedule/class/${cls.id}`)
+    assert.equal(item.href, `/admin/schedule/class/${cls.id}?location=${studio.locationId}`)
     assert.equal(item.dismissable, false)
     assert.deepEqual(item.location, { id: studio.locationId, name: `${studio.slug} Studio` })
     assert.equal(
@@ -254,7 +254,11 @@ describe('Staff attention: waitlist and series', { skip: integrationTestsEnabled
     assert.equal((await summary(admin)).needs_action, 1)
 
     const [mine] = await itemsOf(tara, kind)
-    assert.equal(mine.href, `/instructor/schedule/class/${cls.id}`, 'an instructor is sent to their own page')
+    assert.equal(
+      mine.href,
+      `/instructor/schedule/class/${cls.id}?location=${studio.locationId}`,
+      'an instructor is sent to their own page',
+    )
     assert.equal((await summary(tara)).needs_action, 1)
 
     assert.deepEqual(await itemsOf(other, kind), [])
@@ -335,7 +339,7 @@ describe('Staff attention: waitlist and series', { skip: integrationTestsEnabled
     assert.equal(item.id, `series_ending:${series.id}`)
     assert.equal(item.title, 'The Hatha series on Tuesdays at 7:00 pm runs out after Tue 1 Jul')
     assert.equal(item.detail, 'Extend it to keep classes on the timetable')
-    assert.equal(item.href, `/admin/schedule/class/${lastClass}`)
+    assert.equal(item.href, `/admin/schedule/class/${lastClass}?location=${studio.locationId}`)
     assert.equal(item.dismissable, false)
     assert.equal(
       (await panel(admin)).needs_action.groups.find((g: any) => g.items.some((i: any) => i.kind === 'series_ending')).key,
@@ -396,7 +400,7 @@ describe('Staff attention: waitlist and series', { skip: integrationTestsEnabled
       200,
     )
     const [item] = await itemsOf(admin, 'series_ending')
-    assert.equal(item.href, `/admin/schedule/class/${grown.class_ids.at(-1)}`)
+    assert.equal(item.href, `/admin/schedule/class/${grown.class_ids.at(-1)}?location=${studio.locationId}`)
     assert.match(item.title, /runs out after Tue 1 Jul$/)
   })
 })
@@ -545,7 +549,7 @@ describe('Staff attention: a class kept past its series', { skip: integrationTes
     assert.match(items[0]!.title, /^Hatha on Tue 1 Jul, 7:00 pm is after the end of its series but still has 2 bookings$/)
     assert.match(items[1]!.title, /Tue 8 Jul, 7:00 pm is after the end of its series but still has 1 booking$/)
     assert.equal(items[0]!.detail, 'Cancel it, or dismiss to keep it')
-    assert.equal(items[0]!.href, `/admin/schedule/class/${s.classIds[2]}`)
+    assert.equal(items[0]!.href, `/admin/schedule/class/${s.classIds[2]}?location=${s.studio.locationId}`)
     assert.equal(items[0]!.dismissable, true)
     assert.deepEqual(await itemsOf(s.teacher), [])
   })

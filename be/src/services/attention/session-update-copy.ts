@@ -42,11 +42,18 @@ export interface PtSessionCancelledByMemberPayload extends SessionPayload {
   memberName: string
 }
 
+/**
+ * The role whose portal a link opens in: the reading staff member's own, so an
+ * admin who also teaches is sent to `/admin/...`, never to the instructor portal
+ * they may not be able to enter. (Not `StaffRole`: this file imports nothing.)
+ */
+export type PortalRole = 'admin' | 'instructor'
+
 /** The session page, or for a workshop (which has none for an instructor) the schedule on its day. */
-export function sessionHref(p: SessionPayload): string {
-  if (p.sessionKind === 'class') return `/instructor/schedule/class/${p.sessionId}`
-  if (p.sessionKind === 'pt') return `/instructor/schedule/pt/${p.sessionId}`
-  return `/instructor/schedule?date=${p.date}`
+export function sessionHref(p: SessionPayload, role: PortalRole): string {
+  if (p.sessionKind === 'class') return `/${role}/schedule/class/${p.sessionId}`
+  if (p.sessionKind === 'pt') return `/${role}/schedule/pt/${p.sessionId}`
+  return `/${role}/schedule?date=${p.date}`
 }
 
 interface Copy {
@@ -55,16 +62,16 @@ interface Copy {
   href: string | null
 }
 
-export function composeSessionChanged(p: SessionChangedPayload): Copy {
-  const onDate = `/instructor/schedule?date=${p.date}`
+export function composeSessionChanged(p: SessionChangedPayload, role: PortalRole): Copy {
+  const onDate = `/${role}/schedule?date=${p.date}`
   switch (p.change) {
     case 'moved':
-      return { title: `${p.actorName} moved ${p.subject} from ${p.from} to ${p.when}`, detail: null, href: sessionHref(p) }
+      return { title: `${p.actorName} moved ${p.subject} from ${p.from} to ${p.when}`, detail: null, href: sessionHref(p, role) }
     case 'changed':
       return {
         title: `${p.actorName} changed the room, location or end time of ${p.subject} on ${p.when}`,
         detail: null,
-        href: sessionHref(p),
+        href: sessionHref(p, role),
       }
     case 'handed_over':
       return {
@@ -78,23 +85,23 @@ export function composeSessionChanged(p: SessionChangedPayload): Copy {
       return {
         title: `${p.actorName} changed the instructor of ${p.subject} on ${p.when} to ${p.otherInstructor}`,
         detail: null,
-        href: sessionHref(p),
+        href: sessionHref(p, role),
       }
   }
 }
 
-export function composeSessionCancelledByAdmin(p: SessionCancelledByAdminPayload): Copy {
+export function composeSessionCancelledByAdmin(p: SessionCancelledByAdminPayload, role: PortalRole): Copy {
   return {
     title: `${p.actorName} cancelled ${p.subject} on ${p.when}, which you were teaching`,
     detail: null,
-    href: sessionHref(p),
+    href: sessionHref(p, role),
   }
 }
 
-export function composePtSessionCancelledByMember(p: PtSessionCancelledByMemberPayload): Copy {
+export function composePtSessionCancelledByMember(p: PtSessionCancelledByMemberPayload, role: PortalRole): Copy {
   return {
     title: `${p.memberName} cancelled their private session with you on ${p.when}`,
     detail: null,
-    href: `/instructor/schedule/pt/${p.sessionId}`,
+    href: `/${role}/schedule/pt/${p.sessionId}`,
   }
 }

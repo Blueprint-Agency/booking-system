@@ -253,7 +253,7 @@ describe('Staff attention: session Updates', { skip: integrationTestsEnabled ? f
   /** "Tue 28 Oct, 7:00 pm" in Singapore, the studio's default zone. */
   const when = (at: Date) => {
     const p = Object.fromEntries(
-      new Intl.DateTimeFormat('en-GB', {
+      new Intl.DateTimeFormat('en-US', {
         timeZone: 'Asia/Singapore',
         weekday: 'short',
         day: 'numeric',
@@ -300,6 +300,93 @@ describe('Staff attention: session Updates', { skip: integrationTestsEnabled ? f
       assert.equal(u!.href, `/instructor/schedule/class/${cls.id}`)
     }
     assert.equal(await unread(admin), 0)
+  })
+
+  test('ATN-195 an admin who also teaches is linked to the admin portal for every session Update, never to the instructor one', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    const dual = await adminAt(studio, 'dual')
+    await harness.db.insert(schema.instructors).values({ tenantId: studio.id, staffUserId: dual.id })
+    const ada = await instructorAt(studio, admin, 'ada')
+    const mia = await memberOf(studio, 'Mia')
+
+    // Moved: the class page.
+    const moved = await classOf(studio, admin, dual)
+    const newStart = new Date(moved.startsAt.getTime() + DAY)
+    await json(
+      await patchClass(admin, moved.id, { starts_at: newStart.toISOString(), ends_at: new Date(newStart.getTime() + HOUR).toISOString() }),
+      200,
+    )
+    // Cancelled: the class page.
+    const cancelled = await classOf(studio, admin, dual)
+    await json(await send(`/portal/admin/schedule/classes/${cancelled.id}/cancel`, admin.headers, 'POST', {}), 200)
+    // Handed to someone else: the schedule on that day.
+    const handed = await classOf(studio, admin, dual)
+    await json(await patchClass(admin, handed.id, { main_instructor_id: ada.id }), 200)
+    // A member cancelling their private session: the session page.
+    const pt = await ptOf(studio, admin, dual, mia)
+    await json(await send(`/me/pt-sessions/${pt.requestId}/cancel`, mia.headers, 'POST', {}), 200)
+
+    const hrefs = new Map((await updatesOf(dual)).map(u => [u.kind + (u.title.includes(' gave ') ? ':handed' : ''), u.href as string]))
+    assert.equal(hrefs.get('session_cancelled_by_admin'), `/admin/schedule/class/${cancelled.id}`)
+    assert.equal(hrefs.get('session_changed:handed'), `/admin/schedule?date=${dayOf(handed.startsAt)}`)
+    assert.equal(hrefs.get('session_changed'), `/admin/schedule/class/${moved.id}`)
+    assert.equal(hrefs.get('pt_session_cancelled_by_member'), `/admin/schedule/pt/${pt.id}`)
+    for (const href of hrefs.values()) assert.ok(href.startsWith('/admin/'), href)
+  })
+
+  test('ATN-197 every session Update that names a member is stored with that member, so permanently deleting them removes it; a session with two members names neither', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    const ada = await instructorAt(studio, admin, 'ada')
+    const ben = await instructorAt(studio, admin, 'ben')
+    const mia = await memberOf(studio, 'Mia')
+    const noor = await memberOf(studio, 'Noor')
+    const omar = await memberOf(studio, 'Omar')
+
+    // Mia's one-on-one is moved and then cancelled by an admin; her other one she cancels herself.
+    const moved = await ptOf(studio, admin, ada, mia)
+    const newStart = new Date(moved.startsAt.getTime() + DAY)
+    await json(
+      await send(`/portal/admin/pt-sessions/sessions/${moved.id}`, admin.headers, 'PATCH', {
+        starts_at: newStart.toISOString(),
+        ends_at: new Date(newStart.getTime() + HOUR).toISOString(),
+      }),
+      200,
+    )
+    await json(await send(`/portal/admin/pt-sessions/${moved.requestId}/cancel`, admin.headers, 'POST', {}), 200)
+    const hers = await ptOf(studio, admin, ben, mia, 7)
+    await json(await send(`/me/pt-sessions/${hers.requestId}/cancel`, mia.headers, 'POST', {}), 200)
+
+    // A 2-on-1 of Noor and Omar is moved: the Update names neither.
+    const pair = await ptOf(studio, admin, ada, noor, 9)
+    await harness.db.insert(schema.ptSessionClients).values({ tenantId: studio.id, ptSessionId: pair.id, clientId: omar.clientId })
+    const pairStart = new Date(pair.startsAt.getTime() + DAY)
+    await json(
+      await send(`/portal/admin/pt-sessions/sessions/${pair.id}`, admin.headers, 'PATCH', {
+        starts_at: pairStart.toISOString(),
+        ends_at: new Date(pairStart.getTime() + HOUR).toISOString(),
+      }),
+      200,
+    )
+
+    const rows = await harness.db.select().from(schema.staffUpdates).where(eq(schema.staffUpdates.tenantId, studio.id))
+    const sessionRows = rows.filter(r => SESSION_KINDS.includes(r.kind))
+    const named = (r: (typeof sessionRows)[number]) => JSON.stringify(r.payload).includes('Mia')
+    assert.ok(sessionRows.filter(named).length >= 3, 'moved, cancelled by an admin, and cancelled by the member all name Mia')
+    for (const r of sessionRows.filter(named)) assert.equal(r.subjectClientId, mia.clientId, r.kind)
+    const pairRow = sessionRows.find(r => (r.payload as { sessionId?: string }).sessionId === pair.id)
+    assert.equal((pairRow!.payload as { subject: string }).subject, 'the 2-on-1 private session')
+    assert.equal(pairRow!.subjectClientId, null)
+    for (const name of ['Noor', 'Omar']) assert.ok(!JSON.stringify(pairRow!.payload).includes(name), name)
+
+    await json(
+      await harness.app.request(`/api/v1/portal/admin/clients/${mia.clientId}/permanently`, { method: 'DELETE', headers: admin.headers }),
+      200,
+    )
+    const after = await harness.db.select().from(schema.staffUpdates).where(eq(schema.staffUpdates.tenantId, studio.id))
+    assert.ok(!after.some(r => JSON.stringify(r.payload).includes('Mia')), 'nothing left names Mia')
+    assert.ok(after.some(r => r.id === pairRow!.id), 'the 2-on-1 Update is not Mia’s to take')
   })
 
   test('ATN-181 changing only a class’s room tells the instructors it changed, and an edit that changes nothing they teach tells nobody', async () => {

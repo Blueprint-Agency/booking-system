@@ -199,9 +199,18 @@ describe('Staff attention: dismissals', { skip: integrationTestsEnabled ? false 
   test('ATN-52 dismissing a kind that is not dismissable is 422 not_dismissable', async () => {
     const studio = await freshStudio()
     const admin = await staffAt(studio, 'boss', 'admin')
-    for (const kind of ['instructor_pay_missing', 'pt_request_pending', 'no_such_kind']) {
+    for (const kind of ['instructor_pay_missing', 'pt_request_pending']) {
       const body = await json(await dismiss(admin, kind, randomUUID()), 422)
       assert.equal(body.error, 'not_dismissable', kind)
+    }
+  })
+
+  test('ATN-190 a dismissal naming a kind the portal does not know is refused as an invalid request, before anything is looked up', async () => {
+    const studio = await freshStudio()
+    const admin = await staffAt(studio, 'boss', 'admin')
+    for (const kind of ['no_such_kind', '', 'PART_PAYMENT_SILENT']) {
+      const body = await json(await dismiss(admin, kind, randomUUID()), 400)
+      assert.equal(body.error, 'invalid_request', kind)
     }
   })
 

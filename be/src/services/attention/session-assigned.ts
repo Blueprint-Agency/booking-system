@@ -5,7 +5,8 @@ import { staffUsers } from '../../db/schema/identity'
 import { classes, corporateSessions, ptSessions, workshopDays, workshops } from '../../db/schema/schedule'
 import type { RosterEventKind } from '../schedule/roster'
 import { loadTenantById } from '../tenants/tenants'
-import { formatClock, formatDay, formatWeekday, formatWhen, localDate } from './format'
+import { localDate } from '../tenants/term-dates'
+import { formatClock, formatDay, formatWeekday, formatWhen } from './format'
 import { recordUpdate, type SessionAssignedPayload } from './updates'
 
 /**
@@ -84,7 +85,12 @@ export async function recordSessionAssigned(
   ref: SessionRef,
   added: AddedInstructors,
   /** `tx`: the act's transaction handle, to read the session it just wrote. */
-  opts: { series?: boolean; tx?: unknown } = {},
+  opts: {
+    series?: boolean
+    tx?: unknown
+    /** The member the copy names (a corporate session's client), so deleting them removes the Update. */
+    subjectClientId?: string
+  } = {},
 ): Promise<void> {
   const main = (added.main ?? []).filter(id => id !== actorStaffId)
   const supporting = (added.supporting ?? []).filter(id => id !== actorStaffId && !main.includes(id))
@@ -108,12 +114,12 @@ export async function recordSessionAssigned(
     actorName: actor?.name ?? 'An admin',
     what: what.what,
     when: at ? formatWhen(at, timezone) : null,
-    date: at ? localDate(at, timezone) : null,
+    date: at ? localDate(timezone, at) : null,
     series:
       opts.series && at
         ? { weekday: formatWeekday(at, timezone), time: formatClock(at, timezone), from: formatDay(at, timezone) }
         : null,
   }
-  await recordUpdate(tenantId, 'session_assigned', main, { ...payload, supporting: false })
-  await recordUpdate(tenantId, 'session_assigned', supporting, { ...payload, supporting: true })
+  await recordUpdate(tenantId, 'session_assigned', main, { ...payload, supporting: false }, opts.subjectClientId)
+  await recordUpdate(tenantId, 'session_assigned', supporting, { ...payload, supporting: true }, opts.subjectClientId)
 }

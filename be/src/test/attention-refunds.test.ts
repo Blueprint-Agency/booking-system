@@ -523,4 +523,23 @@ describe('Staff attention: refunds', { skip: integrationTestsEnabled ? false : S
     assert.equal((await itemsOf(theirAdmin, 'refund_incomplete')).length, 1)
     assert.equal((await itemsOf(theirAdmin, 'workshop_cancelled_unrefunded')).length, 1)
   })
+
+  test('ATN-200 the SQL that counts a Refund stopped part-way agrees with refundProgress for every small combination of payment counts', async () => {
+    const { sql } = await import('drizzle-orm')
+    const { refundIncompleteSql, refundProgress } = await import('../services/billing/balance')
+    for (let held = 0; held <= 3; held++) {
+      for (let heldRequested = 0; heldRequested <= held; heldRequested++) {
+        for (let refunded = 0; refunded <= 3; refunded++) {
+          const [row] = await harness.db.execute<{ incomplete: boolean }>(
+            sql`select ${refundIncompleteSql({ held: sql`${held}::int`, heldRequested: sql`${heldRequested}::int`, refunded: sql`${refunded}::int` })} as incomplete`,
+          )
+          assert.equal(
+            row!.incomplete,
+            refundProgress({ held, heldRequested, refunded }) === 'incomplete',
+            `held ${held}, asked ${heldRequested}, refunded ${refunded}`,
+          )
+        }
+      }
+    }
+  })
 })

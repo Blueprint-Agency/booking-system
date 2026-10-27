@@ -1,4 +1,4 @@
-import { count, min, sql } from 'drizzle-orm'
+import { count, min, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import { memberWithoutEmail } from '../clients/manage'
@@ -42,6 +42,7 @@ export const membersWithoutEmail: AttentionProvider = {
     ]
   },
   seeAllHref: () => '/admin/customers?filter=no_email',
+  seeAllLabel: 'Customers',
 }
 
 /** How far back an outcome still counts. */
@@ -63,9 +64,17 @@ type BouncingRow = {
  * and mail logged with no recipient id (sent before an account existed) has no
  * one to point at.
  */
-async function bouncing(ctx: AttentionContext): Promise<BouncingRow[]> {
+/** `latest` is one row per recipient with an outcome in the window; these are the ones whose outcome is a bad one. */
+const BAD_OUTCOME = sql`status <> 'delivered'`
+
+/**
+ * The query both `bouncing` (the rows) and `countBouncing` (their number) run:
+ * the `latest` CTE, then whatever `tail` selects from it, so who counts as
+ * bouncing is written once.
+ */
+function latestOutcomes(ctx: AttentionContext, tail: SQL): SQL {
   const since = new Date(ctx.now.getTime() - WINDOW_MS)
-  const rows = await db.execute<BouncingRow>(sql`
+  return sql`
     with people as (
       select 'client'::email_recipient_kind as kind, id, name, email
         from clients
@@ -89,9 +98,22 @@ async function bouncing(ctx: AttentionContext): Promise<BouncingRow[]> {
          and l.outcome_at <= ${ctx.now.toISOString()}::timestamptz
        order by l.recipient_user_kind, l.recipient_user_id, l.outcome_at desc, l.id
     )
-    select * from latest where status <> 'delivered' order by at, user_id
-  `)
+    ${tail}
+  `
+}
+
+async function bouncing(ctx: AttentionContext): Promise<BouncingRow[]> {
+  const rows = await db.execute<BouncingRow>(
+    latestOutcomes(ctx, sql`select * from latest where ${BAD_OUTCOME} order by at, user_id`),
+  )
   return [...rows]
+}
+
+async function countBouncing(ctx: AttentionContext): Promise<number> {
+  const [row] = await db.execute<{ n: number }>(
+    latestOutcomes(ctx, sql`select count(*)::int as n from latest where ${BAD_OUTCOME}`),
+  )
+  return row?.n ?? 0
 }
 
 const WORDING = {
@@ -105,7 +127,7 @@ export const emailBouncing: AttentionProvider = {
   group: 'people_email',
   dismissable: false,
   appliesTo: adminOnly,
-  count: async ctx => (await bouncing(ctx)).length,
+  count: countBouncing,
   list: async (ctx, limit) =>
     (await bouncing(ctx)).slice(0, limit).map((r): ProviderItem => {
       const at = new Date(r.at)

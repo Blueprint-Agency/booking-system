@@ -112,4 +112,5 @@ export const classpassReview: AttentionProvider = {
     )
   },
   seeAllHref: () => '/admin/classpass',
+  seeAllLabel: 'ClassPass',
 }

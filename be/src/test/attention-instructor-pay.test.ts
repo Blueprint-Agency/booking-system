@@ -124,6 +124,7 @@ describe('Staff attention: instructor pay missing', { skip: integrationTestsEnab
     const item = items[0]!
     assert.equal(item.id, 'instructor_pay_missing:window')
     assert.equal(item.title, '3 completed sessions have no instructor pay')
+    assert.equal(item.detail, 'Since Tue 1 Sep. Set pay so Finance is right', 'the first day of last month, in the spec’s date style')
     assert.equal(item.href, '/admin/finance?needs_pay=1&from=2026-09-01&to=2026-10-15')
     assert.equal(item.location, null)
     assert.equal(item.dismissable, false)
@@ -148,6 +149,89 @@ describe('Staff attention: instructor pay missing', { skip: integrationTestsEnab
     )
     assert.equal(finance.unpriced_count, 1)
     assert.equal(finance.rows.length, 1)
+  })
+
+  test('ATN-199 the SQL count covers all five pay sources, main and supporting, and is the Finance page’s own unpriced count for the same range', async () => {
+    const studio = await freshStudio()
+    const admin = await staffAt(studio, 'admin', 'admin')
+    const teacher = await staffAt(studio, 'teacher', 'instructor')
+    const mate = await staffAt(studio, 'mate', 'instructor')
+    harness.clock.set(new Date('2026-10-15T08:00:00Z'))
+    const ended = new Date(harness.clock.now().getTime() - 24 * HOUR)
+
+    // A class: main and supporting both unpriced (2). Another: both priced (0).
+    const unpriced = await classEnded(studio, teacher, ended)
+    await harness.db.insert(schema.classSupportingInstructors).values({ tenantId: studio.id, classId: unpriced, instructorId: mate.id })
+    const priced = await classEnded(studio, teacher, ended, '30.00')
+    await harness.db
+      .insert(schema.classSupportingInstructors)
+      .values({ tenantId: studio.id, classId: priced, instructorId: mate.id, paySgd: '10.00' })
+
+    // A private session: main and supporting both unpriced (2).
+    const { ensureAuthUser } = await import('../services/auth/auth-users')
+    const email = `m@${studio.slug}.test`
+    const authUserId = await ensureAuthUser(harness.db, 'client', { email, name: 'Mia', tenantId: studio.id })
+    const [member] = await harness.db
+      .insert(schema.clients)
+      .values({ tenantId: studio.id, email, name: 'Mia', phone: '+6580000000', authUserId })
+      .returning({ id: schema.clients.id })
+    const [request] = await harness.db
+      .insert(schema.ptRequests)
+      .values({ tenantId: studio.id, clientId: member!.id, locationId: studio.locationId, sessionType: '1on1', status: 'scheduled', expiresAt: ended })
+      .returning({ id: schema.ptRequests.id })
+    const [pt] = await harness.db
+      .insert(schema.ptSessions)
+      .values({
+        tenantId: studio.id,
+        ptRequestId: request!.id,
+        instructorId: teacher.id,
+        locationId: studio.locationId,
+        roomId: studio.roomId,
+        startsAt: new Date(ended.getTime() - HOUR),
+        endsAt: ended,
+        sessionType: '1on1',
+        capacityOnline: 1,
+        scheduledAt: new Date(ended.getTime() - 48 * HOUR),
+        scheduledByStaffId: admin.id,
+      })
+      .returning({ id: schema.ptSessions.id })
+    await harness.db
+      .insert(schema.ptSessionSupportingInstructors)
+      .values({ tenantId: studio.id, ptSessionId: pt!.id, instructorId: mate.id })
+
+    // Workshops: one over, main unpriced and supporting priced (1); one still to come (0).
+    const workshop = async (name: string, endsAt: Date) => {
+      const [w] = await harness.db
+        .insert(schema.workshops)
+        .values({ tenantId: studio.id, name, locationId: studio.locationId, createdByStaffId: admin.id })
+        .returning({ id: schema.workshops.id })
+      await harness.db.insert(schema.workshopDays).values({
+        tenantId: studio.id,
+        workshopId: w!.id,
+        ord: 1,
+        roomId: studio.roomId,
+        startsAt: new Date(endsAt.getTime() - 2 * HOUR),
+        endsAt,
+        basePriceSgd: '100.00',
+        capacityOnline: 10,
+      })
+      await harness.db.insert(schema.workshopInstructors).values([
+        { tenantId: studio.id, workshopId: w!.id, instructorId: teacher.id, role: 'main' },
+        { tenantId: studio.id, workshopId: w!.id, instructorId: mate.id, role: 'supporting', paySgd: '10.00' },
+      ])
+    }
+    await workshop('Done', ended)
+    await workshop('Later', new Date(harness.clock.now().getTime() + 48 * HOUR))
+
+    const item = (await payItems(admin))[0]!
+    assert.equal(item.title, '5 completed sessions have no instructor pay')
+    const from = sgInstant('2026-09-01', '00:00').toISOString()
+    const to = sgInstant('2026-10-15', '23:59').toISOString()
+    const finance = await json(
+      await send(`/portal/admin/finance?needs_pay=true&from=${from}&to=${to}`, admin.headers),
+      200,
+    )
+    assert.equal(finance.unpriced_count, 5, 'the Finance page counts the same five')
   })
 
   test('ATN-102 only sessions since the first of the previous month count, and priced ones never do', async () => {

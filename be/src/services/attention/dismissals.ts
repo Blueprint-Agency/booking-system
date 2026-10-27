@@ -13,7 +13,8 @@ import { providers } from './registry'
 
 /**
  * Dismiss one item. `403` for a caller who is not an admin; `422
- * not_dismissable` for a kind that is not (or does not exist); `404` when the
+ * not_dismissable` for a kind that is not (the route has already refused a kind
+ * the registry does not hold, as an invalid request); `404` when the
  * item is not open now (never was, resolved, or already dismissed).
  */
 export async function dismissItem(
