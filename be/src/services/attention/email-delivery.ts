@@ -42,6 +42,7 @@ export const membersWithoutEmail: AttentionProvider = {
     ]
   },
   seeAllHref: () => '/admin/customers?filter=no_email',
+  seeAllLabel: 'Customers',
 }
 
 /** How far back an outcome still counts. */

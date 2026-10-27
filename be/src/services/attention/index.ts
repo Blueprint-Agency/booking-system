@@ -87,12 +87,46 @@ export interface AttentionItemView {
   dismissable: boolean
 }
 
+/** A "See all {count}" link to one page that lists items the panel cut short. */
+export interface SeeAllView {
+  href: string
+  label: string
+  count: number
+}
+
 export interface AttentionGroupView {
   key: AttentionGroupKey
   label: string
   count: number
+  /** The one page that lists the group, when one kind makes it up; null when several do. */
   see_all_href: string | null
+  /** Per page: the kinds whose items the panel cut short, summed by the page they link to. */
+  see_all: SeeAllView[]
   items: AttentionItemView[]
+}
+
+/**
+ * For each page the group's kinds link to, how many items are open there, when
+ * the panel shows fewer of them than that. Kinds that share a page (the three
+ * corporate ones) are one link.
+ */
+function seeAllLinks(
+  ctx: AttentionContext,
+  inGroup: ReadonlyArray<{ provider: AttentionProvider; count: number }>,
+  shown: ReadonlyMap<string, number>,
+): SeeAllView[] {
+  const pages = new Map<string, SeeAllView & { shown: number }>()
+  for (const { provider, count } of inGroup) {
+    const href = provider.seeAllHref(ctx)
+    if (!href) continue
+    const page = pages.get(href) ?? { href, label: provider.seeAllLabel ?? '', count: 0, shown: 0 }
+    page.count += count
+    page.shown += shown.get(provider.kind) ?? 0
+    pages.set(href, page)
+  }
+  return [...pages.values()]
+    .filter(p => p.count > p.shown)
+    .map(({ href, label, count }) => ({ href, label, count }))
 }
 
 /** The panel's Needs action tab: the groups that have something, most urgent first. */
@@ -119,17 +153,27 @@ export async function attentionPanel(
     const rows = await Promise.all(
       inGroup.map(async ({ provider }) => (await provider.list(ctx, limit)).map(item => ({ provider, item }))),
     )
-    const items = rows
+    const shownRows = rows
       .flat()
       .sort((a, b) => byOldestThenSoonest(a.item, b.item))
       .slice(0, limit)
-      .map(({ provider, item }) => view(provider, item))
+    const items = shownRows.map(({ provider, item }) => view(provider, item))
     groups.push({
       key: group.key,
       label: group.label,
       count: inGroup.reduce((n, c) => n + c.count, 0),
       // One page lists a group's items only when one kind makes up the group.
       see_all_href: inGroup.length === 1 ? inGroup[0]!.provider.seeAllHref(ctx) : null,
+      see_all: seeAllLinks(
+        ctx,
+        inGroup,
+        new Map(
+          inGroup.map(({ provider }) => [
+            provider.kind,
+            shownRows.filter(r => r.provider.kind === provider.kind).length,
+          ]),
+        ),
+      ),
       items,
     })
   }

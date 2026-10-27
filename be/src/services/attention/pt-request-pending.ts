@@ -60,4 +60,5 @@ export const ptRequestPending: AttentionProvider = {
     return rows.map(r => toItem(ctx, r))
   },
   seeAllHref: base,
+  seeAllLabel: 'PT requests',
 }

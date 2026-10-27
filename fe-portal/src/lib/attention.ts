@@ -23,12 +23,30 @@ export interface AttentionItem {
   dismissable: boolean;
 }
 
+/** A page that lists items the panel cut short: one per page a group's kinds link to. */
+export interface AttentionSeeAll {
+  href: string;
+  /** What the page is called ("Leave"), to tell two links in one group apart. */
+  label: string;
+  count: number;
+}
+
 export interface AttentionGroup {
   key: string;
   label: string;
   count: number;
+  /** The one page that lists the group, when one kind makes it up; null when several do. */
   see_all_href: string | null;
+  see_all: AttentionSeeAll[];
   items: AttentionItem[];
+}
+
+/**
+ * The text of a "See all" link: "See all 4", or, where the group has more than
+ * one such link, "See all 4 Leave" so they can be told apart.
+ */
+export function seeAllText(link: AttentionSeeAll, linksInGroup: number): string {
+  return linksInGroup > 1 && link.label ? `See all ${link.count} ${link.label}` : `See all ${link.count}`;
 }
 
 export interface AttentionUpdate {

@@ -92,6 +92,7 @@ export const corporateRequestPending: AttentionProvider = {
     )
   },
   seeAllHref: () => PAGE,
+  seeAllLabel: 'Corporate requests',
 }
 
 /** A scheduled request whose session is over and still not marked attended. */
@@ -120,6 +121,7 @@ export const corporateSessionUnmarked: AttentionProvider = {
       }),
     ),
   seeAllHref: () => PAGE,
+  seeAllLabel: 'Corporate requests',
 }
 
 /** A scheduled request whose purchase was refunded while its session is still booked. */
@@ -144,4 +146,5 @@ export const corporateRefundedStillScheduled: AttentionProvider = {
       }),
     ),
   seeAllHref: () => PAGE,
+  seeAllLabel: 'Corporate requests',
 }

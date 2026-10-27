@@ -40,4 +40,5 @@ export const partPaymentSilent: AttentionProvider = {
   count: async ctx => (await open(ctx)).length,
   list: async (ctx, limit) => (await open(ctx)).slice(0, limit).map(p => itemFor(ctx, p)),
   seeAllHref: () => PAGE,
+  seeAllLabel: 'Partial payments',
 }

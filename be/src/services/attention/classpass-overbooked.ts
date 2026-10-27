@@ -60,4 +60,5 @@ export const classpassOverbooked: AttentionProvider = {
     })
   },
   seeAllHref: () => '/admin/classpass',
+  seeAllLabel: 'ClassPass',
 }

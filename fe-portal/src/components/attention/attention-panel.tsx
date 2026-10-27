@@ -13,6 +13,7 @@ import {
   appendOlder,
   dismissalBody,
   removeItemLocally,
+  seeAllText,
   locationFromHref,
   markAllReadLocally,
   markUpdateReadLocally,
@@ -318,7 +319,6 @@ function Group({
   onFollow: (href: string | null) => void;
   onDismiss: (item: AttentionItem) => void;
 }) {
-  const more = group.count - group.items.length;
   return (
     <section aria-label={group.label} className="border-b border-border last:border-b-0">
       <h3 className="flex items-center justify-between px-4 pb-1 pt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-muted">
@@ -330,15 +330,16 @@ function Group({
           <Row key={item.id} item={item} showLocation={showLocation} onFollow={onFollow} onDismiss={onDismiss} />
         ))}
       </ul>
-      {more > 0 && group.see_all_href && (
+      {group.see_all.map((link) => (
         <Link
-          href={group.see_all_href}
-          onClick={() => onFollow(group.see_all_href)}
+          key={link.href}
+          href={link.href}
+          onClick={() => onFollow(link.href)}
           className="block px-4 pb-3 pt-1 text-xs font-medium text-accent hover:underline"
         >
-          See all {group.count}
+          {seeAllText(link, group.see_all.length)}
         </Link>
-      )}
+      ))}
     </section>
   );
 }

@@ -62,4 +62,5 @@ export const leaveRequestPending: AttentionProvider = {
   count: ctx => countPendingLeaveForDecision(ctx.tenantId, ctx.staffId),
   list: async (ctx, limit) => (await listPendingLeaveForDecision(ctx.tenantId, ctx.staffId, limit)).map(r => toItem(ctx, r)),
   seeAllHref: () => LEAVE_PAGE,
+  seeAllLabel: 'Leave',
 }

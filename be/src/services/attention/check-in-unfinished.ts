@@ -124,4 +124,5 @@ export const checkInUnfinished: AttentionProvider = {
       .slice(0, limit)
   },
   seeAllHref: desk,
+  seeAllLabel: 'Check-in',
 }

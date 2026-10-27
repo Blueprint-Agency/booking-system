@@ -111,4 +111,6 @@ export interface AttentionProvider {
   list(ctx: AttentionContext, limit: number): Promise<ProviderItem[]>
   /** The page that lists every item of this kind, for the group's "See all". */
   seeAllHref(ctx: AttentionContext): string | null
+  /** What that page is called ("Leave"), to tell two "See all" links in one group apart. */
+  seeAllLabel?: string
 }

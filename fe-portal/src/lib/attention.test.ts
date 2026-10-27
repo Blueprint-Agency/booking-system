@@ -5,6 +5,7 @@ import {
   isWantedPurchase,
   purchaseParam,
   removeItemLocally,
+  seeAllText,
   withWantedFirst,
   type AttentionGroup,
   type AttentionItem,
@@ -167,13 +168,22 @@ test("ATN-57 a dismissal is posted with the item's kind and subject, the row goe
     dismissable: true,
   });
   const groups: AttentionGroup[] = [
-    { key: "payments_refunds", label: "Payments & refunds", count: 2, see_all_href: null, items: [item("a"), item("b")] },
-    { key: "requests", label: "Requests", count: 1, see_all_href: null, items: [item("c")] },
+    { key: "payments_refunds", label: "Payments & refunds", count: 2, see_all_href: null, see_all: [], items: [item("a"), item("b")] },
+    { key: "requests", label: "Requests", count: 1, see_all_href: null, see_all: [], items: [item("c")] },
   ];
   const after = removeItemLocally(groups, "part_payment_silent:a");
   assert.deepEqual(after[0]!.items.map((i) => i.id), ["part_payment_silent:b"]);
   assert.equal(after[0]!.count, 1);
   assert.equal(removeItemLocally(after, "part_payment_silent:b").length, 1, "an emptied group is dropped");
+});
+
+test("ATN-192 a See all link reads 'See all {n}', and names its page when the group has more than one", () => {
+  const leave = { href: "/admin/leave", label: "Leave", count: 7 };
+  const corporate = { href: "/admin/corporate-requests", label: "Corporate requests", count: 3 };
+  assert.equal(seeAllText(leave, 1), "See all 7");
+  assert.equal(seeAllText(leave, 2), "See all 7 Leave");
+  assert.equal(seeAllText(corporate, 2), "See all 3 Corporate requests");
+  assert.equal(seeAllText({ ...leave, label: "" }, 2), "See all 7", "a link with no page name falls back to the count alone");
 });
 
 test("ATN-58 Partial payments reads ?purchase= and lists that purchase first", () => {

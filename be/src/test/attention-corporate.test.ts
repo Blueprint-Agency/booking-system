@@ -315,6 +315,45 @@ describe('Staff attention: corporate requests', { skip: integrationTestsEnabled 
     harness.clock.set(START)
   })
 
+  test('ATN-191 a group fed by two pages gives each page its own See all with its own count, only for the kinds the panel cut short', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    const tara = await instructorAt(studio, admin, 'tara')
+    await pending(studio, 'Ann', 5 * HOUR)
+    await pending(studio, 'Bea', 4 * HOUR)
+    for (const start of ['2031-06-20', '2031-06-21']) {
+      await harness.db.insert(schema.leaveRequests).values({
+        tenantId: studio.id,
+        staffUserId: tara.id,
+        type: 'annual',
+        startDate: start,
+        endDate: start,
+        halfDay: 'none',
+        days: '1.0',
+        leaveYear: 2031,
+        status: 'pending',
+        reason: 'attention test',
+      })
+    }
+
+    // Everything fits: nothing was cut short, so there is nothing to "see all" of.
+    const all = (await json(await send('/portal/attention?limit_per_group=10', admin.headers), 200)).needs_action.groups.find(
+      (g: any) => g.key === 'requests',
+    )
+    assert.equal(all.count, 4)
+    assert.deepEqual(all.see_all, [])
+
+    const cut = (await json(await send('/portal/attention?limit_per_group=1', admin.headers), 200)).needs_action.groups.find(
+      (g: any) => g.key === 'requests',
+    )
+    assert.equal(cut.items.length, 1)
+    assert.equal(cut.see_all_href, null, 'the group-level link stays null while two pages feed it')
+    assert.deepEqual(cut.see_all, [
+      { href: '/admin/corporate-requests', label: 'Corporate requests', count: 2 },
+      { href: '/admin/leave', label: 'Leave', count: 2 },
+    ])
+  })
+
   test('ATN-27 another studio’s Admin sees none of it', async () => {
     const studio = await freshStudio()
     const other = await freshStudio()

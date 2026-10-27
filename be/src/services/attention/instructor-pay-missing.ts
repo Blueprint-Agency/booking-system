@@ -54,4 +54,5 @@ export const instructorPayMissing: AttentionProvider = {
     return [item]
   },
   seeAllHref: () => `${FINANCE_PAGE}?needs_pay=1`,
+  seeAllLabel: 'Finance',
 }
