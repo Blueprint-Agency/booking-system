@@ -61,8 +61,10 @@ const KIND_NAME: Record<PurchasedKind, string> = {
 /**
  * NTF-08: confirm a class booking to the member — the class, its time, place
  * and instructor, the check-in code, and what it cost the package that paid.
+ * A booking staff made for the member is confirmed whatever the studio's
+ * switch says; the member's own honours it.
  */
-export async function sendClassBookingEmail(tenantId: string, bookingId: string): Promise<void> {
+export async function sendClassBookingEmail(tenantId: string, bookingId: string, by: 'member' | 'staff'): Promise<void> {
   try {
     const [row] = await db
       .select({
@@ -97,6 +99,7 @@ export async function sendClassBookingEmail(tenantId: string, bookingId: string)
     await sendTemplatedEmail({
       tenantId,
       slug: 'class_booking_confirmed',
+      staffAction: by === 'staff',
       recipient: { email: row.clientEmail, userId: row.clientId, userKind: 'client' },
       variables: {
         client_name: row.clientName,

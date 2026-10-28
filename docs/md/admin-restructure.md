@@ -54,7 +54,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 - **Config**: Class Types, Promo Codes. **A Promo Code sits in Config, not Packages**: it crosses products, so it belongs with the building blocks rather than inside any one catalogue (contrast a Promotion, which belongs to exactly one product and is edited there).
 - **Packages**: Classes, Workshops, Private Sessions, Corporate, Merch (global, shared across locations). Merch is shop-floor stock (mats, props, apparel) rather than catalogue governance, but like the rest of Packages it is managed by admins.
 - **People**: Customers, Corporate Requests, Staff, Leave, My leave (members + staff accounts). **Leave** is the queue of every staff member's requests, each labelled with the applicant's role, where any admin decides any request, their own included. **My leave** (`/admin/my-leave`) is the admin's own balances, request form, documents and history, the same page instructors have at `/instructor/leave` (#315). **Corporate Requests sits here, not in the workspace zone** — a request records no `location_id` until it is scheduled, so there is nothing for the switcher to filter it by; it is a person asking, which is what People is.
-- **Settings**: Global Policy, Business details, ClassPass (location-independent policy + config). **ClassPass** (#407, `/admin/classpass`, admins only) is where the studio sets up importing its ClassPass bookings from the emails ClassPass sends it — see §21. **Business details** (#391, #398, `/admin/business-details`, admins only) sets what the studio's business documents say about it: first its **Business name** (required), the name it trades under, then the registration number, address and footer note its Receipts print, and the Receipt number prefix (default `R`), with a live preview of the number the next Receipt will take under the prefix being typed. A save applies to Receipts issued afterwards; earlier ones keep what they were issued with. The super portal's New studio form takes the same fields, optional: its "Domain name" field is `tenants.name`, the platform's own label, and a blank Business name is that Domain name. **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio and eligible class types, and no photo: the instructor sets their own picture). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
+- **Settings**: Global Policy, Business details, Emails, Features, ClassPass (location-independent policy + config). **Emails** (#467, `/admin/emails`, admins only) switches each of the studio's emails on or off — see §16. **ClassPass** (#407, `/admin/classpass`, admins only) is where the studio sets up importing its ClassPass bookings from the emails ClassPass sends it — see §21. **Business details** (#391, #398, `/admin/business-details`, admins only) sets what the studio's business documents say about it: first its **Business name** (required), the name it trades under, then the registration number, address and footer note its Receipts print, and the Receipt number prefix (default `R`), with a live preview of the number the next Receipt will take under the prefix being typed. A save applies to Receipts issued afterwards; earlier ones keep what they were issued with. The super portal's New studio form takes the same fields, optional: its "Domain name" field is `tenants.name`, the platform's own label, and a blank Business name is that Domain name. **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio and eligible class types, and no photo: the instructor sets their own picture). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
 - **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
 
 `NavItem.workspaceScoped` marks the workspace-zone items; it is distinct from `NavItem.scope`, which only governs role visibility (admin vs instructor). The build-order below is the recommended *setup* sequence, not the visual order.
@@ -91,13 +91,13 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 **Clients & Content:**
 15. Clients
-16. Notifications (Email Templates)
+16. Emails (a switch per email)
 17. Waivers — not being built
 
 **Completed this phase:**
 - 14. Roles & Invitations
 - 15. Clients (list, profile, credit balance, history, manual adjustments)
-- 16. Notifications (email template management) — built against fixture templates, then hidden (#277); see §16
+- 16. Emails: a switch per email, on the portal's Emails page and the admin API behind it (#467); the template editor is deleted; see §16
 
 **Next phase (see §19):**
 - Dashboard
@@ -674,7 +674,7 @@ Two staff roles in the system: `admin` and `instructor`. The `staff_role` type h
 
 | Role | How created | Authority |
 |---|---|---|
-| **Admin** | A studio's first admin arrives with the studio (created or restored through the super portal); further admins are invited by an admin | Everything in the portal: Locations, Class Types, all Packages + Promotions, Promo Codes, Global Policy, Notifications, Marketing, feature flags, Staff (including other admins), Clients, Workshops, Rooms, and member impersonation. Sees every active location of the studio. |
+| **Admin** | A studio's first admin arrives with the studio (created or restored through the super portal); further admins are invited by an admin | Everything in the portal: Locations, Class Types, all Packages + Promotions, Promo Codes, Global Policy, Emails (§16), Marketing, feature flags, Staff (including other admins), Clients, Workshops, Rooms, and member impersonation. Sees every active location of the studio. |
 | **Instructor** | Invited by an admin | The instructor portal only, scoped to their own sessions. What they may do there beyond teaching is set per person by their **Instructor Permissions** (below). |
 
 - Roles are **mutually exclusive** — one email = one staff account = one role.
@@ -832,19 +832,35 @@ The actions on a client's active-package kebab, all written into the same immuta
 
 ---
 
-## 16. Notifications (Email Templates)
+## 16. Emails
 
-> **Hidden (#277).** The Notifications screen listed fixture templates, including `admin_cancel_*` emails no backend code sends, and omitted `purchase_refunded`, which it does send. It has been removed from the portal and its nav entry until the list can be read from the emails the backend actually sends — a separate ticket. The design below is the target for that work, not a description of the shipped portal.
+> **Switches, not a template editor (#467).** A studio turns individual emails on or off; it does not edit their wording. The template editor this section used to describe, and its `/portal/admin/notifications` stub routes, are deleted.
 
 ### 16a. Overview
 
-- Every trigger event always fires its email — no per-template enable/disable toggle.
-- Each template ships with seeded default content (subject + body). Admin can customise; the seed is the fallback for a fresh deployment.
-- No rendered preview mode — admin edits and saves directly.
-- Body uses a **rich text editor** (headings, bold, italic, bullet points, links).
-- Variables use `{{variable_name}}` syntax. The editor **detects variables inline** — known variables are highlighted; unknown variables are flagged in amber. A reference panel alongside the editor lists all valid variables for that specific template.
+- The **Emails** page (`/admin/emails`, Settings group beside Business details and Global Policy, admins only) lists every email the API returns for the studio, in two groups: **To members** and **To staff**, each in the API's order. Each email is a row with a plain-language name (for example "Class booking confirmed", "Check-in reminder to instructor and admins"), which the API gives with each email from the one classification, and one switch for the whole studio.
+- **Flipping a switch saves at once.** The switch moves straight away and stays disabled until the API answers; a refusal puts it back and shows the API's sentence in a toast. There is no Save button.
+- **Every switch starts on**, for new and existing studios, so nothing changes until an admin turns one off.
+- **Some emails are always on.** They are listed greyed out with a disabled switch and no explanation line: sign-in and account mail (sign-in code, password resets, staff 2FA, invitations, the staff email-change link and notice), money (purchase confirmations, receipts, refunds), and anything staff or the system did to a member's booking (the studio cancelled a class, PT session or workshop; an accepted-packages change cancelled a booking; a PT request was cancelled; a waitlist promotion booked and charged the member).
+- **A booking staff made always confirms.** "Class booking confirmed" is switchable for the bookings members make themselves. When an admin or instructor books a member onto a class, the member is sent the confirmation whatever the switch says. It is still one email and one row on the page.
+- **A switched-off email leaves a trace.** It is not sent, and the email log records a `skipped` row, so support can answer "why didn't I get an email?".
+- **Every change is in the studio's audit log** (who, which email, from, to). Instructors cannot see or change the switches: the page and its nav item are admin-only, and the API refuses them. Members never get email settings. The super portal has no controls over a studio's switches in v1.
+- The switches travel in a studio's archive and restore.
+- Each email's wording is the studio's seeded template copy (`email_templates`); it is not editable.
+
+The one classification of every email, which the send check, the API and the page all read, is `STUDIO_EMAILS` in `be/src/services/notifications/switches.ts`:
+
+| Group | Switchable | Locked |
+|---|---|---|
+| To members | `class_booking_confirmed`, `class_cancelled_credit_returned`, `pt_cancelled_session_returned`, `credit_expiry_reminder` | `sign_in_code`, `password_reset`, `client_invite`, `package_purchase_confirmed`, `trial_pass_purchase_confirmed`, `corporate_purchase_confirmed`, `purchase_receipt`, `workshop_purchase_confirmed`, `purchase_refunded`, `admin_cancel_class`, `admin_cancel_pt`, `admin_cancel_workshop`, `class_rule_cancelled`, `pt_request_cancelled`, `class_waitlist_promoted` |
+| To staff | `checkin_nag`, `instructor_cancel_class`, `classpass_overbooked`, `leave_request_submitted`, `leave_approved`, `leave_rejected`, `leave_revoked` | `staff_two_factor_code`, `staff_password_reset`, `admin_invite`, `instructor_invite`, `staff_email_change_link`, `staff_email_changed_notice` |
+
+- `pt_request_cancelled` is one email for a member's and a staff cancel, so it is locked whole. `checkin_nag` goes to the instructor and every admin; one switch covers both.
+- Template slugs no code sends (`welcome`, `class_cancelled_forfeited`, `pt_cancelled_forfeited`, `pt_session_approved`, `pt_session_declined`, `pt_request_expired`, `pt_request_submitted`, `workshop_waitlist_promoted`, `referral_credited`) are not listed. The super portal's own `platform_*` mail is not a studio's and is not listed.
 
 ### 16b. Template List
+
+The emails' triggers and variables, for reference. Some rows below (Welcome, the forfeited cancels, the PT request replies) are templates no code sends today; they are not on the Emails page.
 
 **Auth**
 
@@ -895,23 +911,6 @@ The actions on a client's active-package kebab, all written into the same immuta
 | 17 | Instructor invite | Admin creates instructor profile (§14b) | New instructor | `{{instructor_name}}`, `{{studio_name}}`, `{{invite_link}}`, `{{expiry_days}}` |
 | 18 | Admin invite | Admin sends admin invite (§14b) | Invitee | `{{studio_name}}`, `{{invite_link}}`, `{{expiry_days}}` |
 | 19 | Check-in nag | Check-in still `pending` 24h after event end (§11) | Assigned instructor (cc admin) | `{{instructor_name}}`, `{{session_name}}`, `{{date}}`, `{{pending_count}}`, `{{checkin_link}}` |
-
-### 16c. Template Editor
-
-**Fields:**
-- **Subject** — plain text input; supports variables.
-- **Body** — rich text editor; supports headings, bold, italic, bullet points, links, and variables.
-
-**Variable behaviour:**
-- Variables written as `{{variable_name}}`.
-- Editor highlights known variables inline as the admin types.
-- Unknown or misspelled variables flagged in amber with a tooltip ("Unrecognised variable — will render as blank").
-- Reference panel alongside the editor lists all valid variables for the open template with a short description of each.
-
-**Save behaviour:**
-- Save button active whenever unsaved changes exist.
-- Save replaces the current template body + subject for that trigger.
-- No versioning or rollback in v1 — admin can manually restore by re-typing or referencing the seeded defaults (documented externally).
 
 ---
 

@@ -7,6 +7,8 @@ import { staffUsers } from '../../db/schema/identity'
 import { and, eq, ne } from 'drizzle-orm'
 import { reportError } from '../../shared/logger'
 import { STUDIO_NAME_VARIABLE } from './variables'
+import type { StudioEmailSlug } from './switches'
+import { emailEnabled } from './switch-state'
 
 export type TemplateSlug =
   | 'welcome'
@@ -59,6 +61,9 @@ export type TemplateSlug =
   | 'staff_two_factor_code'
   | 'staff_password_reset'
 
+/** A template some sender sends: one classified in `./switches.ts`. */
+export type SentTemplateSlug = Extract<TemplateSlug, StudioEmailSlug>
+
 export interface TemplateRecipient {
   email: string
   /** staff_users.id or clients.id — nullable when we don't yet have a row. */
@@ -70,7 +75,7 @@ export interface SendInput {
   /** Whose words these are — the template is resolved within this tenant, and
    *  the `email_log` row is filed under it. */
   tenantId: string
-  slug: TemplateSlug
+  slug: SentTemplateSlug
   recipient: TemplateRecipient
   variables: Record<string, string>
   /**
@@ -91,6 +96,11 @@ export interface SendInput {
    * Trusted HTML.
    */
   appendixHtml?: string
+  /**
+   * Staff did this to the member, so the email is sent whatever the studio's
+   * switch says: anything staff did to a member's booking always sends.
+   */
+  staffAction?: boolean
 }
 
 const REDACTED = '[redacted]'
@@ -102,12 +112,22 @@ const REDACTED = '[redacted]'
  * want to roll back business actions (e.g. an invitation) because of a
  * transient provider hiccup.
  *
- * Throws only when the template row is missing (programming error) — which now
- * includes a tenant that has not been seeded its copy, and that is the right
- * failure: sending another studio's wording is worse than sending nothing.
+ * An email the studio has switched off is filed `skipped` before anything is
+ * read or rendered for it.
+ *
+ * Throws only when the template row of an email that goes out is missing
+ * (programming error) — which now includes a tenant that has not been seeded
+ * its copy, and that is the right failure: sending another studio's wording
+ * is worse than sending nothing.
  */
 export async function sendTemplatedEmail(input: SendInput): Promise<void> {
+  await sendTemplated(input, input.staffAction === true || (await emailEnabled(input.tenantId, input.slug)))
+}
+
+/** `sendTemplatedEmail` once the studio's switch has been read. */
+async function sendTemplated(input: SendInput, enabled: boolean): Promise<void> {
   const { tenantId, slug, recipient, variables, secretVariables = [], attachments, appendixHtml } = input
+  if (!enabled) return logSkipped(tenantId, slug, recipient)
   const [tpl] = await db
     .select()
     .from(emailTemplates)
@@ -168,6 +188,10 @@ export async function sendStudioSystemEmail(input: {
   recipient: TemplateRecipient
   render: (studioName: string, redact: boolean) => FramedEmail
 }): Promise<boolean> {
+  if (!(await emailEnabled(input.tenantId, input.slug))) {
+    await logSkipped(input.tenantId, input.slug, input.recipient)
+    return false
+  }
   const identity = await tenantMailIdentity(input.tenantId)
   return deliver({
     tenantId: input.tenantId,
@@ -179,10 +203,28 @@ export async function sendStudioSystemEmail(input: {
   })
 }
 
+/**
+ * A switched-off email's `email_log` row: its slug and recipient, `skipped`.
+ * Nothing was rendered, so its subject and body are empty, and it never
+ * reaches the mailer.
+ */
+async function logSkipped(tenantId: string, slug: StudioEmailSlug, recipient: TemplateRecipient): Promise<void> {
+  await db.insert(emailLog).values({
+    tenantId,
+    templateSlug: slug,
+    recipientEmail: recipient.email,
+    recipientUserId: recipient.userId ?? null,
+    recipientUserKind: recipient.userKind,
+    subjectRendered: '',
+    bodyRendered: '',
+    status: 'skipped',
+  })
+}
+
 /** File the `email_log` row, send, and record how the send went. True when it went. */
 async function deliver(input: {
   tenantId: string
-  slug: TemplateSlug | SystemMailSlug
+  slug: StudioEmailSlug
   recipient: TemplateRecipient
   identity: Awaited<ReturnType<typeof tenantMailIdentity>>
   email: FramedEmail
@@ -266,20 +308,22 @@ async function deliver(input: {
  * sit inside the same swallow as the sends: every caller runs AFTER the row it
  * announces is committed, so nothing here may undo — or fail — that work. A
  * failure is reported (shared/logger.ts) rather than thrown, so a swallowed
- * notification is never a silent one.
+ * notification is never a silent one. The studio's switch is read once, and an
+ * email it has switched off never builds them: each admin gets a `skipped` row.
  *
  * `exceptStaffId` leaves one admin out: the one whose own action this is. An
  * admin who files leave is not told they filed it.
  */
 export async function emailEveryAdmin(
   tenantId: string,
-  slug: TemplateSlug,
+  slug: SentTemplateSlug,
   variables: () => Promise<Record<string, string>>,
   context?: Record<string, unknown>,
   options: { exceptStaffId?: string } = {},
 ): Promise<void> {
   try {
-    const vars = await variables()
+    const enabled = await emailEnabled(tenantId, slug)
+    const vars = enabled ? await variables() : {}
     const admins = await db
       .select({ id: staffUsers.id, email: staffUsers.email })
       .from(staffUsers)
@@ -293,12 +337,7 @@ export async function emailEveryAdmin(
       )
 
     for (const admin of admins) {
-      await sendTemplatedEmail({
-        tenantId,
-        slug,
-        recipient: { email: admin.email, userId: admin.id, userKind: 'staff' },
-        variables: vars,
-      })
+      await sendTemplated({ tenantId, slug, recipient: { email: admin.email, userId: admin.id, userKind: 'staff' }, variables: vars }, enabled)
     }
   } catch (err) {
     reportError(err, 'admin notification failed', { tenantId, slug, ...context })

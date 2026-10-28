@@ -1,8 +1,8 @@
 /**
  * A studio's stored template, rendered and wrapped in the shared email design.
  *
- * The stored `body_html` is the *content* — what the portal's template editor
- * shows and edits, `{{var}}` placeholders and all. The header, the footer and
+ * The stored `body_html` is the *content*, `{{var}}` placeholders and all.
+ * The header, the footer and
  * the palette are not the studio's copy; they are the layout's
  * (`services/mail/layout.ts`), applied here at send time, so every studio's
  * mail — and every row written before the design changed — goes out in the

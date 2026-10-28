@@ -62,11 +62,11 @@ describe('mail through the send gate', { skip: integrationTestsEnabled ? false :
 
   test("a studio's message leaves on noreply@ wearing the studio's name, tagged and keyed by its log row", async () => {
     const { one } = harness.tenants
-    const email = at('welcome')
+    const email = at('member')
     await withTenant(one.id, () =>
       send.sendTemplatedEmail({
         tenantId: one.id,
-        slug: 'welcome',
+        slug: 'class_rule_cancelled',
         recipient: { email, userKind: 'client' },
         variables: { name: 'Probe' },
       }),
@@ -85,7 +85,7 @@ describe('mail through the send gate', { skip: integrationTestsEnabled ? false :
     assert.equal(call.idempotencyKey, row!.id)
     assert.deepEqual(call.payload.tags, [
       { name: 'kind', value: 'everyday' },
-      { name: 'template', value: 'welcome' },
+      { name: 'template', value: 'class_rule_cancelled' },
       { name: 'tenant', value: one.id },
     ])
   })
@@ -142,7 +142,7 @@ describe('mail through the send gate', { skip: integrationTestsEnabled ? false :
     await withTenant(one.id, () =>
       send.sendTemplatedEmail({
         tenantId: one.id,
-        slug: 'welcome',
+        slug: 'class_rule_cancelled',
         recipient: { email, userKind: 'client' },
         variables: { name: 'Probe' },
       }),

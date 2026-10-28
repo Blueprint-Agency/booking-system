@@ -39,7 +39,7 @@ describe('mail attachments', { skip: integrationTestsEnabled ? false : SKIP_REAS
     return withTenant(one.id, () =>
       send.sendTemplatedEmail({
         tenantId: one.id,
-        slug: 'welcome',
+        slug: 'class_rule_cancelled',
         recipient: { email, userKind: 'client' },
         variables: { name: 'Probe' },
         ...(attachments ? { attachments } : {}),

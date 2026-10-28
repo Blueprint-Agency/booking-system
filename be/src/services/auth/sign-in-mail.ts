@@ -12,7 +12,7 @@ import { platformPasswordResetEmail, platformTwoFactorEmail, type PlatformEmail 
  *
  * **A studio pool's mail is that studio's mail.** It goes through
  * `sendTemplatedEmail` like every other message, so it is worded by the
- * Tenant's own `email_templates` row (editable in the portal), wears the
+ * Tenant's own `email_templates` row, wears the
  * Tenant's display name and `Reply-To`, leaves on the platform's one envelope
  * address ahead of any everyday mail at the send gate, and files an `email_log` row. The Tenant is the one whose
  * context the request opened: `/api/v1/auth/{client,staff}/*` runs behind

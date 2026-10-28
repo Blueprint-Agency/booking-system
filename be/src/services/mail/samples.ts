@@ -10,26 +10,14 @@
 import { buildEmailTemplates } from '../../db/seed/email-copy'
 import { platformPasswordResetEmail, platformTwoFactorEmail } from '../auth/platform-mail'
 import { frameTemplatedEmail } from '../notifications/frame'
+import { isStudioEmailSlug, STUDIO_EMAILS } from '../notifications/switches'
 import { TEMPLATE_VARIABLES } from '../notifications/variables'
 
 export const SAMPLE_STUDIO = 'Sample <b>Studio</b> & Co'
 
-/** Who each template goes to — staff mail says so in its footer. */
-const STAFF_SLUGS: ReadonlySet<string> = new Set([
-  'instructor_invite',
-  'admin_invite',
-  'instructor_cancel_class',
-  'leave_request_submitted',
-  'leave_approved',
-  'leave_rejected',
-  'leave_revoked',
-  'checkin_nag',
-  'classpass_overbooked',
-  'staff_two_factor_code',
-  'staff_password_reset',
-])
-
-export const recipientKindOf = (slug: string): 'client' | 'staff' => (STAFF_SLUGS.has(slug) ? 'staff' : 'client')
+/** Who each template goes to — staff mail says so in its footer. A template no sender sends goes to a member. */
+const recipientKindOf = (slug: string): 'client' | 'staff' =>
+  isStudioEmailSlug(slug) && STUDIO_EMAILS[slug].audience === 'staff' ? 'staff' : 'client'
 
 const PERSON = `Alex <O'Neill>`
 const SAMPLE_VALUES: Record<string, string> = {

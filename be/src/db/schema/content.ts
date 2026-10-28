@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, jsonb, boolean, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
@@ -36,6 +36,27 @@ export const emailTemplates = pgTable(
       table.tenantId,
       table.slug,
     ),
+  }),
+)
+
+/**
+ * A studio's switch for one of its emails (`services/notifications/switches.ts`).
+ *
+ * No row is on: a studio that has never touched a switch sends everything, as
+ * every studio did before the switches existed. A row is written the first time
+ * an admin changes that email, and kept after it is switched back on, so the
+ * audit rows about it name one target. A locked email's row is never read.
+ */
+export const emailSwitches = pgTable(
+  'email_switches',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    slug: text('slug').notNull(),
+    enabled: boolean('enabled').notNull(),
+  },
+  table => ({
+    tenantSlugUnique: uniqueIndex('email_switches_tenant_slug_unique').on(table.tenantId, table.slug),
   }),
 )
 

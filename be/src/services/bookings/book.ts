@@ -182,7 +182,7 @@ async function bookIntoClass(
   // the class lock is not held across the send and a mail fault cannot undo a
   // seat that is already the member's. A waitlist promotion books through
   // `payAndBook` and sends its own email (../waitlist/promote.ts).
-  afterCommit(() => sendClassBookingEmail(tenantId, booking.bookingId))
+  afterCommit(() => sendClassBookingEmail(tenantId, booking.bookingId, input.role === 'member' ? 'member' : 'staff'))
   return booking
 }
 

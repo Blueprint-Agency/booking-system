@@ -111,6 +111,8 @@ export const ERROR_CODES = {
   email_change_link_expired: "email_change_link_expired",
   email_change_link_invalid: "email_change_link_invalid",
   email_in_use: "email_in_use",
+  email_locked: "email_locked",
+  email_not_found: "email_not_found",
   email_placeholder_not_allowed: "email_placeholder_not_allowed",
   email_send_failed: "email_send_failed",
   email_unchanged: "email_unchanged",

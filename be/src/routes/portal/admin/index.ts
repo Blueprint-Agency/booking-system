@@ -22,7 +22,7 @@ import leave from './leave'
 import checkIn from './check-in'
 import clients from './clients'
 import staff from './staff'
-import notifications from './notifications'
+import emails from './emails'
 import marketing from './marketing'
 import featureFlags from './feature-flags'
 import impersonate from './impersonate'
@@ -67,7 +67,8 @@ const app = new Hono()
   .route('/clients', clients)
   .route('/', impersonate)
   .route('/staff', staff)
-  .route('/notifications', notifications)
+  // The studio's emails, each switched on or off for the whole studio (#467).
+  .route('/emails', emails)
   .route('/marketing', marketing)
   .route('/feature-flags', featureFlags)
   // The studio's own settings: the receipt details (#391).

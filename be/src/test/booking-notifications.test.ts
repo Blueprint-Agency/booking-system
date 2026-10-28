@@ -375,6 +375,59 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
     assert.deepEqual(drain(), [])
   })
 
+  test("NTF-49 with booking confirmations switched off, a booking an admin or instructor makes for a member still confirms to the member, and a member's own booking is skipped", async () => {
+    const confirmations = (enabled: boolean) =>
+      harness.app.request('/api/v1/portal/admin/emails/class_booking_confirmed', {
+        method: 'PATCH',
+        headers: { ...one.admin.headers, ...json },
+        body: JSON.stringify({ enabled }),
+      })
+    const staffBook = (who: Staff, area: 'admin' | 'instructor', classId: string, client: Member) =>
+      harness.app.request(`/api/v1/portal/${area}/schedule/classes/${classId}/bookings`, {
+        method: 'POST',
+        headers: { ...who.headers, ...json },
+        body: JSON.stringify({ client_id: client.clientId }),
+      })
+
+    const byAdmin = await member(one, 'Ana')
+    const byInstructor = await member(one, 'Ben')
+    const self = await member(one, 'Cy')
+    for (const who of [byAdmin, byInstructor, self]) await give(one, who, 'credit_bundle', 5)
+    const [adminClass, instructorClass, ownClass] = [await addClass(one), await addClass(one), await addClass(one)]
+
+    await expectStatus(await confirmations(false), 200)
+    try {
+      drain()
+      await expectStatus(await staffBook(one.admin, 'admin', adminClass, byAdmin), 201)
+      await expectStatus(await staffBook(one.instructor, 'instructor', instructorClass, byInstructor), 201)
+      await expectStatus(await book(self, ownClass), 201)
+
+      assert.deepEqual(
+        drain().map(m => [m.to, m.template]),
+        [
+          [byAdmin.email, 'class_booking_confirmed'],
+          [byInstructor.email, 'class_booking_confirmed'],
+        ],
+      )
+      const logged = await harness.db
+        .select({ to: schema.emailLog.recipientEmail, slug: schema.emailLog.templateSlug, status: schema.emailLog.status })
+        .from(schema.emailLog)
+        .where(and(eq(schema.emailLog.tenantId, one.id), sql`${schema.emailLog.recipientEmail} IN (${byAdmin.email}, ${byInstructor.email}, ${self.email})`))
+      assert.deepEqual(
+        logged.map(r => [r.to, r.slug, r.status]).sort(),
+        [
+          [byAdmin.email, 'class_booking_confirmed', 'sent'],
+          [byInstructor.email, 'class_booking_confirmed', 'sent'],
+          [self.email, 'class_booking_confirmed', 'skipped'],
+        ].sort(),
+      )
+    } finally {
+      await harness.db
+        .delete(schema.emailSwitches)
+        .where(and(eq(schema.emailSwitches.tenantId, one.id), eq(schema.emailSwitches.slug, 'class_booking_confirmed')))
+    }
+  })
+
   test('NTF-08 a booking still commits when its confirmation cannot be sent', async () => {
     const ivy = await member(one, 'Ivy')
     const pkg = await give(one, ivy, 'credit_bundle', 5)
