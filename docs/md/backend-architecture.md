@@ -1013,7 +1013,7 @@ A staff cancel of one booking (`/bookings/:id/cancel`) sends nothing (#320).
 
 #### `email_switches` (#467)
 
-id, slug (text, unique per Tenant), enabled (bool). A studio's switch for one of its emails. **No row is on**: a studio that never touched a switch sends everything, which is how migration 0129 left every existing studio. The first change an admin makes writes the row; switching back on keeps it, so every `email_switch_changed` audit row about that email targets one id. It travels in a studio archive by the catalogue rule (it has a `tenant_id`).
+id, slug (text, unique per Tenant), enabled (bool). A studio's switch for one of its emails. **No row is on**: a studio that never touched a switch sends everything, which is how migration 0136 left every existing studio. The first change an admin makes writes the row; switching back on keeps it, so every `email_switch_changed` audit row about that email targets one id. It travels in a studio archive by the catalogue rule (it has a `tenant_id`).
 
 Which emails exist, what each is called on the portal's Emails page, who receives each and which are locked is one map in code, `STUDIO_EMAILS` (`services/notifications/switches.ts`): 19 to members and 13 to staff, every slug some sender sends, the `email_templates` slugs with no sender left out. The send path takes only those slugs (`SentTemplateSlug`), so a sender cannot ship an unclassified email, and `switches.test.ts` fails when a new template slug is neither classified nor named as unsent. The admin API is `routes/portal/admin/emails.ts` (be-portal.md).
 
