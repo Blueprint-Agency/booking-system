@@ -10,7 +10,7 @@
  *
  * See docs/md/be-client.md §Corporate and docs/md/be-portal.md §Corporate.
  */
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { publicObjectUrl } from '../../lib/r2'
 import { corporateRequests, corporateSessions } from '../../db/schema/schedule'
@@ -64,7 +64,7 @@ export interface CreateCorporateRequestInput {
   clientId: string
   corporatePackageId: string
   /** The Purchase that paid for it, so a Refund of the Purchase can close it. */
-  purchaseId: string | null
+  purchaseId: string
 }
 
 /**
@@ -78,6 +78,10 @@ export interface CreateCorporateRequestInput {
  * the member has paid, and refusing the request then would keep their money
  * and give them nothing; checkout is where a package that is not on sale is
  * refused.
+ *
+ * One per Purchase (`corporate_requests_purchase_unique`): a second payment
+ * landing on a Purchase that already made its request, or a second write
+ * racing the first, gets the request already made back.
  */
 export async function createCorporateRequest(
   tenantId: string,
@@ -92,8 +96,23 @@ export async function createCorporateRequest(
       purchaseId: input.purchaseId,
       status: 'pending',
     })
+    .onConflictDoNothing({
+      target: [corporateRequests.tenantId, corporateRequests.purchaseId],
+      where: sql`${corporateRequests.purchaseId} IS NOT NULL`,
+    })
     .returning({ id: corporateRequests.id })
-  return { corporateRequestId: row!.id }
+  if (row) return { corporateRequestId: row.id }
+
+  const [made] = await db
+    .select({ id: corporateRequests.id })
+    .from(corporateRequests)
+    .where(
+      and(
+        eq(corporateRequests.tenantId, tenantId),
+        eq(corporateRequests.purchaseId, input.purchaseId),
+      ),
+    )
+  return { corporateRequestId: made!.id }
 }
 
 /**

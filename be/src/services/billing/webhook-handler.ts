@@ -382,6 +382,20 @@ async function bankPayment(
     )
 }
 
+async function bankedByConcurrentDelivery(tenantId: string, paymentIntentId: string): Promise<boolean> {
+  const [locked] = await db
+    .select({ status: stripePayments.status })
+    .from(stripePayments)
+    .where(
+      and(
+        eq(stripePayments.tenantId, tenantId),
+        eq(stripePayments.paymentIntentId, paymentIntentId),
+      ),
+    )
+    .for('update')
+  return locked?.status === 'succeeded'
+}
+
 /** The payment this system already recorded for an intent, within its Tenant. */
 async function existingPayment(tenantId: string, paymentIntentId: string) {
   const [row] = await db
@@ -887,21 +901,7 @@ async function dispatchStripeEvent(
           .onConflictDoNothing()
       }
 
-      // The request has no unique key of its own to stop a second one, so the
-      // payment row is the lock: two deliveries of this intent at once (the
-      // webhook and the confirmation page's fallback) queue here, and the one
-      // that waited reads the other's `succeeded` and stops.
-      const [locked] = await db
-        .select({ status: stripePayments.status })
-        .from(stripePayments)
-        .where(
-          and(
-            eq(stripePayments.tenantId, tenantId),
-            eq(stripePayments.paymentIntentId, paymentIntentId),
-          ),
-        )
-        .for('update')
-      if (locked?.status === 'succeeded') return
+      if (await bankedByConcurrentDelivery(tenantId, paymentIntentId)) return
 
       if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry))) return
 
