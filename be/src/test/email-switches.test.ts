@@ -110,7 +110,7 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     }
   })
 
-  test('NTF-38 an admin lists every email the studio sends, grouped by who receives it, each locked or not and every one on', async () => {
+  test('NTF-39 an admin lists every email the studio sends, grouped by who receives it, each locked or not and every one on', async () => {
     const { STUDIO_EMAILS } = await import('../services/notifications/switches')
     const body = await expectStatus(await list(admin), 200)
     for (const audience of ['member', 'staff'] as const) {
@@ -135,7 +135,7 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     for (const email of byslug.values()) assert.ok(email.name, `${email.slug} is listed without a name`)
   })
 
-  test('NTF-39 a switched-off email is not sent and its log row is skipped; switched back on, it sends', async () => {
+  test('NTF-40 a switched-off email is not sent and its log row is skipped; switched back on, it sends', async () => {
     const { one } = harness.tenants
     const off = await expectStatus(await change(admin, 'class_booking_confirmed', false), 200)
     assert.deepEqual(off, { slug: 'class_booking_confirmed', name: 'Class booking confirmed', audience: 'member', locked: false, enabled: false })
@@ -148,7 +148,7 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     assert.deepEqual(await sendTo(one, 'class_booking_confirmed'), { mailed: 1, statuses: ['sent'], slugs: ['class_booking_confirmed'] })
   })
 
-  test('NTF-40 a switched-off staff email sent to every admin reaches none of them, each logged skipped', async () => {
+  test('NTF-41 a switched-off staff email sent to every admin reaches none of them, each logged skipped', async () => {
     const { one } = harness.tenants
     await expectStatus(await change(admin, 'leave_request_submitted', false), 200)
     await withTenant(one.id, () => send.emailEveryAdmin(one.id, 'leave_request_submitted', async () => ({})))
@@ -158,7 +158,7 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     await expectStatus(await change(admin, 'leave_request_submitted', true), 200)
   })
 
-  test('NTF-41 a locked email is sent whatever its stored switch says, and an admin cannot switch it', async () => {
+  test('NTF-42 a locked email is sent whatever its stored switch says, and an admin cannot switch it', async () => {
     const { one } = harness.tenants
     const refused = await expectStatus(await change(admin, 'sign_in_code', false), 409, 'email_locked')
     assert.match(String(refused.message), /\.$/, 'refused with a sentence')
@@ -185,7 +185,7 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
       .where(and(eq(schema.emailSwitches.tenantId, one.id), inArray(schema.emailSwitches.slug, ['admin_cancel_class', 'staff_email_changed_notice'])))
   })
 
-  test("NTF-42 one studio's switch does not reach another studio", async () => {
+  test("NTF-43 one studio's switch does not reach another studio", async () => {
     const { one, two } = harness.tenants
     await expectStatus(await change(admin, 'credit_expiry_reminder', false), 200)
 
@@ -199,7 +199,7 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     await expectStatus(await change(admin, 'credit_expiry_reminder', true), 200)
   })
 
-  test('NTF-43 an instructor can neither list nor change the switches, and an email the studio does not send is not found', async () => {
+  test('NTF-44 an instructor can neither list nor change the switches, and an email the studio does not send is not found', async () => {
     await expectStatus(await list(instructor), 403)
     await expectStatus(await change(instructor, 'checkin_nag', false), 403)
     await expectStatus(await change(admin, 'welcome', false), 404, 'email_not_found')
@@ -207,7 +207,7 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     assert.equal(listed.staff.find((e: Email) => e.slug === 'checkin_nag').enabled, true)
   })
 
-  test('NTF-44 each change writes an audit row naming who, the email, and what it went from and to', async () => {
+  test('NTF-45 each change writes an audit row naming who, the email, and what it went from and to', async () => {
     const { one } = harness.tenants
     await expectStatus(await change(otherAdmin, 'checkin_nag', false), 200)
     await expectStatus(await change(otherAdmin, 'checkin_nag', false), 200)
@@ -239,7 +239,7 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     return row!.id
   }
 
-  test("NTF-45 a studio's archive carries its switches, and restoring it switches the same emails off", async () => {
+  test("NTF-46 a studio's archive carries its switches, and restoring it switches the same emails off", async () => {
     const transfer = await import('../services/tenants/transfer')
     const { listStudioEmails } = await import('../services/notifications/switch-state')
     const source = await emptyStudio('source')
@@ -257,7 +257,7 @@ describe('email switches', { skip: integrationTestsEnabled ? false : SKIP_REASON
     assert.deepEqual(off, ['checkin_nag'])
   })
 
-  test('NTF-49 a switched-off email at a studio that has no template for it is logged skipped, not refused for the missing template', async () => {
+  test('NTF-50 a switched-off email at a studio that has no template for it is logged skipped, not refused for the missing template', async () => {
     const studio = { id: await emptyStudio('untemplated'), slug: '' }
     await harness.db.insert(schema.emailSwitches).values({ tenantId: studio.id, slug: 'credit_expiry_reminder', enabled: false })
 

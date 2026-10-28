@@ -38,7 +38,7 @@ const NO_SENDER = [
 
 const sorted = (slugs: Iterable<string>) => [...slugs].sort()
 
-test('NTF-37 every email a studio sends is classified to members or staff, and locked or switchable, as the spec lists it', () => {
+test('NTF-38 every email a studio sends is classified to members or staff, and locked or switchable, as the spec lists it', () => {
   const expected = [
     ...MEMBER_SWITCHABLE.map(slug => [slug, { audience: 'member', locked: false }] as const),
     ...MEMBER_LOCKED.map(slug => [slug, { audience: 'member', locked: true }] as const),
@@ -55,7 +55,7 @@ test('NTF-37 every email a studio sends is classified to members or staff, and l
   )
 })
 
-test('NTF-37 every classified email has a plain-language name of its own, not its slug', () => {
+test('NTF-38 every classified email has a plain-language name of its own, not its slug', () => {
   const names = Object.entries(STUDIO_EMAILS).map(([slug, { name }]) => {
     assert.ok(name.trim() !== '', `${slug} has no name`)
     assert.ok(!name.includes('_'), `${slug} is named ${name}`)
@@ -64,7 +64,7 @@ test('NTF-37 every classified email has a plain-language name of its own, not it
   assert.equal(new Set(names).size, names.length, 'two emails share a name')
 })
 
-test('NTF-37 a template slug is either classified or one no sender uses, so a new email cannot ship unclassified', () => {
+test('NTF-38 a template slug is either classified or one no sender uses, so a new email cannot ship unclassified', () => {
   const classified = new Set(Object.keys(STUDIO_EMAILS))
   const unclassified = Object.keys(TEMPLATE_VARIABLES).filter(slug => !classified.has(slug))
   assert.deepEqual(sorted(unclassified), sorted(NO_SENDER))

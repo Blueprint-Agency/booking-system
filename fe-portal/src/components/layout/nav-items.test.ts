@@ -22,7 +22,7 @@ test("INV-54 the sidebar offers Receipts under Finance to an admin, and never to
   assert.equal(visibleToRole(receipts, "instructor"), false);
 });
 
-test("NTF-46 the sidebar offers Emails under Settings to an admin, and never to an instructor", () => {
+test("NTF-47 the sidebar offers Emails under Settings to an admin, and never to an instructor", () => {
   const emails = NAV_ITEMS.find((item) => item.href === "/admin/emails");
   assert.ok(emails, "Emails is in the nav");
   assert.equal(emails.label, "Emails");

@@ -375,7 +375,7 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
     assert.deepEqual(drain(), [])
   })
 
-  test("NTF-48 with booking confirmations switched off, a booking an admin or instructor makes for a member still confirms to the member, and a member's own booking is skipped", async () => {
+  test("NTF-49 with booking confirmations switched off, a booking an admin or instructor makes for a member still confirms to the member, and a member's own booking is skipped", async () => {
     const confirmations = (enabled: boolean) =>
       harness.app.request('/api/v1/portal/admin/emails/class_booking_confirmed', {
         method: 'PATCH',

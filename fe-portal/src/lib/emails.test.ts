@@ -22,7 +22,7 @@ const view = (): StudioEmailsView => ({
   ],
 });
 
-test("NTF-46 the Emails page lists every email the API returns, To members then To staff, each by the name the API gives it", () => {
+test("NTF-47 the Emails page lists every email the API returns, To members then To staff, each by the name the API gives it", () => {
   assert.deepEqual(emailGroups(view()), [
     {
       audience: "member",
@@ -43,7 +43,7 @@ test("NTF-46 the Emails page lists every email the API returns, To members then 
   ]);
 });
 
-test("NTF-47 flipping a switch shows it at once, saves it, and keeps what the API answered", async () => {
+test("NTF-48 flipping a switch shows it at once, saves it, and keeps what the API answered", async () => {
   let shown = view();
   const show = (update: (v: StudioEmailsView) => StudioEmailsView) => {
     shown = update(shown);
@@ -62,7 +62,7 @@ test("NTF-47 flipping a switch shows it at once, saves it, and keeps what the AP
   assert.deepEqual(shown.member, view().member, "the other emails are untouched");
 });
 
-test("NTF-47 a refused switch puts itself back and gives the API's sentence", async () => {
+test("NTF-48 a refused switch puts itself back and gives the API's sentence", async () => {
   let shown = view();
   const show = (update: (v: StudioEmailsView) => StudioEmailsView) => {
     shown = update(shown);
