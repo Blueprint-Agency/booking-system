@@ -44,6 +44,36 @@ async function failRead(page: Page, suffix: string, how: 'server' | 'dropped' = 
   return { stop: () => page.unroute(matches, handler) }
 }
 
+/**
+ * Sign a member in with nothing to celebrate over the page. The member app
+ * opens a celebration over whatever page it is on for an approved Private
+ * session or Corporate Request the member has not seen, and an earlier journey
+ * in the same run may leave one on the shared `holder`: its overlay would take
+ * every click here. The approvals read is answered with an empty list for this
+ * page only; nothing is marked seen on the server, so the journeys that rely
+ * on that approval still find it. Call before the first page.
+ */
+async function signInQuietly(page: Page, member: { token: string }): Promise<void> {
+  await page.route(
+    url => url.pathname.endsWith('/me/approvals'),
+    async route => {
+      const request = route.request()
+      if (request.method() !== 'GET') return route.fallback()
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: {
+          'access-control-allow-origin': request.headers().origin ?? '*',
+          'access-control-expose-headers': 'set-auth-token',
+          vary: 'Origin',
+        },
+        body: JSON.stringify({ approvals: [] }),
+      })
+    },
+  )
+  await signInMember(page, member)
+}
+
 /** One booking's card on My bookings, by the name it leads with. */
 function card(page: Page, title: string) {
   return page.getByRole('listitem').filter({ has: page.getByText(title, { exact: true }) })
@@ -59,7 +89,7 @@ function packageCard(page: Page, name: string) {
 
 test('ACC-63 a signed-in member whose session cannot be read is told so, never sent to sign in, and Try again brings their account back', async ({ page }) => {
   const { urls, members } = studio()
-  await signInMember(page, members.holder)
+  await signInQuietly(page, members.holder)
   const visited: string[] = []
   page.on('framenavigated', frame => {
     if (frame === page.mainFrame()) visited.push(frame.url())
@@ -95,7 +125,7 @@ test('ACC-63 an anonymous visitor whose session read fails still sees the signed
 
 test('ACC-64 My bookings lists what loaded and names the private sessions that did not, on every filter', async ({ page }) => {
   const { urls, catalogue, members } = studio()
-  await signInMember(page, members.holder)
+  await signInQuietly(page, members.holder)
   await failRead(page, '/me/pt-sessions')
 
   await page.goto(`${urls.client}/account/bookings`)
@@ -115,7 +145,7 @@ test('ACC-64 My bookings lists what loaded and names the private sessions that d
 
 test('ACC-64 My bookings names the waitlist when that read fails, and still lists the rest', async ({ page }) => {
   const { urls, catalogue, members } = studio()
-  await signInMember(page, members.holder)
+  await signInQuietly(page, members.holder)
   await failRead(page, '/me/waitlist')
 
   await page.goto(`${urls.client}/account/bookings`)
@@ -126,7 +156,7 @@ test('ACC-64 My bookings names the waitlist when that read fails, and still list
 
 test('ACC-64 a failed read is retried from the line, without leaving the page', async ({ page }) => {
   const { urls, catalogue, members } = studio()
-  await signInMember(page, members.holder)
+  await signInQuietly(page, members.holder)
   const pt = await failRead(page, '/me/pt-sessions')
 
   await page.goto(`${urls.client}/account/bookings`)
@@ -140,7 +170,7 @@ test('ACC-64 a failed read is retried from the line, without leaving the page', 
 
 test('ACC-65 Up next never says nothing is booked while a read failed, and says it may not be the next booking', async ({ page }) => {
   const { urls, catalogue, members } = studio()
-  await signInMember(page, members.holder)
+  await signInQuietly(page, members.holder)
   await failRead(page, '/me/workshop-bookings')
   await failRead(page, '/me/pt-sessions')
   await failRead(page, '/me/bookings/past', 'dropped')
@@ -158,7 +188,7 @@ test('ACC-65 Up next never says nothing is booked while a read failed, and says 
 
 test('ACC-65 Up next with nothing to draw and a read that failed says it could not load what is next', async ({ page }) => {
   const { urls, members } = studio()
-  await signInMember(page, members.newcomer)
+  await signInQuietly(page, members.newcomer)
   await failRead(page, '/me/workshop-bookings')
   await failRead(page, '/me/pt-sessions')
   await failRead(page, '/me/bookings/past', 'dropped')
@@ -172,7 +202,7 @@ test('ACC-65 Up next with nothing to draw and a read that failed says it could n
 
 test('PKG-51 the Corporate tab says it could not load the corporate packages, not that none are on offer', async ({ page }) => {
   const { urls, members } = studio()
-  await signInMember(page, members.holder)
+  await signInQuietly(page, members.holder)
   await failRead(page, '/me/corporate-packages')
 
   await page.goto(`${urls.client}/packages#corporate`)
@@ -183,7 +213,7 @@ test('PKG-51 the Corporate tab says it could not load the corporate packages, no
 
 test('PAY-75 a checkout whose options could not be read says it could not check Part Payment, offers none, and still takes the whole Balance', async ({ page }) => {
   const { urls, catalogue, members } = studio()
-  await signInMember(page, members.holder)
+  await signInQuietly(page, members.holder)
   await failRead(page, '/me/checkout/options')
 
   await page.goto(`${urls.client}/packages`)
@@ -198,7 +228,7 @@ test('PAY-75 a checkout whose options could not be read says it could not check 
 
 test('PT-168 a partner lookup that failed says so, and the request cannot be sent until a lookup answers', async ({ page }) => {
   const { urls, members } = studio()
-  await signInMember(page, members.holder)
+  await signInQuietly(page, members.holder)
   // The holder holds a 1-on-1 package only; a 2-on-1 beside it is what puts
   // the partner form on the page, so it is added to what the page reads.
   await page.route(
@@ -246,7 +276,7 @@ test('PT-168 a partner lookup that failed says so, and the request cannot be sen
 
 test('PT-169 the private session request page shows the error page when the studio booking window could not be read', async ({ page }) => {
   const { urls, members } = studio()
-  await signInMember(page, members.holder)
+  await signInQuietly(page, members.holder)
   await failRead(page, '/public/pt-booking-config')
 
   await page.goto(`${urls.client}/private-sessions`)
@@ -256,7 +286,7 @@ test('PT-169 the private session request page shows the error page when the stud
 
 test('WSP-38 a workshop link that is not a workshop reads Workshop not found with a way back, and a real one still opens', async ({ page }) => {
   const { urls, catalogue, members } = studio()
-  await signInMember(page, members.holder)
+  await signInQuietly(page, members.holder)
 
   for (const id of ['3f1d2c4e-7a5b-4c8d-9e0f-1a2b3c4d5e6f', 'not-a-uuid']) {
     await page.goto(`${urls.client}/workshops/${id}`)
