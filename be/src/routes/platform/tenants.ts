@@ -6,7 +6,8 @@ import { checkSlug } from '../../services/tenants/slug'
 import { inviteFirstAdmin, provisionTenant, slugConflictFor } from '../../services/tenants/provision'
 import { renameTenant } from '../../services/tenants/rename'
 import { deleteTenant } from '../../services/tenants/delete'
-import { isIsoDate, setTenantTerm, termEnded } from '../../services/tenants/term'
+import { setTenantTerm } from '../../services/tenants/term'
+import { isIsoDate, termEnded } from '../../services/tenants/term-dates'
 import {
   listTenants,
   loadTenantById,
