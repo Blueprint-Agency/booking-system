@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { PromotionWriteInput } from '../../../services/packages/promotions'
 import { MAX_VALIDITY_DAYS } from '../../../services/packages/validity'
 import { BadRequestError } from '../../../shared/errors'
+import { dateTime } from '../../date-time'
 
 /**
  * The fields a class package and a PT package share, each with the sentence
@@ -35,7 +36,7 @@ export const validityDaysField = z
   .max(MAX_VALIDITY_DAYS, VALIDITY_MESSAGE)
 
 const PROMOTION_DATE_MESSAGE = 'A promotion starts and ends on a date and time, like 2026-01-31T09:00:00+08:00.'
-const promotionDate = z.string({ message: PROMOTION_DATE_MESSAGE }).datetime({ offset: true, message: PROMOTION_DATE_MESSAGE })
+const promotionDate = dateTime('A promotion date', PROMOTION_DATE_MESSAGE)
 const PERCENT_MESSAGE = 'A promotion takes 1 to 99 percent off.'
 
 // Promotion wire shape — mirrors serializePromotion's snake_case output so write/read are symmetric.

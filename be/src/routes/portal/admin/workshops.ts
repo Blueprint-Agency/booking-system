@@ -8,6 +8,7 @@ import * as scheduleSvc from '../../../services/workshops/schedule'
 import * as cancelSvc from '../../../services/workshops/cancel'
 import { tenantId } from '../../../middleware/tenant'
 import { BadRequestError } from '../../../shared/errors'
+import { dateTime } from '../../date-time'
 import {
   listManagedPromotionsFor,
   replacePromotionsForParent,
@@ -31,7 +32,7 @@ const priceField = z.union([z.string(), z.number()]).transform(v => {
   return n.toFixed(2)
 })
 
-const isoDate = z.string().datetime({ offset: true })
+const isoDate = dateTime('A workshop date and time')
 
 const workshopInstructorSchema = z.object({
   instructor_id: z.string().uuid(),

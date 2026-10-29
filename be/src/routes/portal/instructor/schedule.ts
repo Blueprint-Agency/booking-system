@@ -12,6 +12,7 @@ import { seatFields, staffBookingJson, staffBookingSchema, staffPackagesJson, st
 import { classWaitlistRoutes } from '../class-waitlist'
 import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
 import { explainSeries, previewJson, seriesRow, seriesTemplateFields, toSeriesInput } from '../class-series'
+import { dateTime } from '../../date-time'
 
 /**
  * Instructor schedule surface.
@@ -53,13 +54,9 @@ import { explainSeries, previewJson, seriesRow, seriesTemplateFields, toSeriesIn
 const schedulesClasses = requirePermission('schedule_classes')
 const managesRosters = requirePermission('manage_rosters')
 
-const isoDate = z
-  .string()
-  .refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
-
 const listQuery = z.object({
-  from: isoDate.optional(),
-  to: isoDate.optional(),
+  from: dateTime('A from time').optional(),
+  to: dateTime('A to time').optional(),
   type: z.enum(['class', 'workshop', 'pt', 'corporate']).optional(),
 })
 
@@ -68,8 +65,8 @@ const createClassSchema = z
     class_type_id: z.string().uuid(),
     location_id: z.string().uuid(),
     room_id: z.string().uuid(),
-    starts_at: isoDate,
-    ends_at: isoDate,
+    starts_at: dateTime('A start time'),
+    ends_at: dateTime('An end time'),
     capacity_online: z.number().int().min(0),
     capacity_waitlist: z.number().int().min(0).default(0),
     capacity_buffer: z.number().int().min(0).default(0),

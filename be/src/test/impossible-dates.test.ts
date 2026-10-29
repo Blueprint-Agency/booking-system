@@ -748,7 +748,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
     await check(range(portal('/instructor/payroll'), 'instructor', '/portal/instructor/payroll'), IMPOSSIBLE_MOMENTS)
   })
 
-  test('PT-170 a private session proposed, scheduled, moved or created on a day or time that does not exist is refused 400, and no session is made or moved', async () => {
+  test('PT-171 a private session proposed, scheduled, moved or created on a day or time that does not exist is refused 400, and no session is made or moved', async () => {
     const admins = portal('/admin/pt-sessions')
     const instructors = portal('/instructor/pt-requests')
     // The member's proposed date.

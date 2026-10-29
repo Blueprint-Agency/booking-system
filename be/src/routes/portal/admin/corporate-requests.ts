@@ -4,14 +4,11 @@ import { z } from 'zod'
 import * as svc from '../../../services/corporate/requests'
 import { tenantId } from '../../../middleware/tenant'
 import { ERROR_CODES } from '../../../shared/error-codes'
+import { dateTime } from '../../date-time'
 
 // Corporate request triage for staff. Mirrors the PT request flow: no approve/
 // decline — admin negotiates over WhatsApp, then schedules (the implicit
 // approval) or cancels. See docs/md/be-portal.md §Corporate.
-
-const isoDate = z
-  .string()
-  .refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -28,8 +25,8 @@ const scheduleSchema = z
     location_id: z.string().uuid().optional(),
     location_text: z.string().trim().min(1).max(300).optional(),
     room_id: z.string().uuid().optional(),
-    starts_at: isoDate,
-    ends_at: isoDate,
+    starts_at: dateTime('A start time'),
+    ends_at: dateTime('An end time'),
   })
   .refine(v => Boolean(v.location_id) || Boolean(v.location_text), {
     message: 'either location_id or location_text is required',

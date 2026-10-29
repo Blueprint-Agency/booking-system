@@ -18,6 +18,7 @@ import { namedClassRule, namedRuleJson } from './package-rules'
 import { classCancelWindow } from '../policy/cancel-window'
 import { localDateOf, zonedInstant } from './series-dates'
 import { loadTenantById } from '../tenants/tenants'
+import { dateTime } from '../../routes/date-time'
 
 interface LocationLite {
   id: string
@@ -85,8 +86,8 @@ const classFiltersSchema = z.object({
   instructor_id: z.string().uuid().optional(),
   class_type_id: z.string().uuid().optional(),
   level: z.enum(classDifficultyEnum.enumValues).optional(),
-  from: z.string().datetime().optional(),
-  to: z.string().datetime().optional(),
+  from: dateTime('A from time').optional(),
+  to: dateTime('A to time').optional(),
 })
 
 export function parseClassFilters(raw: Record<string, string>): ClassListFilters {

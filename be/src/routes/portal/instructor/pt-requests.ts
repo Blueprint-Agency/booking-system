@@ -29,6 +29,7 @@ import {
   seatCandidatesJson,
 } from '../pt-manual'
 import { requirePermission } from '../../../middleware/require-permission'
+import { dateTime } from '../../date-time'
 
 // Instructor PT surface. Instructors see the pending requests they may act on —
 // unbound ones, plus those bound to them — and pick up the ones they can run;
@@ -42,7 +43,6 @@ import { requirePermission } from '../../../middleware/require-permission'
 // taught from the timetable and check-in desk, which this does not gate.
 const takesPtBookings = requirePermission('take_pt_bookings')
 
-const isoDate = z.string().refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
 const idParam = z.object({ id: z.string().uuid() })
 
 // instructor_id is taken from the authenticated staff context, never the body.
@@ -50,8 +50,8 @@ const scheduleSchema = z
   .object({
     location_id: z.string().uuid(),
     room_id: z.string().uuid(),
-    starts_at: isoDate,
-    ends_at: isoDate,
+    starts_at: dateTime('A start time'),
+    ends_at: dateTime('An end time'),
     // To the member, when the time is not one they proposed.
     note: z.string().max(500).nullable().optional(),
     // "Schedule anyway" after `time_clash`: a member holds a booking then.

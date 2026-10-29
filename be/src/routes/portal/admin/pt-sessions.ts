@@ -32,12 +32,12 @@ import {
   removeMemberParam,
   seatCandidatesJson,
 } from '../pt-manual'
+import { dateTime } from '../../date-time'
 
 // PT request triage for admins. No "approve"/"decline" in the simplified flow —
 // admin negotiates over WhatsApp, then either schedules (the implicit approval)
 // or cancels. See docs/md/be-portal.md §3c.
 
-const isoDate = z.string().refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
 const idParam = z.object({ id: z.string().uuid() })
 
 const listQuery = z.object({
@@ -52,8 +52,8 @@ const scheduleSchema = z
     instructor_id: z.string().uuid(),
     location_id: z.string().uuid(),
     room_id: z.string().uuid(),
-    starts_at: isoDate,
-    ends_at: isoDate,
+    starts_at: dateTime('A start time'),
+    ends_at: dateTime('An end time'),
     // Optional: blank leaves the session Unpriced — see the note on the admin
     // class-create schema in ./schedule.ts.
     instructor_pay_sgd: z.number().min(0).nullable().optional(),
@@ -69,8 +69,8 @@ const scheduleSchema = z
 // PATCH /sessions/:id targets a SCHEDULED pt_sessions row (distinct from the pt_requests
 // id used by the routes above) — the only id space with starts_at/room/etc.
 const updateSessionSchema = z.object({
-  starts_at: isoDate.optional(),
-  ends_at: isoDate.optional(),
+  starts_at: dateTime('A start time').optional(),
+  ends_at: dateTime('An end time').optional(),
   room_id: z.string().uuid().optional(),
   location_id: z.string().uuid().optional(),
   session_type: z.enum(['1on1', '2on1']).optional(),

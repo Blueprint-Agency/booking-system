@@ -30,14 +30,11 @@ import {
   seriesTemplateFields,
   toSeriesInput,
 } from '../class-series'
-
-const isoDate = z
-  .string()
-  .refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
+import { dateTime } from '../../date-time'
 
 const listQuery = z.object({
-  from: isoDate.optional(),
-  to: isoDate.optional(),
+  from: dateTime('A from time').optional(),
+  to: dateTime('A to time').optional(),
   type: z.enum(['class', 'workshop', 'pt', 'corporate']).optional(),
   instructor_id: z.string().uuid().optional(),
   class_type_id: z.string().uuid().optional(),
@@ -75,8 +72,8 @@ const createClassSchema = z
     supporting_instructor_ids: z.array(z.string().uuid()).optional(),
     location_id: z.string().uuid(),
     room_id: z.string().uuid(),
-    starts_at: isoDate,
-    ends_at: isoDate,
+    starts_at: dateTime('A start time'),
+    ends_at: dateTime('An end time'),
     capacity_online: z.number().int().min(0),
     capacity_waitlist: z.number().int().min(0).default(0),
     capacity_buffer: z.number().int().min(0).default(0),
@@ -103,8 +100,8 @@ const updateClassSchema = z.object({
   supporting_instructor_ids: z.array(z.string().uuid()).optional(),
   location_id: z.string().uuid().optional(),
   room_id: z.string().uuid().optional(),
-  starts_at: isoDate.optional(),
-  ends_at: isoDate.optional(),
+  starts_at: dateTime('A start time').optional(),
+  ends_at: dateTime('An end time').optional(),
   capacity_online: z.number().int().min(0).optional(),
   capacity_waitlist: z.number().int().min(0).optional(),
   capacity_buffer: z.number().int().min(0).optional(),
