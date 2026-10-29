@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -19,6 +20,7 @@ import { sessionTenantRefusal } from "@/lib/session-tenant";
 import { getPortalToken, signOutPortal, usePortalSession } from "@/lib/portal-auth";
 import {
   assertLoadedInFull,
+  latestRead,
   locationsToManage,
   workspaceLocations,
   type FullListStatus,
@@ -149,6 +151,16 @@ export function WorkspaceProvider({
   const [fullStatus, setFullStatus] = useState<"loading" | "loaded" | "failed">(
     "loading",
   );
+  // Which read of the full list may still land (see `latestRead`).
+  const fullReads = useRef(latestRead());
+  // Forgets the full list: rows gone, status back to loading (a read is due, so
+  // neither "loaded" over no rows nor an old failure stays), and any read still
+  // in flight cancelled so it cannot land on the next session.
+  const resetFullLocations = useCallback(() => {
+    fullReads.current.cancel();
+    setFullLocations(null);
+    setFullStatus("loading");
+  }, []);
   const locations = useMemo(
     () => workspaceLocations(shortLocations, fullLocations),
     [shortLocations, fullLocations],
@@ -234,7 +246,7 @@ export function WorkspaceProvider({
         setDenied({ reason: failure.reason });
         setCurrentStaff(null);
         setShortLocations([]);
-        setFullLocations(null);
+        resetFullLocations();
         return;
       }
       // Network or unexpected — leave staff null so UI shows error/empty
@@ -243,7 +255,7 @@ export function WorkspaceProvider({
     } finally {
       setLoading(false);
     }
-  }, [api, signOutToLogin]);
+  }, [api, signOutToLogin, resetFullLocations]);
 
   // Once the session is known, fetch /auth/me — or send a signed-out visitor to
   // sign in, remembering where they were going.
@@ -253,7 +265,7 @@ export function WorkspaceProvider({
       setLoading(false);
       setCurrentStaff(null);
       setShortLocations([]);
-      setFullLocations(null);
+      resetFullLocations();
       setDenied(null);
       const next = `${pathname ?? ""}${window.location.search}`;
       router.replace(`/login?next=${encodeURIComponent(next)}`);
@@ -263,7 +275,7 @@ export function WorkspaceProvider({
       setLoading(false);
       setCurrentStaff(null);
       setShortLocations([]);
-      setFullLocations(null);
+      resetFullLocations();
       setDenied({ reason: tenantRefusal });
       return;
     }
@@ -271,20 +283,25 @@ export function WorkspaceProvider({
     // `pathname` is read, not watched: moving between pages while signed out is
     // already a redirect, and re-running the load on every navigation is not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, isSignedIn, tenantRefusal, loadMe, router]);
+  }, [isLoaded, isSignedIn, tenantRefusal, loadMe, router, resetFullLocations]);
 
   // For a studio admin, additionally fetch ALL locations (incl. archived) so the
   // Locations page + manage dialog can render archived rows.
   const refreshAllLocations = useCallback(async () => {
     if (!api || !currentStaff || !runsStudio(currentStaff.role)) return;
+    // Reads can overlap (a mutation refreshes while a Retry is in flight): only
+    // the latest one lands, success or failure.
+    const read = fullReads.current.begin();
     try {
       const data = await api.get<{ locations: LocationApiRow[] }>(
         "/portal/admin/locations",
         { include_archived: "true" },
       );
+      if (!fullReads.current.isCurrent(read)) return;
       setFullLocations(data.locations.map(locationFromApi));
       setFullStatus("loaded");
     } catch (err) {
+      if (!fullReads.current.isCurrent(read)) return;
       // Still reported. The short list keeps the switcher working, but it is
       // not the full list: edit, archive and restore wait for a read that works.
       setFullStatus("failed");
@@ -357,7 +374,7 @@ export function WorkspaceProvider({
       if (!api) return;
       // The second guard: a row the full list did not give has a blank phone
       // and Maps link that would be saved over the real ones.
-      assertLoadedInFull(fullLocations, loc);
+      assertLoadedInFull(fullLocations, locationsStatus, loc);
       await api.patch(`/portal/admin/locations/${loc.id}`, {
         name: loc.name,
         address: loc.address || null,
@@ -366,7 +383,7 @@ export function WorkspaceProvider({
       });
       await refreshAllLocations();
     },
-    [api, fullLocations, refreshAllLocations],
+    [api, fullLocations, locationsStatus, refreshAllLocations],
   );
 
   // Story 133: name what archiving strands before it happens. Here rather than
