@@ -1035,6 +1035,34 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
       assert.equal(place!.amountPaidSgd, FULL)
     })
 
+    test('WSP-34 a delivery that loses the race for a sale with no recorded List Price returns the place the other booked and does not log it as booked at the tier price', async () => {
+      const { w, payer, sale, params } = await onPaymentPage('Old workshop race', 'Hana Old Race')
+      await setStoredMetadata(sale.id, 'list_price_sgd', null)
+      const intent = `pi_${randomUUID()}`
+      const lateDelivery = () =>
+        bookSvc.bookWorkshopPaid(one.id, {
+          clientId: payer.clientId,
+          workshopId: w.id,
+          workshopTierId: w.tierIds[0]!,
+          paymentIntentId: intent,
+          purchaseId: sale.id,
+          amountSgd: FULL,
+          frozenListPriceSgd: null,
+        })
+      const fallbackLines = () =>
+        harness.logs.lines().filter(l => l.purchaseId === sale.id && String(l.msg).includes('before its List Price was recorded'))
+
+      harness.logs.clear()
+      assert.equal((await deliverPaid(paidSession(params, intent))).status, 200)
+      assert.equal(fallbackLines().length, 1, 'the delivery that books the place says it did')
+
+      harness.logs.clear()
+      const loser = await lateDelivery()
+      assert.equal(loser.created, false, 'the place was already booked')
+      assert.equal(fallbackLines().length, 0, 'the loser booked nothing, so it has nothing to say')
+      assert.equal((await bookingsOf(payer, w)).length, 1)
+    })
+
     for (const bad of ['abc', '-5.00', '150.001', '1e2']) {
       test(`WSP-34 a sale whose stored List Price is ${JSON.stringify(bad)} fails its delivery and books and records nothing`, async () => {
         const { w, payer, sale, params } = await onPaymentPage(`Corrupt workshop sale ${bad}`, `Ivy Corrupt ${bad.replace(/\W/g, '')}`)
