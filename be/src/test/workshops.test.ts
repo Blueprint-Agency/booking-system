@@ -258,9 +258,10 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     const workshops = sql`SELECT id FROM workshops WHERE created_by_staff_id IN (${staffIds})`
     const locations = sql`SELECT id FROM locations WHERE name LIKE ${`% ${run}`}`
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
+    // Before the bookings: a payment that booked a place points at it.
+    await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM bookings WHERE workshop_id IN (${workshops}) OR client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
-    await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
@@ -954,6 +955,133 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
       ['Full', [detail.body.days[0].id]],
     ])
     assert.deepEqual((detail.body.promotions as { label: string }[]).map(p => p.label), ['Launch'])
+  })
+
+  describe('the List Price a paid workshop place records', () => {
+    const FULL = '150.00'
+    const RAISED = '200.00'
+
+    /** A workshop with one tier at S$150, and a member who has opened its payment page. */
+    async function onPaymentPage(name: string, who: string) {
+      const w = await workshop(one, adminAtOne, teacherAtOne, {
+        name,
+        days: [{ capacity: 10 }],
+        tiers: [{ name: 'Full', price: FULL, days: [0] }],
+      })
+      const payer = await member(one, who)
+      assert.equal((await checkout(payer, w)).status, 200)
+      const [sale] = await workshopSalesOf(payer)
+      return { w, payer, sale: sale!, params: lastSession() }
+    }
+
+    const raiseTier = async (w: Workshop, price: string) => {
+      const edited = await call(`/api/v1/portal/admin/workshops/${w.id}/tiers/${w.tierIds[0]}`, adminAtOne.headers, {
+        method: 'PATCH',
+        body: { regular_price_sgd: price },
+      })
+      assert.equal(edited.status, 200, edited.text)
+    }
+
+    const setStoredMetadata = (purchaseId: string, key: string, value: string | null) =>
+      value === null
+        ? harness.db.execute(sql`UPDATE purchases SET metadata = metadata - ${key}::text WHERE id = ${purchaseId}::uuid`)
+        : harness.db.execute(
+            sql`UPDATE purchases SET metadata = jsonb_set(metadata, ARRAY[${key}::text], to_jsonb(${value}::text)) WHERE id = ${purchaseId}::uuid`,
+          )
+
+    test('WSP-33 a place paid in one go is recorded at the List Price checkout showed, whatever an Admin did to the tier after', async () => {
+      const { w, payer, params } = await onPaymentPage('Frozen price workshop', 'Fay Frozen Price')
+      await raiseTier(w, RAISED)
+
+      const delivered = await deliverPaid(paidSession(params, `pi_${randomUUID()}`))
+      assert.equal(delivered.status, 200, await delivered.text())
+
+      const [place, ...more] = await bookingsOf(payer, w)
+      assert.equal(more.length, 0)
+      assert.equal(place!.listPriceSgd, FULL, 'the List Price the member was shown')
+      assert.equal(place!.amountPaidSgd, FULL, 'the amount charged')
+    })
+
+    test('WSP-33 a place part-paid across two cards is recorded at the List Price checkout showed, even when the tier is repriced before the Balance is cleared', async () => {
+      const { w, payer, sale, params } = await onPaymentPage('Frozen part payment workshop', 'Gus Part Payment')
+      const first = await deliverPaid({ ...paidSession(params, `pi_${randomUUID()}`), amount_total: 5000 })
+      assert.equal(first.status, 200, await first.text())
+      assert.equal((await bookingsOf(payer, w)).length, 0, 'no place is held while a Balance is owed')
+
+      await raiseTier(w, RAISED)
+
+      const resumed = await call(`/api/v1/me/purchases/${sale.id}/resume`, payer.headers, { method: 'POST', body: {} })
+      assert.equal(resumed.status, 200, resumed.text)
+      const settled = await deliverPaid(paidSession(lastSession(), `pi_${randomUUID()}`))
+      assert.equal(settled.status, 200, await settled.text())
+
+      const [place, ...more] = await bookingsOf(payer, w)
+      assert.equal(more.length, 0)
+      assert.equal(place!.listPriceSgd, FULL, 'the List Price at the first card')
+      assert.equal(place!.amountPaidSgd, FULL)
+    })
+
+    test('WSP-34 a sale whose stored copy carries no List Price is booked at the tier price as it stands', async () => {
+      const { w, payer, sale, params } = await onPaymentPage('Old workshop sale', 'Hana Old Sale')
+      await setStoredMetadata(sale.id, 'list_price_sgd', null)
+      await raiseTier(w, RAISED)
+
+      const delivered = await deliverPaid(paidSession(params, `pi_${randomUUID()}`))
+      assert.equal(delivered.status, 200, await delivered.text())
+
+      const [place, ...more] = await bookingsOf(payer, w)
+      assert.equal(more.length, 0)
+      assert.equal(place!.listPriceSgd, RAISED)
+      assert.equal(place!.amountPaidSgd, FULL)
+    })
+
+    test('WSP-34 a delivery that loses the race for a sale with no recorded List Price returns the place the other booked and does not log it as booked at the tier price', async () => {
+      const { w, payer, sale, params } = await onPaymentPage('Old workshop race', 'Hana Old Race')
+      await setStoredMetadata(sale.id, 'list_price_sgd', null)
+      const intent = `pi_${randomUUID()}`
+      const lateDelivery = () =>
+        bookSvc.bookWorkshopPaid(one.id, {
+          clientId: payer.clientId,
+          workshopId: w.id,
+          workshopTierId: w.tierIds[0]!,
+          paymentIntentId: intent,
+          purchaseId: sale.id,
+          amountSgd: FULL,
+          frozenListPriceSgd: null,
+        })
+      const fallbackLines = () =>
+        harness.logs.lines().filter(l => l.purchaseId === sale.id && String(l.msg).includes('before its List Price was recorded'))
+
+      harness.logs.clear()
+      assert.equal((await deliverPaid(paidSession(params, intent))).status, 200)
+      assert.equal(fallbackLines().length, 1, 'the delivery that books the place says it did')
+
+      harness.logs.clear()
+      const loser = await lateDelivery()
+      assert.equal(loser.created, false, 'the place was already booked')
+      assert.equal(fallbackLines().length, 0, 'the loser booked nothing, so it has nothing to say')
+      assert.equal((await bookingsOf(payer, w)).length, 1)
+    })
+
+    for (const bad of ['abc', '-5.00', '150.001', '1e2']) {
+      test(`WSP-34 a sale whose stored List Price is ${JSON.stringify(bad)} fails its delivery and books and records nothing`, async () => {
+        const { w, payer, sale, params } = await onPaymentPage(`Corrupt workshop sale ${bad}`, `Ivy Corrupt ${bad.replace(/\W/g, '')}`)
+        await setStoredMetadata(sale.id, 'list_price_sgd', bad)
+        const intent = `pi_${randomUUID()}`
+
+        const delivered = await deliverPaid(paidSession(params, intent))
+
+        assert.equal(delivered.status, 500, await delivered.text())
+        assert.equal((await bookingsOf(payer, w)).length, 0, 'a place was booked on corrupt terms')
+        const payments = await harness.db
+          .select()
+          .from(schema.stripePayments)
+          .where(eq(schema.stripePayments.paymentIntentId, intent))
+        assert.equal(payments.length, 0, 'a payment row was left behind')
+        const [still] = await workshopSalesOf(payer)
+        assert.equal(still!.status, sale.status, 'the Purchase changed')
+      })
+    }
   })
 
   test('SCH-37 a workshop roster naming one supporting instructor twice, once in capitals, keeps them once at the pay given, and the main instructor in capitals as supporting is refused', async () => {
