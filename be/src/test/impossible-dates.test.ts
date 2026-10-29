@@ -1061,7 +1061,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
   })
 
   test('CAT-13 a from or to written as a bare calendar date is read as that day at midnight UTC, and one that is not a real day is refused 400', async () => {
-    // The Mindbody import's tests, and any caller that sends a bare date, send `from=2089-12-01`.
+    // The Mindbody import's tests send a bare date, `from=2089-12-01`.
     const dateOnly = (path: string, as: Who, label: string): Surface[] =>
       (['from', 'to'] as const).map(field => ({
         label: `GET ${label} ${field}`,

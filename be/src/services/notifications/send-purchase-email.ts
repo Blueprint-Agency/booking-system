@@ -398,8 +398,8 @@ async function purchaseReceiptEmail(tenantId: string, receipt: ReceiptRow): Prom
 
 /**
  * Confirm one workshop booking, paid or free. The free path is the worst case
- * in the set — it produces a confirmed booking with a QR code and a date, and
- * used to send nothing at all.
+ * in the set — it produces a confirmed booking with a QR code and a date, so it
+ * must send too.
  *
  * Fills the workshop template's declared variables and carries the place's
  * Receipt, whose Purchase the booking names, paid or free.

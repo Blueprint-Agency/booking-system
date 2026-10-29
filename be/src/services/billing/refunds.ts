@@ -98,9 +98,8 @@ const accountUrlFor = (tenantId: string) =>
  * Read off the Purchase's own Balance, which is derived from the payment rows
  * and means *money currently held*: a comp grant, a $0 trial and a Promo Code
  * that took the total to zero never reached the provider and hold nothing, and
- * a Purchase already refunded has been zeroed by `markPurchaseRefunded`. It is
- * the same question the payment intent used to answer by being non-null, asked
- * of the record that now owns the money.
+ * a Purchase already refunded has been zeroed by `markPurchaseRefunded`. The
+ * record that owns the money is asked, not the payment intent.
  */
 const holdsMoney = (amountPaidSgd: string | null): boolean =>
   amountPaidSgd != null && toCents(amountPaidSgd) > 0

@@ -308,7 +308,7 @@ describe('Staff attention: Updates', { skip: integrationTestsEnabled ? false : S
     const left = await harness.db
       .select({ subject: schema.staffUpdates.subjectClientId })
       .from(schema.staffUpdates)
-      // Not the admin's `staff_joined` for Ada (#491), which names no member either.
+      // Not the admin's `staff_joined` for Ada, which names no member either.
       .where(and(eq(schema.staffUpdates.tenantId, studio.id), eq(schema.staffUpdates.recipientStaffId, ada.id)))
     assert.deepEqual(left, [{ subject: null }], 'only the update that named no one is left')
   })

@@ -66,7 +66,7 @@ interface ProvisionTenantInput {
   termMonths?: TermMonths
   /**
    * The studio's Business details from its first Receipt and email. A blank
- or omitted Business name is the Domain name (`name`), so a
+   * or omitted Business name is the Domain name (`name`), so a
    * new studio is never nameless; the rest omitted leaves the default prefix
    * and no details, for its admin to set.
    */

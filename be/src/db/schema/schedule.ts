@@ -458,8 +458,8 @@ export const workshopInstructors = pgTable(
 )
 
 // ============================================================================
-// workshop_tiers (§4e / §19) — capacity column REMOVED (derived via workshop_tier_days).
-// Pricing uses numeric(10,2) (was text in the old schema).
+// workshop_tiers (§4e / §19) — capacity is derived via workshop_tier_days, not stored.
+// Pricing uses numeric(10,2).
 // ============================================================================
 
 export const workshopTiers = pgTable(

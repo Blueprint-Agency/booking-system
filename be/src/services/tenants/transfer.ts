@@ -782,10 +782,10 @@ export async function importTenant(
 /**
  * Say what a duplicate key here actually means.
  *
- * This should now be unreachable for the case it was written for. Copying a
- * studio beside itself used to break on the first platform-wide unique key it
- * met; migration 0040 scoped those to the Tenant and `transfer-identity.ts`
- * gives the copy fresh row ids, so the two studios collide over nothing.
+ * This should be unreachable for the case it was written for. Copying a studio
+ * beside itself can't collide: unique keys are scoped to the Tenant (migration
+ * 0040) and `transfer-identity.ts` gives the copy fresh row ids, so the two
+ * studios share nothing to collide over.
  *
  * It is kept because a raw `duplicate key value violates unique constraint …`
  * is a dead end for the operator, and a unique key added later without either of

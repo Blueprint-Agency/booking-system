@@ -75,8 +75,7 @@ export interface ListClientsPageOptions extends ListClientsOptions {
 
 /**
  * The Trial Funnel over every member the filter matches — not just the page on
- * screen, which is what the old client-side count silently became the moment
- * the list paged.
+ * screen.
  */
 export interface TrialFunnel {
   trials: number
@@ -310,9 +309,9 @@ export interface CreateClientInput {
 /**
  * Where the new member signs in — their own studio's app.
  *
- * It used to be the platform's single `CLIENT_ORIGIN`, which named one studio,
- * so a member added by the second studio's admin was invited to sign in at the
- * first studio's app: a hostname their bookings are not on.
+ * Never a platform-wide origin: that would name one studio, and a member added
+ * by another studio's admin would be invited to sign in on a hostname their
+ * bookings are not on.
  */
 function buildClientLoginUrl(tenantId: string): Promise<string> {
   return requireTenantUrl('client', tenantId).then(base => `${base}/login`)

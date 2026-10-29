@@ -250,10 +250,9 @@ const app = new Hono()
     if (quote.outcome === 'granted') {
       return c.json({ outcome: 'granted', client_package_id: quote.clientPackageId, free: true }, 201)
     }
-    // Where Stripe sends the member back to — this studio's app, not the
-    // platform's one configured origin. A member of the second studio used to
-    // finish paying and land on the first studio's confirmation page, signed
-    // out, looking at somebody else's booking app.
+    // Where Stripe sends the member back to — this studio's app, not a
+    // platform-wide origin, which would land a member of another studio on
+    // somebody else's confirmation page, signed out.
     const clientUrl = await requireTenantUrl('client', tenantId(c))
     const url = await createCheckoutSession({
       tenantId: tenantId(c),

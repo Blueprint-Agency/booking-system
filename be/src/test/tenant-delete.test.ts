@@ -540,7 +540,8 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
    * table that points at `clients`. A referencing column with no index of its
    * own makes each of those lookups a scan of the whole table, and a studio this
    * size then takes ~40s — the portal gives up at 15s while the backend carries
-   * on and commits. So the bound is the portal's.
+   * on and commits. So the sizes here are a real studio's — the size that missed
+   * the deadline — and the bound is the portal's.
    */
   test('a studio of a real one’s size is deleted inside the portal’s deadline', { timeout: 180_000 }, async () => {
     const { tenant } = await provision.provisionTenant({ slug: `del-big-${run}`, name: 'Years Of History' })

@@ -144,8 +144,8 @@ export const bookingStateEnum = pgEnum('booking_state', ['confirmed', 'cancelled
 // `buffer` is one of `capacity_buffer`, filled only by staff; `overbook` is an
 // admin's booking past both. Workshop and PT bookings stay `online`, unread.
 export const bookingSeatEnum = pgEnum('booking_seat', ['online', 'buffer', 'overbook'])
-// How a booking reached the studio: `direct` through ReserveToday, as
-// the default, or
+// How a booking reached the studio: `direct` through ReserveToday, the default
+// (every booking made before this column was backfilled to `direct`), or
 // `classpass`, a ClassPass booking: ClassPass paid for the seat, so no package
 // pays and no credit is spent.
 export const bookingSourceEnum = pgEnum('booking_source', ['direct', 'classpass'])

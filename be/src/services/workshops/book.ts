@@ -388,7 +388,7 @@ export async function bookWorkshopFree(
   })
 
   // The worst case in the set (§13): a confirmed booking with a QR code and a
-  // date that used to send nothing at all. The Purchase was opened just above,
+  // date, so it must send. The Purchase was opened just above,
   // so this call always inserts the booking and always sends, once the
   // request's transaction has committed (`afterCommit`). The helper cannot throw.
   afterCommit(() => sendWorkshopPurchaseEmail(tenantId, booked.bookingId))

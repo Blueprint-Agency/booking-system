@@ -561,7 +561,7 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     assert.equal(await balanceOf(bundle), 1)
     await assertLedger(bundle)
 
-    // Too late to move the other for free: it is a late cancel like any other:
+    // Too late to move the other for free — it is a late cancel like any other:
     // the place is freed and the credit stays spent.
     harness.clock.set(shifted(t0, 5 * DAY - classWindowHours * HOUR + MINUTE))
     const lateCancel = await expectStatus(await cancel(dee, lateBooking), 200)

@@ -176,11 +176,8 @@ export function currentEnv<K extends keyof Env>(name: K): Env[K] {
 }
 
 /*
- * `CLIENT_URL` used to live here — "the one place any link mailed or redirected
- * to a member is built from", built from `CLIENT_ORIGIN`. One place, and one
- * studio: on a platform serving many, it named whichever studio the deployment
- * was configured for, so a member of any other one was mailed and redirected
- * into somebody else's app. A studio's URLs are per studio and are derived from
- * its slug — `services/tenants/urls.ts`. There is no platform-wide equivalent
- * to reach for, deliberately.
+ * There is no platform-wide `CLIENT_URL`. A single URL would name whichever
+ * studio the deployment was configured for, so a member of any other studio
+ * would be mailed and redirected into somebody else's app. A studio's URLs are
+ * per studio and are derived from its slug — `services/tenants/urls.ts`.
  */
