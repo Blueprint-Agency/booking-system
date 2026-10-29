@@ -915,6 +915,46 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal((await movementsOn(sessions.clientPackageId)).length, sessionMovements)
   })
 
+  test('RFD-40 an Admin\'s Keep credit cancel that waits for the package a Refund is voiding finds it Voided: the booking settles n_a and no kept movement lands on the Voided package', async () => {
+    const ola = await member(one, 'Rae Kept')
+    const bundle = await buy(one, ola, 'bundle')
+    const classId = await addClass(one, 3 * DAY)
+    const booked = await book(ola, classId)
+    assert.equal(booked.status, 201, JSON.stringify(booked.body))
+    // A class already under way when the Refund lands is left standing by the Void.
+    await harness.db
+      .update(schema.classes)
+      .set({ startsAt: new Date(Date.now() - 10 * 60 * 1000), endsAt: new Date(Date.now() + 50 * 60 * 1000) })
+      .where(eq(schema.classes.id, classId))
+    const movementsOn = () =>
+      harness.db.select().from(schema.creditMovements).where(eq(schema.creditMovements.clientPackageId, bundle.clientPackageId))
+    const movements = (await movementsOn()).length
+
+    const [unwound, kept] = await inFlightTogether(
+      harness.db,
+      sql`SELECT id FROM client_packages WHERE id = ${bundle.clientPackageId}`,
+      [
+        () => deliverRefund(bundle.intents[0]!),
+        () => post(`/api/v1/portal/admin/bookings/${booked.body.booking_id}/cancel`, adminAtOne.headers, { credit: 'keep' }),
+      ],
+    )
+
+    assert.equal(unwound!.status, 200, JSON.stringify(unwound!.body))
+    await assertRefunded(bundle.purchaseId)
+    assert.equal(kept!.status, 200, JSON.stringify(kept!.body))
+    assert.equal(kept!.body.refund_outcome, 'n_a')
+    assert.equal(kept!.body.refund_fired, false)
+    const standing = await bookingRow(booked.body.booking_id)
+    assert.equal(standing.state, 'cancelled')
+    assert.equal(standing.refundOutcome, 'n_a')
+    const after = await packageRow(bundle.clientPackageId)
+    assert.equal(after.creditsOrSessionsRemaining, 9)
+    assert.equal(after.active, false)
+    const history = await movementsOn()
+    assert.equal(history.length, movements, 'nothing was recorded on the Voided package')
+    assert.ok(!history.some(m => m.cause === 'kept'), 'no credit was kept on a package that was Voided')
+  })
+
   test('RFD-36 a Refund whose cancel of one of its bookings Postgres aborts as a deadlock runs again from the start: the booking is cancelled, not left confirmed on the voided package', async () => {
     const ola = await member(one, 'Ola Aborted')
     const paid = await buy(one, ola, 'bundle')
