@@ -26,7 +26,7 @@
  * its package, cancelled in time, returns the package to Dormant.
  */
 import { and, asc, eq, notInArray } from 'drizzle-orm'
-import { db } from '../../db'
+import { db, retryingTransaction } from '../../db'
 import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { clients, staffUsers } from '../../db/schema/identity'
@@ -794,7 +794,11 @@ export async function removeManualPtSessionMember(
   tenantId: string,
   input: RemoveManualPtSessionMemberInput,
 ): Promise<{ refundOutcome: RefundOutcome; refundedSessions: number }> {
-  return db.transaction(async tx => {
+  // The seat's cancel reverses an Activation, which waits on the Purchase a
+  // Refund's unwind holds while it waits on this session's request: Postgres
+  // aborts one of the two, and this runs again (RFD-38). It reaches nothing
+  // outside the database.
+  return retryingTransaction('manual-session member removal', async tx => {
     const { session, req } = await lockManualSession(tx, tenantId, input.ptSessionId, input.requireOwnInstructorId)
     const seat = (await seatsOn(tx, tenantId, session.id)).find(s => s.clientId === input.clientId)
     if (!seat) throw new NotFoundError('booking_not_found')
