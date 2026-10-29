@@ -14,7 +14,8 @@ import { signInStaff, studio } from '../src/studio'
  * backend, are the ones it started with.
  *
  * The location is the studio's own, shared with the other journeys: it is given a
- * phone and a Maps link first, and its name is put back at the end.
+ * phone and a Maps link first, and its name, phone and Maps link are put back at
+ * the end.
  */
 test('LOC-20 when the admin locations read fails, Manage locations says so and offers no edit; after Retry an edit saves and the location keeps its phone and Maps link', async ({
   browser,
@@ -49,25 +50,35 @@ test('LOC-20 when the admin locations read fails, Manage locations says so and o
     expect(res.ok(), `patch: ${res.status()} ${await res.text()}`).toBe(true)
   }
 
+  // What the shared location held before the journey, put back in `finally`.
   const location = await readLocation()
+  const original = { name: location.name, phone: location.phone, gmaps_url: location.gmaps_url }
   await patch(location.id, { name: site.locationName, phone, gmaps_url: gmapsUrl })
+
+  // The portal calls `${urls.api}/portal/admin/locations`; match on the path that
+  // URL really has (it carries the API's `/api/v1` prefix), not a bare `/portal/...`.
+  const locationsPath = new URL(`${urls.api}/portal/admin/locations`).pathname
 
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   try {
     // The portal's full locations read fails until the journey lets it through.
     let failing = true
+    let failedReads = 0
     await page.route(`${urls.api}/portal/admin/locations**`, route => {
       const url = new URL(route.request().url())
       const isFullRead =
         route.request().method() === 'GET' &&
-        url.pathname === '/portal/admin/locations' &&
+        url.pathname === locationsPath &&
         url.searchParams.get('include_archived') === 'true'
-      if (failing && isFullRead) return route.fulfill({ status: 500, json: { error: 'internal_error' } })
+      if (failing && isFullRead) {
+        failedReads++
+        return route.fulfill({ status: 500, json: { error: 'internal_error' } })
+      }
       return route.fallback()
     })
     const updates: string[] = []
     page.on('request', req => {
-      if (req.method() === 'PATCH' && new URL(req.url()).pathname.startsWith('/portal/admin/locations/')) {
+      if (req.method() === 'PATCH' && new URL(req.url()).pathname.startsWith(`${locationsPath}/`)) {
         updates.push(req.url())
       }
     })
@@ -89,6 +100,7 @@ test('LOC-20 when the admin locations read fails, Manage locations says so and o
     await expect(manage.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
     await expect(manage.getByRole('button', { name: 'Archive', exact: true })).toHaveCount(0)
     await expect(manage.getByRole('button', { name: 'Restore', exact: true })).toHaveCount(0)
+    expect(failedReads, 'the journey served the 500 to the full read').toBeGreaterThan(0)
     expect(updates, 'no update request left the browser').toEqual([])
 
     // The read recovers; Retry brings the full list in and editing works.
@@ -113,7 +125,7 @@ test('LOC-20 when the admin locations read fails, Manage locations says so and o
     expect(after.phone).toBe(phone)
     expect(after.gmaps_url).toBe(gmapsUrl)
   } finally {
-    await patch(location.id, { name: site.locationName })
+    await patch(location.id, original)
     await page.close()
   }
 })
