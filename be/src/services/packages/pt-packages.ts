@@ -2,6 +2,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { ptPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { replacePromotionsForParent, type PromotionWriteInput } from './promotions'
 
 export type PtPackageRow = typeof ptPackages.$inferSelect
 export type PtSessionType = '1on1' | '2on1'
@@ -67,6 +68,26 @@ export async function createPtPackage(
     })
     .returning()
   return row!
+}
+
+/**
+ * A new package and its Promotions, saved together or not at all: one savepoint,
+ * so a Promotion the database refuses takes the package row with it. The request
+ * around it commits whatever is left when the route answers an error.
+ */
+export async function createPtPackageWithPromotions(
+  tenantId: string,
+  input: CreatePtPackageInput,
+  promotions: PromotionWriteInput[],
+  actorStaffId: string,
+): Promise<PtPackageRow> {
+  return db.transaction(async () => {
+    const row = await createPtPackage(tenantId, input)
+    if (promotions.length) {
+      await replacePromotionsForParent(tenantId, 'pt_package', row.id, promotions, actorStaffId)
+    }
+    return row
+  })
 }
 
 export interface UpdatePtPackageInput {

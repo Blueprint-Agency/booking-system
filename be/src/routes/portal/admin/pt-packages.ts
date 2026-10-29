@@ -107,23 +107,19 @@ const app = new Hono()
   .post('/', zValidator('json', createSchema, explainPackage), async c => {
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
-    const row = await svc.createPtPackage(tenantId(c), {
-      name: body.name,
-      sessionType: body.session_type,
-      numSessions: body.num_sessions,
-      validityDays: body.validity_days,
-      instructorBound: body.instructor_bound,
-      priceSgd: body.price_sgd,
-    })
-    if (body.promotions && body.promotions.length) {
-      await replacePromotionsForParent(
-        tenantId(c),
-        'pt_package',
-        row.id,
-        body.promotions.map(toPromotionWriteInput),
-        actor,
-      )
-    }
+    const row = await svc.createPtPackageWithPromotions(
+      tenantId(c),
+      {
+        name: body.name,
+        sessionType: body.session_type,
+        numSessions: body.num_sessions,
+        validityDays: body.validity_days,
+        instructorBound: body.instructor_bound,
+        priceSgd: body.price_sgd,
+      },
+      (body.promotions ?? []).map(toPromotionWriteInput),
+      actor,
+    )
     c.set('auditTarget' as any, { table: 'pt_packages', id: row.id })
     return c.json(await serializeWithPromos(tenantId(c), row), 201)
   })

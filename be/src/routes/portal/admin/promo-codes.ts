@@ -4,6 +4,7 @@ import { z } from 'zod'
 import * as svc from '../../../services/packages/promo-code-admin'
 import { tenantId } from '../../../middleware/tenant'
 import { BadRequestError } from '../../../shared/errors'
+import { dateTime } from '../../../shared/date-time'
 
 const productTypeEnum = z.enum(['class_package', 'pt_package', 'workshop'])
 const statusEnum = z.enum(['active', 'archived'])
@@ -38,7 +39,7 @@ const createSchema = z.object({
   percent_off: z.number().int().min(1).max(99).nullish(),
   amount_off_sgd: amountField.nullish(),
   max_redemptions: maxRedemptionsField.nullish(),
-  expires_at: z.string().datetime({ offset: true }).nullish(),
+  expires_at: dateTime('An expiry').nullish(),
   applies_to_all: z.boolean(),
   products: z.array(productSchema).default([]),
 })
@@ -49,7 +50,7 @@ const createSchema = z.object({
 const updateSchema = z.object({
   label: labelField.optional(),
   max_redemptions: maxRedemptionsField.nullish(),
-  expires_at: z.string().datetime({ offset: true }).nullish(),
+  expires_at: dateTime('An expiry').nullish(),
   applies_to_all: z.boolean().optional(),
   products: z.array(productSchema).optional(),
   code: z.string().min(1).max(64).optional(),

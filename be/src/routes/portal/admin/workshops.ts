@@ -8,6 +8,7 @@ import * as scheduleSvc from '../../../services/workshops/schedule'
 import * as cancelSvc from '../../../services/workshops/cancel'
 import { tenantId } from '../../../middleware/tenant'
 import { BadRequestError } from '../../../shared/errors'
+import { dateTime } from '../../../shared/date-time'
 import {
   listManagedPromotionsFor,
   replacePromotionsForParent,
@@ -31,7 +32,9 @@ const priceField = z.union([z.string(), z.number()]).transform(v => {
   return n.toFixed(2)
 })
 
-const isoDate = z.string().datetime({ offset: true })
+const startsAtField = dateTime('A start time')
+const endsAtField = dateTime('An end time')
+const earlyBirdCutoffField = dateTime('An early-bird cutoff')
 
 const workshopInstructorSchema = z.object({
   instructor_id: z.string().uuid(),
@@ -70,8 +73,8 @@ const updateBasicsSchema = z.object({
 const dayCreateSchema = z.object({
   ord: z.number().int().min(1),
   room_id: z.string().uuid(),
-  starts_at: isoDate,
-  ends_at: isoDate,
+  starts_at: startsAtField,
+  ends_at: endsAtField,
   // Per-day base_price_sgd is retained at the DB level but is no longer
   // surfaced in the admin UI — pricing lives on workshop_tiers. Default to 0
   // so the column's NOT NULL constraint stays satisfied.
@@ -88,7 +91,7 @@ const tierCreateSchema = z.object({
   regular_price_sgd: priceField,
   early_bird_price_sgd: priceField.nullish(),
   early_bird_quota: z.number().int().min(1).nullish(),
-  early_bird_cutoff_at: isoDate.nullish(),
+  early_bird_cutoff_at: earlyBirdCutoffField.nullish(),
   ord: z.number().int().min(1),
   day_ids: z.array(z.string().uuid()).min(1),
 })
@@ -99,7 +102,7 @@ const tierUpdateSchema = z.object({
   regular_price_sgd: priceField.optional(),
   early_bird_price_sgd: priceField.nullish().optional(),
   early_bird_quota: z.number().int().min(1).nullish().optional(),
-  early_bird_cutoff_at: isoDate.nullish().optional(),
+  early_bird_cutoff_at: earlyBirdCutoffField.nullish().optional(),
   ord: z.number().int().min(1).optional(),
   day_ids: z.array(z.string().uuid()).min(1).optional(),
 })
@@ -127,8 +130,8 @@ const promotionInputSchema = z.object({
   kind: z.enum(['percent', 'special_price']),
   percent_off: z.number().int().min(1).max(99).nullish(),
   special_price_sgd: priceField.nullish(),
-  starts_at: isoDate,
-  ends_at: isoDate,
+  starts_at: startsAtField,
+  ends_at: endsAtField,
 })
 
 const replacePromotionsSchema = z.object({

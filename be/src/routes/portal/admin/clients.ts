@@ -55,6 +55,7 @@ import { creditHistory, serializeCreditHistory } from '../../../services/package
 import { changeClientEmail } from '../../../services/clients/change-email'
 import { editClientProfile } from '../../../services/clients/edit-profile'
 import { explainInvalid } from '../../explain-invalid'
+import { dateTime } from '../../../shared/date-time'
 import { clientGenderEnum } from '../../../db/enums'
 import {
   listMemberSessions,
@@ -192,7 +193,7 @@ const profileSchema = z
   })
 const EXPIRY_MESSAGE = 'A new expiry must be a date, like 2026-01-31, or none.'
 const expirySchema = z.object({
-  expires_at: z.string({ message: EXPIRY_MESSAGE }).datetime({ offset: true, message: EXPIRY_MESSAGE }).nullable(),
+  expires_at: dateTime('A new expiry', EXPIRY_MESSAGE).nullable(),
   reason: z
     .string({ message: 'A reason must be text.' })
     .min(1, 'Give a reason for the change.')

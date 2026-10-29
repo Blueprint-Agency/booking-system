@@ -508,6 +508,50 @@ describe('PT jobs on the app clock', { skip: integrationTestsEnabled ? false : S
     assert.equal((await pkg(packageId)).creditsOrSessionsRemaining, 9)
   })
 
+  test('PT-166 a request that is no longer scheduled, whose session still reads active and has ended, keeps its status when the completion job runs: the job checks the request, not only the session', async () => {
+    harness.clock.set(new Date())
+    const dana = await member(one)
+    const packageId = await givePt(one, dana, '1on1')
+    const requestId = await request(one, dana, '1on1', packageId)
+    // An hour of its own in the room, apart from PT-56's.
+    const startsAt = new Date(harness.clock.now().getTime() + 4 * DAY + 5 * HOUR)
+    const endsAt = new Date(startsAt.getTime() + HOUR)
+    await schedule(one, adminAtOne, coachAtOne, requestId, startsAt)
+
+    // A state no current path produces: the request cancelled on its own, its session left active.
+    // Written straight to the row, because what is under test is the job's check, not a flow.
+    await harness.db.update(schema.ptRequests).set({ status: 'cancelled_after_scheduled' }).where(eq(schema.ptRequests.id, requestId))
+    assert.equal((await sessionOf(requestId)).session.lifecycle, 'active')
+
+    harness.clock.set(new Date(endsAt.getTime() + MINUTE))
+    await jobs.scheduledJobs.completeEndedPtSessions()
+
+    assert.equal((await requestRow(requestId)).status, 'cancelled_after_scheduled')
+    assert.equal((await asMemberSees(dana, requestId)).status, 'cancelled_after_scheduled')
+  })
+
+  test('PT-167 a request still scheduled whose session is cancelled and has ended is not moved to attended when the completion job runs: the job checks the session, not only the request', async () => {
+    harness.clock.set(new Date())
+    const eli = await member(one)
+    const packageId = await givePt(one, eli, '1on1')
+    const requestId = await request(one, eli, '1on1', packageId)
+    // An hour of its own in the room, apart from PT-56's and PT-166's.
+    const startsAt = new Date(harness.clock.now().getTime() + 4 * DAY + 7 * HOUR)
+    const endsAt = new Date(startsAt.getTime() + HOUR)
+    await schedule(one, adminAtOne, coachAtOne, requestId, startsAt)
+
+    // A state no current path produces: the session cancelled on its own, its request left scheduled.
+    const { session } = await sessionOf(requestId)
+    await harness.db.update(schema.ptSessions).set({ lifecycle: 'cancelled' }).where(eq(schema.ptSessions.id, session.id))
+
+    harness.clock.set(new Date(endsAt.getTime() + MINUTE))
+    await jobs.scheduledJobs.completeEndedPtSessions()
+
+    // Left as the job leaves a request it does not complete: still scheduled, and never attended.
+    assert.equal((await requestRow(requestId)).status, 'scheduled')
+    assert.notEqual((await asMemberSees(eli, requestId)).status, 'attended')
+  })
+
   test('PT-133 the studio cancels the booking of an ended session, returning its session, while a completion tick that read it as scheduled is under way: the request ends cancelled, not attended', async () => {
     harness.clock.set(new Date())
     const hal = await member(one)

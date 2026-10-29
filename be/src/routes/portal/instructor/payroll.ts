@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { getPayroll } from '../../../services/payroll/list'
 import { tenantId } from '../../../middleware/tenant'
+import { dateTime } from '../../../shared/date-time'
 
 /**
  * Instructor payroll — the caller's OWN teaching log only.
@@ -17,14 +18,10 @@ import { tenantId } from '../../../middleware/tenant'
  * `payrollSaveMessage` exactly as the admin route does — do not re-derive it.
  */
 
-const isoDate = z
-  .string()
-  .refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
-
 const listQuery = z.object({
   class_type_id: z.string().uuid().optional(),
-  from: isoDate.optional(),
-  to: isoDate.optional(),
+  from: dateTime('A from time').optional(),
+  to: dateTime('A to time').optional(),
 })
 
 // Same payroll call the admin screen makes, scoped to one instructor — so the

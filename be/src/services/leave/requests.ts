@@ -852,6 +852,10 @@ export async function attachSupportingDocument(input: {
 
   // Locked only now, after the bucket call: a decision that committed while the
   // file was uploading is read here, and one that comes later waits for this.
+  // The two refusals below delete the file just stored, and that first attempt
+  // is awaited (up to the 8 s storage deadline) while this transaction still
+  // holds the request's row lock, so an admin's decision on it waits behind a
+  // slow bucket. Only the retries of a failed delete run in the background.
   const [current] = await db
     .select({ status: leaveRequests.status, key: leaveRequests.supportingDocumentR2Key })
     .from(leaveRequests)

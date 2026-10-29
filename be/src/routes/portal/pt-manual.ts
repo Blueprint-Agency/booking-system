@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { SeatCandidate } from '../../services/pt-sessions/manual'
+import { dateTime } from '../../shared/date-time'
 
 /**
  * `POST …/manual`: a private session staff create with its members, no member
@@ -10,14 +11,13 @@ import type { SeatCandidate } from '../../services/pt-sessions/manual'
  * never none. Each may name the package that pays; absent, the Default payer
  * does. `override` is staff saying "Add anyway" to a `seat_needs_override`.
  */
-const isoDate = z.string().refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
 
 const manualFields = {
   session_type: z.enum(['1on1', '2on1']),
   location_id: z.string().uuid(),
   room_id: z.string().uuid(),
-  starts_at: isoDate,
-  ends_at: isoDate,
+  starts_at: dateTime('A start time'),
+  ends_at: dateTime('An end time'),
   instructor_pay_sgd: z.number().min(0).nullable().optional(),
   members: z
     .array(
@@ -103,7 +103,7 @@ export function removedMemberJson(res: { refundOutcome: string; refundedSessions
 const seatCandidateFields = {
   client_id: z.string().uuid(),
   session_type: z.enum(['1on1', '2on1']),
-  starts_at: z.string().datetime({ offset: true }).optional(),
+  starts_at: dateTime('A start time').optional(),
 }
 
 export const adminSeatCandidatesQuery = z.object({ ...seatCandidateFields, instructor_id: z.string().uuid() })
