@@ -120,7 +120,7 @@ the predictor of CI remains the whole serial `npm run check`.
 
 `be/src/test/authorization-matrix.test.ts` reads every `/api/v1/me`, `/api/v1/public` and
 `/api/v1/platform` route from the app's own route table, and the portal's routes surface by surface as
-each is brought under it (so far `/api/v1/portal/admin/receipts`, #389, and `/api/v1/portal/admin/classpass`, #409), and calls each one as
+each is brought under it (so far `/api/v1/portal/admin/receipts`, #389, `/api/v1/portal/admin/classpass`, #409, `/api/v1/portal/attention`, and the schedule and private session surfaces of both staff roles: `/api/v1/portal/admin/schedule`, `/api/v1/portal/admin/pt-sessions`, `/api/v1/portal/instructor/schedule`, `/api/v1/portal/instructor/pt-requests`, and the Instructor's `/api/v1/portal/instructor/sessions` and `/api/v1/portal/instructor/clients` reads), and calls each one as
 anonymous, a member of studio one, a member of studio two on studio one's hostname, an Admin of studio
 one, an Instructor of studio one, a Platform administrator, and a caller naming no studio. On `/me`
 and `/public` every caller calls from studio one's member app, on `/portal` from studio one's portal. Its `EXPECTATIONS` table says, per method and path

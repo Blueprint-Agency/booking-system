@@ -329,11 +329,72 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'POST /api/v1/portal/attention/dismissals': { gate: STUDIO_ADMIN },
   'POST /api/v1/portal/attention/updates/read-all': { gate: STUDIO_STAFF },
   'POST /api/v1/portal/attention/updates/:id/read': { gate: STUDIO_STAFF },
+
+  // The Admin's schedule: the timetable, classes, Class Series, the class waitlist, workshop cancel.
+  'GET /api/v1/portal/admin/schedule': { gate: STUDIO_ADMIN },
+  'GET /api/v1/portal/admin/schedule/classes/:id': { gate: STUDIO_ADMIN },
+  'GET /api/v1/portal/admin/schedule/pt/:id': { gate: STUDIO_ADMIN },
+  'GET /api/v1/portal/admin/schedule/classes/:id/packages': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/schedule/classes': { gate: STUDIO_ADMIN },
+  'PATCH /api/v1/portal/admin/schedule/classes/:id': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/schedule/classes/:id/bookings': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/schedule/classes/:id/cancel': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/schedule/classes/:id/waitlist': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/schedule/classes/:id/waitlist/:entryId/promote': { gate: STUDIO_ADMIN },
+  'DELETE /api/v1/portal/admin/schedule/classes/:id/waitlist/:entryId': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/schedule/workshops/:id/cancel': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/schedule/series/preview': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/schedule/series': { gate: STUDIO_ADMIN },
+  'GET /api/v1/portal/admin/schedule/series/:id': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/schedule/series/:id/extend/preview': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/schedule/series/:id/extend': { gate: STUDIO_ADMIN },
+  'PUT /api/v1/portal/admin/schedule/series/:id/package-rule': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/schedule/series/:id/end': { gate: STUDIO_ADMIN },
+
+  // The Admin's private session (PT Request) surface.
+  'GET /api/v1/portal/admin/pt-sessions': { gate: STUDIO_ADMIN },
+  'GET /api/v1/portal/admin/pt-sessions/seat-candidates': { gate: STUDIO_ADMIN },
+  // A request that does not exist answers `not_found`, the gate's own word, so this one is called with an id the route's validator refuses.
+  'GET /api/v1/portal/admin/pt-sessions/:id': { gate: STUDIO_ADMIN, probe: { params: { id: 'not-an-id' } } },
+  'POST /api/v1/portal/admin/pt-sessions/:id/schedule': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/pt-sessions/manual': { gate: STUDIO_ADMIN },
+  'PATCH /api/v1/portal/admin/pt-sessions/sessions/:id': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/pt-sessions/sessions/:id/members': { gate: STUDIO_ADMIN },
+  'DELETE /api/v1/portal/admin/pt-sessions/sessions/:id/members/:clientId': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/pt-sessions/:id/link-partner': { gate: STUDIO_ADMIN },
+  'POST /api/v1/portal/admin/pt-sessions/:id/cancel': { gate: STUDIO_ADMIN },
+
+  // The Instructor's schedule. The gate here is the role's: which Instructor
+  // Permission each route needs is judged by `instructor-permissions.test.ts`.
+  'GET /api/v1/portal/instructor/schedule': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/instructor/schedule/classes': { gate: STUDIO_STAFF },
+  'GET /api/v1/portal/instructor/schedule/classes/:id/packages': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/instructor/schedule/classes/:id/bookings': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/instructor/schedule/classes/:id/cancel': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/instructor/schedule/classes/:id/waitlist': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/instructor/schedule/classes/:id/waitlist/:entryId/promote': { gate: STUDIO_STAFF },
+  'DELETE /api/v1/portal/instructor/schedule/classes/:id/waitlist/:entryId': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/instructor/schedule/series/preview': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/instructor/schedule/series': { gate: STUDIO_STAFF },
+
+  // The Instructor's private session (PT Request) surface.
+  'GET /api/v1/portal/instructor/pt-requests': { gate: STUDIO_STAFF },
+  'GET /api/v1/portal/instructor/pt-requests/seat-candidates': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/instructor/pt-requests/manual': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/instructor/pt-requests/sessions/:id/members': { gate: STUDIO_STAFF },
+  'DELETE /api/v1/portal/instructor/pt-requests/sessions/:id/members/:clientId': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/instructor/pt-requests/:id/schedule': { gate: STUDIO_STAFF },
+  'POST /api/v1/portal/instructor/pt-requests/:id/cancel': { gate: STUDIO_STAFF },
+
+  // The Instructor's session pages: the class and private session roster reads, and the member search.
+  'GET /api/v1/portal/instructor/sessions/class/:id/roster': { gate: STUDIO_STAFF },
+  'GET /api/v1/portal/instructor/sessions/pt/:id/roster': { gate: STUDIO_STAFF },
+  'GET /api/v1/portal/instructor/clients': { gate: STUDIO_STAFF },
 }
 
 /** The prefixes the matrix speaks for: every route under them needs a line above. */
 const UNDER_THE_MATRIX =
-  /^\/api\/v1\/(me|public|platform|portal\/admin\/receipts|portal\/admin\/classpass|portal\/attention)(\/|$)/
+  /^\/api\/v1\/(me|public|platform|portal\/admin\/receipts|portal\/admin\/classpass|portal\/attention|portal\/admin\/schedule|portal\/admin\/pt-sessions|portal\/instructor\/schedule|portal\/instructor\/pt-requests|portal\/instructor\/sessions|portal\/instructor\/clients)(\/|$)/
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH'])
 
 describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
