@@ -28,7 +28,7 @@ export function PtRequestDrawer({
 }) {
   const partnerNeedsAccount =
     request.session_type === "2on1" && !request.co_client?.clientId;
-  // Staff put a manual session on the Schedule (#338): the member asked for
+  // Staff put a manual session on the Schedule: the member asked for
   // nothing, so there are no proposed slots, class type, message or binding.
   const manual = request.origin === "portal";
   useEffect(() => {

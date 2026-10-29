@@ -1,5 +1,5 @@
 /**
- * A package's Credit history (#353), as `GET /portal/admin/clients/:id/packages/:pid/credit-history`
+ * A package's Credit history, as `GET /portal/admin/clients/:id/packages/:pid/credit-history`
  * sends it, and each movement in words.
  */
 export type CreditMovementCause =

@@ -1,5 +1,5 @@
 "use client";
-// A member paying one seat on a manual private session (#336, #338): the
+// A member paying one seat on a manual private session: the
 // member search, and the row showing which of their packages pays — a select
 // when more than one can, the warning band with Add anyway when it bends
 // something they bought. Add manually holds several of these; the session

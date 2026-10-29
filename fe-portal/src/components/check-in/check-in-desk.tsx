@@ -48,7 +48,7 @@ import { untickConfirmCopy } from "@/lib/untick-confirm";
 import { useWorkspace } from "@/lib/workspace-context";
 
 /**
- * The check-in desk (#192) — one component for both audiences. The admin desk
+ * The check-in desk — one component for both audiences. The admin desk
  * sees every session today at the workspace switcher's location; the
  * instructor desk the sessions they teach. That difference is the backend's
  * (the instructor mount refuses anyone else's booking), so here `audience`

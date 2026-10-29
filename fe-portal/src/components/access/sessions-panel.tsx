@@ -22,7 +22,7 @@ interface ApiSession {
 
 /**
  * The sessions a member or staff member holds at this studio, on their detail
- * view (#119), with "Sign out everywhere".
+ * view, with "Sign out everywhere".
  *
  * `path` is the person's API resource (`/portal/admin/clients/:id` or
  * `/portal/admin/staff/:id`); the panel reads `${path}/sessions` and posts

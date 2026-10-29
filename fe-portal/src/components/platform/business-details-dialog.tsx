@@ -19,7 +19,7 @@ import {
 } from "@/lib/receipt-details";
 
 /**
- * A studio's Business details (#391, #398), corrected by the operator from
+ * A studio's Business details, corrected by the operator from
  * outside it: the Business name it trades under on its Receipts and emails, and
  * what its Receipts print beside it. The same fields and rules as the studio's
  * own Business details page; a save reaches only Receipts issued afterwards.

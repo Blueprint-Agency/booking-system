@@ -1,4 +1,4 @@
-// ClassPass review (be-portal.md §classpass.ts, #413): the ClassPass emails
+// ClassPass review (be-portal.md §classpass.ts): the ClassPass emails
 // the importer could not place, or kept while it was off, and the three ways
 // an Admin closes one.
 // Shapes mirror be/src/routes/portal/admin/classpass.ts.

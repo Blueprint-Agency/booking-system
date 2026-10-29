@@ -32,9 +32,7 @@ export interface ApiScheduleEntry {
 }
 
 /**
- * Shape consumed by the schedule UI. Mirrors the legacy
- * `buildScheduleEntries()` return shape so the calendar renderer stays
- * untouched while we swap data sources. `raw` only carries what the renderer
+ * Shape consumed by the schedule UI. `raw` only carries what the renderer
  * needs (the workshop link uses `raw.id` for workshops).
  */
 export type ScheduleEntry =

@@ -1,4 +1,4 @@
-// The ClassPass page (be-portal.md §classpass.ts, #409): the studio's
+// The ClassPass page (be-portal.md §classpass.ts): the studio's
 // ClassPass address, its import switch, Gmail's confirmation code, and what
 // has arrived. Shapes mirror be/src/routes/portal/admin/classpass.ts.
 
@@ -26,7 +26,7 @@ export interface ClassPassStatus {
   counts: Record<ClassPassOutcome, number>;
   /** ClassPass bookings in an Overbook seat on a class that hasn't ended, soonest first. */
   overbooked: ClassPassOverbooked[];
-  /** The ClassPass Daily Roster check (#415) over the last week's rosters. */
+  /** The ClassPass Daily Roster check over the last week's rosters. */
   roster_check: ClassPassRosterCheck;
   /** What the setup guide ticks each step on. */
   setup: ClassPassSetup;
@@ -185,7 +185,7 @@ export function regenerateClassPassAddress(api: Api): Promise<ClassPassSettings>
   return api.post<ClassPassSettings>("/portal/admin/classpass/address/regenerate");
 }
 
-// ClassPass location mappings (#410): ClassPass's name for a location -> one
+// ClassPass location mappings: ClassPass's name for a location -> one
 // of the studio's Locations. The backend stores the name normalised
 // (lower-cased, spaces collapsed, every dash `-`), so the list shows it so.
 

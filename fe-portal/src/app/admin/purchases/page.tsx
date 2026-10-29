@@ -21,7 +21,7 @@ import {
 import { formatDate } from "@/lib/formatters";
 
 /**
- * Purchases a member part-paid and never came back to (#95).
+ * Purchases a member part-paid and never came back to.
  *
  * Money the studio is holding against nothing granted — no plan, no credits, no
  * place — that nobody has touched for a long time. It is a list and a button and
@@ -48,7 +48,7 @@ interface ApiSilentPurchase {
   /** The backend's own sentence. The portal derives no domain rule. */
   silence_notice: string;
   payment_count: number;
-  /** Whether a Refund is already on its way (#275) — the button is withheld while one is. */
+  /** Whether a Refund is already on its way — the button is withheld while one is. */
   refund_progress: RefundProgress;
   created_at: string;
   grants_nothing: boolean;
@@ -70,8 +70,7 @@ function UnfinishedPurchases() {
   // (refunded, paid, dismissed) the page opens as normal.
   const wanted = purchaseParam(`?${search.toString()}`);
   const highlighted = useRef<HTMLDivElement | null>(null);
-  // The same gate the member detail page puts on its Refund buttons — the role
-  // split this was written against (superadmin) no longer exists.
+  // The same gate the member detail page puts on its Refund buttons.
   const canRefund = runsStudio(role);
 
   const [rows, setRows] = useState<ApiSilentPurchase[]>([]);
@@ -242,7 +241,7 @@ function UnfinishedPurchases() {
               // The backend's own sentence — "2 payments returned, totalling
               // S$120.00". One press of the button becomes one return per
               // payment, and that count is what the statement will show. A
-              // Refund Stripe refused part-way is a warning, not a success (#275).
+              // Refund Stripe refused part-way is a warning, not a success.
               const t = refundReplyToast("unfinished", res, res.returned_line);
               if (t.tone === "warning") toast.warning(t.message, { duration: 15000 });
               else toast.success(t.message);

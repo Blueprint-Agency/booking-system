@@ -817,7 +817,7 @@ function PtEditor({
         // `partner_required` and the admin has no field to fix it with.
         // Needs a client picker here, shown only when switching to 2on1.
         // A manual session's type changes on the Members panel instead, which
-        // asks for the partner and their package (#338).
+        // asks for the partner and their package.
         ...(manual ? {} : { session_type: sessionType }),
         instructor_id: mainInstructorId,
         instructor_pay_sgd: mainPay.trim() === "" ? null : Number(mainPay),

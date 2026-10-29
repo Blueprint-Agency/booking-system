@@ -79,7 +79,7 @@ test("an unknown refusal falls back to the status", () => {
   });
 });
 
-/* ── staff pick the member's package (#333) ── */
+/* ── staff pick the member's package ── */
 
 const pkg = (over: Partial<StaffMemberPackage>): StaffMemberPackage => ({
   id: "p",

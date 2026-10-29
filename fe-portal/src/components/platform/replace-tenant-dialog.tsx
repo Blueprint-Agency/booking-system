@@ -5,7 +5,7 @@ import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import type { PlatformTenant } from "@/lib/platform";
 
 /**
- * Replace a studio's data with an archive's (#339).
+ * Replace a studio's data with an archive's.
  *
  * Everything the studio holds is deleted and the file's rows written in its
  * place — so, like deleting a studio, it asks for the studio's address typed

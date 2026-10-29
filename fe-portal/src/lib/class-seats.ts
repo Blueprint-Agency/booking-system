@@ -50,7 +50,7 @@ export function seatTag(seat: BookingSeat): string | null {
 }
 
 /**
- * How a booking reached the studio (#408): `classpass` is a ClassPass booking,
+ * How a booking reached the studio: `classpass` is a ClassPass booking,
  * which ClassPass paid for — no package, no credits.
  */
 export type BookingSource = "direct" | "classpass";
@@ -109,7 +109,7 @@ export type PackageRefusal =
   | "plan_expires_before_class"
   | "insufficient_credits";
 
-/** One of the member's class packages read against the class (#333). */
+/** One of the member's class packages read against the class. */
 export interface StaffMemberPackage {
   id: string;
   name: string;

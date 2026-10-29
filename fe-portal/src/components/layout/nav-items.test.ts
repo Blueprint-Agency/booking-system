@@ -4,7 +4,7 @@ import { NAV_ITEMS } from "./nav-items";
 import { visibleToRole } from "@/lib/staff-role";
 
 // The Inbox and Notifications screens read fixture data that made untrue
-// claims about refunds and about which emails are sent (#277). They are hidden
+// claims about refunds and about which emails are sent. They are hidden
 // until they can be wired to the backend, so staff must have no way to reach them.
 test("the sidebar offers no Inbox or Notifications screen", () => {
   const hrefs = NAV_ITEMS.map((item) => item.href);
@@ -12,7 +12,7 @@ test("the sidebar offers no Inbox or Notifications screen", () => {
   assert.ok(!hrefs.includes("/admin/notifications"), "Notifications is still in the nav");
 });
 
-// Every Receipt in the studio is the studio's money, for its admins (#389).
+// Every Receipt in the studio is the studio's money, for its admins.
 test("INV-54 the sidebar offers Receipts under Finance to an admin, and never to an instructor", () => {
   const receipts = NAV_ITEMS.find((item) => item.href === "/admin/receipts");
   assert.ok(receipts, "Receipts is in the nav");
@@ -31,7 +31,7 @@ test("NTF-47 the sidebar offers Emails under Settings to an admin, and never to 
   assert.equal(visibleToRole(emails, "instructor"), false);
 });
 
-// The ClassPass page holds the studio's private forwarding address (#409).
+// The ClassPass page holds the studio's private forwarding address.
 test("CPS-19 the sidebar offers ClassPass under Settings to an admin, and never to an instructor", () => {
   const classpass = NAV_ITEMS.find((item) => item.href === "/admin/classpass");
   assert.ok(classpass, "ClassPass is in the nav");

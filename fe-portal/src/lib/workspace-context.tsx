@@ -328,7 +328,7 @@ export function WorkspaceProvider({
   const accessibleLocations = useMemo(() => {
     if (!currentStaff) return [];
     // Every staff member works across all of the studio's active locations —
-    // matches the BE /auth/me rule. Location grants no longer narrow it.
+    // matches the BE /auth/me rule. Location grants do not narrow it.
     return locations.filter(l => !l.archivedAt);
   }, [locations, currentStaff]);
 

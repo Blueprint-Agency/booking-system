@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button, Dialog, DialogFooter, Label } from "@/components/ui";
 
 /**
- * Take back a **Complimentary Package** given by mistake (#176).
+ * Take back a **Complimentary Package** given by mistake.
  *
  * Deliberately not the Refund dialog: no money moved, so there is nothing to
  * give back — the package row goes, and the classes it paid for that have not

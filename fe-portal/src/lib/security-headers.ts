@@ -1,5 +1,5 @@
 /**
- * The response headers every page of the portal carries (#142), applied from
+ * The response headers every page of the portal carries, applied from
  * `next.config.ts`. Kept here, as a pure function of the build's environment,
  * so the policy can be tested without a build. fe-client has its own copy — the
  * apps share no code.
@@ -19,7 +19,7 @@
  * inline scripts, and the only way to drop it is a per-request nonce, which
  * turns every static page dynamic. `docs/md/deployment.md` § Security headers.
  *
- * The camera is this origin's only: the check-in desk (#192) scans members' QR
+ * The camera is this origin's only: the check-in desk scans members' QR
  * codes with it. Nothing framed or third-party may ask for it.
  */
 

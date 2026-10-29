@@ -1,7 +1,7 @@
 import { ERROR_CODES } from "./error-codes";
 
 /**
- * Why a Refund was refused, in words an admin can act on (#293).
+ * Why a Refund was refused, in words an admin can act on.
  *
  * Two refusals are about where the money is rather than about the purchase:
  * the studio has no payment account of its own any more, so nothing can be

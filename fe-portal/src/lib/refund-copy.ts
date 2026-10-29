@@ -1,5 +1,5 @@
 /**
- * What the portal's Refund screens say (#275), kept pure so every sentence is
+ * What the portal's Refund screens say, kept pure so every sentence is
  * testable and the three places a Refund is issued from say the same thing.
  *
  * Nothing here decides a rule. The backend says whether a Refund is on its way,
@@ -15,7 +15,7 @@ import { REFUND_REFUSALS as WHERE_THE_MONEY_IS } from "./refund-refusals";
 /**
  * The backend's refusals of a Refund, in words an admin can act on — the ones
  * about the purchase here, and the ones about which Stripe account holds the
- * money (#293) from `refund-refusals`.
+ * money from `refund-refusals`.
  */
 const REFUND_REFUSALS: Record<string, string> = {
   ...WHERE_THE_MONEY_IS,

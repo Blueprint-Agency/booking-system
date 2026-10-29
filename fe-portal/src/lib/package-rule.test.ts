@@ -23,7 +23,7 @@ import { scheduleErrorMessage } from "./schedule";
 import { updateSeriesRule } from "./series";
 import type { Api } from "./api";
 
-// A class's Package rule (#323): which class packages may pay for it.
+// A class's Package rule: which class packages may pay for it.
 
 const pkg = (id: string, name: string, kind: RulePackage["kind"], archived = false): RulePackage => ({
   id,

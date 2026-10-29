@@ -76,7 +76,7 @@ export function OverviewPanel({
               value={String(members.joined)}
               hint="New members in the period"
             />
-            {/* Money the studio is holding against nothing granted (#93). It is
+            {/* Money the studio is holding against nothing granted. It is
                 deliberately outside the money chain above: it is not revenue and
                 must not move Gross or Net, but it is cash in the account and
                 leaving it off the page entirely would be its own kind of lie. */}
@@ -194,7 +194,7 @@ function Panel({
   );
 }
 
-/** An empty panel used to read as one grey line stranded at the top of a box. */
+/** An empty panel fills its box, not one grey line stranded at the top of it. */
 function Empty({ children }: { children: React.ReactNode }) {
   return (
     <p className="flex min-h-24 items-center justify-center rounded-lg bg-warm/50 px-4 text-center text-xs text-muted">

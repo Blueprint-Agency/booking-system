@@ -20,7 +20,7 @@ import {
 } from "@/lib/receipt-details";
 
 /**
- * Business details (#391, #398): what the studio's business documents say
+ * Business details: what the studio's business documents say
  * about it. The Business name it trades under, the registration number,
  * address and footer note its Receipts print, and the Receipt number prefix,
  * with a live preview of the number the next Receipt will take. Studio admins

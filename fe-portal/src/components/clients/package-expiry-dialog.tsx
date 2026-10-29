@@ -34,8 +34,8 @@ export function PackageExpiryDialog({
           e.preventDefault();
           if (!reason.trim()) return;
           // The last instant of the picked day on the studio's local clock
-          // (lib/package-expiry.ts). Ends stamped by the old dialog at
-          // 23:59:59 UTC are not rewritten: that would take eight hours from
+          // (lib/package-expiry.ts). Ends already stamped at 23:59:59 UTC
+          // are not rewritten: that would take eight hours from
           // members, and reopening one saves the later day in their favour.
           onSave(expiryInstant(date), reason.trim());
         }}

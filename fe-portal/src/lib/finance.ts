@@ -126,15 +126,15 @@ export interface FinanceRow {
   promo_code: string | null;
   refunded: boolean;
   /**
-   * A **Complimentary Package** — given by an admin at no charge (#176). It is
+   * A **Complimentary Package** — given by an admin at no charge. It is
    * listed at S$0 against its list price and counts towards no total, so the
    * table says so rather than letting the two figures read as a discount.
    */
   complimentary: boolean;
   /**
-   * Every way it was paid (#282) — two for a Part Payment paid two ways. Empty
+   * Every way it was paid — two for a Part Payment paid two ways. Empty
    * on money out. Optional because the portal and the backend deploy apart, and
-   * a backend from before #282 sends neither field: absent reads as "none".
+   * an older backend sends neither field: absent reads as "none".
    */
   methods?: FinanceMethod[];
   /**
@@ -279,7 +279,7 @@ export interface FinanceOverview {
   /** Sessions with no pay set. Excluded from Net, so Net says so. */
   unpriced_count: number;
   /**
-   * Money taken against purchases that have granted nothing yet (#93) — a
+   * Money taken against purchases that have granted nothing yet — a
    * member part-way through paying with two cards.
    *
    * **Not revenue**, and never inside Gross or Net: a purchase enters the

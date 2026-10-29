@@ -21,7 +21,7 @@ export function PtRequestPickerDialog({
   const [pending, setPending] = useState<ApiPtRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [picked, setPicked] = useState<ApiPtRequest | null>(null);
-  /** Add manually: a session agreed outside the app, with no request behind it (#336). */
+  /** Add manually: a session agreed outside the app, with no request behind it. */
   const [manual, setManual] = useState(false);
 
   useEffect(() => {

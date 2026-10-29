@@ -7,7 +7,7 @@
  *
  * One component rather than four copies, because the failure it exists to
  * prevent is a *partial* rebrand: three surfaces resolving the Tenant and the
- * fourth still saying the name it was written with. There is now one place that
+ * fourth still saying the name it was written with. There is one place that
  * can be wrong, and it is wrong for everyone at once.
  *
  * The mark falls back to initials derived from the name, so a studio that has
