@@ -583,6 +583,69 @@ describe('Staff attention: session Updates', { skip: integrationTestsEnabled ? f
     assert.equal(await unread(ben), 0)
   })
 
+  test('ATN-201 an Admin who also teaches a workshop moves its day in the editor\'s one save: the other instructor is told by the Admin\'s name, the Admin is told nothing, and a refused save tells nobody', async () => {
+    const studio = await freshStudio()
+    const owner = await adminAt(studio)
+    const dual = await adminAt(studio, 'dual')
+    await harness.db.insert(schema.instructors).values({ tenantId: studio.id, staffUserId: dual.id })
+    const ada = await instructorAt(studio, owner, 'ada')
+    const w = await workshopOf(studio, owner, ada, [dual])
+    const mia = await memberOf(studio, 'Mia')
+
+    const tierIds: string[] = []
+    for (const [i, name] of ['Full', 'Other'].entries()) {
+      const [tier] = await harness.db
+        .insert(schema.workshopTiers)
+        .values({ tenantId: studio.id, workshopId: w.id, name, regularPriceSgd: '100.00', ord: i + 1 })
+        .returning({ id: schema.workshopTiers.id })
+      await harness.db.insert(schema.workshopTierDays).values({ tenantId: studio.id, workshopTierId: tier!.id, workshopDayId: w.dayId })
+      tierIds.push(tier!.id)
+    }
+
+    const detailPath = `/portal/admin/workshops/${w.id}`
+    const read = async () =>
+      (await json(await send(detailPath, dual.headers), 200)) as {
+        name: string
+        days: { id: string; room_id: string; starts_at: string; ends_at: string; capacity_online: number }[]
+      }
+    const saveWith = async (moveBy: number, keep: string[]) => {
+      const [day] = (await read()).days
+      return send(detailPath, dual.headers, 'PATCH', {
+        days: [
+          {
+            id: day!.id,
+            ref: day!.id,
+            room_id: day!.room_id,
+            starts_at: new Date(Date.parse(day!.starts_at) + moveBy).toISOString(),
+            ends_at: new Date(Date.parse(day!.ends_at) + moveBy).toISOString(),
+            capacity_online: day!.capacity_online,
+          },
+        ],
+        tiers: keep.map(id => ({ id, name: id === tierIds[0] ? 'Full' : 'Other', regular_price_sgd: '100.00', day_refs: [day!.id] })),
+      })
+    }
+
+    await json(await saveWith(DAY, tierIds), 200)
+    const moved = new Date(w.startsAt.getTime() + DAY)
+    const [told] = await updatesOf(ada)
+    assert.equal(told!.title, `dual moved Inversions from ${when(w.startsAt)} to ${when(moved)}`)
+    assert.equal((await updatesOf(ada)).length, 1)
+    assert.deepEqual(await updatesOf(dual), [], 'the Admin who saved was told of their own change')
+
+    // A member is still paying for the first tier, so taking it off is refused.
+    await harness.db.insert(schema.purchases).values({
+      tenantId: studio.id,
+      clientId: mia.clientId,
+      kind: 'workshop',
+      totalSgd: '100.00',
+      metadata: { workshop_tier_id: tierIds[0], workshop_id: w.id },
+    })
+    const refused = await json(await saveWith(DAY, [tierIds[1]!]), 409)
+    assert.equal(refused.error, 'workshop_tier_has_open_purchases')
+    assert.equal((await updatesOf(ada)).length, 1, 'a refused save told the instructor')
+    assert.deepEqual(await updatesOf(dual), [])
+  })
+
   test('ATN-188 a member cancelling their private session, by the request or by their booking, tells its instructor and names the member', async () => {
     const studio = await freshStudio()
     const admin = await adminAt(studio)
