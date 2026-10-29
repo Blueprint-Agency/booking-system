@@ -43,6 +43,9 @@ import {
   ptCancelResult,
 } from "@/lib/cancellation-copy";
 import { makePtSessionsApi, ptCancelFailure, type RawPtRequest } from "@/lib/pt-sessions";
+import { settleOptional } from "@/lib/booking-sources";
+import type { BookingKind } from "@/lib/booking-gaps";
+import { MissingBookingsNote } from "@/components/account/missing-bookings-note";
 
 /** The ticket, and what a Cancel on it acts on. */
 type Next =
@@ -110,6 +113,12 @@ function nextUp(
   return candidates[0] ?? null;
 }
 
+/** What Up next read: the ticket, and the booking kinds it could not check. */
+type UpNext = { next: Next | null; missing: BookingKind[] };
+
+/** Said beside a ticket drawn from only the bookings that loaded. */
+const MAY_NOT_BE_NEXT = "Some of your bookings couldn't be checked, so this may not be your next one.";
+
 /** The `my-bookings` key of what the ticket shows, so a list beside it can leave it out. */
 function keyOf(next: Next): string {
   if ("booking" in next) return `class:${next.booking.booking_id}`;
@@ -162,38 +171,43 @@ function ComingUpTicket({
   const [cancelPt, setCancelPt] = useState<RawPtRequest | null>(null);
 
   // Drawn at once from the last visit and re-read behind it (`resource-cache.ts`).
-  const read = useCachedResource<Next | null>(session ? `me:${session.userId}:coming-up` : null, async () => {
+  const read = useCachedResource<UpNext>(session ? `me:${session.userId}:coming-up` : null, async () => {
     try {
-      // Only the class bookings are essential: a failed PT, workshop or past
-      // read must not blank a confirmed class into "Nothing booked yet".
-      const optional = <T,>(p: Promise<T>, fallback: T, scope: string) =>
-        p.catch((err) => {
-          reportError(err, { scope });
-          return fallback;
-        });
-      const [upcoming, past, pt, workshops] = await Promise.all([
+      // Only the upcoming class bookings are essential. A failed past, PT or
+      // workshop read must not blank a confirmed class into "Nothing booked
+      // yet" — and is named in `missing`, so the ticket never claims to be the
+      // next booking when it could not check them all (#500).
+      const [upcoming, optional] = await Promise.all([
         api.get<{ bookings: ApiBooking[] }>("/me/bookings/upcoming"),
-        optional(api.get<{ bookings: ApiBooking[] }>("/me/bookings/past"), { bookings: [] }, "coming-up-past"),
-        optional(makePtSessionsApi(api).listRequests(), { pt_requests: [] }, "coming-up-pt"),
-        optional(
-          api.get<{ workshop_bookings: ApiWorkshopBooking[] }>("/me/workshop-bookings"),
-          { workshop_bookings: [] },
-          "coming-up-workshops",
-        ),
+        settleOptional({
+          past: { scope: "coming-up-past", read: api.get<{ bookings: ApiBooking[] }>("/me/bookings/past") },
+          pt: { scope: "coming-up-pt", read: makePtSessionsApi(api).listRequests() },
+          workshops: {
+            scope: "coming-up-workshops",
+            read: api.get<{ workshop_bookings: ApiWorkshopBooking[] }>("/me/workshop-bookings"),
+          },
+        }),
       ]);
-      return nextUp(
-        { upcoming: upcoming.bookings ?? [], past: past.bookings ?? [] },
-        pt.pt_requests ?? [],
-        workshops.workshop_bookings ?? [],
-        Date.now(),
-      );
+      const past = optional.loaded.past as { bookings?: ApiBooking[] } | undefined;
+      const pt = optional.loaded.pt as { pt_requests?: RawPtRequest[] } | undefined;
+      const workshops = optional.loaded.workshops as { workshop_bookings?: ApiWorkshopBooking[] } | undefined;
+      return {
+        next: nextUp(
+          { upcoming: upcoming.bookings ?? [], past: past?.bookings ?? [] },
+          pt?.pt_requests ?? [],
+          workshops?.workshop_bookings ?? [],
+          Date.now(),
+        ),
+        missing: optional.missing,
+      };
     } catch (err) {
       reportError(err, { scope: "coming-up" });
       throw err;
     }
   });
   const loading = read.loading;
-  const next = read.data;
+  const next = read.data?.next ?? null;
+  const missing = read.data?.missing ?? [];
   const reload = read.refresh;
 
   // On the schedule the ticket sits above the class list with no placeholder:
@@ -277,6 +291,12 @@ function ComingUpTicket({
     return (
       <>
         <NextTicketCard ticket={next.ticket} onCancel={onCancel} />
+        <MissingBookingsNote
+          missing={missing}
+          text={MAY_NOT_BE_NEXT}
+          onRetry={reload}
+          className="-mt-2 mb-4"
+        />
         {dialogs}
       </>
     );
@@ -290,6 +310,10 @@ function ComingUpTicket({
 
       {loading ? (
         <ContentLoading label="Loading what's coming up" className="min-h-32" />
+      ) : !next && missing.length > 0 ? (
+        // Never "Nothing booked yet." while a read failed: it would be a claim
+        // about bookings that were not read.
+        <MissingBookingsNote missing={missing} text="Couldn't load what's next." onRetry={reload} />
       ) : !next ? (
         <div className={cn(CARD, "flex items-center justify-between gap-3 p-4")}>
           <p className="text-sm text-muted">Nothing booked yet.</p>
@@ -302,7 +326,15 @@ function ComingUpTicket({
           </Link>
         </div>
       ) : (
-        <NextTicketCard ticket={next.ticket} className="mb-0" onCancel={onCancel} />
+        <>
+          <NextTicketCard ticket={next.ticket} className="mb-0" onCancel={onCancel} />
+          <MissingBookingsNote
+            missing={missing}
+            text={MAY_NOT_BE_NEXT}
+            onRetry={reload}
+            className="mt-3"
+          />
+        </>
       )}
 
       {dialogs}

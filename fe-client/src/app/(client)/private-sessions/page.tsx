@@ -15,6 +15,7 @@ import { useLocations, useClassTypes } from "@/lib/classes";
 import { PreferredClassType } from "@/components/booking/preferred-class-type";
 import { usePtSessionsApi, HALF_HOUR_TIMES, formatSlotTime } from "@/lib/pt-sessions";
 import { ApiError } from "@/lib/api";
+import { reportError } from "@/lib/report-error";
 import {
   ptSlotDateProblem,
   ptWindowDates,
@@ -105,7 +106,11 @@ export default function PrivateSessionsPage() {
   // Partner state (2on1 only).
   const [partnerEmail, setPartnerEmail] = useState<string>("");
   const [partnerLookup, setPartnerLookup] = useState<
-    { state: "idle" } | { state: "found"; clientId: string; name: string } | { state: "not_found" }
+    | { state: "idle" }
+    | { state: "found"; clientId: string; name: string }
+    | { state: "not_found" }
+    // The lookup itself failed: the studio has not said whether this is a member.
+    | { state: "failed" }
   >({ state: "idle" });
   const [partnerName, setPartnerName] = useState<string>("");
 
@@ -138,8 +143,11 @@ export default function PrivateSessionsPage() {
       } else {
         setPartnerLookup({ state: "not_found" });
       }
-    } catch {
-      setPartnerLookup({ state: "not_found" });
+    } catch (err) {
+      // Not "not a member yet": that would invite a duplicate account for
+      // someone who may already be a member.
+      reportError(err, { scope: "partner-lookup" });
+      setPartnerLookup({ state: "failed" });
     }
   }
 
@@ -163,6 +171,7 @@ export default function PrivateSessionsPage() {
     if (sessionType === "2on1") {
       if (!partnerEmail.trim()) errs.push("Partner email is required for a 2-on-1.");
       else if (partnerLookup.state === "idle") errs.push("Run partner lookup first.");
+      else if (partnerLookup.state === "failed") errs.push("Check your partner's email again.");
       else if (partnerLookup.state === "not_found" && !partnerName.trim()) errs.push("Partner name is required when they're not yet a member.");
     }
     return errs;
@@ -454,6 +463,18 @@ export default function PrivateSessionsPage() {
               {partnerLookup.state === "found" && (
                 <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-sage">
                   <CheckCircle2 size={14} /> {partnerLookup.name} — existing member.
+                </p>
+              )}
+              {partnerLookup.state === "failed" && (
+                <p role="alert" className="mt-2 inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-error">
+                  <AlertCircle size={14} /> Couldn&apos;t check that email.
+                  <button
+                    type="button"
+                    onClick={runPartnerLookup}
+                    className="font-semibold underline underline-offset-2"
+                  >
+                    Try again
+                  </button>
                 </p>
               )}
               {partnerLookup.state === "not_found" && (

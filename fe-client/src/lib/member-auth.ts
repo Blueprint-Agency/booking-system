@@ -139,8 +139,42 @@ export type { MemberSession } from "@/lib/member-session-view";
  * The signed-in session, from Better Auth's own session store. Reads as not
  * loaded until hydration is done, so the hydrating render matches the server's
  * — see `memberSessionView`.
+ *
+ * When the app could not find out whether this browser is signed in (the read
+ * failed and a token is held) this throws, during render, to the route's error
+ * boundary — as a failed read does (`failed-read.ts`). Every page that draws
+ * from who is signed in then shows the error page, never the sign-in page or a
+ * signed-out version of itself. `recheckMemberSession` is what Try again runs.
  */
 export function useMemberSession(): MemberSessionView {
+  const view = useMemberSessionQuiet();
+  if (view.failure !== undefined) throw view.failure;
+  return view;
+}
+
+/**
+ * The same, without throwing: for the one consumer outside the route boundary
+ * (telemetry identification in the root layout), which draws nothing and must
+ * not take the whole app down with a failed read.
+ */
+export function useMemberSessionQuiet(): MemberSessionView {
   const store = memberAuth.useSession();
-  return memberSessionView(useHydrated(), store);
+  const hydrated = useHydrated();
+  return memberSessionView(hydrated, store, hydrated && readMemberToken() !== null);
+}
+
+/**
+ * Ask the backend about the session again, and settle once it has answered.
+ * The store keeps a failed first read until something re-reads it, so Try again
+ * on the error page re-reads before the page re-renders: otherwise the page
+ * would read the old failure and throw again at once. The token is never
+ * cleared here.
+ */
+export async function recheckMemberSession(): Promise<void> {
+  const { error, refetch } = memberAuth.$store.atoms.session.get() as {
+    error?: unknown;
+    refetch?: () => Promise<void>;
+  };
+  if (error == null || !refetch) return;
+  await refetch();
 }
