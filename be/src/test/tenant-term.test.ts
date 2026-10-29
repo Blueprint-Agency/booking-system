@@ -19,6 +19,7 @@ describe('tenant term', { skip: integrationTestsEnabled ? false : SKIP_REASON },
   let schema!: typeof import('../db/schema')
   let provision!: typeof import('../services/tenants/provision')
   let term!: typeof import('../services/tenants/term')
+  let termDates!: typeof import('../services/tenants/term-dates')
   let jobs!: typeof import('../jobs')
   let operator!: Record<string, string>
 
@@ -44,6 +45,7 @@ describe('tenant term', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     schema = await import('../db/schema')
     provision = await import('../services/tenants/provision')
     term = await import('../services/tenants/term')
+    termDates = await import('../services/tenants/term-dates')
     jobs = await import('../jobs')
     operator = await harness.signInAs('platform', OPERATOR, null)
   })
@@ -64,15 +66,15 @@ describe('tenant term', { skip: integrationTestsEnabled ? false : SKIP_REASON },
       }),
       201,
     )
-    const today = term.localDate('Pacific/Kiritimati')
+    const today = termDates.localDate('Pacific/Kiritimati')
     assert.equal(created.tenant.term.start_date, today)
-    assert.equal(created.tenant.term.end_date, term.termEndDate(today, 6))
+    assert.equal(created.tenant.term.end_date, termDates.termEndDate(today, 6))
     assert.equal(created.tenant.term.ended, false)
 
     // Without a duration the Term is open-ended.
     const open = await provision.provisionTenant({ slug: `term-open-${run}`, name: 'Term Open' })
     assert.equal(open.tenant.termEndDate, null)
-    assert.equal(open.tenant.termStartDate, term.localDate('Asia/Singapore'))
+    assert.equal(open.tenant.termStartDate, termDates.localDate('Asia/Singapore'))
   })
 
   test('the operator sets a start and a duration; the end is computed', async () => {
@@ -131,7 +133,7 @@ describe('tenant term', { skip: integrationTestsEnabled ? false : SKIP_REASON },
 
     // Extending the Term does not reopen the studio by itself…
     await expectStatus(
-      await platform(`/tenants/${tenant.id}/term`, 'PUT', { start_date: term.localDate('Asia/Singapore'), months: 12 }),
+      await platform(`/tenants/${tenant.id}/term`, 'PUT', { start_date: termDates.localDate('Asia/Singapore'), months: 12 }),
       200,
     )
     assert.equal((await stored(tenant.id)).status, 'suspended')

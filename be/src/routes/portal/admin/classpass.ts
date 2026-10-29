@@ -122,7 +122,7 @@ const app = new Hono()
       { locationName: body.location_name, locationId: body.location_id },
       c.get('staffUserId'),
     )
-    c.set('auditTarget' as any, { table: 'classpass_location_mappings', id: row.id })
+    c.set('auditTarget', { table: 'classpass_location_mappings', id: row.id })
     return c.json(serializeMapping(row), 201)
   })
   .patch('/locations/:id', zValidator('param', idParam), zValidator('json', mappingPatchSchema), async c => {
@@ -134,13 +134,13 @@ const app = new Hono()
       { locationName: body.location_name, locationId: body.location_id },
       c.get('staffUserId'),
     )
-    c.set('auditTarget' as any, { table: 'classpass_location_mappings', id })
+    c.set('auditTarget', { table: 'classpass_location_mappings', id })
     return c.json(serializeMapping(row))
   })
   .delete('/locations/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     await locationSvc.removeClassPassLocationMapping(tenantId(c), id)
-    c.set('auditTarget' as any, { table: 'classpass_location_mappings', id })
+    c.set('auditTarget', { table: 'classpass_location_mappings', id })
     return c.body(null, 204)
   })
   // ClassPass review (#413): the booking emails the importer could not place, and closing each one.
@@ -148,19 +148,19 @@ const app = new Hono()
   .post('/review/:id/book', zValidator('param', idParam), zValidator('json', bookSchema), async c => {
     const { id } = c.req.valid('param')
     const item = await reviewSvc.bookClassPassReviewItem(tenantId(c), id, c.req.valid('json').class_id, c.get('staffUserId'))
-    c.set('auditTarget' as any, { table: 'classpass_inbound_emails', id })
+    c.set('auditTarget', { table: 'classpass_inbound_emails', id })
     return c.json(serializeReviewItem(item))
   })
   .post('/review/:id/dismiss', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const item = await reviewSvc.dismissClassPassReviewItem(tenantId(c), id, c.get('staffUserId'))
-    c.set('auditTarget' as any, { table: 'classpass_inbound_emails', id })
+    c.set('auditTarget', { table: 'classpass_inbound_emails', id })
     return c.json(serializeReviewItem(item))
   })
   .post('/review/:id/location', zValidator('param', idParam), zValidator('json', locationSchema), async c => {
     const { id } = c.req.valid('param')
     const result = await reviewSvc.mapClassPassReviewLocation(tenantId(c), id, c.req.valid('json').location_id, c.get('staffUserId'))
-    c.set('auditTarget' as any, { table: 'classpass_location_mappings', id: result.mapping.id })
+    c.set('auditTarget', { table: 'classpass_location_mappings', id: result.mapping.id })
     return c.json({ mapping: serializeMapping(result.mapping), items: result.items.map(serializeReviewItem) })
   })
 

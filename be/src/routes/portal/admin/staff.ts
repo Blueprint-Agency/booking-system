@@ -218,14 +218,14 @@ const app = new Hono()
       invitedByStaffId: actor,
       ...(body.permissions !== undefined ? { permissions: body.permissions } : {}),
     })
-    c.set('auditTarget' as any, { table: 'staff_invitations', id: inv.id })
+    c.set('auditTarget', { table: 'staff_invitations', id: inv.id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }), 201)
   })
   .post('/invitations/:id/revoke', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId')
     const inv = await svc.revokeInvitation(tenantId(c), id, actor)
-    c.set('auditTarget' as any, { table: 'staff_invitations', id })
+    c.set('auditTarget', { table: 'staff_invitations', id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }))
   })
   .post('/invitations/:id/resend', zValidator('param', idParam), async c => {
@@ -236,7 +236,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId'),
       from: c.req.raw.headers,
     })
-    c.set('auditTarget' as any, { table: 'staff_invitations', id })
+    c.set('auditTarget', { table: 'staff_invitations', id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }))
   })
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateStaffSchema, explainStaff), async c => {
@@ -277,7 +277,7 @@ const app = new Hono()
           : {}),
       },
     })
-    c.set('auditTarget' as any, { table: 'staff_users', id })
+    c.set('auditTarget', { table: 'staff_users', id })
     return c.json(serializeStaff(row, await pendingEmailOf(tenantId(c), id)))
   })
   // The sign-in email, anyone's the admin may edit, their own included: the new
@@ -293,7 +293,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId'),
       email: body.email,
     })
-    c.set('auditTarget' as any, { table: 'staff_users', id })
+    c.set('auditTarget', { table: 'staff_users', id })
     return c.json({
       pending_email: serializePendingEmail(pending),
       resend_after_seconds: EMAIL_CHANGE_RESEND_AFTER_MS / 1000,
@@ -318,7 +318,7 @@ const app = new Hono()
       actorStaffId: actor,
       from: c.req.raw.headers,
     })
-    c.set('auditTarget' as any, { table: 'staff_users', id })
+    c.set('auditTarget', { table: 'staff_users', id })
     return c.json(serializeStaff(await withPermissionsOf(tenantId(c), row), await pendingEmailOf(tenantId(c), id)))
   })
   .post('/:id/unarchive', zValidator('param', idParam), async c => {
@@ -330,7 +330,7 @@ const app = new Hono()
       actorStaffId: actor,
       from: c.req.raw.headers,
     })
-    c.set('auditTarget' as any, { table: 'staff_users', id })
+    c.set('auditTarget', { table: 'staff_users', id })
     return c.json(serializeStaff(await withPermissionsOf(tenantId(c), row), await pendingEmailOf(tenantId(c), id)))
   })
   .get('/:id/sessions', zValidator('param', idParam), async c => {
@@ -346,7 +346,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId'),
       from: c.req.raw.headers,
     })
-    c.set('auditTarget' as any, { table: 'staff_users', id })
+    c.set('auditTarget', { table: 'staff_users', id })
     return c.json({ revoked })
   })
   .post('/:id/resend-invitation', zValidator('param', idParam), async c => {
@@ -357,7 +357,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId'),
       from: c.req.raw.headers,
     })
-    c.set('auditTarget' as any, { table: 'staff_users', id })
+    c.set('auditTarget', { table: 'staff_users', id })
     return c.json({ sent })
   })
   .delete('/:id', zValidator('param', idParam), async c => {
@@ -368,7 +368,7 @@ const app = new Hono()
       targetStaffId: id,
       actorStaffId: actor,
     })
-    c.set('auditTarget' as any, { table: 'staff_users', id })
+    c.set('auditTarget', { table: 'staff_users', id })
     return c.body(null, 204)
   })
 

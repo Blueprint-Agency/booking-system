@@ -28,7 +28,7 @@ export function bookingCancelRoutes(role: StaffCancelSource) {
         actorStaffId: c.get('staffUserId'),
         credit: c.req.valid('json').credit,
       })
-      c.set('auditTarget' as any, { table: 'bookings', id })
+      c.set('auditTarget', { table: 'bookings', id })
       return c.json({ refund_outcome: res.refundOutcome, refund_fired: res.refundFired })
     },
   )

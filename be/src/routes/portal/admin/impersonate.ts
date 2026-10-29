@@ -24,7 +24,7 @@ const app = new Hono().post(
         admin: staffRow,
         from: c.req.raw.headers,
       })
-      c.set('auditTarget' as any, { table: 'clients', id })
+      c.set('auditTarget', { table: 'clients', id })
       return c.json({
         token: res.token,
         grant: res.grant,

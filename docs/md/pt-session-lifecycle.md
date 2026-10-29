@@ -10,7 +10,7 @@ are referenced where they share policy but are not the subject here. Companion t
 | Gap | Status | File |
 |---|---|---|
 | P1 — scheduling service + admin routes | ✅ done | `services/pt-sessions/schedule.ts`, `routes/portal/admin/pt-sessions.ts` |
-| P1 — instructor routes (instructor_id forced) | ✅ done | `routes/portal/instructor/pt-requests.ts` |
+| P1 — instructor routes (instructor_id forced) | ✅ done | `routes/portal/pt-request-routes.ts` (mounted by `routes/portal/instructor/pt-requests.ts`, which holds the gates) |
 | P2 — scheduled-session cancel cascade | ✅ done | `services/pt-sessions/cancel.ts` (`scheduled` branch) |
 | P3 — 2-on-1 debits/refunds 2 (not 1) | ✅ done | `services/pt-sessions/cost.ts`, `request.ts`, `cancel.ts` |
 | P4 — window-based refund via `evaluateCancellation` | ✅ done | `cancel.ts` (client scheduled-cancel) |
@@ -56,7 +56,7 @@ Verify each step with `npx tsc --noEmit` in `be/` (no test infra per project con
 | Admin triage queue (list requests) | ✅ done | `routes/portal/admin/pt-sessions.ts`, `services/pt-sessions/list.ts` |
 | Admin schedules a request → creates session | ✅ done | `services/pt-sessions/schedule.ts:schedulePtRequest` |
 | Admin cancels (pending or scheduled) | ✅ done | `routes/portal/admin/pt-sessions.ts`, `services/pt-sessions/cancel.ts` |
-| Instructor list / schedule / cancel | ✅ done | `routes/portal/instructor/pt-requests.ts` |
+| Instructor list / schedule / cancel | ✅ done | `routes/portal/pt-request-routes.ts` (mounted by `routes/portal/instructor/pt-requests.ts`, which holds the gates) |
 | Stale-request auto-expiry cron | ✅ done | `services/pt-sessions/cancel.ts:expireStaleSessions` (every 5 min, `jobs/index.ts`) |
 | Cancellation policy engine (window + shared cap) | ✅ **already PT-aware** | `services/policy/evaluate-cancellation.ts` (`kind:'pt'`, `ptWindowHours`) |
 

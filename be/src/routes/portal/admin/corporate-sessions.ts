@@ -102,7 +102,7 @@ const app = new Hono()
       if (result.error === ERROR_CODES.not_found) return c.json({ error: ERROR_CODES.not_found }, 404)
       return c.json({ error: result.error }, statusFor(result.error))
     }
-    c.set('auditTarget' as any, { table: 'corporate_sessions', id })
+    c.set('auditTarget', { table: 'corporate_sessions', id })
     return c.json({ corporate_session: serialize(result.session) })
   })
   .post('/:id/cancel', zValidator('param', idParam), async c => {
@@ -110,7 +110,7 @@ const app = new Hono()
     const actor = c.get('staffUserId') as string
     const row = await svc.cancelCorporateSession(tenantId(c), id, actor)
     if (!row) return c.json({ error: ERROR_CODES.not_found_or_already_cancelled }, 404)
-    c.set('auditTarget' as any, { table: 'corporate_sessions', id })
+    c.set('auditTarget', { table: 'corporate_sessions', id })
     return c.json({ corporate_session: serialize(row) })
   })
 

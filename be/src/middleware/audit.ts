@@ -1,7 +1,21 @@
 import type { MiddlewareHandler } from 'hono'
 import { db } from '../db'
 import { auditLog } from '../db/schema/ledger'
+import type { TableName } from '../db/table-names'
 import { tenantId } from './tenant'
+
+declare module 'hono' {
+  interface ContextVariableMap {
+    /** The row a mutating request changed: one of the schema's tables, and the row's id. */
+    auditTarget?: { table: TableName; id: string }
+    /** What else the audit row records, as `payload.detail`. */
+    auditDetail?: Record<string, unknown>
+    /** Set when the request's service filed its own audit row, so this one is not written. */
+    auditFiled?: boolean
+    /** The path to record in place of the request's own, for a path that names someone who must not be named. */
+    auditPath?: string
+  }
+}
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -24,7 +38,7 @@ export const audit: MiddlewareHandler = async (c, next) => {
 
   if (!MUTATING.has(c.req.method)) return
   if (c.res.status >= 400) return
-  if (c.get('auditFiled' as any) === true) return
+  if (c.get('auditFiled') === true) return
 
   const staffRow = c.get('staffRow')
   const impersonatedBy = c.get('impersonatedBy')
@@ -44,8 +58,8 @@ export const audit: MiddlewareHandler = async (c, next) => {
 
   // A handler whose path names someone who must not be named afterwards — a
   // permanently deleted member (#144) — records the route pattern instead.
-  const path = (c.get('auditPath' as any) as string | undefined) ?? c.req.path
-  const target = (c.get('auditTarget' as any) as { table: string; id: string } | undefined) ?? {
+  const path = c.get('auditPath') ?? c.req.path
+  const target: { table: string; id: string } = c.get('auditTarget') ?? {
     table: path,
     id: '00000000-0000-0000-0000-000000000000',
   }
@@ -58,7 +72,7 @@ export const audit: MiddlewareHandler = async (c, next) => {
   if (actingAs) payload.actingAs = actingAs
   // What the handler wants remembered about how it was done — an override
   // staff gave after a warning, say (`{ allow_clash: true }`).
-  const detail = c.get('auditDetail' as any) as Record<string, unknown> | undefined
+  const detail = c.get('auditDetail')
   if (detail) payload.detail = detail
   if (impersonatedClientId) payload.impersonatedClientId = impersonatedClientId
 

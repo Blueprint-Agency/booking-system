@@ -46,7 +46,7 @@ const app = new Hono()
       phone: body.phone ?? null,
       invitedByStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'staff_users', id: view.id })
+    c.set('auditTarget', { table: 'staff_users', id: view.id })
     return c.json(serialize(view), 201)
   })
 

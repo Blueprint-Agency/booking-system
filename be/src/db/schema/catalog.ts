@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   primaryKey,
   check,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
@@ -131,7 +132,7 @@ export const merchOrders = pgTable(
   }),
 )
 
-export const classTypes: any = pgTable(
+const classTypesTable = pgTable(
   'class_types',
   {
     tenantId: tenantIdColumn(),
@@ -143,7 +144,7 @@ export const classTypes: any = pgTable(
     difficulty: classDifficultyEnum('difficulty').notNull().default('general'),
     // Single-level hierarchy. Depth capped at 1 — enforced in service layer:
     // a child (parent_id IS NOT NULL) cannot itself become a parent.
-    parentId: uuid('parent_id').references((): any => classTypes.id, { onDelete: 'restrict' }),
+    parentId: uuid('parent_id').references((): AnyPgColumn => classTypesTable.id, { onDelete: 'restrict' }),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
@@ -155,6 +156,16 @@ export const classTypes: any = pgTable(
     parentIdx: index('class_types_parent_idx').on(table.tenantId, table.parentId),
   }),
 )
+
+/** The table's own name, which `classTypes` below cannot give: it is typed `any` (see there). */
+export type ClassTypesTableName = (typeof classTypesTable)['_']['name']
+
+/**
+ * Typed `any` as it always was: code reads its columns loosely. `classTypesTable`
+ * is the same table with its real type, so that `TableName` (`../table-names`)
+ * still finds the table's name.
+ */
+export const classTypes: any = classTypesTable
 
 export const instructors = pgTable('instructors', {
   tenantId: tenantIdColumn(),

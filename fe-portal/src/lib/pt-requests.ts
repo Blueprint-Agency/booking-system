@@ -1,5 +1,5 @@
 // Wire shape for the admin PT-request triage queue.
-// Mirrors be/src/routes/portal/admin/pt-sessions.ts `serialize()`.
+// Mirrors be/src/routes/portal/pt-request-routes.ts `ptRequestJson()`.
 
 export type PtStatus =
   | "pending"

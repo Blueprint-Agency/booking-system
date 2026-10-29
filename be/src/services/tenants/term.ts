@@ -36,8 +36,6 @@ import { logger } from '../../shared/logger'
 import { termEndDate, type TermMonths } from './term-dates'
 import { forgetCachedTenants } from './tenants'
 
-export { isIsoDate, localDate, termEndDate, termEnded } from './term-dates'
-
 /**
  * Set a studio's Term: a start date and a duration, from which the end is
  * computed and stored. Returns the updated row.

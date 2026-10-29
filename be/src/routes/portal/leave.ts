@@ -87,7 +87,7 @@ const app = new Hono()
       halfDay: body.half_day,
       reason: body.reason,
     })
-    c.set('auditTarget' as any, { table: 'leave_requests', id: row.id })
+    c.set('auditTarget', { table: 'leave_requests', id: row.id })
     return c.json(serialize(row), 201)
   })
   /**
@@ -128,7 +128,7 @@ const app = new Hono()
         contentType: file.type,
         bytes: new Uint8Array(await file.arrayBuffer()),
       })
-      c.set('auditTarget' as any, { table: 'leave_requests', id })
+      c.set('auditTarget', { table: 'leave_requests', id })
       return c.json(serialize(row))
     },
   )
@@ -150,7 +150,7 @@ const app = new Hono()
       c.get('staffUserId'),
       id,
     )
-    c.set('auditTarget' as any, { table: 'leave_requests', id })
+    c.set('auditTarget', { table: 'leave_requests', id })
     return c.json(serialize(row))
   })
   .post('/:id/cancel', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
@@ -161,7 +161,7 @@ const app = new Hono()
       c.get('staffUserId'),
       id,
     )
-    c.set('auditTarget' as any, { table: 'leave_requests', id })
+    c.set('auditTarget', { table: 'leave_requests', id })
     return c.json(serialize(row))
   })
 

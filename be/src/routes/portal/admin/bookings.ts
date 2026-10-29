@@ -13,7 +13,7 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     const staffId = c.get('staffUserId')
     await markNoShow(tenantId(c), { bookingId: id, actorStaffId: staffId })
-    c.set('auditTarget' as any, { table: 'bookings', id })
+    c.set('auditTarget', { table: 'bookings', id })
     return c.json({ ok: true })
   })
 

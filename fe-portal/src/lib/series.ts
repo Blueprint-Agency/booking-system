@@ -1,6 +1,6 @@
 // Class Series: a weekly repeating class, defined once, that creates ordinary
 // classes. Shapes mirror the /portal/{admin,instructor}/schedule/series routes
-// in be/src/routes/portal/{admin,instructor}/schedule.ts. Create and extend are
+// in be/src/routes/portal/class-series.ts (create) and admin/schedule.ts (the rest). Create and extend are
 // both a preview (every date with its clashes) followed by a commit of the same
 // input. Staff create one from the class screen's Repeat weekly switch; only an
 // admin extends or ends one.

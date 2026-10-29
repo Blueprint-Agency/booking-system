@@ -111,7 +111,7 @@ export function checkInRoutes(source: CheckInSource) {
         staffId: c.get('staffUserId'),
         source,
       })
-      c.set('auditTarget' as any, { table: 'bookings', id: res.bookingId })
+      c.set('auditTarget', { table: 'bookings', id: res.bookingId })
       return c.json(scanView(res))
     })
     .post(
@@ -125,7 +125,7 @@ export function checkInRoutes(source: CheckInSource) {
           attended,
           source,
         })
-        c.set('auditTarget' as any, { table: 'bookings', id: booking_id })
+        c.set('auditTarget', { table: 'bookings', id: booking_id })
         return c.json({ check_in_state: res.checkInState })
       },
     )

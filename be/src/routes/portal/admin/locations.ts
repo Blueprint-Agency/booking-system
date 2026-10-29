@@ -63,7 +63,7 @@ const app = new Hono()
       gmapsUrl: body.gmaps_url ?? null,
       phone: body.phone ?? null,
     })
-    c.set('auditTarget' as any, { table: 'locations', id: row.id })
+    c.set('auditTarget', { table: 'locations', id: row.id })
     return c.json(serialize(row), 201)
   })
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema, explainLocation), async c => {
@@ -75,7 +75,7 @@ const app = new Hono()
       ...(body.gmaps_url !== undefined ? { gmapsUrl: body.gmaps_url ?? null } : {}),
       ...(body.phone !== undefined ? { phone: body.phone ?? null } : {}),
     })
-    c.set('auditTarget' as any, { table: 'locations', id })
+    c.set('auditTarget', { table: 'locations', id })
     return c.json(serialize(row))
   })
   .get('/:id/live-unlimited-count', zValidator('param', idParam), async c => {
@@ -85,19 +85,19 @@ const app = new Hono()
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await svc.archiveLocation(tenantId(c), id)
-    c.set('auditTarget' as any, { table: 'locations', id })
+    c.set('auditTarget', { table: 'locations', id })
     return c.json(serialize(row))
   })
   .post('/:id/unarchive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await svc.unarchiveLocation(tenantId(c), id)
-    c.set('auditTarget' as any, { table: 'locations', id })
+    c.set('auditTarget', { table: 'locations', id })
     return c.json(serialize(row))
   })
   .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     await svc.softDeleteLocation(tenantId(c), id)
-    c.set('auditTarget' as any, { table: 'locations', id })
+    c.set('auditTarget', { table: 'locations', id })
     return c.body(null, 204)
   })
 

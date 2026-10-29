@@ -128,7 +128,7 @@ const app = new Hono()
       },
       c.get('staffUserId'),
     )
-    c.set('auditTarget' as any, { table: 'promo_codes', id: detail.code.id })
+    c.set('auditTarget', { table: 'promo_codes', id: detail.code.id })
     return c.json(serialize(detail), 201)
   })
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
@@ -153,14 +153,14 @@ const app = new Hono()
       ...(body.applies_to_all !== undefined ? { appliesToAll: body.applies_to_all } : {}),
       ...(body.products !== undefined ? { products: toProductRefs(body.products) } : {}),
     })
-    c.set('auditTarget' as any, { table: 'promo_codes', id })
+    c.set('auditTarget', { table: 'promo_codes', id })
     return c.json(serialize(detail))
   })
   // Archive only — §11 gives one direction. There is no un-archive.
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const detail = await svc.archivePromoCode(tenantId(c), id)
-    c.set('auditTarget' as any, { table: 'promo_codes', id })
+    c.set('auditTarget', { table: 'promo_codes', id })
     return c.json(serialize(detail))
   })
 

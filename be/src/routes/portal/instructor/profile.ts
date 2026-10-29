@@ -48,7 +48,7 @@ const app = new Hono()
       ...(body.bio !== undefined ? { bio: body.bio } : {}),
       ...(body.phone !== undefined ? { phone: body.phone } : {}),
     })
-    c.set('auditTarget' as any, { table: 'instructors', id: self })
+    c.set('auditTarget', { table: 'instructors', id: self })
     return c.json(serialize(view, row.role, row.email))
   })
 
