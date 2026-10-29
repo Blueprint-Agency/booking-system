@@ -45,6 +45,19 @@ function statusOf(err: unknown): { status: number } | null {
 }
 
 /**
+ * The failure as the error boundary and telemetry receive it. Better Auth's
+ * error is a plain `{ status, statusText }` object; thrown as it is, telemetry
+ * records `[object Object]`. An `Error` carries a message and the status, with
+ * the original failure kept as its `cause`.
+ */
+export function memberSessionReadError(failure: unknown): Error {
+  const status = statusOf(failure)?.status;
+  const detail =
+    status ?? (failure instanceof Error && failure.message ? failure.message : "unknown");
+  return new Error(`member session read failed: ${detail}`, { cause: failure });
+}
+
+/**
  * What `useMemberSession` reports for the store's value.
  *
  * Before hydration it is always "not loaded yet", whatever the store holds. The

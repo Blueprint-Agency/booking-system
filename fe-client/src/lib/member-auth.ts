@@ -26,7 +26,7 @@ import { noteMaintenance } from "@/lib/maintenance";
 import { noteStudioRefusal } from "@/lib/studio-refusal";
 import { clearTelemetryUser } from "@/lib/telemetry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
-import { memberSessionView, type MemberSessionView } from "@/lib/member-session-view";
+import { memberSessionReadError, memberSessionView, type MemberSessionView } from "@/lib/member-session-view";
 import { useHydrated } from "@/lib/use-hydrated";
 
 /** Where this hostname keeps its session token. */
@@ -148,7 +148,7 @@ export type { MemberSession } from "@/lib/member-session-view";
  */
 export function useMemberSession(): MemberSessionView {
   const view = useMemberSessionQuiet();
-  if (view.failure !== undefined) throw view.failure;
+  if (view.failure !== undefined) throw memberSessionReadError(view.failure);
   return view;
 }
 
