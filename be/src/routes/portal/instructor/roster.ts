@@ -5,8 +5,8 @@ import { getOwnClassDetail, getOwnPtSessionDetail } from '../../../services/sche
 import { searchClients } from '../../../services/clients/manage'
 import { tenantId } from '../../../middleware/tenant'
 import { requirePermission } from '../../../middleware/require-permission'
-import { classSeatsJson } from '../class-seats'
-import { namedRuleJson } from '../../../services/schedule/package-rules'
+import { classDetailJson } from '../class-detail'
+import { idParam } from '../parse'
 import { ptSessionDetailJson } from '../pt-session-detail'
 
 /**
@@ -30,41 +30,16 @@ import { ptSessionDetailJson } from '../pt-session-detail'
 const searchQuery = z.object({ q: z.string().trim().min(1).max(100) })
 
 const app = new Hono()
-  .get(
-    '/sessions/class/:id/roster',
-    zValidator('param', z.object({ id: z.string().uuid() })),
-    async c => {
-      const { id } = c.req.valid('param')
-      const d = await getOwnClassDetail(tenantId(c), id, c.get('staffUserId'))
-      return c.json({
-        id: d.id,
-        lifecycle: d.lifecycle,
-        starts_at: d.startsAt.toISOString(),
-        ends_at: d.endsAt.toISOString(),
-        class_type: d.classType,
-        difficulty: d.difficulty,
-        instructor: d.instructor,
-        location: d.location,
-        room: d.room,
-        capacity_online: d.capacityOnline,
-        capacity_waitlist: d.capacityWaitlist,
-        capacity_buffer: d.capacityBuffer,
-        credit_cost: d.creditCost,
-        package_rule: namedRuleJson(d.packageRule),
-        ...classSeatsJson(d),
-        check_in_state: d.checkInState,
-      })
-    },
-  )
-  .get(
-    '/sessions/pt/:id/roster',
-    zValidator('param', z.object({ id: z.string().uuid() })),
-    async c => {
-      const { id } = c.req.valid('param')
-      const d = await getOwnPtSessionDetail(tenantId(c), id, c.get('staffUserId'))
-      return c.json(ptSessionDetailJson(d, { admin: false }))
-    },
-  )
+  .get('/sessions/class/:id/roster', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const d = await getOwnClassDetail(tenantId(c), id, c.get('staffUserId'))
+    return c.json(classDetailJson(d, { admin: false }))
+  })
+  .get('/sessions/pt/:id/roster', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const d = await getOwnPtSessionDetail(tenantId(c), id, c.get('staffUserId'))
+    return c.json(ptSessionDetailJson(d, { admin: false }))
+  })
   .get('/clients', requirePermission('manage_rosters'), zValidator('query', searchQuery), async c => {
     const rows = await searchClients(tenantId(c), c.req.valid('query').q)
     return c.json({ clients: rows.map(r => ({ id: r.id, name: r.name, email: r.email })) })

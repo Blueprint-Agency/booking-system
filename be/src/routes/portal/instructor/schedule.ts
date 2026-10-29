@@ -1,18 +1,15 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import * as timetable from '../../../services/schedule/timetable'
-import * as classesSvc from '../../../services/schedule/classes'
-import * as seriesSvc from '../../../services/schedule/series'
 import { cancelClass } from '../../../services/bookings/cancel-class'
-import { staffBookClass, staffPackagesForClass } from '../../../services/bookings/book'
 import { tenantId } from '../../../middleware/tenant'
 import { requirePermission } from '../../../middleware/require-permission'
-import { seatFields, staffBookingJson, staffBookingSchema, staffPackagesJson, staffPackagesQuery } from '../class-seats'
 import { classWaitlistRoutes } from '../class-waitlist'
-import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
-import { explainSeries, previewJson, seriesRow, seriesTemplateFields, toSeriesInput } from '../class-series'
-import { dateTime } from '../../../shared/date-time'
+import { classBookingRoutes } from '../class-booking'
+import { classCreateRoutes } from '../class-create'
+import { classSeriesCreateRoutes } from '../class-series'
+import { idParam } from '../parse'
+import { timetableRoutes } from '../timetable-read'
 
 /**
  * Instructor schedule surface.
@@ -41,196 +38,42 @@ import { dateTime } from '../../../shared/date-time'
  *                           main-instructor check lives in the service.
  *
  * Creating a class, previewing or creating a series, and cancelling a class are
- * the **Schedule classes** Instructor Permission (be/docs/adr/0012): each is
- * gated `requirePermission('schedule_classes')`, which refuses an Instructor
- * without it `403 forbidden_permission` before any ownership check. The rest —
- * the timetable, booking a member, the waitlist — is not this permission's.
+ * the **Schedule classes** Instructor Permission (be/docs/adr/0012); booking a
+ * member onto a class, reading their packages and the three waitlist actions
+ * are **Manage rosters**. The timetable is neither: it is what an Instructor
+ * teaches from.
  *
- * Booking a member onto a class and the three waitlist actions are the
- * **Manage rosters** permission. The waitlist factory is shared with the admin
- * mount, so its gate is applied here, on the paths it mounts, registered before
- * it so it runs first — never inside the factory.
+ * Most of these routes are written once for both portals (the Admin's mount is
+ * `../admin/schedule.ts`), so no permission is applied inside them. Each gated
+ * path has one line here, registered before the module that serves it, so the
+ * gate runs after the role gate and before any ownership check or body
+ * validation: an Instructor without the permission is refused
+ * `403 forbidden_permission`, never told about ownership or a malformed body.
  */
 const schedulesClasses = requirePermission('schedule_classes')
 const managesRosters = requirePermission('manage_rosters')
 
-const listQuery = z.object({
-  from: dateTime('A from time').optional(),
-  to: dateTime('A to time').optional(),
-  type: z.enum(['class', 'workshop', 'pt', 'corporate']).optional(),
-})
-
-const createClassSchema = z
-  .object({
-    class_type_id: z.string().uuid(),
-    location_id: z.string().uuid(),
-    room_id: z.string().uuid(),
-    starts_at: dateTime('A start time'),
-    ends_at: dateTime('An end time'),
-    capacity_online: z.number().int().min(0),
-    capacity_waitlist: z.number().int().min(0).default(0),
-    capacity_buffer: z.number().int().min(0).default(0),
-    credit_cost: z.number().int().min(0),
-    // Omitted = accepts all. Instructors set it on the classes they schedule.
-    package_rule: packageRuleSchema.optional(),
-  })
-  .refine(v => new Date(v.ends_at) > new Date(v.starts_at), {
-    message: 'ends_at must be after starts_at',
-    path: ['ends_at'],
-  })
-
-// No instructors or pay: an admin's fields sent here are dropped by the parse.
-const seriesSchema = seriesTemplateFields
-
-const ownSeriesInput = (b: z.infer<typeof seriesSchema>, self: string) =>
-  toSeriesInput(b, {
-    mainInstructorId: self, // forced: instructors can only schedule themselves
-    instructorPaySgd: null, // left unpriced; an admin sets pay from Finance
-    supportingInstructors: [], // instructors can't assign other instructors
-  })
-
-function entryRow(e: timetable.ScheduleEntryRow) {
-  return {
-    kind: e.kind,
-    id: e.id,
-    workshop_id: e.workshopId,
-    label: e.label,
-    subtitle: e.subtitle ?? null,
-    class_type_id: e.classTypeId,
-    main_instructor_id: e.mainInstructorId,
-    supporting_instructor_ids: e.supportingInstructorIds,
-    instructor_ids: e.instructorIds,
-    location_id: e.locationId,
-    room_id: e.roomId,
-    starts_at: e.startsAt,
-    ends_at: e.endsAt,
-    capacity: e.capacity,
-    booked_count: e.bookedCount,
-    ...seatFields(e),
-    event_state: e.eventState,
-    day_index: e.dayIndex,
-    day_count: e.dayCount,
-  }
-}
-
 const app = new Hono()
-  // The class waitlist of a class the caller teaches: put a member in line,
-  // Add to class (never an overbook), Remove (spec-waitlist.md §7).
+  .on('POST', '/classes', schedulesClasses)
+  .on('POST', '/series/preview', schedulesClasses)
+  .on('POST', '/series', schedulesClasses)
+  .on('POST', '/classes/:id/cancel', schedulesClasses)
+  .on('GET', '/classes/:id/packages', managesRosters)
+  .on('POST', '/classes/:id/bookings', managesRosters)
   // `/*` matches the bare `/classes/:id/waitlist` (join) too.
   .use('/classes/:id/waitlist/*', managesRosters)
+  // The class waitlist of a class the caller teaches: put a member in line,
+  // Add to class (never an overbook), Remove (spec-waitlist.md §7).
   .route('/', classWaitlistRoutes('instructor'))
-  .get('/', zValidator('query', listQuery), async c => {
-    const q = c.req.valid('query')
-    const self = c.get('staffUserId')
-    const entries = await timetable.listSchedule(tenantId(c), {
-      instructorId: self,
-      from: q.from ? new Date(q.from) : undefined,
-      to: q.to ? new Date(q.to) : undefined,
-      type: q.type,
-    })
-    return c.json({ entries: entries.map(entryRow) })
-  })
-  .post('/classes', schedulesClasses, zValidator('json', createClassSchema), async c => {
-    const body = c.req.valid('json')
-    const self = c.get('staffUserId')
-    const row = await classesSvc.createClass(tenantId(c), {
-      classTypeId: body.class_type_id,
-      mainInstructorId: self, // forced: instructors can only schedule themselves
-      supportingInstructorIds: [], // instructors can't assign other instructors
-      locationId: body.location_id,
-      roomId: body.room_id,
-      startsAt: new Date(body.starts_at),
-      endsAt: new Date(body.ends_at),
-      capacityOnline: body.capacity_online,
-      capacityWaitlist: body.capacity_waitlist,
-      capacityBuffer: body.capacity_buffer,
-      creditCost: body.credit_cost,
-      instructorPaySgd: null, // left unpriced; an admin sets pay from Payroll
-      ...(body.package_rule ? { packageRule: toPackageRule(body.package_rule) } : {}),
-      createdByStaffId: self,
-    })
-    c.set('auditTarget', { table: 'classes', id: row.id })
-    return c.json(
-      {
-        id: row.id,
-        class_type_id: row.classTypeId,
-        main_instructor_id: row.mainInstructorId,
-        location_id: row.locationId,
-        room_id: row.roomId,
-        starts_at: row.startsAt.toISOString(),
-        ends_at: row.endsAt.toISOString(),
-        capacity_online: row.capacityOnline,
-        capacity_waitlist: row.capacityWaitlist,
-        capacity_buffer: row.capacityBuffer,
-        credit_cost: row.creditCost,
-        instructor_pay_sgd: null,
-        package_rule: await classPackageRuleJson(tenantId(c), row),
-        lifecycle: row.lifecycle,
-      },
-      201,
-    )
-  })
-  // ── Class Series ── preview, then commit the same input; see services/schedule/series.ts.
-  .post('/series/preview', schedulesClasses, zValidator('json', seriesSchema, explainSeries), async c => {
-    const input = ownSeriesInput(c.req.valid('json'), c.get('staffUserId'))
-    return c.json(previewJson(await seriesSvc.previewSeries(tenantId(c), input)))
-  })
-  .post('/series', schedulesClasses, zValidator('json', seriesSchema, explainSeries), async c => {
-    const self = c.get('staffUserId')
-    const res = await seriesSvc.createSeries(tenantId(c), {
-      ...ownSeriesInput(c.req.valid('json'), self),
-      createdByStaffId: self,
-    })
-    c.set('auditTarget', { table: 'class_series', id: res.series.id })
-    return c.json({ series: seriesRow(res.series), class_ids: res.classIds }, 201)
-  })
-  // The member's class packages for a class the caller teaches — the admin
-  // route's read (#333). It exists to serve Add member, so it is Manage
-  // rosters' like the member search.
-  .get(
-    '/classes/:id/packages',
-    managesRosters,
-    zValidator('param', z.object({ id: z.string().uuid() })),
-    zValidator('query', staffPackagesQuery),
-    async c => {
-      const { id } = c.req.valid('param')
-      const res = await staffPackagesForClass(tenantId(c), {
-        classId: id,
-        clientId: c.req.valid('query').client_id,
-        role: 'instructor',
-        actorStaffId: c.get('staffUserId'), // never from the query
-      })
-      return c.json(staffPackagesJson(res))
-    },
-  )
-  // Book a member onto a class the caller teaches: a free online seat, else a
-  // buffer seat. An instructor never overbooks, so `overbook` in the body
-  // changes nothing. They may pick the member's package, as an admin may.
-  .post(
-    '/classes/:id/bookings',
-    managesRosters,
-    zValidator('param', z.object({ id: z.string().uuid() })),
-    zValidator('json', staffBookingSchema),
-    async c => {
-      const { id } = c.req.valid('param')
-      const body = c.req.valid('json')
-      const res = await staffBookClass(tenantId(c), {
-        classId: id,
-        clientId: body.client_id,
-        role: 'instructor',
-        actorStaffId: c.get('staffUserId'), // never from the body
-        clientPackageId: body.client_package_id ?? null,
-        allowClash: body.allow_clash ?? false,
-      })
-      c.set('auditTarget', { table: 'bookings', id: res.bookingId })
-      if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
-      return c.json(staffBookingJson(res), 201)
-    },
-  )
+  .route('/', timetableRoutes('instructor'))
+  .route('/', classCreateRoutes('instructor'))
+  .route('/', classSeriesCreateRoutes('instructor'))
+  // A member's packages for a class the caller teaches, and booking them onto it.
+  .route('/', classBookingRoutes('instructor'))
+  // Unlike the Admin's, a cancel here needs a reason, and is recorded as the instructor's.
   .post(
     '/classes/:id/cancel',
-    schedulesClasses,
-    zValidator('param', z.object({ id: z.string().uuid() })),
+    zValidator('param', idParam),
     zValidator('json', z.object({ reason: z.string().trim().min(1).max(500) })),
     async c => {
       const { id } = c.req.valid('param')
