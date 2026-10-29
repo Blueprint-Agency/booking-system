@@ -80,7 +80,7 @@ app.get('/tenants/:id/export', zValidator('query', exportQuery), async c => {
 
 /**
  * How an import meets the studio: `restore` (the default) into an empty one, or
- * `replace` (#339) over one that has rows, confirmed by its current Slug. The
+ * `replace` over one that has rows, confirmed by its current Slug. The
  * same fields on the one-request form and the job's start.
  */
 const importRequest = z

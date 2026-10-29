@@ -12,8 +12,8 @@ import {
 } from '../receipt-views'
 
 /**
- * The member's Receipts (#384): `GET /me/receipts`, `GET /me/receipts/:id`,
- * and `GET /me/receipts/:id/pdf`, the same Receipt as a PDF (#386).
+ * The member's Receipts: `GET /me/receipts`, `GET /me/receipts/:id`,
+ * and `GET /me/receipts/:id/pdf`, the same Receipt as a PDF.
  * Only ever the member's own, at this studio; anything else is
  * `404 receipt_not_found`. The shapes are the admin's too (`receipt-views.ts`).
  */

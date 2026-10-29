@@ -14,7 +14,7 @@ import {
 import { explainInvalid } from '../explain-invalid'
 
 /**
- * The member's Billing details (#399): `GET`, `POST /me/billing-details`,
+ * The member's Billing details: `GET`, `POST /me/billing-details`,
  * `PATCH`, `DELETE /me/billing-details/:id` and
  * `POST /me/billing-details/:id/default`. Only ever the member's own, at this
  * studio; anything else is `404 billing_details_not_found`.

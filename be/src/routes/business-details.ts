@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { BusinessDetailsInput, BusinessDetailsView } from '../services/tenants/business-details'
 
 /**
- * A studio's Business details on the wire (#391, #398), as the portal's
+ * A studio's Business details on the wire, as the portal's
  * Business details page and the super portal's create form both send them.
  * Here, beside `receipt-views.ts`, rather than under either audience's routes,
  * so neither imports the other's. Shape only: that a Business name is required,

@@ -18,7 +18,7 @@ import { staffCancellationJson } from '../../services/bookings/cancellation-summ
 
 /**
  * `POST …/schedule/classes/:id/bookings`. `overbook` is honoured for admins
- * only. `client_package_id` is staff's pick of the member's packages (#333);
+ * only. `client_package_id` is staff's pick of the member's packages;
  * absent, the Default payer pays. `allow_clash` is staff's "Book anyway" after a
  * `time_clash`: the member holds a booking at an overlapping time.
  */
@@ -80,13 +80,13 @@ export function classSeatsJson(d: ClassDetail) {
       check_in_state: a.checkInState,
       code: a.code,
       seat: a.seat,
-      // `classpass` on a ClassPass booking, which the roster badges (#408).
+      // `classpass` on a ClassPass booking, which the roster badges.
       source: a.source,
       promoted_from_waitlist: a.promotedFromWaitlist,
-      // Null on a row "Cancel booking" is not offered on (#320).
+      // Null on a row "Cancel booking" is not offered on.
       cancel_preview: staffCancelPreviewJson(a.cancelPreview),
     })),
-    // Apart from the roster, never checked in (#352).
+    // Apart from the roster, never checked in.
     cancelled_bookings: d.cancelledBookings.map(b => ({
       booking_id: b.bookingId,
       client: b.client,

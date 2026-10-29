@@ -8,7 +8,7 @@ import { tenantId } from '../../middleware/tenant'
 const staffCancelSchema = z.object({ credit: z.enum(['return', 'keep']) })
 
 /**
- * A staff member cancels one member's booking (#320), mounted under `/bookings`
+ * A staff member cancels one member's booking, mounted under `/bookings`
  * by both the admin and the instructor portal. The role is the mount's, never
  * the body's; an instructor reaches only the classes they lead (the service
  * checks, `not_your_session`).

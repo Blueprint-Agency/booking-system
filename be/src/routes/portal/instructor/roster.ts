@@ -18,7 +18,7 @@ import { ptSessionDetailJson } from '../pt-session-detail'
  *                                    anyone else's class.
  *   GET /sessions/pt/:id/roster    — a private session the caller runs: its
  *                                    members and the package paying each seat,
- *                                    whether it is manual (#338). No pay
+ *                                    whether it is manual. No pay
  *                                    figures. 403 `not_your_session` otherwise.
  *   GET /clients?q=               — find a member to add to the roster.
  *

@@ -73,7 +73,7 @@ const patchBody = z.object({
 })
 
 // A Manual Entry says why it exists and when, or it is money out nobody can
-// account for (#242): a label of spaces records nothing, and `Date.parse` would
+// account for: a label of spaces records nothing, and `Date.parse` would
 // read "1" as a date in 2000.
 const createManualBody = z.object({
   instructor_id: z.string().uuid(),

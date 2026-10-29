@@ -33,17 +33,17 @@ import classpass from './classpass'
 
 /**
  * Role gating for the portal /admin subtree: a studio's admins run the whole
- * studio (#148), so every surface here takes the same gate. Instructors have
+ * studio, so every surface here takes the same gate. Instructors have
  * their own subtree and are refused all of this one.
  */
 const app = new Hono()
   .use('*', requireRole('admin'))
 
   // ── Route mounts ────────────────────────────────────────────────────────
-  // Unfinished purchases (#95): the money the studio is holding against nothing
+  // Unfinished purchases: the money the studio is holding against nothing
   // granted, and the one place it can be given back.
   .route('/purchases', purchases)
-  // Every Receipt in the studio (#389), read exactly as each member reads theirs.
+  // Every Receipt in the studio, read exactly as each member reads theirs.
   .route('/receipts', receipts)
   .route('/locations', locations)
   .route('/rooms', rooms)
@@ -67,13 +67,13 @@ const app = new Hono()
   .route('/clients', clients)
   .route('/', impersonate)
   .route('/staff', staff)
-  // The studio's emails, each switched on or off for the whole studio (#467).
+  // The studio's emails, each switched on or off for the whole studio.
   .route('/emails', emails)
   .route('/marketing', marketing)
   .route('/feature-flags', featureFlags)
-  // The studio's own settings: the receipt details (#391).
+  // The studio's own settings: the receipt details.
   .route('/settings', settings)
-  // ClassPass import (#407): the studio's ClassPass address and what arrives at it.
+  // ClassPass import: the studio's ClassPass address and what arrives at it.
   .route('/classpass', classpass)
 
 export default app

@@ -5,7 +5,7 @@ import { readBusinessDetails, saveBusinessDetails } from '../../../services/tena
 import { businessDetailsBody, businessDetailsInput, serializeBusinessDetails } from '../../business-details'
 
 /**
- * The studio's own settings. Today its Business details (#391, #398): the
+ * The studio's own settings. Today its Business details: the
  * Business name it trades under, what its Receipts print beside it and the
  * prefix their numbers carry, with the number the next Receipt will take.
  * Saving them reaches only Receipts issued afterwards.

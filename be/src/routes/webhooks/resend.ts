@@ -35,7 +35,7 @@ const app = new Hono().post('/resend', async c => {
   }
 
   try {
-    // Mail a studio forwarded to its ClassPass address (#409); every other
+    // Mail a studio forwarded to its ClassPass address; every other
     // event is an outcome of mail we sent.
     if (event?.type === 'email.received') await handleInboundEmail(event.data ?? {})
     else await handleResendEvent(event)

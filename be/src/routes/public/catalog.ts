@@ -47,7 +47,7 @@ function serializePtPackage(
     session_type: r.sessionType,
     num_sessions: r.numSessions,
     validity_days: r.validityDays,
-    // Instructor-Bound (#109) — checkout asks for an instructor on a true, and
+    // Instructor-Bound — checkout asks for an instructor on a true, and
     // for nothing at all on a false.
     instructor_bound: r.instructorBound,
     price_sgd: r.priceSgd,
@@ -142,7 +142,7 @@ const app = new Hono()
       book_in_advance_days: window.maxDays,
     })
   })
-  // Whether this studio takes card payments online at all (#293) — false until
+  // Whether this studio takes card payments online at all — false until
   // it has supplied its own payment account. Read before a buy button is shown,
   // so a member is told plainly rather than handed a button that fails. Public
   // because the catalogue is. Not cached: a studio whose credentials have just

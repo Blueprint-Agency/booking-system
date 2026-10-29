@@ -7,7 +7,7 @@ import * as reviewSvc from '../../../services/classpass/review'
 import { tenantId } from '../../../middleware/tenant'
 
 /**
- * The ClassPass page (#409), admins only (mounted under `requireRole('admin')`):
+ * The ClassPass page, admins only (mounted under `requireRole('admin')`):
  * the studio's ClassPass address, its switch, Gmail's confirmation code, and
  * what has arrived at the address.
  */
@@ -85,7 +85,7 @@ function serialize(status: svc.ClassPassStatus) {
   }
 }
 
-/** The page as read: the status, and the ClassPass Daily Roster check (#415), worked out on a read only. */
+/** The page as read: the status, and the ClassPass Daily Roster check, worked out on a read only. */
 function serializePage(page: svc.ClassPassPage) {
   return {
     ...serialize(page),
@@ -111,7 +111,7 @@ const app = new Hono()
     c.json(serialize(await svc.setClassPassEnabled(tenantId(c), c.req.valid('json').enabled))),
   )
   .post('/address/regenerate', async c => c.json(serialize(await svc.regenerateClassPassAddress(tenantId(c)))))
-  // ClassPass location mappings (#410): ClassPass's name for a location -> one of the studio's Locations.
+  // ClassPass location mappings: ClassPass's name for a location -> one of the studio's Locations.
   .get('/locations', async c =>
     c.json({ mappings: (await locationSvc.listClassPassLocationMappings(tenantId(c))).map(serializeMapping) }),
   )
@@ -143,7 +143,7 @@ const app = new Hono()
     c.set('auditTarget', { table: 'classpass_location_mappings', id })
     return c.body(null, 204)
   })
-  // ClassPass review (#413): the booking emails the importer could not place, and closing each one.
+  // ClassPass review: the booking emails the importer could not place, and closing each one.
   .get('/review', async c => c.json({ items: (await reviewSvc.listClassPassReview(tenantId(c))).map(serializeReviewItem) }))
   .post('/review/:id/book', zValidator('param', idParam), zValidator('json', bookSchema), async c => {
     const { id } = c.req.valid('param')

@@ -32,10 +32,10 @@ import { requireTenantUrl } from '../../services/tenants/urls'
 import { tenantId } from '../../middleware/tenant'
 
 /**
- * Part Payment (#93): how much of the price to put on this card.
+ * Part Payment: how much of the price to put on this card.
  *
  * Dollars on the wire because that is what the member typed, cents everywhere
- * behind it. Absent — the default and the shape of every sale before this —
+ * behind it. Absent — the default —
  * charges the whole price. The number is **not** trusted: the service checks it
  * against the Balance it reads for itself, refuses anything larger, and ignores
  * it outright where the studio has Part Payment switched off.
@@ -51,7 +51,7 @@ const requestedCents = (sgd: number | undefined): number | null =>
   sgd === undefined ? null : Math.round(sgd * 100)
 
 /**
- * "Save this card for next time" (#185) — the member's consent, carried from
+ * "Save this card for next time" — the member's consent, carried from
  * our own checkout page.
  *
  * The provider's hosted page has no box of its own on the API version this
@@ -63,10 +63,10 @@ const requestedCents = (sgd: number | undefined): number | null =>
 const saveCard = z.boolean().optional()
 
 /**
- * The member's Billing details this Purchase is billed to (#401): one of their
+ * The member's Billing details this Purchase is billed to: one of their
  * own sets, copied onto the Purchase and so onto its Receipt as Bill to.
  *
- * Every member purchase names one, free ones included (#402). Optional to the
+ * Every member purchase names one, free ones included. Optional to the
  * parser only so that a request naming none is refused with its own code,
  * `billing_details_required` (`billToFor`), rather than as a malformed body.
  */
@@ -94,7 +94,7 @@ const planCheckoutSchema = z.object({
   /** Home Location — required for an Unlimited Plan, refused for anything else (§1). */
   location_id: z.string().uuid().optional(),
   /** The instructor picked for an Instructor-Bound PT package — required for
-   *  one, refused for anything else (#109). */
+   *  one, refused for anything else. */
   instructor_id: z.string().uuid().optional(),
   /** Buy the Cross-Location Add-On with the plan — one session, two line items (§5). */
   cross_location_add_on: z.boolean().optional(),
@@ -208,7 +208,7 @@ const app = new Hono()
   .post('/checkout/package', zValidator('json', checkoutPackageSchema), async c => {
     const body = c.req.valid('json')
     // Who the sale is billed to, resolved before anything is opened or claimed:
-    // a request naming no set of the member's own goes no further (#402).
+    // a request naming no set of the member's own goes no further.
     const billTo = await billToFor(tenantId(c), c.get('clientId'), body.billing_details_id)
     if (body.package_kind === 'corporate') {
       const corporate = await beginCorporateCheckout(tenantId(c), c.get('clientId'), body.package_id, billTo)
@@ -264,7 +264,7 @@ const app = new Hono()
       metadata: quote.metadata,
       // A part payment lands on the balance page, not the "you're all set" one:
       // it has granted nothing, and a confirmation screen saying otherwise is
-      // the single most misleading thing this flow could do (#93).
+      // the single most misleading thing this flow could do.
       successUrl: balanceAware(
         clientUrl,
         body.part_payment_sgd,
@@ -446,7 +446,7 @@ const app = new Hono()
     }
 
     const { handleStripeEvent } = await import('../../services/billing/webhook-handler')
-    // With the account the session was just read from (#293). It was retrieved
+    // With the account the session was just read from. It was retrieved
     // with this studio's own key, so that is the account the money is on — and
     // a payment recorded here without it would read as the platform's, which
     // the app can never refund. Whichever of this and the webhook lands first

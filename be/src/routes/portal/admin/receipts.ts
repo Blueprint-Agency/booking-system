@@ -21,10 +21,10 @@ import {
 } from '../../receipt-views'
 
 /**
- * Every Receipt in the studio, for its admins (#389): `GET /`, searched by
+ * Every Receipt in the studio, for its admins: `GET /`, searched by
  * `?q` (receipt number, buyer name or email), narrowed by `?from&to` (studio
- * days), `?kind` and `?status`; `GET /export.csv`, the same list as a file
- * (#390); `GET /:id`; `GET /:id/pdf`; and `POST /:id/resend` (#390). One Receipt
+ * days), `?kind` and `?status`; `GET /export.csv`, the same list as a file;
+ * `GET /:id`; `GET /:id/pdf`; and `POST /:id/resend`. One Receipt
  * reads and downloads exactly as the member sees it: the shapes and the PDF
  * are the member routes' own (`receipt-views.ts`). Another studio's Receipt is
  * `404 receipt_not_found`. Instructors are refused by the admin subtree's gate.
@@ -61,7 +61,7 @@ const app = new Hono()
     })
     return c.json({ receipts: result.rows.map(studioSummaryView), total: result.total, page: q.page, page_size: q.page_size })
   })
-  // The list as a file for the bookkeeper (#390): the same filters, every page.
+  // The list as a file for the bookkeeper: the same filters, every page.
   // Mounted before `/:id`, which would read `export.csv` as an id.
   .get('/export.csv', zValidator('query', exportQuery, explainReceiptsQuery), async c => {
     const q = c.req.valid('query')
@@ -82,7 +82,7 @@ const app = new Hono()
     return receiptPdfResponse(c, receipt)
   })
   // The purchase's own email again, Receipt and PDF with it, to the member's
-  // current address (#390). `409 receipt_member_deleted` once they are gone.
+  // current address. `409 receipt_member_deleted` once they are gone.
   // The service files the one `receipt_resent` row naming the admin.
   .post('/:id/resend', zValidator('param', receiptIdParam), async c => {
     const { id } = c.req.valid('param')

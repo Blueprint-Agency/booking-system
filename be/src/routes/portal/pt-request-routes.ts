@@ -50,7 +50,7 @@ export function ptRequestJson(r: AdminPtRequestView) {
     message: r.message,
     schedule_note: r.scheduleNote,
     cancel_note: r.cancelNote,
-    // `portal` marks a manual session staff created (#334).
+    // `portal` marks a manual session staff created.
     origin: r.origin,
     created_at: r.createdAt.toISOString(),
     expires_at: r.expiresAt ? r.expiresAt.toISOString() : null,
@@ -130,12 +130,12 @@ interface PtSurface<Queue, Schedule extends ScheduleBody, Manual extends ManualB
  * cancels; an Instructor picks up the requests they can run (be-portal.md §3c).
  *
  *   GET    /                                 — the queue
- *   GET    /seat-candidates                  — a member's PT packages read against a session's shape (#337)
- *   POST   /manual                           — a session staff create themselves, no request behind it (#334)
+ *   GET    /seat-candidates                  — a member's PT packages read against a session's shape
+ *   POST   /manual                           — a session staff create themselves, no request behind it
  *   POST   /:id/schedule                     — schedule a pending request
  *   POST   /:id/cancel                       — cancel a request (a refund; staff's, so it doesn't count to the member's cap)
- *   POST   /sessions/:id/members             — one more member on a manual session (#337)
- *   DELETE /sessions/:id/members/:clientId   — one member off it, refunded on their own package (#335)
+ *   POST   /sessions/:id/members             — one more member on a manual session
+ *   DELETE /sessions/:id/members/:clientId   — one member off it, refunded on their own package
  *
  * Static paths are registered here, before the Admin's `/:id` reads that
  * follow this module on its mount, so a path segment is never taken for a

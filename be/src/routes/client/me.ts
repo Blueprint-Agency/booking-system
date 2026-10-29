@@ -77,7 +77,7 @@ function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>
     // re-derives coverage.
     cross_location_paid_sgd: r.crossLocationPaidSgd,
     session_type: r.sessionType,
-    // Who this PT package's sessions are with (#109). Null means open to any
+    // Who this PT package's sessions are with. Null means open to any
     // instructor — the member surface reads the null and never re-derives it.
     bound_instructor: r.boundInstructor,
   }
@@ -85,7 +85,7 @@ function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>
 
 // Editable profile fields. The row is the source of truth for a member's name at
 // this studio; the email is the account's sign-in address and is read-only here.
-// Gender is the member's to give or take back (#281): null clears it. The
+// Gender is the member's to give or take back: null clears it. The
 // trimmed length limits are the service's, shared with the admin's edit.
 const patchSchema = z
   .object({
@@ -162,12 +162,12 @@ const app = new Hono()
       },
     })
   })
-  // One package's Credit history (#353): the member's own package, or 404.
+  // One package's Credit history: the member's own package, or 404.
   .get('/packages/:id/credit-history', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const history = await creditHistory(tenantId(c), c.get('clientId'), c.req.valid('param').id)
     return c.json(serializeCreditHistory(history, 'member'))
   })
-  // ---- saved cards (#185) ----
+  // ---- saved cards ----
   // The member's own cards, and only ever the brand, the last four digits and
   // the expiry — read live from the provider, because a local copy of a card is
   // a copy that goes stale in the exact way that makes a member pick one that

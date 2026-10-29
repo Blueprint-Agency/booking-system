@@ -33,7 +33,7 @@ const updateSessionSchema = z.object({
   // Partner for a 1on1 → 2on1 upgrade. Only needed when the request doesn't
   // already carry a co-client. See services/pt-sessions/schedule.ts.
   co_client_id: z.string().uuid().optional(),
-  // A manual session's upgrade only (#335): the partner pays their own seat,
+  // A manual session's upgrade only: the partner pays their own seat,
   // from this package or else the Default payer, and `override` is "Add anyway".
   co_client_package_id: z.string().uuid().optional(),
   override: z.boolean().optional(),
