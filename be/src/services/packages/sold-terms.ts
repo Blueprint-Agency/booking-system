@@ -8,6 +8,7 @@
  * in flight keeps the terms it was sold on.
  */
 import type { classPackages, ptPackages } from '../../db/schema/packages'
+import type { PackageKind } from './validity'
 
 export interface SoldTerms {
   creditsOrSessions: number | null
@@ -108,8 +109,6 @@ export function soldTermsFromMetadata(meta: Record<string, string>): SoldTerms |
   return { creditsOrSessions, validityDays, durationMonths, listPriceSgd }
 }
 
-export type SoldPackageKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
-
 /**
  * The fields each kind is sold on, the same the catalogue requires before an
  * Admin can save one. The catalogue's upper bounds are not re-applied: they may
@@ -117,7 +116,7 @@ export type SoldPackageKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
  */
 type CountField = 'creditsOrSessions' | 'validityDays' | 'durationMonths'
 
-const FIELDS_OF_KIND: Record<SoldPackageKind, { needs: CountField[]; never: CountField[] }> = {
+const FIELDS_OF_KIND: Record<PackageKind, { needs: CountField[]; never: CountField[] }> = {
   credit_bundle: { needs: ['creditsOrSessions', 'validityDays'], never: ['durationMonths'] },
   trial: { needs: ['creditsOrSessions', 'validityDays'], never: ['durationMonths'] },
   pt: { needs: ['creditsOrSessions', 'validityDays'], never: ['durationMonths'] },
@@ -135,7 +134,7 @@ const KEY_OF_FIELD: Record<CountField, string> = {
  * row, which never changes it): null for an old sale, else the terms, complete
  * and well-formed for that kind. Anything else throws `CorruptSoldTermsError`.
  */
-export function soldTermsForKind(meta: Record<string, string>, kind: SoldPackageKind): SoldTerms | null {
+export function soldTermsForKind(meta: Record<string, string>, kind: PackageKind): SoldTerms | null {
   const terms = soldTermsFromMetadata(meta)
   if (!terms) return null
   const { needs, never } = FIELDS_OF_KIND[kind]
