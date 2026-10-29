@@ -237,7 +237,7 @@ export async function applyPromoCode(input: RedemptionInput): Promise<AppliedPro
  * so its Redemption is written straight to `consumed` — there is no later
  * webhook to flip it.
  */
-export async function holdPromoCode(input: RedemptionInput): Promise<AppliedPromoCode> {
+async function holdPromoCode(input: RedemptionInput): Promise<AppliedPromoCode> {
   return db.transaction(async tx => {
     const now = clockNow()
     const found = await readCode(tx, input.tenantId, input.codeText, true)

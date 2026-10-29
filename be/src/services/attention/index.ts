@@ -23,7 +23,7 @@ export interface AttentionCaller {
   permissions: ReadonlySet<InstructorPermission>
 }
 
-export const DEFAULT_LIMIT_PER_GROUP = 5
+const DEFAULT_LIMIT_PER_GROUP = 5
 
 export async function contextFor(caller: AttentionCaller): Promise<AttentionContext> {
   const [tenant, active] = await Promise.all([

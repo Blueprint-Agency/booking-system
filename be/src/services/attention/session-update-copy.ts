@@ -50,7 +50,7 @@ export interface PtSessionCancelledByMemberPayload extends SessionPayload {
 export type PortalRole = 'admin' | 'instructor'
 
 /** The session page, or for a workshop (which has none for an instructor) the schedule on its day. */
-export function sessionHref(p: SessionPayload, role: PortalRole): string {
+function sessionHref(p: SessionPayload, role: PortalRole): string {
   if (p.sessionKind === 'class') return `/${role}/schedule/class/${p.sessionId}`
   if (p.sessionKind === 'pt') return `/${role}/schedule/pt/${p.sessionId}`
   return `/${role}/schedule?date=${p.date}`

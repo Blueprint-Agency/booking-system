@@ -298,7 +298,7 @@ export async function sendClassCancelledToWaitlistEmails(tenantId: string, class
  * NTF-10: the studio cancelled a private session — every member on it is told,
  * with the sessions returned to their own package (`admin_cancel_pt`).
  */
-export async function sendPtCancelledByStudioEmails(tenantId: string, notices: readonly StudioCancelNotice[]): Promise<void> {
+async function sendPtCancelledByStudioEmails(tenantId: string, notices: readonly StudioCancelNotice[]): Promise<void> {
   const batch = await cancelledBatch(tenantId, notices.map(n => n.bookingId))
   if (!batch) return
   const accountUrl = `${batch.base}/account/private-sessions`

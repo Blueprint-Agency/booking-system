@@ -67,7 +67,7 @@ const isProd = env.NODE_ENV === 'production'
  * integration harness passes an in-memory stream to read what a request logged.
  * Without one it writes to stdout, pretty-printed outside production.
  */
-export function createLogger(destination?: DestinationStream) {
+function createLogger(destination?: DestinationStream) {
   const options = {
     level: env.LOG_LEVEL ?? (isProd ? 'info' : 'debug'),
     // The platform, not a studio — one backend serves every tenant, so a log line

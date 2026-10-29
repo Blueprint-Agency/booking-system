@@ -86,7 +86,7 @@ const startsClass = (pieces: string[], i: number, receivedLocalDate: string) =>
   time(pieces[i + 1]) !== null && day(pieces[i + 2], receivedLocalDate) !== null
 
 /** The roster's listing and classes. `receivedLocalDate` is the studio's day it arrived, `YYYY-MM-DD`. */
-export function parseClassPassRoster(
+function parseClassPassRoster(
   message: { html: string | null; text: string | null },
   receivedLocalDate: string,
 ): ParsedRoster {

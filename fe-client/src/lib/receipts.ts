@@ -6,7 +6,6 @@
  * testing on its own. Everything on a Receipt is what the studio wrote when it
  * was issued; nothing here works a figure out.
  */
-import { cardBrandLabel } from "./saved-cards.ts";
 
 export type ReceiptStatus = "issued" | "refunded";
 
@@ -83,34 +82,6 @@ export interface ReceiptsPage {
  */
 export function receiptAmount(sgd: string): string {
   return `S$${(Math.round(Number(sgd) * 100) / 100).toFixed(2)}`;
-}
-
-const WALLETS: Record<string, string> = {
-  apple_pay: "Apple Pay",
-  google_pay: "Google Pay",
-  samsung_pay: "Samsung Pay",
-  link: "Link",
-};
-
-const METHODS: Record<string, string> = {
-  paynow: "PayNow",
-  grabpay: "GrabPay",
-  alipay: "Alipay",
-  wechat_pay: "WeChat Pay",
-  link: "Link",
-};
-
-/** How a payment was made: `Visa •••• 4242`, `Apple Pay · Visa •••• 4242`, `PayNow`. */
-export function paymentLabel(p: Pick<ReceiptPayment, "method" | "card_brand" | "card_last4" | "wallet">): string {
-  if (p.method === "card" || p.card_brand) {
-    const card = [p.card_brand ? cardBrandLabel(p.card_brand) : "Card", p.card_last4 ? `•••• ${p.card_last4}` : null]
-      .filter(Boolean)
-      .join(" ");
-    const wallet = p.wallet ? (WALLETS[p.wallet] ?? p.wallet) : null;
-    return wallet ? `${wallet} · ${card}` : card;
-  }
-  if (p.method) return METHODS[p.method] ?? p.method.charAt(0).toUpperCase() + p.method.slice(1).replace(/_/g, " ");
-  return "Online payment";
 }
 
 export function receiptStatusLabel(status: ReceiptStatus): string {

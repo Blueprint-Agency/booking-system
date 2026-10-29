@@ -244,7 +244,7 @@ export function htmlToText(html: string, { withUrls = true }: { withUrls?: boole
 /* ── The shell ───────────────────────────────────────────────────────────── */
 
 /** An initial per word, capped at three — the header mark is a square. */
-export function brandInitials(name: string): string {
+function brandInitials(name: string): string {
   const letters = name
     .split(/\s+/)
     .filter(Boolean)

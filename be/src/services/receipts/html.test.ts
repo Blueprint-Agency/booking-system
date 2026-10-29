@@ -48,7 +48,7 @@ const paid: ReceiptRow = {
   refundedAt: null,
 }
 
-test('INV-88 the Receipt as HTML: paid, refunded and free each read as the PDF does, every value escaped, credited to the platform', () => {
+test('INV-88 INV-09 INV-53 the Receipt as HTML: paid, refunded and free each read as the PDF does, every value escaped, credited to the platform', () => {
   const text = htmlToText(receiptHtml(receiptDocument(paid, STUDIO)))
   for (const said of [
     'Receipt number: R-000042',
@@ -94,6 +94,21 @@ test('INV-88 the Receipt as HTML: paid, refunded and free each read as the PDF d
   assert.doesNotMatch(hostile, /<script>|<b>|<img>|javascript:/, 'nothing a studio or a member typed becomes markup')
   assert.ok(hostile.includes('&lt;script&gt;alert(1)&lt;/script&gt;'))
   assert.ok(hostile.startsWith('<!doctype html>') && hostile.includes('<title>Receipt R-000042</title>'))
+})
+
+test('INV-09 INV-53 a payment with no recorded method reads Online payment, one with no card brand reads Card, and an unknown brand reads as a name, not blank', () => {
+  const none = { method: null, cardBrand: null, cardLast4: null, wallet: null }
+  const read = (payment: Pick<(typeof paid.payments)[number], 'method' | 'cardBrand' | 'cardLast4' | 'wallet'>): string =>
+    htmlToText(receiptHtml(receiptDocument({ ...paid, payments: [{ ...payment, amountSgd: '19.00', paidAt: '2026-10-02T03:00:00Z' }] }, STUDIO)))
+
+  const unrecorded = read(none)
+  assert.ok(unrecorded.includes('Online payment 2 Oct 2026 S$19.00'), unrecorded)
+
+  const noBrand = read({ ...none, method: 'card', cardLast4: '4242' })
+  assert.ok(noBrand.includes('Card •••• 4242 2 Oct 2026 S$19.00'), noBrand)
+
+  const unknownBrand = read({ ...none, method: 'card', cardBrand: 'cartes_bancaires', cardLast4: '4242' })
+  assert.ok(unknownBrand.includes('Cartes bancaires •••• 4242 2 Oct 2026 S$19.00'), unknownBrand)
 })
 
 test('INV-103 nothing typed into a Bill to, the studio\'s Business details or its contact email becomes markup in the Receipt\'s HTML', () => {

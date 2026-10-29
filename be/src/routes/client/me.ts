@@ -132,7 +132,6 @@ const app = new Hono()
     const updated = await setDisplayPrefs(tenantId(c), c.get('clientId'), { theme, fontSize: font_size })
     return c.json(serializeProfile(updated))
   })
-  .get('/dashboard', c => c.json({ todo: 'next-up + balances' }, 501))
   .get('/packages', async c => {
     const clientId = c.get('clientId')
     const onlyActive = c.req.query('only_active') === '1'

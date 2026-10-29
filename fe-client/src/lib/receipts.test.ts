@@ -8,7 +8,6 @@ import assert from "node:assert/strict";
 
 import {
   dateRangeProblem,
-  paymentLabel,
   receiptAmount,
   receiptPdfFilename,
   receiptsQuery,
@@ -21,14 +20,6 @@ test("INV-09 amounts print as the studio prints money to members, always to the 
   assert.equal(receiptAmount("0.00"), "S$0.00");
   // The same form as the confirmation emails (the backend's `sgdText`): no separator.
   assert.equal(receiptAmount("1234.5"), "S$1234.50");
-});
-
-test("INV-09 a card payment names its brand and last four, and the wallet it was in", () => {
-  const card = { method: "card", card_brand: "visa", card_last4: "4242", wallet: null };
-  assert.equal(paymentLabel(card), "Visa •••• 4242");
-  assert.equal(paymentLabel({ ...card, wallet: "apple_pay" }), "Apple Pay · Visa •••• 4242");
-  assert.equal(paymentLabel({ method: "paynow", card_brand: null, card_last4: null, wallet: null }), "PayNow");
-  assert.equal(paymentLabel({ method: null, card_brand: null, card_last4: null, wallet: null }), "Online payment");
 });
 
 test("INV-09 a Receipt reads Issued, or Refunded once the money went back", () => {

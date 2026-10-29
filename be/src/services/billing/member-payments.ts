@@ -38,7 +38,7 @@ export interface MemberPaymentView {
   createdAt: Date
 }
 
-export const MEMBER_PAYMENTS_LIMIT = 50
+const MEMBER_PAYMENTS_LIMIT = 50
 
 export async function listMemberPayments(
   tenantId: string,

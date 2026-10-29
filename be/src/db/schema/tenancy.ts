@@ -157,7 +157,7 @@ export const tenantSettings = pgTable('tenant_settings', {
   // Domain name, `tenants.name`, when the operator gives none) and changed by
   // the studio's admin on its Business details page. Never blank: migration
   // 0115's trigger fills it from the display name, else `tenants.name`, for a
-  // writer that does not name one (a restore, `createTenant`).
+  // writer that does not name one (a restore).
   businessName: text('business_name').notNull(),
 
   // The rest of the Business details (#391, #398): what the studio's Receipts

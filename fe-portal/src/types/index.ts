@@ -27,16 +27,6 @@ export interface ClassType {
   archivedAt: string | null;
 }
 
-export interface Instructor {
-  id: string; // matches staff_users.id where role=instructor
-  name: string;
-  email: string;
-  phone: string;
-  bio: string;
-  photoUrl: string | null;
-  archivedAt: string | null;
-}
-
 // --- Capacity (cross-cutting) ---
 
 export interface Capacity {
