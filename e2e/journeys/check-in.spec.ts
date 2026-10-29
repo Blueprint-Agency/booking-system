@@ -3,7 +3,7 @@ import { closeBookedCelebration, openDayOf } from '../src/schedule'
 import { signInMember, signInStaff, studio } from '../src/studio'
 
 /**
- * Journey 4: a member books, shows their code at the desk, and is checked in (#192).
+ * Journey 4: a member books, shows their code at the desk, and is checked in.
  *
  * The class starts minutes from now — inside the studio's Check-in Window, so
  * this is the early arrival the window exists for. The desk types the code the

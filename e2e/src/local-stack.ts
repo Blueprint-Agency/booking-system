@@ -4,7 +4,7 @@ import { STRIPE_HOST_RULES, STRIPE_STUB_API_URL } from './stripe-stub'
 
 /**
  * `E2E_STACK=local`: the journeys against this machine rather than a deployed
- * stack — the pull-request job (#207), the Playwright agents, and a developer.
+ * stack — the pull-request job, the Playwright agents, and a developer.
  *
  * The backend and the production builds of both frontends are started here
  * (the frontends reused, off CI, if they are already up), the studio is made by the local
@@ -25,7 +25,7 @@ export const localStudioCommand = `${app('be')} run -s e2e:studio --`
 
 /**
  * The run's studio sells on an account of its own, played by the stub: there
- * is no platform account to fall back to (#293), so a studio without one is
+ * is no platform account to fall back to, so a studio without one is
  * refused at checkout. The studio command sets it up the way the super portal
  * would — the key proved, a webhook endpoint made on the account, both secrets
  * sealed with `PAYMENT_CREDENTIALS_KEY` — and the backend opens them with the

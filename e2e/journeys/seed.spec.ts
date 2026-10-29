@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { studio } from '../src/studio'
 
 /**
- * The Playwright agents' seed (#207) — where a planner or generator session
+ * The Playwright agents' seed — where a planner or generator session
  * starts. It runs, and must pass, wherever the agents work: the local stack,
  * CI included. A run against a deployed stack leaves it out (playwright.config.ts).
  *

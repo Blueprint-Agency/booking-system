@@ -3,12 +3,12 @@ import { openDayOf } from '../src/schedule'
 import { signInMember, studio, visitSignedOut } from '../src/studio'
 
 /**
- * Journeys: a failed read is never drawn as data (#460, #500).
+ * Journeys: a failed read is never drawn as data.
  *
  * Each test makes one API call fail the way the server or the network would
  * (a `500`, or a dropped connection) and asserts what the member can see: what
  * did load, a line saying what did not, and none of the false things a failure
- * used to be drawn as ("Nothing booked yet.", "No corporate packages on offer
+ * could be drawn as ("Nothing booked yet.", "No corporate packages on offer
  * right now.", "Not a member yet", the sign-in page). fe-client-features §9.3.
  *
  * The `holder` holds a class, a workshop place, a scheduled private session and

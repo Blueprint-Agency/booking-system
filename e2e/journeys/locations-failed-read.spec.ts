@@ -3,12 +3,12 @@ import { signInStaff, studio } from '../src/studio'
 
 /**
  * Journey: when the portal cannot read the studio's locations in full, an admin
- * is not offered an edit that would blank a location's phone and Maps link (#496).
+ * is not offered an edit that would blank a location's phone and Maps link.
  *
  * The staff payload names a location but carries neither its phone nor its Maps
- * link; the full read (`/portal/admin/locations`) does. The portal used to fall
- * back to the payload's rows when the full read failed, so a renamed location was
- * saved with both fields empty. The journey fails that read, opens Manage
+ * link; the full read (`/portal/admin/locations`) does. Falling back to the
+ * payload's rows when the full read failed would save a renamed location with
+ * both fields empty. The journey fails that read, opens Manage
  * locations, and checks it says so and offers no edit; the read then succeeds on
  * Retry, editing works, and the location's phone and Maps link, read back from the
  * backend, are the ones it started with.
