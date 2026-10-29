@@ -4,11 +4,19 @@ import { Pencil, Archive, RotateCcw, Plus } from "lucide-react";
 import { Dialog, Button, Badge } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { LocationFormDialog } from "@/components/locations/location-form-dialog";
+import { LocationsLoadError } from "@/components/locations/locations-load-error";
 import type { Location } from "@/types";
 
 export function ManageLocationsDialog({ onClose }: { onClose: () => void }) {
-  const { locations, addLocation, updateLocation, archiveLocation, restoreLocation } =
-    useWorkspace();
+  const {
+    manageableLocations: locations,
+    locationsStatus,
+    retryLocations,
+    addLocation,
+    updateLocation,
+    archiveLocation,
+    restoreLocation,
+  } = useWorkspace();
   const [editing, setEditing] = useState<Location | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -21,6 +29,13 @@ export function ManageLocationsDialog({ onClose }: { onClose: () => void }) {
               <Plus className="h-3.5 w-3.5" /> Add location
             </Button>
           </div>
+          {locationsStatus === "failed" && (
+            <LocationsLoadError onRetry={() => void retryLocations()} />
+          )}
+          {locationsStatus === "loading" && (
+            <p className="px-1 text-sm text-muted">Loading locations…</p>
+          )}
+          {locationsStatus === "loaded" && (
           <ul className="divide-y divide-border rounded-lg border border-border">
             {locations.length === 0 && (
               <li className="px-4 py-6 text-center text-sm text-muted">
@@ -64,6 +79,7 @@ export function ManageLocationsDialog({ onClose }: { onClose: () => void }) {
               </li>
             ))}
           </ul>
+          )}
         </div>
       </Dialog>
       {creating && (
