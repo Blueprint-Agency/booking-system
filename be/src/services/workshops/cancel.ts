@@ -53,15 +53,18 @@ export async function cancelWorkshop(
       .returning()
 
     // Everyone teaching it is told (#493).
+    // A workshop with no day was never on anyone's schedule: nothing to name.
     const facts = await workshopFacts(tenantId, workshopId)
-    await recordSessionCancelledByAdmin(tenantId, {
-      actorStaffId: staffId,
-      kind: 'workshop',
-      sessionId: workshopId,
-      subject: facts.subject,
-      startsAt: facts.startsAt,
-      instructorIds: (await readInstructors(tenantId, 'workshop', workshopId)).instructorIds,
-    })
+    if (facts) {
+      await recordSessionCancelledByAdmin(tenantId, {
+        actorStaffId: staffId,
+        kind: 'workshop',
+        sessionId: workshopId,
+        subject: facts.subject,
+        startsAt: facts.startsAt,
+        instructorIds: (await readInstructors(tenantId, 'workshop', workshopId)).instructorIds,
+      })
+    }
 
     const affected = await tx
       .select({ id: bookings.id })

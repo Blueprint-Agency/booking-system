@@ -214,15 +214,18 @@ export async function updateWorkshop(
     }
 
     // The instructors are told when someone else moved the workshop to another location or changed who teaches it (#493).
+    // A workshop with no day has no time to move or name, so there is nothing to tell.
     const factsAfter = await workshopFacts(tenantId, id)
-    await recordSessionChanged(tenantId, {
-      actorStaffId: patch.actorStaffId,
-      kind: 'workshop',
-      sessionId: id,
-      subject: factsAfter.subject,
-      before: { ...factsBefore, roomId: null, ...instructorsBefore },
-      after: { ...factsAfter, roomId: null, ...(await readInstructors(tenantId, 'workshop', id)) },
-    })
+    if (factsBefore && factsAfter) {
+      await recordSessionChanged(tenantId, {
+        actorStaffId: patch.actorStaffId,
+        kind: 'workshop',
+        sessionId: id,
+        subject: factsAfter.subject,
+        before: { ...factsBefore, roomId: null, ...instructorsBefore },
+        after: { ...factsAfter, roomId: null, ...(await readInstructors(tenantId, 'workshop', id)) },
+      })
+    }
 
     if (patch.imageR2Keys !== undefined) {
       await tx
