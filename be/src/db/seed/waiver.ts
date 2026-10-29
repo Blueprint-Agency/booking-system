@@ -10,6 +10,14 @@ import type { SeededTenant } from './tenants'
  */
 const WAIVER_SINGLETON_ID = '00000000-0000-0000-0000-000000000003'
 
+/**
+ * Writes one waiver row per tenant. The unique index on `tenant_id` holds the
+ * table to one row each, and the insert's conflict clause lands on that index,
+ * so a tenant that already has one keeps it: this never updates.
+ *
+ * Only the test harness calls it, for the two fixture studios. Waivers are not
+ * being built (#233), so no studio gets a row from anywhere else.
+ */
 export async function seedWaiver(db: PostgresJsDatabase<typeof schema>, tenant: SeededTenant) {
   const isTenantOne = tenant.id === TENANT_ONE_ID
 
