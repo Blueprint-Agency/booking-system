@@ -298,7 +298,10 @@ services/billing/create-intent.ts:workshopIntent({ client_id, workshop_id, works
      amount: effective_price * 100,
      currency: 'sgd',
      metadata: { kind: 'workshop', client_id, workshop_id, workshop_tier_id,
-                 applied_promotion_id: promotion?.id ?? null }
+                 applied_promotion_id: promotion?.id ?? null,
+                 list_price_sgd }
+     — the tier's regular price as checkout showed it, frozen here because the tier is admin-editable.
+     The Purchase keeps the same metadata, and the webhook books from the Purchase's copy.
    })
 6. Insert stripe_payments row: status='pending', kind='workshop', client_id, payment_intent_id
    (booking_id stays null until success — created in webhook)
@@ -315,7 +318,13 @@ tx start
    - If status='succeeded': webhook is a retry, no-op (idempotent)
 2. Insert bookings row: kind='workshop', workshop_id, workshop_tier_id, state='confirmed',
    client_package_id=NULL, refund_outcome='n_a', check_in_state='pending',
-   purchase_id=P            — the sale; a Refund routes on it, not on the intent (#92)
+   purchase_id=P            — the sale; a Refund routes on it, not on the intent (#92),
+   list_price_sgd = purchase.metadata.list_price_sgd — the List Price checkout showed, whether the sale
+   was paid in one go or across a Part Payment, and whatever an Admin did to the tier since.
+   (A Purchase from before checkout recorded one carries none, and is booked at the tier's price as it
+   stands, with an info log line. A List Price that is present but not an amount of dollars to the cent
+   is corrupt: the delivery fails and books nothing, so the provider redelivers it, and an error line
+   names the Purchase. The tier must still exist: a payment landing on a removed tier is given back, WSP-27.)
 3. Generate qr_token + code
 4. Update stripe_payments: status='succeeded', receipt_url = paymentIntent.charges.data[0].receipt_url (the provider's, kept as evidence)
 5. issueReceipt; enqueueEmail('workshop_purchase_confirmed', client.email, { workshop_name, date, qr_url, code, amount_paid, receipt_url }) — the member's Receipt, from the delivery that issued it (§13)
@@ -541,8 +550,11 @@ tx start
    credits_or_sessions_remaining = purchase.metadata.credits_or_sessions (NULL for unlimited),
    validity_days = purchase.metadata.validity_days, frozen (every kind but unlimited),
    list_price_sgd = purchase.metadata.list_price_sgd
-   (A Purchase from before checkout froze these terms carries no validity_days or duration_months,
-    and is granted from the catalogue row as it stands, with an info log line.)
+   (A Purchase from before checkout froze these terms carries no credits_or_sessions, validity_days or
+    duration_months, and is granted from the catalogue row as it stands, with an info log line. Terms
+    that are incomplete or malformed for the package's kind are refused, not granted: the delivery fails
+    and grants nothing, so the provider redelivers it, and an error line names the Purchase, the package
+    and the key at fault, for a human to repair the record by hand.)
    expires_at = NULL on every kind — every purchase lands Dormant and Activates on the
                 first booking it pays for (be/docs/adr/0004), whatever else the member
                 holds or has running (be/docs/adr/0010),
