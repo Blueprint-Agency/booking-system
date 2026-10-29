@@ -61,7 +61,7 @@ const pay = (p: Partial<MoneyEvent> = {}) =>
   assert.strictEqual(s.totals.net_sgd, 0)
 }
 
-// -- a Complimentary Package is listed and counted in nothing (#176) ---------
+// -- a Complimentary Package is listed and counted in nothing ---------
 // The row above is why the marker exists rather than a test on "paid 0": these
 // two are the same three numbers and different events. A comp was never sold,
 // so its List Price is not Gross, and the gap to zero is not money given away
@@ -170,9 +170,9 @@ const pay = (p: Partial<MoneyEvent> = {}) =>
 }
 
 // -- a refunded sale still counts in Gross for the month it happened in ------
-// Regression: the corporate query once filtered to status 'succeeded', but the
-// refund webhook flips the status — so the sale vanished from Gross while its
-// negative Refund row stayed, understating Net by twice the amount.
+// The refund webhook flips a corporate payment's status, so the query must not
+// filter to 'succeeded': the sale would vanish from Gross while its negative
+// Refund row stayed, understating Net by twice the amount.
 {
   const s = summarizeFinance([
     ev({ kind: 'corporate', id: 'c-1', listPriceSgd: '500.00', paidSgd: '500.00', refunded: true }),

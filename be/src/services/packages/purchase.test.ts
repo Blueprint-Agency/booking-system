@@ -114,7 +114,7 @@ assert.deepStrictEqual(
   'unchanged means every live plan already sits there, not just the one staff clicked',
 )
 
-// --- the Bound Instructor a purchase lands on (#109) ---
+// --- the Bound Instructor a purchase lands on ---
 //
 // Same reason the Location rule is pure and tested here: checkout and the grant
 // must refuse the same purchases, because a refusal that only fires in the
@@ -178,7 +178,7 @@ for (const kind of ['credit_bundle', 'unlimited', 'trial'] as const) {
   )
 }
 
-// --- an admin binds, moves or clears a purchased package's Bound Instructor (#110) ---
+// --- an admin binds, moves or clears a purchased package's Bound Instructor ---
 //
 // A separate rule from the purchase one, because it answers a different
 // question: not "what may the studio sell", but "what may an admin change it to

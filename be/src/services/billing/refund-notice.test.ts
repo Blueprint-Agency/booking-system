@@ -116,7 +116,7 @@ const SINCE = new Date('2026-06-11T16:00:00Z')
   )
 }
 
-// --- silence (#95) ----------------------------------------------------------
+// --- silence ----------------------------------------------------------
 // The clock runs from the LAST payment. A member who paid a second card
 // yesterday is mid-purchase; one who paid once a month ago has gone quiet.
 {

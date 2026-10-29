@@ -1,5 +1,5 @@
 /**
- * Setting a studio's own payment credentials can't be done wrongly (#276): the
+ * Setting a studio's own payment credentials can't be done wrongly: the
  * environment decides which kind of key it takes, and the webhook URL the
  * operator is shown is HTTPS wherever the provider will call it.
  *

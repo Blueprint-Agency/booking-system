@@ -57,7 +57,7 @@ assert.match(
   /promo WELCOME10 applied/,
 )
 
-// --- the line names the STUDIO, not the platform (#66) ---
+// --- the line names the STUDIO, not the platform ---
 //
 // This is what a member reads on the checkout page and later on a card
 // statement, so a second tenant's charge has to say the second tenant's name.
