@@ -343,10 +343,12 @@ function isRefundedInFull(charge: Stripe.Charge): boolean {
 }
 
 /**
- * Give back a sale whose money arrived and whose grant was then refused: a
- * Trial Pass paid for on a second checkout the member opened before the first
- * one granted (PKG-43). Eligibility is asked when checkout starts, so two can
- * be open at once, and the one-trial index refuses the second grant.
+ * Give back a sale whose money arrived and whose grant was then refused. Two
+ * grants are refused this way:
+ *  - a Trial Pass paid for on a second checkout the member opened before the
+ *    first one granted (PKG-43). Eligibility is asked when checkout starts, so
+ *    two can be open at once, and the one-trial index refuses the second grant;
+ *  - a workshop place whose tier was removed before the payment landed (WSP-27).
  *
  * The unwind that each `charge.refunded` runs stops at the closed Purchase, so
  * the Promo Code is handed back here rather than there.
