@@ -201,7 +201,7 @@ export async function updateClass(
 ): Promise<ClassRow> {
   // A rule change cancels bookings and promotes from their lines, so it can
   // deadlock with a member's cancel as a promotion can (`cancelBooking`).
-  const { row, ruleChange } = await retryingTransaction(async tx => {
+  const { row, ruleChange } = await retryingTransaction('Package rule change', async tx => {
     // The lock booking takes (bookings/book.ts `lockClass`), before anything is
     // read: a booking made meanwhile is counted below, and one made after
     // waits and is judged by the edit.

@@ -805,6 +805,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
       assert.equal(unwound.status, 200, `${step}: ${JSON.stringify(unwound.body)}`)
       assert.equal(reached, 2, `${step} was aborted once, and the unwind's second attempt wrote it`)
       assert.equal(retriedAttempts().length, 1, `${step}: the unwind ran exactly one extra attempt`)
+      assert.equal(retriedAttempts()[0]!.operation, 'Refund unwind', 'the retry line names what ran again')
       assert.deepEqual(harness.logs.lines().filter(l => l.level === 'error'), [], `${step}: nothing was reported`)
       await assertRefunded(paid.purchaseId)
       assert.equal((await packageRow(paid.clientPackageId)).active, false, step)

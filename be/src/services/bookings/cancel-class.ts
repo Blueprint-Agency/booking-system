@@ -57,7 +57,7 @@ export async function cancelClass(
 ): Promise<CancelClassResult> {
   // A promotion that passes the head of a line by locks the next member's
   // packages only once it reaches them, after the class's own (#439).
-  return retryingTransaction(tx => cancelClassInTx(tx, tenantId, input))
+  return retryingTransaction('whole-class cancel', tx => cancelClassInTx(tx, tenantId, input))
 }
 
 export async function cancelClassInTx(

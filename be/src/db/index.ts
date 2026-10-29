@@ -160,10 +160,26 @@ const RETRY_ATTEMPTS = 4
 const retrying = new AsyncLocalStorage<true>()
 
 /**
+ * The paths that run again when Postgres aborts them, by the short fixed name
+ * their retry warning carries, so the logs say which of them deadlock. One name
+ * per path, and never member data in it.
+ */
+export type RetriedOperation =
+  | 'booking cancel'
+  | 'whole-class cancel'
+  | 'Package rule change'
+  | 'Complimentary Remove'
+  | 'Refund unwind'
+  | 'PT request cancel'
+  | 'manual-session member removal'
+
+/**
  * `db.transaction(fn)`, run again from the start when Postgres aborts it to
  * break a deadlock or a serialization conflict (`isRetryableAbort`): up to
  * four attempts, a short random pause between them. Once they run out, the
  * last attempt's error is thrown, as `db.transaction` would have thrown it.
+ * Each retry is logged with `operation`, the fixed name of the path that ran
+ * again.
  *
  * Inside a Tenant context this is a savepoint of the outer transaction. Rolling
  * back to it lets go of every lock the attempt took, so the transaction it
@@ -178,7 +194,7 @@ const retrying = new AsyncLocalStorage<true>()
  * attempt alone could not go through while the outer one keeps the locks it
  * took before it.
  */
-export function retryingTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+export function retryingTransaction<T>(operation: RetriedOperation, fn: (tx: Tx) => Promise<T>): Promise<T> {
   if (retrying.getStore()) return db.transaction(fn)
   return retrying.run(true, async () => {
     for (let attempt = 1; ; attempt++) {
@@ -186,7 +202,10 @@ export function retryingTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
         return await db.transaction(fn)
       } catch (err) {
         if (attempt >= RETRY_ATTEMPTS || !isRetryableAbort(err)) throw err
-        logger.warn({ scope: 'db', attempt, tenantId: currentTenantId() }, 'transaction aborted by Postgres; retrying')
+        logger.warn(
+          { scope: 'db', operation, attempt, tenantId: currentTenantId() },
+          'transaction aborted by Postgres; retrying',
+        )
         await new Promise(resolve => setTimeout(resolve, 10 + Math.random() * 40 * attempt))
       }
     }
