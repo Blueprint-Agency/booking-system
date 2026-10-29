@@ -202,9 +202,16 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
       ],
     }
     const mainToo = { ...template(), supporting_instructors: [{ instructor_id: teacher.id.toUpperCase(), pay_sgd: 30 }] }
+    // The other side of the same comparison: the main instructor's id in capitals, and the same instructor in lower case as supporting.
+    const mainInCapitals = {
+      ...template(),
+      main_instructor_id: teacher.id.toUpperCase(),
+      supporting_instructors: [{ instructor_id: teacher.id.toLowerCase(), pay_sgd: 30 }],
+    }
     for (const path of ['/series/preview', '/series']) {
       assert.equal((await json(await send(path, admin.headers, 'POST', twice), 400)).error, 'duplicate_supporting_instructor')
       assert.equal((await json(await send(path, admin.headers, 'POST', mainToo), 400)).error, 'supporting_instructor_duplicates_main')
+      assert.equal((await json(await send(path, admin.headers, 'POST', mainInCapitals), 400)).error, 'supporting_instructor_duplicates_main')
     }
     const made = await harness.db.select().from(schema.classSeries).where(eq(schema.classSeries.classTypeId, classTypeId))
     assert.deepEqual(made, [])
