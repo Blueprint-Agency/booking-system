@@ -152,7 +152,7 @@ export const PT_STATUS_LABEL: Record<PtStatus, string> = {
   pending: "pending",
   scheduled: "scheduled",
   // A PT request holds sessions, not money — what comes back is the session, and
-  // "refunded" is kept for money going back through Stripe (#275).
+  // "refunded" is kept for money going back through Stripe.
   cancelled_before_scheduled: "cancelled (session returned)",
   cancelled_after_scheduled: "cancelled",
   attended: "attended",
@@ -190,7 +190,7 @@ export function ptInFilter(r: ApiPtRequest, f: PtFilter): boolean {
 }
 
 /**
- * The queue row's line under the member's name. A manual session (#338) had
+ * The queue row's line under the member's name. A manual session had
  * no request from the member — no proposed slots, class type or message — so
  * it reads "Manual" and names who and where it was put on instead.
  */

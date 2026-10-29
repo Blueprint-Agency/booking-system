@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { creditKept } from "./cancellations";
 
-// How staff read a cancellation on the profile and the roster (#352). Who and
+// How staff read a cancellation on the profile and the roster. Who and
 // where the credit went are the server's lines
 // (be/src/services/bookings/cancellation-summary.test.ts, CUS-25); the tone is this app's.
 

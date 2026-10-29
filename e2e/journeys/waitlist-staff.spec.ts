@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { signInStaff, studio } from '../src/studio'
 
 /**
- * Journey: staff work a class's waitlist from its session page (#310).
+ * Journey: staff work a class's waitlist from its session page.
  *
  * The class has one online seat, taken, one buffer seat free, and two members
  * already in line. The admin sees the line in order with what each would pay

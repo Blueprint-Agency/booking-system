@@ -21,7 +21,7 @@ assert.strictEqual(
   slotFromParams(new URLSearchParams("date=17-08-2026&start=19:30&end=20:30")),
   null,
 );
-// The end time the last grid slot used to emit before it was clamped.
+// An end time past midnight, which the last grid slot must not emit.
 assert.strictEqual(
   slotFromParams(new URLSearchParams("date=2026-08-17&start=23:30&end=24:30")),
   null,

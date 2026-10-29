@@ -56,7 +56,7 @@ function ConfirmationCard({ children }: { children: React.ReactNode }) {
 
 /**
  * What was bought, as a receipt panel under the heading — one label, the
- * item, and a line about it. It replaces a second, larger heading that used to
+ * item, and a line about it. It is not a second, larger heading, which would
  * outrank the page's own.
  */
 function ReceiptPanel({
@@ -80,7 +80,7 @@ function ReceiptPanel({
 // ── The sync every paid flow does on landing ─────────────────────────────────
 /**
  * Record the provider's session now rather than waiting on webhook delivery
- * (no CLI listener in local dev), and say what it answered (#274).
+ * (no CLI listener in local dev), and say what it answered.
  *
  * Null while it runs. After that, only `confirmed` may be called a payment: a
  * session the provider has not marked paid, or a sync that failed, is
@@ -89,7 +89,7 @@ function ReceiptPanel({
  */
 function useCheckoutSync(stripeSessionId: string | null): {
   outcome: ConfirmationOutcome | null;
-  /** The Receipt the payment was given, once the sync says so (#384). */
+  /** The Receipt the payment was given, once the sync says so. */
   receipt: SyncedReceipt | null;
 } {
   const getToken = getMemberToken;
@@ -318,7 +318,7 @@ function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
 
 // ── Cross-Location Add-On bought on its own ──────────────────────────────────
 /**
- * Where the standalone Add-On lands (#274). It used to fall through to
+ * Where the standalone Add-On lands. It must not fall through to
  * "Nothing to confirm", which reads as the purchase having gone nowhere.
  */
 function CrossLocationSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
@@ -371,7 +371,7 @@ function CrossLocationSuccess({ stripeSessionId }: { stripeSessionId: string | n
 
 // ── Part payment: what is still owed ─────────────────────────────────────────
 /**
- * Where a part payment lands (#93).
+ * Where a part payment lands.
  *
  * It cannot say "you're all set", because it does not know that it is: the
  * payment may have cleared the balance or may have left some of it. So it syncs
@@ -389,7 +389,7 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
   const partPayment = usePartPaymentOptions();
   // What this session left owing, or nothing, or "not confirmed yet" — which
   // also covers a sync that failed. That last must never be shown as the
-  // second, and never as a payment received (#274) — see the sync below.
+  // second, and never as a payment received — see the sync below.
   const [outcome, setOutcome] = useState<
     | { kind: "syncing" }
     | { kind: "pending" }
@@ -434,7 +434,7 @@ function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null })
         // The money is safe — the webhook records it whatever happens here —
         // but we do not know what was taken or what is left. Saying "all set"
         // on a failed read is how a member who owes half is told they owe
-        // nothing, and "received" claims a payment nobody confirmed (#274).
+        // nothing, and "received" claims a payment nobody confirmed.
         reportError(err, { scope: "balance-confirmation" });
         if (!cancelled) setOutcome({ kind: "pending" });
       }

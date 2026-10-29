@@ -29,7 +29,7 @@ test("a class is upcoming until it starts, ongoing while it runs, past once it e
   );
 });
 
-// #349: a cancelled class is on Cancelled from the moment it is cancelled,
+// A cancelled class is on Cancelled from the moment it is cancelled,
 // whatever its time — never Upcoming, Ongoing or Past.
 test("ACC-32 a cancelled class is on Cancelled whether it is still to come, running or over", () => {
   const gone = (id: string, start: number, cancelledAt: number) =>
@@ -47,7 +47,7 @@ test("ACC-32 Cancelled lists the newest cancellation first, whatever the class t
   assert.deepEqual(sortForPhase(items, "cancelled").map((i) => i.key), ["class:earlier-class", "class:later-class"]);
 });
 
-// #351: a cancelled or expired PT request is on Cancelled, no longer Past;
+// A cancelled or expired PT request is on Cancelled, not Past;
 // what was held — attended, or a no-show staff marked — stays on Past.
 test("ACC-34 a pending PT request is upcoming; a scheduled one follows its session; a held one is past; a cancelled or expired one is on Cancelled", () => {
   const noShow = { ...(pt("n", "attended", [-50, -49]) as object), booking: { check_in_state: "no_show" } } as never;
@@ -75,7 +75,7 @@ test("ACC-34 a pending PT request is upcoming; a scheduled one follows its sessi
   );
 });
 
-// #351: a held private session reads by the member's own check-in, as a class
+// A held private session reads by the member's own check-in, as a class
 // does — the request turns `attended` when its session ends, ticked or not.
 test("ACC-39 a held private session reads Attended only when ticked, No-show only when staff marked it, and nothing when never ticked", () => {
   const held = (check_in_state: string) =>
@@ -90,7 +90,7 @@ test("ACC-39 a held private session reads Attended only when ticked, No-show onl
   assert.equal(ptStanding({ ...(pt("e", "cancelled_before_scheduled") as object), expired: true } as never), "expired");
 });
 
-// #351: "a cancelled workshop is past" becomes: a cancelled workshop is on Cancelled.
+// A cancelled workshop is on Cancelled, not Past.
 test("ACC-34 a workshop with no dates yet is upcoming; a cancelled one is on Cancelled, whatever its dates", () => {
   const w = (id: string, state: string, start: number | null, end: number | null) =>
     ({ id, state, booked_at: at(-100), starts_at: start == null ? null : at(start), ends_at: end == null ? null : at(end) }) as never;

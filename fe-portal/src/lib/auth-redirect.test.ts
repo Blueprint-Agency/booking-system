@@ -54,7 +54,7 @@ test("the next sanitiser", () => {
   assert.equal(safeNextPath(new URLSearchParams("next=/admin/staff")), "/admin/staff");
   assert.equal(safeNextPath(new URLSearchParams("next=https://evil.com")), null);
   assert.equal(safeNextPath(new URLSearchParams("next=//evil.com")), null);
-  // A `next` back to the login page is the self-replace the pages used to do.
+  // A `next` back to the login page is a self-replace, so it is refused.
   assert.equal(safeNextPath(new URLSearchParams("next=/login")), null);
   assert.equal(safeNextPath(new URLSearchParams()), null);
 });

@@ -31,11 +31,11 @@ type AuthGateContext = "buy a package" | "book a workshop" | "buy merch";
  * review page when the purchase has one, or back to `gateHref` (the page they
  * were on) when it does not: merch, and a $0 item.
  *
- * Every purchase is billed to the member's Billing details, free ones included
- * (#402). The review page asks for them itself; the direct path asks first, in
+ * Every purchase is billed to the member's Billing details, free ones included.
+ * The review page asks for them itself; the direct path asks first, in
  * a sheet over the page (`BillToSheet`), and buys once the member confirms.
  *
- * A studio that takes no online payments (#293) gets a sentence in place of a
+ * A studio that takes no online payments gets a sentence in place of a
  * paid button — a button that can only be refused is worse than being told.
  * A $0 purchase keeps its button: it never reaches the payment provider.
  */
@@ -57,7 +57,7 @@ export function BuyButton({
   priceSgd: string | number;
   /**
    * The purchase needs a choice only the review page can take — an Unlimited
-   * Plan's Home studio. The price no longer decides: a Promotion that drives the
+   * Plan's Home studio. The price does not decide: a Promotion that drives the
    * plan to $0 would otherwise post straight to the grant with no Location and be
    * refused, leaving a free plan nobody can buy.
    */

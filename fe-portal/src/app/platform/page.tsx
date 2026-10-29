@@ -397,7 +397,7 @@ export default function PlatformPage() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   {/* `tenants.name`: the Domain name, the platform's own label
-                      for the studio (#398), not the Business name members see. */}
+                      for the studio, not the Business name members see. */}
                   <span className="min-w-0 break-words font-medium text-ink" title="Domain name">
                     <span className="sr-only">Domain name: </span>
                     {tenant.name}
@@ -428,7 +428,7 @@ export default function PlatformPage() {
                 {/* Whose account this studio's money lands in. Worth a line of
                     its own rather than a badge: "not set up" is an ordinary
                     state — every studio starts there, and takes no online
-                    payments until it leaves it (#293) — and the account id is
+                    payments until it leaves it — and the account id is
                     the only thing anyone can ever see about a studio's own
                     credentials, so it is the only way to spot the wrong ones. */}
                 {/* Wraps rather than truncates on a phone: the account id is

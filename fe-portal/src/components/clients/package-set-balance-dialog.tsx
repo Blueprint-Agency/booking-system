@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import type { ClientPackage } from "@/types";
 
-/** The most a package may hold after a staff edit, as the backend refuses past it (#240). */
+/** The most a package may hold after a staff edit, as the backend refuses past it. */
 export const MAX_PACKAGE_BALANCE = 10_000;
 
 export function PackageSetBalanceDialog({

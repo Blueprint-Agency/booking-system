@@ -9,7 +9,7 @@ import { reportError } from "@/lib/report-error";
 
 /**
  * Settle the optional reads of a page that draws a member's bookings, apart
- * from its essential ones: what loaded, and the kinds that did not (#500).
+ * from its essential ones: what loaded, and the kinds that did not.
  * Each failure is reported to telemetry under its own `scope`, as it always
  * was; it is not swallowed into an empty list.
  */

@@ -7,7 +7,7 @@ import { ApiError } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 
 /**
- * Mail a member the link that sets their password (#173) — for a member who
+ * Mail a member the link that sets their password — for a member who
  * never received theirs, or lost it. The same link their own sign-in sends.
  */
 export function SendSetPasswordButton({ clientId, email }: { clientId: string; email: string }) {

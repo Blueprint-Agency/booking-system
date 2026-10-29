@@ -7,7 +7,7 @@ import { cancelledNotice } from "@/lib/checkout-return";
 import { cn } from "@/lib/utils";
 
 /**
- * The banner a checkout's cancel return lands on (#274) — the account page (a
+ * The banner a checkout's cancel return lands on — the account page (a
  * standalone Add-On, or paying more towards an unfinished purchase) and merch.
  * Renders nothing on an ordinary visit.
  *

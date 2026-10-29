@@ -14,7 +14,7 @@ interface PackageOption {
 }
 
 /**
- * A package's Credit history on the member's profile (#353): every movement of
+ * A package's Credit history on the member's profile: every movement of
  * its credits or sessions, newest first, with the booking it was for, who did
  * it and the balance after. One package at a time, picked from the member's.
  *

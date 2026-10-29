@@ -9,8 +9,8 @@
  * studio name with a non-ASCII character would have to be encoded.
  *
  * Every value has a neutral fallback, and none of the fallbacks name a studio.
- * That is the whole point of #66: a Tenant with no settings row renders as
- * *itself*, on its own name, and never as somebody else.
+ * A Tenant with no settings row renders as *itself*, on its own name, and never
+ * as somebody else.
  */
 import { headers } from "next/headers";
 import { ROOT_DOMAIN, tenantSlugFromHost } from "@/lib/tenant-host";

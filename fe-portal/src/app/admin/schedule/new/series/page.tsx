@@ -2,8 +2,8 @@ import { redirect } from "next/navigation";
 import { repeatWeeklyHref } from "@/lib/repeat-weekly";
 
 /**
- * The retired series screen. A weekly series is now the class screen with
- * Repeat weekly on; bookmarks and old links land there with their slot.
+ * A weekly series is the class screen with Repeat weekly on; a bookmark or link
+ * to this series address lands there with its slot.
  */
 export default async function LegacyNewSeriesRedirect({
   searchParams,

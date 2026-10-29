@@ -119,7 +119,7 @@ export function isTenantLabel(label: string): boolean {
  * product is cross-tenant and its routes are exempt from tenant resolution
  * altogether. Everywhere else it is a dead end: the backend refuses a
  * tenant-scoped request carrying no `X-Tenant-Slug` with `tenant_required`
- * (400), where it used to answer as Tenant #1. Whether a well-formed slug
+ * (400). Whether a well-formed slug
  * corresponds to a Tenant that *exists* is not decidable here — that is the
  * resolver's job, over HTTP.
  *

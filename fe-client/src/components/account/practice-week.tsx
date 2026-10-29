@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * My activity's week (#342): Monday to Sunday, a column per day filled with
+ * My activity's week: Monday to Sunday, a column per day filled with
  * the sessions attended there and a dashed cap for any still booked. A day
  * with sessions opens them when tapped, as the month's tiles do
  * (`PracticeDayDialog`).

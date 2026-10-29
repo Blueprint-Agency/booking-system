@@ -31,7 +31,7 @@ function refusal(err: unknown): string {
 }
 
 /**
- * ClassPass location mappings (#410): which of the studio's Locations each
+ * ClassPass location mappings: which of the studio's Locations each
  * name ClassPass writes in its emails means. ClassPass spells a name in more
  * than one way, so the backend stores it normalised (lower case, single
  * spaces, every dash the same), and two spellings are one mapping.

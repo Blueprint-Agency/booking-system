@@ -106,7 +106,7 @@ interface ApiPackage {
   /** There is money at the payment provider to give back (§14). */
   refundable: boolean;
   /**
-   * Given by an admin at no charge (#176). What "Remove" is offered on, and why
+   * Given by an admin at no charge. What "Remove" is offered on, and why
    * S$0 against a real list price is not a discount somebody granted.
    */
   complimentary: boolean;
@@ -116,9 +116,9 @@ interface ApiPackage {
    * is still allowed.
    */
   refund_notice: string | null;
-  /** How many refunds the Refund will put on the statement (#93). */
+  /** How many refunds the Refund will put on the statement. */
   refund_payment_count: number;
-  /** Whether a Refund is already on its way — the action is withheld while one is (#275). */
+  /** Whether a Refund is already on its way — the action is withheld while one is. */
   refund_progress: RefundProgress;
   /** What the Refund gives back — the whole Purchase, Add-On included when bought with it. */
   refund_amount_sgd: string;
@@ -167,19 +167,19 @@ interface ApiBooking {
   credits_used: number | null;
   package_name: string | null;
   code: string;
-  /** `classpass` on a ClassPass booking, which ClassPass paid for (#408). */
+  /** `classpass` on a ClassPass booking, which ClassPass paid for. */
   source: BookingSource;
   booked_at: string;
   cancelled_at: string | null;
   /**
-   * What the cancel dialog asks Return / Keep credit from (#320). Null when the
+   * What the cancel dialog asks Return / Keep credit from. Null when the
    * booking cannot be cancelled from here.
    */
   cancel_preview: StaffCancelPreview | null;
 }
 
 /**
- * A cancelled booking with who cancelled and where the credit went (#352). A
+ * A cancelled booking with who cancelled and where the credit went. A
  * private-session request withdrawn or expired while pending never had a
  * booking: `booking_id` and `code` are null and `pt_request_id` names it.
  */
@@ -205,12 +205,12 @@ interface ApiPayment {
   amount_sgd: string;
   status: "pending" | "succeeded" | "refunded" | "failed";
   purchase_status: "open" | "paid" | "refunded" | "abandoned";
-  /** The studio's Receipt for the sale (#389); null while it is part-paid. */
+  /** The studio's Receipt for the sale; null while it is part-paid. */
   receipt_id: string | null;
   /** The provider's own receipt for this charge: shown only where there is no Receipt. */
   receipt_url: string | null;
   refunded_at: string | null;
-  /** A Refund has been issued and Stripe has not yet confirmed it (#275). */
+  /** A Refund has been issued and Stripe has not yet confirmed it. */
   refund_processing: boolean;
   created_at: string;
 }
@@ -224,7 +224,7 @@ interface ApiWorkshopPurchase {
   amount_paid_sgd: string;
   list_price_sgd: string;
   purchased_at: string;
-  /** Its Workshop was cancelled and the money has not come back yet (#272). */
+  /** Its Workshop was cancelled and the money has not come back yet. */
   cancelled: boolean;
   refundable: boolean;
   refund_notice: string | null;
@@ -235,7 +235,7 @@ interface ApiWorkshopPurchase {
 }
 
 /**
- * A purchase the member started paying for and has not finished (#93).
+ * A purchase the member started paying for and has not finished.
  *
  * Money the studio is holding against **nothing granted**: no plan, no place,
  * no credits. It is listed apart from the packages for exactly that reason —
@@ -252,12 +252,12 @@ interface ApiOpenPurchase {
   part_paid_at: string | null;
   created_at: string;
   grants_nothing: boolean;
-  /** How many returns one press of Refund will put on the statement (#95). */
+  /** How many returns one press of Refund will put on the statement. */
   refund_payment_count: number;
   refund_progress: RefundProgress;
 }
 
-/** What one press of a Refund button answers (#275). */
+/** What one press of a Refund button answers. */
 interface ApiRefundReply extends RefundReply {
   /** An unfinished purchase's reply names what went back — "2 payments returned, totalling S$120.00". */
   returned_line?: string;
@@ -408,7 +408,7 @@ export default function ClientProfilePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wanted, profile !== null, showPastPackages]);
 
-  // Everything the studio holds about this member, for an access request (#143).
+  // Everything the studio holds about this member, for an access request.
   // Logged as a staff act on the member.
   const downloadData = async () => {
     setExporting(true);
@@ -483,7 +483,7 @@ export default function ClientProfilePage({
   }
 
   /**
-   * Issue a Refund and say what happened (#275). A Refund that Stripe took for
+   * Issue a Refund and say what happened. A Refund that Stripe took for
    * some payments and refused for the next is not an error — money moved — so
    * it is a warning naming how much went back. A refusal is reloaded after, so
    * a purchase refunded in another tab stops offering the button.
@@ -626,7 +626,7 @@ export default function ClientProfilePage({
                   </span>
                 </div>
               </div>
-              {/* The address the member signs in with (#176) — beside the one
+              {/* The address the member signs in with — beside the one
                   the header shows, because that is the thing being changed. */}
               {canEdit && !blocked && (
                 // A full-width pair under the name on a phone; beside it from sm up.
@@ -645,7 +645,7 @@ export default function ClientProfilePage({
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
             <div className="min-w-0 space-y-6">
-              {/* Unfinished purchases — money held against nothing granted (#93).
+              {/* Unfinished purchases — money held against nothing granted.
                   First, because it is the thing a member's arrival at the front
                   desk turns into a question. */}
               {profile.open_purchases.length > 0 && (
@@ -663,7 +663,7 @@ export default function ClientProfilePage({
                 title="Packages & memberships"
                 count={profile.packages.length}
                 aside={
-                  // A **Complimentary Package** (#176) — beside the wallet it
+                  // A **Complimentary Package** — beside the wallet it
                   // lands in, not among the account actions.
                   canEdit && !blocked ? (
                     <Button size="sm" variant="secondary" onClick={() => setGiveOpen(true)}>
@@ -1020,7 +1020,7 @@ export default function ClientProfilePage({
         />
       )}
 
-      {/* An unfinished purchase (#95). Aimed at the Purchase itself, because
+      {/* An unfinished purchase. Aimed at the Purchase itself, because
           there is no plan and no booking to aim it at. The reply names how many
           payments went back and what they totalled, so an admin can reconcile
           it against the statement without opening the provider's dashboard. */}
@@ -1529,7 +1529,7 @@ function OpenPurchaseList({
                 in against it.
               </span>
             </p>
-            {/* The money's only way out (#95). Nothing was delivered, so there
+            {/* The money's only way out. Nothing was delivered, so there
                 is no plan to void and no booking to cancel — the refund closes
                 the purchase and that is all it does. */}
             {canEdit && p.refund_progress !== "processing" && (
@@ -1621,7 +1621,7 @@ function WorkshopPurchaseList({
 }
 
 /**
- * Permanent deletion (#144), beside blocking. Nothing about the member is left
+ * Permanent deletion, beside blocking. Nothing about the member is left
  * to restore, so the dialog offers the download first and asks for the email
  * typed out, as blocking does.
  */
@@ -1931,7 +1931,7 @@ function BookingRow({
   );
 }
 
-/** The ClassPass badge on a ClassPass booking (#408); nothing on a direct one. */
+/** The ClassPass badge on a ClassPass booking; nothing on a direct one. */
 function SourceBadge({ source }: { source: BookingSource }) {
   const label = sourceBadge(source);
   return label ? <Badge tone="accent">{label}</Badge> : null;
@@ -1941,7 +1941,7 @@ const atTime = (iso: string, pattern: string) =>
   formatDate(iso, pattern).replace(/(AM|PM)/, (m) => m.toLowerCase());
 
 /**
- * A cancellation as the front desk is asked about it (#352): what and when it
+ * A cancellation as the front desk is asked about it: what and when it
  * was, where the credit went, when it was cancelled and by whom — the member,
  * the named staff member, or Automatic. Nothing here can be checked in or
  * cancelled again.
@@ -2005,7 +2005,7 @@ function bookingWhat(b: ApiBooking): string {
  * matching the member's own: Upcoming in full; History, what was held (the
  * most recent the backend sends — the attendance strip in the header counts
  * every one); Cancelled, every kind from the moment it is cancelled, newest
- * first, with who cancelled and where the credit went (#352).
+ * first, with who cancelled and where the credit went.
  */
 function BookingsSection({
   upcoming,
@@ -2102,7 +2102,7 @@ function PaymentsSection({ payments }: { payments: ApiPayment[] }) {
         <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
           <ul className="divide-y divide-border">
             {visible.map((p) => {
-              // Still "succeeded" until Stripe's confirmation lands (#275), and
+              // Still "succeeded" until Stripe's confirmation lands, and
               // "Paid" beside a Refund just issued reads as though it failed.
               const s = p.refund_processing
                 ? { label: REFUND_PROCESSING_LABEL, tone: "warning" as const }

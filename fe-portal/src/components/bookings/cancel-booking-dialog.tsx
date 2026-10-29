@@ -1,5 +1,5 @@
 "use client";
-// A staff member cancels one member's class booking (#320), shared by the class
+// A staff member cancels one member's class booking, shared by the class
 // roster (admin and instructor) and the admin member profile. It asks Return
 // credit or Keep credit with neither picked, and Cancel booking stays disabled
 // until one is; a booking that spent nothing says so instead.

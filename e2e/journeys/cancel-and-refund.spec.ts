@@ -49,7 +49,7 @@ test('CXL-01 a member cancels inside the window and the credit comes back', asyn
 })
 
 /**
- * The late cancel (#318): a member cancels a class hours away, inside its
+ * The late cancel: a member cancels a class hours away, inside its
  * window. The cancel goes through — they are warned first — and the credit it
  * spent stays spent. The class is booked for them when the studio is made, so
  * the balance is read before and after the cancel alone.

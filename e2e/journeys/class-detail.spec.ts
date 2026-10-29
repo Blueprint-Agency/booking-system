@@ -3,7 +3,7 @@ import { closeBookedCelebration, openDayOf } from '../src/schedule'
 import { signInMember, studio } from '../src/studio'
 
 /**
- * Journey: a member opens a class's detail from the schedule and books from it (#323).
+ * Journey: a member opens a class's detail from the schedule and books from it.
  *
  * Tapping a class row opens the detail overlay: the class, its time, where and
  * with whom, which packages it accepts, and the member's own packages marked

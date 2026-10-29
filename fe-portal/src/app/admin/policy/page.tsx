@@ -8,7 +8,7 @@ import { ApiError } from "@/lib/api";
 import { ptBookingWindowProblem } from "@/lib/pt-requests";
 
 interface PolicyState {
-  /** Whether cancellations past the count keep their credit (#318). */
+  /** Whether cancellations past the count keep their credit. */
   cancelCapEnabled: boolean;
   cancelCapCount: number;
   cancelCapCycleDays: number;
@@ -17,9 +17,9 @@ interface PolicyState {
   leaveCarryOverCapDays: number;
   studyLeaveCap: number;
   crossLocationRateSgd: number;
-  /** Whether members may split a purchase across two cards (#93). */
+  /** Whether members may split a purchase across two cards. */
   partPaymentEnabled: boolean;
-  /** How long before a session starts the door opens for check-in (#192). */
+  /** How long before a session starts the door opens for check-in. */
   checkInOpensMinutesBefore: number;
   bookInAdvanceDays: number;
   /** The earliest a member may propose a private session, in days after today. */

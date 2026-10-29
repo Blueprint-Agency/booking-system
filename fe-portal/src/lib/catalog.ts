@@ -4,8 +4,8 @@
 // Every read here returns *active* rows only, and that is the whole point of the
 // module: the backend already drops archived rooms, locations and class types,
 // but `GET /portal/admin/instructors` returns archived instructors unless a
-// status filter is passed. Six screens used to re-type `!i.archived_at` and one
-// forgot to. So the rows returned here deliberately carry no `archived_at` —
+// status filter is passed. A caller that re-types `!i.archived_at` is one
+// forgotten filter from listing an archived instructor. So the rows returned here deliberately carry no `archived_at` —
 // there is nothing left for a caller to filter on.
 //
 // Takes the backend handle as a parameter rather than reaching for React
@@ -74,7 +74,7 @@ export async function fetchActiveInstructors(api: Api): Promise<CatalogInstructo
 }
 
 /**
- * Instructors a purchased PT Package may be **bound** to (#110). Narrower than
+ * Instructors a purchased PT Package may be **bound** to. Narrower than
  * `fetchActiveInstructors`: the backend's binding rule reads the same roster
  * checkout does, which is accepted instructors only, so offering a pending
  * invitee here would offer somebody the save would then refuse.

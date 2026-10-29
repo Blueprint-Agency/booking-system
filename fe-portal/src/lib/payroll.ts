@@ -2,8 +2,8 @@
 // shape it reads, and the mapping from a failed pay edit to the sentence a
 // human reads. Mirrors be/src/routes/portal/instructor/payroll.ts.
 //
-// The admin half of this module moved to ./finance when the Payroll page was
-// replaced by Finance (be/docs/adr/0002-finance-replaces-payroll.md). What stayed:
+// The admin half lives in ./finance, not here (be/docs/adr/0002-finance-replaces-payroll.md).
+// This module holds:
 //
 //   - The instructor read. It is deliberately NOT the Finance read scoped down.
 //     An instructor gets one flat total for themselves and never a studio
@@ -11,11 +11,11 @@
 //     `instructor_id` sent from that screen would be ignored, so the type
 //     refuses to carry one.
 //   - The error copy, which Finance imports rather than restates. A pay edit
-//     fails in four different ways that used to arrive as one anonymous 404 —
-//     the session was deleted, the instructor was taken off it, the amount was
-//     unusable, or nobody was named on a workshop. The screen showed
-//     "Couldn't save (HTTP 404)" for all four, so nobody could tell which one to
-//     fix. `payrollErrorMessage` is the only place that translation happens.
+//     fails in four different ways — the session was deleted, the instructor
+//     was taken off it, the amount was unusable, or nobody was named on a
+//     workshop. "Couldn't save (HTTP 404)" for all four would leave nobody able
+//     to tell which one to fix. `payrollErrorMessage` is the only place that
+//     translation happens.
 //
 // This stays separate from `scheduleErrorMessage`: the two surfaces share the
 // wire shape but not one error, and a class edit and a pay edit fail for

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Part Payment at checkout (#93).
+ * Part Payment at checkout.
  *
  * On "Full payment" (the default) the checkout behaves exactly as it always
  * has. On "Partial payment", the member says what this card will take —

@@ -4,7 +4,7 @@
  * scrolling on its own, and collapsible to an icon rail.
  *
  * Pinned because the nav is how staff move between pages, and a long page (a
- * month of schedule, a customer's history) used to carry it off the top of the
+ * month of schedule, a customer's history) would carry it off the top of the
  * screen. It is `sticky` to the viewport with its own scroll area, so the page
  * and the nav never move each other.
  *

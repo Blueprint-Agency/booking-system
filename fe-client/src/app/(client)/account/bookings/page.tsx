@@ -95,7 +95,7 @@ function YourBookings() {
   const [src, setSrc] = useState<BookingSources | null>(null);
   const [waitlisted, setWaitlisted] = useState<ApiWaitlistEntry[]>([]);
   const [loadError, setLoadError] = useState(false);
-  // The kinds that could not be read (#500): named above the list, never drawn as none.
+  // The kinds that could not be read: named above the list, never drawn as none.
   const [missing, setMissing] = useState<BookingKind[]>([]);
   const [banner, setBanner] = useState<Banner | null>(null);
   const [cancelTarget, setCancelTarget] = useState<ApiBooking | null>(null);

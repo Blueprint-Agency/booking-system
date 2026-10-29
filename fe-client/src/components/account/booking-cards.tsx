@@ -51,7 +51,7 @@ import {
   ptCancelPrompt,
 } from "@/lib/cancellation-copy";
 
-/** What a cancelled booking's read sends of its cancellation: the server's own lines (#349, #351). */
+/** What a cancelled booking's read sends of its cancellation: the server's own lines. */
 interface CancelledLines {
   cancelled_at?: string | null;
   who_line?: string | null;
@@ -238,7 +238,7 @@ export function ClassBookingCard({
   const past = !ongoing && !canCancelClass(b.starts_at);
   const cancelled = b.state === "cancelled";
   const attended = b.check_in_state === "attended";
-  // Only staff marking the member absent makes a No-show (#349).
+  // Only staff marking the member absent makes a No-show.
   const noShow = b.check_in_state === "no_show";
   // Cancellable until it starts; inside its window it is a late cancel. One
   // booked on ClassPass is cancelled on ClassPass.
@@ -313,7 +313,7 @@ function ptStatus(r: RawPtRequest): Status | null {
       return { label: "Attended", tone: "ok", icon: CheckCircle2 };
     case "no_show":
       return { label: "No-show", tone: "muted", icon: XCircle };
-    // Where the session went is the outcome line under the card (#351).
+    // Where the session went is the outcome line under the card.
     case "expired":
       return { label: "Expired", tone: "muted", icon: XCircle };
     case "cancelled":
@@ -537,7 +537,7 @@ export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorksho
       code={past ? null : b.code}
       open={{ label: `Workshop: ${b.workshop_name}`, href: `/workshops/${b.workshop_id}` }}
     >
-      {/* No self-serve cancel: the studio arranges changes and refunds (#272). */}
+      {/* No self-serve cancel: the studio arranges changes and refunds. */}
       {!past && <p className="mt-2 text-xs text-muted">To change or cancel, contact the studio.</p>}
       {cancelled && <Cancelled c={b} />}
     </BookingCard>

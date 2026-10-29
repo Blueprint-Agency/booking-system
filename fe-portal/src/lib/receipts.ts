@@ -1,5 +1,5 @@
 /**
- * The studio's Receipts (#389), as `GET /portal/admin/receipts` and
+ * The studio's Receipts, as `GET /portal/admin/receipts` and
  * `GET /portal/admin/receipts/:id` send them, and how the admin pages read
  * them.
  *
@@ -151,7 +151,7 @@ export function receiptsQuery(s: ReceiptsState): Record<string, string | number>
 }
 
 /**
- * Where Export CSV downloads the list from (#390): the search and filters the
+ * Where Export CSV downloads the list from: the search and filters the
  * list is showing, and no page, so the file is every page of it.
  */
 export function receiptsExportPath(s: ReceiptsState): string {
@@ -160,7 +160,7 @@ export function receiptsExportPath(s: ReceiptsState): string {
   return `/portal/admin/receipts/export.csv${qs ? `?${qs}` : ""}`;
 }
 
-/** Why a resend was refused (#390), from the refusal's body. */
+/** Why a resend was refused, from the refusal's body. */
 export function resendRefusal(body: unknown): string {
   const code = (body as { error?: unknown } | null)?.error;
   if (code === ERROR_CODES.receipt_member_deleted) {

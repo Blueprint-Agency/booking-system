@@ -26,7 +26,7 @@ const nextConfig: NextConfig = {
       { source: "/admin/clients/:path*", destination: "/admin/customers/:path*", permanent: true },
     ];
   },
-  // Hardening headers and the Content-Security-Policy on every response (#142).
+  // Hardening headers and the Content-Security-Policy on every response.
   async headers() {
     return [
       {

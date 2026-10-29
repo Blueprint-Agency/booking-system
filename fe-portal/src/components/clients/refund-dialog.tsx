@@ -11,7 +11,7 @@ import { refundEffects, splitPaymentLines, type RefundFacts } from "@/lib/refund
  *
  * `facts` is what the backend says the Refund will do: the amount going back,
  * whether the Cross-Location Add-On goes with it, how many bookings it cancels
- * and which Promo Code it frees (#275). The dialog lists every one of them
+ * and which Promo Code it frees. The dialog lists every one of them
  * before the admin commits, because each is something a member will ring about.
  *
  * `notice` is the backend's sentence — "3 classes used (attended or no-show)
@@ -30,14 +30,14 @@ export function RefundDialog({
   packageName: string;
   /** What is being refunded and what the Refund undoes.
    *
-   *  `unfinished` is a Purchase the member part-paid and never came back to
-   *  (#95). Nothing was ever issued on it, so the copy must not promise to
+   *  `unfinished` is a Purchase the member part-paid and never came back to.
+   *  Nothing was ever issued on it, so the copy must not promise to
    *  cancel a package or a place — there is none, and an admin who reads that
    *  will go looking for what was taken away. */
   facts: RefundFacts;
   notice: string | null;
   /**
-   * How many payments this purchase holds (#93). One is the ordinary case and
+   * How many payments this purchase holds. One is the ordinary case and
    * says nothing extra. More than one means several refunds will appear on the
    * statement from one press of this button, and the admin is told before they
    * press it rather than by a bookkeeper a week later.

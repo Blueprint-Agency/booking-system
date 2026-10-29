@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 
 /**
- * An admin changes a member's email (#176) — for a member imported with a
+ * An admin changes a member's email — for a member imported with a
  * placeholder address, or one who has since moved.
  *
  * The dialog states the two consequences the form cannot show: the member signs

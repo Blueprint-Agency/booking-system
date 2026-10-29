@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Who this purchase is billed to (#401): the member's saved Billing details,
+ * Who this purchase is billed to: the member's saved Billing details,
  * the default selected, any other one a tap away, and a set added or edited
  * without leaving checkout. The chosen set is sent with the checkout and
  * printed on the Receipt as "Bill to".

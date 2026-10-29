@@ -26,9 +26,9 @@ test('PAY-16 INV-11 a member buys a plan with a test card, opens its Receipt and
   await expect(page.getByText("You're all set!")).toBeVisible({ timeout: 60_000 })
   await expect(page.getByText(`${catalogue.packageCredits} class credits added`)).toBeVisible()
 
-  // The studio's Receipt for the sale, straight from the confirmation (#384):
+  // The studio's Receipt for the sale, straight from the confirmation:
   // its number, and the total the member just paid. The page titles itself
-  // "Receipt R-…" and shows the Receipt's own html in a frame (#396), so what
+  // "Receipt R-…" and shows the Receipt's own html in a frame, so what
   // the Receipt says is read inside that frame.
   await page.getByRole('link', { name: /^View receipt R-\d{6}$/ }).click()
   await expect(page).toHaveURL(new RegExp(`${urls.client}/account/receipts/[0-9a-f-]{36}$`))

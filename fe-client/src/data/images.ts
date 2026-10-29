@@ -6,9 +6,8 @@
  * manifest is what renders for a studio that has supplied none: stock images
  * that belong to no studio, name no premises and imply no location.
  *
- * That split is the point of #66. When these entries carried one studio's
- * WordPress CDN URLs, every other studio's sign-in page showed that studio's
- * rooms — which is worse than a generic photograph, not better.
+ * That split keeps one studio's photography off every other studio's sign-in
+ * page, where it would be worse than a generic photograph, not better.
  *
  * Each entry pairs a stable key with a hosted URL (used now) and a local-asset
  * path (used once assets are downloaded into /public/images/).

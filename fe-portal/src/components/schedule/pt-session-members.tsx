@@ -1,5 +1,5 @@
 "use client";
-// A private session's members on its detail page (#338). Every session lists
+// A private session's members on its detail page. Every session lists
 // who is on it, their check-in and the package paying their seat. A manual one
 // (staff put it on with no member request) is also managed here while it is to
 // come: remove one member (refunded on their own package, the others stay),

@@ -50,7 +50,7 @@ function refusal(err: unknown): string {
 }
 
 /**
- * ClassPass review (#413): every ClassPass email the importer couldn't place
+ * ClassPass review: every ClassPass email the importer couldn't place
  * (or kept while it was off), until an Admin books it into a class, dismisses
  * it, or (for an unmapped location) maps the location, which imports every open
  * item from it that now matches.

@@ -8,7 +8,7 @@
  * counts as Upcoming: it is something coming, and it can still be cancelled.
  * Past holds only what was held. Whatever its kind, a cancellation is on
  * Cancelled from the moment it is cancelled, whatever its time, sorted by its
- * cancel time (#349, #351): a class, a PT request cancelled or expired (or a
+ * cancel time: a class, a PT request cancelled or expired (or a
  * seat the member left), a workshop place, a corporate request.
  */
 import type { ApiBooking } from "@/components/account/class-bookings";
@@ -127,7 +127,7 @@ export type PtStanding = "pending" | "confirmed" | "attended" | "no_show" | "can
 
 /**
  * A held private session reads by the member's own booking's check-in, as a
- * class does (#351): "Attended" only when ticked, "No-show" only when staff
+ * class does: "Attended" only when ticked, "No-show" only when staff
  * marked them absent, and nothing for one held but never ticked. The request's
  * `attended` status says only that its session ended.
  */

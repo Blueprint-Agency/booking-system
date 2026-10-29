@@ -59,12 +59,12 @@ export const NAV_ITEMS: NavItem[] = [
 
   // --- Finance (operations surface; both roles view records + edit pay) ---
   { group: "Finance", label: "Finance", href: "/admin/finance", icon: Wallet, scope: "both" },
-  // Unfinished purchases (#95) sit beside Finance rather than inside it: these
+  // Unfinished purchases sit beside Finance rather than inside it: these
   // are not Money Events but money held against a sale that never happened, and
   // the page exists to be acted on. Both roles see the list; only a superadmin
   // refunds, gated at the backend the same way every other Refund is.
   { group: "Finance", label: "Partial payments", href: "/admin/purchases", icon: HandCoins, scope: "both" },
-  // Every Receipt in the studio (#389). The studio's money, so admins only:
+  // Every Receipt in the studio. The studio's money, so admins only:
   // the backend refuses an instructor every receipt route.
   { group: "Finance", label: "Receipts", href: "/admin/receipts", icon: ReceiptText, scope: "global" },
 
@@ -103,13 +103,13 @@ export const NAV_ITEMS: NavItem[] = [
 
   // --- Settings (location-independent policy + config) ---
   { group: "Settings", label: "Global Policy", href: "/admin/policy", icon: Shield, scope: "global" },
-  // What the studio's business documents say (#391, #398): its Business name,
+  // What the studio's business documents say: its Business name,
   // the details its Receipts print and their number prefix.
   { group: "Settings", label: "Business details", href: "/admin/business-details", icon: ReceiptText, scope: "global" },
   // Which of the studio's emails go out: a switch each, locked ones shown.
   { group: "Settings", label: "Emails", href: "/admin/emails", icon: Send, scope: "global" },
   { group: "Settings", label: "Features", href: "/admin/feature-flags", icon: ToggleRight, scope: "global" },
-  // The studio's ClassPass address and the import of its ClassPass bookings (#407, #409).
+  // The studio's ClassPass address and the import of its ClassPass bookings.
   { group: "Settings", label: "ClassPass", href: "/admin/classpass", icon: Mail, scope: "global", badgeKey: "classpassPending" },
 ];
 

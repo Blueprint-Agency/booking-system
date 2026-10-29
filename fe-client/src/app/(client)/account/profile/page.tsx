@@ -23,7 +23,7 @@ type Gender = "female" | "male" | "non_binary" | "prefer_not_to_say";
 /** The longest name the studio keeps, first and last together, as the backend refuses past it. */
 const NAME_MAX = 160;
 
-// The member's own answer (#281), and theirs to take back: "Not set" clears it.
+// The member's own answer, and theirs to take back: "Not set" clears it.
 const GENDERS: { value: Gender; label: string }[] = [
   { value: "female", label: "Female" },
   { value: "male", label: "Male" },

@@ -1,5 +1,5 @@
 /**
- * Where a package can be used, as its card's "Covers" row says it (#316).
+ * Where a package can be used, as its card's "Covers" row says it.
  *
  * A Credit Bundle — and a Trial, which is one — works at every Location, so
  * its card carries one "All locations" chip, decided from the kind alone. An

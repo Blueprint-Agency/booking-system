@@ -1,5 +1,5 @@
 /**
- * The studio refusing the member app as a whole, rather than one call (#250).
+ * The studio refusing the member app as a whole, rather than one call.
  *
  *  - **Paused.** The studio is suspended: its slug lookup says so, and every
  *    other call is answered `403 tenant_suspended`. Nothing the member app

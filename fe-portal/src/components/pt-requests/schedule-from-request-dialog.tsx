@@ -133,7 +133,7 @@ export function ScheduleFromRequestDialog({
         //
         // A bound coach who has been archived is NOT pre-selected and NOT
         // quietly replaced by the first name on the roster: the admin is told
-        // the binding is stale and picks deliberately (#107 story 39).
+        // the binding is stale and picks deliberately.
         const bound = request.bound_instructor?.id;
         setInstructorId(
           bound
@@ -155,7 +155,7 @@ export function ScheduleFromRequestDialog({
     () => accessibleLocations.filter((l) => !l.archivedAt),
     [accessibleLocations],
   );
-  // A package can outlive the coach it was sold with (#107 story 39): the
+  // A package can outlive the coach it was sold with: the
   // binding stays and shows as stale until an admin rebinds it.
   const boundInstructorArchived = Boolean(
     !refLoading &&

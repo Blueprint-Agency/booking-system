@@ -1,5 +1,5 @@
 /**
- * Where a checkout sends the member back to, and what those screens say (#274).
+ * Where a checkout sends the member back to, and what those screens say.
  *
  * Two halves. A **cancel** return — the member backed out of the payment page —
  * must say plainly that nothing was taken, wherever it lands. A **success**
@@ -62,7 +62,7 @@ export const notGranted = (outcome: ConfirmationOutcome | null): outcome is NotG
   outcome === "refunded" || outcome === "abandoned";
 
 /**
- * The Receipt the sync said this payment was given (#384), for the
+ * The Receipt the sync said this payment was given, for the
  * confirmation page to link to: null for anything short of a granted payment,
  * and for a sale that is not issued one.
  */

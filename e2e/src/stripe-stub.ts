@@ -9,7 +9,7 @@ import path from 'node:path'
 
 /**
  * Stripe, played by this process, for the journeys a pull request runs on the
- * CI runner (#207). Nothing in such a run reaches real Stripe:
+ * CI runner. Nothing in such a run reaches real Stripe:
  *
  *  - The backend's Stripe client is pointed here by `STRIPE_API_URL`
  *    (be/src/lib/stripe-endpoint.ts), and is answered the few calls a checkout
@@ -164,8 +164,8 @@ export async function startStripeStub(): Promise<StripeStub> {
     const route = `${req.method} ${url.pathname}`
     let match: RegExpMatchArray | null
 
-    // The studio command sets the studio's account up as the super portal does
-    // (#294): the key proved, the account id this answers with stored, and the
+    // The studio command sets the studio's account up as the super portal does:
+    // the key proved, the account id this answers with stored, and the
     // studio's webhook endpoint made there. Nothing is ever delivered to it —
     // the confirmation page's sync is what grants in a journey.
     if (route === 'GET /v1/account') {

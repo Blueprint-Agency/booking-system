@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * The one line a page of bookings draws above its list when some kinds could
- * not be read (#500): which ones, and Try again, which re-reads them all in
+ * not be read: which ones, and Try again, which re-reads them all in
  * place. What did load is drawn beneath it. Draws nothing when none is missing.
  *
  * `text` puts the page's own words in the sentence's place ("Some of your

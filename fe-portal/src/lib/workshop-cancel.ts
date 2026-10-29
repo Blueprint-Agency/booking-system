@@ -1,6 +1,6 @@
 /**
  * The confirmation shown before a Workshop is cancelled, from the schedule
- * detail and from the Workshop editor alike (#272). It states the consequence
+ * detail and from the Workshop editor alike. It states the consequence
  * the admin cannot see from the button: every place goes, and no money comes
  * back on its own — each member is refunded from their customer page.
  */

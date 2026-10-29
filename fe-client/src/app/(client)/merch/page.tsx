@@ -40,7 +40,7 @@ export default function MerchPage() {
       {/* Nothing is shipped: the one thing a buyer must know before paying. */}
       <PageHeader title="Merch" description="Pay online, collect at the front desk on your next visit." />
 
-      {/* Back from the payment page without paying (#274). */}
+      {/* Back from the payment page without paying. */}
       <CancelledBanner className="mb-5" />
 
       {!items && !error && (

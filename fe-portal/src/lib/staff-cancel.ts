@@ -1,4 +1,4 @@
-// A staff member cancels one member's class booking (#320), from the class
+// A staff member cancels one member's class booking, from the class
 // roster (admin and instructor) or the admin member profile. Every cancel asks
 // Return credit or Keep credit, with neither picked; the backend's
 // `cancel_preview` on the row carries everything the question needs.

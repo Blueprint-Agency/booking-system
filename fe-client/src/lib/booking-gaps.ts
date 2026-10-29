@@ -1,6 +1,6 @@
 /**
- * Which of a member's booking sources could not be read, and how to say so
- * (#500). A page that draws a member's bookings from several reads (My
+ * Which of a member's booking sources could not be read, and how to say so.
+ * A page that draws a member's bookings from several reads (My
  * bookings, a day of My activity, Up next) keeps only the class reads
  * essential: the others settle independently, and one that failed must be
  * named on the page, never drawn as "none" — a member with a private session

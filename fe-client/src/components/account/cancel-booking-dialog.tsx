@@ -36,7 +36,7 @@ export interface CancelOutcome {
  *
  * On opening it reads the booking's `cancel_preview`: the server's own answer
  * to what this cancel would do — late or not, credit back or not, the cap
- * included — so the member is told before they confirm (#318).
+ * included — so the member is told before they confirm.
  */
 export function CancelBookingDialog({
   booking,

@@ -5,7 +5,7 @@ import { fetchBindableInstructors, type CatalogInstructor } from "@/lib/catalog"
 import { useWorkspace } from "@/lib/workspace-context";
 
 /**
- * Give a member a **Complimentary Package** (#176) — a catalogue package at no
+ * Give a member a **Complimentary Package** — a catalogue package at no
  * charge, with a reason.
  *
  * The picker offers the live catalogue and nothing else: a comp goes through

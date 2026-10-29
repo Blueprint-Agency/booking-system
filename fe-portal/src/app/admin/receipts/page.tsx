@@ -30,7 +30,7 @@ import {
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
- * Every Receipt in the studio (#389), newest first: searched by receipt
+ * Every Receipt in the studio, newest first: searched by receipt
  * number, member name or email, and narrowed by day, kind and status. Each row
  * opens the Receipt as the member sees it. Admins only; the backend refuses an
  * instructor every receipt route.
@@ -110,7 +110,7 @@ function ReceiptsList() {
   const detailHref = (id: string) => `/admin/receipts/${id}`;
 
   // Every Receipt the search and filters keep, every page of them, for the
-  // bookkeeper (#390). Fetched with the staff session, as the PDF is.
+  // bookkeeper. Fetched with the staff session, as the PDF is.
   const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
     setExporting(true);

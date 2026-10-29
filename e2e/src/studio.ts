@@ -181,7 +181,7 @@ export async function visitSignedOut(page: Page): Promise<void> {
 /**
  * Finish signing a member in on the member app's own /login form, which the
  * page is already on: the email, then the password once the app says this
- * account has one (#173). For the journeys whose point is where sign-in sends
+ * account has one. For the journeys whose point is where sign-in sends
  * the member next; the rest start signed in (`signInMember`).
  */
 export async function completeMemberLogin(page: Page, member: { email: string }): Promise<void> {
@@ -215,7 +215,7 @@ export async function setStudioFlag(request: APIRequestContext, key: string, ena
 
 /**
  * Sign a staff member in through the portal's own form: the email first, and
- * the password once the portal says this account has one (#227).
+ * the password once the portal says this account has one.
  */
 export async function signInStaff(page: Page, person: { email: string }): Promise<void> {
   const { urls, staff } = studio()

@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * A member's Billing details (#399): up to three name-and-address sets a
+ * A member's Billing details: up to three name-and-address sets a
  * Purchase is billed to, one of them the default. The rules — how many, which
  * is the default, what each field may hold — are the backend's
  * (`/me/billing-details`); this reads and writes them, and says them.
  *
  * Kept free of any one page so checkout can pick from the same sets and add or
- * edit one without leaving (#401).
+ * edit one without leaving.
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, useApi, type Api } from "@/lib/api";
