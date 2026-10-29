@@ -9,6 +9,7 @@ import {
 } from '../../db/schema/schedule'
 import { stripePayments } from '../../db/schema/ledger'
 import { isUniqueViolation } from '../../db/unique-violation'
+import { logger } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
 import { lockMemberTime, memberClash, type HeldWindow } from '../bookings/member-time'
@@ -149,6 +150,16 @@ export interface BookWorkshopInput {
   purchaseId?: string | null
   /** amount paid in SGD as "120.00". "0.00" for free workshops. */
   amountSgd: string
+  /**
+   * The List Price the place records (§15): the tier's regular price, the
+   * headline figure an early-bird price or a Promotion is cut from, as the
+   * member was shown it. Supplied by the caller, who knows which sale this is:
+   * a paid place's checkout froze it on the Purchase, and a free place's is
+   * the one its own Purchase line was priced at. A free workshop stores it
+   * against zero paid, same as a comp grant; a zero would hide the giveaway.
+   * The money off is derived (list minus paid) and never stored.
+   */
+  listPriceSgd: string
   /** frozen promotion applied at purchase; null if none. */
   appliedPromotionId?: string | null
   /** frozen Promo Code the member typed at purchase (§11); null if none. */
@@ -179,18 +190,6 @@ async function insertWorkshopBooking(
     if (existing) return { ...existing, created: false }
   }
 
-  // Frozen workshop money (§15). List Price is the tier's regular price — the
-  // headline figure an early-bird or a Promotion is cut from — read here so BOTH
-  // the paid and the free path record it. A free workshop stores that price
-  // against zero paid, same as a comp grant; a zero would hide the giveaway.
-  // The money off is derived (list minus paid) and never stored.
-  const [tierRow] = await db
-    .select({ regularPriceSgd: workshopTiers.regularPriceSgd })
-    .from(workshopTiers)
-    .where(and(eq(workshopTiers.tenantId, tenantId), eq(workshopTiers.id, input.workshopTierId)))
-    .limit(1)
-  if (!tierRow) throw new NotFoundError('workshop_tier_not_found')
-
   try {
     const [row] = await db
       .insert(bookings)
@@ -202,7 +201,7 @@ async function insertWorkshopBooking(
         workshopTierId: input.workshopTierId,
         appliedPromotionId: input.appliedPromotionId ?? null,
         appliedPromoCodeId: input.appliedPromoCodeId ?? null,
-        listPriceSgd: tierRow.regularPriceSgd,
+        listPriceSgd: input.listPriceSgd,
         amountPaidSgd: input.amountSgd,
         state: 'confirmed',
         qrToken,
@@ -259,11 +258,38 @@ async function bookingForPurchase(
   return row ? { bookingId: row.id, qrToken: row.qrToken, code: row.code } : undefined
 }
 
+/**
+ * A place the member has paid for. It is recorded at the List Price checkout
+ * showed (`frozenListPriceSgd`, read off the Purchase's own copy), whatever an
+ * Admin did to the tier since. A Purchase from before checkout recorded one
+ * carries none, and is booked at the tier's price as it stands.
+ *
+ * The tier must still be there: a payment that lands on a removed tier is
+ * given back (WSP-27), and freezing the price does not lift that check.
+ */
 export async function bookWorkshopPaid(
   tenantId: string,
-  input: BookWorkshopInput & { paymentIntentId: string; purchaseId: string },
+  input: Omit<BookWorkshopInput, 'listPriceSgd'> & {
+    paymentIntentId: string
+    purchaseId: string
+    frozenListPriceSgd?: string | null
+  },
 ): Promise<{ bookingId: string; qrToken: string; code: string; created: boolean }> {
-  return insertWorkshopBooking(tenantId, input)
+  const { frozenListPriceSgd, ...booking } = input
+  const [tier] = await db
+    .select({ regularPriceSgd: workshopTiers.regularPriceSgd })
+    .from(workshopTiers)
+    .where(and(eq(workshopTiers.tenantId, tenantId), eq(workshopTiers.id, input.workshopTierId)))
+    .limit(1)
+  if (!tier) throw new NotFoundError('workshop_tier_not_found')
+
+  if (frozenListPriceSgd == null) {
+    logger.info(
+      { purchaseId: input.purchaseId, workshopTierId: input.workshopTierId },
+      'stripe-webhook: a workshop sale checked out before its List Price was recorded is booked at the tier price as it stands',
+    )
+  }
+  return insertWorkshopBooking(tenantId, { ...booking, listPriceSgd: frozenListPriceSgd ?? tier.regularPriceSgd })
 }
 
 export async function bookWorkshopFree(
@@ -350,6 +376,9 @@ export async function bookWorkshopFree(
       paymentIntentId: null,
       purchaseId: purchase.id,
       amountSgd: '0.00',
+      // The List Price its own Purchase line was priced at, decided in the
+      // request that priced it, so the place and its S$0.00 Receipt agree.
+      listPriceSgd: args.lines[0]?.listPriceSgd ?? tier.regularPriceSgd,
       appliedPromotionId: eff.appliedPromotionId,
       appliedPromoCodeId: args.appliedPromoCodeId ?? null,
     })

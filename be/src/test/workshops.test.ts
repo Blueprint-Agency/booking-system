@@ -258,9 +258,10 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     const workshops = sql`SELECT id FROM workshops WHERE created_by_staff_id IN (${staffIds})`
     const locations = sql`SELECT id FROM locations WHERE name LIKE ${`% ${run}`}`
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
+    // Before the bookings: a payment that booked a place points at it.
+    await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM bookings WHERE workshop_id IN (${workshops}) OR client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
-    await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)

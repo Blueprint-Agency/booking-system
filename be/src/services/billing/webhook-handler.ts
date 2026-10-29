@@ -19,7 +19,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import { type RetryPolicy } from '../../lib/outbound'
 import { latestCharge, methodPatch } from './payment-methods'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
-import { soldTermsFromMetadata } from '../packages/sold-terms'
+import { CorruptSoldTermsError, soldListPriceFromMetadata } from '../packages/sold-terms'
 import { consumePromoCodeHold, refundPromoCodeRedemption } from '../packages/promo-redemption'
 import { returnLatePayment, unwindRefund, unwindRefundForTenant } from './refunds'
 import {
@@ -317,6 +317,20 @@ async function settleAndMayGrant(
   // Each part of a Part Payment is its own charge, so each keeps its own method.
   await bankPayment(tenantId, paymentIntentId, { ...receiptOf(charge), ...methodPatch(charge) })
   return false
+}
+
+/**
+ * A grant refused because the Purchase's stored terms are corrupt: one error
+ * line naming the Purchase, what was being granted and the key at fault, for a
+ * human to repair the record by hand. The error goes on up, so the delivery
+ * answers 500 and the provider redelivers.
+ */
+function reportCorruptTerms(err: unknown, context: Record<string, string>): void {
+  if (!(err instanceof CorruptSoldTermsError)) return
+  logger.error(
+    { ...context, key: err.key, value: err.value ?? null, reason: err.reason },
+    'stripe-webhook: a sale granted nothing because its frozen terms are corrupt, repair the Purchase and let the provider redeliver',
+  )
 }
 
 /**
@@ -670,13 +684,6 @@ async function dispatchStripeEvent(
         granted = await db.transaction(async () => {
           const hold = promoCodeId ? { promoCodeId, clientId } : null
           if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId, retry, hold))) return null
-          const terms = soldTermsFromMetadata(purchase.metadata as Record<string, string>)
-          if (!terms) {
-            logger.info(
-              { purchaseId: purchase.id, packageId },
-              'stripe-webhook: a sale checked out before its terms were frozen is granted from the catalogue row',
-            )
-          }
           return grantPackage(tenantId, {
             clientId,
             purchaseId: purchase.id,
@@ -695,10 +702,11 @@ async function dispatchStripeEvent(
             crossLocationPaidSgd: crossLocationSgd,
             // The money is in: an archive or an edit since checkout cannot
             // refuse it or change what it grants.
-            alreadySold: { terms },
+            alreadySold: { metadata: purchase.metadata as Record<string, string> },
           })
         })
       } catch (err) {
+        reportCorruptTerms(err, { purchaseId: purchase.id, packageId })
         if (!(err instanceof ConflictError && err.code === 'trial_already_used')) throw err
         await returnRefusedSale(tenantId, purchase.id, paymentIntentId, providerAccountId, retry)
         return
@@ -991,11 +999,16 @@ async function dispatchStripeEvent(
             paymentIntentId,
             purchaseId: purchase.id,
             amountSgd,
+            // The List Price checkout showed, off the Purchase's own copy and
+            // never the provider session's: an Admin's edit to the tier since
+            // cannot change what the place records.
+            frozenListPriceSgd: soldListPriceFromMetadata(purchase.metadata as Record<string, string>),
             appliedPromotionId,
             appliedPromoCodeId: promoCodeId,
           })
         })
       } catch (err) {
+        reportCorruptTerms(err, { purchaseId: purchase.id, workshopTierId })
         if (!(err instanceof NotFoundError && err.code === 'workshop_tier_not_found')) throw err
         await returnRefusedSale(tenantId, purchase.id, paymentIntentId, providerAccountId, retry)
         return
