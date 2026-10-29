@@ -1059,4 +1059,26 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
       IMPOSSIBLE_MOMENTS,
     )
   })
+
+  test('CAT-13 a from or to written as a bare calendar date is read as that day at midnight UTC, and one that is not a real day is refused 400', async () => {
+    // The Mindbody import's tests, and any caller before #501, send `from=2089-12-01`.
+    const dateOnly = (path: string, as: Who, label: string): Surface[] =>
+      (['from', 'to'] as const).map(field => ({
+        label: `GET ${label} ${field}`,
+        as,
+        send: v => ({ method: 'GET', path: query(path, { [field]: v }) }),
+        valid: '2026-01-31',
+      }))
+    await check(
+      [
+        ...dateOnly('/api/v1/me/classes', 'member', '/me/classes'),
+        ...dateOnly('/api/v1/public/classes', 'visitor', '/public/classes'),
+        ...dateOnly(portal('/admin/schedule'), 'admin', '/portal/admin/schedule'),
+        ...dateOnly(portal('/instructor/schedule'), 'instructor', '/portal/instructor/schedule'),
+        ...dateOnly(portal('/admin/finance'), 'admin', '/portal/admin/finance'),
+        ...dateOnly(portal('/admin/finance/overview'), 'admin', '/portal/admin/finance/overview'),
+      ],
+      IMPOSSIBLE_DATES,
+    )
+  })
 })
