@@ -16,7 +16,7 @@ const DAY = 24 * HOUR
 const RATE = '20.00'
 
 /**
- * Every kind of Purchase gets its Receipt the moment it is paid in full (#385),
+ * Every kind of Purchase gets its Receipt the moment it is paid in full,
  * including one that cost nothing; a part-paid one gets none until it settles,
  * and a Complimentary Package or an Abandoned Purchase never gets one.
  *
@@ -186,7 +186,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
   const post = (headers: Record<string, string>, path: string, body: unknown) =>
     harness.app.request(path, { method: 'POST', headers: { ...headers, ...json }, body: JSON.stringify(body) })
 
-  /** A member's checkout at `path`, naming their Billing details as every member purchase does (#402). */
+  /** A member's checkout at `path`, naming their Billing details as every member purchase does. */
   const checkout = async (who: Member, path: string, body: Record<string, unknown>) =>
     post(who.headers, path, await billed(harness.app, who.headers, body))
 

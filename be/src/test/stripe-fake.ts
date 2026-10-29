@@ -13,11 +13,11 @@ import {
  * patched, no key is needed. The accessor is asked for a client and hands back
  * this instead, so a test drives checkout, the webhook and refunds exactly as
  * the real code does — and can then read back *which account* each call was
- * made against, which is the fact a studio's own credentials (#100) turn on.
+ * made against, which is the fact a studio's own credentials turn on.
  */
 export type ProviderCall = {
   /**
-   * The account the client was bound to. Always a studio's own since #293;
+   * The account the client was bound to. Always a studio's own;
    * typed nullable only so a fake set up by hand can still be read back.
    *
    * The id, not the credentials: a test asserts which studio's account the
@@ -37,14 +37,13 @@ export type Reply = unknown | ((...args: unknown[]) => unknown)
 export type OwnAccount = { accountId: string; webhookPath: string }
 
 /**
- * Where a studio's own account delivers its webhooks (#100). The only Stripe
- * webhook endpoint there is: the platform account's shared one went with it
- * (#293).
+ * Where a studio's own account delivers its webhooks. The only Stripe
+ * webhook endpoint there is: the platform account has no shared one.
  */
 export const stripeWebhookPath = (slug: string): string => `/api/v1/webhooks/stripe/${slug}`
 
 /**
- * A webhook endpoint on one account, as the fake keeps it (#294). The shape is
+ * A webhook endpoint on one account, as the fake keeps it. The shape is
  * the part of Stripe's `WebhookEndpoint` the platform reads: `secret` is only
  * ever in the answer to `create`, as it is at Stripe.
  */
@@ -68,9 +67,9 @@ export type StripeFake = {
   /** What `method` answers with. An `Error` is thrown rather than returned. */
   reply(method: string, value: Reply): void
   /**
-   * Give a studio its own provider account (#100), so calls on its behalf are
+   * Give a studio its own provider account, so calls on its behalf are
    * recorded against that account. A studio not named here has none, and so
-   * takes no online payments (#293) — the same answer the real lookup gives a
+   * takes no online payments — the same answer the real lookup gives a
    * studio that has supplied no credentials.
    */
   credentials(tenantId: string, account: { accountId: string; secretKey?: string; webhookSecret?: string }): void

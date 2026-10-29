@@ -25,12 +25,12 @@ async function pdfText(bytes: Uint8Array): Promise<string> {
 }
 
 /**
- * The purchase confirmations carry the member's Receipt (#387): the four
+ * The purchase confirmations carry the member's Receipt: the four
  * confirmation emails a member already gets show the Receipt itemised under
  * the studio's own copy, attach it as a PDF named after its number, and link
  * the Receipt in the member's account, for a paid purchase and a free one.
  * Merch and a standalone Cross-Location Add-On, which had no confirmation,
- * send `purchase_receipt` carrying the same (#388).
+ * send `purchase_receipt` carrying the same.
  *
  * Asked over HTTP: a checkout, the provider's delivery to the studio's own
  * webhook (the Stripe fake stands in for the provider), then the email read

@@ -12,16 +12,16 @@ import {
 /**
  * Every link the backend hands a human names the studio the request is for.
  *
- * The platform used to have one `PORTAL_ORIGIN` and one `CLIENT_ORIGIN`, so it
- * had one studio's two hostnames and mailed them to everybody: staff invited to
- * the second studio were sent into the first studio's portal, where their
- * invitation does not exist; members of the second
- * studio were sent to the first studio's account page, which they cannot sign
- * into. Both are silent — nothing fails until somebody clicks.
+ * A single `PORTAL_ORIGIN` and `CLIENT_ORIGIN` would give the platform one
+ * studio's two hostnames to mail to everybody: staff invited to the second
+ * studio would be sent into the first studio's portal, where their invitation
+ * does not exist; members of the second studio would be sent to the first
+ * studio's account page, which they cannot sign into. Both are silent —
+ * nothing fails until somebody clicks.
  *
  * So the assertions are all of the same shape, and the negative half is the
  * load-bearing one: the *other* studio's hostname must appear nowhere, and
- * neither must the bare platform origin the old code produced.
+ * neither must a bare platform origin.
  */
 describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
@@ -61,7 +61,7 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
     schema = await import('../db/schema')
 
     // Fixtures in the SECOND studio, deliberately — tenant #1 is the one whose
-    // hostnames the deleted env vars used to name, so a leak there would look
+    // hostnames a single global origin would name, so a leak there would look
     // like a pass.
     const [inviter] = await harness.db
       .insert(schema.staffUsers)
@@ -89,7 +89,7 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
     memberId = member!.id
 
     // No receipt URL on the row, which is the case that falls back to the
-    // account page — the value that used to be a module constant built from the
+    // account page — which must be the studio's own, not a constant built from the
     // platform's `CLIENT_URL`.
     const [pkg] = await harness.db
       .insert(schema.clientPackages)
@@ -212,9 +212,8 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
       "the account link is on the buying studio's own app",
     )
     assert.ok(!body.includes(clientHost(one.slug)), "no link into another studio's app")
-    // `CLIENT_URL` defaulted to exactly this when `CLIENT_ORIGIN` was unset, and
-    // named tenant #1's app when it was set. Neither is a page this member can
-    // sign into.
+    // A platform-wide client origin, localhost or tenant #1's app, is not a page
+    // this member can sign into.
     assert.ok(!body.includes('http://localhost:3000/'), 'no platform-wide client origin')
   })
 })

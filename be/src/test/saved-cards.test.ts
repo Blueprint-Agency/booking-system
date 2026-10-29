@@ -9,7 +9,7 @@ const run = Date.now().toString(36)
 const DOMAIN = `${run}.saved-cards.test`
 
 /**
- * A member's saved cards (#185): listing them, and removing one, at the
+ * A member's saved cards: listing them, and removing one, at the
  * studio's own payment account and nowhere else.
  *
  * Written from PAY-48 to PAY-51 of the Scenario Inventory

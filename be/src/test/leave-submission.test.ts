@@ -32,7 +32,7 @@ const sgDate = (offsetDays: number) =>
   new Date(Date.now() + offsetDays * DAY + 8 * HOUR).toISOString().slice(0, 10)
 
 /**
- * Instructor leave SUBMISSION over real HTTP (#204): the instructor's own
+ * Instructor leave SUBMISSION over real HTTP: the instructor's own
  * `POST /portal/leave`, against real Postgres and a real sign-in.
  *
  * What is proven here is every rule that can refuse a request at the moment it

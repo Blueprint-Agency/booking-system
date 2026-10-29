@@ -6,9 +6,9 @@ import { memberFixtures } from './member-fixtures'
 
 /**
  * `memberFixtures().cleanup` is what every file that builds on the fixtures
- * runs in `after`. When it stopped at the first row it could not delete, every
- * row after that one survived into the next file, and one stuck row turned into
- * failures in tests that had nothing to do with it (#260).
+ * runs in `after`. It must not stop at the first row it cannot delete: every
+ * row after that one would survive into the next file, and one stuck row would
+ * turn into failures in tests that have nothing to do with it.
  */
 describe('member fixtures cleanup', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp

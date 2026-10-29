@@ -12,7 +12,7 @@ import {
 import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
- * Staff attention, the ClassPass kinds (#476, #484): `classpass_review` and
+ * Staff attention, the ClassPass kinds: `classpass_review` and
  * `classpass_overbooked`, read over HTTP as a signed-in admin or instructor.
  * Each test makes a studio of its own, so a count is about its own rows only.
  */

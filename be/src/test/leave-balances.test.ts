@@ -11,7 +11,7 @@ type LeaveType = (typeof LEAVE_TYPES)[number]
 
 /**
  * Leave Pools, balances, Assigned Days, the carry-over cap and the Global Policy
- * leave settings, over real HTTP against a real Postgres (#204).
+ * leave settings, over real HTTP against a real Postgres.
  *
  * The routes: the instructor's own `GET /portal/leave`, the admin
  * staff profile (`/portal/admin/staff`, which carries Assigned Days and this

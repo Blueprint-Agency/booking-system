@@ -9,7 +9,7 @@ import {
 } from './harness'
 
 /**
- * An admin manages a person's access from their detail view (#119), over real
+ * An admin manages a person's access from their detail view, over real
  * HTTP: the sessions a member or staff member holds at this studio, signing them
  * out everywhere, blocking and unblocking, and resending a staff invitation.
  * Each act is logged in `auth_events` as the acting staff member's.

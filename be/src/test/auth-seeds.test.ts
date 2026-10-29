@@ -4,8 +4,8 @@ import { eq } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 
 /**
- * The platform-admin bootstrap seed provisions the Better Auth user (#112),
- * stays safe to run on every deploy, and writes nothing else (#116).
+ * The platform-admin bootstrap seed provisions the Better Auth user,
+ * stays safe to run on every deploy, and writes nothing else.
  */
 describe('auth bootstrap seeds', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp

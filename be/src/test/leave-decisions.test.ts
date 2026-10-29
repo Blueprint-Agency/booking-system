@@ -12,7 +12,7 @@ const DOMAIN = `${run}.leave-decisions.test`
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
- * Deciding leave over real HTTP (#204): an admin approves, rejects and revokes;
+ * Deciding leave over real HTTP: an admin approves, rejects and revokes;
  * the instructor withdraws and cancels his own; the Supporting Document is
  * uploaded, signed and never leaks its key; the calendar redacts; and a mail
  * transport that fails never takes a decision down with it.

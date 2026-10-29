@@ -16,7 +16,7 @@ test('every client login table is set aside as deliberately unexported, with a r
 })
 
 test('a client login table stays accounted for once it carries tenant_id', () => {
-  // As the pool will look once logins are per studio.
+  // As the pool looks with logins per studio.
   const perStudioSessions = pgTable('client_auth_sessions', {
     tenantId: tenantIdColumn(),
     id: text('id').primaryKey(),

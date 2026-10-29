@@ -19,7 +19,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * Buying packages over real HTTP (#215): checkout, the payment provider's
+ * Buying packages over real HTTP: checkout, the payment provider's
  * webhook, and every rule checkout applies before a member is charged.
  *
  * Written from the PKG and PAY rows of the Scenario Inventory
@@ -258,7 +258,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
         },
       },
     }
-    // The studio's own endpoint (#293): the one whose member the session was for.
+    // The studio's own endpoint: the one whose member the session was for.
     const endpoint = options.endpoint ?? stripeWebhookPath(params.metadata.tenant_id === two.id ? two.slug : one.slug)
     return harness.app.request(endpoint, {
       method: 'POST',
@@ -298,7 +298,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
 
   /**
    * The fake provider, with both studios selling on accounts of their own —
-   * the only way a studio sells at all (#293).
+   * the only way a studio sells at all.
    */
   async function installFake(): Promise<StripeFake> {
     const installed = (await import('./stripe-fake')).installStripeFake()

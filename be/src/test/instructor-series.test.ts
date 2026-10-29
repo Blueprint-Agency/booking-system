@@ -5,7 +5,7 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 import { addDays, isoWeekday } from '../services/schedule/series-dates'
 
 /**
- * An instructor schedules for themselves (#319): a single class, a weekly
+ * An instructor schedules for themselves: a single class, a weekly
  * repeat (Class Series) and a PT session from a request. Whatever the body
  * names, the caller is the main instructor, nobody else is rostered, and pay is
  * left Unpriced for an admin to set from Finance's Needs pay filter. Extending

@@ -62,8 +62,8 @@ test('no template is a bare name (the §13 placeholder bug)', () => {
     // reads. The shell's own chrome — the studio's name in the mark and again
     // in the footer — comes out too, because it is the same on every template
     // and would otherwise pad a bare one over the bar. That padding is exactly
-    // what a longer studio name would have quietly bought before #66 made the
-    // name a variable.
+    // what a longer studio name would have quietly bought if it were written into
+    // the copy instead of being a variable.
     const prose = t.bodyHtml
       .replace(/<[^>]+>/g, ' ')
       .replace(/\{\{\w+\}\}/g, '')
@@ -80,7 +80,7 @@ test('no template is a bare name (the §13 placeholder bug)', () => {
 })
 
 /**
- * #66: the copy is the TENANT's, not the product's.
+ * The copy is the TENANT's, not the product's.
  *
  * The failure this rules out is the one the module started with — a studio name
  * baked into thirty templates, so every tenant's members read the first

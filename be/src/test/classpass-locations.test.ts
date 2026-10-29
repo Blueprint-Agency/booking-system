@@ -5,7 +5,7 @@ import { and, eq, inArray, like, or } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
 
 /**
- * ClassPass location mappings (#410): an Admin maps each name ClassPass gives
+ * ClassPass location mappings: an Admin maps each name ClassPass gives
  * a location in its emails to one of the studio's Locations. Driven through
  * the mapping service and the ClassPass page's routes.
  */

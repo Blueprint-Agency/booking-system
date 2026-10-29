@@ -279,7 +279,7 @@ describe('moving a studio between deployments', () => {
   })
 
   test('STF-33 an archive taken before Instructor Permissions existed restores every instructor with all three', options, async () => {
-    // Migration 0097 (#328) added `instructors.permissions`. An archive written
+    // Migration 0097 added `instructors.permissions`. An archive written
     // the day before has instructors rows without it, and must restore the way
     // the migration backfilled the database: every instructor holding all three.
     const source = await studioWithData(`prepermsrc-${Date.now()}`)
@@ -331,8 +331,8 @@ describe('moving a studio between deployments', () => {
 
   test('a studio copies into a second one beside it', options, async () => {
     // The ordinary operator flow: export studio A, create studio B, import into
-    // B — with A still on the platform the whole time. It used to break on the
-    // first platform-wide unique key it met.
+    // B — with A still on the platform the whole time. It must not break on the
+    // first platform-wide unique key it meets.
     const source = await studioWithData(`copysrc-${Date.now()}`)
     const archive = await transfer.exportTenant(source)
 
@@ -358,9 +358,9 @@ describe('moving a studio between deployments', () => {
       assert.ok(!originals.has(row.id), 'a copied row must not reuse the original row s id')
     }
 
-    // The login a member signs in with never travels in an archive (#229): each
+    // The login a member signs in with never travels in an archive: each
     // copied member names the login their email has in the client pool at the
-    // copy — logins are per studio (#231) — not the id the archive carried.
+    // copy — logins are per studio — not the id the archive carried.
     const accounts = await harness.db.execute<{ email: string; auth_user_id: string; login_id: string | null }>(sql`
     SELECT c.email, c.auth_user_id, u.id AS login_id
     FROM clients c LEFT JOIN client_auth_users u ON u.email = lower(c.email) AND u.tenant_id = c.tenant_id
@@ -476,7 +476,7 @@ describe('moving a studio between deployments', () => {
   })
 
   test('INV-14 a studio restored from its archive keeps its Receipts and their numbers, and its next Receipt takes the next number', options, async () => {
-    // Receipt numbers run on per studio with no gaps (#380). The counter is a
+    // Receipt numbers run on per studio with no gaps. The counter is a
     // studio row like any other: emptied with the studio, and only the archive
     // can bring it back. Without it the next sale would be numbered 1 again.
     const receipts = receiptFixtures(harness)
@@ -521,7 +521,7 @@ describe('moving a studio between deployments', () => {
   })
 
   test('INV-45 a studio restored from its archive keeps its receipt details; an archive made before it had any leaves the studio’s own', options, async () => {
-    // The receipt details (#391) are what the studio's next Receipt carries: a
+    // The receipt details are what the studio's next Receipt carries: a
     // restore that dropped them would number it R- and print none of them.
     const detailsAt = async (tenantId: string) => {
       const [row] = await harness.db.execute<Record<string, string | null>>(sql`

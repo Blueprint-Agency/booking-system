@@ -4,7 +4,7 @@ import { withEnv } from './with-env'
 
 /**
  * Every studio an Admin reads their attention in carries `payments_not_configured`
- * until ReserveToday connects its payments (#489). A test about some other kind
+ * until ReserveToday connects its payments. A test about some other kind
  * connects its studio's payments through the real service so that item is not
  * in its counts. Call `usePaymentKey()` inside the `describe`, then
  * `connectPayments(studioId)` for each studio.

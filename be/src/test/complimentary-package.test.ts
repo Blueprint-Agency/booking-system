@@ -4,7 +4,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { startTestApp, integrationTestsEnabled, inTenantContext, SKIP_REASON, type TestApp } from './harness'
 
 /**
- * The **Complimentary Package** (#176) — a catalogue package an admin gives at
+ * The **Complimentary Package** — a catalogue package an admin gives at
  * no charge — against a real database, because everything that makes a comp a
  * comp lives where the pure tests cannot reach it: it goes through the same
  * grant a sale does (so it lands Dormant and the Family and one-trial rules

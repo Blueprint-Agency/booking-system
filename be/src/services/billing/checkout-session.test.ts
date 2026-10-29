@@ -57,7 +57,7 @@ test('a total in cents becomes the numeric string the ledger stores', () => {
   assert.equal(toSgd(12_950), '129.50')
 })
 
-// --- Part Payment (#93) -----------------------------------------------------
+// --- Part Payment -----------------------------------------------------
 
 const LINES = [
   { name: 'Unlimited · 6 months', description: 'Acme Yoga', amountCents: 600_00 },
@@ -120,7 +120,7 @@ test('an unfinished sale can be named from its Purchase alone', () => {
   assert.equal(itemName([]), 'Purchase')
 })
 
-// --- Saved cards (#185) -----------------------------------------------------
+// --- Saved cards -----------------------------------------------------
 
 test('without a Customer the session is an email, exactly as it always was', () => {
   const params = checkoutSessionParams(sessionInput())
@@ -170,7 +170,7 @@ test('keeping the card makes a full-price checkout cards-only, and says so here'
 })
 
 test('PayNow survives a full payment that keeps no card — the default', () => {
-  // The acceptance line this protects: PayNow never appears on a Part Payment,
+  // PayNow never appears on a Part Payment,
   // and does appear on a full one. An untouched `payment_method_types` is what
   // lets the studio's own enabled methods through.
   const plain = checkoutSessionParams(sessionInput({ customerId: 'cus_1' }))

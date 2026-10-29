@@ -192,11 +192,10 @@ describe('tenant resolution', { skip: integrationTestsEnabled ? false : SKIP_REA
       { tenantId: two.id, corroborated: true },
     )
 
-    // And a request that claimed nothing is refused outright. It used to be
-    // handed tenant #1 with `corroborated: true` — nothing had been forged, so
-    // nothing was suspicious — which meant the one request that named no studio
-    // at all was the one request allowed to provision a membership in a studio
-    // it had never mentioned.
+    // And a request that claimed nothing is refused outright. Handing it tenant #1
+    // with `corroborated: true` — nothing has been forged, so nothing is
+    // suspicious — would let the one request that named no studio at all
+    // provision a membership in a studio it had never mentioned.
     const bare = await probe.request('/probe')
     assert.equal(bare.status, 400)
     assert.deepEqual(await bare.json(), { error: 'tenant_required' })

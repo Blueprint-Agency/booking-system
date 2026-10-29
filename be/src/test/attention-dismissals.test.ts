@@ -7,7 +7,7 @@ import { connectPayments, usePaymentKey } from './attention-payments'
 import { ownAccountId, stripeWebhookPath, type StripeFake } from './stripe-fake'
 
 /**
- * Staff attention, dismissals (#476, #482): an admin can dismiss a Needs-action
+ * Staff attention, dismissals: an admin can dismiss a Needs-action
  * item of a dismissable kind for the whole studio; the first such kind is
  * `part_payment_silent`, a part-paid Purchase the member has stopped paying
  * towards for 14 days. The item goes when the Purchase is refunded, paid in

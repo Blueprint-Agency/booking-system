@@ -7,7 +7,7 @@ import { CHECKOUT_RATE_LIMIT } from '../middleware/checkout-rate-limit'
 const run = Date.now().toString(36)
 
 /**
- * Checkout's own budget (#142), over real HTTP: tighter than the general
+ * Checkout's own budget, over real HTTP: tighter than the general
  * signed-in budget, and counted per member, not per address.
  */
 describe('checkout rate limit', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {

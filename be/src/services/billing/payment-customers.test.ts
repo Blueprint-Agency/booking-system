@@ -1,7 +1,7 @@
 /**
  * The two rules in `payment-customers.ts` that are decisions rather than
  * plumbing: what a member is told about their own card, and whether a card is
- * theirs at all (#185).
+ * theirs at all.
  *
  * Both are pure, and both are the kind of thing that breaks silently — one by
  * leaking a field, the other by letting a member detach somebody else's card —

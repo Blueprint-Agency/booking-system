@@ -21,7 +21,7 @@ const DOMAIN = `${run}.corporate-checkout.test`
 const NAME = `CorpCheckout ${run}`
 
 /**
- * Buying a corporate package (#374; fe-client-features §6.2, be-client
+ * Buying a corporate package (fe-client-features §6.2, be-client
  * `POST /checkout/package` and § Corporate branch, admin-restructure §9b).
  *
  * A corporate package is paid by card on the studio's own account, at its

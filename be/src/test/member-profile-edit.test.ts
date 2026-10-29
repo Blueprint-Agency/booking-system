@@ -5,10 +5,10 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 import { memberFixtures, type Staff, type Tenant } from './member-fixtures'
 
 /**
- * A Member's profile (#281): an admin edits name, gender and phone from the
+ * A Member's profile: an admin edits name, gender and phone from the
  * customer page, and a Member sets their own gender.
  *
- * Over the real routes, like the email change (#176) beside it: the admin edit
+ * Over the real routes, like the email change beside it: the admin edit
  * is refused to an instructor by the role gate, to another studio's admin by
  * the Tenant scope, and for a blocked Member by the service — three different
  * layers, each of which only an HTTP request passes through.

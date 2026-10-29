@@ -8,7 +8,7 @@ import type { TestApp } from './harness'
 
 /**
  * A member with a row in every table `MEMBER_TABLES` lists, for the tests of the
- * features that read that list: member export (#143) and member deletion (#144).
+ * features that read that list: member export and member deletion.
  *
  * Rows are made by `insertRow`, which reads the table's shape from the catalogue
  * and fills whatever the table requires, parents included. So a table added to
@@ -29,7 +29,7 @@ export function memberFixtures(harness: TestApp, schema: typeof Schema, domain: 
 
   const staffAt = async (tenant: Tenant, email: string, role: 'admin' | 'instructor'): Promise<Staff> => {
     const headers = await harness.signInAs('staff', email, tenant)
-    // This studio's login for them: logins are per studio (#231).
+    // This studio's login for them: logins are per studio.
     const [user] = await harness.db
       .select()
       .from(schema.staffAuthUsers)

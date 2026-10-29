@@ -16,7 +16,7 @@ const DAY = 24 * HOUR
 const T = new Date('2031-03-10T04:00:00Z')
 
 /**
- * When a package starts and ends, over real HTTP (#215): Activation on the
+ * When a package starts and ends, over real HTTP: Activation on the
  * first booking it pays for, which package pays when a member holds several,
  * and what an Admin's hand on a package's expiry or Home Location does.
  *

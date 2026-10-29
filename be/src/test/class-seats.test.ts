@@ -12,7 +12,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * Seats over HTTP (#307, spec-waitlist.md §2, §7, §10).
+ * Seats over HTTP (spec-waitlist.md §2, §7, §10).
  *
  * A class has online seats members book and buffer seats staff fill;
  * attendance capacity is their sum and the waitlist is not a seat. Staff book a

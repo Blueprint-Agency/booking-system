@@ -36,7 +36,7 @@ export const paidWith = (type: string): PaymentDetails => ({ type })
 export function checkoutWebhook(harness: TestApp, schema: typeof Schema, fake: StripeFake) {
   const run = randomUUID().slice(0, 8)
   const tenantId = harness.tenants.one.id
-  // The studio sells on its own account (#293): the one that signs the delivery
+  // The studio sells on its own account: the one that signs the delivery
   // and that each payment is recorded against.
   const { accountId } = fake.ownAccount(harness.tenants.one)
   const clientIds: string[] = []

@@ -6,7 +6,7 @@ import type { ReceiptRow } from '../services/receipts/issue'
 import type { TestApp } from './harness'
 
 /**
- * A Receipt issued for a member the one way any is (#380): a Purchase settled
+ * A Receipt issued for a member the one way any is: a Purchase settled
  * as paid, its card payment banked, then `issueReceipt` inside the studio's
  * own transaction, as the webhook's paid class package calls it. For the
  * features that keep a studio's Receipts through something else happening —
@@ -23,7 +23,7 @@ export function receiptFixtures(harness: TestApp) {
    * A ten pack at S$150.00 less a S$15.00 code, paid by a Visa ending 4242;
    * or, with `kind` and `item`, another kind of sale under another name at the
    * same price; with `billTo`, billed to that name and address, as a checkout
-   * naming the member's Billing details opens its Purchase (#401).
+   * naming the member's Billing details opens its Purchase.
    */
   const issueFor = async (
     tenantId: string,

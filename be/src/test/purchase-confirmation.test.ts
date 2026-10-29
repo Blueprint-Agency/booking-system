@@ -16,7 +16,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * A member's purchase confirmation is their receipt (#370): every purchase kind
+ * A member's purchase confirmation is their receipt: every purchase kind
  * sends exactly one, on the template for its kind, carrying the amount the
  * member actually paid (NTF-03); and what it says about validity is true of the
  * package it confirms (NTF-04).
@@ -425,7 +425,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
 
   /* ── corporate ──────────────────────────────────────────────────────── */
 
-  /** The member's one Receipt, as their account lists it: what the email's receipt link opens (#387). */
+  /** The member's one Receipt, as their account lists it: what the email's receipt link opens. */
   async function onlyReceiptOf(who: Member): Promise<{ id: string }> {
     const listed = await expectStatus(await harness.app.request('/api/v1/me/receipts', { headers: who.headers }), 200)
     assert.equal(listed.receipts.length, 1, 'exactly one Receipt')

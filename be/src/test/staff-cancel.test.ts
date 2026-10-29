@@ -15,7 +15,7 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * A staff member cancels one member's class booking from the portal (#320):
+ * A staff member cancels one member's class booking from the portal:
  * an admin on any class, an instructor on a class they lead. Every staff cancel
  * chooses — Return credit or Keep credit — and neither the window nor the cap
  * chooses for them; a staff cancel never counts toward the member's cap.
@@ -461,7 +461,7 @@ describe('staff cancel of a member booking over HTTP', { skip: integrationTestsE
     assert.equal(roster.attendees.find((a: any) => a.booking_id === halBooking).cancel_preview, null)
   })
 
-  /* ── who cancelled (#350) ───────────────────────────────────────────── */
+  /* ── who cancelled ───────────────────────────────────────────── */
 
   test('CXL-60 a staff cancel records which staff member cancelled; a member’s own cancel records none', async () => {
     const t0 = aWeekOut()
@@ -544,7 +544,7 @@ describe('staff cancel of a member booking over HTTP', { skip: integrationTestsE
     assert.deepEqual([record?.source, record?.cancelledByStaffId], ['system', null])
   })
 
-  /* ── the profile's Cancelled tab and the roster's Cancelled section (#352) ── */
+  /* ── the profile's Cancelled tab and the roster's Cancelled section ── */
 
   const profileOf = async (who: Member) =>
     expectStatus(

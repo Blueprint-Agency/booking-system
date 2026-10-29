@@ -190,7 +190,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
     const { withTenant, db } = await import('../db')
     const { clients } = await import('../db/schema/identity')
 
-    // Deliberately no `where`. This is the bug the whole ticket is about: a
+    // Deliberately no `where`. This is the bug: a
     // developer writes a list query and forgets the tenant. Under the policies
     // it is not a leak, it is a narrower answer.
     const seenByTenantOne = await withTenant(oneId, () =>

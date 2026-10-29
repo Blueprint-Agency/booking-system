@@ -8,7 +8,7 @@ const DOMAIN = `${run}.email-switches.test`
 const EMAILS_PATH = '/api/v1/portal/admin/emails'
 
 /**
- * A studio switches individual emails off and on (#467): the admin API that
+ * A studio switches individual emails off and on: the admin API that
  * lists and changes them, and the one send path that honours them. A
  * switched-off email is not sent and leaves a `skipped` row in `email_log`; a
  * locked one is sent whatever is stored.

@@ -19,7 +19,7 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * The ClassPass Daily Roster check (#415): ClassPass's `ClassPass Daily
+ * The ClassPass Daily Roster check: ClassPass's `ClassPass Daily
  * Roster` email lists, per listing, each class with the names of the members
  * coming. It is compared with the ClassPass bookings held on those classes at
  * the mapped Location, and every difference is shown on the ClassPass page:

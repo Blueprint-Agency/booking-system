@@ -13,10 +13,10 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * Front-desk check-in over real HTTP (#192): a member's QR or typed code,
+ * Front-desk check-in over real HTTP: a member's QR or typed code,
  * scanned by staff, ticks them `attended` on the roster.
  *
- * Every rule the ticket names has a test here — the scan by token and by code,
+ * Every rule of check-in has a test here — the scan by token and by code,
  * the idempotent second scan, the Check-in Window either side, the refusals
  * (unknown, cancelled booking, cancelled class, wrong day, another studio's
  * code, an instructor on somebody else's class), and today's roster.

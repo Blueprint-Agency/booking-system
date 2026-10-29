@@ -5,7 +5,7 @@ import path from 'node:path'
 import { transformMindbody } from './transform'
 
 /**
- * A Member's gender (#281): Retention Management is the one report that holds
+ * A Member's gender: Retention Management is the one report that holds
  * it, and only for members with a membership. Where it has F or M the Member
  * comes across female or male; everyone else comes across with none, never a
  * default. The preflight counts how many came across with one.

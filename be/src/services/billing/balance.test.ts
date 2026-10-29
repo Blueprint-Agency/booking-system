@@ -84,7 +84,7 @@ test('an overpayment owes nothing rather than less than nothing', () => {
   assert.equal(isSettled(100_00, 150_00), true)
 })
 
-// ── what a Refund still has to give back (#92) ───────────────────────────────
+// ── what a Refund still has to give back ───────────────────────────────
 
 test('a Refund of a purchase settled by one payment has one call to make', () => {
   const held = heldPayments([payment('pi_1', '129.00')])

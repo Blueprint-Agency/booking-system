@@ -6,7 +6,7 @@ import { sgInstant, sgToday } from '../lib/time'
 import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
- * Staff attention, instructor pay (#476, #486): `instructor_pay_missing`, one
+ * Staff attention, instructor pay: `instructor_pay_missing`, one
  * aggregated line for admins counting completed sessions with no instructor pay
  * since the first day of the previous month. Every test makes a studio of its
  * own and holds the clock at one instant.

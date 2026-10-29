@@ -5,7 +5,7 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
- * Staff attention, staff logins (#476, #487): `staff_invitation_expired`,
+ * Staff attention, staff logins: `staff_invitation_expired`,
  * `staff_email_change_expired` and `staff_without_email`, read over HTTP.
  * Every test makes a studio of its own, so a count says only what it filed.
  */

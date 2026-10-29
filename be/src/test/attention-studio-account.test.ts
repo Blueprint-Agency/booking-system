@@ -6,7 +6,7 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 import { withEnv } from './with-env'
 
 /**
- * Staff attention, the studio's account (#476, #489): `studio_term_ending` and
+ * Staff attention, the studio's account: `studio_term_ending` and
  * `payments_not_configured`, read over HTTP. Only ReserveToday can act on them,
  * so neither has a link. Every test makes a studio of its own.
  */

@@ -14,11 +14,11 @@ import {
 import { addDays, isoWeekday } from '../services/schedule/series-dates'
 
 /**
- * Instructor Permissions (#327, be/docs/adr/0012): three switches an Admin sets
+ * Instructor Permissions (be/docs/adr/0012): three switches an Admin sets
  * per Instructor. This file proves them end to end over HTTP — read and set
  * through the staff API, enforced on the instructor's routes, felt on the next
  * request — and that everything an Instructor needs to teach is untouched:
- * **Schedule classes** (#328) on the schedule, **Take PT bookings** (#330) on
+ * **Schedule classes** on the schedule, **Take PT bookings** on
  * the PT request queue.
  *
  * Each run gets studios of its own, provisioned the way the super portal does
@@ -277,11 +277,11 @@ describe('Instructor Permissions', { skip: integrationTestsEnabled ? false : SKI
   const ptSchedule = (studio: Studio, who: Staff, id: string) =>
     send(`/portal/instructor/pt-requests/${id}/schedule`, who.headers, 'POST', ptSlot(studio, nextPtStart()))
   const ptCancel = (who: Staff, id: string) => send(`/portal/instructor/pt-requests/${id}/cancel`, who.headers, 'POST')
-  // A manual session (#334) puts a PT session on the caller's calendar, so it is
+  // A manual session puts a PT session on the caller's calendar, so it is
   // Take PT bookings' too. The permission is judged before the body, so an
   // empty body is enough to see the refusal.
   const ptManual = (who: Staff) => send('/portal/instructor/pt-requests/manual', who.headers, 'POST', {})
-  // The manual session's own reads and writes (#335, #337): the seat-candidates
+  // The manual session's own reads and writes: the seat-candidates
   // read and adding or removing a member. Same permission, judged first.
   const NIL = '00000000-0000-4000-8000-000000000000'
   const ptSeatCandidates = (who: Staff) => send('/portal/instructor/pt-requests/seat-candidates', who.headers)
@@ -641,7 +641,7 @@ describe('Instructor Permissions', { skip: integrationTestsEnabled ? false : SKI
     await json(await createClass(b, atB), 201)
   })
 
-  /* ── Manage rosters (#331) ─────────────────────────────────────────── */
+  /* ── Manage rosters ─────────────────────────────────────────── */
 
   let members = 0
   /** A member of `studio` holding a 10-credit bundle, so any seat or line place can be paid. */
@@ -707,7 +707,7 @@ describe('Instructor Permissions', { skip: integrationTestsEnabled ? false : SKI
   /** The seven roster actions the Manage rosters switch governs, on the instructor mount. */
   const rosterActions = (who: Staff, classId: string) => ({
     search: (q: string) => send(`/portal/instructor/clients?q=${encodeURIComponent(q)}`, who.headers),
-    // The member's packages for the class (#333): Add member's read, so Manage rosters' too.
+    // The member's packages for the class: Add member's read, so Manage rosters' too.
     packages: (clientId: string) =>
       send(`/portal/instructor/schedule/classes/${classId}/packages?client_id=${clientId}`, who.headers),
     book: (clientId: string) =>

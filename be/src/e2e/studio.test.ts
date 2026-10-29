@@ -5,7 +5,7 @@ import { harnessAddress, integrationTestsEnabled, SKIP_REASON, startTestApp, typ
 import { withEnv } from '../test/with-env'
 
 /**
- * The throwaway studio the browser journeys run in (#145).
+ * The throwaway studio the browser journeys run in.
  *
  * What is proven here is what the journeys cannot see for themselves: that the
  * studio is complete enough to buy, book, schedule and cancel in; that the

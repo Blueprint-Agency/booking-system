@@ -15,8 +15,8 @@ const BUNDLE_NAME = `Gates pass ${run}`
 const HOUR = 60 * 60 * 1000
 
 /**
- * The super portal and the studios, kept out of each other over real HTTP
- * (#364): a platform session cannot act inside a studio, a studio session
+ * The super portal and the studios, kept out of each other over real HTTP:
+ * a platform session cannot act inside a studio, a studio session
  * cannot see the platform, and neither has a way to rewrite a studio's audit
  * trail.
  *
@@ -403,7 +403,7 @@ describe('super portal gates', { skip: integrationTestsEnabled ? false : SKIP_RE
     // fields in the body. The portal's as the admin and as the instructor, the
     // platform's as the Platform administrator.
     //
-    // No act deletes an audit row (#375, docs/adr/0008). Two touch them, each as
+    // No act deletes an audit row (docs/adr/0008). Two touch them, each as
     // a consequence of deleting something else, never an audit row on its own
     // (and an audit row's id names neither): permanently deleting a member keeps
     // the trail about them with their personal data replaced (AUD-07,

@@ -40,7 +40,7 @@ const HOME = { name: 'Mia Tan', line1: '8 Orchard Road', city: 'Singapore', post
 const HOME_LINES = ['Mia Tan', '8 Orchard Road', 'Singapore 238823', 'Singapore']
 
 /**
- * A paid checkout bills the member's chosen Billing details (#401): the set is
+ * A paid checkout bills the member's chosen Billing details: the set is
  * copied onto the Purchase when it opens and from it onto the Receipt, which
  * shows it as **Bill to**, with the member's email, in its JSON, its `html`,
  * its PDF and the confirmation email alike. Editing or deleting the set later

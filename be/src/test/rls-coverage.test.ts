@@ -119,7 +119,7 @@ describe('row-level security coverage', () => {
   })
 
   test('the studio pools\' auth tables are policed, and the platform pool\'s are not', options, async () => {
-    // Logins are per studio (#231, ADR 0006): the `staff` and `client` tables carry
+    // Logins are per studio (ADR 0006): the `staff` and `client` tables carry
     // a `tenant_id` and the sweep fences them like any studio row. The `platform`
     // pool's must not: the super portal has no Tenant, so a policy there would hide
     // every operator's login and session. See db/schema/auth.ts.

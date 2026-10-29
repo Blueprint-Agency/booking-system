@@ -164,7 +164,7 @@ assert.strictEqual(
 
 // --- activation expiry ------------------------------------------------------
 // The ONE rule for a package's end date: the moment it Activates plus the
-// length frozen on it. Nothing stamps an expiry at purchase any more.
+// length frozen on it. Nothing stamps an expiry at purchase.
 
 assert.strictEqual(
   activationExpiry(
@@ -203,7 +203,7 @@ assert.strictEqual(
 )
 
 // A length frozen before the catalogue capped it can be past what a Date holds
-// (#245: a 2,000,000,000-day bundle). It runs the longest length a package may
+// (a 2,000,000,000-day bundle). It runs the longest length a package may
 // carry instead of yielding an Invalid Date that throws once serialised.
 assert.strictEqual(
   activationExpiry({ kind: 'credit_bundle', durationMonths: null, validityDays: 2_000_000_000 }, NOW)?.toISOString(),

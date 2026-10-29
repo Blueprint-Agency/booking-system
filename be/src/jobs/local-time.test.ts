@@ -51,7 +51,7 @@ import { SLOT_CRON, SLOT_MINUTES, localClock, isDailySlot } from './local-time'
   assert.equal(sg.length, 1, 'Asia/Singapore fires once a day')
   assert.deepEqual(localClock('Asia/Singapore', sg[0]!), { hour: 1, minute: 0 })
 
-  // The whole point of the ticket: a studio outside Singapore.
+  // A studio outside Singapore.
   const ny = firedAt('America/New_York')
   assert.equal(ny.length, 1, 'America/New_York fires once a day')
   assert.deepEqual(localClock('America/New_York', ny[0]!), { hour: 1, minute: 0 })

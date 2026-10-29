@@ -12,8 +12,8 @@ import {
 
 /**
  * Tenant isolation across every migrated surface — identity, policy, catalog and
- * schedule (#60), and the transactional core: bookings, check-ins, packages, the
- * credit ledger, finance and billing (#61).
+ * schedule, and the transactional core: bookings, check-ins, packages, the
+ * credit ledger, finance and billing.
  *
  * Two halves, for one reason:
  *
@@ -23,12 +23,11 @@ import {
  *   SQL. Tenant `acme` asking for classes, locations, instructors, class types
  *   or merch must never see northwind's.
  *
- * - **Writes go through the services.** These were written while every portal
- *   route sat behind a vendor JWT this harness could not mint, so the refusals are
- *   asserted one layer below the HTTP boundary, on exactly the functions those
- *   routes call, with the tenant the route would have passed. The harness's
- *   `signInAs` now signs in for real (#113); the signed-in half of isolation —
- *   a session from one studio refused at another — is `isolation-sessions.test.ts`.
+ * - **Writes go through the services.** The refusals are asserted one layer
+ *   below the HTTP boundary, on exactly the functions the portal routes call,
+ *   with the tenant the route would have passed. The signed-in half of
+ *   isolation — a session from one studio refused at another — is
+ *   `isolation-sessions.test.ts`.
  */
 
 const SOON = () => new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
@@ -194,7 +193,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
       classId: cls.id,
     })
 
-    // The remaining-surfaces batch (#62): a workshop with one day and one tier,
+    // The remaining-surfaces batch: a workshop with one day and one tier,
     // and one pending leave request. Both are far enough out that the fixture
     // class cannot clash with them — a room conflict or a leave clash would
     // stand in for the tenant refusal these tests are about.
@@ -536,24 +535,20 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
   })
 
   test('a request that names no tenant is refused, not answered as tenant #1', async () => {
-    // This asserted the opposite while the platform still had one studio, and
-    // the assertion was the bug: answering as tenant #1 meant a caller that
-    // forgot to say whose data it wanted got northwind's, plausibly and
-    // silently. Nothing legitimate lands here — health, the webhooks, the super
-    // portal and tenant lookup are exempted before this middleware runs — so the
-    // absence is always a caller bug and 400 is what surfaces it.
+    // Answering as tenant #1 would mean a caller that forgot to say whose
+    // data it wanted got northwind's, plausibly and silently. Nothing legitimate
+    // lands here — health, the webhooks, the super portal and tenant lookup are
+    // exempted before this middleware runs — so the absence is always a caller
+    // bug and 400 is what surfaces it.
     const res = await harness.app.request('/api/v1/public/class-types')
     assert.equal(res.status, 400)
     assert.deepEqual(await res.json(), { error: 'tenant_required' })
   })
 
   test('a write that names no tenant is refused', async () => {
-    // The inverse of what the expand phase asserted here. While the services
-    // were being scoped batch by batch, `tenant_id` defaulted to tenant #1 so an
-    // un-migrated writer kept behaving as it always had. Every batch has landed,
-    // so #63 dropped that default — and a default that silently files somebody
-    // else's booking under the first tenant is exactly the quiet failure the plan
-    // exists to avoid. The write now fails at the database instead.
+    // `tenant_id` has no default: a default that silently files somebody else's
+    // booking under the first tenant is exactly the quiet failure the plan exists
+    // to avoid. The write fails at the database instead.
     await assert.rejects(
       () =>
         harness.db
@@ -1120,7 +1115,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
 
   test('a payment record carries its tenant, and the unwind reads it off there', async () => {
     // The provider's event names an intent and nothing else, so the payment row
-    // is where the tenant has to come from — and since #92 the payment is also
+    // is where the tenant has to come from — and the payment is also
     // the only route to the Purchase everything else routes on. Both studios
     // hold a purchase of the same shape; refunding one must not touch the other.
     const intent = 'pi_isolation_refund'
@@ -1183,7 +1178,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     }
   })
 
-  // ── workshops (#62) ───────────────────────────────────────────────────────
+  // ── workshops ───────────────────────────────────────────────────────
 
   /**
    * Studio two's fixture member, signed in on its member app. Workshops are
@@ -1311,7 +1306,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.ok(day, "northwind's workshop day was deleted from acme")
   })
 
-  // ── PT (#62) ──────────────────────────────────────────────────────────────
+  // ── PT ──────────────────────────────────────────────────────────────
 
   test("a PT request cannot be filed against another tenant's package", async () => {
     await assert.rejects(
@@ -1383,7 +1378,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.equal(notFound.found, false)
   })
 
-  // ── leave (#62) ───────────────────────────────────────────────────────────
+  // ── leave ───────────────────────────────────────────────────────────
 
   test("leave pools and requests belong to the staff member's own studio", async () => {
     // A Pool is materialised under the staff member's lock, so a cross-tenant
@@ -1476,7 +1471,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     )
   })
 
-  // ── content and the switchboard (#62) ─────────────────────────────────────
+  // ── content and the switchboard ─────────────────────────────────────
 
   test('every tenant owns its own email templates, waiver and home page', async () => {
     for (const table of [schema.emailTemplates, schema.waiver, schema.marketingContent]) {

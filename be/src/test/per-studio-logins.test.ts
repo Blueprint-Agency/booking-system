@@ -12,7 +12,7 @@ import {
 } from './harness'
 
 /**
- * Per-studio logins (#231): the same email at two studios is two accounts.
+ * Per-studio logins: the same email at two studios is two accounts.
  *
  * Each studio's member app and portal has its own login for an address — its
  * own password, sign-up codes and set-password links — and nothing done at one

@@ -1,5 +1,5 @@
 /**
- * A delivery arriving on one studio's own webhook endpoint (#100).
+ * A delivery arriving on one studio's own webhook endpoint.
  *
  * The signatures here are real ones — computed the way the provider computes
  * them and checked by the provider's own library — because the property under
@@ -79,7 +79,7 @@ describe("a delivery on a studio's own endpoint", () => {
   })
 
   /**
-   * The account comes back **with** the event (#97), because here is where the
+   * The account comes back **with** the event, because here is where the
    * signature proved it: the secret that verified this body is this account's.
    * Every payment the delivery writes is stamped with it, so a Refund years
    * later is issued on the account the money came in on.
@@ -123,7 +123,7 @@ describe("a delivery on a studio's own endpoint", () => {
   test('a studio with no account of its own accepts nothing here', async () => {
     const fake = install()
 
-    // It takes no online payments (#293), so nothing can be delivered for it.
+    // It takes no online payments, so nothing can be delivered for it.
     // Falling back to any other secret would be the second attempt this must
     // never make.
     assert.equal(await subject.verifyTenantDelivery(STUDIO_A, BODY, signed(BODY, SECRET_A)), null)

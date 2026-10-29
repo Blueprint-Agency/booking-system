@@ -37,7 +37,7 @@ const COMPANY = {
 const COMPANY_LINES = ['Harbour Analytics Sdn Bhd', '12 Jalan Ampang', 'Level 8', 'Kuala Lumpur Wilayah Persekutuan 50450', 'Malaysia']
 
 /**
- * The Receipt laid out as a business receipt (#403, spec #397): the title with
+ * The Receipt laid out as a business receipt: the title with
  * the studio's logo or Business name, the facts (Receipt number, Date paid,
  * Registration), the studio and Bill to side by side, a headline of what was
  * paid and when, the lines, totals ending in Amount paid, and a Payment

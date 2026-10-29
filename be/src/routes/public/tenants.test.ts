@@ -94,11 +94,9 @@ describe('public slug resolution', { skip: integrationTestsEnabled ? false : SKI
   test('a row written without a tenant is refused, not quietly claimed', async () => {
     const { classTypes } = await import('../../db/schema/catalog')
 
-    // Until #63 this was the opposite test: `tenant_id` defaulted to tenant #1
-    // and a seed pass claimed anything that slipped through as an explicit null.
-    // The contract migration dropped both the default and the claiming pass, so
-    // an insert that does not name its tenant now fails at the database instead
-    // of filing somebody else's row under the first tenant.
+    // `tenant_id` has no default and no pass claims a stray null, so an insert
+    // that does not name its tenant fails at the database instead of filing
+    // somebody else's row under the first tenant.
     await assert.rejects(
       () =>
         harness.db
@@ -117,10 +115,9 @@ describe('public slug resolution', { skip: integrationTestsEnabled ? false : SKI
   })
 
   test('a public route reached without a tenant is refused', async () => {
-    // The pre-tenancy compatibility path, retired. A public route is public
+    // A public route is public
     // about *a studio* — there is no platform-wide list of locations to return —
-    // so a request that names none is asking a question with no answer. It used
-    // to be handed tenant #1's.
+    // so a request that names none is asking a question with no answer.
     const res = await harness.app.request('/api/v1/public/locations')
     assert.equal(res.status, 400)
     assert.deepEqual(await res.json(), { error: 'tenant_required' })

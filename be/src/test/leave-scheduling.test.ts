@@ -11,8 +11,8 @@ import {
 import { buyCorporatePackage, forgetPurchases } from './corporate-purchase'
 
 /**
- * Leave occupying the schedule, and an instructor cancelling his own class
- * (#204), over real HTTP with real sign-in.
+ * Leave occupying the schedule, and an instructor cancelling his own class,
+ * over real HTTP with real sign-in.
  *
  * spec-instructor-leave.md §The clash rule: pending and approved leave Occupy
  * the instructor on every scheduling write path — class create/edit (admin and
@@ -293,7 +293,7 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
   /**
    * A corporate session comes only from scheduling a member's Corporate Request
    * (CORP-12), so the fixture is the request, made the way a member makes one:
-   * by paying for the package (#374).
+   * by paying for the package.
    */
   const corporateRequest = () =>
     buyCorporatePackage(harness, schema, corporateMember, harness.tenants.one, corporatePackageId)

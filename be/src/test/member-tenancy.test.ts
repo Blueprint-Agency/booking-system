@@ -19,7 +19,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * A member's studio is the only studio their requests can see or touch (#368).
+ * A member's studio is the only studio their requests can see or touch.
  *
  * Two studios, each with its own catalogue, Locations, staff and members, and
  * the same person a member of both. Every test acts over HTTP on one studio's
@@ -172,7 +172,7 @@ describe('a member sees and touches only their own studio', { skip: integrationT
         capacityOnline: 10,
       })
       .returning({ id: schema.workshopDays.id })
-    // A tier, so the workshop is on sale: members are not offered one without (#235).
+    // A tier, so the workshop is on sale: members are not offered one without.
     const [tier] = await harness.db
       .insert(schema.workshopTiers)
       .values({ tenantId: tenant.id, workshopId: workshop!.id, name: 'Full', regularPriceSgd: '80.00', ord: 1 })

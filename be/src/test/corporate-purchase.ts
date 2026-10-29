@@ -7,7 +7,7 @@ import { stripeWebhookPath, type StripeFake } from './stripe-fake'
 import { TEST_ADDRESS } from './billing-details-fixture'
 
 /**
- * A Corporate Request, made the only way a member can make one (#374): by paying
+ * A Corporate Request, made the only way a member can make one: by paying
  * for a corporate package. The provider's `checkout.session.completed` for the
  * sale, delivered to the studio's own webhook endpoint, with the Stripe fake
  * standing in for the provider.
@@ -21,7 +21,7 @@ const PROVIDER_SIGNATURE = 't=1,v1=corporate-purchase'
 
 /**
  * The fake provider, ready to sell: both fixture studios on accounts of their
- * own (#293), a Customer for whoever asks, a session for every checkout, and a
+ * own, a Customer for whoever asks, a session for every checkout, and a
  * signature check that passes `PROVIDER_SIGNATURE` alone.
  */
 export async function sellingFake(harness: TestApp): Promise<StripeFake> {
@@ -109,7 +109,7 @@ export const deliverTo = (harness: TestApp, slug: string, event: unknown, signat
  * The sale is priced and named by the real checkout service, and its payment
  * delivered over HTTP to the studio's own webhook endpoint — the path that
  * makes the request. The checkout route itself is skipped: it is rate-limited
- * per member (#142), and a file that needs a dozen requests for one member
+ * per member, and a file that needs a dozen requests for one member
  * would run out. `corporate-checkout.test.ts` covers the route.
  *
  * Installs the fake for the purchase and puts the real provider back after,
@@ -137,7 +137,7 @@ export async function buyCorporatePackage(
     const before = await requestsOf()
 
     const checkout = inTenantContext(await import('../services/corporate/checkout'))
-    // Every member purchase is billed to Billing details (#402); the route
+    // Every member purchase is billed to Billing details; the route
     // resolves the member's set, and the service is handed its address.
     const quote = await checkout.beginCorporateCheckout(tenant.id, who.clientId, packageId, {
       name: 'Test Member',

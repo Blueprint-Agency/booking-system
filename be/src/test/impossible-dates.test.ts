@@ -19,7 +19,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * A date that does not exist, over real HTTP (#501).
+ * A date that does not exist, over real HTTP.
  *
  * Every form and filter that takes a date or a moment in time is sent values
  * that are not on the calendar. Each must answer `400`, write nothing, and leave
@@ -1061,7 +1061,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
   })
 
   test('CAT-13 a from or to written as a bare calendar date is read as that day at midnight UTC, and one that is not a real day is refused 400', async () => {
-    // The Mindbody import's tests, and any caller before #501, send `from=2089-12-01`.
+    // The Mindbody import's tests, and any caller that sends a bare date, send `from=2089-12-01`.
     const dateOnly = (path: string, as: Who, label: string): Surface[] =>
       (['from', 'to'] as const).map(field => ({
         label: `GET ${label} ${field}`,

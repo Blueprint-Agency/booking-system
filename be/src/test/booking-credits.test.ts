@@ -16,7 +16,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * Class booking and the credit ledger, over real HTTP (#213): what booking a
+ * Class booking and the credit ledger, over real HTTP: what booking a
  * class does to a member's balance — a Credit Bundle or trial pays the class's
  * credit cost, an Activated Unlimited Plan pays nothing — every refusal, and
  * what a cancellation or an admin's hand on the balance puts back.
@@ -1082,7 +1082,7 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
     const max = await member(one, 'topper')
     const bundle = await give(one, max, 'credit_bundle', { credits: 5 })
 
-    // The four from #240: past the column's range, and one that only overflows once added to the balance.
+    // Past the column's range, and one that only overflows once added to the balance.
     for (const res of [
       await adjust(one.admin.headers, max, bundle, { delta: 2_147_483_647, reason: 'huge' }),
       await adjust(one.admin.headers, max, bundle, { delta: 999_999_999_999, reason: 'huger' }),
@@ -1147,7 +1147,7 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
 
     const stripe = (await import('./stripe-fake')).installStripeFake()
     try {
-      // Paid on the studio's own account — the only way a studio sells (#293).
+      // Paid on the studio's own account — the only way a studio sells.
       stripe.ownAccount(one)
       stripe.reply('customers.create', { id: `cus_${run}` })
       stripe.reply('checkout.sessions.create', { id: `cs_${run}`, url: `https://checkout.test/${run}` })

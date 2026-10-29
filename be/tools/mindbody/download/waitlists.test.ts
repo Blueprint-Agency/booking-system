@@ -7,7 +7,7 @@ import { futureClasses, matchSignInLinks, mightHaveWaitlist, readWaitlistSection
 import { writeXlsx } from './xlsx-write'
 
 /**
- * The Class Waitlists scrape (#311): which classes it opens, which link is each
+ * The Class Waitlists scrape: which classes it opens, which link is each
  * class's sign-in screen, and what it reads off that screen's Waitlist section.
  * The browser half is `./engine.ts`; everything it decides is here.
  */

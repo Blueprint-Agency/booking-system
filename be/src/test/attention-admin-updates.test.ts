@@ -13,7 +13,7 @@ import {
 } from './harness'
 
 /**
- * Staff attention, Updates the admins and instructors are told of (#476, #491):
+ * Staff attention, Updates the admins and instructors are told of:
  * an instructor cancelling a class or a private session, a staff member joining,
  * and an admin changing an instructor's permissions. Each is written in the
  * transaction of the act, to the right people and never the actor.
@@ -345,7 +345,7 @@ describe('Staff attention: admin and permission Updates', { skip: integrationTes
       assert.equal(told[0]!.detail, null)
       assert.equal(told[0]!.href, `/admin/schedule/pt/${byInstructor.sessionId}`)
     }
-    // Scheduling ada to teach the sessions told her (#492); her own cancel told her nothing.
+    // Scheduling ada to teach the sessions told her; her own cancel told her nothing.
     assert.equal((await ofKind(ada, 'pt_session_cancelled_by_instructor')).length, 0)
   })
 
