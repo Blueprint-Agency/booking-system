@@ -40,7 +40,7 @@ and the build order to complete the lifecycle.
 
 | Stage | Status | Location |
 |---|---|---|
-| Admin creates class | ✅ done | `routes/portal/admin/schedule.ts` → `services/schedule/classes.ts:createClass` |
+| Admin creates class | ✅ done | `routes/portal/class-create.ts` → `services/schedule/classes.ts:createClass` |
 | Client books class | ✅ done | `routes/client/bookings.ts` → `services/bookings/book.ts` |
 | Admin views class detail | 🟡 count only, no roster | `services/schedule/detail.ts:getClassDetail` |
 | Client cancels booking | ❌ 501 stub | `routes/client/bookings.ts:24`, `services/bookings/cancel.ts` |

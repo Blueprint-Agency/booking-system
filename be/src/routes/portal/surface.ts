@@ -1,6 +1,6 @@
 /**
  * Which portal a route module is mounted under. The mount names it, as
- * `scheduleRoutes('instructor')` under `/portal/instructor/schedule`: the
+ * `classCreateRoutes('instructor')` under `/portal/instructor/schedule`: the
  * request body never does, and neither does the caller's Staff role, so an Admin
  * who calls an Instructor route is on the Instructor surface.
  *

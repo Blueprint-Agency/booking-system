@@ -15,7 +15,8 @@ import type { Surface } from './surface'
  * routes (be/CONTEXT.md § Class Series). Both create a series by preview then
  * commit of one body; they differ only in who the instructors are and what they
  * are paid, which the admin sends and the instructor route fills in itself.
- * Shape only: what a series does is `services/schedule/series`.
+ * The shapes, and the preview and create handlers that answer them: what a
+ * series does is `services/schedule/series`.
  */
 
 /** A series body refused for its shape, answered with the first field's sentence. */
@@ -24,7 +25,7 @@ export const explainSeries = explainInvalid('That series is not valid.')
 const localTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'expected HH:MM')
 
 /** Everything a series body carries except its instructors and their pay. */
-const seriesTemplateFields =z.object({
+const seriesTemplateFields = z.object({
   class_type_id: z.string().uuid(),
   location_id: z.string().uuid(),
   room_id: z.string().uuid(),

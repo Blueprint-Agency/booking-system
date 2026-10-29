@@ -30,8 +30,8 @@ export function slotFromParams(params: URLSearchParams): Slot | null {
 
 // The portal's schedule surface: reading, editing and cancelling a scheduled
 // event, plus the one mapping from a backend error code to the sentence an
-// admin reads. Shapes mirror be/src/routes/portal/admin/{schedule,pt-sessions,
-// corporate-sessions}.ts.
+// admin reads. Shapes mirror be/src/routes/portal/{class-detail,timetable-read,
+// pt-session-detail}.ts and admin/corporate-sessions.ts.
 //
 // Two things live here because callers kept getting them wrong:
 //
