@@ -554,7 +554,7 @@ export const ptRequests = pgTable(
     coClientEmail: text('co_client_email'),
     message: text('message'),
     status: ptRequestStatusEnum('status').notNull().default('pending'),
-    // `portal` for a manual session's request (#334): written by staff and
+    // `portal` for a manual session's request: written by staff and
     // scheduled in the same transaction, with no slots, no expiry and no debit
     // of its own — each attendee's booking names the package that paid.
     origin: ptRequestOriginEnum('origin').notNull().default('member'),
@@ -586,11 +586,11 @@ export const ptRequests = pgTable(
     resolvedByStaffId: uuid('resolved_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',
     }),
-    // Who cancelled it (#352): the member, a staff member, or the studio's
+    // Who cancelled it: the member, a staff member, or the studio's
     // machinery — an expiry, a Complimentary Package's Remove. A pending
     // request has no `cancellations` row, so this is its only record of who:
     // a Remove names its admin in `resolved_by_staff_id`, yet is no staff
-    // cancel. Null while live, and on a request cancelled before #352.
+    // cancel. Null while live, and on a request cancelled before the source was recorded.
     cancelSource: cancellationSourceEnum('cancel_source'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -656,7 +656,7 @@ export const ptSessions = pgTable(
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     // UNIQUE — every session is scheduled from a request. Null only once the member who
-    // made the request is permanently deleted (#144): the request goes with them, and
+    // made the request is permanently deleted: the request goes with them, and
     // the session, which is the instructor's and any partner's too, stays. No DB FK
     // declared here to avoid the circular FK at create time; it is added below via foreignKey().
     ptRequestId: uuid('pt_request_id'),
@@ -741,18 +741,8 @@ export const ptSessions = pgTable(
 // 0.31.x does not currently emit an "add FK" follow-up SQL for table-level foreignKey() refs
 // that are declared on the OTHER table.
 //
-// TODO (migration hand-edit): append the following to the generated 0001_*.sql after
-// pt_sessions is created:
-//
-//   ALTER TABLE pt_requests
-//     ADD CONSTRAINT pt_requests_scheduled_pt_session_fk
-//     FOREIGN KEY (scheduled_pt_session_id)
-//     REFERENCES pt_sessions(id)
-//     ON DELETE SET NULL
-//     DEFERRABLE INITIALLY DEFERRED;
-//
-// The DEFERRABLE clause lets us insert a pt_sessions row inside a transaction that also
-// updates pt_requests.scheduled_pt_session_id without tripping a sequencing failure.
+// No such constraint exists in the database: `pt_requests.scheduled_pt_session_id` has no
+// foreign key to `pt_sessions.id` (no `pt_requests_scheduled_pt_session_fk`).
 
 // ============================================================================
 // pt_session_clients — unchanged (M:N supports 2-on-1)

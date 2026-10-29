@@ -8,10 +8,10 @@ import { seedPlatformAdmins } from './platform-admin'
  * What a fresh deployment provisions: the super portal's way in, and nothing
  * else.
  *
- * This used to seed a real studio — its premises, catalogue, waiver and email
- * copy — because the platform was built for exactly one. On a multi-tenant
- * platform that is one customer's *data* shipped inside every other customer's
- * product, and every new deployment started life holding it.
+ * This seeds no studio. On a multi-tenant platform a studio's premises,
+ * catalogue, waiver and email copy are one customer's *data*, and shipped
+ * inside every other customer's product every new deployment would start life
+ * holding it.
  *
  * So a new platform is empty. A studio arrives one of two ways, both from the
  * super portal and neither from this file:
@@ -21,11 +21,9 @@ import { seedPlatformAdmins } from './platform-admin'
  *     catalogue, and its own admins fill those in.
  *  2. **Restored** — from an archive of a studio that existed before
  *     (`services/tenants/transfer.ts`). This is how a studio that predates the
- *     super portal comes back after the seeders that used to invent it were
- *     removed, and how any studio survives being deleted.
+ *     super portal comes back, and how any studio survives being deleted.
  *
- * The per-tenant seeders that used to run here still exist, and are mostly what
- * they always really were: **fixtures for the test harness**, which needs two
+ * The per-tenant seeders are mostly **fixtures for the test harness**, which needs two
  * studios with data in order to prove that neither can see the other's.
  *
  * One is not a fixture. `./email-templates.ts` is called by `provisionTenant`

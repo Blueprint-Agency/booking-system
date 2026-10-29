@@ -10,7 +10,7 @@ import type { SeededTenant } from './tenants'
 /**
  * Anything that can run a statement — the pool, a `withTenant` transaction, or
  * the `tx` inside `provisionTenant`'s. Structural rather than the concrete
- * database type because the seeder is now called from inside the transaction
+ * database type because the seeder is called from inside the transaction
  * that creates a studio, and that transaction must be the one it writes on: a
  * template written outside it would survive a rollback that took the studio.
  */
@@ -20,9 +20,9 @@ type TemplateWriter = Pick<PostgresJsDatabase<typeof schema>, 'execute'>
  * Write every email template for one tenant.
  *
  * Called when a studio is *created* (`services/tenants/provision.ts`) and by the
- * test harness — no longer by `db:seed`, which has no studios to run it for. So
+ * test harness — not by `db:seed`, which has no studios to run it for. So
  * the UPSERT on (tenant, slug) is idempotence, not a copy-refresh channel: a
- * deploy no longer rewrites anybody's copy, which is what a studio that has
+ * deploy never rewrites anybody's copy, which is what a studio that has
  * edited its own wording needs, and means a fix to the shipped copy reaches only
  * studios created after it. Refreshing an existing studio's is a separate act
  * with a separate question to answer — which edits it is allowed to overwrite —
@@ -31,9 +31,9 @@ type TemplateWriter = Pick<PostgresJsDatabase<typeof schema>, 'execute'>
  * The copy itself is in `./email-copy.ts`; this file is the half that knows the
  * database and the environment.
  *
- * **The origins are the tenant's own, derived from its slug.** They used to be
- * `CLIENT_URL` and `env.PORTAL_ORIGIN`, which are single global values naming
- * one studio's apps — so the second studio's instructor got an "Open the
+ * **The origins are the tenant's own, derived from its slug.** `CLIENT_URL` and
+ * `env.PORTAL_ORIGIN` are single global values naming one studio's apps — the
+ * second studio's instructor would get an "Open the
  * schedule" button pointing at the first studio's portal, baked into
  * `body_html` where nothing would notice until it was clicked. `tenantOrigin`
  * reads the same `FRONTEND_URLS` wildcards CORS accepts, so the link
@@ -42,7 +42,7 @@ type TemplateWriter = Pick<PostgresJsDatabase<typeof schema>, 'execute'>
  * **An environment with no wildcard for an app is refused, not fallen back
  * on.** `tenantOrigin` returns null there, and the only two things a fallback
  * could bake in are the platform env vars — which is precisely the cross-tenant
- * link this change removes — or a dead relative href, which is a broken button
+ * link — or a dead relative href, which is a broken button
  * in thirty emails discovered by a member rather than by us. Neither is worth
  * having, and neither is a loss: in an environment with no per-tenant hostname
  * the frontends read no slug from the hostname either, so a studio created
@@ -71,7 +71,7 @@ export async function seedEmailTemplates(db: TemplateWriter, tenant: SeededTenan
   const templates = buildEmailTemplates({
     clientUrl,
     portalUrl,
-    // Whose words these are. The name is not written in at all (#400): the
+    // Whose words these are. The name is not written in at all: the
     // copy says `{{studio_name}}`, which `sendTemplatedEmail` fills with the
     // studio's Business name as it is when each email is sent, so a rename
     // reaches the next email and a studio's members never read another

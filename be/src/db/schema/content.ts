@@ -12,7 +12,7 @@ import { emailRecipientKindEnum, emailLogStatusEnum } from '../enums'
  * which would have put one studio's words, links and sign-off in another
  * studio's outbox; only the pair (tenant, slug) is unique.
  *
- * `tenant_id` is `NOT NULL` here ahead of the contract step (#63) for the same
+ * `tenant_id` is `NOT NULL` here ahead of the contract step for the same
  * reason it is on `promo_codes`: Postgres treats NULLs as distinct in a unique
  * index, so a nullable column would let two rows both be `welcome` while the
  * (tenant, slug) lookup that renders them finds neither.
@@ -88,7 +88,7 @@ export const emailLog = pgTable(
 )
 
 /**
- * Unused: waivers are not being built (#233). No route reads or writes `waiver`
+ * Unused: waivers are not being built. No route reads or writes `waiver`
  * or `waiver_signatures`, and both tables wait for the drop that needs both
  * backend devs.
  *
@@ -114,7 +114,7 @@ export const waiver = pgTable(
   }),
 )
 
-/** Unused, like `waiver` above: waivers are not being built (#233), and the table waits for the same drop. */
+/** Unused, like `waiver` above: waivers are not being built, and the table waits for the same drop. */
 export const waiverSignatures = pgTable(
   'waiver_signatures',
   {

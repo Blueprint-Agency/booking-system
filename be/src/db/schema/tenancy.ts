@@ -35,10 +35,8 @@ import { tenantStatusEnum } from '../enums'
  * given deployment is that deployment's business and appears nowhere in the
  * code.
  *
- * Used only by the seed fixtures now. The server no longer reads it at all —
- * the last runtime use was `tenantMatches` treating a null `tenant_id` as this
- * tenant, which stopped being a sensible reading when the column became
- * `NOT NULL`.
+ * Used only by the seed fixtures. The server never reads it: a null
+ * `tenant_id` is not read as this tenant, because the column is `NOT NULL`.
  */
 export const TENANT_ONE_ID = '10000000-0000-0000-0000-000000000001'
 
@@ -152,7 +150,7 @@ export const tenantSettings = pgTable('tenant_settings', {
 
   waiverText: text('waiver_text'),
 
-  // The studio's Business name (#398): the one name it trades under, which
+  // The studio's Business name: the one name it trades under, which
   // members see on its Receipts. Set by the super portal at creation (the
   // Domain name, `tenants.name`, when the operator gives none) and changed by
   // the studio's admin on its Business details page. Never blank: migration
@@ -160,7 +158,7 @@ export const tenantSettings = pgTable('tenant_settings', {
   // writer that does not name one (a restore).
   businessName: text('business_name').notNull(),
 
-  // The rest of the Business details (#391, #398): what the studio's Receipts
+  // The rest of the Business details: what the studio's Receipts
   // carry, copied onto each one as it is issued (services/receipts/issue.ts),
   // so an edit here reaches only the Receipts issued after it. The prefix heads
   // every number (`R-000123`); the rest is printed under the studio's name and
@@ -177,13 +175,13 @@ export const tenantSettings = pgTable('tenant_settings', {
 })
 
 /**
- * A studio's own payment-provider account (#100).
+ * A studio's own payment-provider account.
  *
  * There is no platform account in the middle — Stripe Connect is not available
  * to this platform — so a studio hands over the credentials to its own account
  * and every call on its behalf is made against that account directly. A Tenant
- * with no row here takes no online payments (#293): there is no platform
- * account behind it any more.
+ * with no row here takes no online payments: there is no platform
+ * account behind it.
  *
  * Both secrets are sealed (`lib/secret-box.ts`); `accountId` is not, because it
  * names the account rather than opening it, and naming it is the whole of what
@@ -203,10 +201,10 @@ export const tenantPaymentCredentials = pgTable('tenant_payment_credentials', {
   secretKeySealed: text('secret_key_sealed').notNull(),
   webhookSecretSealed: text('webhook_secret_sealed').notNull(),
   /**
-   * The webhook endpoint the platform created on the studio's account (#294),
+   * The webhook endpoint the platform created on the studio's account,
    * so it can be deleted when the key is replaced or removed. Not a secret: it
    * names the endpoint, and its signing secret is the sealed column above.
-   * Null on rows saved before #294, whose endpoint was made by hand.
+   * Null on rows whose endpoint was made by hand.
    */
   webhookEndpointId: text('webhook_endpoint_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -216,7 +214,7 @@ export const tenantPaymentCredentials = pgTable('tenant_payment_credentials', {
 /**
  * The `tenant_id` column every other table carries.
  *
- * This is the *contract* step of expand-migrate-contract (#63). `NOT NULL` with
+ * This is the *contract* step of expand-migrate-contract. `NOT NULL` with
  * **no default**: every insert now has to name its tenant, and one that forgets
  * fails loudly instead of quietly filing somebody else's row under tenant #1.
  * The scaffolding default that made the migrate batches safe is gone with it.
@@ -234,10 +232,10 @@ export const tenantIdColumn = () =>
 /**
  * One restore of a studio archive into a Tenant, as a job the server runs.
  *
- * The super portal's import used to be a single request that held the archive,
- * wrote every row and answered with the summary — so a reload, a closed tab or
- * a proxy timeout lost the only record of how it went, and there was nothing to
- * show a progress bar from. This row is that record: created before the upload,
+ * The super portal's import is not a single request that holds the archive,
+ * writes every row and answers with the summary: a reload, a closed tab or a
+ * proxy timeout would lose the only record of how it went, and there would be
+ * nothing to show a progress bar from. This row is that record: created before the upload,
  * advanced by the upload and then by the import itself, and read back by the
  * page whenever it loads.
  *

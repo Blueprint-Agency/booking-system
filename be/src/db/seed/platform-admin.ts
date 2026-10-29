@@ -12,7 +12,7 @@ import { ensureAuthUser } from '../../services/auth/auth-users'
  * archive.
  *
  * So this seeds the people on `PLATFORM_ADMIN_EMAIL` into the Better Auth
- * `platform` pool — the one the super portal signs in against (#116) — and
+ * `platform` pool — the one the super portal signs in against — and
  * nothing else. There is no `staff_users` row to write: platform administration
  * deliberately lives outside every studio's rows, so that a studio's own
  * admin cannot become one by any write path (see

@@ -7,7 +7,7 @@ import { bookings } from './bookings'
 import { classpassEmailKindEnum, classpassEmailOutcomeEnum, classpassReviewReasonEnum } from '../enums'
 
 /**
- * A studio's ClassPass import (#407): the private address it forwards
+ * A studio's ClassPass import: the private address it forwards
  * ClassPass's emails to, and whether the import is switched on.
  *
  * One row per studio, made the first time an Admin opens the ClassPass page.
@@ -67,10 +67,10 @@ export const classpassInboundEmails = pgTable(
     headers: jsonb('headers'),
     text: text('text'),
     html: text('html'),
-    // Why it was not placed (#411), with an outcome of `review` or `unparsed`;
+    // Why it was not placed, with an outcome of `review` or `unparsed`;
     // null otherwise.
     reviewReason: classpassReviewReasonEnum('review_reason'),
-    // What the parser read (#411), each null when it could not. The location
+    // What the parser read, each null when it could not. The location
     // is as ClassPass wrote it; `starts_at` is its date and time read in the
     // studio's timezone.
     reservationId: text('reservation_id'),
@@ -82,7 +82,7 @@ export const classpassInboundEmails = pgTable(
     // The member it was placed for, and the booking it made or matched.
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
     bookingId: uuid('booking_id').references(() => bookings.id, { onDelete: 'set null' }),
-    // ClassPass review (#413): when an open item (outcome `review` or
+    // ClassPass review: when an open item (outcome `review` or
     // `unparsed`) was closed, and the Admin who closed it, by booking it into a
     // class, dismissing it, or mapping its location. Null while it is open.
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
@@ -102,7 +102,7 @@ export const classpassInboundEmails = pgTable(
 )
 
 /**
- * A ClassPass location mapping (#410): the name ClassPass gives one of the
+ * A ClassPass location mapping: the name ClassPass gives one of the
  * studio's locations in its emails, and the Location it means. Rows the
  * studio's Admins write on the ClassPass page; nothing is seeded.
  *
