@@ -48,7 +48,7 @@ const paid: ReceiptRow = {
   refundedAt: null,
 }
 
-test('INV-88 the Receipt as HTML: paid, refunded and free each read as the PDF does, every value escaped, credited to the platform', () => {
+test('INV-88 INV-09 INV-53 the Receipt as HTML: paid, refunded and free each read as the PDF does, every value escaped, credited to the platform', () => {
   const text = htmlToText(receiptHtml(receiptDocument(paid, STUDIO)))
   for (const said of [
     'Receipt number: R-000042',
