@@ -3654,7 +3654,11 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
         if (order === 'edit first') {
           await expectStatus(edited, 200)
           const refused = await expectStatus(created, 409)
-          assert.notEqual(refused.error, undefined, label)
+          assert.equal(
+            refused.error,
+            kind === 'manual session' ? 'package_expires_before_session' : 'plan_expires_before_class',
+            label,
+          )
         } else {
           await expectStatus(created, 201)
           assert.equal((await expectStatus(edited, 409)).error, 'expiry_before_paid_booking', label)
