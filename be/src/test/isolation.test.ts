@@ -826,7 +826,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
   // ── identity ──────────────────────────────────────────────────────────────
 
   test("the member directory never shows another tenant's members", async () => {
-    const forTwo = await clientsSvc.listClients(two.tenantId, {})
+    const { rows: forTwo } = await clientsSvc.listClientsPage(two.tenantId, { page: 1, pageSize: 500 })
     const ids = forTwo.map(r => r.id)
     assert.ok(ids.includes(two.clientId))
     assert.ok(!ids.includes(one.clientId))

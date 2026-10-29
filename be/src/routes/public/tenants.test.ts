@@ -8,14 +8,12 @@ const ARCHIVED_SLUG = 'ghoststudio'
 describe('public slug resolution', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
   let tenants: typeof import('../../db/schema/tenancy')['tenants']
-  let createTenant: typeof import('../../services/tenants/tenants')['createTenant']
 
   before(async () => {
     harness = await startTestApp()
     // Imported after the harness has pointed DATABASE_URL at the scratch
     // database — a static import would bind the dev pool instead.
     ;({ tenants } = await import('../../db/schema/tenancy'))
-    ;({ createTenant } = await import('../../services/tenants/tenants'))
 
     await harness.db
       .insert(tenants)
@@ -91,19 +89,6 @@ describe('public slug resolution', { skip: integrationTestsEnabled ? false : SKI
       }),
     )
     for (const body of bodies) assert.equal(body, unknownBody)
-  })
-
-  test('tenant creation refuses a reserved slug', async () => {
-    await assert.rejects(
-      () => createTenant({ slug: 'admin', name: 'Impostor' }),
-      (err: { code?: string; status?: number }) => {
-        assert.equal(err.code, 'slug_reserved')
-        assert.equal(err.status, 400)
-        return true
-      },
-    )
-    const rows = await harness.db.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, 'admin'))
-    assert.equal(rows.length, 0)
   })
 
   test('a row written without a tenant is refused, not quietly claimed', async () => {

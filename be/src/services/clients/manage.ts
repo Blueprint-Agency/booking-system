@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import type { clientGenderEnum } from '../../db/enums'
 import { clients } from '../../db/schema/identity'
@@ -42,55 +42,6 @@ export type ClientListRow = ClientRow & {
    * before trying a new class is already converted.
    */
   converted: boolean
-}
-
-/**
- * Admin client directory. Self-registered members (via the client app webhook)
- * and admin-invited members both land here. Soft-deleted clients (deletedAt
- * set) are filtered out unless includeDeleted is true.
- */
-export async function listClients(
-  tenantId: string,
-  opts: ListClientsOptions,
-): Promise<ClientListRow[]> {
-  const conds: SQL[] = [eq(clients.tenantId, tenantId)]
-  if (!opts.includeDeleted) conds.push(isNull(clients.deletedAt))
-  if (opts.status) conds.push(eq(clients.status, opts.status))
-  if (opts.q?.trim()) {
-    const term = `%${opts.q.trim()}%`
-    conds.push(or(ilike(clients.name, term), ilike(clients.email, term))!)
-  }
-  // Correlated rather than joined: each is per-client over all time, and joining
-  // them would multiply a client's row by its own matches.
-  // Three subqueries per row over the whole studio. The Customers page no longer
-  // reads this — it pages through `listClientsPage` below; this unpaged read is
-  // kept for the callers that want every member.
-  const rows = await db
-    .select({
-      ...getTableColumns(clients),
-      trialStartedAt: sql<Date | null>`(
-        select min(cp.purchased_at) from ${clientPackages} cp
-        where cp.client_id = "clients"."id" and cp.kind = 'trial'
-      )`,
-      attended: sql<number>`(
-        select count(*) from ${bookings} b
-        join ${clientPackages} cp on cp.id = b.client_package_id
-        where b.client_id = "clients"."id"
-          and b.check_in_state = 'attended'
-          and cp.kind = 'trial'
-      )`,
-      converted: sql<boolean>`exists (
-        select 1 from ${clientPackages} cp
-        where cp.client_id = "clients"."id"
-          and cp.kind <> 'trial'
-          and cp.amount_paid_sgd > 0
-          and not cp.complimentary
-      )`,
-    })
-    .from(clients)
-    .where(and(...conds))
-    .orderBy(desc(clients.joinedAt))
-  return rows.map(r => ({ ...r, attended: Number(r.attended) }))
 }
 
 export type ClientDirectoryFilter = 'active' | 'trials' | 'blocked' | 'no_email'

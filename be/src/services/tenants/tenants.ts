@@ -1,14 +1,12 @@
 import { and, eq, inArray, notLike, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
-import type { TenantRow, TenantSettingsRow } from '../../db/schema/tenancy'
+import type { TenantRow } from '../../db/schema/tenancy'
 import type { TenantStatus } from '../../db/enums'
-import { isUniqueViolation } from '../../db/unique-violation'
 import { now as clockNow } from '../../lib/clock'
 import { ConflictError } from '../../shared/errors'
-import { claimSlug } from './former-slugs'
-import { assertUsableSlug, E2E_SLUG_PREFIX, normaliseSlug } from './slug'
-import { DEFAULT_TIMEZONE, termEnded, todayFor } from './term-dates'
+import { E2E_SLUG_PREFIX, normaliseSlug } from './slug'
+import { termEnded } from './term-dates'
 
 /**
  * What a studio publishes about itself: the branding both frontends render
@@ -317,56 +315,4 @@ export async function setTenantStatus(
 
   forgetCachedTenants()
   return row ?? null
-}
-
-type CreateTenantInput = {
-  slug: string
-  name: string
-  timezone?: string
-  settings?: Partial<Omit<TenantSettingsRow, 'tenantId' | 'createdAt' | 'updatedAt'>>
-}
-
-/**
- * The whole of "creating a tenant": one row in `tenants`, one in
- * `tenant_settings`. No infrastructure, no deployment — the subdomains resolve
- * the moment the row exists, which is exactly why the slug gate lives here and
- * not at the route.
- */
-export async function createTenant(input: CreateTenantInput): Promise<ResolvedTenant> {
-  const slug = assertUsableSlug(input.slug)
-
-  try {
-    return await db.transaction(async tx => {
-      await claimSlug(tx, slug)
-
-      const [tenant] = await tx
-        .insert(tenants)
-        .values({
-          slug,
-          name: input.name,
-          ...(input.timezone ? { timezone: input.timezone } : {}),
-          // The Term starts today on the studio's own clock, not the database's.
-          termStartDate: todayFor(input.timezone ?? DEFAULT_TIMEZONE),
-        })
-        .returning()
-      // Invariant: an insert that succeeds returns its row; a refused one throws.
-      if (!tenant) throw new Error('tenant insert returned no row')
-
-      const [settings] = await tx
-        .insert(tenantSettings)
-        // Trading under its Domain name until it is told otherwise (#398).
-        .values({ businessName: input.name, ...input.settings, tenantId: tenant.id })
-        // Display columns only, for the same reason the resolver reads only
-        // those: the application role has SELECT on nothing else here.
-        .returning(DISPLAY_SETTINGS)
-
-      forgetCachedTenants()
-      return { tenant, settings: settings ?? null }
-    })
-  } catch (err) {
-    if (isUniqueViolation(err, 'tenants_slug_unique')) {
-      throw new ConflictError('slug_taken', { slug })
-    }
-    throw err
-  }
 }
