@@ -15,7 +15,7 @@ import { readReports, verifyImport } from './transform'
 import { dateOfIso } from './values'
 
 /**
- * #284: every paid past Mindbody sale is a provider-less Purchase carrying its
+ * Every paid past Mindbody sale is a provider-less Purchase carrying its
  * Mindbody sale number and how it was paid (the Sales report, `readSaleMethods`),
  * mapped by the config's `paymentMethods` table. From the outside: fixture
  * reports and config in, archive rows, preflight and figures out.

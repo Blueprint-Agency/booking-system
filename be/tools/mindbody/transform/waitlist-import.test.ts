@@ -10,7 +10,7 @@ import { withEnv } from '../../../src/test/with-env'
 const OPERATOR = 'mindbody-waitlist-operator@platform.test'
 
 /**
- * The live waitlists brought across (#311), end to end: the fixture reports
+ * The live waitlists brought across, end to end: the fixture reports
  * plus a scraped Class Waitlists file go through the transform, the zip
  * through the super portal's import, and then the platform is asked as a
  * member and an admin would ask it. Beside `import.test.ts`, which is the rest
