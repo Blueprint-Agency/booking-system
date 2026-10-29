@@ -195,12 +195,28 @@ export function retryingTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 
-/** `db.transaction` inside a Tenant context: a savepoint whose rollback drops its after-commit work. */
+/**
+ * `db.transaction` inside a Tenant context: a savepoint whose rollback drops
+ * its after-commit work, and whose body runs with the shared `db` pointed at
+ * the savepoint.
+ *
+ * The second half matters to the driver's error bookkeeping, not to what
+ * Postgres does: a statement already runs within the innermost open savepoint
+ * whichever handle sent it, but postgres.js records a failed statement on the
+ * scope of the handle that sent it and rethrows it when that scope ends. A
+ * helper deep inside a retried body that sent its statement on the request's
+ * handle would therefore fail the whole request after the retry succeeded
+ * (#466). Pointing `db` at the savepoint keeps a failure with the savepoint
+ * that rolls it back. The after-commit list stays the request's one list.
+ */
 function savepoint(store: TenantScope): Db['transaction'] {
   return (async (fn: Parameters<Db['transaction']>[0], config?: Parameters<Db['transaction']>[1]) => {
     const mark = store.afterCommit.length
     try {
-      return await store.tx.transaction(fn, config)
+      return await store.tx.transaction(
+        (inner: any) => scope.run({ ...store, tx: inner as Db }, () => fn(inner)),
+        config,
+      )
     } catch (err) {
       store.afterCommit.length = mark
       throw err
