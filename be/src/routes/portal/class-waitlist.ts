@@ -45,8 +45,8 @@ export function classWaitlistRoutes(role: StaffRole) {
           { role, staffId: c.get('staffUserId') },
           { allowClash: body.allow_clash ?? false },
         )
-        c.set('auditTarget' as any, { table: 'waitlist_entries', id: res.entryId })
-        if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
+        c.set('auditTarget', { table: 'waitlist_entries', id: res.entryId })
+        if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
         return c.json({ entry_id: res.entryId, position: res.position }, 201)
       },
     )
@@ -65,15 +65,15 @@ export function classWaitlistRoutes(role: StaffRole) {
           overbook: body.overbook,
           allowClash: body.allow_clash ?? false,
         })
-        c.set('auditTarget' as any, { table: 'bookings', id: res.bookingId })
-        if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
+        c.set('auditTarget', { table: 'bookings', id: res.bookingId })
+        if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
         return c.json(staffBookingJson(res), 201)
       },
     )
     .delete('/classes/:id/waitlist/:entryId', zValidator('param', waitlistEntryParams), async c => {
       const { id, entryId } = c.req.valid('param')
       await staffRemove(tenantId(c), { classId: id, entryId, actor: { role, staffId: c.get('staffUserId') } })
-      c.set('auditTarget' as any, { table: 'waitlist_entries', id: entryId })
+      c.set('auditTarget', { table: 'waitlist_entries', id: entryId })
       return c.body(null, 204)
     })
 }

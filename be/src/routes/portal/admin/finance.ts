@@ -146,14 +146,14 @@ const app = new Hono()
       },
       actorStaffId,
     )
-    c.set('auditTarget' as any, { table: 'manual_payroll_entries', id: row.id })
+    c.set('auditTarget', { table: 'manual_payroll_entries', id: row.id })
     return c.json({ id: row.id }, 201)
   })
   .delete('/manual/:id', zValidator('param', manualParam), async c => {
     const { id } = c.req.valid('param')
     const res = await deleteManualPayroll(tenantId(c), id)
     if (!res.ok) return saveFailure(c, 'manual', res.reason)
-    c.set('auditTarget' as any, { table: 'manual_payroll_entries', id })
+    c.set('auditTarget', { table: 'manual_payroll_entries', id })
     return c.json({ ok: true })
   })
   // Inline edit of one session's Instructor Pay. null clears it back to Unpriced.
@@ -168,7 +168,7 @@ const app = new Hono()
       instructor_id,
     )
     if (!res.ok) return saveFailure(c, kind, res.reason)
-    c.set('auditTarget' as any, { table: payrollAuditTable[kind], id })
+    c.set('auditTarget', { table: payrollAuditTable[kind], id })
     return c.json({ ok: true })
   })
 

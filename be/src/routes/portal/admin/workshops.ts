@@ -311,7 +311,7 @@ const app = new Hono()
       imageR2Keys: body.image_r2_keys,
       createdByStaffId: staffId,
     })
-    c.set('auditTarget' as any, { table: 'workshops', id: row.id })
+    c.set('auditTarget', { table: 'workshops', id: row.id })
     return c.json(workshopRow(row), 201)
   })
   .patch('/:id', zValidator('param', idParam), zValidator('json', saveWorkshopSchema), async c => {
@@ -355,14 +355,14 @@ const app = new Hono()
             ...(body.promotions !== undefined ? { promotions: body.promotions.map(toPromotionWriteInput) } : {}),
             actorStaffId: staffId,
           })
-    c.set('auditTarget' as any, { table: 'workshops', id })
+    c.set('auditTarget', { table: 'workshops', id })
     return c.json(workshopRow(row))
   })
   .post('/:id/cancel', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const staffId = c.get('staffUserId')
     const row = await cancelSvc.cancelWorkshop(tenantId(c), id, staffId, c.get('staffRow').role)
-    c.set('auditTarget' as any, { table: 'workshops', id })
+    c.set('auditTarget', { table: 'workshops', id })
     return c.json(workshopRow(row))
   })
 
@@ -370,7 +370,7 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const saved = await scheduleSvc.saveWorkshopSchedule(tenantId(c), id, toScheduleInput(body), c.get('staffUserId'))
-    c.set('auditTarget' as any, { table: 'workshops', id })
+    c.set('auditTarget', { table: 'workshops', id })
     return c.json({ days: saved.days.map(dayRow), tiers: saved.tiers.map(tierRow) })
   })
 
@@ -393,7 +393,7 @@ const app = new Hono()
       capacityWaitlist: body.capacity_waitlist,
       capacityBuffer: body.capacity_buffer,
     })
-    c.set('auditTarget' as any, { table: 'workshop_days', id: row.id })
+    c.set('auditTarget', { table: 'workshop_days', id: row.id })
     return c.json(dayRow(row), 201)
   })
   .patch(
@@ -413,14 +413,14 @@ const app = new Hono()
         ...(body.capacity_waitlist !== undefined ? { capacityWaitlist: body.capacity_waitlist } : {}),
         ...(body.capacity_buffer !== undefined ? { capacityBuffer: body.capacity_buffer } : {}),
       }, c.get('staffUserId'))
-      c.set('auditTarget' as any, { table: 'workshop_days', id: day_id })
+      c.set('auditTarget', { table: 'workshop_days', id: day_id })
       return c.json(dayRow(row))
     },
   )
   .delete('/:id/days/:day_id', zValidator('param', idDayParam), async c => {
     const { id, day_id } = c.req.valid('param')
     await daysSvc.deleteDay(tenantId(c), id, day_id)
-    c.set('auditTarget' as any, { table: 'workshop_days', id: day_id })
+    c.set('auditTarget', { table: 'workshop_days', id: day_id })
     return c.json({ deleted: true })
   })
 
@@ -443,7 +443,7 @@ const app = new Hono()
       ord: body.ord,
       dayIds: body.day_ids,
     })
-    c.set('auditTarget' as any, { table: 'workshop_tiers', id: row.id })
+    c.set('auditTarget', { table: 'workshop_tiers', id: row.id })
     return c.json(tierRow(row), 201)
   })
   .patch(
@@ -471,14 +471,14 @@ const app = new Hono()
         ...(body.ord !== undefined ? { ord: body.ord } : {}),
         ...(body.day_ids !== undefined ? { dayIds: body.day_ids } : {}),
       })
-      c.set('auditTarget' as any, { table: 'workshop_tiers', id: tier_id })
+      c.set('auditTarget', { table: 'workshop_tiers', id: tier_id })
       return c.json(tierRow(row))
     },
   )
   .delete('/:id/tiers/:tier_id', zValidator('param', idTierParam), async c => {
     const { id, tier_id } = c.req.valid('param')
     await tiersSvc.deleteTier(tenantId(c), id, tier_id)
-    c.set('auditTarget' as any, { table: 'workshop_tiers', id: tier_id })
+    c.set('auditTarget', { table: 'workshop_tiers', id: tier_id })
     return c.json({ deleted: true })
   })
 
@@ -503,7 +503,7 @@ const app = new Hono()
         body.promotions.map(toPromotionWriteInput),
         staffId,
       )
-      c.set('auditTarget' as any, { table: 'promotions', id })
+      c.set('auditTarget', { table: 'promotions', id })
       return c.json({ promotions: rows.map(serializePromotion) })
     },
   )

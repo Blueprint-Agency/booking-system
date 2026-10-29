@@ -64,7 +64,7 @@ const app = new Hono()
       priceSgd: body.price_sgd,
       createdByStaffId: actor,
     })
-    c.set('auditTarget' as any, { table: 'corporate_packages', id: row.id })
+    c.set('auditTarget', { table: 'corporate_packages', id: row.id })
     return c.json({ corporatePackage: serialize(row) }, 201)
   })
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
@@ -100,20 +100,20 @@ const app = new Hono()
       if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     }
 
-    c.set('auditTarget' as any, { table: 'corporate_packages', id })
+    c.set('auditTarget', { table: 'corporate_packages', id })
     return c.json({ corporatePackage: serialize(row) })
   })
   .post('/:id/unarchive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await svc.unarchiveCorporatePackage(tenantId(c), id)
     if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
-    c.set('auditTarget' as any, { table: 'corporate_packages', id })
+    c.set('auditTarget', { table: 'corporate_packages', id })
     return c.json({ corporatePackage: serialize(row) })
   })
   .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     await svc.softDeleteCorporatePackage(tenantId(c), id)
-    c.set('auditTarget' as any, { table: 'corporate_packages', id })
+    c.set('auditTarget', { table: 'corporate_packages', id })
     return c.body(null, 204)
   })
 

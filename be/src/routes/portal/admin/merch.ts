@@ -67,7 +67,7 @@ const app = new Hono()
       description: body.description ?? null,
       priceSgd: body.price_sgd,
     })
-    c.set('auditTarget' as any, { table: 'merch', id: row.id })
+    c.set('auditTarget', { table: 'merch', id: row.id })
     return c.json(svc.serializeMerch(row), 201)
   })
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema, explainMerch), async c => {
@@ -79,7 +79,7 @@ const app = new Hono()
       ...(body.price_sgd !== undefined ? { priceSgd: body.price_sgd } : {}),
       ...(body.archived !== undefined ? { archivedAt: body.archived ? new Date() : null } : {}),
     })
-    c.set('auditTarget' as any, { table: 'merch', id })
+    c.set('auditTarget', { table: 'merch', id })
     return c.json(svc.serializeMerch(row))
   })
   .post(
@@ -105,14 +105,14 @@ const app = new Hono()
         contentType: file.type,
         bytes: new Uint8Array(await file.arrayBuffer()),
       })
-      c.set('auditTarget' as any, { table: 'merch', id })
+      c.set('auditTarget', { table: 'merch', id })
       return c.json(svc.serializeMerch(row))
     },
   )
   .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     await svc.deleteMerch(tenantId(c), id)
-    c.set('auditTarget' as any, { table: 'merch', id })
+    c.set('auditTarget', { table: 'merch', id })
     return c.body(null, 204)
   })
 

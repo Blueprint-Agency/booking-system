@@ -24,6 +24,7 @@
  */
 import { and, count, eq, gte, isNull, lt, lte, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
+import type { TableName } from '../../db/table-names'
 import { now as clockNow } from '../../lib/clock'
 import {
   classes,
@@ -53,7 +54,7 @@ export type PayrollKind = 'class' | 'pt' | 'workshop' | 'manual'
  * table even when the write lands on the supporting-instructor join row — the
  * session is the record being repriced.)
  */
-export const payrollAuditTable: Record<PayrollKind, string> = {
+export const payrollAuditTable: Record<PayrollKind, TableName> = {
   class: 'classes',
   pt: 'pt_sessions',
   workshop: 'workshop_instructors',

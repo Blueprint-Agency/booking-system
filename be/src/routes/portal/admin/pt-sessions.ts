@@ -213,8 +213,8 @@ const app = new Hono()
       allowClash: body.allow_clash === true,
     })
     if (!result.ok) return c.json({ error: result.error }, statusForScheduleError(result.error))
-    c.set('auditTarget' as any, { table: 'pt_requests', id })
-    if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
+    c.set('auditTarget', { table: 'pt_requests', id })
+    if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
     const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
@@ -229,8 +229,8 @@ const app = new Hono()
       actorStaffId: actor,
       actorIsAdmin: true,
     })
-    c.set('auditTarget' as any, { table: 'pt_requests', id: ptRequestId })
-    if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
+    c.set('auditTarget', { table: 'pt_requests', id: ptRequestId })
+    if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
     const row = await getPtRequestForAdmin(tenantId(c), ptRequestId)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
@@ -265,8 +265,8 @@ const app = new Hono()
           }
         : {}),
     })
-    c.set('auditTarget' as any, { table: 'pt_sessions', id })
-    if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
+    c.set('auditTarget', { table: 'pt_sessions', id })
+    if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
     const detail = await getPtSessionDetail(tenantId(c), id)
     return c.json(serializeSession(detail))
   })
@@ -285,8 +285,8 @@ const app = new Hono()
         actorStaffId: c.get('staffUserId') as string,
         actorIsAdmin: true,
       })
-      c.set('auditTarget' as any, { table: 'bookings', id: seat.bookingId })
-      if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
+      c.set('auditTarget', { table: 'bookings', id: seat.bookingId })
+      if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
       return c.json(addedMemberJson(body.client_id, seat), 201)
     },
   )
@@ -300,7 +300,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId') as string,
       source: 'admin',
     })
-    c.set('auditTarget' as any, { table: 'pt_sessions', id })
+    c.set('auditTarget', { table: 'pt_sessions', id })
     return c.json(removedMemberJson(res))
   })
   .post('/:id/link-partner', zValidator('param', idParam), zValidator('json', linkPartnerSchema, explainLinkPartner), async c => {
@@ -312,7 +312,7 @@ const app = new Hono()
       coClientId: client_id,
       email,
     })
-    c.set('auditTarget' as any, { table: 'pt_requests', id })
+    c.set('auditTarget', { table: 'pt_requests', id })
     const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null })
   })
@@ -328,7 +328,7 @@ const app = new Hono()
       actorStaffId: actor,
       note,
     })
-    c.set('auditTarget' as any, { table: 'pt_requests', id })
+    c.set('auditTarget', { table: 'pt_requests', id })
     const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null, result })
   })

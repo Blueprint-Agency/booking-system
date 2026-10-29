@@ -161,7 +161,7 @@ const app = new Hono()
       },
       staffId,
     )
-    c.set('auditTarget' as any, { table: 'global_policy', id: row.id })
+    c.set('auditTarget', { table: 'global_policy', id: row.id })
     return c.json({
       ...serializeGlobal(row),
       leave_conflicts: await serializeConflicts(tenantId(c)),
@@ -180,7 +180,7 @@ const app = new Hono()
       },
       staffId,
     )
-    c.set('auditTarget' as any, { table: 'pt_booking_config', id: row.id })
+    c.set('auditTarget', { table: 'pt_booking_config', id: row.id })
     return c.json(serializePt(row))
   })
 

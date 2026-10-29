@@ -118,8 +118,8 @@ const app = new Hono()
       actorStaffId: self,
       actorIsAdmin: false,
     })
-    c.set('auditTarget' as any, { table: 'pt_requests', id: ptRequestId })
-    if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
+    c.set('auditTarget', { table: 'pt_requests', id: ptRequestId })
+    if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
     const row = await getPtRequestForAdmin(tenantId(c), ptRequestId)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
@@ -156,8 +156,8 @@ const app = new Hono()
         actorIsAdmin: false,
         requireOwnInstructorId: self,
       })
-      c.set('auditTarget' as any, { table: 'bookings', id: seat.bookingId })
-      if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
+      c.set('auditTarget', { table: 'bookings', id: seat.bookingId })
+      if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
       return c.json(addedMemberJson(body.client_id, seat), 201)
     },
   )
@@ -173,7 +173,7 @@ const app = new Hono()
       source: 'instructor',
       requireOwnInstructorId: self,
     })
-    c.set('auditTarget' as any, { table: 'pt_sessions', id })
+    c.set('auditTarget', { table: 'pt_sessions', id })
     return c.json(removedMemberJson(res))
   })
   .post('/:id/schedule', takesPtBookings, zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
@@ -195,8 +195,8 @@ const app = new Hono()
       allowClash: body.allow_clash === true,
     })
     if (!result.ok) return c.json({ error: result.error }, statusForScheduleError(result.error))
-    c.set('auditTarget' as any, { table: 'pt_requests', id })
-    if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
+    c.set('auditTarget', { table: 'pt_requests', id })
+    if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
     const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
@@ -214,7 +214,7 @@ const app = new Hono()
       requireOwnInstructorId: self,
       note,
     })
-    c.set('auditTarget' as any, { table: 'pt_requests', id })
+    c.set('auditTarget', { table: 'pt_requests', id })
     const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null, result })
   })

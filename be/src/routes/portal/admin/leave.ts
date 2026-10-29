@@ -81,7 +81,7 @@ const app = new Hono()
       id,
       actorStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'leave_requests', id })
+    c.set('auditTarget', { table: 'leave_requests', id })
     return c.json({ ok: true })
   })
   // The reason is required by the schema AND by the service — it is what the
@@ -94,7 +94,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId'),
       reason: c.req.valid('json').reason,
     })
-    c.set('auditTarget' as any, { table: 'leave_requests', id })
+    c.set('auditTarget', { table: 'leave_requests', id })
     return c.json({ ok: true })
   })
   // Approved leave that hasn't started. The service refuses anything else.
@@ -105,7 +105,7 @@ const app = new Hono()
       id,
       actorStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'leave_requests', id })
+    c.set('auditTarget', { table: 'leave_requests', id })
     return c.json({ ok: true })
   })
 

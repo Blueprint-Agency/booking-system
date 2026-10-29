@@ -123,7 +123,7 @@ const app = new Hono()
       (body.promotions ?? []).map(toPromotionWriteInput),
       actor,
     )
-    c.set('auditTarget' as any, { table: 'class_packages', id: row.id })
+    c.set('auditTarget', { table: 'class_packages', id: row.id })
     return c.json(await serializeWithPromos(tenantId(c), row), 201)
   })
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema, explainPackage), async c => {
@@ -148,25 +148,25 @@ const app = new Hono()
         actor,
       )
     }
-    c.set('auditTarget' as any, { table: 'class_packages', id })
+    c.set('auditTarget', { table: 'class_packages', id })
     return c.json(await serializeWithPromos(tenantId(c), row))
   })
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await svc.archiveClassPackage(tenantId(c), id)
-    c.set('auditTarget' as any, { table: 'class_packages', id })
+    c.set('auditTarget', { table: 'class_packages', id })
     return c.json(await serializeWithPromos(tenantId(c), row))
   })
   .post('/:id/unarchive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await svc.unarchiveClassPackage(tenantId(c), id)
-    c.set('auditTarget' as any, { table: 'class_packages', id })
+    c.set('auditTarget', { table: 'class_packages', id })
     return c.json(await serializeWithPromos(tenantId(c), row))
   })
   .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     await svc.softDeleteClassPackage(tenantId(c), id)
-    c.set('auditTarget' as any, { table: 'class_packages', id })
+    c.set('auditTarget', { table: 'class_packages', id })
     return c.body(null, 204)
   })
 

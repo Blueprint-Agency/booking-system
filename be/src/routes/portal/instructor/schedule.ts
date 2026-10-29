@@ -149,7 +149,7 @@ const app = new Hono()
       ...(body.package_rule ? { packageRule: toPackageRule(body.package_rule) } : {}),
       createdByStaffId: self,
     })
-    c.set('auditTarget' as any, { table: 'classes', id: row.id })
+    c.set('auditTarget', { table: 'classes', id: row.id })
     return c.json(
       {
         id: row.id,
@@ -181,7 +181,7 @@ const app = new Hono()
       ...ownSeriesInput(c.req.valid('json'), self),
       createdByStaffId: self,
     })
-    c.set('auditTarget' as any, { table: 'class_series', id: res.series.id })
+    c.set('auditTarget', { table: 'class_series', id: res.series.id })
     return c.json({ series: seriesRow(res.series), class_ids: res.classIds }, 201)
   })
   // The member's class packages for a class the caller teaches — the admin
@@ -222,8 +222,8 @@ const app = new Hono()
         clientPackageId: body.client_package_id ?? null,
         allowClash: body.allow_clash ?? false,
       })
-      c.set('auditTarget' as any, { table: 'bookings', id: res.bookingId })
-      if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
+      c.set('auditTarget', { table: 'bookings', id: res.bookingId })
+      if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
       return c.json(staffBookingJson(res), 201)
     },
   )
@@ -241,7 +241,7 @@ const app = new Hono()
         source: 'instructor',
         reason,
       })
-      c.set('auditTarget' as any, { table: 'classes', id })
+      c.set('auditTarget', { table: 'classes', id })
       return c.json({ total_bookings: res.totalBookings, refunded_count: res.refundedCount })
     },
   )

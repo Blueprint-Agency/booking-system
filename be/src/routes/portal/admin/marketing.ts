@@ -32,7 +32,7 @@ const app = new Hono()
       },
       c.get('staffUserId'),
     )
-    c.set('auditTarget' as any, { table: 'marketing_content', id: row.id })
+    c.set('auditTarget', { table: 'marketing_content', id: row.id })
     return c.json(svc.serializeMarketing(row))
   })
 

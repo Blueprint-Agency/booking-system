@@ -459,7 +459,7 @@ const app = new Hono()
       sendInvite: body.send_invite,
       invitedByStaffId: staffId,
     })
-    c.set('auditTarget' as any, { table: 'clients', id: row.id })
+    c.set('auditTarget', { table: 'clients', id: row.id })
     return c.json(clientRow(row), 201)
   })
   .get('/:id', zValidator('param', idParam), async c => {
@@ -540,7 +540,7 @@ const app = new Hono()
       reason: body.reason,
       actedByStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    c.set('auditTarget', { table: 'client_packages', id: pid })
     return c.json(editedPackageView(row))
   })
   .post('/:id/packages/:pid/balance', zValidator('param', idPkgParam), zValidator('json', balanceSchema), async c => {
@@ -554,7 +554,7 @@ const app = new Hono()
       reason: body.reason,
       actedByStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    c.set('auditTarget', { table: 'client_packages', id: pid })
     return c.json(editedPackageView(row))
   })
   .post('/:id/packages/:pid/expiry', zValidator('param', idPkgParam), zValidator('json', expirySchema, explainInvalid('That expiry change is not valid.')), async c => {
@@ -568,7 +568,7 @@ const app = new Hono()
       reason: body.reason,
       actedByStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    c.set('auditTarget', { table: 'client_packages', id: pid })
     return c.json(editedPackageView(row))
   })
   // Bind, move or clear a purchased PT Package's Bound Instructor (§33-§37).
@@ -584,7 +584,7 @@ const app = new Hono()
       reason: body.reason,
       actedByStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    c.set('auditTarget', { table: 'client_packages', id: pid })
     return c.json(editedPackageView(row))
   })
   .post('/:id/packages/:pid/cross-location', zValidator('param', idPkgParam), zValidator('json', crossLocationSchema), async c => {
@@ -598,7 +598,7 @@ const app = new Hono()
       reason: body.reason,
       actedByStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    c.set('auditTarget', { table: 'client_packages', id: pid })
     return c.json(editedPackageView(row))
   })
   // Moving a member's Home Location (§7) — the correction for a Location picked
@@ -615,7 +615,7 @@ const app = new Hono()
       reason: body.reason,
       actedByStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    c.set('auditTarget', { table: 'client_packages', id: pid })
     return c.json(editedPackageView(row))
   })
   // A Refund (§14). The handler calls the payment provider and returns — the
@@ -632,7 +632,7 @@ const app = new Hono()
       reason: body.reason,
       actorStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    c.set('auditTarget', { table: 'client_packages', id: pid })
     return c.json({
       refunded: true,
       attended_count: result.attendedCount,
@@ -657,7 +657,7 @@ const app = new Hono()
         reason: body.reason,
         actorStaffId: c.get('staffUserId'),
       })
-      c.set('auditTarget' as any, { table: 'bookings', id: bid })
+      c.set('auditTarget', { table: 'bookings', id: bid })
       return c.json({
         refunded: true,
         attended_count: result.attendedCount,
@@ -682,7 +682,7 @@ const app = new Hono()
       instructorId: body.instructor_id ?? null,
       actedByStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'client_packages', id: clientPackageId })
+    c.set('auditTarget', { table: 'client_packages', id: clientPackageId })
     return c.json({ client_package_id: clientPackageId }, 201)
   })
   // Removing a Complimentary Package given by mistake, while it is Untouched.
@@ -697,7 +697,7 @@ const app = new Hono()
       reason: body.reason,
       actedByStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    c.set('auditTarget', { table: 'client_packages', id: pid })
     return c.json({ removed: true, cancelled_bookings: result.cancelledBookings })
   })
   // The member's email (#176) — the address they sign in with and the one the
@@ -712,7 +712,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId'),
       from: c.req.raw.headers,
     })
-    c.set('auditTarget' as any, { table: 'clients', id })
+    c.set('auditTarget', { table: 'clients', id })
     return c.json(clientRow(row))
   })
   // The member's name, gender and phone (#281), in one save.
@@ -727,7 +727,7 @@ const app = new Hono()
       phone: body.phone,
       gender: body.gender,
     })
-    c.set('auditTarget' as any, { table: 'clients', id })
+    c.set('auditTarget', { table: 'clients', id })
     return c.json(clientRow(row))
   })
   // Blocking is DELETE /:id + POST /:id/restore below — there is deliberately no
@@ -741,7 +741,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId'),
       from: c.req.raw.headers,
     })
-    c.set('auditTarget' as any, { table: 'clients', id })
+    c.set('auditTarget', { table: 'clients', id })
     return c.json(clientRow(row))
   })
   .post('/:id/restore', zValidator('param', idParam), async c => {
@@ -752,7 +752,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId'),
       from: c.req.raw.headers,
     })
-    c.set('auditTarget' as any, { table: 'clients', id })
+    c.set('auditTarget', { table: 'clients', id })
     return c.json(clientRow(row))
   })
   // ---- permanent delete (#144): the member's rows go, the studio's accounts
@@ -766,7 +766,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId'),
       from: c.req.raw.headers,
     })
-    c.set('auditPath' as any, c.req.routePath)
+    c.set('auditPath', c.req.routePath)
     return c.json({ deleted: true })
   })
   // ---- sessions (#119) ----
@@ -783,7 +783,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId'),
       from: c.req.raw.headers,
     })
-    c.set('auditTarget' as any, { table: 'clients', id })
+    c.set('auditTarget', { table: 'clients', id })
     return c.json({ revoked })
   })
   // ---- set-password link (#173) ----
@@ -795,7 +795,7 @@ const app = new Hono()
       actorStaffId: c.get('staffUserId'),
       from: c.req.raw.headers,
     })
-    c.set('auditTarget' as any, { table: 'clients', id })
+    c.set('auditTarget', { table: 'clients', id })
     return c.json({ sent: true })
   })
   // ---- member export (#143): everything the studio holds about the member, as

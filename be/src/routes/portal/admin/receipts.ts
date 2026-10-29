@@ -87,7 +87,7 @@ const app = new Hono()
   .post('/:id/resend', zValidator('param', receiptIdParam), async c => {
     const { id } = c.req.valid('param')
     const sent = await resendReceipt({ tenantId: tenantId(c), receiptId: id, actorStaffId: c.get('staffUserId') })
-    c.set('auditFiled' as any, true)
+    c.set('auditFiled', true)
     return c.json({ sent_to: sent.sentTo })
   })
 

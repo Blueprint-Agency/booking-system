@@ -296,8 +296,8 @@ const app = new Hono()
         clientPackageId: body.client_package_id ?? null,
         allowClash: body.allow_clash ?? false,
       })
-      c.set('auditTarget' as any, { table: 'bookings', id: res.bookingId })
-      if (body.allow_clash) c.set('auditDetail' as any, { allow_clash: true })
+      c.set('auditTarget', { table: 'bookings', id: res.bookingId })
+      if (body.allow_clash) c.set('auditDetail', { allow_clash: true })
       return c.json(staffBookingJson(res), 201)
     },
   )
@@ -325,7 +325,7 @@ const app = new Hono()
       ...(body.package_rule ? { packageRule: toPackageRule(body.package_rule) } : {}),
       createdByStaffId: staffId,
     })
-    c.set('auditTarget' as any, { table: 'classes', id: row.id })
+    c.set('auditTarget', { table: 'classes', id: row.id })
     return c.json(await classRow(tenantId(c), row), 201)
   })
   .patch(
@@ -368,7 +368,7 @@ const app = new Hono()
         ...(body.package_rule !== undefined ? { packageRule: toPackageRule(body.package_rule) } : {}),
       }
       const row = await classesSvc.updateClass(tenantId(c), id, patch, c.get('staffUserId'))
-      c.set('auditTarget' as any, { table: 'classes', id })
+      c.set('auditTarget', { table: 'classes', id })
       return c.json(await classRow(tenantId(c), row))
     },
   )
@@ -379,7 +379,7 @@ const app = new Hono()
       const { id } = c.req.valid('param')
       const staffId = c.get('staffUserId')
       const res = await cancelClass(tenantId(c), { classId: id, actorStaffId: staffId })
-      c.set('auditTarget' as any, { table: 'classes', id })
+      c.set('auditTarget', { table: 'classes', id })
       return c.json({ total_bookings: res.totalBookings, refunded_count: res.refundedCount })
     },
   )
@@ -390,7 +390,7 @@ const app = new Hono()
       const { id } = c.req.valid('param')
       const staffId = c.get('staffUserId')
       const w = await cancelWorkshop(tenantId(c), id, staffId, c.get('staffRow').role)
-      c.set('auditTarget' as any, { table: 'workshops', id })
+      c.set('auditTarget', { table: 'workshops', id })
       // Same serializer as POST /admin/workshops/:id/cancel: one cancellation,
       // one response shape, whichever path reached it.
       return c.json(workshopRow(w))
@@ -406,7 +406,7 @@ const app = new Hono()
       ...adminSeriesInput(c.req.valid('json')),
       createdByStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'class_series', id: res.series.id })
+    c.set('auditTarget', { table: 'class_series', id: res.series.id })
     return c.json({ series: seriesRow(res.series), class_ids: res.classIds }, 201)
   })
   .get('/series/:id', seriesParam, async c => {
@@ -430,7 +430,7 @@ const app = new Hono()
       excludedDates: body.excluded_dates,
       actorStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'class_series', id })
+    c.set('auditTarget', { table: 'class_series', id })
     return c.json({ series: seriesRow(res.series), class_ids: res.classIds })
   })
   // The rule every class the series makes from now on is given; its existing
@@ -438,7 +438,7 @@ const app = new Hono()
   .put('/series/:id/package-rule', seriesParam, zValidator('json', packageRuleSchema), async c => {
     const { id } = c.req.valid('param')
     const series = await seriesSvc.setSeriesRule(tenantId(c), id, toPackageRule(c.req.valid('json')))
-    c.set('auditTarget' as any, { table: 'class_series', id })
+    c.set('auditTarget', { table: 'class_series', id })
     return c.json(seriesRow(series))
   })
   .post('/series/:id/end', seriesParam, zValidator('json', endSchema, explainSeries), async c => {
@@ -447,7 +447,7 @@ const app = new Hono()
       fromDate: c.req.valid('json').from_date,
       actorStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'class_series', id })
+    c.set('auditTarget', { table: 'class_series', id })
     return c.json({
       ended_from: res.endedFrom,
       cancelled_class_ids: res.cancelledClassIds,

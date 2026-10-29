@@ -82,7 +82,7 @@ const app = new Hono()
       reason: body.reason,
       actorStaffId: c.get('staffUserId'),
     })
-    c.set('auditTarget' as any, { table: 'purchases', id })
+    c.set('auditTarget', { table: 'purchases', id })
     const paymentCount = result.paymentIntentIds.length
     return c.json({
       refunded: true,
