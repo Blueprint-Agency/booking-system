@@ -804,6 +804,117 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(voided.creditsOrSessionsRemaining, before, 'no session was returned to the voided package')
   })
 
+  test('RFD-39 a step that waits for the package a Refund is voiding finds it Voided: a member cancelling a pending request (the package used up by it or not) and an Admin returning a booking the Refund left standing put nothing back on it, and scheduling a pending request is refused', async () => {
+    const proposed = new Date(Date.now() + 5 * DAY).toISOString().slice(0, 10)
+    const request = async (who: Member, paid: Paid) => {
+      const requested = await post('/api/v1/me/pt-sessions/request', who.headers, {
+        classTypeId: one.classTypeId,
+        locationId: one.locationId,
+        sessionType: '1on1',
+        clientPackageId: paid.clientPackageId,
+        slots: [{ proposedDate: proposed, startTime: '09:00', endTime: '10:00' }],
+      })
+      assert.equal(requested.status, 201, JSON.stringify(requested.body))
+      return requested.body.pt_request_id as string
+    }
+    const movementsOn = (clientPackageId: string) =>
+      harness.db.select().from(schema.creditMovements).where(eq(schema.creditMovements.clientPackageId, clientPackageId))
+    /** The step runs once the unwind is waiting for the package; the test holds the package until both are. */
+    const raced = async (paid: Paid, step: () => Promise<Reply>) => {
+      const [unwound, answered] = await inFlightTogether(
+        harness.db,
+        sql`SELECT id FROM client_packages WHERE id = ${paid.clientPackageId}`,
+        [() => deliverRefund(paid.intents[0]!), step],
+      )
+      assert.equal(unwound!.status, 200, JSON.stringify(unwound!.body))
+      await assertRefunded(paid.purchaseId)
+      return answered!
+    }
+
+    for (const lastSession of [false, true]) {
+      const label = lastSession ? 'the request took its last session' : 'sessions left'
+      const who = await member(one, `Rae Pending ${lastSession ? 'Last' : 'Some'}`)
+      const paid = await buy(one, who, 'pt')
+      if (lastSession) {
+        await harness.db
+          .update(schema.clientPackages)
+          .set({ creditsOrSessionsRemaining: 1 })
+          .where(eq(schema.clientPackages.id, paid.clientPackageId))
+      }
+      const requestId = await request(who, paid)
+      const before = await packageRow(paid.clientPackageId)
+      assert.equal(before.active, !lastSession, label)
+      const movements = (await movementsOn(paid.clientPackageId)).length
+
+      const cancelled = await raced(paid, () => post(`/api/v1/me/pt-sessions/${requestId}/cancel`, who.headers, {}))
+
+      assert.equal(cancelled.status, 200, `${label}: ${JSON.stringify(cancelled.body)}`)
+      assert.equal(cancelled.body.status, 'cancelled_before_scheduled', label)
+      assert.equal(cancelled.body.refundOutcome, 'n_a', label)
+      assert.equal(cancelled.body.refundedSessions, 0, label)
+      const after = await packageRow(paid.clientPackageId)
+      assert.equal(after.creditsOrSessionsRemaining, before.creditsOrSessionsRemaining, label)
+      assert.equal(after.active, false, label)
+      assert.equal((await movementsOn(paid.clientPackageId)).length, movements, label)
+    }
+
+    // A class already under way when the Refund lands is left standing by the Void.
+    const ola = await member(one, 'Rae Running')
+    const bundle = await buy(one, ola, 'bundle')
+    const classId = await addClass(one, 3 * DAY)
+    const booked = await book(ola, classId)
+    assert.equal(booked.status, 201, JSON.stringify(booked.body))
+    await harness.db
+      .update(schema.classes)
+      .set({ startsAt: new Date(Date.now() - 10 * 60 * 1000), endsAt: new Date(Date.now() + 50 * 60 * 1000) })
+      .where(eq(schema.classes.id, classId))
+    const bundleMovements = (await movementsOn(bundle.clientPackageId)).length
+
+    const returned = await raced(bundle, () =>
+      post(`/api/v1/portal/admin/bookings/${booked.body.booking_id}/cancel`, adminAtOne.headers, { credit: 'return' }),
+    )
+
+    assert.equal(returned.status, 200, JSON.stringify(returned.body))
+    assert.equal(returned.body.refund_outcome, 'n_a')
+    assert.equal(returned.body.refund_fired, false)
+    const standing = await bookingRow(booked.body.booking_id)
+    assert.equal(standing.state, 'cancelled')
+    assert.equal(standing.refundOutcome, 'n_a')
+    const bundleAfter = await packageRow(bundle.clientPackageId)
+    assert.equal(bundleAfter.creditsOrSessionsRemaining, 9)
+    assert.equal(bundleAfter.active, false)
+    assert.equal((await movementsOn(bundle.clientPackageId)).length, bundleMovements)
+
+    // Scheduling a pending request the Refund's package paid for.
+    const sal = await member(one, 'Rae Scheduled')
+    const sessions = await buy(one, sal, 'pt')
+    const pendingId = await request(sal, sessions)
+    const startsAt = new Date(Date.now() + 6 * DAY)
+    const sessionMovements = (await movementsOn(sessions.clientPackageId)).length
+
+    const scheduled = await raced(sessions, () =>
+      post(`/api/v1/portal/admin/pt-sessions/${pendingId}/schedule`, adminAtOne.headers, {
+        instructor_id: teacherAtOne.staffId,
+        location_id: one.locationId,
+        room_id: one.roomId,
+        starts_at: startsAt.toISOString(),
+        ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+      }),
+    )
+
+    assert.equal(scheduled.status, 409, JSON.stringify(scheduled.body))
+    assert.equal(scheduled.body.error, 'package_voided')
+    const [stillPending] = await harness.db.select().from(schema.ptRequests).where(eq(schema.ptRequests.id, pendingId))
+    assert.equal(stillPending?.status, 'pending')
+    assert.deepEqual(await harness.db.select().from(schema.ptSessions).where(eq(schema.ptSessions.ptRequestId, pendingId)), [])
+    assert.deepEqual(await harness.db.select().from(schema.bookings).where(eq(schema.bookings.clientId, sal.clientId)), [])
+    const unscheduled = await packageRow(sessions.clientPackageId)
+    assert.equal(unscheduled.creditsOrSessionsRemaining, 4)
+    assert.equal(unscheduled.active, false)
+    assert.equal(unscheduled.expiresAt, null, 'the refunded package was not Activated')
+    assert.equal((await movementsOn(sessions.clientPackageId)).length, sessionMovements)
+  })
+
   test('RFD-36 a Refund whose cancel of one of its bookings Postgres aborts as a deadlock runs again from the start: the booking is cancelled, not left confirmed on the voided package', async () => {
     const ola = await member(one, 'Ola Aborted')
     const paid = await buy(one, ola, 'bundle')
