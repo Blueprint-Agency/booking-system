@@ -283,13 +283,16 @@ export async function bookWorkshopPaid(
     .limit(1)
   if (!tier) throw new NotFoundError('workshop_tier_not_found')
 
-  if (frozenListPriceSgd == null) {
+  const placed = await insertWorkshopBooking(tenantId, { ...booking, listPriceSgd: frozenListPriceSgd ?? tier.regularPriceSgd })
+  // Only a delivery that inserted the place booked it at the tier price: the
+  // loser of a race, or a redelivery, gets the winner's booking back.
+  if (placed.created && frozenListPriceSgd == null) {
     logger.info(
       { purchaseId: input.purchaseId, workshopTierId: input.workshopTierId },
       'stripe-webhook: a workshop sale checked out before its List Price was recorded is booked at the tier price as it stands',
     )
   }
-  return insertWorkshopBooking(tenantId, { ...booking, listPriceSgd: frozenListPriceSgd ?? tier.regularPriceSgd })
+  return placed
 }
 
 export async function bookWorkshopFree(
