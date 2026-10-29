@@ -43,6 +43,13 @@ const IMPOSSIBLE_MOMENTS = [
   '0000-01-01T00:00:00Z',
   '20260-01-01',
   '12/31/99999',
+  // An offset the clock never has: the string reads as a moment and `new Date` turns it into Invalid Date.
+  '2026-01-31T09:00:00+24:00',
+  '2026-01-31T09:00:00+99:99',
+  '2026-01-31T09:00:00-25:00',
+  // A year that is 1 to 9999 as written and 10000 or 0 once the offset is applied.
+  '9999-12-31T23:00:00-08:00',
+  '0001-01-01T00:00:00+08:00',
 ] as const
 
 type Who = 'member' | 'admin' | 'instructor' | 'visitor'
@@ -516,7 +523,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
     await exec(sql`DELETE FROM class_supporting_instructors WHERE class_id IN (${ourClasses})`)
     await exec(sql`DELETE FROM classes WHERE room_id = ${roomId}`)
     await exec(sql`DELETE FROM class_series WHERE class_type_id = ${classTypeId}`)
-    await exec(sql`DELETE FROM workshop_tier_days WHERE tier_id IN (SELECT id FROM workshop_tiers WHERE workshop_id IN (${workshops}))`)
+    await exec(sql`DELETE FROM workshop_tier_days WHERE workshop_tier_id IN (SELECT id FROM workshop_tiers WHERE workshop_id IN (${workshops}))`)
     await exec(sql`DELETE FROM workshop_tiers WHERE workshop_id IN (${workshops})`)
     await exec(sql`DELETE FROM workshop_days WHERE workshop_id IN (${workshops})`)
     await exec(sql`DELETE FROM workshop_instructors WHERE workshop_id IN (${workshops})`)
@@ -921,6 +928,53 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
           }),
           { says: /date and time/i },
         ),
+      ],
+      IMPOSSIBLE_MOMENTS,
+    )
+  })
+
+  test('PKG-53 a package whose Promotions cannot be saved is not saved either, however the Promotions fail', async () => {
+    // A Promotion that ends before it starts passes the request's checks and is refused by the database after the package row is in.
+    const endsBeforeStart = {
+      label: `${TAG} backwards promotion`,
+      kind: 'percent',
+      percent_off: 25,
+      starts_at: new Date(Date.now() + 10 * DAY).toISOString(),
+      ends_at: new Date(Date.now() + 5 * DAY).toISOString(),
+    }
+    const wrong: string[] = []
+    for (const [path, body] of [
+      [
+        '/admin/class-packages',
+        { name: `${TAG} half-saved pass`, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00' },
+      ],
+      [
+        '/admin/pt-packages',
+        { name: `${TAG} half-saved sessions`, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00' },
+      ],
+    ] as const) {
+      const before = await fingerprint()
+      const res = await send('admin', { method: 'POST', path: portal(path), body: { ...body, promotions: [endsBeforeStart] } })
+      if (res.status < 400) wrong.push(`${path}: answered ${res.status} ${JSON.stringify(res.body).slice(0, 160)}`)
+      if ((await fingerprint()) !== before) wrong.push(`${path}: a refused request wrote`)
+      const saved = await harness.db.execute<{ n: number }>(
+        sql`SELECT (SELECT count(*) FROM class_packages WHERE name = ${body.name})::int + (SELECT count(*) FROM pt_packages WHERE name = ${body.name})::int AS n`,
+      )
+      if (saved[0]!.n !== 0) wrong.push(`${path}: the package was saved without its Promotion`)
+    }
+    assert.deepEqual(wrong, [])
+  })
+
+  test('ATN-201 the Updates tab refuses a cursor whose time does not exist, 400, instead of a 500', async () => {
+    const id = randomUUID()
+    await check(
+      [
+        {
+          label: 'GET /portal/attention updates_before',
+          as: 'admin',
+          send: v => ({ method: 'GET', path: query(portal('/attention'), { updates_before: `${v}_${id}` }) }),
+          valid: moment(),
+        },
       ],
       IMPOSSIBLE_MOMENTS,
     )
