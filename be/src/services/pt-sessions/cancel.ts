@@ -5,7 +5,7 @@ import { bookings, cancellations } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
 import { activeAdminIds, recordUpdate, staffNameFor, studioWhen } from '../attention/updates'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
-import { actorOfSource, isVoided, recordMovement, refundCredits, type Tx } from '../packages/ledger'
+import { actorOfSource, keepCredit, refundCredits, type Tx } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import { ptSessionCost } from './cost'
 import { cancelManualSessionInTx } from './manual'
@@ -154,7 +154,6 @@ async function cancelPtRequestInTx(
 
   const cost = ptSessionCost(req.sessionType)
   const resolvedByStaffId = staff ? (actorStaffId ?? null) : null
-  const voided = req.debitedClientPackageId !== null && (await isVoided(tx, tenantId, req.debitedClientPackageId))
 
   // Written first, in this transaction, so every branch below — the manual
   // session's included — carries it, and a refused cancel rolls it back.
@@ -167,10 +166,13 @@ async function cancelPtRequestInTx(
   }
 
   // Refund `n` sessions to the exact debited package (ledger locks the row,
-  // re-derives `active` and writes the audit entry).
-  const refundToPackage = async (n: number, reason: string, bookingId: string | null = null) => {
-    if (n <= 0 || !req.debitedClientPackageId) return
-    await refundCredits(tx, {
+  // re-derives `active` and writes the audit entry). Whether they landed is the
+  // ledger's answer, read under the package lock: a Voided package takes
+  // nothing back, whatever order the Refund and this cancel ran in. Nothing to
+  // return, or no package to return it to, is not a refusal.
+  const refundToPackage = async (n: number, reason: string, bookingId: string | null = null): Promise<boolean> => {
+    if (n <= 0 || !req.debitedClientPackageId) return true
+    const { landed } = await refundCredits(tx, {
       tenantId,
       clientId: req.clientId,
       clientPackageId: req.debitedClientPackageId,
@@ -182,15 +184,13 @@ async function cancelPtRequestInTx(
       actor: actorOfSource(source),
       actedByStaffId: resolvedByStaffId,
     })
+    return landed
   }
 
   // ---- pending → cancelled_before_scheduled (always refund) -------------
   if (req.status === 'pending') {
-    const returned = voided ? 0 : cost
-    await refundToPackage(
-      returned,
-      input.expired ? 'pt_request_expiry_refund' : 'pt_request_cancel_refund',
-    )
+    const landed = await refundToPackage(cost, input.expired ? 'pt_request_expiry_refund' : 'pt_request_cancel_refund')
+    const returned = landed ? cost : 0
     await tx
       .update(ptRequests)
       // The source is the request's only record of who ended it: a Remove
@@ -207,7 +207,7 @@ async function cancelPtRequestInTx(
     return {
       status: 'cancelled_before_scheduled',
       refundedSessions: returned,
-      refundOutcome: voided ? 'n_a' : 'session_returned',
+      refundOutcome: landed ? 'session_returned' : 'n_a',
     }
   }
 
@@ -308,33 +308,40 @@ async function cancelPtRequestInTx(
   // cancelled on its own (services/bookings/cancel.ts), that cancel settled the
   // session(s) — returned or forfeited — and returning them here would pay twice.
   const requesterStillBooked = sessionBookings.some(b => b.clientId === req.clientId)
-  const refundOutcome: CancelPtRequestResult['refundOutcome'] = !requesterStillBooked
+  let refundOutcome: CancelPtRequestResult['refundOutcome'] = !requesterStillBooked
     ? 'n_a'
     : refundSessions === 0
       ? 'forfeited'
-      : voided
-        ? 'n_a'
-        : 'session_returned'
+      : 'session_returned'
   if (refundOutcome !== 'session_returned') refundSessions = 0
 
   const requesterBookingId = sessionBookings.find(b => b.clientId === req.clientId)?.id ?? null
-  await refundToPackage(refundSessions, staff ? 'pt_admin_cancel_refund' : 'pt_cancel_refund', requesterBookingId)
-  if (refundOutcome === 'forfeited' && req.debitedClientPackageId) {
-    await recordMovement(tx, {
+  // A Voided package takes nothing back and keeps nothing: the ledger says so
+  // under the package lock, and the cancel is settled `n_a`.
+  if (!(await refundToPackage(refundSessions, staff ? 'pt_admin_cancel_refund' : 'pt_cancel_refund', requesterBookingId))) {
+    refundSessions = 0
+    refundOutcome = 'n_a'
+  }
+  if (
+    refundOutcome === 'forfeited' &&
+    req.debitedClientPackageId &&
+    !(await keepCredit(tx, {
       tenantId,
       clientId: req.clientId,
       clientPackageId: req.debitedClientPackageId,
-      cause: 'kept',
       bookingId: requesterBookingId,
       actor: actorOfSource(source),
       actedByStaffId: resolvedByStaffId,
-    })
+    }))
+  ) {
+    refundOutcome = 'n_a'
   }
 
   // The session that Activated the package, cancelled in time, returns it to
   // Dormant (be/docs/adr/0011). Not when the requester's booking was already
-  // cancelled on its own: that cancel settled it.
-  if (requesterStillBooked && req.debitedClientPackageId && !voided) {
+  // cancelled on its own: that cancel settled it. A Voided package is left as
+  // the Void left it, which the reversal judges under the package lock.
+  if (requesterStillBooked && req.debitedClientPackageId) {
     await reverseActivationOnCancel(tx, {
       tenantId,
       clientId: req.clientId,

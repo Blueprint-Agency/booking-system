@@ -13,7 +13,7 @@
 import { and, eq, isNotNull, lte } from 'drizzle-orm'
 import { clientPackages } from '../../db/schema/packages'
 import { manualAdjustments } from '../../db/schema/ledger'
-import { recordExpired, type Tx } from './ledger'
+import { isVoided, recordExpired, type Tx } from './ledger'
 import { effectiveExpiry, isDormant } from './validity'
 import { ConflictError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
@@ -152,6 +152,10 @@ export async function reverseActivationOnCancel(
     .for('update')
     .limit(1)
   if (!pkg) return
+  // A Voided package has ended and stays exactly as the Void left it: no expiry
+  // cleared, no row written. Read now the row is held, so a Void that was
+  // waiting on it is seen; callers do not gate this on a read of their own.
+  if (await isVoided(tx, input.tenantId, input.clientPackageId)) return
 
   await tx
     .update(clientPackages)

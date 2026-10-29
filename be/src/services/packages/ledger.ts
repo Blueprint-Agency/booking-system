@@ -86,6 +86,14 @@ interface CreditMovementInput {
 interface MovementOutcome {
   remaining: number
   active: boolean
+  /**
+   * Whether the movement happened. A return to a **Voided** package does not:
+   * the ledger holds the package row and finds its Purchase refunded, so it
+   * moves nothing and writes no Credit movement and no audit row. Every caller
+   * that returns a session or credit records this answer, never its own read
+   * of the Voided state taken before the package was held (be/CONTEXT.md § Void).
+   */
+  landed: boolean
 }
 
 async function move(tx: Tx, input: CreditMovementInput, sign: 1 | -1): Promise<MovementOutcome> {
@@ -112,12 +120,19 @@ async function move(tx: Tx, input: CreditMovementInput, sign: 1 | -1): Promise<M
     .limit(1)
   if (!pkg) throw new NotFoundError('client_package_not_found')
 
+  // Read now the row is held, never before: a Refund's Void holds the row while
+  // it ends the package and marks the Purchase refunded before it lets go, so a
+  // return that waited for it sees the package Voided, and one that ran first
+  // landed before the Void and is Voided along with the package.
+  const voided = await isVoided(tx, input.tenantId, input.clientPackageId)
+  if (sign === 1 && voided) return { remaining: pkg.remaining ?? 0, active: false, landed: false }
+
   const result = applyMovement(
     {
       kind: pkg.kind,
       expiresAt: pkg.expiresAt,
       creditsOrSessionsRemaining: pkg.remaining,
-      voided: await isVoided(tx, input.tenantId, input.clientPackageId),
+      voided,
     },
     sign * input.amount,
   )
@@ -164,7 +179,7 @@ async function move(tx: Tx, input: CreditMovementInput, sign: 1 | -1): Promise<M
     })
   }
 
-  return { remaining: result.remaining, active: result.active }
+  return { remaining: result.remaining, active: result.active, landed: true }
 }
 
 /**
@@ -256,6 +271,22 @@ export async function recordMovement(tx: Handle, m: RecordedMovement): Promise<v
     actedByStaffId: m.actedByStaffId ?? null,
     note: m.note ?? null,
   })
+}
+
+/**
+ * A forfeit: the credit a cancel kept (a Late cancel, an over-cap one, a staff
+ * Keep credit), recorded as a `kept` Credit movement. A Voided package has no
+ * credit to keep, so nothing is recorded and the answer is `false`: the caller
+ * settles the cancel as `n_a`. Nothing moves, so unlike a return this takes no
+ * lock on the package.
+ */
+export async function keepCredit(
+  tx: Handle,
+  m: Pick<RecordedMovement, 'tenantId' | 'clientId' | 'clientPackageId' | 'actor' | 'bookingId' | 'actedByStaffId'>,
+): Promise<boolean> {
+  if (await isVoided(tx, m.tenantId, m.clientPackageId)) return false
+  await recordMovement(tx, { ...m, cause: 'kept' })
+  return true
 }
 
 /**

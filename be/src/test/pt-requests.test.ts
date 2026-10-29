@@ -4351,7 +4351,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
   })
 
   /** A member's 2on1 request session, scheduled; the requester's package paid its two sessions. */
-  async function requestPair(name: string, startsAt?: Date) {
+  async function requestPair(name: string, opts: { instructor?: Staff } = {}) {
     const who = await member(one, `${name} One`)
     const partner = await member(one, `${name} Two`)
     const packageId = await givePt(one, who, '2on1')
@@ -4360,7 +4360,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       clientPackageId: packageId,
       partner: { kind: 'existing', coClientId: partner.clientId },
     })
-    const sessionId = await scheduled(requestId, startsAt ? { startsAt } : {})
+    const sessionId = await scheduled(requestId, opts.instructor ? { instructor: opts.instructor } : {})
     assert.equal(await sessionsLeft(packageId), 8)
     return { who, partner, packageId, requestId, sessionId }
   }
@@ -4370,7 +4370,8 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const confirmedOn = async (sessionId: string) =>
       (await bookingsOn(sessionId)).filter(b => b.state === 'confirmed').length
 
-    const started = await requestPair('Ned Started Request')
+    // Its own Instructor, so editing its pay is not an overlap with the manual session beside it.
+    const started = await requestPair('Ned Started Request', { instructor: coachB })
     const manual = await fullPair('Ned Started Manual')
     const attended = await requestPair('Ned Attended Request')
     await startedAgo(started.sessionId, 10)

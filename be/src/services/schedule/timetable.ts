@@ -348,6 +348,24 @@ export async function listSchedule(
             ),
           )
       : []
+    // The seats still booked, as a class counts its confirmed seats: a cancelled
+    // session reads 0 of its places, and a 2on1 whose partner left reads 1 of 2.
+    // The names above stay as the session was made, so its label still says who
+    // it was for.
+    const bookedRows = ids.length
+      ? await db
+          .select({ ptSessionId: bookings.ptSessionId, cnt: sql<number>`count(*)::int` })
+          .from(bookings)
+          .where(
+            and(
+              eq(bookings.tenantId, tenantId),
+              inArray(bookings.ptSessionId, ids),
+              eq(bookings.state, 'confirmed'),
+            ),
+          )
+          .groupBy(bookings.ptSessionId)
+      : []
+    const bookedBySession = new Map(bookedRows.map(r => [r.ptSessionId, r.cnt]))
     const namesBySession = new Map<string, string[]>()
     for (const r of clientLinks) {
       const list = namesBySession.get(r.ptSessionId) ?? []
@@ -371,7 +389,7 @@ export async function listSchedule(
         startsAt: r.startsAt.toISOString(),
         endsAt: r.endsAt.toISOString(),
         capacity: attendanceCapacity(r),
-        bookedCount: names.length,
+        bookedCount: bookedBySession.get(r.id) ?? 0,
         seats: null,
         waiting: null,
         eventState: computeEventState({

@@ -20,7 +20,7 @@ import { classes } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { bookings, cancellations } from '../../db/schema/bookings'
-import { isVoided, lockPackages, refundCredits } from '../packages/ledger'
+import { lockPackages, refundCredits } from '../packages/ledger'
 import { computeEventState } from '../policy/event-state'
 import { staffCancelInTime } from '../policy/evaluate-cancellation'
 import { now as clockNow } from '../../lib/clock'
@@ -150,18 +150,16 @@ export async function cancelClassInTx(
   const notices: StudioCancelNotice[] = []
   for (const bk of confirmed) {
     const used = bk.used ?? 0
-    // Nothing goes back to a Voided package: the member has their money.
-    const refundFired =
-      used > 0 && !!bk.clientPackageId && !(await isVoided(tx, tenantId, bk.clientPackageId))
-    notices.push({ bookingId: bk.id, returned: refundFired ? used : 0 })
-
-    if (refundFired) {
-      // Ledger re-derives `active` — an emptied bundle refunded here is
-      // spendable again (it previously came back unusable).
-      await refundCredits(tx, {
+    // Ledger re-derives `active` — an emptied bundle refunded here is
+    // spendable again (it previously came back unusable). Nothing goes back to
+    // a Voided package, the member has their money: the ledger says so under
+    // the package lock, and the booking settles `n_a`.
+    let refundFired = false
+    if (used > 0 && bk.clientPackageId) {
+      const { landed } = await refundCredits(tx, {
         tenantId,
         clientId: bk.clientId,
-        clientPackageId: bk.clientPackageId!,
+        clientPackageId: bk.clientPackageId,
         amount: used,
         reason:
           source === 'instructor'
@@ -172,8 +170,10 @@ export async function cancelClassInTx(
         actor: 'staff',
         actedByStaffId: actorStaffId,
       })
-      refundedCount++
+      refundFired = landed
     }
+    if (refundFired) refundedCount++
+    notices.push({ bookingId: bk.id, returned: refundFired ? used : 0 })
 
     await tx.insert(cancellations).values({
       tenantId,
