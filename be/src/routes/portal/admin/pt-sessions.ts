@@ -32,7 +32,7 @@ import {
   removeMemberParam,
   seatCandidatesJson,
 } from '../pt-manual'
-import { dateTime } from '../../date-time'
+import { dateTime } from '../../../shared/date-time'
 
 // PT request triage for admins. No "approve"/"decline" in the simplified flow —
 // admin negotiates over WhatsApp, then either schedules (the implicit approval)

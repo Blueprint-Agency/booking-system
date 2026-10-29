@@ -5,7 +5,7 @@ import { submitPtRequest } from '../../services/pt-sessions/request'
 import { cancelPtRequest } from '../../services/pt-sessions/cancel'
 import { listClientPtRequests, lookupPartnerByEmail } from '../../services/pt-sessions/list'
 import { tenantId } from '../../middleware/tenant'
-import { plainDate } from '../plain-date'
+import { plainDate } from '../../shared/plain-date'
 
 const slotSchema = z.object({
   proposedDate: plainDate('A proposed date'),

@@ -29,7 +29,7 @@ import {
   seatCandidatesJson,
 } from '../pt-manual'
 import { requirePermission } from '../../../middleware/require-permission'
-import { dateTime } from '../../date-time'
+import { dateTime } from '../../../shared/date-time'
 
 // Instructor PT surface. Instructors see the pending requests they may act on —
 // unbound ones, plus those bound to them — and pick up the ones they can run;

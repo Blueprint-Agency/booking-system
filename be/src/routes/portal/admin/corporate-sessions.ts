@@ -4,7 +4,7 @@ import { z } from 'zod'
 import * as svc from '../../../services/corporate/sessions'
 import { tenantId } from '../../../middleware/tenant'
 import { ERROR_CODES } from '../../../shared/error-codes'
-import { dateTime } from '../../date-time'
+import { dateTime } from '../../../shared/date-time'
 
 const idParam = z.object({ id: z.string().uuid() })
 

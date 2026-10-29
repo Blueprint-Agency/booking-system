@@ -18,7 +18,7 @@ import { namedClassRule, namedRuleJson } from './package-rules'
 import { classCancelWindow } from '../policy/cancel-window'
 import { localDateOf, zonedInstant } from './series-dates'
 import { loadTenantById } from '../tenants/tenants'
-import { dateTime } from '../../routes/date-time'
+import { dateTime } from '../../shared/date-time'
 
 interface LocationLite {
   id: string

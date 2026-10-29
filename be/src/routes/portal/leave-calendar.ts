@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { leaveViewer, listLeaveCalendar } from '../../services/leave/requests'
 import { explainInvalid } from '../explain-invalid'
-import { plainDate } from '../plain-date'
+import { plainDate } from '../../shared/plain-date'
 
 /**
  * GET /api/v1/portal/leave-calendar?from=YYYY-MM-DD&to=YYYY-MM-DD

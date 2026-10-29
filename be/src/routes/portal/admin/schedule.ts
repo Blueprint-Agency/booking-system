@@ -22,7 +22,7 @@ import { classWaitlistRoutes } from '../class-waitlist'
 import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
 import { namedRuleJson } from '../../../services/schedule/package-rules'
 import { ptSessionDetailJson } from '../pt-session-detail'
-import { plainDate } from '../../plain-date'
+import { plainDate } from '../../../shared/plain-date'
 import {
   explainSeries,
   previewJson,
@@ -30,7 +30,7 @@ import {
   seriesTemplateFields,
   toSeriesInput,
 } from '../class-series'
-import { dateTime } from '../../date-time'
+import { dateTime } from '../../../shared/date-time'
 
 const listQuery = z.object({
   from: dateTime('A from time').optional(),

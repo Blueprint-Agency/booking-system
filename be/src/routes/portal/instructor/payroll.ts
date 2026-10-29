@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { getPayroll } from '../../../services/payroll/list'
 import { tenantId } from '../../../middleware/tenant'
-import { dateTime } from '../../date-time'
+import { dateTime } from '../../../shared/date-time'
 
 /**
  * Instructor payroll — the caller's OWN teaching log only.

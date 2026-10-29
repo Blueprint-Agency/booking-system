@@ -20,7 +20,7 @@ import {
   type PayrollSaveReason,
 } from '../../../services/payroll/save-reasons'
 import { tenantId } from '../../../middleware/tenant'
-import { dateTime } from '../../date-time'
+import { dateTime } from '../../../shared/date-time'
 
 // Finance: every Money Event in a period — money in and money out — with the
 // studio's five figures over it. Replaces the admin Payroll surface; the

@@ -6,7 +6,7 @@ import type { ReceiptRow } from '../services/receipts/issue'
 import { receiptPdf, receiptPdfFilename } from '../services/receipts/pdf'
 import { receiptStatus, type ReceiptSummary } from '../services/receipts/read'
 import { explainInvalid } from './explain-invalid'
-import { plainDate } from './plain-date'
+import { plainDate } from '../shared/plain-date'
 
 /** A Receipts filter refused for its shape, answered with the field's sentence. */
 export const explainReceiptsQuery = explainInvalid('That Receipts filter is not valid.')

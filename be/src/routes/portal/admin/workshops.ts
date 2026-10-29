@@ -8,7 +8,7 @@ import * as scheduleSvc from '../../../services/workshops/schedule'
 import * as cancelSvc from '../../../services/workshops/cancel'
 import { tenantId } from '../../../middleware/tenant'
 import { BadRequestError } from '../../../shared/errors'
-import { dateTime } from '../../date-time'
+import { dateTime } from '../../../shared/date-time'
 import {
   listManagedPromotionsFor,
   replacePromotionsForParent,

@@ -3,7 +3,7 @@ import * as seriesSvc from '../../services/schedule/series'
 import { packageRuleSchema, toPackageRule } from './class-package-rule'
 import { namedRuleJson } from '../../services/schedule/package-rules'
 import { explainInvalid } from '../explain-invalid'
-import { plainDate } from '../plain-date'
+import { plainDate } from '../../shared/plain-date'
 
 /**
  * A Class Series on the wire, shared by the admin and instructor schedule

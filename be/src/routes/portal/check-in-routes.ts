@@ -11,7 +11,7 @@ import {
 } from '../../services/bookings/check-in'
 import { BadRequestError } from '../../shared/errors'
 import { tenantId } from '../../middleware/tenant'
-import { plainDate } from '../plain-date'
+import { plainDate } from '../../shared/plain-date'
 
 /**
  * The check-in surface (#192), mounted twice: at `/admin/check-in` and at

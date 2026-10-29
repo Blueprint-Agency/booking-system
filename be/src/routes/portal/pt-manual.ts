@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { SeatCandidate } from '../../services/pt-sessions/manual'
-import { dateTime } from '../date-time'
+import { dateTime } from '../../shared/date-time'
 
 /**
  * `POST …/manual`: a private session staff create with its members, no member

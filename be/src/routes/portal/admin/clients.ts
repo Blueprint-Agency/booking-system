@@ -55,7 +55,7 @@ import { creditHistory, serializeCreditHistory } from '../../../services/package
 import { changeClientEmail } from '../../../services/clients/change-email'
 import { editClientProfile } from '../../../services/clients/edit-profile'
 import { explainInvalid } from '../../explain-invalid'
-import { dateTime } from '../../date-time'
+import { dateTime } from '../../../shared/date-time'
 import { clientGenderEnum } from '../../../db/enums'
 import {
   listMemberSessions,

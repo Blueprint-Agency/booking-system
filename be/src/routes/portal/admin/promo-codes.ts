@@ -4,7 +4,7 @@ import { z } from 'zod'
 import * as svc from '../../../services/packages/promo-code-admin'
 import { tenantId } from '../../../middleware/tenant'
 import { BadRequestError } from '../../../shared/errors'
-import { dateTime } from '../../date-time'
+import { dateTime } from '../../../shared/date-time'
 
 const productTypeEnum = z.enum(['class_package', 'pt_package', 'workshop'])
 const statusEnum = z.enum(['active', 'archived'])

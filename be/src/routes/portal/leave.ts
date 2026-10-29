@@ -8,7 +8,7 @@ import { ERROR_CODES } from '../../shared/error-codes'
 import { tenantId } from '../../middleware/tenant'
 import { MULTIPART_ENVELOPE_BYTES, uploadedFile } from '../uploaded-file'
 import { explainInvalid } from '../explain-invalid'
-import { plainDate } from '../plain-date'
+import { plainDate } from '../../shared/plain-date'
 
 /**
  * /api/v1/portal/leave — the caller's OWN leave, whichever role they hold.

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { PromotionWriteInput } from '../../../services/packages/promotions'
 import { MAX_VALIDITY_DAYS } from '../../../services/packages/validity'
 import { BadRequestError } from '../../../shared/errors'
-import { dateTime } from '../../date-time'
+import { dateTime } from '../../../shared/date-time'
 
 /**
  * The fields a class package and a PT package share, each with the sentence

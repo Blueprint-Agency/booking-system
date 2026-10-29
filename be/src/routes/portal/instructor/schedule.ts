@@ -12,7 +12,7 @@ import { seatFields, staffBookingJson, staffBookingSchema, staffPackagesJson, st
 import { classWaitlistRoutes } from '../class-waitlist'
 import { classPackageRuleJson, packageRuleSchema, toPackageRule } from '../class-package-rule'
 import { explainSeries, previewJson, seriesRow, seriesTemplateFields, toSeriesInput } from '../class-series'
-import { dateTime } from '../../date-time'
+import { dateTime } from '../../../shared/date-time'
 
 /**
  * Instructor schedule surface.
