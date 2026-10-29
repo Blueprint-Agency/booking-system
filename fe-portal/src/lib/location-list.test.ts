@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert";
 import {
   assertLoadedInFull,
+  latestRead,
+  locationSaveRefusal,
   locationsToManage,
   mayEditLocations,
   workspaceLocations,
@@ -35,14 +37,44 @@ test("LOC-18 an admin is offered no edit, archive or restore while the studio's 
   }
 });
 
-test("LOC-18 saving a location refuses a row that did not come from the full list, so no blank phone or Maps link can be sent over the real ones", () => {
+test("LOC-18 saving a location refuses a row that did not come from the loaded full list, so no blank phone or Maps link can be sent over the real ones", () => {
   // The short list's row for `a` has a blank phone; the full list's has the real one.
-  assert.throws(() => assertLoadedInFull(null, short[0]!), /full list/i);
-  assert.throws(() => assertLoadedInFull(full, row("zzz", "Not in the list")), /full list/i);
-  assert.doesNotThrow(() => assertLoadedInFull(full, full[0]!));
+  assert.throws(() => assertLoadedInFull(null, "loaded", short[0]!), /full list/i);
+  assert.throws(() => assertLoadedInFull(full, "loaded", row("zzz", "Not in the list")), /full list/i);
+  assert.doesNotThrow(() => assertLoadedInFull(full, "loaded", full[0]!));
+  // A full list that is not the loaded one (re-reading, failed) is no basis for a save, even holding the id.
+  for (const status of ["idle", "loading", "failed"] as const) {
+    assert.throws(() => assertLoadedInFull(full, status, full[0]!), /full list/i, status);
+  }
 });
 
-test("LOC-19 once the full list has loaded, every location, archived ones included, can be edited as before", () => {
+test("LOC-18 the location form shows the guard's own sentence when a save is refused for want of the full list, and the fallback for any other failure", () => {
+  const fallback = "The location could not be saved. Try again.";
+  let guard: unknown;
+  try {
+    assertLoadedInFull(null, "failed", short[0]!);
+  } catch (err) {
+    guard = err;
+  }
+  const shown = locationSaveRefusal(guard, fallback);
+  assert.match(shown, /full list/i);
+  assert.notStrictEqual(shown, fallback);
+  assert.strictEqual(locationSaveRefusal(new Error("network"), fallback), fallback);
+});
+
+test("LOC-18 only the latest read of the full list may land: a read a newer one has replaced, or a reset has cancelled, is ignored whether it succeeded or failed", () => {
+  const reads = latestRead();
+  const first = reads.begin();
+  assert.strictEqual(reads.isCurrent(first), true);
+  const second = reads.begin();
+  assert.strictEqual(reads.isCurrent(first), false);
+  assert.strictEqual(reads.isCurrent(second), true);
+  reads.cancel();
+  assert.strictEqual(reads.isCurrent(second), false);
+  assert.strictEqual(reads.isCurrent(reads.begin()), true);
+});
+
+test("LOC-19 once the full list has loaded, an Admin may edit and the screens that edit list every location, archived ones included", () => {
   assert.strictEqual(mayEditLocations("loaded"), true);
   assert.deepStrictEqual(locationsToManage("loaded", full), full);
 });
