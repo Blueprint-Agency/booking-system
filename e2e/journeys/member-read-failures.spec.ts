@@ -257,8 +257,10 @@ test('PT-168 a partner lookup that failed says so, and the request cannot be sen
   await page.getByRole('button', { name: '2-on-1', exact: true }).click()
   // A slot the form accepts, so the partner check is the only thing that can
   // stop the request. The window notice is up once the studio's window has been
-  // read, and its earliest day is the date picker's `min`.
-  await expect(page.getByText(/^Book .*up to \d+ days? ahead/)).toBeVisible()
+  // read, and its earliest day is the date picker's `min`. The notice is known by
+  // what it always carries, whatever its wording: a count of days and the dates
+  // it allows in brackets, "Choose dates 3 to 7 days from today (Sun 1 Nov – Thu 5 Nov)."
+  await expect(page.getByText(/^(Book|Choose) .*\d+ days?.* \([A-Z][a-z]{2} \d+ [A-Z][a-z]{2}[^)]*\)\.$/)).toBeVisible()
   const date = page.getByLabel('Date', { exact: true })
   const earliest = await date.getAttribute('min')
   expect(earliest).toMatch(/^\d{4}-\d{2}-\d{2}$/)
