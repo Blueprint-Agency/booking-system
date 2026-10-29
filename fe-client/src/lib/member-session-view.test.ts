@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { memberSessionView, type SessionStoreValue } from "./member-session-view.ts";
+import { memberSessionReadError, memberSessionView, type SessionStoreValue } from "./member-session-view.ts";
 
 const signedIn: SessionStoreValue = {
   data: { user: { id: "u1", email: "member@northwind.test" }, session: { claimedTenantId: "t1" } },
@@ -62,6 +62,22 @@ test("ACC-63 a session read that failed with a token held is unknown, never sign
     assert.equal(view.isLoaded, false);
     assert.equal(view.session, null);
   }
+});
+
+test("ACC-63 a session read that failed reaches the error page as an Error carrying the status and the original failure, so telemetry records a message", () => {
+  const betterAuthError = { status: 503, statusText: "Service Unavailable" };
+  const err = memberSessionReadError(betterAuthError);
+  assert.ok(err instanceof Error);
+  assert.equal(err.message, "member session read failed: 503");
+  assert.equal(err.cause, betterAuthError);
+
+  const dropped = new TypeError("Failed to fetch");
+  const droppedErr = memberSessionReadError(dropped);
+  assert.ok(droppedErr instanceof Error);
+  assert.equal(droppedErr.message, "member session read failed: Failed to fetch");
+  assert.equal(droppedErr.cause, dropped);
+
+  assert.equal(memberSessionReadError({}).message, "member session read failed: unknown");
 });
 
 test("ACC-63 a browser with no token is signed out whatever the read said", () => {
