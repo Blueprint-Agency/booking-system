@@ -646,6 +646,70 @@ describe('Staff attention: session Updates', { skip: integrationTestsEnabled ? f
     assert.deepEqual(await updatesOf(dual), [])
   })
 
+  test('ATN-202 an Admin who adds an instructor and moves the only day in one save: the new instructor is told once that they were scheduled on the new day and never that it moved, and those already on it are told it moved', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    const ada = await instructorAt(studio, admin, 'ada')
+    const ben = await instructorAt(studio, admin, 'ben')
+    const sam = await instructorAt(studio, admin, 'sam')
+    const w = await workshopOf(studio, admin, ada, [ben])
+
+    const detailPath = `/portal/admin/workshops/${w.id}`
+    const moved = new Date(w.startsAt.getTime() + DAY)
+    await json(
+      await send(detailPath, admin.headers, 'PATCH', {
+        supporting_instructors: [{ instructor_id: ben.id }, { instructor_id: sam.id }],
+        days: [
+          {
+            id: w.dayId,
+            ref: w.dayId,
+            room_id: studio.roomId,
+            starts_at: moved.toISOString(),
+            ends_at: new Date(moved.getTime() + 2 * HOUR).toISOString(),
+            capacity_online: 10,
+          },
+        ],
+        tiers: [{ name: 'Full', regular_price_sgd: '100.00', day_refs: [w.dayId] }],
+      }),
+      200,
+    )
+
+    const allOf = async (who: Staff) =>
+      (
+        (await json(await send('/portal/attention', who.headers), 200)).updates.items as Array<Record<string, any>>
+      ).filter(u => u.kind === 'session_assigned' || u.kind === 'session_changed')
+    const samsUpdates = await allOf(sam)
+    assert.deepEqual(
+      samsUpdates.map(u => [u.kind, u.title]),
+      [['session_assigned', `boss scheduled you to teach Inversions on ${when(moved)} as a supporting instructor`]],
+    )
+    for (const who of [ada, ben]) {
+      assert.deepEqual(
+        (await allOf(who)).map(u => [u.kind, u.title]),
+        [['session_changed', `boss moved Inversions from ${when(w.startsAt)} to ${when(moved)}`]],
+      )
+    }
+    assert.deepEqual(await allOf(admin), [])
+  })
+
+  test('ATN-203 editing a workshop that has no days yet tells its instructors nothing, however often it is saved', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    const ada = await instructorAt(studio, admin, 'ada')
+    const [w] = await harness.db
+      .insert(schema.workshops)
+      .values({ tenantId: studio.id, name: 'Inversions', locationId: studio.locationId, createdByStaffId: admin.id })
+      .returning({ id: schema.workshops.id })
+    await harness.db
+      .insert(schema.workshopInstructors)
+      .values({ tenantId: studio.id, workshopId: w!.id, instructorId: ada.id, role: 'main' as const })
+
+    for (const name of ['Inversions I', 'Inversions II', 'Inversions III']) {
+      await json(await send(`/portal/admin/workshops/${w!.id}`, admin.headers, 'PATCH', { name }), 200)
+    }
+    assert.deepEqual(await updatesOf(ada), [])
+  })
+
   test('ATN-188 a member cancelling their private session, by the request or by their booking, tells its instructor and names the member', async () => {
     const studio = await freshStudio()
     const admin = await adminAt(studio)
