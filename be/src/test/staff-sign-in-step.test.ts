@@ -17,7 +17,7 @@ import {
  * invitation.
  *
  * The case this exists for: a person who is already staff at one studio is made
- * the first admin of another. Logins are per studio (#231), so their password at
+ * the first admin of another. Logins are per studio, so their password at
  * the first studio does not sign in at the new one; the email step mails them the
  * new studio's set-password link, and following it accepts the invitation.
  */
@@ -83,7 +83,7 @@ describe('staff email-first sign-in', { skip: integrationTestsEnabled ? false : 
     })
   }
 
-  /** The person's login at `tenant` — logins are per studio (#231) — with the harness password or none. */
+  /** The person's login at `tenant` — logins are per studio — with the harness password or none. */
   const authUserId = async (email: string, withPassword: boolean, tenant: { id: string; slug: string } = one) => {
     const { ensureAuthUser } = await import('../services/auth/auth-users')
     if (withPassword) await harness.signInAs('staff', email, tenant)
@@ -279,7 +279,7 @@ describe('staff email-first sign-in', { skip: integrationTestsEnabled ? false : 
     assert.deepEqual(await step(one, stranger), { next: 'link_sent' })
     assert.equal(mailsTo(stranger).length, 0)
 
-    // Staff at another studio only: their password is that studio's (#231), so
+    // Staff at another studio only: their password is that studio's, so
     // here they are an unknown address like any other.
     const elsewhere = at('elsewhere')
     await staffAt(one, elsewhere, await authUserId(elsewhere, true), 'active')

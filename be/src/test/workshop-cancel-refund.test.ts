@@ -6,13 +6,13 @@ import { ownAccountId, type StripeFake } from './stripe-fake'
 
 /**
  * Cancelling a Workshop refunds nobody, and its paid bookings stay refundable
- * afterwards (#272).
+ * afterwards.
  *
- * Against a real database, because the whole of the bug lived in two queries:
- * the member page listed only `confirmed` workshop bookings, so the Refund
- * action vanished the moment the Workshop was cancelled, and the refund unwind
- * only touched `confirmed` bookings, so a refund issued afterwards would have
- * left the booking saying nothing came back.
+ * Against a real database, because the whole of the behaviour lives in two
+ * queries: the member page must list a cancelled Workshop's paid bookings, or
+ * the Refund action vanishes the moment the Workshop is cancelled, and the
+ * refund unwind must touch them, or a refund issued afterwards would leave the
+ * booking saying nothing came back.
  */
 
 const HOUR = 60 * 60 * 1000
@@ -112,7 +112,7 @@ describe('refunding a cancelled Workshop', { skip: integrationTestsEnabled ? fal
     const { installStripeFake } = await import('./stripe-fake')
     fake = installStripeFake()
     // The studio's own account — where every payment here was taken, and the
-    // only account a Refund can be issued on (#293).
+    // only account a Refund can be issued on.
     fake.ownAccount(harness.tenants.one)
     fake.reply('refunds.create', {})
 

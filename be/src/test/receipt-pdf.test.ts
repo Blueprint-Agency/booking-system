@@ -19,7 +19,7 @@ async function pdfText(bytes: Uint8Array): Promise<string> {
 }
 
 /**
- * A member downloads a Receipt as a PDF (#386): `GET /me/receipts/:id/pdf`,
+ * A member downloads a Receipt as a PDF: `GET /me/receipts/:id/pdf`,
  * rendered on request from what the Receipt says. Asked over HTTP, after a
  * checkout and the provider's delivery to the studio's own webhook (the Stripe
  * fake stands in for the provider), and read back as the text in the PDF.
@@ -66,7 +66,7 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
       .insert(schema.classPackages)
       .values({ tenantId: tenant.id, name: packageName, kind: 'credit_bundle', credits: 10, validityDays: 90, priceSgd: '150.00' })
       .returning({ id: schema.classPackages.id })
-    // The name a Receipt names the studio by (#403): its Business name, as issued.
+    // The name a Receipt names the studio by: its Business name, as issued.
     const [named] = await harness.db
       .select({ businessName: schema.tenantSettings.businessName })
       .from(schema.tenantSettings)
@@ -279,9 +279,9 @@ describe('a member downloads a Receipt as a PDF', { skip: integrationTestsEnable
   })
 
   test('INV-18 the renderer: a S$0.00 Receipt says no payment was due, a refunded one is stamped, and one Receipt always gives the same document', async () => {
-    // The renderer the member's download, the admin's (#389) and the email's
-    // attachment (#387) share, handed Receipts as they are stored. Free paths
-    // and Refunds issue and stamp Receipts in their own tickets (#385); what
+    // The renderer the member's download, the admin's and the email's
+    // attachment share, handed Receipts as they are stored. Free paths
+    // and Refunds issue and stamp Receipts in their own tests; what
     // the PDF makes of one is asked here.
     const { receiptPdf } = await import('../services/receipts/pdf')
     const free: import('../services/receipts/issue').ReceiptRow = {

@@ -9,7 +9,7 @@ const DOMAIN = `${run}.lifecycle.test`
 const OPERATOR = `operator@${DOMAIN}`
 
 /**
- * A studio's life as the super portal runs it, over real HTTP (#365): creating
+ * A studio's life as the super portal runs it, over real HTTP: creating
  * one and the addresses it may not take, suspending and reactivating it, giving
  * it its first Admin, following its imports and setting its Term.
  *

@@ -12,8 +12,8 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * An Unlimited Plan's **Home Location** as the member meets it, over real HTTP
- * (#226): which Location's classes it pays for, what the Cross-Location Add-On
+ * An Unlimited Plan's **Home Location** as the member meets it, over real HTTP:
+ * which Location's classes it pays for, what the Cross-Location Add-On
  * changes, and that a Credit Bundle is never spent in its place without the
  * member asking. Then the Inbox item a member's own PT session cancel leaves.
  *

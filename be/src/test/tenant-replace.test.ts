@@ -20,7 +20,7 @@ const OPERATOR = `operator@replace-${run}.test`
 const DOMAIN = `replace-${run}.test`
 
 /**
- * Replacing a studio from an archive (#339): every row the studio owns goes,
+ * Replacing a studio from an archive: every row the studio owns goes,
  * the archive's rows arrive in their place, and its people's logins stay.
  *
  * Through the platform routes, as the super portal and the runbook call them,

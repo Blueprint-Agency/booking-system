@@ -39,7 +39,7 @@ const COMPANY_LINES = ['Harbour Analytics Sdn Bhd', '12 Jalan Ampang', 'Level 8'
 const HOME = { name: 'Mia Tan', line1: '8 Orchard Road', city: 'Singapore', postcode: '238823' }
 
 /**
- * Every member purchase needs Billing details (#402): a free trial, a S$0
+ * Every member purchase needs Billing details: a free trial, a S$0
  * package or workshop place, Merch, a corporate package and a Cross-Location
  * Add-On alike. A purchase sent without them is refused before anything is
  * opened, and a free purchase sent with them is billed to the chosen set, its

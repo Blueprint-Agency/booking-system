@@ -11,7 +11,7 @@ import { unpackArchive } from '../services/tenants/transfer-archive'
 import { ArchiveError, type MemberManifest } from '../services/tenants/transfer-shape'
 
 /**
- * An admin downloads everything a studio holds about one member (#143).
+ * An admin downloads everything a studio holds about one member.
  *
  * The fixture is built from `MEMBER_TABLES` itself (`member-fixtures.ts`): a row
  * in every listed table for the member being exported, the same for another
@@ -52,7 +52,7 @@ describe('member export', { skip: integrationTestsEnabled ? false : SKIP_REASON 
 
     member = await memberAt(one, admin.headers, at('member'))
     neighbour = await memberAt(one, admin.headers, at('neighbour'))
-    // The same person, a member of the second studio too, on that studio's own login (#231).
+    // The same person, a member of the second studio too, on that studio's own login.
     elsewhere = await memberAt(two, adminTwo.headers, at('member'))
     assert.notEqual(elsewhere.authUserId, member.authUserId)
 

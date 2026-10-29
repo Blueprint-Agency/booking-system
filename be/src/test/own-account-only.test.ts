@@ -12,9 +12,9 @@ const PAID_PACKAGE = `Own account pass ${run}`
 const FREE_PACKAGE = `Own account free pass ${run}`
 
 /**
- * Every studio takes payments on its own account, and only on it (#293).
+ * Every studio takes payments on its own account, and only on it.
  *
- * The platform's account is no longer anywhere to fall back to. A studio that
+ * There is no platform account to fall back to. A studio that
  * has supplied no credentials cannot take a card payment at all — its checkout
  * is refused before anything is opened, while a $0 purchase, which never
  * reaches the provider, still goes through. A payment recorded against the

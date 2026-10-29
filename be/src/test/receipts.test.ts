@@ -12,7 +12,7 @@ const DOMAIN = `${run}.receipts.test`
 const NAME = `Receipts ${run}`
 
 /**
- * A member's Receipts (#384): the studio's own record of a paid Purchase,
+ * A member's Receipts: the studio's own record of a paid Purchase,
  * issued when the payment provider says the money arrived and read back from
  * the member's account. Everything is asked over HTTP: a checkout, the
  * provider's delivery to the studio's own webhook endpoint (the Stripe fake

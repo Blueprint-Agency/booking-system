@@ -13,7 +13,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * The staff side of the class waitlist over HTTP (#310, spec-waitlist.md §7,
+ * The staff side of the class waitlist over HTTP (spec-waitlist.md §7,
  * §8, §10).
  *
  * The session page lists a class's line in order with whether each member's

@@ -9,7 +9,7 @@ const DOMAIN = `${run}.admin-leave.test`
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
- * Leave belongs to a staff member, not an instructor profile (#315): an admin
+ * Leave belongs to a staff member, not an instructor profile: an admin
  * files leave exactly as an instructor does, through the one self-service mount
  * both roles share, and decides it on the same queue — their own request
  * included. Leave Conflicts and the study Leave Cap stay instructor-only.

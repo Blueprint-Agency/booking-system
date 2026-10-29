@@ -19,13 +19,13 @@ const SLUGS = [
 ]
 
 /**
- * Migration 0108 (#359): studios created before the booking and cancellation
+ * Migration 0108: studios created before the booking and cancellation
  * emails were sent get their new wording — in a template still exactly the
  * default it was written with, and a new row where they have none — while a
  * studio's own wording is never touched.
  *
  * Two throwaway studios, provisioned with today's templates. The "before"
- * text is the copy as it shipped before #359, written out here from that
+ * text is the copy as it shipped before the migration, written out here from that
  * release with the shared layout helpers — the links carrying the studio's own
  * origin, as the seeder baked them. The migration's own SQL is run against
  * them, twice.
@@ -67,7 +67,7 @@ describe('migration 0108:the booking emails reach studios created before them', 
     }
   }
 
-  /** The seven templates as they shipped before #359, for one studio's origins. */
+  /** The seven templates as they shipped before the migration, for one studio's origins. */
   function before359(slug: string): Record<string, { subject: string; bodyHtml: string }> {
     const { emailHeading, emailParagraph, emailButton, emailNote, emailLink, emailDetails } = layout
     const client = tenantOrigin('client', slug)!
@@ -191,9 +191,9 @@ describe('migration 0108:the booking emails reach studios created before them', 
     assert.deepEqual(Object.keys(today).sort(), [...SLUGS].sort(), 'a studio created today has every template')
     const FOOTER = layout.emailFooterNote(`1 ${run} Street`)
 
-    // Studio one: each template as written before #359 — two of them with a
+    // Studio one: each template as written before the migration — two of them with a
     // footer note, as the fixtures' are — and two rows gone, one of them the
-    // template #359 adds.
+    // template the migration adds.
     const oldA = before359(unedited.slug)
     for (const [slug, old] of Object.entries(oldA)) {
       const withFooter = slug === 'admin_cancel_class' || slug === 'checkin_nag'

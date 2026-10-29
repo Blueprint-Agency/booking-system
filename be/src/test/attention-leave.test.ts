@@ -6,7 +6,7 @@ import { connectPayments, usePaymentKey } from './attention-payments'
 import { sgToday } from '../lib/time'
 
 /**
- * Staff attention, leave requests (#476, #479): `leave_request_pending`, read
+ * Staff attention, leave requests: `leave_request_pending`, read
  * over HTTP as a signed-in admin. Every test makes a studio of its own, so a
  * count says only what that test filed.
  */

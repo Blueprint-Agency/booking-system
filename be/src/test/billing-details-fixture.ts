@@ -12,7 +12,7 @@ export const TEST_ADDRESS = { line1: '1 Test Street', city: 'Singapore', postcod
 
 /**
  * The id of a set of Billing details the signed-in member is billed to, which
- * every member purchase names (#402): their default where they have saved
+ * every member purchase names: their default where they have saved
  * some, otherwise one saved now through their own route, under their own name
  * and `TEST_ADDRESS`, which becomes their default.
  *
@@ -38,7 +38,7 @@ async function billingDetailsFor(app: Requester, headers: Record<string, string>
   return ((await added.json()) as { billing_details: { id: string } }).billing_details.id
 }
 
-/** `body`, a member purchase, naming the member's Billing details as every checkout now does (#402). */
+/** `body`, a member purchase, naming the member's Billing details as every checkout does. */
 export async function billed<T extends Record<string, unknown>>(
   app: Requester,
   headers: Record<string, string>,

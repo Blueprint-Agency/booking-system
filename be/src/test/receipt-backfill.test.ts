@@ -9,7 +9,7 @@ const run = Date.now().toString(36)
 const DOMAIN = `${run}.receipt-backfill.test`
 
 /**
- * Receipts for the sales made before Receipts existed (#394): the one-off CLI
+ * Receipts for the sales made before Receipts existed: the one-off CLI
  * `npm run receipts:backfill`, called here through its exported entry
  * function exactly as `main` calls it, against the test database.
  *

@@ -11,7 +11,7 @@ const NAME = `Nag ${run}`
 const HOUR = 60 * 60 * 1000
 
 /**
- * The check-in nag (#359: NTF-18, admin-restructure §11 and §16b): a session
+ * The check-in nag (NTF-18, admin-restructure §11 and §16b): a session
  * whose check-in is still `pending` 24 hours after it ended emails its
  * Instructor, with every active Admin of that studio copied — once.
  *

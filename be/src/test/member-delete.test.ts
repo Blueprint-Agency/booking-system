@@ -9,13 +9,13 @@ import type { ReceiptRow } from '../services/receipts/issue'
 import type { StripeFake } from './stripe-fake'
 
 /**
- * A studio permanently deletes a member (#144).
+ * A studio permanently deletes a member.
  *
  * The fixture is the export test's (`member-fixtures.ts`): a row in every table
  * `MEMBER_TABLES` lists, for the member, for another member of the same studio,
  * and for the same person as a member of the second studio. Two members are
  * deleted: one who belongs to both studios, and one who belongs to this studio
- * alone. Logins are per studio (#231), so each loses this studio's login, and
+ * alone. Logins are per studio, so each loses this studio's login, and
  * the first keeps the separate login they have at the second studio.
  */
 describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
@@ -78,8 +78,8 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
 
   before(async () => {
     harness = await startTestApp()
-    // Deletion asks the payment provider to forget the member's Customer
-    // (#185). Without the fake that is a real network call per fixture — caught
+    // Deletion asks the payment provider to forget the member's Customer.
+    // Without the fake that is a real network call per fixture — caught
     // and logged, so the suite would still pass, but every run would wait out
     // the vendor deadline for nothing.
     //
@@ -172,7 +172,7 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
     assert.ok(memberTrail.length >= 6, `the member has an audit trail to keep: ${JSON.stringify(memberTrail)}`)
 
     receiptsMade = receiptFixtures(harness)
-    // Billed to the member's own Billing details (#401): her name and her home.
+    // Billed to the member's own Billing details: her name and her home.
     memberReceipt = await receiptsMade.issueFor(one.id, member.clientId, { billTo: ADA_BILL_TO })
     assert.deepEqual(
       [memberReceipt.clientId, memberReceipt.buyerName, memberReceipt.buyerEmail, memberReceipt.billTo],
@@ -266,10 +266,10 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
       //
       // Written out rather than derived twice, so a table that starts being kept
       // has to be named here on purpose — the list is the assertion. `purchases`
-      // joined it when a Purchase learned to outlive its member (#144 × #91);
+      // joined it when a Purchase learned to outlive its member;
       // `payment_customers` deliberately did **not**, because it is deleted, not
-      // emptied (#185): the studio's accounts keep money, not the member's
-      // identity at a third party. `receipts` joined it with Receipts (#380):
+      // emptied: the studio's accounts keep money, not the member's
+      // identity at a third party. `receipts` joined it with Receipts:
       // the studio's record of each sale, kept with its buyer emptied.
       const kept = MEMBER_TABLES.filter(
         e => e.columns.join() === 'client_id' && eraseSteps(e).some(s => 'keptBecause' in s),

@@ -5,7 +5,7 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 import { addDays, isoWeekday } from '../services/schedule/series-dates'
 
 /**
- * Instructor Pay is optional when an admin schedules (#314, reversing the
+ * Instructor Pay is optional when an admin schedules (reversing the
  * required-pay rule of be/docs/adr/0002 — see adr/0008). A blank pay field
  * leaves the assignment Unpriced — stored null, never S$0 — and every Unpriced
  * assignment shows under Finance's Needs pay filter once the session is held,

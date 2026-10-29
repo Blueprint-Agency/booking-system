@@ -10,7 +10,7 @@ import postgres from 'postgres'
 import { integrationTestsEnabled, SKIP_REASON, TEST_DATABASE_URL } from './harness'
 
 /**
- * Migration 0055 (#150): the retired staff role becomes `admin`, and `staff_role`
+ * Migration 0055: the retired staff role becomes `admin`, and `staff_role`
  * stops accepting it.
  *
  * The shared scratch database is already past 0055, so this one gets a database

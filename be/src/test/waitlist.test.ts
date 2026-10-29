@@ -23,7 +23,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * The class waitlist over HTTP (#308, spec-waitlist.md §3–§6, §8, §9, §11).
+ * The class waitlist over HTTP (spec-waitlist.md §3–§6, §8, §9, §11).
  *
  * A member joins the line of a class whose online seats are full; joining costs
  * nothing. When a confirmed online booking is cancelled outside the

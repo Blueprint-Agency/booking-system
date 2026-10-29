@@ -16,7 +16,7 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
  * studio runs; they cannot answer a lookup by the foreign key column alone.
  * Deleting a studio deletes every row of its in a handful of statements, so it
  * is where a missing one shows first: a studio restored with years of history
- * took ~40s to delete, past the portal's request deadline (#194). The same
+ * takes ~40s to delete, past the portal's request deadline. The same
  * lookup runs when a single client or class is deleted, only smaller.
  *
  * Read from the catalogue, so a foreign key added later is held to it too.

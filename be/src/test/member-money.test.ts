@@ -16,7 +16,7 @@ const DAY = 24 * HOUR
 
 /**
  * A member is charged exactly what the studio promises, and never charged or
- * granted by mistake (#366): a class's credit cost, a checkout the member walked
+ * granted by mistake: a class's credit cost, a checkout the member walked
  * away from, a Promo Code worth more than the package, and the catalogues a
  * member buys from (corporate and PT).
  *

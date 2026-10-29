@@ -23,7 +23,7 @@ const studioDay = (at: string) =>
   new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(at))
 
 /**
- * A Refund stamps the Purchase's Receipt **Refunded on {date}** (#392), in the
+ * A Refund stamps the Purchase's Receipt **Refunded on {date}**, in the
  * transaction that marks the Purchase refunded, and changes none of its
  * figures. An Abandoned Purchase never had a Receipt, so nothing is stamped.
  *

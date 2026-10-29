@@ -17,7 +17,7 @@ async function pdfText(bytes: Uint8Array): Promise<string> {
 }
 
 /**
- * A studio's receipt details (#391): the prefix its Receipt numbers carry, and
+ * A studio's receipt details: the prefix its Receipt numbers carry, and
  * the legal name, registration number, address and footer note its Receipts
  * print. Rows the studio owns, set by its admin in the portal's studio settings
  * or by the operator when the super portal creates the studio, and copied onto

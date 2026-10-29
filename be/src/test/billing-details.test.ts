@@ -4,7 +4,7 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 import { memberFixtures, type Staff, type Tenant } from './member-fixtures'
 
 /**
- * A member's Billing details (#399): up to three name-and-address sets they
+ * A member's Billing details: up to three name-and-address sets they
  * keep at their studio, one of them the default, managed from their account.
  *
  * Over the member's own routes, as a member would use them: what each call

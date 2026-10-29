@@ -13,7 +13,7 @@ import {
 import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
- * Staff attention (#476, #478): the three corporate kinds, all Admin-only.
+ * Staff attention: the three corporate kinds, all Admin-only.
  * `corporate_request_pending`, `corporate_session_unmarked` and
  * `corporate_refunded_still_scheduled`. Every test makes a studio of its own,
  * and each kind is resolved through the real portal routes.

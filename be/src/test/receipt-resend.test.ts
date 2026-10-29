@@ -23,7 +23,7 @@ async function pdfText(bytes: Uint8Array): Promise<string> {
 }
 
 /**
- * A studio admin resends a Receipt (#390): `POST /portal/admin/receipts/:id/resend`
+ * A studio admin resends a Receipt: `POST /portal/admin/receipts/:id/resend`
  * sends the member the same email their purchase sent, the receipt block and
  * the PDF with it, to the address the member has now, and the audit trail
  * records which admin sent it to whom.
@@ -549,8 +549,8 @@ describe('an admin resends a Receipt', { skip: integrationTestsEnabled ? false :
       const receipt = await onlyReceipt(who)
       const [confirmation] = mailTo(who.email)
       assert.equal(templateOf(confirmation!), slug)
-      // A free sale settled before #390 carries nothing on its Purchase naming
-      // the package it granted: the backfill gave it a Receipt all the same.
+      // A free sale settled before a Purchase named the package it granted carries
+      // nothing there naming it: the backfill gave it a Receipt all the same.
       await harness.db.execute(
         sql`UPDATE purchases SET metadata = metadata - 'granted_client_package_id' WHERE tenant_id = ${one.id} AND id = (SELECT purchase_id FROM receipts WHERE id = ${receipt.id})`,
       )

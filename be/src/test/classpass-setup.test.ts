@@ -18,7 +18,7 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * The ClassPass setup guide (#407): the ClassPass page's status carries the
+ * The ClassPass setup guide: the ClassPass page's status carries the
  * facts each step of the guide ticks on, worked out from what the studio has
  * done and what has arrived at its ClassPass address. Every fact is read
  * through the admin ClassPass route; mail arrives through the one entry

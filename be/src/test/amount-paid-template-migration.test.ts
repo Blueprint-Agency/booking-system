@@ -10,14 +10,14 @@ const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0105_purchase_c
 const SLUGS = ['package_purchase_confirmed', 'trial_pass_purchase_confirmed', 'workshop_purchase_confirmed']
 
 /**
- * Migration 0105 (#370, #373): studios created before the purchase
+ * Migration 0105: studios created before the purchase
  * confirmations said what the member paid get the "Amount paid" row too, but
  * only in a template still exactly as it was written for them.
  *
  * Two throwaway studios, provisioned with today's templates. Each template is
- * put back to the default as it was before #370 — today's with the studio's
- * name written in where #400 put `{{studio_name}}`, and its Amount paid row
- * taken out — and studio two's are then edited. The migration's own SQL is
+ * put back to the default as it was before the Amount paid row existed —
+ * today's with the studio's name written in where `{{studio_name}}` stands, and
+ * that row taken out — and studio two's are then edited. The migration's own SQL is
  * run against them, twice.
  */
 describe('migration 0105: the amount paid reaches unedited purchase confirmations', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
@@ -47,7 +47,7 @@ describe('migration 0105: the amount paid reaches unedited purchase confirmation
 
   /**
    * A studio's templates as 0105 saw them. A studio provisioned today is given
-   * `{{studio_name}}` (#400); one provisioned before had its name written in,
+   * `{{studio_name}}`; one provisioned before had its name written in,
    * raw in a subject and HTML-escaped in a body, and that is the text 0105 ran
    * against.
    */
@@ -110,8 +110,8 @@ describe('migration 0105: the amount paid reaches unedited purchase confirmation
 
   test('NTF-03 an unedited confirmation gains the Amount paid row, an edited one is untouched, and a second run changes nothing', async () => {
     const [unedited, edited] = [studios[0]!, studios[1]!]
-    // Today's defaults, with each studio's name back where #400 put the
-    // placeholder: the text a studio created before #400 was given.
+    // Today's defaults, with each studio's name written in where the
+    // placeholder stands: the text a studio created before it was given.
     const today = {
       unedited: withNameWrittenIn(await templatesOf(unedited.id), unedited.name),
       edited: withNameWrittenIn(await templatesOf(edited.id), edited.name),
@@ -123,7 +123,7 @@ describe('migration 0105: the amount paid reaches unedited purchase confirmation
     }
     const FOOTER = emailFooterNote(`1 ${run} Street`)
 
-    // Studio one: the defaults as written before #370; its workshop template
+    // Studio one: the defaults as written before the Amount paid row; its workshop template
     // also carries a footer note, as a fixture's do.
     for (const slug of SLUGS) {
       const old = before370(today.unedited[slug]!)

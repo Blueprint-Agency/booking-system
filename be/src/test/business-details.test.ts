@@ -18,7 +18,7 @@ async function pdfText(bytes: Uint8Array): Promise<string> {
 }
 
 /**
- * A studio's Business name (#398): the one name it trades under, a row it owns
+ * A studio's Business name: the one name it trades under, a row it owns
  * in `tenant_settings`. The super portal gives it one when it creates the
  * studio (the Domain name when the operator leaves it blank), and the studio's
  * admin changes it on the Business details page, beside the registration
@@ -402,7 +402,7 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     const mia = await member(studio)
     const [oldName, newName] = [`Northwind ${run} Old Trading`, `Northwind ${run} New Trading`]
 
-    // Merch, whose email is its Receipt (#388), so a resend has nothing else to describe.
+    // Merch, whose email is its Receipt, so a resend has nothing else to describe.
     const sale = { kind: 'merch', item: 'Yoga mat' } as const
     await expectStatus(await saveDetails(studio, { business_name: oldName }), 200)
     const before = await receipts.issueFor(studio.id, mia.clientId, sale)
@@ -439,7 +439,7 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
     for (const surface of ['html', 'pdf', 'email'] as const) {
       assert.ok(issuedBefore[surface].includes(oldName), `the ${surface} keeps ${oldName}: ${issuedBefore[surface]}`)
     }
-    // The email's own words name the studio as it is now (#400); the Receipt
+    // The email's own words name the studio as it is now; the Receipt
     // itself, its page and its PDF, never take the new name.
     for (const surface of ['html', 'pdf'] as const) {
       assert.ok(!issuedBefore[surface].includes(newName), `the rename never reaches a Receipt already issued (${surface})`)

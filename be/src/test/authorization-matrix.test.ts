@@ -18,8 +18,8 @@ const OPERATOR = `operator@${DOMAIN}`
 const THROWAWAY_SLUG = `matrix-${run}`
 
 /**
- * The authorization matrix (#363): every `/me`, `/public` and `/platform` route
- * the app has, and the portal's admin Receipts routes (#389), called as every
+ * The authorization matrix: every `/me`, `/public` and `/platform` route
+ * the app has, and the portal's admin Receipts routes, called as every
  * kind of caller, each answered by its gate as declared below.
  *
  * The routes come from the app's own route table, never from a list kept here,
@@ -293,23 +293,23 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'DELETE /api/v1/platform/tenants/:id/payment-credentials': { gate: PLATFORM_ADMIN_ONLY },
 
   // ── /portal ──────────────────────────────────────────────────────────────
-  // Every Receipt in the studio (#389): the studio's money, for its admins only.
+  // Every Receipt in the studio: the studio's money, for its admins only.
   'GET /api/v1/portal/admin/receipts': { gate: STUDIO_ADMIN },
   'GET /api/v1/portal/admin/receipts/:id': { gate: STUDIO_ADMIN },
   'GET /api/v1/portal/admin/receipts/:id/pdf': { gate: STUDIO_ADMIN },
-  // Resending a Receipt and exporting the list (#390).
+  // Resending a Receipt and exporting the list.
   'POST /api/v1/portal/admin/receipts/:id/resend': { gate: STUDIO_ADMIN },
   'GET /api/v1/portal/admin/receipts/export.csv': { gate: STUDIO_ADMIN },
-  // The ClassPass page (#409): the studio's ClassPass address and its switch, admins only.
+  // The ClassPass page: the studio's ClassPass address and its switch, admins only.
   'GET /api/v1/portal/admin/classpass': { gate: STUDIO_ADMIN },
   'PATCH /api/v1/portal/admin/classpass': { gate: STUDIO_ADMIN, probe: { body: { enabled: false } } },
   'POST /api/v1/portal/admin/classpass/address/regenerate': { gate: STUDIO_ADMIN },
-  // ClassPass location mappings (#410), admins only.
+  // ClassPass location mappings, admins only.
   'GET /api/v1/portal/admin/classpass/locations': { gate: STUDIO_ADMIN },
   'POST /api/v1/portal/admin/classpass/locations': { gate: STUDIO_ADMIN },
   'PATCH /api/v1/portal/admin/classpass/locations/:id': { gate: STUDIO_ADMIN },
   'DELETE /api/v1/portal/admin/classpass/locations/:id': { gate: STUDIO_ADMIN },
-  // ClassPass review (#413): the emails the importer could not place, admins only.
+  // ClassPass review: the emails the importer could not place, admins only.
   'GET /api/v1/portal/admin/classpass/review': { gate: STUDIO_ADMIN },
   'POST /api/v1/portal/admin/classpass/review/:id/book': {
     gate: STUDIO_ADMIN,
@@ -320,11 +320,11 @@ const EXPECTATIONS: Record<string, Expectation> = {
     gate: STUDIO_ADMIN,
     probe: { body: { location_id: '00000000-0000-4000-8000-000000000000' } },
   },
-  // The bell (#477): the counts and the panel, for both staff roles.
+  // The bell: the counts and the panel, for both staff roles.
   'GET /api/v1/portal/attention/summary': { gate: STUDIO_STAFF },
   'GET /api/v1/portal/attention': { gate: STUDIO_STAFF },
-  // Updates (#490): a staff member reads their own.
-  // Dismissals (#482): an admin's studio-wide decision.
+  // Updates: a staff member reads their own.
+  // Dismissals: an admin's studio-wide decision.
   'POST /api/v1/portal/attention/dismissals': { gate: STUDIO_ADMIN },
   'POST /api/v1/portal/attention/updates/read-all': { gate: STUDIO_STAFF },
   'POST /api/v1/portal/attention/updates/:id/read': { gate: STUDIO_STAFF },
@@ -599,7 +599,7 @@ describe('authorization matrix', { skip: integrationTestsEnabled ? false : SKIP_
         await status.setTenantStatus(throwaway.id, 'suspended')
         await tenants.deleteTenant({ tenantId: throwaway.id, confirmSlug: throwaway.slug })
       }
-      // An admitted admin write is audited (the ClassPass switch, #409), and the
+      // An admitted admin write is audited (the ClassPass switch), and the
       // ClassPass page makes the studio's settings row on first read.
       await harness.db.execute(
         sql`DELETE FROM audit_log WHERE actor_staff_id IN (SELECT id FROM staff_users WHERE email LIKE ${ours})`,

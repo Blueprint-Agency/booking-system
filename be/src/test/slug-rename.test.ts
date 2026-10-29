@@ -8,7 +8,7 @@ const run = Date.now().toString(36)
 const OPERATOR = `operator-${run}@rename.test`
 
 /**
- * Slug Rename (#174): a studio changes its web address from the super portal,
+ * Slug Rename: a studio changes its web address from the super portal,
  * and its old address redirects for 90 days without ever resolving as a Tenant.
  * The studio itself may be renamed straight back; no other studio may take the
  * old address inside the window.

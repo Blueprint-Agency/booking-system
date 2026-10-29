@@ -5,7 +5,7 @@ import type { ResendClient, ResendPayload } from '../lib/send-gate'
 
 /**
  * A studio's email can carry files: the groundwork for a purchase confirmation
- * that attaches its Receipt PDF (#380, #381). Sent through the one way a
+ * that attaches its Receipt PDF. Sent through the one way a
  * studio's mail leaves, `sendTemplatedEmail`, and read back at the two ends a
  * message can reach: the null transport's capture under test, and the Resend
  * client the live transport hands its payload to.

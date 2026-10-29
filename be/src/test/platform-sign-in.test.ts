@@ -17,7 +17,7 @@ const OPERATOR = `operator-${run}@platform.test`
 const FIRST_TIMER = `first-timer-${run}@platform.test`
 
 /**
- * The super portal signs in through its own pool (#116).
+ * The super portal signs in through its own pool.
  *
  * `platform` is a Better Auth instance of its own, so a studio admin's
  * credentials are rows it has never seen: they cannot even produce a session

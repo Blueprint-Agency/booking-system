@@ -8,14 +8,13 @@ const run = Date.now().toString(36)
 const OPERATOR = `operator-${run}@sessions.test`
 
 /**
- * Tenant isolation for signed-in callers (#113), over real HTTP.
+ * Tenant isolation for signed-in callers, over real HTTP.
  *
- * The half of the isolation suite `isolation.test.ts` could not write while the
- * only sessions were vendor JWTs this harness could not mint. A Better Auth session
- * is stamped at sign-in with the Tenant whose hostname it signed in on, and both
- * studio middlewares refuse it anywhere else — so a session from studio A is
- * worthless at studio B, for staff and, for the first time, for members. Since
- * logins are per studio (#231), studio B cannot even see it: 401.
+ * The signed-in half of the isolation suite; `isolation.test.ts` is the rest.
+ * A Better Auth session is stamped at sign-in with the Tenant whose hostname it
+ * signed in on, and both studio middlewares refuse it anywhere else — so a
+ * session from studio A is worthless at studio B, for staff and for members.
+ * Since logins are per studio, studio B cannot even see it: 401.
  */
 describe('tenant isolation for sessions', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   withEnv({ PLATFORM_ADMIN_EMAIL: OPERATOR })
@@ -50,7 +49,7 @@ describe('tenant isolation for sessions', { skip: integrationTestsEnabled ? fals
     if (error) assert.equal((JSON.parse(body) as { error: string }).error, error)
   }
 
-  /** The person's login at `tenantId` — logins are per studio (#231) — made when there is none yet. */
+  /** The person's login at `tenantId` — logins are per studio — made when there is none yet. */
   const authUserId = async (
     table: typeof schema.clientAuthUsers | typeof schema.staffAuthUsers,
     email: string,
@@ -260,8 +259,7 @@ describe('tenant isolation for sessions', { skip: integrationTestsEnabled ? fals
   })
 
   test('a token no pool issued is refused, whatever its shape', async () => {
-    // A JWT-shaped token once took a second path to a second issuer. There is
-    // one issuer now, and a token it has no session for is simply not one.
+    // There is one issuer, and a token it has no session for is simply not one.
     for (const token of ['a.b.c', 'not-a-session']) {
       await expectStatus(
         await get('/api/v1/portal/auth/me', { ...staffAtOne, Authorization: `Bearer ${token}` }),

@@ -15,7 +15,7 @@ const DAY = 24 * HOUR
 const YEAR = 365 * DAY
 
 /**
- * An Admin's edit of a class's times over HTTP (#246).
+ * An Admin's edit of a class's times over HTTP.
  *
  * Once a class has started it can no longer be edited or cancelled, its
  * bookings are spent and its Instructor Pay is owed. So an edit that gives an

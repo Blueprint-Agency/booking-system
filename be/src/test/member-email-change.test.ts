@@ -12,7 +12,7 @@ import {
 } from './harness'
 
 /**
- * An admin changes a member's email (#176), over the real sign-in.
+ * An admin changes a member's email, over the real sign-in.
  *
  * The claim this suite exists to hold is one no unit test can make: after the
  * change the member signs in at the NEW address and finds everything they had,
@@ -75,7 +75,7 @@ describe('member email change', { skip: integrationTestsEnabled ? false : SKIP_R
     Authorization: `Bearer ${token}`,
   })
 
-  /** Sign in with the password (#173) and return the headers the app would send. */
+  /** Sign in with the password and return the headers the app would send. */
   const signIn = async (email: string, password = PASSWORD) => {
     const res = await send('/api/v1/auth/client/sign-in/email', {
       body: { email, password },
@@ -230,7 +230,7 @@ describe('member email change', { skip: integrationTestsEnabled ? false : SKIP_R
 
     // The new address is a fresh account, so it has no password of its own yet:
     // the member sets one through the link their first attempt mails them, and
-    // is signed in at the end of it — exactly what an added member does (#173).
+    // is signed in at the end of it — exactly what an added member does.
     const now = await setPasswordAt(moved)
     const profile = await send('/api/v1/me', { headers: now })
     assert.equal(profile.status, 200)
@@ -244,7 +244,7 @@ describe('member email change', { skip: integrationTestsEnabled ? false : SKIP_R
       'every package came with them',
     )
 
-    // The old address's login was this studio's own (#231), and went with the
+    // The old address's login was this studio's own, and went with the
     // change: it signs in to nothing here any more.
     const orphan = await send('/api/v1/auth/client/sign-in/email', {
       body: { email: member.email, password: PASSWORD },

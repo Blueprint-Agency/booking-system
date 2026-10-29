@@ -5,7 +5,7 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 import { totp } from './totp'
 
 /**
- * The Better Auth foundation (#112), over real HTTP, in-process.
+ * The Better Auth foundation, over real HTTP, in-process.
  *
  * Three pools boot with the app, each on its own base path; each signs a user
  * in and hands back a bearer token; none accepts another's token. The mail each

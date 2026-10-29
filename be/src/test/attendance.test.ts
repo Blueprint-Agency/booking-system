@@ -14,7 +14,7 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * Attendance over real HTTP (#216): who may mark a booking attended or a
+ * Attendance over real HTTP: who may mark a booking attended or a
  * no-show, on which sessions, what that does to the member's credit, and when a
  * session's check-in counts as finished.
  *

@@ -7,7 +7,7 @@ import { cardPaid, checkoutWebhook, paidWith } from './checkout-webhook'
 import type { StripeFake } from './stripe-fake'
 
 /**
- * How each payment was paid (#282): copied off the provider's charge when the
+ * How each payment was paid: copied off the provider's charge when the
  * payment succeeds, backfilled for payments taken before that, and shown,
  * filtered and exported by Finance.
  */
@@ -274,7 +274,7 @@ describe('payment method', { skip: integrationTestsEnabled ? false : SKIP_REASON
       assert.equal((await checkout.payment(past.intentId)).method, null)
       // One was taken on an account the studio has since replaced, and one on
       // the platform's former account (recorded as none), which no key reaches
-      // any more (#293). The first is on the studio's current own account.
+      // any more. The first is on the studio's current own account.
       await harness.db.execute(
         sql`UPDATE stripe_payments SET provider_account_id = 'acct_retired' WHERE payment_intent_id = ${retired.intentId}`,
       )

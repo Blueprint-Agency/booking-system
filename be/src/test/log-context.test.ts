@@ -14,7 +14,7 @@ import {
 import { memberFixtures, type Staff } from './member-fixtures'
 
 /**
- * What a log line says about where it came from (#162). Alert rules key on
+ * What a log line says about where it came from. Alert rules key on
  * these fields, so they are asserted on the JSON lines the app actually wrote —
  * captured by the harness — rather than on how any middleware set them.
  */
@@ -110,7 +110,7 @@ describe('log context', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     assert.equal(serviceLines[0]!.actorId, member.authUserId)
   })
 
-  // On the studio's own endpoint, the only one there is (#293). The fake
+  // On the studio's own endpoint, the only one there is. The fake
   // provider plays the signature check: one signature verifies, any other fails.
   describe('the Stripe webhook', () => {
     const GOOD_SIGNATURE = 't=1,v1=log-context'

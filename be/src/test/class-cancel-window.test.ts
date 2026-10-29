@@ -18,7 +18,7 @@ const STUDIO_HOURS = 24
 /**
  * The class Cancellation Window (be/CONTEXT.md § Cancellation Window) is the
  * studio's class window on Global Policy, read live; a class carries none of its
- * own (the per-class window of #313 was removed). Every rule that turns on "the
+ * own. Every rule that turns on "the
  * class window" reads it at the time of the action — a member's cancel, the
  * waitlist closing, automatic seat-filling and the promotion email's cancel-by
  * time.
@@ -144,7 +144,7 @@ describe('class Cancellation Window', { skip: integrationTestsEnabled ? false : 
 
   /**
    * A member's cancel judged late under a `hours` window: refused naming that
-   * window, or — once a late cancel goes through (#312) — let through without
+   * window, or — once a late cancel goes through — let through without
    * the credit. Either way never a free cancel, and never some other failure.
    */
   function assertLate(res: Reply, hours: number) {

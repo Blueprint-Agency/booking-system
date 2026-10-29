@@ -15,7 +15,7 @@ const DAY = 24 * HOUR
 
 /**
  * The scheduled jobs that change a member's private sessions, and a session's
- * event state, driven by the harness clock (#369).
+ * event state, driven by the harness clock.
  *
  * Time moves only through `harness.clock`; each job is fired through
  * `scheduledJobs` — one cron tick, with the same fan-out over every Tenant the

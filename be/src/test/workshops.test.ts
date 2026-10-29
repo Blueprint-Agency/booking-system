@@ -14,7 +14,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * Workshops over real HTTP (#203): the admin editor's routes, the member
+ * Workshops over real HTTP: the admin editor's routes, the member
  * catalogue, and buying a place — paid through checkout, free by Register.
  *
  * Written from the WSP rows of the Scenario Inventory (`docs/md/test-scenarios.md`).
@@ -240,7 +240,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
     // Each studio sells on an account of its own — the only way a studio sells
-    // at all (#293).
+    // at all.
     stripe.ownAccount(one)
     stripe.ownAccount(two)
     adminAtOne = await staff(one, 'Ada Admin', 'admin')
@@ -1119,7 +1119,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(mainAsSupporting.body.error, 'supporting_instructor_duplicates_main')
   })
 
-  /* ── the editor's one save (#502) ──────────────────────────────────── */
+  /* ── the editor's one save ──────────────────────────────────── */
 
   describe('an Admin edits a workshop in one request', () => {
     type Detail = {
@@ -1470,7 +1470,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
       .where(eq(schema.emailLog.recipientEmail, emailFor(`Ana Settled-${one.slug}`)))
     assert.deepEqual(mailed.map(m => m.templateSlug), ['workshop_purchase_confirmed'])
 
-    // Finance shows the free ticket as it always has: S$0.00 paid, nothing
+    // Finance shows the free ticket: S$0.00 paid, nothing
     // refunded, no way it was paid, and nothing added to the totals.
     const finance = await call(
       `/api/v1/portal/admin/finance?${new URLSearchParams({
@@ -1762,7 +1762,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
   test("a studio's own wording of a template reaches only its own members", async () => {
     const original = await templateAt(one.id)
     // Saved straight to the studio's row: the portal's editor route is not
-    // built yet (NTF-20, #234).
+    // built yet (NTF-20).
     const marker = `own-wording-${run}`
     await harness.db
       .update(schema.emailTemplates)

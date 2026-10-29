@@ -19,7 +19,7 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * Private sessions over real HTTP (#202), written from the PT rows of the
+ * Private sessions over real HTTP, written from the PT rows of the
  * Scenario Inventory (`docs/md/test-scenarios.md`) and `pt-session-lifecycle.md`:
  * a member's request debits their PT package, staff schedule it (the implicit
  * approval) into a session with bookings, and either side cancels it — with the
@@ -1927,7 +1927,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.deepEqual((await bookingsOn(sessionId)).map(b => b.clientId), [fox.clientId])
   })
 
-  // ── Manual sessions (#334) ───────────────────────────────────────────────
+  // ── Manual sessions ───────────────────────────────────────────────
 
   type ManualMember = { client_id: string; client_package_id?: string }
   type ManualOpts = ScheduleOpts & { sessionType?: SessionType; override?: boolean; instructor_id?: string }
@@ -2277,7 +2277,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(packageId), 9)
   })
 
-  // ── Adding a member to a manual session (#337) ───────────────────────────
+  // ── Adding a member to a manual session ───────────────────────────
 
   type AddBody = { client_id: string; client_package_id?: string; override?: boolean }
 
@@ -2537,7 +2537,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(soloReq.coClientId, null)
   })
 
-  // ── Cancel, remove a member, change type: a manual session (#335) ────────
+  // ── Cancel, remove a member, change type: a manual session ────────
   //
   // Everything after creation works as it does for a request session, priced
   // per seat: each attendee is refunded, or charged, on their own package.
@@ -2615,7 +2615,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
         const [cancellation, ...more] = await cancellationsOf(who)
         assert.equal(more.length, 0)
         assert.equal(cancellation!.bookingId, seat!.id)
-        // Recorded as whoever cancelled it, as removing one member is (#350).
+        // Recorded as whoever cancelled it, as removing one member is.
         assert.equal(cancellation!.source, by === coachA ? 'instructor' : 'admin')
         assert.equal(cancellation!.cancelledByStaffId, by.staffId)
         assert.equal(cancellation!.refundFired, true)
@@ -3023,7 +3023,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(cancellation!.wasWithinWindow, false)
   })
 
-  // ── The member's Cancelled tab (#351) ────────────────────────────────────
+  // ── The member's Cancelled tab ────────────────────────────────────
 
   /** What the Cancelled tab says of one request: when (as a number), who, whether it expired. */
   const ended = (r: any) => ({ cancelled_by: r.cancelled_by, expired: r.expired, refund_outcome: r.refund_outcome })
@@ -3119,7 +3119,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     }
   })
 
-  // ── The session detail page's read (#338) ────────────────────────────────
+  // ── The session detail page's read ────────────────────────────────
 
   const adminDetail = (by: Staff, sessionId: string) =>
     harness.app.request(`/api/v1/portal/admin/schedule/pt/${sessionId}`, { headers: by.headers })
@@ -3175,7 +3175,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(away.error, 'pt_session_not_found')
   })
 
-  // ── The packages a member could pay a seat with (#337) ───────────────────
+  // ── The packages a member could pay a seat with ───────────────────
 
   const candidates = (path: string, by: Staff, query: Record<string, string>) =>
     harness.app.request(`${path}?${new URLSearchParams(query)}`, { headers: by.headers })
@@ -3309,7 +3309,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     }
   })
 
-  // ── A seat's package must run until the session (#444 follow-ups) ────────
+  // ── A seat's package must run until the session ────────
 
   test('PT-156 a manual seat naming no package passes over a package that ends before the session and is paid by the next that runs until it; with none that does it is refused with the first one\'s end', async () => {
     const ivo = await member(one, 'Ivo Fall Through')
@@ -3883,7 +3883,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal((await requestRow(requestId)).approvalUnseen, true, 'reading it marks nothing seen')
   })
 
-  // ── The admin profile's Cancelled tab (#352) ────────────────────────────
+  // ── The admin profile's Cancelled tab ────────────────────────────
 
   const profileOf = async (who: Member) =>
     expectStatus(
@@ -4043,7 +4043,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(mine.cancelled_by, 'studio')
   })
 
-  // ── Package expiry (#444) ────────────────────────────────────────────────
+  // ── Package expiry ────────────────────────────────────────────────
 
   const setExpiry = (clientPackageId: string, expiresAt: Date) =>
     harness.db.update(schema.clientPackages).set({ expiresAt }).where(eq(schema.clientPackages.id, clientPackageId))

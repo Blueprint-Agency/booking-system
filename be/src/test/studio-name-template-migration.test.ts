@@ -11,14 +11,14 @@ const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0117_business_n
 const LATEST_MAIL_IDENTITY = path.resolve(process.cwd(), 'src/db/migrations/0120_display_name_mail.sql')
 
 /**
- * Migration 0117 (#400): templates name the studio by `{{studio_name}}`,
+ * Migration 0117: templates name the studio by `{{studio_name}}`,
  * filled with its Business name when each email is sent. Studios created
  * before were given their name written into the text, so the migration swaps
  * the placeholder in for it, but only in a template still exactly the default
  * it was given.
  *
  * Throwaway studios, provisioned with today's templates. Each template is put
- * back to the default as it was written before #400 — today's copy with the
+ * back to the default as it was written before the placeholder — today's copy with the
  * studio's name in place of the placeholder, raw in a subject and escaped in a
  * body — and one studio's are then edited. The migration's own SQL is run
  * against them, twice, as the migrator runs it.
@@ -54,7 +54,7 @@ describe('migration 0117: provisioned templates follow the Business name', { ski
       .where(and(eq(schema.emailTemplates.tenantId, tenantId), eq(schema.emailTemplates.slug, slug)))
   }
 
-  /** The templates a studio was given before #400: its name written in, and its footer note when it had one. */
+  /** The templates a studio was given before the placeholder: its name written in, and its footer note when it had one. */
   async function writtenBefore400(studio: { id: string; slug: string; name: string }, footer?: string) {
     const { buildEmailTemplates } = await import('../db/seed/email-copy')
     const { tenantOrigin } = await import('../lib/allowed-origins')
@@ -125,7 +125,7 @@ describe('migration 0117: provisioned templates follow the Business name', { ski
       assert.ok(!all.includes(studio.name) && !all.includes(studio.name.replace('&', '&amp;')), `nothing names ${studio.name}`)
     }
 
-    // Before #400: the name written in. The first studio carries a footer note,
+    // Before the placeholder: the name written in. The first studio carries a footer note,
     // as the isolation fixtures do.
     const FOOTER = `1 Example Street & Lane ${run}.`
     const old = { [unedited.id]: await writtenBefore400(unedited, FOOTER), [edited.id]: await writtenBefore400(edited) }

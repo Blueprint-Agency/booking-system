@@ -19,7 +19,7 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * Importing a ClassPass cancellation email (#412): a forwarded `ClassPass
+ * Importing a ClassPass cancellation email: a forwarded `ClassPass
  * reservation canceled by user` email cancels the ClassPass booking its
  * Reservation key names, as ClassPass's cancel: nothing to return, never a
  * Late cancel, never toward the Cancellation Cap, and the freed seat promotes

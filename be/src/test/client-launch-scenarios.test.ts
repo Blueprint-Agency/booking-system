@@ -17,10 +17,9 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * The member-side promises the September client-scenarios draft (#128) made
- * that the Scenario Inventory did not yet state (#361): which package pays when
- * the member names none, what a refused booking leaves behind, a package that
- * waits a year, the catalogue edited under a Dormant package, a cancel that
+ * The member-side promises of the September client-scenarios draft: which
+ * package pays when the member names none, what a refused booking leaves
+ * behind, a package that waits a year, the catalogue edited under a Dormant package, a cancel that
  * meets an attended booking or a double click, and who may cancel a 2on1.
  *
  * Every test acts through the member's or the studio's route and then reads the

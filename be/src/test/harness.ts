@@ -133,7 +133,7 @@ async function signInAs(
   const origin = frontendOrigin(pool, tenant)
   // A client address of its own, as the proxy in front of the API would set.
   // Without one every sign-in in a test process shares the limiter's single
-  // no-address bucket (#114), and a suite that signs in a dozen people is
+  // no-address bucket, and a suite that signs in a dozen people is
   // throttled for doing so.
   const forwardedFor = harnessAddress()
   const fromFrontend: Record<string, string> =
@@ -169,7 +169,7 @@ export function harnessAddress(): string {
 
 /**
  * The person's login in `pool` — at `tenant`, for the studio pools, whose logins
- * are per studio (#231) — with the harness password as its credential.
+ * are per studio — with the harness password as its credential.
  */
 async function ensureCredential(
   db: PostgresJsDatabase<typeof schema>,

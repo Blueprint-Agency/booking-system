@@ -12,7 +12,7 @@ import {
 } from './harness'
 
 /**
- * Staff attention, the Updates tab (#476, #492): `session_assigned` is written
+ * Staff attention, the Updates tab: `session_assigned` is written
  * for an instructor when someone else schedules them to teach, on every create
  * or assign path, once per series, never for the person who did the act.
  *
@@ -206,7 +206,7 @@ describe('Staff attention: session assigned', { skip: integrationTestsEnabled ? 
     assert.equal(u!.title, `boss scheduled you to teach Vinyasa on ${WHEN}`)
     assert.equal(u!.href, `/instructor/schedule/class/${res.id}`)
     assert.equal(u!.read_at, null)
-    // The admin is told nothing of the scheduling (a newcomer's staff_joined is #491's, not this ticket's).
+    // The admin is told nothing of the scheduling (a newcomer's staff_joined is a different kind).
     assert.deepEqual((await updatesOf(admin)).filter(x => x.kind === 'session_assigned'), [])
   })
 

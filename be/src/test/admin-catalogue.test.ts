@@ -16,7 +16,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * The admin catalogue over HTTP (#205): promo codes, merch, marketing, rooms,
+ * The admin catalogue over HTTP: promo codes, merch, marketing, rooms,
  * feature flags, class packages and PT packages.
  *
  * The in-process app against real Postgres with both fixture Tenants, and a real

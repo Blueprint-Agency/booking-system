@@ -13,7 +13,7 @@ import {
 } from './harness'
 
 /**
- * Staff attention, Updates about sessions (#476, #493): `session_changed`,
+ * Staff attention, Updates about sessions: `session_changed`,
  * `session_cancelled_by_admin` and `pt_session_cancelled_by_member`. Each is
  * written in the transaction of the act that caused it, for the instructors on
  * the session, and never for the person who did the act.
@@ -239,7 +239,7 @@ describe('Staff attention: session Updates', { skip: integrationTestsEnabled ? f
   }
 
   // Inviting an Instructor and granting their permissions legitimately tells them `permissions_changed` and the
-  // Admins `staff_joined` (#491), so both helpers read only this ticket's kinds.
+  // Admins `staff_joined`, so both helpers read only these kinds.
   const SESSION_KINDS = ['session_changed', 'session_cancelled_by_admin', 'pt_session_cancelled_by_member']
   const updatesOf = async (who: Staff) =>
     (

@@ -5,11 +5,10 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 import { buyCorporatePackage, forgetPurchases } from './corporate-purchase'
 
 /**
- * A studio admin runs the whole studio (#148), over real HTTP.
+ * A studio admin runs the whole studio, over real HTTP.
  *
- * Every portal surface that used to be closed to admins opens to them;
- * clients, workshops and rooms stop being read-only for them. An instructor
- * keeps exactly what they had: none of it.
+ * Every portal surface opens to admins; clients, workshops and rooms are not
+ * read-only for them. An instructor has none of it.
  */
 describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
@@ -130,7 +129,7 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
     await harness.db.delete(schema.staffAuthUsers).where(like(schema.staffAuthUsers.email, `%@${DOMAIN}`))
   }
 
-  /** One write in each group that used to be closed or read-only to admins. */
+  /** One write in each group admins run. */
   const writes = (): Array<{ group: string; method: string; path: string; body?: unknown }> => [
     { group: 'locations', method: 'POST', path: '/locations', body: { name: `${TAG} Studio` } },
     { group: 'class types', method: 'POST', path: '/class-types', body: { name: `${TAG} Flow` } },
@@ -147,7 +146,7 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
   /**
    * Writes whose handler is not built yet (they answer 501) or that need a row
    * the test would have to invent first: what they prove here is only that the
-   * role gate lets an admin through, which is all this ticket changes.
+   * role gate lets an admin through.
    */
   const gated = (): Array<{ group: string; method: string; path: string; body?: unknown }> => [
     { group: 'corporate sessions', method: 'POST', path: `/corporate-sessions/${crypto.randomUUID()}/cancel` },
@@ -212,7 +211,7 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
       .insert(schema.clients)
       .values({ tenantId: one.id, email, name: `${TAG} Client`, phone: '+6591234570', authUserId: authUser!.id })
       .returning({ id: schema.clients.id })
-    // The member pays for the package; the payment is what makes the request (#374).
+    // The member pays for the package; the payment is what makes the request.
     const requestId = await buyCorporatePackage(harness, schema, { clientId: client!.id }, one, pkg.corporatePackage.id)
 
     // Far out and at a random hour, so no fixture class holds the room or the instructor.

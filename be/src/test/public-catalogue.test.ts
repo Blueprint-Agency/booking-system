@@ -19,7 +19,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * The member app's public surface over real HTTP (#226): the home page's
+ * The member app's public surface over real HTTP: the home page's
  * Locations and copy, the class list and its filters, and the packages page —
  * all read by a visitor who is signed in nowhere.
  *
@@ -419,7 +419,6 @@ describe('public catalogue over HTTP', { skip: integrationTestsEnabled ? false :
     assert.deepEqual(combined.map(c => c.id), [one.classes.atA])
   })
 
-  // Fails today: the class list has no level filter, and ignores `level` (#238).
   test('CAT-04 filtering by level lists only that level\'s classes', async () => {
     const beginners = await classesAt(one, '&level=beginner')
     assert.deepEqual(beginners.map(c => c.id), [one.classes.otherType])

@@ -13,7 +13,7 @@ import {
 import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
- * Staff attention, the Updates tab (#476, #490): `leave_decided` is written in
+ * Staff attention, the Updates tab: `leave_decided` is written in
  * the transaction of the act that caused it, once per recipient, never for the
  * person who did the act; read and read-all touch only the caller's own rows;
  * the panel pages them; a daily job deletes those older than 90 days.
@@ -151,7 +151,7 @@ describe('Staff attention: Updates', { skip: integrationTestsEnabled ? false : S
     assert.ok(u!.created_at)
 
     // The admin who decided it is told nothing.
-    // (Ada joining did tell the admin, `staff_joined`, #491; the leave is not it.)
+    // (Ada joining did tell the admin, `staff_joined`; the leave is not it.)
     assert.deepEqual(
       (await updatesOf(admin)).map(x => x.kind),
       ['staff_joined'],

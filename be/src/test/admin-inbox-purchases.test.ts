@@ -14,13 +14,13 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * The admin Inbox and the admin Purchases surface over real HTTP (#206).
+ * The admin Inbox and the admin Purchases surface over real HTTP.
  *
- * **Inbox.** The admin Inbox is not being built (#237) and its routes are gone;
+ * **Inbox.** The admin Inbox is not being built and its routes are gone;
  * what is tested is INB-08's refusals, through the routes a person uses.
  *
  * **Purchases.** Part-paid Purchases that were never granted and have gone
- * silent (#95): the list an admin reads, and the refund button — with the
+ * silent: the list an admin reads, and the refund button — with the
  * payment provider replaced by the in-process fake, and its `charge.refunded`
  * delivery driven through the webhook route, exactly as `refunds.test.ts` does.
  */
@@ -277,7 +277,7 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
     // Each studio sells on an account of its own — the only way a studio sells
-    // at all (#293) — and its deliveries arrive on its own endpoint.
+    // at all — and its deliveries arrive on its own endpoint.
     fake.ownAccount(one)
     fake.ownAccount(two)
     adminAtOne = await staff(one, 'owner', 'admin')

@@ -15,7 +15,7 @@ const run = Date.now().toString(36)
 const DOMAIN = `${run}.sign-up-mail.test`
 
 /**
- * The member sign-up and sign-in rows no other file owns (#226), and the mail
+ * The member sign-up and sign-in rows no other file owns, and the mail
  * they send, read back from the test mail capture and the send log.
  *
  * Written from the AUTH and NTF rows of the Scenario Inventory

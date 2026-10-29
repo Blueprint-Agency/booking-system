@@ -12,7 +12,7 @@ import {
 } from './harness'
 
 /**
- * A studio archive never carries logins, and a restore makes fresh ones (#229).
+ * A studio archive never carries logins, and a restore makes fresh ones.
  *
  * The secrets a login holds — a password hash, a 2FA secret, a session token, a
  * verification value — are written here with markers that could not appear by
@@ -78,7 +78,7 @@ describe('logins in a studio transfer', () => {
     const mark = `${MARK}-${slug}`
 
     const memberLogin = randomUUID()
-    // Every login row is the studio's own (#231).
+    // Every login row is the studio's own.
     const tenantId = tenant.id
     await harness.db.insert(schema.clientAuthUsers).values({ id: memberLogin, email: memberEmail, name: 'Member', emailVerified: true, tenantId })
     await harness.db.insert(schema.clientAuthAccounts).values({

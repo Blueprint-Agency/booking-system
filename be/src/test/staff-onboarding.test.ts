@@ -13,7 +13,7 @@ import {
 import { totp } from './totp'
 
 /**
- * Staff onboarding through Better Auth (#115), over real HTTP.
+ * Staff onboarding through Better Auth, over real HTTP.
  *
  * Invitation-only in fact: inviting an admin, and creating an instructor, each
  * write the staff auth user and the `staff_users` row together and mail a link
@@ -65,7 +65,7 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
     return row ?? null
   }
 
-  /** The person's login at `tenantId` (studio one unless named): logins are per studio (#231). */
+  /** The person's login at `tenantId` (studio one unless named): logins are per studio. */
   const authUser = async (email: string, tenantId: string = one.id) => {
     const [row] = await harness.db
       .select()
@@ -330,7 +330,7 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
     const email = at('archived')
     const atOne = await harness.signInAs('staff', email, one)
     const atTwo = await harness.signInAs('staff', email, two)
-    // Staff at both studios, on a login at each (#231).
+    // Staff at both studios, on a login at each.
     for (const tenant of [one, two]) {
       const user = await authUser(email, tenant.id)
       await harness.db.insert(schema.staffUsers).values({
