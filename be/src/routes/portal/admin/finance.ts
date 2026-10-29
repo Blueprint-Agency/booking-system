@@ -20,6 +20,7 @@ import {
   type PayrollSaveReason,
 } from '../../../services/payroll/save-reasons'
 import { tenantId } from '../../../middleware/tenant'
+import { dateTime } from '../../../shared/date-time'
 
 // Finance: every Money Event in a period — money in and money out — with the
 // studio's five figures over it. Replaces the admin Payroll surface; the
@@ -34,10 +35,6 @@ import { tenantId } from '../../../middleware/tenant'
 // A save that didn't happen answers with its reason; the status comes from
 // `payrollSaveStatus` and the sentence from `payrollSaveMessage` — this file
 // decides neither. Body shape matches the error boundary's, `{ error, message }`.
-
-const isoDate = z
-  .string()
-  .refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
 
 // The filter accepts exactly the Types that exist — adding one to the service
 // adds it here, and a stale copy can no longer drift out of the enum.
@@ -55,11 +52,11 @@ const listQuery = z.object({
   needs_pay: z.enum(['true', 'false']).optional(),
   /** How it was paid, by category. Money out is never paid any way, so it drops out. */
   method: z.enum(METHOD_CATEGORIES).optional(),
-  from: isoDate.optional(),
-  to: isoDate.optional(),
+  from: dateTime('A from time').optional(),
+  to: dateTime('A to time').optional(),
 })
 
-const overviewQuery = z.object({ from: isoDate.optional(), to: isoDate.optional() })
+const overviewQuery = z.object({ from: dateTime('A from time').optional(), to: dateTime('A to time').optional() })
 
 const patchParam = z.object({
   kind: z.enum(['class', 'pt', 'workshop', 'manual']),
@@ -82,7 +79,7 @@ const createManualBody = z.object({
   instructor_id: z.string().uuid(),
   amount_sgd: z.number().min(0).max(MAX_PAY_SGD),
   label: z.string().trim().min(1),
-  entry_date: z.string().datetime({ offset: true }).optional(),
+  entry_date: dateTime('An entry date').optional(),
 })
 
 const manualParam = z.object({ id: z.string().uuid() })

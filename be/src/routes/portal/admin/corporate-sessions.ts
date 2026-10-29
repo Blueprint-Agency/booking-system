@@ -4,16 +4,13 @@ import { z } from 'zod'
 import * as svc from '../../../services/corporate/sessions'
 import { tenantId } from '../../../middleware/tenant'
 import { ERROR_CODES } from '../../../shared/error-codes'
-
-const isoDate = z
-  .string()
-  .refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
+import { dateTime } from '../../../shared/date-time'
 
 const idParam = z.object({ id: z.string().uuid() })
 
 const listQuery = z.object({
-  from: isoDate.optional(),
-  to: isoDate.optional(),
+  from: dateTime('A from time').optional(),
+  to: dateTime('A to time').optional(),
   location_id: z.string().uuid().optional(),
 })
 
@@ -26,8 +23,8 @@ const updateSchema = z.object({
   supporting_instructor_ids: z.array(z.string().uuid()).default([]),
   location_id: z.string().uuid(),
   room_id: z.string().uuid(),
-  starts_at: isoDate,
-  ends_at: isoDate,
+  starts_at: dateTime('A start time'),
+  ends_at: dateTime('An end time'),
 }).partial()
 
 function serialize(r: svc.CorporateSessionRow) {

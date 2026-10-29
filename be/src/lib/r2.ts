@@ -107,9 +107,11 @@ export async function deleteObject(tenantId: string, key: string, options: { ret
 
 /**
  * Delete an object no row points at any more: a refused or failed upload, or
- * the object a later one replaced. A failed delete is retried off the request,
- * so the reply does not wait on the bucket, and a delete that still fails is
- * reported with `context`, which names what it belonged to.
+ * the object a later one replaced. The first attempt is awaited, bounded by the
+ * storage deadline (8 s), so a hung bucket delays the caller by up to that long.
+ * Only the retries of a failed attempt run in the background, off the request,
+ * and a delete that still fails after them is reported with `context`, which
+ * names what it belonged to.
  */
 export async function deleteUnreferencedObject(
   tenantId: string,

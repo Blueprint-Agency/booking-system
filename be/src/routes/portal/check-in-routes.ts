@@ -11,6 +11,7 @@ import {
 } from '../../services/bookings/check-in'
 import { BadRequestError } from '../../shared/errors'
 import { tenantId } from '../../middleware/tenant'
+import { plainDate } from '../../shared/plain-date'
 
 /**
  * The check-in surface (#192), mounted twice: at `/admin/check-in` and at
@@ -27,11 +28,7 @@ const scanBody = z
 // A real calendar day in the studio's own time; none means today.
 const dayQuery = z.object({
   location_id: z.string().uuid().optional(),
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .refine(d => new Date(`${d}T00:00:00Z`).toISOString().startsWith(d))
-    .optional(),
+  date: plainDate('A date').optional(),
 })
 
 const refuseScanBody = (result: { success: boolean }) => {

@@ -23,7 +23,7 @@ import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedu
 import { bookings } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
-import { debitCredits, isVoided, refundCredits, type Tx } from '../packages/ledger'
+import { debitCredits, isVoided, lockPackages, refundCredits, type Tx } from '../packages/ledger'
 import { activateOnSchedule, assertPackageCoversSession } from '../packages/activation'
 import { now as clockNow } from '../../lib/clock'
 import { generateBookingCodes } from '../bookings/qr'
@@ -38,6 +38,7 @@ import {
 } from '../schedule/roster'
 import { planPtTypeChange, ptSessionCost } from './cost'
 import { retypeManualSessionInTx } from './manual'
+import { refuseTypeChangeOnceStarted } from './started'
 import { maySchedulePtRequest } from './binding'
 import { assertPartnerEligible } from './request'
 import { ptSubject, readInstructors, recordSessionChanged } from '../attention/session-updates'
@@ -232,6 +233,16 @@ export async function schedulePtRequest(
     }
 
     if (req.debitedClientPackageId) {
+      // Held first, then judged: a Refund's Void holds the package while it ends
+      // it, so a schedule that waited for it finds the package Voided and the
+      // whole schedule rolls back. A refunded package is never Activated, nor
+      // put on the calendar for a member who has their money back.
+      await lockPackages(tx, tenantId, { packageIds: [req.debitedClientPackageId] })
+      if (await isVoided(tx, tenantId, req.debitedClientPackageId)) {
+        throw new ConflictError('package_voided', {
+          message: "This member's package has been refunded, so this request can't be scheduled. Cancel the request instead.",
+        })
+      }
       await activateOnSchedule(tx, tenantId, req.debitedClientPackageId, { id: sessionId, startsAt: input.startsAt })
     }
 
@@ -331,10 +342,17 @@ async function reconcileSessionType(
     ptRequestId: string
     from: '1on1' | '2on1'
     to: '1on1' | '2on1'
+    /** The session's start: from it, a 2on1 can no longer be changed to 1on1. */
+    startsAt: Date
     partnerClientId?: string
     actorStaffId: string
   },
 ): Promise<void> {
+  // Returning a session by changing the type is refused as a cancel is, from
+  // the start: a member's request session has no end check to hide behind, so
+  // this holds days later, after the completion job has marked it attended.
+  if (args.to === '1on1') refuseTypeChangeOnceStarted(args.startsAt, clockNow())
+
   const [req] = await tx
     .select({
       id: ptRequests.id,
@@ -393,7 +411,9 @@ async function reconcileSessionType(
       actor: 'staff',
       actedByStaffId: args.actorStaffId,
     })
-  } else if (plan.delta > 0 && !(await isVoided(tx, tenantId, req.debitedClientPackageId))) {
+  } else if (plan.delta > 0) {
+    // A Voided package takes nothing back; the ledger finds that out under the
+    // package lock and moves nothing.
     await refundCredits(tx, {
       tenantId,
       clientId: req.clientId,
@@ -612,6 +632,7 @@ export async function updatePtSession(
             },
             req,
             to: patch.sessionType,
+            startedAt: existing.startsAt,
             ...(patch.partnerClientId !== undefined ? { partnerClientId: patch.partnerClientId } : {}),
             partnerClientPackageId: patch.partnerClientPackageId ?? null,
             actorStaffId: patch.actorStaffId,
@@ -624,6 +645,7 @@ export async function updatePtSession(
             ptRequestId: existing.ptRequestId,
             from: existing.sessionType,
             to: patch.sessionType,
+            startsAt: existing.startsAt,
             ...(patch.partnerClientId !== undefined ? { partnerClientId: patch.partnerClientId } : {}),
             actorStaffId: patch.actorStaffId,
           })

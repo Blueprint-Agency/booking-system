@@ -81,10 +81,14 @@ export function PtSessionMembers({
   const retypeControl =
     role === "admin" && editable && !upgrading ? (
       data.session_type === "2on1" ? (
-        <Button type="button" variant="ghost" size="sm" onClick={downgrade} disabled={busy !== null}>
-          {busy === "retype" && <Loader2 className="h-4 w-4 animate-spin" />}
-          Change to 1-on-1
-        </Button>
+        // Giving a session back by changing its type is refused from the start,
+        // as a cancel is: offered only while Cancel session is.
+        canCancelSession(data) && (
+          <Button type="button" variant="ghost" size="sm" onClick={downgrade} disabled={busy !== null}>
+            {busy === "retype" && <Loader2 className="h-4 w-4 animate-spin" />}
+            Change to 1-on-1
+          </Button>
+        )
       ) : (
         <Button
           type="button"

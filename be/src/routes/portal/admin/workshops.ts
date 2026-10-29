@@ -8,6 +8,7 @@ import * as scheduleSvc from '../../../services/workshops/schedule'
 import * as cancelSvc from '../../../services/workshops/cancel'
 import { tenantId } from '../../../middleware/tenant'
 import { BadRequestError } from '../../../shared/errors'
+import { dateTime } from '../../../shared/date-time'
 import {
   listManagedPromotionsFor,
   replacePromotionsForParent,
@@ -31,7 +32,9 @@ const priceField = z.union([z.string(), z.number()]).transform(v => {
   return n.toFixed(2)
 })
 
-const isoDate = z.string().datetime({ offset: true })
+const startsAtField = dateTime('A start time')
+const endsAtField = dateTime('An end time')
+const earlyBirdCutoffField = dateTime('An early-bird cutoff')
 
 const workshopInstructorSchema = z.object({
   instructor_id: z.string().uuid(),
@@ -70,8 +73,8 @@ const updateBasicsSchema = z.object({
 const dayCreateSchema = z.object({
   ord: z.number().int().min(1),
   room_id: z.string().uuid(),
-  starts_at: isoDate,
-  ends_at: isoDate,
+  starts_at: startsAtField,
+  ends_at: endsAtField,
   // Per-day base_price_sgd is retained at the DB level but is no longer
   // surfaced in the admin UI — pricing lives on workshop_tiers. Default to 0
   // so the column's NOT NULL constraint stays satisfied.
@@ -88,7 +91,7 @@ const tierCreateSchema = z.object({
   regular_price_sgd: priceField,
   early_bird_price_sgd: priceField.nullish(),
   early_bird_quota: z.number().int().min(1).nullish(),
-  early_bird_cutoff_at: isoDate.nullish(),
+  early_bird_cutoff_at: earlyBirdCutoffField.nullish(),
   ord: z.number().int().min(1),
   day_ids: z.array(z.string().uuid()).min(1),
 })
@@ -99,7 +102,7 @@ const tierUpdateSchema = z.object({
   regular_price_sgd: priceField.optional(),
   early_bird_price_sgd: priceField.nullish().optional(),
   early_bird_quota: z.number().int().min(1).nullish().optional(),
-  early_bird_cutoff_at: isoDate.nullish().optional(),
+  early_bird_cutoff_at: earlyBirdCutoffField.nullish().optional(),
   ord: z.number().int().min(1).optional(),
   day_ids: z.array(z.string().uuid()).min(1).optional(),
 })
@@ -127,8 +130,8 @@ const promotionInputSchema = z.object({
   kind: z.enum(['percent', 'special_price']),
   percent_off: z.number().int().min(1).max(99).nullish(),
   special_price_sgd: priceField.nullish(),
-  starts_at: isoDate,
-  ends_at: isoDate,
+  starts_at: startsAtField,
+  ends_at: endsAtField,
 })
 
 const replacePromotionsSchema = z.object({
@@ -177,6 +180,18 @@ const createSchema = createBasicsSchema.extend({
   tiers: scheduleSchema.shape.tiers.default([]),
   promotions: z.array(promotionInputSchema).default([]),
 })
+
+// The editor's one save (#502): the basics, plus the schedule and promotions
+// when sent. A half schedule never reaches the schedule rules.
+const saveWorkshopSchema = updateBasicsSchema
+  .extend({
+    days: scheduleSchema.shape.days.optional(),
+    tiers: scheduleSchema.shape.tiers.optional(),
+    promotions: z.array(promotionInputSchema).optional(),
+  })
+  .refine(b => (b.days === undefined) === (b.tiers === undefined), {
+    message: 'days and tiers are saved together: send both or neither',
+  })
 
 // ---------------------------------------------------------------------------
 // Serializers
@@ -299,7 +314,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'workshops', id: row.id })
     return c.json(workshopRow(row), 201)
   })
-  .patch('/:id', zValidator('param', idParam), zValidator('json', updateBasicsSchema), async c => {
+  .patch('/:id', zValidator('param', idParam), zValidator('json', saveWorkshopSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     // snake_case → the roster module's shape, and nothing else. An OMITTED
@@ -310,7 +325,7 @@ const app = new Hono()
         instructorId: s.instructor_id,
         ...(s.pay_sgd !== undefined ? { paySgd: s.pay_sgd } : {}),
       }))
-    const row = await publish.updateWorkshop(tenantId(c), id, {
+    const basics: publish.UpdateWorkshopInput = {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
       ...(body.description_html !== undefined ? { descriptionHtml: body.description_html ?? null } : {}),
@@ -326,8 +341,20 @@ const app = new Hono()
         ? { supportingInstructorIds: body.supporting_instructor_ids }
         : {}),
       ...(body.image_r2_keys !== undefined ? { imageR2Keys: body.image_r2_keys } : {}),
-      actorStaffId: c.get('staffUserId'),
-    })
+    }
+    const staffId = c.get('staffUserId')
+    // A basics-only save stays what it was; one carrying a schedule or promotions is the one save.
+    const row =
+      body.days === undefined && body.promotions === undefined
+        ? await publish.updateWorkshop(tenantId(c), id, { ...basics, actorStaffId: staffId })
+        : await scheduleSvc.updateWorkshopWithSchedule(tenantId(c), id, {
+            basics,
+            ...(body.days !== undefined && body.tiers !== undefined
+              ? { schedule: toScheduleInput({ days: body.days, tiers: body.tiers }) }
+              : {}),
+            ...(body.promotions !== undefined ? { promotions: body.promotions.map(toPromotionWriteInput) } : {}),
+            actorStaffId: staffId,
+          })
     c.set('auditTarget' as any, { table: 'workshops', id })
     return c.json(workshopRow(row))
   })
@@ -342,7 +369,7 @@ const app = new Hono()
   .put('/:id/schedule', zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    const saved = await scheduleSvc.saveWorkshopSchedule(tenantId(c), id, toScheduleInput(body))
+    const saved = await scheduleSvc.saveWorkshopSchedule(tenantId(c), id, toScheduleInput(body), c.get('staffUserId'))
     c.set('auditTarget' as any, { table: 'workshops', id })
     return c.json({ days: saved.days.map(dayRow), tiers: saved.tiers.map(tierRow) })
   })

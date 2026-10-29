@@ -17,7 +17,7 @@ import { now as clockNow } from '../../lib/clock'
 import { sgFormat } from '../../lib/time'
 import { isVoided, recordAdjustment, type Tx } from './ledger'
 import { listActiveInstructors } from '../schedule/client-catalog'
-import { computeActive } from './validity'
+import { activationExpiry, computeActive } from './validity'
 import { boundInstructorChange, homeLocationMove, liveUnlimited } from './purchase'
 
 export type ClientPackageRow = typeof clientPackages.$inferSelect
@@ -420,6 +420,9 @@ const startTime = sgFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour12
  * leave that booking paid by a package that has ended, so it is refused,
  * naming the earliest date allowed (#444 holds scheduling to the same rule).
  * The row is locked first, so a booking made meanwhile is seen.
+ *
+ * A blank expiry (back to Dormant) is refused only when the package pays for a
+ * booking that a fresh Activation now would not reach (#499).
  */
 export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPackageRow> {
   if (!input.reason.trim()) throw new BadRequestError('reason_required')
@@ -432,20 +435,35 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
       .for('update')
     const pkg = await editablePackage(tx, input)
 
-    if (input.expiresAt) {
-      const earliest = await latestPaidStart(tx, input.tenantId, pkg.id, clockNow())
-      if (earliest && input.expiresAt < earliest) {
-        throw new ConflictError('expiry_before_paid_booking', {
-          earliest_expires_at: earliest.toISOString(),
-          message: `This package pays for a booking at ${startTime.format(earliest)} on ${startDay.format(earliest)}. Set its expiry no earlier than that.`,
-        })
-      }
+    const now = clockNow()
+    const earliest = await latestPaidStart(tx, input.tenantId, pkg.id, now)
+    if (earliest && input.expiresAt && input.expiresAt < earliest) {
+      throw new ConflictError('expiry_before_paid_booking', {
+        earliest_expires_at: earliest.toISOString(),
+        message: `This package pays for a booking at ${startTime.format(earliest)} on ${startDay.format(earliest)}. Set its expiry no earlier than that.`,
+      })
     }
 
     // A blank expiry returns the package to Dormant (§8) — the escape hatch the
     // one-way activation rule depends on, the way an admin undoes an Activation
     // caused by a class the studio itself cancelled. Every kind can be Dormant.
     // A null expiry means Dormant and nothing else — "no expiry" has left the domain.
+    //
+    // It is refused only when the package pays for a booking that a fresh
+    // Activation now would not reach: any later Activation counts from its own
+    // moment, so it ends no earlier than now plus the package's length, and a
+    // booking within that reach cannot be stranded. Past it, staff had extended
+    // the date by hand, and the same booking would then be paid by a package
+    // that could end before it.
+    if (earliest && !input.expiresAt) {
+      const reach = activationExpiry(pkg, now)
+      if (reach && earliest > reach) {
+        throw new ConflictError('expiry_before_paid_booking', {
+          earliest_expires_at: earliest.toISOString(),
+          message: `This package pays for a booking at ${startTime.format(earliest)} on ${startDay.format(earliest)}. Returned to Dormant it could end before then. Keep an expiry no earlier than that.`,
+        })
+      }
+    }
     const fmt = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : 'Dormant')
     const reason = `Expiry changed from ${fmt(pkg.expiresAt)} to ${fmt(input.expiresAt)}: ${input.reason.trim()}`
 

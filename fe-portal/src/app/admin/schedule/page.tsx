@@ -210,7 +210,7 @@ export default function SchedulePage() {
     <div>
       <PageHeader
         title="Schedule"
-        description="Unified timetable of classes, workshops, and confirmed private sessions."
+        description="Unified timetable of classes, workshops, and private sessions."
         actions={ADD_KINDS.map((k) => (
           <Button
             key={k.kind}

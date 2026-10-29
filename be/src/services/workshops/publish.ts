@@ -148,6 +148,13 @@ export async function updateWorkshop(
   tenantId: string,
   id: string,
   patch: UpdateWorkshopInput,
+  opts: {
+    /**
+     * False when the caller tells the instructors this edit adds, after it has
+     * written the rest of the save and the workshop's first day is final.
+     */
+    announceAdded?: boolean
+  } = {},
 ): Promise<WorkshopRow> {
   const existing = await getWorkshop(tenantId, id)
   if (existing.lifecycle === 'cancelled') {
@@ -205,7 +212,7 @@ export async function updateWorkshop(
             ? { supportingInstructorIds: patch.supportingInstructorIds }
             : {}),
         },
-        patch.actorStaffId ? { actorStaffId: patch.actorStaffId } : undefined,
+        patch.actorStaffId && opts.announceAdded !== false ? { actorStaffId: patch.actorStaffId } : undefined,
       )
       // A workshop with no main row is a broken row, not a state to save into.
       if (!roster.some(r => r.role === 'main')) {
@@ -214,15 +221,18 @@ export async function updateWorkshop(
     }
 
     // The instructors are told when someone else moved the workshop to another location or changed who teaches it (#493).
+    // A workshop with no day has no time to move or name, so there is nothing to tell.
     const factsAfter = await workshopFacts(tenantId, id)
-    await recordSessionChanged(tenantId, {
-      actorStaffId: patch.actorStaffId,
-      kind: 'workshop',
-      sessionId: id,
-      subject: factsAfter.subject,
-      before: { ...factsBefore, roomId: null, ...instructorsBefore },
-      after: { ...factsAfter, roomId: null, ...(await readInstructors(tenantId, 'workshop', id)) },
-    })
+    if (factsBefore && factsAfter) {
+      await recordSessionChanged(tenantId, {
+        actorStaffId: patch.actorStaffId,
+        kind: 'workshop',
+        sessionId: id,
+        subject: factsAfter.subject,
+        before: { ...factsBefore, roomId: null, ...instructorsBefore },
+        after: { ...factsAfter, roomId: null, ...(await readInstructors(tenantId, 'workshop', id)) },
+      })
+    }
 
     if (patch.imageR2Keys !== undefined) {
       await tx

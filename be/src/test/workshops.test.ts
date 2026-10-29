@@ -1119,6 +1119,165 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(mainAsSupporting.body.error, 'supporting_instructor_duplicates_main')
   })
 
+  /* ── the editor's one save (#502) ──────────────────────────────────── */
+
+  describe('an Admin edits a workshop in one request', () => {
+    type Detail = {
+      name: string
+      days: { id: string; room_id: string; starts_at: string; ends_at: string; capacity_online: number }[]
+      tiers: { id: string; name: string; regular_price_sgd: string; day_ids: string[] }[]
+      promotions: { label: string }[]
+      supporting_instructors: { instructor_id: string }[]
+    }
+    const detailOf = async (w: Workshop) => {
+      const res = await call(`/api/v1/portal/admin/workshops/${w.id}`, adminAtOne.headers)
+      assert.equal(res.status, 200, res.text)
+      return res.body as Detail
+    }
+
+    /** The body the editor sends: every day and tier as stored, with `change` applied on top. */
+    const editBody = (before: Detail, change: Record<string, unknown> = {}) => ({
+      name: before.name,
+      days: before.days.map(d => ({
+        id: d.id,
+        ref: d.id,
+        room_id: d.room_id,
+        starts_at: d.starts_at,
+        ends_at: d.ends_at,
+        capacity_online: d.capacity_online,
+      })),
+      tiers: before.tiers.map(t => ({ id: t.id, name: t.name, regular_price_sgd: t.regular_price_sgd, day_refs: t.day_ids })),
+      ...change,
+    })
+    const save = (w: Workshop, body: unknown) =>
+      call(`/api/v1/portal/admin/workshops/${w.id}`, adminAtOne.headers, { method: 'PATCH', body })
+    const launch = () => ({
+      label: 'Launch',
+      kind: 'percent',
+      percent_off: 10,
+      starts_at: new Date(Date.now() - DAY).toISOString(),
+      ends_at: new Date(Date.now() + DAY).toISOString(),
+    })
+    /** Half an hour: a moved day stays clear of the next workshop's slot, which `nextStart` puts three hours on. */
+    const SHIFT = HOUR / 2
+    const movedBy = (day: Detail['days'][number], by: number) => ({
+      id: day.id,
+      ref: day.id,
+      room_id: day.room_id,
+      starts_at: new Date(Date.parse(day.starts_at) + by).toISOString(),
+      ends_at: new Date(Date.parse(day.ends_at) + by).toISOString(),
+      capacity_online: day.capacity_online,
+    })
+
+    test('WSP-35 one save renames a workshop, changes its instructors, day, tiers and promotions together, and a save the API refuses leaves every part as it was', async () => {
+      const sam = await staff(one, `Sam Edit ${run}`, 'instructor')
+      const w = await workshop(one, adminAtOne, teacherAtOne, {
+        name: 'One save retreat',
+        days: [{ capacity: 10 }],
+        tiers: [
+          { name: 'Full', price: '150.00', days: [0] },
+          { name: 'Other', price: '90.00', days: [0] },
+        ],
+      })
+      const cara = await member(one, 'Cara One Save')
+      assert.equal((await checkout(cara, w)).status, 200)
+      const before = await detailOf(w)
+      const [day] = before.days
+      const renamed = `Renamed one save ${run}`
+
+      // The held tier (the first) is dropped in the same save as everything else.
+      const refused = await save(
+        w,
+        editBody(before, {
+          name: renamed,
+          supporting_instructors: [{ instructor_id: sam.staffId, pay_sgd: 40 }],
+          days: [movedBy(day!, SHIFT)],
+          tiers: [{ id: w.tierIds[1], name: 'Other', regular_price_sgd: '90.00', day_refs: [day!.id] }],
+          promotions: [launch()],
+        }),
+      )
+      assert.equal(refused.status, 409, refused.text)
+      assert.equal(refused.body.error, 'workshop_tier_has_open_purchases')
+      assert.match(String(refused.body.message), /1 unfinished purchase\b/, refused.text)
+      assert.deepEqual(await detailOf(w), before, 'the refused save changed the workshop')
+
+      const kept = await save(
+        w,
+        editBody(before, {
+          name: renamed,
+          supporting_instructors: [{ instructor_id: sam.staffId, pay_sgd: 40 }],
+          days: [movedBy(day!, SHIFT)],
+          promotions: [launch()],
+        }),
+      )
+      assert.equal(kept.status, 200, kept.text)
+      const after = await detailOf(w)
+      assert.equal(after.name, renamed)
+      assert.deepEqual(after.supporting_instructors.map(s => s.instructor_id), [sam.staffId])
+      assert.deepEqual(after.days.map(d => [d.id, d.starts_at]), [[day!.id, new Date(Date.parse(day!.starts_at) + SHIFT).toISOString()]])
+      assert.deepEqual(after.tiers.map(t => t.id), w.tierIds, 'the tiers were duplicated or dropped')
+      assert.deepEqual(after.promotions.map(p => p.label), ['Launch'])
+    })
+
+    test('WSP-36 a save whose promotions cannot be written leaves the name, instructors, days and tiers as they were', async () => {
+      const w = await workshop(one, adminAtOne, teacherAtOne, {
+        name: 'Promotion fault retreat',
+        days: [{ capacity: 10 }],
+        tiers: [{ name: 'Full', price: '150.00', days: [0] }],
+      })
+      const before = await detailOf(w)
+      const [day] = before.days
+      const fault = `wsp36_${run}`
+      await harness.db.execute(
+        sql.raw(`CREATE FUNCTION ${fault}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+          BEGIN
+            IF NEW.parent_id = '${w.id}' THEN RAISE EXCEPTION 'promotions are not writable here'; END IF;
+            RETURN NEW;
+          END $$`),
+      )
+      await harness.db.execute(
+        sql.raw(`CREATE TRIGGER ${fault} BEFORE INSERT ON promotions FOR EACH ROW EXECUTE FUNCTION ${fault}()`),
+      )
+      try {
+        const failed = await save(
+          w,
+          editBody(before, {
+            name: `Never saved ${run}`,
+            days: [movedBy(day!, SHIFT)],
+            tiers: [
+              { id: w.tierIds[0], name: 'Full', regular_price_sgd: '175.00', day_refs: [day!.id] },
+              { name: 'Added', regular_price_sgd: '60.00', day_refs: [day!.id] },
+            ],
+            promotions: [launch()],
+          }),
+        )
+        assert.ok(failed.status >= 500, `the save should fail: ${failed.status} ${failed.text}`)
+      } finally {
+        await harness.db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${fault} ON promotions`))
+        await harness.db.execute(sql.raw(`DROP FUNCTION IF EXISTS ${fault}()`))
+      }
+      assert.deepEqual(await detailOf(w), before, 'the failed save changed the workshop')
+    })
+
+    test('WSP-37 a save naming days without tiers, or tiers without days, is refused as an invalid body and writes nothing', async () => {
+      const w = await workshop(one, adminAtOne, teacherAtOne, {
+        name: 'Half schedule retreat',
+        days: [{ capacity: 10 }],
+        tiers: [{ name: 'Full', price: '150.00', days: [0] }],
+      })
+      const before = await detailOf(w)
+      const full = editBody(before, { name: `Half schedule renamed ${run}` })
+
+      const daysOnly = await save(w, { name: full.name, days: full.days })
+      assert.equal(daysOnly.status, 400, daysOnly.text)
+      assert.match(daysOnly.text, /send both or neither/, daysOnly.text)
+      const tiersOnly = await save(w, { name: full.name, tiers: full.tiers })
+      assert.equal(tiersOnly.status, 400, tiersOnly.text)
+      assert.match(tiersOnly.text, /send both or neither/, tiersOnly.text)
+      assert.deepEqual(await detailOf(w), before, 'a refused body wrote something')
+    })
+  })
+
   test('WSP-21 removing one of two tiers while the other is being removed leaves the workshop one tier', async () => {
     const w = await workshop(one, adminAtOne, teacherAtOne, {
       name: 'Two tier race',

@@ -88,14 +88,14 @@ export const emailLog = pgTable(
 )
 
 /**
- * The liability text a member signs — one row **per tenant**, not one row.
+ * Unused: waivers are not being built (#233). No route reads or writes `waiver`
+ * or `waiver_signatures`, and both tables wait for the drop that needs both
+ * backend devs.
  *
- * It carried a `CHECK (id = '<fixed uuid>')`, which is the right constraint for
- * one studio and the wrong one for two: no second tenant could own a row, so
- * every second tenant would have been shown tenant #1's waiver and its
- * members would have put their name to a document about another business. The
- * check is gone, the id is generated, and the unique index on `tenant_id` is
- * what holds the table to one row each.
+ * It is one row **per tenant**, not one row. It carried a
+ * `CHECK (id = '<fixed uuid>')`, the right constraint for one studio and the
+ * wrong one for two, so the check is gone, the id is generated, and the unique
+ * index on `tenant_id` is what holds the table to one row each.
  */
 export const waiver = pgTable(
   'waiver',
@@ -114,6 +114,7 @@ export const waiver = pgTable(
   }),
 )
 
+/** Unused, like `waiver` above: waivers are not being built (#233), and the table waits for the same drop. */
 export const waiverSignatures = pgTable(
   'waiver_signatures',
   {

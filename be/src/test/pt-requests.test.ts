@@ -3425,6 +3425,36 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     }
   })
 
+  test('SCH-43 a private session counts the members still booked on it: a cancelled one reads 0 of its places and still names who it was for, and a 2on1 whose partner left reads 1 of 2', async () => {
+    const sid = await member(one, 'Sid Count Cancelled')
+    const sidPackage = await givePt(one, sid, '1on1')
+    const sidRequest = await requestOk(one, sid, { sessionType: '1on1', clientPackageId: sidPackage })
+    const cancelled = await scheduled(sidRequest, { instructor: coachA })
+    await expectStatus(await adminCancel(adminAtOne, sidRequest), 200)
+    const pair = await requestPair('Sol Count Left')
+    const seat = (await bookingOf(pair.sessionId, pair.partner))!
+    await expectStatus(await adminBookingCancel(seat.id, 'return'), 200)
+    assert.equal((await sessionRow(pair.sessionId)).lifecycle, 'active', 'the session goes on without the partner')
+
+    for (const [path, by] of [
+      ['/api/v1/portal/instructor/schedule?type=pt', coachA],
+      ['/api/v1/portal/admin/schedule?type=pt', adminAtOne],
+    ] as const) {
+      const res = await expectStatus(await harness.app.request(path, { headers: by.headers }), 200)
+      const gone = (res.entries as any[]).find(e => e.id === cancelled)
+      assert.ok(gone, `${path} lists the cancelled private session`)
+      assert.equal(gone.event_state, 'cancelled', path)
+      assert.equal(gone.booked_count, 0, path)
+      assert.equal(gone.capacity, 1, path)
+      assert.equal(gone.label, 'Private · Sid', path)
+      const left = (res.entries as any[]).find(e => e.id === pair.sessionId)
+      assert.ok(left, `${path} lists the 2on1`)
+      assert.equal(left.booked_count, 1, path)
+      assert.equal(left.capacity, 2, path)
+      assert.equal(left.label, 'Private · Sol + Sol', path)
+    }
+  })
+
   test('PKG-46 an Admin setting a package\'s expiry before a live session or class it pays for is refused with the earliest date allowed; a cancelled one no longer holds it', async () => {
     const editExpiry = (who: Member, clientPackageId: string, expiresAt: Date) =>
       harness.app.request(`/api/v1/portal/admin/clients/${who.clientId}/packages/${clientPackageId}/expiry`, {
@@ -3489,6 +3519,160 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       200,
     )
     await expectStatus(await editExpiry(uma, classPackage!.id, new Date(Date.now() + 10 * DAY)), 200)
+  })
+
+  const editExpiryOf = (who: Member, clientPackageId: string, expiresAt: Date | null) =>
+    harness.app.request(`/api/v1/portal/admin/clients/${who.clientId}/packages/${clientPackageId}/expiry`, {
+      method: 'POST',
+      headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expires_at: expiresAt ? expiresAt.toISOString() : null, reason: 'Desk correction' }),
+    })
+
+  /** A class at studio one starting at `startsAt`, with room for the member who books it. */
+  async function classStartingAt(startsAt: Date): Promise<string> {
+    const [klass] = await harness.db
+      .insert(schema.classes)
+      .values({
+        tenantId: one.id,
+        classTypeId: one.classTypeId,
+        mainInstructorId: coachB.staffId,
+        locationId: one.places[0]!.locationId,
+        roomId: one.places[0]!.roomId,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + HOUR),
+        capacityOnline: 10,
+        creditCost: 1,
+        createdByStaffId: coachB.staffId,
+      })
+      .returning({ id: schema.classes.id })
+    return klass!.id
+  }
+
+  const bookClassFor = (who: Member, classId: string) =>
+    harness.app.request('/api/v1/me/bookings/class', {
+      method: 'POST',
+      headers: { ...who.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ class_id: classId }),
+    })
+
+  /** A member holding one Dormant class bundle, the package's id. */
+  async function memberWithBundle(name: string): Promise<{ who: Member; packageId: string }> {
+    const who = await member(one, name)
+    await giveClassCredits(one, who)
+    const [bundle] = await harness.db
+      .select({ id: schema.clientPackages.id })
+      .from(schema.clientPackages)
+      .where(and(eq(schema.clientPackages.clientId, who.clientId), eq(schema.clientPackages.kind, 'credit_bundle')))
+    return { who, packageId: bundle!.id }
+  }
+
+  /** Days out, past what a 3-day package reaches, each session at a time of its own. */
+  const beyondThreeDays = () => new Date(Date.now() + 10 * DAY + farSlots++ * 2 * HOUR)
+
+  test('PKG-48 an Admin clearing the expiry of a package that pays for a booking starting past what a fresh Activation reaches is refused with that booking\'s start; once it is cancelled, or when every booking is within reach, clearing returns the package to Dormant', async () => {
+    function assertWouldStrand(refused: any, startsAt: Date) {
+      assert.equal(refused.error, 'expiry_before_paid_booking')
+      assert.equal(refused.earliest_expires_at, startsAt.toISOString())
+      assert.match(refused.message, /Dormant/)
+      assert.match(refused.message, /no earlier than/)
+    }
+
+    // A PT package staff extended by hand, then a manual session past its length.
+    const tia = await member(one, 'Tia Cleared Session')
+    const ptPackage = await givePt(one, tia, '1on1')
+    await setValidityDays(ptPackage, 3)
+    await expectStatus(await editExpiryOf(tia, ptPackage, new Date(Date.now() + 30 * DAY)), 200)
+    const sessionStart = beyondThreeDays()
+    const { requestId } = await manualSession(
+      await adminManual(adminAtOne, [{ client_id: tia.clientId, client_package_id: ptPackage }], { startsAt: sessionStart }),
+    )
+    const extended = (await pkg(ptPackage)).expiresAt
+    assert.ok(extended)
+
+    assertWouldStrand(await expectStatus(await editExpiryOf(tia, ptPackage, null), 409), sessionStart)
+    assert.equal((await pkg(ptPackage)).expiresAt?.getTime(), extended.getTime())
+    await expectStatus(await adminCancel(adminAtOne, requestId), 200)
+    await expectStatus(await editExpiryOf(tia, ptPackage, null), 200)
+    assert.equal((await pkg(ptPackage)).expiresAt, null)
+
+    // The same for a class bundle and a class booked past its length.
+    const { who: uma, packageId: bundle } = await memberWithBundle('Uma Cleared Class')
+    await setValidityDays(bundle, 3)
+    await expectStatus(await editExpiryOf(uma, bundle, new Date(Date.now() + 30 * DAY)), 200)
+    const classStart = beyondThreeDays()
+    const booked = await expectStatus(await bookClassFor(uma, await classStartingAt(classStart)), 201)
+    const bundleEnd = (await pkg(bundle)).expiresAt
+    assert.ok(bundleEnd)
+
+    assertWouldStrand(await expectStatus(await editExpiryOf(uma, bundle, null), 409), classStart)
+    assert.equal((await pkg(bundle)).expiresAt?.getTime(), bundleEnd.getTime())
+    await expectStatus(
+      await harness.app.request(`/api/v1/me/bookings/${booked.booking_id}`, { method: 'DELETE', headers: uma.headers }),
+      200,
+    )
+    await expectStatus(await editExpiryOf(uma, bundle, null), 200)
+    assert.equal((await pkg(bundle)).expiresAt, null)
+
+    // Every booking within reach of a fresh Activation: nothing for clearing to strand.
+    const vic = await member(one, 'Vic Cleared Within Reach')
+    const reachable = await givePt(one, vic, '1on1')
+    await manualSession(await adminManual(adminAtOne, [{ client_id: vic.clientId, client_package_id: reachable }], { startsAt: far() }))
+    assert.ok((await pkg(reachable)).expiresAt, 'the session Activated the package')
+    await expectStatus(await editExpiryOf(vic, reachable, null), 200)
+    const cleared = await pkg(reachable)
+    assert.equal(cleared.expiresAt, null)
+    assert.equal(cleared.active, true, 'a Dormant package is spendable')
+  })
+
+  test('PKG-49 an Admin\'s expiry edit and a booking paid by the same package, made at the same moment, never both go through: whichever takes the package first, the other is refused, and no live booking starts past the package\'s end', async () => {
+    for (const kind of ['manual session', 'class booking'] as const) {
+      for (const order of ['edit first', 'create first'] as const) {
+        const label = `${kind}, ${order}`
+        const name = `Race ${kind} ${order}`
+        const startsAt = beyondThreeDays()
+        let who: Member
+        let packageId: string
+        let create: () => Promise<Response>
+        if (kind === 'manual session') {
+          who = await member(one, name)
+          packageId = await givePt(one, who, '1on1')
+          create = async () => adminManual(adminAtOne, [{ client_id: who.clientId, client_package_id: packageId }], { startsAt })
+        } else {
+          ;({ who, packageId } = await memberWithBundle(name))
+          const classId = await classStartingAt(startsAt)
+          create = async () => bookClassFor(who, classId)
+        }
+        const edit = async () => editExpiryOf(who, packageId, new Date(startsAt.getTime() - 5 * DAY))
+
+        const [first, second] = await inFlightTogether(
+          harness.db,
+          sql`SELECT id FROM client_packages WHERE id = ${packageId}`,
+          order === 'edit first' ? [edit, create] : [create, edit],
+        )
+
+        const [edited, created] = order === 'edit first' ? [first!, second!] : [second!, first!]
+        if (order === 'edit first') {
+          await expectStatus(edited, 200)
+          const refused = await expectStatus(created, 409)
+          assert.equal(
+            refused.error,
+            kind === 'manual session' ? 'package_expires_before_session' : 'plan_expires_before_class',
+            label,
+          )
+        } else {
+          await expectStatus(created, 201)
+          assert.equal((await expectStatus(edited, 409)).error, 'expiry_before_paid_booking', label)
+        }
+        const end = (await pkg(packageId)).expiresAt
+        assert.ok(end, label)
+        const live = await harness.db
+          .select({ id: schema.bookings.id })
+          .from(schema.bookings)
+          .where(and(eq(schema.bookings.clientPackageId, packageId), eq(schema.bookings.state, 'confirmed')))
+        if (order === 'edit first') assert.equal(live.length, 0, label)
+        else assert.ok(end >= startsAt, `${label}: the package ends ${end.toISOString()}, after the booking at ${startsAt.toISOString()}`)
+      }
+    }
   })
 
   // ── Who may ──────────────────────────────────────────────────────────────
@@ -4170,6 +4354,119 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     }
   })
 
+  /** A member's 2on1 request session, scheduled; the requester's package paid its two sessions. */
+  async function requestPair(name: string, opts: { instructor?: Staff } = {}) {
+    const who = await member(one, `${name} One`)
+    const partner = await member(one, `${name} Two`)
+    const packageId = await givePt(one, who, '2on1')
+    const requestId = await requestOk(one, who, {
+      sessionType: '2on1',
+      clientPackageId: packageId,
+      partner: { kind: 'existing', coClientId: partner.clientId },
+    })
+    const sessionId = await scheduled(requestId, opts.instructor ? { instructor: opts.instructor } : {})
+    assert.equal(await sessionsLeft(packageId), 8)
+    return { who, partner, packageId, requestId, sessionId }
+  }
+
+  test('PT-163 changing a 2on1 private session to 1on1 is refused once it has started, on a member request and on a manual session, ended and marked attended included: nothing is returned and the type stays; a millisecond before the start it goes through, and a started session saves an edit that leaves its type alone', async () => {
+    const type = (sessionId: string) => sessionRow(sessionId).then(s => s.sessionType)
+    const confirmedOn = async (sessionId: string) =>
+      (await bookingsOn(sessionId)).filter(b => b.state === 'confirmed').length
+
+    // Its own Instructor, so editing its pay is not an overlap with the manual session beside it.
+    const started = await requestPair('Ned Started Request', { instructor: coachB })
+    const manual = await fullPair('Ned Started Manual')
+    const attended = await requestPair('Ned Attended Request')
+    await startedAgo(started.sessionId, 10)
+    await startedAgo(manual.sessionId, 10)
+    await startedAgo(attended.sessionId, 120)
+    await jobs.scheduledJobs.completeEndedPtSessions()
+    assert.equal((await requestRow(attended.requestId)).status, 'attended')
+
+    for (const [label, sessionId, requestId, balances] of [
+      ['a member request, ten minutes in', started.sessionId, started.requestId, [[started.packageId, 8]]],
+      ['a manual session, ten minutes in', manual.sessionId, manual.requestId, [[manual.firstPackage, 9], [manual.secondPackage, 9]]],
+      ['a member request that ended and was marked attended', attended.sessionId, attended.requestId, [[attended.packageId, 8]]],
+    ] as const) {
+      const movements = await Promise.all(balances.map(([id]) => movementsOn(id).then(m => m.length)))
+
+      const refused = await expectStatus(await retype(sessionId, { session_type: '1on1' }), 422)
+
+      assert.equal(refused.error, 'session_already_started', label)
+      assert.match(refused.message, /type can no longer change/, label)
+      assert.equal(await type(sessionId), '2on1', label)
+      assert.equal((await requestRow(requestId)).sessionType, '2on1', label)
+      assert.equal(await confirmedOn(sessionId), 2, label)
+      for (const [i, [id, left]] of balances.entries()) {
+        assert.equal(await sessionsLeft(id), left, label)
+        assert.equal((await movementsOn(id)).length, movements[i], label)
+      }
+    }
+
+    // A started session still saves an edit that does not change its type, one
+    // that names the type it already has among them.
+    await expectStatus(await retype(started.sessionId, { session_type: '2on1', instructor_pay_sgd: 80 }), 200)
+    assert.equal((await sessionRow(started.sessionId)).instructorPaySgd, '80.00')
+
+    const request = await requestPair('Ned Instant Request')
+    const pair = await fullPair('Ned Instant Manual')
+    const requestStartsAt = (await sessionRow(request.sessionId)).startsAt
+    const pairStartsAt = (await sessionRow(pair.sessionId)).startsAt
+    try {
+      harness.clock.set(requestStartsAt)
+      assert.equal((await expectStatus(await retype(request.sessionId, { session_type: '1on1' }), 422)).error, 'session_already_started')
+      harness.clock.set(pairStartsAt)
+      assert.equal((await expectStatus(await retype(pair.sessionId, { session_type: '1on1' }), 422)).error, 'session_already_started')
+      assert.equal(await sessionsLeft(request.packageId), 8)
+      assert.equal(await sessionsLeft(pair.secondPackage), 9)
+
+      harness.clock.set(new Date(requestStartsAt.getTime() - 1))
+      await expectStatus(await retype(request.sessionId, { session_type: '1on1' }), 200)
+      assert.equal(await sessionsLeft(request.packageId), 9, 'the requester gets one of the two sessions back')
+      harness.clock.set(new Date(pairStartsAt.getTime() - 1))
+      await expectStatus(await retype(pair.sessionId, { session_type: '1on1' }), 200)
+      assert.equal(await sessionsLeft(pair.secondPackage), 10, 'the leaving partner gets theirs back')
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
+  test('PT-164 scheduling a pending request whose package has been refunded is refused 409 package_voided with a sentence, by an Admin and by the request\'s Instructor: no session is made, the package is not Activated and the request still waits', async () => {
+    const who = await member(one, 'Pru Voided Pending')
+    const packageId = await givePt(one, who, '1on1')
+    const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: packageId })
+    await voidPackage(who, packageId)
+    const sessionsBefore = await ptSessionCount()
+    const movements = (await movementsOn(packageId)).length
+
+    for (const [label, schedule] of [
+      ['an Admin', () => adminSchedule(one, adminAtOne, requestId)],
+      ['an Instructor', () => instructorSchedule(one, coachA, requestId)],
+    ] as const) {
+      const refused = await expectStatus(await schedule(), 409)
+
+      assert.equal(refused.error, 'package_voided', label)
+      assert.match(refused.message, /refunded/, label)
+      assert.match(refused.message, /Cancel the request instead/, label)
+      assert.equal((await requestRow(requestId)).status, 'pending', label)
+      assert.deepEqual(await sessionsFor(requestId), [], label)
+      assert.equal(await ptSessionCount(), sessionsBefore, label)
+      assert.deepEqual(await bookingsOwnedBy(who), [], label)
+      const after = await pkg(packageId)
+      assert.equal(after.expiresAt, null, `${label}: the refunded package is not Activated`)
+      assert.equal(after.activatedByPtSessionId, null, label)
+      assert.equal(after.creditsOrSessionsRemaining, 9, label)
+      assert.equal((await movementsOn(packageId)).length, movements, label)
+    }
+
+    await expectStatus(await adminCancel(adminAtOne, requestId), 200)
+    assert.equal(await sessionsLeft(packageId), 9, 'cancelling the request puts nothing back on the refunded package')
+  })
+
+  const bookingsOwnedBy = (who: Member) =>
+    harness.db.select().from(schema.bookings).where(eq(schema.bookings.clientId, who.clientId))
+
   test('RFD-32 a private-session request still pending when its package is Voided returns nothing to it, cancelled by the member or an Admin or expired', async () => {
     for (const how of ['member', 'admin', 'expiry'] as const) {
       const who = await member(one, `Val Pending ${how}`)
@@ -4196,12 +4493,12 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     }
   })
 
-  test('RFD-33 staff cancelling a private session before it starts return nothing to a Voided package that paid for it: a request scheduled after the Void, and a manual seat the Void could not cancel', async () => {
+  test("RFD-33 staff cancelling a private session before it starts return nothing to a Voided package that paid for it: a member's request session the Void left standing, and a manual seat the Void could not cancel", async () => {
     const who = await member(one, 'Vic Scheduled After')
     const packageId = await givePt(one, who, '1on1')
     const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: packageId })
-    await voidPackage(who, packageId)
     const sessionId = await scheduled(requestId)
+    await voidPackage(who, packageId)
     const activated = await pkg(packageId)
     const movements = (await movementsOn(packageId)).length
 
@@ -4215,20 +4512,39 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(after.expiresAt?.getTime(), activated.expiresAt?.getTime(), 'a Voided package is not put back to Dormant')
     assert.equal((await movementsOn(packageId)).length, movements)
 
+    const reversalsOn = async (clientPackageId: string) =>
+      (
+        await harness.db
+          .select()
+          .from(schema.manualAdjustments)
+          .where(eq(schema.manualAdjustments.clientPackageId, clientPackageId))
+      ).filter(a => a.reason === 'pt_activation_reversed')
+    assert.deepEqual(await reversalsOn(packageId), [])
+
     const pair = await fullPair('Vic Seat Stands')
     await voidPackage(pair.first, pair.firstPackage)
+    const seatActivated = await pkg(pair.firstPackage)
+    assert.ok(seatActivated.expiresAt, "the seat's session started the package")
 
     const removed = await expectStatus(await adminRemoveMember(adminAtOne, pair.sessionId, pair.first.clientId), 200)
     assert.equal(removed.refund_outcome, 'n_a')
     assert.equal((await bookingOf(pair.sessionId, pair.first))?.refundOutcome, 'n_a')
     assert.equal(await sessionsLeft(pair.firstPackage), 9)
+    const seatAfter = await pkg(pair.firstPackage)
+    assert.equal(seatAfter.expiresAt?.getTime(), seatActivated.expiresAt?.getTime(), "a Voided seat's package is not put back to Dormant")
+    assert.equal(seatAfter.activatedByPtSessionId, seatActivated.activatedByPtSessionId)
+    assert.deepEqual(await reversalsOn(pair.firstPackage), [])
 
     const again = await fullPair('Vic Session Cancelled')
     await voidPackage(again.first, again.firstPackage)
+    const againActivated = await pkg(again.firstPackage)
     await expectStatus(await adminCancel(adminAtOne, again.requestId), 200)
     assert.equal((await bookingOf(again.sessionId, again.first))?.refundOutcome, 'n_a')
     assert.equal(await sessionsLeft(again.firstPackage), 9)
     assert.equal(await sessionsLeft(again.secondPackage), 10, 'the other seat is returned to its own package')
+    const againAfter = await pkg(again.firstPackage)
+    assert.equal(againAfter.expiresAt?.getTime(), againActivated.expiresAt?.getTime(), "a Voided seat's package is not put back to Dormant")
+    assert.deepEqual(await reversalsOn(again.firstPackage), [])
   })
 
   test('RFD-34 a private session switched from 2on1 to 1on1 returns nothing to a Voided package: the requester of a member request, or the partner leaving a manual session', async () => {
@@ -4240,8 +4556,8 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       clientPackageId: packageId,
       partner: { kind: 'existing', coClientId: partner.clientId },
     })
-    await voidPackage(who, packageId)
     const sessionId = await scheduled(requestId)
+    await voidPackage(who, packageId)
     assert.equal(await sessionsLeft(packageId), 8)
 
     await expectStatus(await retype(sessionId, { session_type: '1on1' }), 200)

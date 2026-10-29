@@ -74,7 +74,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 **Schedule:**
 8. Schedule
-   - **Timetable** — unified calendar view of all sessions (classes + workshops + confirmed PT) scoped to the active workspace
+   - **Timetable** — unified calendar view of all sessions (classes + workshops + PT) scoped to the active workspace
    - **Create Schedule** — every flow starts by arming the grid and clicking a slot (§7f):
      - Class instance (class type, instructor, date/time, duration, capacity, credit cost, difficulty)
      - Workshop — the slot becomes the first day of a new workshop in the Packages editor (§7c)
@@ -339,7 +339,7 @@ Studio goods surfaced in the member app at `/merch`. **Admins** manage them — 
 
 ### 7a. Timetable
 
-- Google Calendar-style unified view of all classes, workshops, and confirmed private sessions **scoped to the active workspace** (`rt.activeLocationId`). Switching workspace via the topbar re-renders the calendar.
+- Google Calendar-style unified view of all classes, workshops, and private sessions **scoped to the active workspace** (`rt.activeLocationId`). Switching workspace via the topbar re-renders the calendar.
 - Admin navigates by day / week / month.
 
 **Filters (no Location filter — workspace is global now):**
@@ -954,6 +954,8 @@ Workshops are configured at `/admin/packages/workshops` — **workspace-scoped**
 1. **Basics** — name, description, class type, location, instructors, cover + additional images.
 2. **Days** — date entry (range mode or individual dates) with per-day `start_time`, `end_time`, `base_price_sgd`, and `<CapacityFields />`.
 3. **Tiers** — at least one tier required. Each tier picks which `day_ids` it covers, a name, regular price, and optional early-bird price + cutoff.
+
+*As built:* a new workshop and an edit are each saved in one request (`POST /workshops`, `PATCH /workshops/:id`), and a refused save changes nothing.
 
 ### 18c. Derived tier capacity
 

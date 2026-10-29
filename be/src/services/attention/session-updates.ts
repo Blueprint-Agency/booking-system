@@ -96,11 +96,14 @@ export async function ptSubject(
   return { subject: people.length > 1 ? 'the 2-on-1 private session' : 'the private session' }
 }
 
-/** A workshop is called by its name, and starts when its first day does. */
+/**
+ * A workshop is called by its name, and starts when its first day does. One with
+ * no day has no start, so there is nothing to tell an instructor about it: null.
+ */
 export async function workshopFacts(
   tenantId: string,
   workshopId: string,
-): Promise<{ subject: string; startsAt: Date; endsAt: Date; locationId: string | null }> {
+): Promise<{ subject: string; startsAt: Date; endsAt: Date; locationId: string | null } | null> {
   const [w] = await db
     .select({ name: workshops.name, locationId: workshops.locationId })
     .from(workshops)
@@ -112,11 +115,11 @@ export async function workshopFacts(
     .where(and(eq(workshopDays.tenantId, tenantId), eq(workshopDays.workshopId, workshopId)))
     .orderBy(asc(workshopDays.startsAt))
     .limit(1)
-  const at = first?.startsAt ?? new Date()
+  if (!first) return null
   return {
     subject: w?.name ?? 'your workshop',
-    startsAt: at,
-    endsAt: first?.endsAt ?? at,
+    startsAt: first.startsAt,
+    endsAt: first.endsAt,
     locationId: w?.locationId ?? null,
   }
 }
