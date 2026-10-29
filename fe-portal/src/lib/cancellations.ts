@@ -1,5 +1,5 @@
 /**
- * How staff read a cancellation (#352): the profile's Cancelled tab and the
+ * How staff read a cancellation: the profile's Cancelled tab and the
  * class roster's Cancelled section. The backend's shared cancellation summary
  * (`be/src/services/bookings/cancellation-summary.ts`) decides who cancelled
  * and where the credit went, and words both lines — the same sentences the

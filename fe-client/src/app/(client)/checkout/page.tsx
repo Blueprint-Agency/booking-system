@@ -111,11 +111,11 @@ function CheckoutContent() {
   // it prices at the stored Duration with no remainder — a commented mirror of
   // `priceCrossLocationForNewPlan`, which is what the charge is actually built from.
   const [addOn, setAddOn] = useState(false);
-  // Part Payment (#93) — off unless the member ticks it, and absent entirely
+  // Part Payment — off unless the member ticks it, and absent entirely
   // unless the studio offers it. `partAmount` is a string because it is what
   // the member is typing; the server decides whether it is allowed.
   const partPayment = usePartPaymentOptions();
-  // Whether this studio takes card payments online at all (#293). A total above
+  // Whether this studio takes card payments online at all. A total above
   // zero at a studio that takes none gets a sentence instead of a Pay button.
   const onlinePayments = useOnlinePayments();
   const [partChecked, setPartChecked] = useState(false);
@@ -135,9 +135,9 @@ function CheckoutContent() {
   const { data: instructors, loading: instructorsLoading } = useInstructors();
   const needsInstructor = isBoundPt && !instructorId;
 
-  // Who the purchase is billed to (#401): one of the member's Billing details,
+  // Who the purchase is billed to: one of the member's Billing details,
   // printed on the Receipt as Bill to. The picker selects the default. Every
-  // purchase takes one, a corporate package included (#402).
+  // purchase takes one, a corporate package included.
   const [billingDetailsId, setBillingDetailsId] = useState<string | null>(null);
   const [billToStatus, setBillToStatus] = useState<BillToStatus>("loading");
   const needsBillTo = !billingDetailsId;
@@ -600,7 +600,7 @@ function CheckoutContent() {
               />
             )}
 
-            {/* Bill to (#401) — the member's Billing details, the default selected. */}
+            {/* Bill to — the member's Billing details, the default selected. */}
             <BillingDetailsPicker value={billingDetailsId} onChange={setBillingDetailsId} onStatus={setBillToStatus} />
 
             {/* Promo code — never on a corporate package (§6.2). */}
@@ -691,7 +691,7 @@ function CheckoutContent() {
               )}
             </div>
 
-            {/* Part Payment (#93) — under the total, because it is a decision
+            {/* Part Payment — under the total, because it is a decision
                 about how to pay a price the member has already read. Nothing
                 renders where the studio has not turned it on, and a free
                 purchase has nothing to split. */}

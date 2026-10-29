@@ -9,7 +9,7 @@ const run = Date.now().toString(36)
 const DOMAIN = `${run}.admin-receipts.test`
 
 /**
- * A studio admin's Receipts (#389): every Receipt in the studio, at
+ * A studio admin's Receipts: every Receipt in the studio, at
  * `/portal/admin/receipts`, searched and filtered, opened, and downloaded as
  * the PDF the member gets. Asked over HTTP as the studio's Admin; the Receipts
  * are issued the one way any is (`receipt-fixtures.ts`).

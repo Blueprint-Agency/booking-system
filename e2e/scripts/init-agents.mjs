@@ -1,4 +1,4 @@
-// Playwright's planner / generator / healer agents for Claude Code (#207), at
+// Playwright's planner / generator / healer agents for Claude Code, at
 // the repo root so a session opened there — where the test guardrail hooks are
 // registered — has them. See docs/md/e2e-journeys.md.
 //

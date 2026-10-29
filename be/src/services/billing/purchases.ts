@@ -6,9 +6,8 @@
  * The grant then depends on one question and not on the payment that triggered
  * it: is there anything still outstanding?
  *
- * Nothing here changes what a member or an admin sees. A sale paid in full at
- * the first attempt settles on that first payment, which is every sale this
- * system takes today. Part payment is #92; this is the record it will need.
+ * A sale paid in full at the first attempt settles on that first payment; a
+ * part payment leaves the Purchase open until the Balance reaches zero.
  */
 import { and, eq, ne } from 'drizzle-orm'
 
@@ -32,14 +31,14 @@ export interface OpenPurchaseInput {
   /** What the webhook will grant from, frozen beside the price. */
   metadata: Record<string, string>
   /**
-   * What was in the sale, line by line, frozen beside the price (#382). Empty
+   * What was in the sale, line by line, frozen beside the price. Empty
    * only where nothing knows them: a payment from a session opened before
    * Purchases existed, which the webhook gives a Purchase after the fact.
    */
   lines: PurchaseLine[]
   /**
-   * Who the sale is billed to (#401): the member's chosen Billing details,
-   * copied. Every member checkout names a set, free ones included (#402); null
+   * Who the sale is billed to: the member's chosen Billing details,
+   * copied. Every member checkout names a set, free ones included; null
    * only where no member checkout opened the sale, as the webhook's fallback
    * for a session from before Purchases existed.
    */
@@ -96,7 +95,7 @@ export async function openPurchase(input: OpenPurchaseInput): Promise<PurchaseRo
  * and a history that shows only the ones that moved money is a history with
  * holes in it.
  *
- * Settled here, so its Receipt is issued here too (#385): a S$0.00 Receipt
+ * Settled here, so its Receipt is issued here too: a S$0.00 Receipt
  * with no payments, in the same transaction as the sale, which is every free
  * path's — package, trial, Merch, corporate and workshop alike.
  */
@@ -172,7 +171,7 @@ export interface PurchasePayment {
   amountSgd: string
   status: 'pending' | 'succeeded' | 'refunded' | 'failed'
   /**
-   * The account this payment was taken on; null is the platform's own (#97).
+   * The account this payment was taken on; null is the platform's own.
    *
    * It travels with the payment because the Refund is issued *there* and not
    * wherever the studio sells today — and after a studio moves, one Purchase
@@ -180,7 +179,7 @@ export interface PurchasePayment {
    */
   providerAccountId: string | null
   /**
-   * When the portal asked the provider to return it (#275). Set on a held
+   * When the portal asked the provider to return it. Set on a held
    * payment, it means that Refund is on its way and not to be asked for again.
    */
   refundRequestedAt: Date | null
@@ -223,7 +222,7 @@ export async function paymentsForPurchase(
  * of the refundable set, since a Refund is the whole purchase back.
  *
  * Its Receipt is stamped refunded in the same transaction, by the delivery
- * that wins the flip, so a redelivery never moves the date (#392).
+ * that wins the flip, so a redelivery never moves the date.
  */
 export async function markPurchaseRefunded(
   tenantId: string,
@@ -263,7 +262,7 @@ export async function restateBalanceOnPartRefund(
 }
 
 /**
- * Stamp the Purchase abandoned, once (#95).
+ * Stamp the Purchase abandoned, once.
  *
  * The twin of `markPurchaseRefunded`, and separate from it because the two say
  * different things. **Refunded** is a sale unwound: something was delivered and
@@ -340,11 +339,11 @@ export async function recomputeBalance(
   // unwind is the later word on it, and a redelivery of the original payment —
   // which the provider will retry for days, and which the confirmation page's
   // `sync-session` fallback can replay by hand — must reopen neither. The
-  // Balance matters as much as the status since #92: `amount_paid_sgd` is what
+  // Balance matters as much as the status: `amount_paid_sgd` is what
   // says a purchase is refundable, so restoring it would put a Refund button
   // back on a plan already refunded.
   //
-  // `abandoned` is closed for the same reason and more sharply (#95): its
+  // `abandoned` is closed for the same reason and more sharply: its
   // payments have all been returned, so a redelivery that reopened it would put
   // a Resume button in front of a member whose money is already back and offer
   // them a Balance to clear on a purchase the studio has written off.

@@ -1,7 +1,7 @@
 "use client";
 /**
  * The portal's sign-in form: on a studio's hostname against the `staff` Better
- * Auth pool (#115), on the super portal's against the `platform` pool (#116).
+ * Auth pool, on the super portal's against the `platform` pool.
  * `lib/portal-auth.ts` already talks to the right pool; `superPortal` only
  * decides where a signed-in person is sent and a line of copy.
  *
@@ -19,7 +19,7 @@
  * cannot fill. On the super portal an operator who has never set a password is
  * mailed the link to set one (`be/src/services/auth/platform-first-sign-in.ts`).
  * On a studio's portal the link goes to staff with no password at this studio
- * — each studio has its own sign-in (#231) — and to staff still pending here,
+ * — each studio has its own sign-in — and to staff still pending here,
  * for whom following the link accepts their invitation
  * (`be/src/services/auth/staff-sign-in-step.ts`).
  */

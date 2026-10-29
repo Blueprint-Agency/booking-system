@@ -130,12 +130,11 @@ export type JobTenant = { id: string; timezone: string }
 /**
  * Every tenant a background job should run for, oldest first.
  *
- * Cron jobs used to be one cross-tenant sweep each — `UPDATE … WHERE expires_at
- * < now()` over the whole table. With Row-Level Security live that sweep sees
- * nothing at all, because a job has no request and therefore no Tenant context.
- * Rather than granting jobs a bypass (which is a hole shaped exactly like the
- * one this ticket closes), each job runs once per tenant inside that tenant's
- * context and the policy does the filtering the job never had to express.
+ * Under Row-Level Security a job has no request and therefore no Tenant
+ * context, so a cross-tenant sweep like `UPDATE … WHERE expires_at < now()`
+ * over the whole table sees nothing at all. Jobs get no bypass; each job runs
+ * once per tenant inside that tenant's context, and the policy does the
+ * filtering the job never has to express.
  *
  * The timezone comes along because a daily job's "01:00" is the tenant's 01:00,
  * decided per tick — see jobs/local-time.ts. The list is read fresh on every

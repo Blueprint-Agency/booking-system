@@ -81,7 +81,7 @@ export default function PackagesPage() {
   const [privateSubTab, setPrivateSubTab] = useState<PrivateSubTab>("1on1");
   const [claimingTrialId, setClaimingTrialId] = useState<string | null>(null);
   const [pendingTrial, setPendingTrial] = useState<ApiClassPackage | null>(null);
-  // The trial whose Billing details are being asked for (#402), after its terms.
+  // The trial whose Billing details are being asked for, after its terms.
   const [billingTrial, setBillingTrial] = useState<ApiClassPackage | null>(null);
   const [trialMessage, setTrialMessage] = useState<
     { kind: "ok" | "err"; text: string } | null
@@ -90,7 +90,7 @@ export default function PackagesPage() {
   const trialAck = useBrandCopy(TRIAL_ACK_COPY_KEY, "I have read and accept these terms.");
   // Terms to accept → the acknowledgement step first; none → straight on to
   // who it is billed to. A trial is a purchase, so it is billed to the
-  // member's Billing details like any other, free or not (#402).
+  // member's Billing details like any other, free or not.
   const askBillTo = (pkg: ApiClassPackage) => {
     setPendingTrial(null);
     setBillingTrial(pkg);
@@ -779,7 +779,7 @@ function TrialCard({
       {disabled ? (
         <DisabledButton>{disabledReason}</DisabledButton>
       ) : blockedByPayments(onlinePayments, pkg.effective_price_sgd) ? (
-        // A priced trial at a studio that takes no online payments (#293).
+        // A priced trial at a studio that takes no online payments.
         <p className="text-sm text-muted text-center">{NO_ONLINE_PAYMENTS}</p>
       ) : (
         <>
@@ -857,7 +857,7 @@ function TrialTermsModal({
             Cancel
           </button>
           <button type="button" disabled={!ack} onClick={onConfirm} className={BTN_PRIMARY}>
-            {/* On to who the pass is billed to, which buys it (#402). */}
+            {/* On to who the pass is billed to, which buys it. */}
             Continue
           </button>
         </div>
@@ -885,7 +885,7 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
       features={[
         ...(pkg.session_type === "2on1" ? ["For you and one partner"] : []),
         // Only an Instructor-Bound package promises one coach. An open package
-        // is open to any instructor, so the old unconditional promise was one
+        // is open to any instructor, so promising one coach would be a promise
         // the studio had not made.
         pkg.instructor_bound ? "The same instructor every session" : "Any instructor, subject to availability",
       ]}
@@ -908,7 +908,7 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
 
 /**
  * `state` keeps a read that failed (or has not answered) apart from a studio
- * with none on offer (#500): "none on offer" is a claim a member would repeat
+ * with none on offer: "none on offer" is a claim a member would repeat
  * to their employer, so it is made only when the read said so.
  */
 function CorporateSection({

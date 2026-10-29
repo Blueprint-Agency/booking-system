@@ -2,8 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { summarizeCancellation, type CancellationFacts, type CancellationRecord } from './cancellation-summary'
 
-// One wording of a cancellation for the member and for staff (#349, #351,
-// #352): the summary's lines, differing only in whose cap and card it is.
+// One wording of a cancellation for the member and for staff: the summary's
+// lines, differing only in whose cap and card it is.
 
 const AT = new Date('2026-10-07T07:00:00.000Z')
 
@@ -68,7 +68,7 @@ test('ACC-33 no cancelled-class line calls a returned credit a refund', () => {
   }
 })
 
-// ── Private sessions, workshops and corporate (#351) ─────────────────────────
+// ── Private sessions, workshops and corporate ─────────────────────────
 
 const pt = (over: Partial<CancellationFacts> = {}) =>
   member({ kind: 'pt', refundOutcome: 'session_returned', ...over })
@@ -121,7 +121,7 @@ test('ACC-35 no private-session line calls a returned session a refund', () => {
   }
 })
 
-// ── Staff read the same lines (#352) ─────────────────────────────────────────
+// ── Staff read the same lines ─────────────────────────────────────────
 
 test('CUS-25 who cancelled: the member, the named staff member, Automatic, or the studio for an unnamed old cancel', () => {
   assert.equal(staff().who, 'Member')

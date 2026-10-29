@@ -7,7 +7,7 @@ import { completeMemberLogin, signInMember, studio, visitSignedOut } from '../sr
  * in front of both (fe-client-features §2.2, §6b, §7).
  *
  * Local stack only, like buy-and-book: a studio takes payments on its own
- * account (#293), which only the Stripe stub plays for a throwaway studio.
+ * account, which only the Stripe stub plays for a throwaway studio.
  */
 
 test('CAT-02 an anonymous visitor on /pricing reads the packages catalogue and cannot buy without signing in', async ({ page }) => {
@@ -99,7 +99,7 @@ test('MRC-03 Buy on merch goes straight to the payment provider for one item, wi
   await page.goto(`${urls.client}/merch`)
   await expect(page.getByText('Pay online, collect at the front desk on your next visit.')).toBeVisible()
   await merchCard(page, catalogue.merchName).getByRole('button', { name: 'Buy' }).click()
-  // Who the purchase is billed to (#402): the member's saved set, selected.
+  // Who the purchase is billed to: the member's saved set, selected.
   await page.getByRole('dialog', { name: 'Billing details' }).getByRole('button', { name: 'Continue to payment' }).click()
 
   await page.waitForURL(/checkout\.stripe\.com/, { timeout: 60_000 })

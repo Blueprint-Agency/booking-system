@@ -55,10 +55,10 @@ export interface CorporateSessionHydrated extends CorporateSessionRow {
   supportingInstructorIds: string[]
 }
 
-// The main-instructor conflict scan that used to live here is gone: it read the
-// main-instructor COLUMN of each kind, so a supporting instructor could be
-// double-booked, and workshops were matched on role='main' only. The occupancy
-// module asks the roster instead — see services/schedule/occupancy.ts.
+// Instructor conflicts are checked against the roster, not the main-instructor
+// COLUMN of each kind: a column scan lets a supporting instructor be
+// double-booked, and matches workshops on role='main' only. See
+// services/schedule/occupancy.ts.
 
 export async function createCorporateSession(
   tenantId: string,

@@ -1,6 +1,6 @@
 "use client";
 /**
- * Member registration (#117, #173): details (gender included), an email and a
+ * Member registration: details (gender included), an email and a
  * password typed twice, then the
  * one-time code mailed to the email, which proves it.
  *

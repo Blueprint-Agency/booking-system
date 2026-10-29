@@ -1,5 +1,5 @@
 /**
- * A package's Credit history (#353), as `GET /me/packages/:id/credit-history`
+ * A package's Credit history, as `GET /me/packages/:id/credit-history`
  * sends it: every movement of its credits or sessions, newest first, each
  * against the booking it was for, with the balance after it.
  */

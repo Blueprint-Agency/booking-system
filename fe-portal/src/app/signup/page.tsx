@@ -1,6 +1,6 @@
 "use client";
 /**
- * Accept a staff invitation: choose a password, and arrive signed in (#115).
+ * Accept a staff invitation: choose a password, and arrive signed in.
  *
  * There is no open sign-up. Every staff account was already written by the
  * invitation — the auth user and the staff row — and this page is where the
@@ -12,7 +12,7 @@
  * studio's login when shared logins were split (migration 0076), or set by a
  * reset after an earlier invitation expired — keeps it: accepting just
  * activates them, and they sign in with it. A password at another studio is
- * that studio's login and plays no part here (#231).
+ * that studio's login and plays no part here.
  */
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type FormEvent } from "react";

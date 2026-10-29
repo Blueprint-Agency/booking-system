@@ -26,7 +26,7 @@ const refusal = (existing: RosterEntry[], patch: RosterPatch): string | undefine
 }
 
 // --- an instructor who stays keeps their pay when no value is supplied -------
-// This is the live defect: pay entered on Payroll, roster re-saved from Schedule.
+// Pay entered on Payroll survives a roster re-saved from Schedule.
 assert.deepStrictEqual(
   merged(roster('A:main=100', 'B=30', 'C=45'), { supporting: [{ instructorId: 'B' }, { instructorId: 'C' }] }),
   roster('A:main=100', 'B=30', 'C=45'),
@@ -118,7 +118,7 @@ assert.strictEqual(
 )
 
 // --- the identifiers-only shape leaves all existing pay intact --------------
-// The behaviour change this ticket is for: bare ids used to mean "pay is nothing".
+// Bare ids keep the pay already on the roster; they do not mean "pay is nothing".
 assert.deepStrictEqual(
   merged(roster('A:main=100', 'B=30', 'C=45'), { supportingInstructorIds: ['B', 'C'] }),
   roster('A:main=100', 'B=30', 'C=45'),
@@ -176,8 +176,8 @@ assert.deepStrictEqual(
   merged([], { main: { instructorId: 'A' }, supportingInstructorIds: ['C', 'B'] }),
   roster('A:main', 'B', 'C'),
 )
-// A supporting-only edit round-trips the main row back out with its pay — this
-// is the defect: the main row used to be deleted and re-inserted unpriced.
+// A supporting-only edit round-trips the main row back out with its pay,
+// never deleted and re-inserted unpriced.
 assert.deepStrictEqual(
   merged(roster('A:main=200', 'B=30'), { supportingInstructorIds: ['B', 'C'] }),
   roster('A:main=200', 'B=30', 'C'),

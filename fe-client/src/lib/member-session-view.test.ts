@@ -39,7 +39,7 @@ test("a session with no studio claim reads claimedTenantId as null", () => {
   assert.equal(view.session?.claimedTenantId, null);
 });
 
-// ── An unreadable session is not a signed-out one (#500) ─────────────────────
+// ── An unreadable session is not a signed-out one ─────────────────────
 
 const failed = (error: unknown, data: SessionStoreValue["data"] = null): SessionStoreValue => ({
   data,

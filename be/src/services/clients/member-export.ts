@@ -9,7 +9,7 @@ import { MEMBER_TABLES } from './member-tables'
 
 /**
  * Everything this studio holds about one member, to answer their access
- * request (#143) — and the act of taking it, logged as the acting staff
+ * request — and the act of taking it, logged as the acting staff
  * member's.
  *
  * Soft-deleted members are included: a request can arrive after a studio has

@@ -52,8 +52,8 @@ export interface EmailTemplateSeed {
 export interface EmailStudio {
   /**
    * How the copy names the studio. A studio's stored templates are given
-   * `{{studio_name}}` (#400), filled with its Business name at send time; a
-   * literal name is what studios created before #400 were given, and what the
+   * `{{studio_name}}`, filled with its Business name at send time; a
+   * literal name is what studios created before the placeholder existed were given, and what the
    * previews and the copy's own checks build with.
    */
   name: string
@@ -188,7 +188,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   )
 
   // Sent both to set a first password (an imported or invited member signing in
-  // for the first time) and to replace a forgotten one (#173), so it says "set".
+  // for the first time) and to replace a forgotten one, so it says "set".
   const PASSWORD_RESET_BODY = body(
     'Set your password',
     [
@@ -454,11 +454,11 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
    *
    * `amount_paid` is the one figure, and it is safe as one: it reads the same
    * for every kind, currency included, and a free purchase prints the zero
-   * amount (#370). The confirmation is the member's receipt, so it says what
+   * amount. The confirmation is the member's receipt, so it says what
    * they paid.
    *
    * The anchor text is neutral on purpose: `receipt_url` is the member's
-   * Receipt in the booking app (#387), and the account page only for a grant
+   * Receipt in the booking app, and the account page only for a grant
    * no Receipt was issued for. The Receipt itself is drawn under this copy by
    * the frame (`services/receipts/email.ts`), so no template carries it.
    */
@@ -506,7 +506,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   ])
 
   /**
-   * Merch and a standalone Cross-Location Add-On (#388), which grant no
+   * Merch and a standalone Cross-Location Add-On, which grant no
    * package and book no place, so there is no confirmation above for them to
    * ride on. One template for both, so nothing here may say which: the item
    * is `item_name`, and the itemised Receipt the frame draws under this copy
@@ -585,7 +585,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     { cta: { href: '{{checkin_url}}', label: 'Open the check-in desk' } },
   )
 
-  // #411. To every active Admin: ClassPass sold a seat the class did not have,
+  // To every active Admin: ClassPass sold a seat the class did not have,
   // so the member took an Overbook seat. The link is the studio's own
   // ClassPass page (`classpass_url`), so the copy carries no origin.
   const CLASSPASS_OVERBOOKED_BODY = body(

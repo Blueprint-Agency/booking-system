@@ -10,7 +10,7 @@ const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0114_purchase_r
 const SLUG = 'purchase_receipt'
 
 /**
- * Migration 0114 (#388): Merch and a standalone Cross-Location Add-On send
+ * Migration 0114: Merch and a standalone Cross-Location Add-On send
  * their Receipt on `purchase_receipt`, a template studios created before it do
  * not have. The migration adds the default wording to every studio without
  * the row, and never touches a row a studio already has.

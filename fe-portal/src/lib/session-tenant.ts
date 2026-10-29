@@ -10,8 +10,8 @@
  *
  * Nothing has to *make* a session carry the right studio: a Better Auth
  * session cannot be moved between studios at all. The claim is written once,
- * at sign-in, and a staff member of two studios has a separate login at each
- * (#231), with its own sessions. So there is nothing to switch — only a
+ * at sign-in, and a staff member of two studios has a separate login at each,
+ * with its own sessions. So there is nothing to switch — only a
  * verdict to read.
  *
  * Normally unreachable in a browser: the session token is kept per origin, so

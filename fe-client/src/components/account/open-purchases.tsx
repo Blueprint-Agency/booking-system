@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Unfinished purchases on the member's account page (#93).
+ * Unfinished purchases on the member's account page.
  *
  * The list is the promise the checkout page made: a balance left outstanding
  * stays open until it is paid in full or the studio refunds it, and the member
@@ -152,7 +152,7 @@ function OpenPurchaseCard({
       {error && <p className="mt-3 text-xs text-error">{error}</p>}
 
       {blockedByPayments(onlinePayments, purchase.outstanding_sgd) ? (
-        // The studio has stopped taking online payments (#293): the balance
+        // The studio has stopped taking online payments: the balance
         // cannot be paid here, and a Pay button would only be refused.
         <p className="mt-4 text-sm text-muted">{NO_ONLINE_PAYMENTS}</p>
       ) : (

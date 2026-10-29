@@ -6,7 +6,7 @@ import { handleExpiredSession } from "@/lib/member-auth";
 import { onStudioRefusal, type StudioRefusal } from "@/lib/studio-refusal";
 
 /**
- * The whole app, unless the studio refuses it (`lib/studio-refusal.ts`, #250).
+ * The whole app, unless the studio refuses it (`lib/studio-refusal.ts`).
  *
  * `paused` is the studio's status as the server read it by slug, so a
  * suspended studio's first paint is already the paused page. Each way out is

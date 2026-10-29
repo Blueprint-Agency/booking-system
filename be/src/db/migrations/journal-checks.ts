@@ -63,7 +63,7 @@ export function findNonMonotonicEntries(): string[] {
  * is the one that prevents the damage rather than reporting it. Generate stamps
  * a new entry with `Date.now()`; if any existing entry is in the future, the new
  * one lands behind it and is silently skipped. That is exactly how 0037 became a
- * no-op on staging and production (#73).
+ * no-op on staging and production.
  */
 export function findFutureDatedEntries(now: number = Date.now()): string[] {
   return journal.entries

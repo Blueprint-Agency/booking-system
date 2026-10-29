@@ -20,8 +20,8 @@ import { usePartPaymentOptions, useOpenPurchases } from "@/lib/open-purchases";
  * bookings, My activity, My packages, Merch, Profile & security, General settings.
  */
 export default function AccountHome() {
-  // A balance the member left outstanding (#93), and the return from a payment
-  // page they left (#274): the checkout's cancel URLs land here.
+  // A balance the member left outstanding, and the return from a payment
+  // page they left: the checkout's cancel URLs land here.
   const {
     purchases: openPurchases,
     failed: openPurchasesFailed,

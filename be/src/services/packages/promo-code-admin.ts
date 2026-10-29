@@ -179,13 +179,13 @@ export async function getPromoCode(tenantId: string, id: string): Promise<PromoC
 /**
  * The most a Promo Code may take off, in SGD: more than any one sale in a
  * studio's catalogue, and far inside the `numeric(10,2)` column a larger figure
- * overflowed as a 500 (#244).
+ * overflowed as a 500.
  */
 export const MAX_AMOUNT_OFF_SGD = 99_999.99
 
 /**
  * The largest Total cap. A code is one use per member, so a cap past a million
- * members caps nothing, and the `integer` column overflowed past ~2.1 billion (#244).
+ * members caps nothing, and the `integer` column overflowed past ~2.1 billion.
  */
 export const MAX_REDEMPTIONS = 1_000_000
 

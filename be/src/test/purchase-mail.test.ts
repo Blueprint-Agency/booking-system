@@ -12,9 +12,9 @@ const DOMAIN = `${run}.purchase-mail.test`
 const NAME = `Purchase-mail ${run}`
 
 /**
- * The confirmation email a member is sent for what they buy (#226), read back
+ * The confirmation email a member is sent for what they buy, read back
  * from the test mail capture: a paid purchase and a free one both link the
- * member's own Receipt in their studio's booking app (#387), and an email that
+ * member's own Receipt in their studio's booking app, and an email that
  * cannot be sent never costs the member what they bought.
  *
  * Written from the NTF rows of the Scenario Inventory
@@ -122,7 +122,7 @@ describe('purchase confirmation email over HTTP', { skip: integrationTestsEnable
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
     // Each studio sells on an account of its own — the only way a studio sells
-    // at all (#293) — and its deliveries arrive on its own endpoint.
+    // at all — and its deliveries arrive on its own endpoint.
     fake.ownAccount(one)
     fake.ownAccount(two)
   })

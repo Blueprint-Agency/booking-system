@@ -6,14 +6,14 @@ import { memberFixtures } from './member-fixtures'
 import { ownAccountId, type StripeFake } from './stripe-fake'
 
 /**
- * What the portal's Refund screens are told (#275).
+ * What the portal's Refund screens are told.
  *
  * A Refund lands only when the provider's `charge.refunded` does. Until then the
- * payment row still reads `succeeded`, so the member page showed it as Paid and
- * offered the Refund again. And a Refund over two payments that failed on the
- * second left the first returned with nothing on the page to say so. Against a
- * real database, because both are about what a second read sees after the
- * first request has committed.
+ * payment row still reads `succeeded`, so the member page must not show it as
+ * Paid and offer the Refund again. And a Refund over two payments that fails on
+ * the second must leave the page saying the first was returned. Against a real
+ * database, because both are about what a second read sees after the first
+ * request has committed.
  */
 
 const DAY = 24 * 60 * 60 * 1000
@@ -114,7 +114,7 @@ describe('the state of a Refund between the button and the webhook', { skip: int
     const { installStripeFake } = await import('./stripe-fake')
     fake = installStripeFake()
     // The studio's own account — where every payment here was taken, and the
-    // only account a Refund can be issued on (#293).
+    // only account a Refund can be issued on.
     fake.ownAccount(harness.tenants.one)
     const [staff] = await harness.db
       .insert(schema.staffUsers)

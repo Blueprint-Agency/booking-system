@@ -22,7 +22,7 @@ export interface MemberPaymentView {
   /** The sale it is part of: open (part-paid), paid, refunded, abandoned. */
   purchaseStatus: (typeof purchases.$inferSelect)['status']
   /**
-   * The studio's Receipt for the Purchase this paid towards (#389): null until
+   * The studio's Receipt for the Purchase this paid towards: null until
    * the Purchase is paid in full, and for a sale made before Receipts existed.
    */
   receiptId: string | null
@@ -30,7 +30,7 @@ export interface MemberPaymentView {
   receiptUrl: string | null
   refundedAt: Date | null
   /**
-   * A Refund has been asked of the provider and has not landed (#275). The
+   * A Refund has been asked of the provider and has not landed. The
    * status still says `succeeded` until `charge.refunded` arrives, and a row
    * reading "Paid" beside a Refund the admin has just issued reads as a failure.
    */

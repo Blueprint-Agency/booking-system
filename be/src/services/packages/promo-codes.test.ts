@@ -238,7 +238,7 @@ assert.strictEqual(moneyOffFor(promoCode({ amountOffSgd: '30.00' }), '0.00'), '0
 
   assert.strictEqual(consumedCount([]), 0)
   assert.strictEqual(consumedCount([consumed]), 1)
-  // The whole point of the ticket: neither of these is a use.
+  // Neither of these is a use.
   assert.strictEqual(consumedCount([liveHold]), 0)
   assert.strictEqual(consumedCount([lapsedHold]), 0)
   assert.strictEqual(consumedCount([refunded]), 0)
@@ -246,7 +246,7 @@ assert.strictEqual(moneyOffFor(promoCode({ amountOffSgd: '30.00' }), '0.00'), '0
   assert.strictEqual(consumedCount([consumed, liveHold, lapsedHold, refunded]), 1)
 
   // A live Hold takes a place without freezing anything — the two counts
-  // disagree here on purpose, and that disagreement is the bug being fixed.
+  // disagree here on purpose.
   assert.strictEqual(usedPlaces([liveHold], NOW), 1)
   assert.strictEqual(consumedCount([liveHold]), 0)
 

@@ -19,7 +19,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * The member's account pages over real HTTP (#206): what `/account` and its
+ * The member's account pages over real HTTP: what `/account` and its
  * sub-pages read — packages, profile, My Classes, My Workshops, My Private
  * Sessions, My Corporate, My Merch and unfinished purchases.
  *
@@ -486,7 +486,7 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
 
   // ── My Classes ───────────────────────────────────────────────────────────
 
-  // #349: the Past tab holds only what was held. A cancelled class is on the
+  // The Past tab holds only what was held. A cancelled class is on the
   // Cancelled tab, whatever its time (CXL-54..CXL-57 in late-cancel.test.ts).
   test('ACC-03 the Past tab gives each class she held its outcome, attended or no-show; a cancelled class is on Cancelled instead', async () => {
     const dev = await member(one, 'Dev Classes')
@@ -611,7 +611,7 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
       .insert(schema.corporatePackages)
       .values({ tenantId: one.id, name: CORPORATE_NAME, priceSgd: '800.00', createdByStaffId: adminAtOne.staffId })
       .returning({ id: schema.corporatePackages.id })
-    // Each request is a paid purchase of the package (#374).
+    // Each request is a paid purchase of the package.
     const request = () => buyCorporatePackage(harness, schema, ida, one, pkg!.id)
     const schedule = (id: string, startsAt: Date) =>
       ok(
@@ -641,7 +641,7 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
     const rows = (await ok(get('/me/corporate-requests', ida.headers))).corporate_requests as any[]
     const byId = new Map<string, any>(rows.map(r => [r.id, r]))
     assert.equal(byId.size, 5)
-    // #351: a cancelled request says when, pending or scheduled; nothing else carries a cancel time.
+    // A cancelled request says when, pending or scheduled; nothing else carries a cancel time.
     for (const id of [calledOff, calledOffScheduled]) {
       assert.equal(byId.get(id).status, 'cancelled')
       const at = new Date(byId.get(id).cancelled_at).getTime()

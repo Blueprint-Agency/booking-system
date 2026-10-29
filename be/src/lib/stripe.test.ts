@@ -17,7 +17,7 @@ const TENANT_B = '22222222-2222-4222-8222-222222222222'
 const ownAccount = (accountId: string) =>
   providerCredentials({ accountId, secretKey: `sk_test_${accountId}`, webhookSecret: `whsec_${accountId}` })
 
-/** The refusal a studio with no account of its own gets (#293). */
+/** The refusal a studio with no account of its own gets. */
 const paymentsNotConfigured = { code: 'payments_not_configured', status: 409 }
 
 describe('the Tenant-bound provider accessor', () => {
@@ -107,7 +107,7 @@ describe('the Tenant-bound provider accessor', () => {
 })
 
 /**
- * The other question (#97): not "where does this studio sell?" but "where did
+ * The other question: not "where does this studio sell?" but "where did
  * *this payment* come in?". They are the same answer until a studio moves, and
  * different forever afterwards.
  */
@@ -169,7 +169,7 @@ describe('the payment-bound provider accessor', () => {
 
   test('a studio with no credentials at all cannot reach a named account, and is told why', async () => {
     installStripeFake()
-    // The same refusal as its checkout (#293): it holds no key for anything.
+    // The same refusal as its checkout: it holds no key for anything.
     await assert.rejects(() => stripeForProviderAccount(TENANT_B, 'acct_studio_a'), paymentsNotConfigured)
   })
 })

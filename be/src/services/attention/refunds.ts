@@ -13,14 +13,14 @@ import { formatWhen } from './format'
 import type { AttentionContext, AttentionProvider, ProviderItem } from './types'
 
 /**
- * The three refunds that need an admin (#485), all in Payments & refunds and
+ * The three refunds that need an admin, all in Payments & refunds and
  * all Admin-only, because money is the studio's rather than a location's.
  *
  * `refund_incomplete` and `refund_unconfirmed` are exactly the Refund screens'
  * own rules (`refundProgress`, `REFUND_IN_FLIGHT_MS`), read across the studio
  * by `refundsNeedingAdmin`; they go when every payment is back or the Refund is
  * pressed again. `workshop_cancelled_unrefunded` is a paid place in a cancelled
- * Workshop that nobody refunded (cancelling refunds nobody, #272); it goes when
+ * Workshop that nobody refunded (cancelling refunds nobody); it goes when
  * refunded, or dismissed to keep the payment.
  *
  * The subject of the first two is the Purchase; of the last, the booking. All

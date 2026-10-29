@@ -13,7 +13,7 @@ import {
 import { totp } from './totp'
 
 /**
- * The sign-in audit log and the sign-in rate limits (#114), over real HTTP.
+ * The sign-in audit log and the sign-in rate limits, over real HTTP.
  *
  * Every flow is driven from a client address of its own, so "the rows this
  * flow wrote" is `WHERE ip = …` and no other test's traffic can be counted, nor
@@ -243,8 +243,7 @@ describe('auth events and sign-in limits', { skip: integrationTestsEnabled ? fal
   })
 
   test('impersonation has its kinds and its writer, naming who and whom', async () => {
-    // Nothing drives impersonation through Better Auth until #118; this is the
-    // writer that ticket calls.
+    // The writer impersonation calls, exercised directly.
     const { recordAuthEvent } = await import('../services/auth/auth-events')
     const { withTenant } = await import('../db')
     const ip = harnessAddress()

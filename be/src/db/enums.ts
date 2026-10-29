@@ -26,11 +26,11 @@ export type InstructorPermission = (typeof instructorPermissionEnum.enumValues)[
 export const ALL_INSTRUCTOR_PERMISSIONS: readonly InstructorPermission[] = instructorPermissionEnum.enumValues
 export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'accepted', 'revoked', 'expired'])
 
-// Sign-in audit log (`auth_events`, #114). The pools are the three Better Auth
-// instances. The two impersonation kinds are written from #118 on; the last four
-// are a staff member's act on someone else's account (#119), and downloading a
-// member's data is one more (#143), and permanently deleting a member another —
-// the one staff act written with no subject, because the member is gone (#144).
+// Sign-in audit log (`auth_events`). The pools are the three Better Auth
+// instances. The last four
+// are a staff member's act on someone else's account, and downloading a
+// member's data is one more, and permanently deleting a member another —
+// the one staff act written with no subject, because the member is gone.
 export const authPoolEnum = pgEnum('auth_pool', ['client', 'staff', 'platform'])
 export const authEventKindEnum = pgEnum('auth_event_kind', [
   'sign_in',
@@ -116,7 +116,7 @@ export const ptRequestStatusEnum = pgEnum('pt_request_status', [
   'attended',
 ])
 
-// Who wrote a pt_requests row (#334):
+// Who wrote a pt_requests row:
 //   member — the member asked from their app, debiting their package at submit
 //   portal — staff created a manual session; the portal wrote the request itself
 //            so every session keeps one behind it. Each attendee's booking carries
@@ -144,8 +144,8 @@ export const bookingStateEnum = pgEnum('booking_state', ['confirmed', 'cancelled
 // `buffer` is one of `capacity_buffer`, filled only by staff; `overbook` is an
 // admin's booking past both. Workshop and PT bookings stay `online`, unread.
 export const bookingSeatEnum = pgEnum('booking_seat', ['online', 'buffer', 'overbook'])
-// How a booking reached the studio (#408): `direct` through ReserveToday, as
-// every booking before this column did (the default is the backfill), or
+// How a booking reached the studio: `direct` through ReserveToday, the default
+// (every booking made before this column was backfilled to `direct`), or
 // `classpass`, a ClassPass booking: ClassPass paid for the seat, so no package
 // pays and no credit is spent.
 export const bookingSourceEnum = pgEnum('booking_source', ['direct', 'classpass'])
@@ -165,16 +165,16 @@ export const refundOutcomeEnum = pgEnum('refund_outcome', [
 export const checkinStateEnum = pgEnum('checkin_state', ['pending', 'attended', 'no_show', 'n_a'])
 export const cancellationKindEnum = pgEnum('cancellation_kind', ['class', 'pt'])
 // `system`: the studio's machinery, not a person — a Refund's Void, a
-// Complimentary Package's Remove, a Package rule change (#350).
-// `classpass`: the member cancelled on ClassPass, and ClassPass's email said so
-// (#412). Settles as a staff cancel does, with nothing to return; never a Late
+// Complimentary Package's Remove, a Package rule change.
+// `classpass`: the member cancelled on ClassPass, and ClassPass's email said so.
+// Settles as a staff cancel does, with nothing to return; never a Late
 // cancel, never toward the Cancellation Cap.
 export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor', 'system', 'classpass'])
 export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual'])
 export type RefundOutcome = (typeof refundOutcomeEnum.enumValues)[number]
 export type CancellationSource = (typeof cancellationSourceEnum.enumValues)[number]
 
-// Credit movements (#353): why a package's balance moved, or — for kept,
+// Credit movements: why a package's balance moved, or — for kept,
 // no_show and expired — why it did not come back. `opening` is the balance the
 // history starts from, written once by migration 0103 for packages bought before it.
 export const creditMovementCauseEnum = pgEnum('credit_movement_cause', [
@@ -204,10 +204,10 @@ export const leaveStatusEnum = pgEnum('leave_status', [
   'revoked',
 ])
 // 'none' = a full day. morning/afternoon are accepted by the schema but refused
-// at submission until half days land (ticket 05).
+// at submission until half days land.
 export const leaveHalfDayEnum = pgEnum('leave_half_day', ['none', 'morning', 'afternoon'])
 
-// Staff Updates (#476): the kinds of event a staff member is told about. A new
+// Staff Updates: the kinds of event a staff member is told about. A new
 // kind adds a value here and a composer in services/attention/updates.ts.
 export const staffUpdateKindEnum = pgEnum('staff_update_kind', [
   'leave_decided',
@@ -259,7 +259,7 @@ export const purchaseStatusEnum = pgEnum('purchase_status', [
 ])
 
 /**
- * How money that never reached a payment provider was paid (#282) — a sale made
+ * How money that never reached a payment provider was paid — a sale made
  * before the studio came to the platform, migrated. A payment the provider took
  * records the provider's own method name on its payment row instead, as text,
  * because the provider's list grows without us.
@@ -277,7 +277,7 @@ export const emailRecipientKindEnum = pgEnum('email_recipient_kind', ['client', 
 // Spec §4j uses `email_log` with a `status` column. The pgEnum is named `email_log_status` per
 // backend-architecture.md §4 enum list; the existing migration named the pg enum `email_status`
 // — we rename here to track the spec. The column reference is updated in `content.ts`.
-// The last four are what Resend's webhook reports after a send (#154); see
+// The last four are what Resend's webhook reports after a send; see
 // services/notifications/delivery-outcomes.ts for the order they move in.
 // `skipped` is an email the studio switched off: logged, never handed to the
 // mailer (services/notifications/switches.ts).
@@ -293,17 +293,17 @@ export const emailLogStatusEnum = pgEnum('email_log_status', [
   'skipped',
 ])
 
-// Inbox — `pt_request` value REMOVED per §4l. PT triage moved to `/admin/pt-requests`.
+// Inbox — there is no `pt_request` value (§4l). PT triage is on `/admin/pt-requests`.
 export const inboxItemTypeEnum = pgEnum('inbox_item_type', [
   'client_cancellation',
   'admin_cancel_class_pt',
   'admin_cancel_workshop',
   'instructor_cancel_class',
 ])
-// `inbox_action` enum is no longer used — action_taken/action_at/action_by_staff_id columns
-// were removed from inbox_items per §4l. Enum left undeclared (drop in migration SQL).
+// There is no `inbox_action` enum: inbox_items carries no
+// action_taken/action_at/action_by_staff_id columns (§4l).
 
-// ClassPass import (#407). What a forwarded email turned out to be, and what
+// ClassPass import. What a forwarded email turned out to be, and what
 // became of it. `gmail_confirmation` is Gmail's own email asking the studio to
 // confirm the forwarding address; `other` is anything that is neither.
 export const classpassEmailKindEnum = pgEnum('classpass_email_kind', [
@@ -324,8 +324,8 @@ export const classpassEmailOutcomeEnum = pgEnum('classpass_email_outcome', [
   'review',
 ])
 
-// Why a ClassPass email was not placed (#411): kept with an outcome of
-// `review` (or `unparsed`) so ClassPass review (#413) can list and filter it.
+// Why a ClassPass email was not placed: kept with an outcome of
+// `review` (or `unparsed`) so ClassPass review can list and filter it.
 // `unparsed`: a required field could not be read. `unmapped_location`: no
 // ClassPass location mapping for the email's location. `no_class` /
 // `ambiguous_class` / `class_cancelled`: the class at that Location and time.

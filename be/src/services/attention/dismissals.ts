@@ -6,7 +6,7 @@ import { contextFor, type AttentionCaller } from './index'
 import { providers } from './registry'
 
 /**
- * Dismissals (#476, #482): the studio's decision that a dismissable Attention
+ * Dismissals: the studio's decision that a dismissable Attention
  * item needs nothing done. It hides the item for every admin, is recorded once
  * per item, and is audited under the admin's name.
  */

@@ -8,7 +8,7 @@ import type { AuthPool } from './better-auth'
 
 /**
  * The sign-in audit log: "who signed in as whom, when" as a query on our own
- * database (#114), and the actor id every log line will carry (#105 story 16).
+ * database, and the actor id every log line will carry.
  */
 
 type AuthEvent = {
@@ -112,7 +112,7 @@ export function authAudit(pool: AuthPool) {
             delete: {
               before: async (session: { userId: string; impersonatedBy?: string | null }, ctx: EndpointContext | null) => {
                 if (ctx?.path !== '/sign-out') return
-                // Signing an impersonation session out is how it stops (#118):
+                // Signing an impersonation session out is how it stops:
                 // filed like its start, as the studio admin's act on the member.
                 if (session.impersonatedBy) {
                   await recordAuthEvent({

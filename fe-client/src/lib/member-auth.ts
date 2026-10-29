@@ -1,6 +1,6 @@
 "use client";
 /**
- * The member's session: a Better Auth session from the `client` pool (#117),
+ * The member's session: a Better Auth session from the `client` pool,
  * held as a bearer token.
  *
  * **A bearer token, per origin.** The API is on another host, so a session

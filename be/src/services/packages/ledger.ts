@@ -3,10 +3,10 @@
  * and `client_packages.active` for a credit/session movement.
  *
  * Why it exists: `active` is what `bookClass` filters candidate packages on, and
- * `computeActive` (./validity.ts) is the stated rule for it. Two refund paths used to
- * bump the balance with raw SQL and never re-derive the flag, so a bundle that hit zero
- * (active=false) and was then refunded ended up holding credits nothing would spend.
- * Every movement now goes through here, so the flag can't drift from the balance again.
+ * `computeActive` (./validity.ts) is the stated rule for it. A refund that bumped the
+ * balance with raw SQL and never re-derived the flag would leave a bundle that hit zero
+ * (active=false) and was then refunded holding credits nothing would spend.
+ * Every movement goes through here, so the flag can't drift from the balance.
  *
  * Contract:
  *   - `debit` / `refund` take the caller's transaction handle — they NEVER open their own,
@@ -17,7 +17,7 @@
  *   - Whether a session or credit lands on a package is decided here and nowhere
  *     else, after the row is held: a return to a Voided package moves nothing
  *     and answers `landed: false`, which every caller records (`n_a`).
- *   - Each movement writes a **Credit movement** (`credit_movements`, #353): the cause,
+ *   - Each movement writes a **Credit movement** (`credit_movements`): the cause,
  *     the booking it was for, who did it and the balance after — the history the member
  *     and staff read. A forfeit that leaves the balance alone (Late cancel, Keep credit,
  *     No-show) and an expiry are recorded too, through `recordMovement` / `recordExpired`.

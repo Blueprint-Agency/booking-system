@@ -1,6 +1,6 @@
 "use client";
 /**
- * Change password, on the member's profile (#173): the current password and a
+ * Change password, on the member's profile: the current password and a
  * new one, through the client pool's own `/change-password`. Other devices stay
  * signed in; "sign out everywhere" is the studio's to do.
  */

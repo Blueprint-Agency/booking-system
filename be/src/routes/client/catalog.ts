@@ -79,7 +79,7 @@ function serializePtPackage(
     session_type: r.sessionType,
     num_sessions: r.numSessions,
     validity_days: r.validityDays,
-    // Instructor-Bound (#109) — checkout asks for an instructor on a true, and
+    // Instructor-Bound — checkout asks for an instructor on a true, and
     // for nothing at all on a false.
     instructor_bound: r.instructorBound,
     price_sgd: r.priceSgd,
@@ -208,6 +208,6 @@ const app = new Hono()
     return c.json({ corporate_requests: rows.map(serializeCorporateRequest) })
   })
   // No route makes one: a Corporate Request is made by paying for the package
-  // (`POST /checkout/package` with `package_kind: 'corporate'`), never for free (#374).
+  // (`POST /checkout/package` with `package_kind: 'corporate'`), never for free.
 
 export default app

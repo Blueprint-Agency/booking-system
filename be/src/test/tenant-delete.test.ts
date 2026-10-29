@@ -226,7 +226,7 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
     const doomed = tenant.id
 
     // People: one who is only here, and one who is also at the other studio —
-    // in each pool. Logins are per studio (#231), so the second has one at each.
+    // in each pool. Logins are per studio, so the second has one at each.
     const login = (pool: 'client' | 'staff', tenantId: string, email: string) =>
       authUsers.ensureAuthUser(harness.db, pool, { tenantId, email, name: email.split('@')[0]! })
     const onlyHereMember = await login('client', doomed, `only-member@${DOMAIN}`)
@@ -539,9 +539,9 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
    * key per deleted row: deleting a studio's clients looks each one up in every
    * table that points at `clients`. A referencing column with no index of its
    * own makes each of those lookups a scan of the whole table, and a studio this
-   * size then took ~40s — the portal gave up at 15s while the backend carried on
-   * and committed (#194). So the sizes here are the ones that failed, and the
-   * bound is the portal's.
+   * size then takes ~40s — the portal gives up at 15s while the backend carries
+   * on and commits. So the sizes here are a real studio's — the size that missed
+   * the deadline — and the bound is the portal's.
    */
   test('a studio of a real one’s size is deleted inside the portal’s deadline', { timeout: 180_000 }, async () => {
     const { tenant } = await provision.provisionTenant({ slug: `del-big-${run}`, name: 'Years Of History' })

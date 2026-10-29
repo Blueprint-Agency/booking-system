@@ -16,7 +16,7 @@ import type { Surface } from './surface'
  *
  *   GET  /classes/:id/packages  — the member's class packages for this class,
  *                                 each Eligible or with its reason: what Add
- *                                 member's package select lists (#333).
+ *                                 member's package select lists.
  *   POST /classes/:id/bookings  — a free online seat, else a buffer seat, else
  *                                 (Admin only) an overbook seat when both are
  *                                 full and the Admin said so (spec-waitlist.md

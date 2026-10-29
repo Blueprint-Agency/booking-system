@@ -59,7 +59,7 @@ export const CHECKS: Record<string, Record<string, Rule>> = {
     classes_capacity_buffer_non_negative: r => num(r.capacity_buffer, n => n >= 0),
     classes_capacity_sum_positive: capacity,
     classes_credit_non_negative: r => num(r.credit_cost, n => n >= 0),
-    // A per-class Cancellation Window override (#313); null follows the studio's.
+    // A per-class Cancellation Window override; null follows the studio's.
     classes_cancel_window_non_negative: r => isNull(r.cancel_window_hours) || num(r.cancel_window_hours, n => n >= 0),
   },
   pt_sessions: {
@@ -89,7 +89,7 @@ export const CHECKS: Record<string, Record<string, Rule>> = {
       r.kind === 'workshop'
         ? set(r.list_price_sgd) && set(r.amount_paid_sgd)
         : isNull(r.list_price_sgd) && isNull(r.amount_paid_sgd),
-    // A ClassPass booking (#411) carries its reservation ID, and only it does; it is
+    // A ClassPass booking carries its reservation ID, and only it does; it is
     // a class booking no package pays for. A row leaving `source` out is `direct`.
     bookings_classpass_shape: r =>
       (r.source === 'classpass') === set(r.classpass_reservation_id) &&

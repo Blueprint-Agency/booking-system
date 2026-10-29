@@ -1,7 +1,7 @@
 /**
  * A member's workshop booking, as `GET /me/workshop-bookings` returns it.
  * Read-only: workshop cancellations and refunds are arranged with the studio,
- * not self-served in-app (#272). The list itself is "Your bookings" (`/account`).
+ * not self-served in-app. The list itself is "Your bookings" (`/account`).
  */
 export interface ApiWorkshopBooking {
   id: string;
@@ -15,7 +15,7 @@ export interface ApiWorkshopBooking {
   cancelled_at: string | null;
   /** On a cancelled place: `stripe_refunded` once the money went back to the card, else `n_a`. */
   refund_outcome: string;
-  /** On a cancelled place, its lines as the server's cancellation summary words them (#351). */
+  /** On a cancelled place, its lines as the server's cancellation summary words them. */
   who_line: string | null;
   outcome_line: string | null;
   code: string;

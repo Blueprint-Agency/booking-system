@@ -7,7 +7,7 @@
  *
  * Past holds only what was held. A cancelled booking is on Cancelled from the
  * moment it is cancelled, with the summary of its cancellation
- * (`cancellation-summary.ts`) — fe-client-features §8.3, #349.
+ * (`cancellation-summary.ts`) — fe-client-features §8.3.
  */
 import { and, asc, desc, eq, gte, lt, ne, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -46,12 +46,12 @@ export interface ClassBookingRow {
   code: string
   /**
    * When the studio's class Cancellation Window opens, read now: a cancel after
-   * this instant is a Late cancel (#318).
+   * this instant is a Late cancel.
    */
   cancelDeadline: Date
   /** The package that paid; null when none did. */
   clientPackageId: string | null
-  /** `classpass`: made on ClassPass, so cancelled there, not here (#407). */
+  /** `classpass`: made on ClassPass, so cancelled there, not here. */
   source: BookingSource
 }
 

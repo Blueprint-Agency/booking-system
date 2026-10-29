@@ -139,7 +139,7 @@ function hasLeaveYear(s: StaffEditableFields) {
   );
 }
 
-/** What this viewer may do to the person's access, from the detail view (#119). */
+/** What this viewer may do to the person's access, from the detail view. */
 export interface StaffAccessActions {
   canRevoke: boolean;
   canResend: boolean;

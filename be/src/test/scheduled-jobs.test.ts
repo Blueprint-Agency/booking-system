@@ -13,7 +13,7 @@ const DAY = 24 * HOUR
 
 /**
  * The daily jobs, fired directly (`scheduledJobs`) at an instant the test holds
- * on the app's clock (#201).
+ * on the app's clock.
  *
  * A daily job's hour is each Tenant's own: the cron grid ticks for everyone and
  * a Tenant's `timezone` decides whether the tick is its moment. The two fixture

@@ -12,9 +12,7 @@ import { PROVISIONED, provisioningFor } from './provisioning'
  * written. Which studios they are is in `./provisioning.ts`; both are invented,
  * and no file in this repo names a real one.
  *
- * **Production seeds no tenant at all.** It used to seed one, because the
- * platform had been built for exactly one and that studio was in the repo; a
- * deployment therefore came up already knowing who it was. A studio now arrives
+ * **Production seeds no tenant at all.** A studio arrives
  * by being created or restored from the super portal (`./run.ts`), so there is
  * nothing here for production to do — and `./run.ts` does not call this file
  * anyway. The guard is belt and braces on a function that writes studios.

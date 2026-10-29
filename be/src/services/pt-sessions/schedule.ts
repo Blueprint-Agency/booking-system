@@ -305,7 +305,7 @@ export interface UpdatePtSessionInput {
    */
   partnerClientId?: string
   /**
-   * A manual session only (#335): the partner's package that pays their seat
+   * A manual session only: the partner's package that pays their seat
    * on an upgrade. Absent, the PT Default payer does.
    */
   partnerClientPackageId?: string
@@ -616,7 +616,7 @@ export async function updatePtSession(
         : []
       // Setting the type to what it already is is a no-op, not a second debit.
       if (existing.sessionType !== patch.sessionType) {
-        // A session whose requester was permanently deleted (#144) has no request
+        // A session whose requester was permanently deleted has no request
         // left to reconcile credits against.
         if (!existing.ptRequestId || !req) throw new ConflictError('pt_requester_deleted')
         if (req.origin === 'portal') {
@@ -690,7 +690,7 @@ export async function updatePtSession(
       set.capacityOnline = ptSessionCost(patch.sessionType)
     }
 
-    // Who ran it before the edit, for the Updates it may owe them (#493).
+    // Who ran it before the edit, for the Updates it may owe them.
     const instructorsBefore = await readInstructors(tenantId, 'pt', id)
 
     let row = existing

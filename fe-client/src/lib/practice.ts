@@ -1,5 +1,5 @@
 /**
- * The words and layout of "My activity" (`/account/practice`, #340; once "My practice"), from
+ * The words and layout of "My activity" (`/account/practice`), from
  * `GET /me/bookings/attendance`. The backend decides the timeframe, its
  * buckets, what counts as a session, how far back and forward the member can
  * step and every figure; this only says them and lays the week out as seven

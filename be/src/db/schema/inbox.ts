@@ -4,10 +4,9 @@ import { tenantIdColumn } from './tenancy'
 import { staffUsers } from './identity'
 import { inboxItemTypeEnum } from '../enums'
 
-// §4l — Inbox is purely a read-only notification feed.
-// `source_pt_session_id`, `action_taken`, `action_at`, `action_by_staff_id` columns were
-// dropped along with the `pt_request` type value. PT triage now lives on /admin/pt-requests
-// backed by the `pt_requests` table (§4e).
+// §4l — Inbox is purely a read-only notification feed. It has no `pt_request` type value
+// and no `source_pt_session_id`, `action_taken`, `action_at` or `action_by_staff_id`
+// columns. PT triage lives on /admin/pt-requests backed by the `pt_requests` table (§4e).
 export const inboxItems = pgTable(
   'inbox_items',
   {

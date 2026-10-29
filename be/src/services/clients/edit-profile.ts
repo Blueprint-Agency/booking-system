@@ -1,5 +1,5 @@
 /**
- * A member's profile: name, gender and phone (#281).
+ * A member's profile: name, gender and phone.
  *
  * An admin edits all three in one save, following the email change
  * (`change-email.ts`) beside it: this studio's member only, never a blocked

@@ -88,7 +88,7 @@ interface CreateInstructorInput {
  * profile and the invitation are written together, and the mail carries a link
  * that sets the instructor's password.
  *
- * Class-type eligibility (instructor_class_types) is no longer modelled in the
+ * Class-type eligibility (instructor_class_types) is not modelled in the
  * UI — instructors are assignable to any class type at scheduling time.
  */
 export async function createInstructor(
@@ -107,7 +107,7 @@ export async function createInstructor(
     // Deliberately *not* tenant-scoped: `staff_users.email` still carries a
     // platform-wide unique index, so scoping this check would only trade a
     // clean 409 for a unique violation. Making one person staff at two tenants
-    // is a schema change of its own (#65).
+    // is a schema change of its own.
     const existing = await tx
       .select({ id: staffUsers.id })
       .from(staffUsers)

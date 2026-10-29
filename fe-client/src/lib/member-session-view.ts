@@ -72,7 +72,7 @@ export function memberSessionReadError(failure: unknown): Error {
  * sign-out) so pages are not torn down into a spinner every time the tab
  * regains focus.
  *
- * A read that failed with nothing to show (#500) is told apart by what answered:
+ * A read that failed with nothing to show is told apart by what answered:
  *  - a `401`, or a browser holding no token: signed out;
  *  - a failure the app answers elsewhere (a studio refusal, maintenance): still
  *    loading, so the paused, mismatch or maintenance page draws without a

@@ -3,13 +3,12 @@
  * the session.
  *
  * The distinction this file exists to hold is between **no session** and **the
- * wrong session**, because the portal used to treat them as one thing. A 403
- * meant "sign out and go to /login" — but a 403 is the answer to "may *this*
- * account be on *this* hostname", and the account it refuses is usually a real
- * one with a real reason to exist: invited and not yet active, staff at another
- * studio, or a studio's own staff while the studio is suspended. Signing it out
- * without a word sent the person to a login page with nothing on screen to
- * explain why they were back there.
+ * wrong session**. A 403 is not "sign out and go to /login": it is the answer
+ * to "may *this* account be on *this* hostname", and the account it refuses is
+ * usually a real one with a real reason to exist: invited and not yet active,
+ * staff at another studio, or a studio's own staff while the studio is
+ * suspended. Signing it out without a word would send the person to a login
+ * page with nothing on screen to explain why they were back there.
  *
  * Not every 403 is about the account, though, and that is the second thing this
  * file is for. `tenant_suspended` is about the *studio*: offering "sign out and

@@ -21,17 +21,16 @@ import type { BillingAddress } from '../../services/billing-details/address'
 /**
  * A Purchase owns the money; a payment is evidence of part of it.
  *
- * Until this table existed, one purchase was one payment intent, and that
- * assumption was load-bearing across plans, workshops, Merch and Cross-Location
- * Add-Ons. It cannot survive either half of #89: a member paying with two cards
- * needs many payments per purchase, and a Refund of a sale paid across two
- * cards becomes several provider calls. So the sale becomes a row of its own, holding what was
+ * A purchase is not one payment intent, across plans, workshops, Merch and
+ * Cross-Location Add-Ons alike: a member paying with two cards needs many
+ * payments per purchase, and a Refund of a sale paid across two cards becomes
+ * several provider calls. So the sale is a row of its own, holding what was
  * bought, what it costs and how much has been paid, and the payment rows point
  * at it.
  *
  * The rule this makes safe is one comparison, in `services/billing/balance.ts`:
  * **nothing is granted until the Balance reaches zero.** A sale paid in full at
- * the first attempt — today's only shape — is simply a Purchase that closes
+ * the first attempt — the usual shape — is simply a Purchase that closes
  * immediately, which is why nothing a member or an admin can see changes.
  */
 export const purchases = pgTable(
@@ -39,7 +38,7 @@ export const purchases = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // Nullable for one reason only: a member may be permanently deleted (#144),
+    // Nullable for one reason only: a member may be permanently deleted,
     // and every row FK-referencing a Purchase is `restrict` and kept as the
     // studio's accounts — so the Purchase cannot go with them and is emptied of
     // them instead. `client_packages.client_id` is nullable for the same reason.
@@ -70,7 +69,7 @@ export const purchases = pgTable(
      */
     metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
     /**
-     * What was in the sale, line by line (#382): each line's description,
+     * What was in the sale, line by line: each line's description,
      * quantity, List Price, the discount with the Promotion or Promo Code that
      * gave it, and the amount (`services/billing/purchase-lines.ts`). Frozen
      * when the Purchase opens, from the same prices the provider is asked to
@@ -82,14 +81,15 @@ export const purchases = pgTable(
      */
     lines: jsonb('lines').$type<PurchaseLine[]>().notNull().default(sql`'[]'::jsonb`),
     /**
-     * Who the sale is billed to (#401): the name and address of the member's
+     * Who the sale is billed to: the name and address of the member's
      * Billing details chosen at checkout, copied when the Purchase opens and
      * copied again onto its Receipt. A copy, not a reference, so editing or
      * deleting the set afterwards changes nothing already bought, and a part
      * payment resumed later bills the set it was opened with.
      *
-     * Null where no set was chosen: every Purchase opened before #401, and
-     * those with no member checkout (the legacy webhook fallback, imports).
+     * Null where no set was chosen: every Purchase opened before Billing
+     * details existed, and those with no member checkout (the webhook
+     * fallback, imports).
      */
     billTo: jsonb('bill_to').$type<BillingAddress>(),
     /**
@@ -100,7 +100,7 @@ export const purchases = pgTable(
      */
     checkoutSessionId: text('checkout_session_id'),
     /**
-     * When the first payment landed that did **not** clear the Balance (#93).
+     * When the first payment landed that did **not** clear the Balance.
      *
      * Not derivable from the other columns: `amount_paid_sgd` says what is held
      * right now, so a Purchase part-paid at noon and finished at one o'clock is
@@ -113,7 +113,7 @@ export const purchases = pgTable(
     settledAt: timestamp('settled_at', { withTimezone: true }),
     /**
      * When a Purchase with **no payment behind it** was refunded — a sale made
-     * before the studio came to the platform, migrated with its return (#217).
+     * before the studio came to the platform, migrated with its return.
      *
      * A Refund of a sale paid here is dated by its payment's `refunded_at`, and
      * Finance reads it there. A migrated sale reached no payment provider, so
@@ -122,7 +122,7 @@ export const purchases = pgTable(
      */
     refundedAt: timestamp('refunded_at', { withTimezone: true }),
     /**
-     * How a Purchase with **no payment behind it** was paid (#282): a sale made
+     * How a Purchase with **no payment behind it** was paid: a sale made
      * before the studio came to the platform, migrated with the method its old
      * system recorded. Null on every Purchase the platform took money for — the
      * payment rows say how those were paid, each on its own.
@@ -141,7 +141,7 @@ export const purchases = pgTable(
       table.clientId,
       table.createdAt,
     ),
-    // Also the whole of the #93 "money held against nothing granted" read,
+    // Also the whole of the "money held against nothing granted" read,
     // which is `sum(amount_paid_sgd) where status = 'open'`. A member's own
     // unfinished purchases come off `clientCreatedIdx` below, which already
     // leads with the two columns that query filters on and ends with the one it
@@ -185,7 +185,7 @@ export const manualAdjustments = pgTable(
 )
 
 /**
- * A Credit movement (#353): one row per change to a package's balance, and per
+ * A Credit movement: one row per change to a package's balance, and per
  * forfeit that left it unchanged, written by `services/packages/ledger.ts` in
  * the same transaction as the change. `balance_after` is the stored balance
  * once the row's `delta` is applied (null on an Unlimited Plan), so a package's
@@ -303,9 +303,9 @@ export const stripePayments = pgTable(
     // Unique per Tenant, not platform-wide — see `paymentIntentUnique` below.
     paymentIntentId: text('payment_intent_id').notNull(),
     /**
-     * The sale this payment is evidence of part of. **NOT NULL** since #92: it
-     * is now the only route from money to what the money bought, because the
-     * plan and the booking point at the Purchase and no longer at an intent.
+     * The sale this payment is evidence of part of. **NOT NULL**: it is the
+     * only route from money to what the money bought, because the plan and the
+     * booking point at the Purchase and not at an intent.
      *
      * The webhook opens one rather than writing null if a session ever arrives
      * without one in its metadata — see `purchaseForPayment`.
@@ -315,7 +315,7 @@ export const stripePayments = pgTable(
       .references(() => purchases.id, { onDelete: 'restrict' }),
     amountSgd: numeric('amount_sgd', { precision: 10, scale: 2 }).notNull(),
     kind: stripePaymentKindEnum('kind').notNull(),
-    // Null once the member is permanently deleted (#144): the payment is the
+    // Null once the member is permanently deleted: the payment is the
     // studio's to keep for its accounts, the member's identity is not.
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
     bookingId: uuid('booking_id').references(() => bookings.id, { onDelete: 'restrict' }),
@@ -325,10 +325,10 @@ export const stripePayments = pgTable(
     status: stripePaymentStatusEnum('status').notNull().default('pending'),
     /**
      * The provider account this payment was taken on — **null is the platform's
-     * own**, not "unknown" (#97).
+     * own**, not "unknown".
      *
      * Written once, at capture, and never updated. A studio that moves onto its
-     * own account (#100) leaves its history behind on the platform's, because
+     * own account leaves its history behind on the platform's, because
      * no provider will hand a payment intent from one account to another; so a
      * Refund years later has to be issued on the account the money actually
      * came in on, and the studio's *current* credentials are the wrong answer
@@ -338,7 +338,7 @@ export const stripePayments = pgTable(
     receiptUrl: text('receipt_url'),
     /**
      * How this payment was paid, copied off the provider's charge when it
-     * succeeds (#282). Best-effort, like the receipt: null means "not read",
+     * succeeds. Best-effort, like the receipt: null means "not read",
      * never "no method".
      *
      * `method` is the provider's own name for the method type — `card`,
@@ -354,7 +354,7 @@ export const stripePayments = pgTable(
     wallet: text('wallet'),
     refundedAt: timestamp('refunded_at', { withTimezone: true }),
     /**
-     * When the portal asked the provider to return this payment (#275).
+     * When the portal asked the provider to return this payment.
      *
      * A Refund lands only when `charge.refunded` does, and until then the row
      * still reads `succeeded` — so without this the portal showed the payment
@@ -387,7 +387,7 @@ export const stripePayments = pgTable(
 
 /**
  * Who a member is **at the payment provider** — the id their saved cards hang
- * off (#185).
+ * off.
  *
  * A card cannot be saved against an email. It is saved against a Customer, so
  * until a member is one, every checkout is a card number typed in full, and the
@@ -396,7 +396,7 @@ export const stripePayments = pgTable(
  * ## One row per member *per account*, which is the whole reason this is a table
  *
  * A Customer id belongs to the account it was created on and means nothing
- * anywhere else. Since #100 a studio can supply its own credentials, so the
+ * anywhere else. A studio can supply its own credentials, so the
  * account a member's cards live on is not a property of the member — it is a
  * property of where the studio sells *today*. A studio that moves accounts
  * leaves its members' old Customers behind, exactly as it leaves its payments
@@ -410,8 +410,8 @@ export const stripePayments = pgTable(
  * platform account still got a Customer each, because the Tenant is in the key.
  *
  * `provider_account_id` follows the convention `stripe_payments` set: **NULL is
- * the platform's own account**, not "unknown" — history only since #293, when
- * the platform account stopped being used and every new row names a studio's.
+ * the platform's own account**, not "unknown" — history only, since the platform
+ * account is not used and every new row names a studio's.
  *
  * Nothing here is a secret and nothing here is money. It is a pointer, and if
  * the whole table were lost the worst that happens is every member is asked to
@@ -424,7 +424,7 @@ export const paymentCustomers = pgTable(
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     /**
      * The member. **NOT NULL**, and deleted rather than emptied when they are
-     * (#144): unlike a payment, this row is not part of the studio's accounts —
+     * permanently deleted: unlike a payment, this row is not part of the studio's accounts —
      * it is the member's identity at a third party, which is the one thing
      * permanent deletion is for. `member-tables.ts` says so in the one list
      * both deletion and export read.
@@ -448,8 +448,8 @@ export const paymentCustomers = pgTable(
      * `NULLS NOT DISTINCT` is load-bearing, and is written out in the migration
      * because Drizzle cannot express it: Postgres treats NULLs as distinct in a
      * unique index by default, and the platform account — the only case until
-     * studios supplied credentials of their own, and still the case for rows
-     * written before #293 — *is* the NULL. Without it the constraint would not
+     * studios supplied credentials of their own, and still the case for the
+     * older rows — *is* the NULL. Without it the constraint would not
      * have held for exactly those rows.
      */
     memberAccountUnique: uniqueIndex('payment_customers_member_account_unique').on(
@@ -461,7 +461,7 @@ export const paymentCustomers = pgTable(
 )
 
 /**
- * A Receipt (#380): the studio's own record of one completed Purchase, issued
+ * A Receipt: the studio's own record of one completed Purchase, issued
  * by `services/receipts` in the transaction that settles it. One per Purchase,
  * ever — `purchase_id` is unique per Tenant, which is what stops a webhook
  * redelivery or the confirmation page's fallback from issuing a second.
@@ -492,25 +492,26 @@ export const receipts = pgTable(
     displayNumber: text('display_number').notNull(),
     issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
     // The seller, as of issue. The rest are the studio's Business details,
-    // which the studio sets (#391, #398). The Business name is null on a
-    // Receipt issued before #398 that carried no Legal name.
+    // which the studio sets. The Business name is null on a
+    // Receipt issued before the Business name existed.
     sellerName: text('seller_name').notNull(),
     sellerBusinessName: text('seller_business_name'),
     sellerRegistrationNumber: text('seller_registration_number'),
     sellerAddress: text('seller_address'),
     sellerFooter: text('seller_footer'),
     /**
-     * The studio's contact email (#403): its reply-to address as of issue.
-     * Null where it had none, and on every Receipt issued before #403.
+     * The studio's contact email: its reply-to address as of issue.
+     * Null where it had none, and on every Receipt issued before the Receipt
+     * carried one.
      */
     sellerEmail: text('seller_email'),
     // The buyer, as of issue.
     buyerName: text('buyer_name'),
     buyerEmail: text('buyer_email'),
     /**
-     * Bill to (#401): the Purchase's `bill_to`, as of issue. Null on a Receipt
-     * whose Purchase chose no Billing details — one issued before #401, a
-     * backfilled one, the legacy webhook fallback's — which names the buyer
+     * Bill to: the Purchase's `bill_to`, as of issue. Null on a Receipt
+     * whose Purchase chose no Billing details — one issued before Billing
+     * details existed, a backfilled one, the webhook fallback's — which names the buyer
      * by their name and email alone.
      */
     billTo: jsonb('bill_to').$type<BillingAddress>(),

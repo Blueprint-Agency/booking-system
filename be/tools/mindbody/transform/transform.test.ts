@@ -35,10 +35,10 @@ test('the archive is for the Tenant it was built for, and asks for accounts to b
   const archive = await unpackArchive(zip)
   assert.equal(archive.manifest.tenant.id, TENANT)
   assert.equal(archive.manifest.ensureAccounts, true)
-  // Every template a provisioned studio gets, class_waitlist_promoted (#308),
-  // class_rule_cancelled (#323), pt_request_cancelled and
-  // corporate_purchase_confirmed (#359), purchase_receipt (#388) and
-  // classpass_overbooked (#411) included.
+  // Every template a provisioned studio gets, class_waitlist_promoted,
+  // class_rule_cancelled, pt_request_cancelled and
+  // corporate_purchase_confirmed, purchase_receipt and
+  // classpass_overbooked included.
   assert.equal(archive.rows.email_templates!.length, 39)
   assert.equal(archive.rows.global_policy!.length, 1)
   assert.equal(archive.rows.pt_booking_config!.length, 1)
@@ -193,7 +193,7 @@ test('the starter config is filled from the reports and refused until a person c
   )
 })
 
-/* ── The catalogue and what members hold of it (#178) ─────────────────────── */
+/* ── The catalogue and what members hold of it ─────────────────────── */
 
 test('the catalogue: sell is active at the config price, legacy is archived, skip and access passes are no row', async () => {
   const { archive } = await run()
@@ -321,7 +321,7 @@ test('the preflight lists what is live in Mindbody and does not come across', as
 
 /**
  * Mindbody lets a pricing option be sold with no expiration at all. Such a
- * holding is not live by the rule the ticket sets — "not expired at download
+ * holding is not live by the liveness rule — "not expired at download
  * time" has no answer without a date — and the platform has no package that
  * never ends. It must still be a line in the preflight: what it must not do is
  * disappear, leaving a member holding credits nobody knows about.
@@ -408,7 +408,7 @@ test('the starter config proposes the catalogue from what was sold', async () =>
   assert.equal(proposed['Handstand Workshop - Twin']!.migrate, 'skip')
 })
 
-/* ── The timetable to come (#179) ─────────────────────────────────────────── */
+/* ── The timetable to come ─────────────────────────────────────────── */
 
 /** A class by what it is and when, as the timetable would read it. */
 const timetable = (archive: { rows: Record<string, Record<string, unknown>[]> }, ids: Record<string, Record<string, string>>) => {
@@ -681,7 +681,7 @@ test('the starter config proposes Rooms, class names, workshops, PT names and th
   ])
 })
 
-/* ── Workshops and retreats to come (#180) ────────────────────────────────── */
+/* ── Workshops and retreats to come ────────────────────────────────── */
 
 test('a future workshop: one Day per occurrence, one Tier per room type, and its instructors', async () => {
   const { archive, ids } = await run()
@@ -926,7 +926,7 @@ test('verify: a class that lost a seat, and a class that lost itself, are both n
   assert.ok(differences.some(d => /: bookings: expected \d+, found \d+$/.test(d)), 'and by member')
 })
 
-/* ── The studio's past (#181) ─────────────────────────────────────────────── */
+/* ── The studio's past ─────────────────────────────────────────────── */
 
 /** The fixture with history from a cutoff. Purchases are the studio's separate decision. */
 const withHistory = (purchases = false, from = '2026-06-01') => {
@@ -1166,7 +1166,7 @@ test('a sale and its return are one past purchase with one Refund, on a Purchase
   )!
   assert.equal(returned.active, false, 'a refunded purchase is not a live package')
   assert.ok(returned.purchase_id)
-  // Every paid past sale is a Purchase now (#284); the return closes this one as refunded.
+  // Every paid past sale is a Purchase; the return closes this one as refunded.
   assert.deepEqual(archive.rows.purchases!.filter(p => p.status === 'refunded'), [
     {
       id: returned.purchase_id,
@@ -1666,7 +1666,7 @@ test('history: a late cancel carries its real time and who made it, from the Can
   assert.equal(run([]).row.cancelled_at, '2026-07-06T11:00:00.000Z', 'no report: dated at the class s start, as before')
 })
 
-/* ── Past classes, visits and PT as Mindbody recorded them (#219) ────────── */
+/* ── Past classes, visits and PT as Mindbody recorded them ────────── */
 
 /** A past Hatha from the fixture's timetable, moved to another day. */
 const pastHatha = (reports: Awaited<ReturnType<typeof readReports>>, d: number, month = 8) => {
@@ -1847,7 +1847,7 @@ test('history: past PT ends as it did — a no-show stays one, a late cancel is 
   )
 })
 
-/* ── Members, packages and weekly Class Series from report data (#220) ───── */
+/* ── Members, packages and weekly Class Series from report data ───── */
 
 /** A visit in the Attendance report, as its reader returns one. */
 const attended = (clientId: string, date: { year: number; month: number; day: number }, over: Record<string, unknown> = {}) => ({
@@ -2251,7 +2251,7 @@ test('each live autopay in Autopay Detail is a preflight line, to stop in Mindbo
   assert.match(renderPreflight(none.preflight), /## Autopays still live in Mindbody \(0\)\n\n[^\n]+\n$/)
 })
 
-/* ── Instructor Pay from the reports (#218) ──────────────────────────────── */
+/* ── Instructor Pay from the reports ──────────────────────────────── */
 
 test('historical Instructor Pay adds up to the Payroll Detail total: class pay, session pay and Manual Entries', async () => {
   const { archive, ids } = await run(withHistory())

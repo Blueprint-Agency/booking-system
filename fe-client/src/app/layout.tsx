@@ -18,13 +18,11 @@ const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
 /**
  * The tab title, the description and the icons are the studio's, resolved from
  * the request's hostname (`lib/brand.ts`). Static metadata here would put one
- * studio's name in every other studio's browser tab, which is the visible half
- * of #66.
+ * studio's name in every other studio's browser tab.
  *
  * The icon falls back to `/brand/platform-mark.svg` only when the studio has
- * supplied none, and that file is the platform's own mark. It used to be tenant
- * #1's logo, which meant every studio without a favicon of its own wore tenant
- * #1's — a fallback must be nobody's branding, never another tenant's.
+ * supplied none, and that file is the platform's own mark — a fallback must be
+ * nobody's branding, never another tenant's.
  *
  * There is no `apple` fallback for the same reason in reverse: an
  * apple-touch-icon is what a member pins to their home screen, so if the studio

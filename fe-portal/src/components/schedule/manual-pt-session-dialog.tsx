@@ -1,5 +1,5 @@
 "use client";
-// Add manually (#336): a private session staff put on the Schedule with its
+// Add manually: a private session staff put on the Schedule with its
 // members, no member request behind it. The form is the class form's Location,
 // room, time, instructor and pay fields plus the PT type; below it a member
 // search and roster like the class roster's, each member paying one session

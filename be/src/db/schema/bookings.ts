@@ -50,9 +50,9 @@ export const bookings = pgTable(
     state: bookingStateEnum('state').notNull().default('confirmed'),
     // The seat a class booking holds (spec-waitlist.md §2). Counted only by
     // `services/bookings/seats.ts`. The default is the backfill: every class
-    // booking before this column came through the member route.
+    // booking made before seats existed came through the member route.
     seat: bookingSeatEnum('seat').notNull().default('online'),
-    // How the booking reached the studio (#408). A ClassPass booking was paid
+    // How the booking reached the studio. A ClassPass booking was paid
     // for by ClassPass: no package, no credits, no money here.
     source: bookingSourceEnum('source').notNull().default('direct'),
     // ClassPass's own reservation ID, on a ClassPass booking only. Unique within
@@ -70,7 +70,7 @@ export const bookings = pgTable(
     qrToken: text('qr_token').notNull(),
     code: text('code').notNull(),
     /**
-     * The sale that bought this seat (#92) — set only on a workshop booking,
+     * The sale that bought this seat — set only on a workshop booking,
      * whose booking IS the purchase. A class or PT booking is paid for by a
      * plan, so its money hangs off `client_package_id` and this stays null,
      * exactly as the payment intent it replaces did.
@@ -108,8 +108,8 @@ export const bookings = pgTable(
     qrTokenUnique: uniqueIndex('bookings_qr_token_unique').on(table.tenantId, table.qrToken),
     codeUnique: uniqueIndex('bookings_code_unique').on(table.tenantId, table.code),
     checkInStateIdx: index('bookings_check_in_state_idx').on(table.tenantId, table.checkInState),
-    // One booking per Purchase — the index that decides a redelivery race, in
-    // the place the payment intent's used to. Partial: only a workshop booking
+    // One booking per Purchase — the index that decides a redelivery race.
+    // Partial: only a workshop booking
     // is a purchase of its own, so every other booking leaves it null.
     purchaseUnique: uniqueIndex('bookings_purchase_unique')
       .on(table.tenantId, table.purchaseId)
@@ -160,7 +160,7 @@ export const cancellations = pgTable(
     kind: cancellationKindEnum('kind').notNull(),
     source: cancellationSourceEnum('source').notNull(),
     // The staff member who cancelled (source admin or instructor); null for a
-    // member's own cancel, a `system` one, and every row written before #350.
+    // member's own cancel, a `system` one, and every row written before cancellations recorded who.
     cancelledByStaffId: uuid('cancelled_by_staff_id').references(() => staffUsers.id, { onDelete: 'restrict' }),
     wasWithinWindow: boolean('was_within_window').notNull(),
     wasWithinCap: boolean('was_within_cap').notNull(),

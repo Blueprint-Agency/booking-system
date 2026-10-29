@@ -8,13 +8,7 @@ import { TENANT_ONE_ID, SECOND_TENANT_ID } from '../schema/tenancy'
  * missing `WHERE tenant_id = ?` looks correct when there is only one tenant's
  * rows to return.
  *
- * This file used to hold a real customer's name, premises, branding URLs and
- * WhatsApp number, described as "the one file in the backend that names a
- * studio". That was already an improvement on the scattering it replaced, but it
- * still shipped one studio's identity inside every other studio's product — a
- * fresh deployment came up already knowing who it was. It does not any more.
- *
- * A studio now arrives the two ways `db/seed/run.ts` describes, both from the
+ * A studio arrives the two ways `db/seed/run.ts` describes, both from the
  * super portal and neither from here: **created** (`services/tenants/provision.ts`)
  * or **restored** from an archive (`services/tenants/transfer.ts`). Its name,
  * premises, branding and copy are rows in `tenants` / `tenant_settings`, written

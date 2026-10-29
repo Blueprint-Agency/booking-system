@@ -135,7 +135,7 @@ const crossLocationSchema = z.object({
 const refundSchema = z.object({
   reason: z.string().min(1).max(2000),
 })
-// Removing a **Complimentary Package** (#176) takes a reason and nothing else,
+// Removing a **Complimentary Package** takes a reason and nothing else,
 // like a Refund does — but it is not one, and CONTEXT.md keeps the two words
 // apart, so it gets its own name rather than borrowing that one.
 const removeSchema = z.object({
@@ -148,14 +148,14 @@ const homeLocationSchema = z.object({
   reason: z.string().min(1).max(2000),
 })
 // Binding a purchased PT Package to an instructor, moving it, or clearing it
-// back to open (#110). Null is a real value here and not an omission — it is
+// back to open. Null is a real value here and not an omission — it is
 // how an admin reopens a package to the whole roster — so the field is required
 // and nullable rather than optional.
 const boundInstructorSchema = z.object({
   instructor_id: z.string().uuid().nullable(),
   reason: z.string().min(1).max(2000),
 })
-// Giving a **Complimentary Package** (#176). The reason is mandatory — a free
+// Giving a **Complimentary Package**. The reason is mandatory — a free
 // package with no record of why it was free is the thing this route exists to
 // prevent. Home Location, the Add-On and the Bound Instructor are the same
 // three choices a checkout makes; the grant service refuses the combinations
@@ -174,7 +174,7 @@ const issueSchema = z.object({
 const emailSchema = z.object({
   email: z.string({ message: EMAIL_MESSAGE }).email(EMAIL_MESSAGE).max(254, 'An email address can be at most 254 characters.'),
 })
-// Editing a member's profile (#281): any of the three, gender nullable to clear
+// Editing a member's profile: any of the three, gender nullable to clear
 // it. The trimmed 1–160 / 1–40 limits are the service's, so they answer with
 // the same sentence however the profile is edited.
 const profileSchema = z
@@ -237,9 +237,9 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
     refund_notice: refund?.notice ?? null,
     // The Purchase the bell's refund items link to (`?purchase=`).
     purchase_id: refund?.purchaseId ?? null,
-    // How many returns the Refund will put on the statement (#93).
+    // How many returns the Refund will put on the statement.
     refund_payment_count: refund?.paymentCount ?? 0,
-    // What the Refund dialog states before the admin commits (#275): whether one
+    // What the Refund dialog states before the admin commits: whether one
     // is already on its way, the amount going back, and what else it undoes.
     refund_progress: refund?.progress ?? 'none',
     refund_amount_sgd: refund?.amountSgd ?? '0.00',
@@ -265,7 +265,7 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
     // The Cross-Location Add-On and what was paid for it (§5, §15) — null means
     // this plan Covers its Home Location only.
     cross_location_paid_sgd: p.crossLocationPaidSgd,
-    // Given by an admin at no charge (#176) — what the portal offers "Remove"
+    // Given by an admin at no charge — what the portal offers "Remove"
     // on, and why the row shows S$0 against a real List Price without that
     // reading as a discount somebody granted at checkout.
     complimentary: p.complimentary,
@@ -303,12 +303,12 @@ function memberBookingView(b: MemberBookingRow | MemberCancelledRow) {
     credits_used: b.creditsUsed,
     package_name: b.packageName,
     code: b.code,
-    // `classpass` on a ClassPass booking, which the profile badges (#408).
+    // `classpass` on a ClassPass booking, which the profile badges.
     source: b.source,
     booked_at: b.bookedAt,
     cancelled_at: b.cancelledAt,
     // Null when the portal offers no "Cancel booking" on it; otherwise what the
-    // cancel dialog asks the Return / Keep credit choice from (#320).
+    // cancel dialog asks the Return / Keep credit choice from.
     cancel_preview: staffCancelPreviewJson(b.cancelPreview),
   }
 }
@@ -316,7 +316,7 @@ function memberBookingView(b: MemberBookingRow | MemberCancelledRow) {
 /**
  * A cancelled booking — or a private-session request withdrawn or expired
  * while pending (`booking_id` null, `pt_request_id` set) — with who cancelled,
- * when, and where the credit went (#352).
+ * when, and where the credit went.
  */
 function cancelledBookingView(b: MemberCancelledRow) {
   return {
@@ -334,9 +334,9 @@ function paymentView(p: MemberPaymentView) {
     amount_sgd: p.amountSgd,
     status: p.status,
     purchase_status: p.purchaseStatus,
-    // The studio's Receipt for the sale (#389); null while it is part-paid.
+    // The studio's Receipt for the sale; null while it is part-paid.
     receipt_id: p.receiptId,
-    // The provider's receipt for this charge, kept for now (spec #380).
+    // The provider's receipt for this charge, kept for now.
     receipt_url: p.receiptUrl,
     refunded_at: p.refundedAt,
     refund_processing: p.refundProcessing,
@@ -344,7 +344,7 @@ function paymentView(p: MemberPaymentView) {
   }
 }
 // A workshop purchase's row on the client detail page, beside the package rows
-// (§14 / issue #36). The booking IS the purchase, so there is no source-package
+// (§14). The booking IS the purchase, so there is no source-package
 // id or expiry to show — only what the Refund button and its notice need.
 function workshopPurchaseView(w: WorkshopPurchase) {
   return {
@@ -366,7 +366,7 @@ function workshopPurchaseView(w: WorkshopPurchase) {
 }
 
 /**
- * An unfinished Purchase on the client detail page (#93).
+ * An unfinished Purchase on the client detail page.
  *
  * Deliberately its **own** list, beside the plans the member holds and never
  * mixed in with them: this is money the studio is holding against nothing
@@ -375,7 +375,7 @@ function workshopPurchaseView(w: WorkshopPurchase) {
  * in against it — which is what `grants_nothing` says in one word to every
  * surface that shows it.
  *
- * It **is** refundable from here since #95, through
+ * It **is** refundable from here, through
  * `POST /portal/admin/purchases/:id/refund` rather than through this file: the
  * Refund is aimed at the Purchase itself, since there is no plan and no booking
  * to aim it at. `refund_payment_count` is what the dialog needs — how many
@@ -522,7 +522,7 @@ const app = new Hono()
       open_purchases: openPurchases.map(openPurchaseView),
     })
   })
-  // One package's Credit history (#353) — the profile's per-package history.
+  // One package's Credit history — the profile's per-package history.
   .get('/:id/packages/:pid/credit-history', zValidator('param', idPkgParam), async c => {
     const { id, pid } = c.req.valid('param')
     const history = await creditHistory(tenantId(c), id, pid)
@@ -640,7 +640,7 @@ const app = new Hono()
       ...issuedRefundView(result),
     })
   })
-  // A Refund on a workshop purchase (§14, issue #36) — the same operation as
+  // A Refund on a workshop purchase (§14) — the same operation as
   // above, aimed at the booking that IS the purchase. `unwindRefund` is already
   // workshop-aware, so this reuses it unchanged.
   .post(
@@ -666,7 +666,7 @@ const app = new Hono()
       })
     },
   )
-  // A **Complimentary Package** (#176): the catalogue package an admin gives at
+  // A **Complimentary Package**: the catalogue package an admin gives at
   // no charge, through the same grant a purchase uses. No money, no email — the
   // reason is what the member is owed, and the admin delivers that themselves.
   .post('/:id/packages/issue', zValidator('param', idParam), zValidator('json', issueSchema), async c => {
@@ -700,7 +700,7 @@ const app = new Hono()
     c.set('auditTarget', { table: 'client_packages', id: pid })
     return c.json({ removed: true, cancelled_bookings: result.cancelledBookings })
   })
-  // The member's email (#176) — the address they sign in with and the one the
+  // The member's email — the address they sign in with and the one the
   // studio writes to, moved together.
   .post('/:id/email', zValidator('param', idParam), zValidator('json', emailSchema, explainInvalid(EMAIL_MESSAGE)), async c => {
     const { id } = c.req.valid('param')
@@ -715,7 +715,7 @@ const app = new Hono()
     c.set('auditTarget', { table: 'clients', id })
     return c.json(clientRow(row))
   })
-  // The member's name, gender and phone (#281), in one save.
+  // The member's name, gender and phone, in one save.
   .patch('/:id/profile', zValidator('param', idParam), zValidator('json', profileSchema, explainInvalid('That profile is not valid.')), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
@@ -755,7 +755,7 @@ const app = new Hono()
     c.set('auditTarget', { table: 'clients', id })
     return c.json(clientRow(row))
   })
-  // ---- permanent delete (#144): the member's rows go, the studio's accounts
+  // ---- permanent delete: the member's rows go, the studio's accounts
   // stay without them. Admin only. Not audited by id: the
   // audit row names the route, and the staff act names nobody.
   .delete('/:id/permanently', zValidator('param', idParam), async c => {
@@ -769,7 +769,7 @@ const app = new Hono()
     c.set('auditPath', c.req.routePath)
     return c.json({ deleted: true })
   })
-  // ---- sessions (#119) ----
+  // ---- sessions ----
   .get('/:id/sessions', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const sessions = await listMemberSessions(tenantId(c), id)
@@ -786,7 +786,7 @@ const app = new Hono()
     c.set('auditTarget', { table: 'clients', id })
     return c.json({ revoked })
   })
-  // ---- set-password link (#173) ----
+  // ---- set-password link ----
   .post('/:id/send-set-password', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     await sendMemberSetPasswordLink({
@@ -798,7 +798,7 @@ const app = new Hono()
     c.set('auditTarget', { table: 'clients', id })
     return c.json({ sent: true })
   })
-  // ---- member export (#143): everything the studio holds about the member, as
+  // ---- member export: everything the studio holds about the member, as
   // a zip, for an access request. Admin only; logged as a staff act.
   .get('/:id/export', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')

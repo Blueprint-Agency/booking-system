@@ -75,7 +75,7 @@ const dayCreateSchema = z.object({
   room_id: z.string().uuid(),
   starts_at: startsAtField,
   ends_at: endsAtField,
-  // Per-day base_price_sgd is retained at the DB level but is no longer
+  // Per-day base_price_sgd stays at the DB level but is not
   // surfaced in the admin UI — pricing lives on workshop_tiers. Default to 0
   // so the column's NOT NULL constraint stays satisfied.
   base_price_sgd: priceField.optional(),
@@ -181,7 +181,7 @@ const createSchema = createBasicsSchema.extend({
   promotions: z.array(promotionInputSchema).default([]),
 })
 
-// The editor's one save (#502): the basics, plus the schedule and promotions
+// The editor's one save: the basics, plus the schedule and promotions
 // when sent. A half schedule never reaches the schedule rules.
 const saveWorkshopSchema = updateBasicsSchema
   .extend({

@@ -11,7 +11,7 @@ import { reportError } from "@/lib/report-error";
  * screen. `retry()` re-fetches and re-renders the segment (`reset()` only
  * re-renders, so a page whose server payload failed would fail again).
  *
- * A session the app could not read (#500) is held by the session store, not by
+ * A session the app could not read is held by the session store, not by
  * the page, so Try again asks the backend about the session first and re-renders
  * once it has answered; for any other failure that re-read is a no-op.
  */

@@ -1,5 +1,5 @@
 /**
- * The studio's Receipts as a CSV for its bookkeeper (#390): one row per
+ * The studio's Receipts as a CSV for its bookkeeper: one row per
  * Receipt the admin's filters keep, in the list's own order. A projection of
  * the rows `exportStudioReceipts` reads, as Finance's export is of its screen
  * (`services/finance/csv.ts`). Pure.
@@ -52,7 +52,7 @@ function cell(value: string | null): string {
 /**
  * The file. A permanently deleted member's Receipt keeps its row, with the
  * member, email and Bill to empty as the Receipt now has them. A Receipt whose
- * Purchase chose no Billing details (#401) has the Bill to columns empty.
+ * Purchase chose no Billing details has the Bill to columns empty.
  */
 export function receiptsCsv(rows: readonly StudioReceiptSummary[]): string {
   const lines = rows.map(r =>

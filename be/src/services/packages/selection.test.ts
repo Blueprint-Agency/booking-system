@@ -81,7 +81,7 @@ const ok = (r: ReturnType<typeof selectPackage>) => {
 }
 
 // --- several packages run per Family: the Default payer ----------------------
-// Nothing waits behind a running package any more. Each package answers for
+// Nothing waits behind a running package. Each package answers for
 // itself; the Default payer is the first Eligible one in default order.
 
 // A running plan at the other studio, credits waiting: the plan cannot pay, so
@@ -123,7 +123,7 @@ const ok = (r: ReturnType<typeof selectPackage>) => {
 }
 
 // A running plan that lapses before the class: the Dormant renewal pays, beside
-// it — two Activated plans at once is allowed now.
+// it — two Activated plans at once is allowed.
 {
   const renewal = dormant()
   const r = ok(select([plan({ expiresAt: new Date('2026-06-05T00:00:00Z') }), renewal]))
@@ -272,7 +272,7 @@ const ok = (r: ReturnType<typeof selectPackage>) => {
 }
 
 // An EXPIRED plan is not a live plan — it refuses nothing and the member's
-// credits pay as they always did.
+// credits pay as normal.
 {
   const b = bundle()
   const r = ok(select([plan({ locationId: OTHER, expiresAt: new Date('2026-01-01T00:00:00Z') }), b]))

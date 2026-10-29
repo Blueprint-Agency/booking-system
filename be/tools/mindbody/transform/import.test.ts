@@ -113,7 +113,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     return dir
   }
 
-  /** The studio as it is with its past brought across from a cutoff (#181). */
+  /** The studio as it is with its past brought across from a cutoff. */
   const withHistory = (purchases = false): Edit => config => {
     config.history = { from: '2026-06-01', purchases }
   }
@@ -142,7 +142,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
 
   test('the zip imports into a freshly provisioned studio, which opens, and its people can sign in', async () => {
     // A member who is already on the platform at another studio has a login
-    // there. Logins are per studio (#231): the import makes this studio its own,
+    // there. Logins are per studio: the import makes this studio its own,
     // and leaves the other studio's alone.
     const existing = await ensureAuthUser(harness.db, 'client', {
       tenantId: harness.tenants.one.id,
@@ -213,10 +213,10 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(await count('locations', studio.tenant.id), 2)
     // Hatha and Vinyasa Flow, plus the Personal Training focus the PT import needs.
     assert.equal(await count('class_types', studio.tenant.id), 3)
-    // Every template a provisioned studio gets, class_waitlist_promoted (#308),
-    // class_rule_cancelled (#323), pt_request_cancelled and
-    // corporate_purchase_confirmed (#359), purchase_receipt (#388) and
-    // classpass_overbooked (#411) included.
+    // Every template a provisioned studio gets, class_waitlist_promoted,
+    // class_rule_cancelled, pt_request_cancelled and
+    // corporate_purchase_confirmed, purchase_receipt and
+    // classpass_overbooked included.
     assert.equal(await count('email_templates', studio.tenant.id), 39)
     assert.equal(await count('clients', studio.tenant.id), 8)
 
@@ -318,7 +318,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(discardedMail.length, before)
   })
 
-  /* ── Packages (#178) ─────────────────────────────────────────────────────── */
+  /* ── Packages ─────────────────────────────────────────────────────── */
 
   type MemberPackage = {
     id: string
@@ -524,7 +524,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.deepEqual(body.pt_packages.map(p => `${p.name}:${p.price_sgd}`), ['PT - Bundle of 10:1200.00'])
   })
 
-  /* ── The timetable to come (#179) ──────────────────────────────────────── */
+  /* ── The timetable to come ──────────────────────────────────────── */
 
   /** The whole imported timetable, as the portal lists it. */
   const timetableOf = async (headers: Record<string, string>, query = '') => {
@@ -655,7 +655,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     )
   })
 
-  /* ── Workshops and retreats to come (#180) ─────────────────────────────── */
+  /* ── Workshops and retreats to come ─────────────────────────────── */
 
   test('an imported workshop is in the portal with its days, tiers, instructors and attendees', async () => {
     const studio = await importedStudio()
@@ -743,7 +743,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     ])
   })
 
-  /* ── The studio's past (#181) ──────────────────────────────────────────── */
+  /* ── The studio's past ──────────────────────────────────────────── */
 
   test('a member s past reads back as it happened: attended, a no-show, and a late cancel that is not a seat', async () => {
     const studio = await importedStudio(withHistory())
@@ -758,7 +758,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
       `${new Date(b.starts_at as string).toISOString()} ${b.name} ${b.state}/${b.check_in_state}`
 
     // Past holds what was held; a cancellation is on Cancelled from the
-    // moment it is cancelled (fe-client-features §8.3, #349).
+    // moment it is cancelled (fe-client-features §8.3).
     assert.deepEqual(
       past.map(line).sort(),
       [

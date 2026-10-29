@@ -234,7 +234,7 @@ test("PT-107 a refused create is worded from its code; a clash passes the backen
   assert.strictEqual(manualSessionErrorMessage(new ApiError(500, null)), "Couldn't create the session (HTTP 500).");
 });
 
-/* ── after it exists: the detail page (#338) ── */
+/* ── after it exists: the detail page ── */
 
 const attendee = (id: string, isRequester: boolean) => ({ id, name: id === "c1" ? "Sam" : "Kim", is_requester: isRequester });
 
@@ -305,7 +305,7 @@ test("PT-113 a refused remove, add, type change or cancel is worded from its cod
   assert.strictEqual(says(400, "partner_required"), "Add the partner who joins the 2-on-1.");
   assert.strictEqual(says(409, "session_full"), "This session has no free seat.");
   assert.strictEqual(says(409, "cannot_cancel"), "This session can no longer be cancelled.");
-  // PT-129, PT-130: a cancel once the session has begun (#241).
+  // PT-129, PT-130: a cancel once the session has begun.
   assert.strictEqual(
     says(422, "session_already_started"),
     "This session has already started, so it can no longer be cancelled.",

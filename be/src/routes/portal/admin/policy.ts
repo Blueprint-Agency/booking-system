@@ -26,13 +26,13 @@ const explainPolicy = explainInvalid('That value is not allowed.', 'invalid_poli
 // the first issue's message straight to an admin — a field left with zod's
 // default would answer them with "Number must be less than or equal to 365".
 const globalPatch = z.object({
-  // The Cancellation Cap switch (#318). Off leaves the count and cycle stored,
+  // The Cancellation Cap switch. Off leaves the count and cycle stored,
   // unread, for when it is switched back on.
   cancel_cap_enabled: z
     .boolean({ message: 'The cancellation cap is either on or off.' })
     .optional(),
   // Each has a most, as every integer column does: past it the save overflowed
-  // as a 500 (#240). A cycle or window of a year, or 999 cancellations in one,
+  // as a 500. A cycle or window of a year, or 999 cancellations in one,
   // already means "no limit" to every member.
   cancel_cap_count: bounded('A cancellation cap must be between 0 and 999.', 0, 999),
   cancel_cap_cycle_days: bounded('A cancellation cycle must be between 1 and 365 days.', 1, 365),
@@ -47,12 +47,12 @@ const globalPatch = z.object({
     .min(0, 'The Add-On rate must be between $0 and $9999.')
     .max(9999, 'The Add-On rate must be between $0 and $9999.')
     .optional(),
-  // Part Payment (#93). Off unless the studio says otherwise; turning it off
+  // Part Payment. Off unless the studio says otherwise; turning it off
   // hides the checkbox and leaves every Purchase already open resumable.
   part_payment_enabled: z
     .boolean({ message: 'Part Payment is either on or off.' })
     .optional(),
-  // The Check-in Window (#192). A day is the ceiling: a member checked in the
+  // The Check-in Window. A day is the ceiling: a member checked in the
   // evening before a morning class has not arrived for anything.
   check_in_opens_minutes_before: bounded('Check-in can open between 0 and 1440 minutes early.', 0, 1440),
   // Every declared Leave Conflict, as one replacement set. Which pairs are

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { movementLine, type CreditMovement } from "./credit-history";
 
-// A package's Credit history on the profile (#353): each movement in words,
+// A package's Credit history on the profile: each movement in words,
 // never a raw code like `client_cancellation_refund`.
 
 const base: CreditMovement = {

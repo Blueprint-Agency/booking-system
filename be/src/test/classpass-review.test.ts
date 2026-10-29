@@ -21,7 +21,7 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * ClassPass review (#413): every ClassPass booking email the importer could not
+ * ClassPass review: every ClassPass booking email the importer could not
  * place is an open item on the ClassPass page, with its reason, what was read
  * from it and the email itself, until an Admin books it into a class, dismisses
  * it, or maps its location.

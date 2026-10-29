@@ -45,7 +45,7 @@ test("a known code is explained without a status", () => {
 });
 
 // An edit that would move a class into the past, or end it before it starts,
-// is refused in words the admin can act on, not a status (#246).
+// is refused in words the admin can act on, not a status.
 test("an edit into the past or with inverted times is explained without a status", () => {
   assert.strictEqual(
     scheduleErrorMessage(new ApiError(400, { error: "starts_at_in_past" })),

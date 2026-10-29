@@ -9,7 +9,7 @@ const run = Date.now().toString(36)
 const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0115_business_name.sql')
 
 /**
- * Migration 0115 (#398): a studio's Business name replaces the Receipt's Legal
+ * Migration 0115: a studio's Business name replaces the Receipt's Legal
  * name. A studio that set a Legal name trades under it; one that did not keeps
  * the name it already has; and a settings row written without a Business name
  * (a restore) takes the display name, else the Domain name.
@@ -63,7 +63,7 @@ describe('migration 0115: the Legal name becomes the Business name', { skip: int
     const [legal, none] = [studios[0]!, studios[1]!]
     assert.equal(await businessName(none.id), none.name, 'provisioned under its Domain name')
 
-    // The column as a studio migrated from before #398 carries it.
+    // The column as a studio migrated from before the Business name carries it.
     await harness.db.execute(sql`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS receipt_legal_name text`)
     await harness.db.execute(
       sql`UPDATE tenant_settings SET receipt_legal_name = ${`  Legal ${run} Pte. Ltd. `} WHERE tenant_id = ${legal.id}`,

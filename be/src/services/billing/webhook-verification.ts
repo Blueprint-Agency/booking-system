@@ -5,7 +5,7 @@ import { loadProviderCredentials } from './provider-credentials'
 /**
  * Is this delivery really from *this* studio's payment account?
  *
- * Every studio charges on its own account (#100, #293) and signs its deliveries
+ * Every studio charges on its own account and signs its deliveries
  * with its own signing secret, so the studio has to be settled *first*, because
  * it is what selects the secret — and the body is exactly what cannot be trusted
  * yet.
@@ -27,7 +27,7 @@ export type VerifiedDelivery = {
   event: Stripe.Event
   /**
    * The account that signed this delivery — which is the account the money in
-   * it is on (#97).
+   * it is on.
    *
    * It is returned from here rather than looked up again later because *here*
    * is where it was proved. The secret that verified the signature is this
@@ -43,7 +43,7 @@ export async function verifyTenantDelivery(
   body: string,
   signature: string,
 ): Promise<VerifiedDelivery | null> {
-  // No credentials means this studio takes no online payments (#293), so there
+  // No credentials means this studio takes no online payments, so there
   // is nothing to check a delivery against. There is no platform secret to fall
   // back to either — and a second secret tried against a delivery is the whole
   // thing this function exists to prevent.

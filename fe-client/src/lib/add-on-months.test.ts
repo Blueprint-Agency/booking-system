@@ -8,10 +8,9 @@ test("the part-months sentence only fires when a part month was rounded up", () 
 
   // A plan bought seconds ago: the server quotes its full Duration, so the
   // charged months land exactly on the plan's end and nothing is rounded up.
-  // The old millisecond-equality test failed here for every plan.
   assert.equal(roundsUpAPartMonth(addMonths(now, 6), 6, now), false);
-  // ...and still false when the two Dates disagree by less than a day, which
-  // is the only reason the equality test never held.
+  // ...and still false when the two Dates disagree by less than a day, so an
+  // exact-equality comparison would fail here.
   const fiveSecondsOff = new Date(addMonths(now, 6).getTime() - 5000);
   assert.equal(roundsUpAPartMonth(fiveSecondsOff, 6, now), false);
 

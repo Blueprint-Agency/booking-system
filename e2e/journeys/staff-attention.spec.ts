@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { signInStaff, studio } from '../src/studio'
 
 /**
- * Journey: the bell tells an admin what is waiting, and the click lands on it (#477).
+ * Journey: the bell tells an admin what is waiting, and the click lands on it.
  *
  * A member asks for a private session. The admin signs in and the bell already
  * counts it, the panel opens by itself with the request in a sentence, and

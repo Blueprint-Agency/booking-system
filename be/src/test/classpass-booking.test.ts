@@ -15,7 +15,7 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * A ClassPass booking (#408): a booking ClassPass paid for, made through the
+ * A ClassPass booking: a booking ClassPass paid for, made through the
  * booking service's ClassPass payer. It spends none of the member's credits,
  * takes seats in the staff order and never refuses, and shows on the roster
  * and the member's profile as ClassPass. Nothing imports one yet, so these

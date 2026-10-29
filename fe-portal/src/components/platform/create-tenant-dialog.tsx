@@ -66,7 +66,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
   const [adminName, setAdminName] = useState("");
   /** Months of the first Term, or "" for open-ended. */
   const [termMonths, setTermMonths] = useState<string>(DEFAULT_TERM);
-  /** The studio's Business details from its first Receipt (#391, #398); all optional. */
+  /** The studio's Business details from its first Receipt; all optional. */
   const [receipt, setReceipt] = useState<ReceiptDetailsDraft>(emptyReceiptDetailsDraft);
   const [verdict, setVerdict] = useState<SlugVerdict | null>(null);
   const [checking, setChecking] = useState(false);

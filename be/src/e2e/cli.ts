@@ -1,7 +1,7 @@
 import { assertMayRunE2eStudio } from './guard'
 
 /**
- * The browser journeys' studio, from a shell (#145). Run where the database is
+ * The browser journeys' studio, from a shell. Run where the database is
  * — on bpvps2, inside the staging stack:
  *
  *   docker compose run --rm -T booking-be npm run -s e2e:studio -- setup
@@ -17,7 +17,7 @@ import { assertMayRunE2eStudio } from './guard'
  * The studio sells on its own payment account when `E2E_STRIPE_SECRET_KEY` is
  * set — a test-mode key, set up exactly as the super portal would: its webhook
  * endpoint created on the account, both secrets sealed with this environment's
- * `PAYMENT_CREDENTIALS_KEY`. Unset, it takes no online payments (#293), and a
+ * `PAYMENT_CREDENTIALS_KEY`. Unset, it takes no online payments, and a
  * journey that pays is refused at checkout.
  */
 const STALE_AFTER_MS = 2 * 60 * 60 * 1000

@@ -11,8 +11,8 @@ import {
 } from './harness'
 
 /**
- * Members sign in through Better Auth (#117), over real HTTP, with the password
- * they chose at registration or through the set-password link (#173).
+ * Members sign in through Better Auth, over real HTTP, with the password
+ * they chose at registration or through the set-password link.
  *
  * A member's account at a studio is two rows written together: the `client`
  * pool's auth user and the studio's `clients` row. Self-registration writes both

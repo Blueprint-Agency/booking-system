@@ -1,6 +1,6 @@
 /**
- * A read that failed with nothing to show, as the page that asked may draw it
- * (#250). Never as a value: a failed `/me/packages` drawn as 0 credits, or a
+ * A read that failed with nothing to show, as the page that asked may draw it.
+ * Never as a value: a failed `/me/packages` drawn as 0 credits, or a
  * failed timetable drawn as "No classes", tells a member something false. A
  * failure no relay answers is thrown during render, to the route's error
  * boundary (`app/error.tsx`).

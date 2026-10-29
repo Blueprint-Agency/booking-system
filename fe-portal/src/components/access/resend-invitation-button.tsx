@@ -7,7 +7,7 @@ import { ApiError } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 
 /**
- * Re-mail a staff member the link that sets their password (#119): their
+ * Re-mail a staff member the link that sets their password: their
  * invitation while it is pending, a set-password link once there is none.
  */
 export function ResendInvitationButton({ staffId, email }: { staffId: string; email: string }) {

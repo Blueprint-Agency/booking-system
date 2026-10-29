@@ -1,5 +1,5 @@
 /**
- * May this package pay for one seat on a PT session? (#334)
+ * May this package pay for one seat on a PT session?
  *
  * A manual session — one staff put on the calendar with no member request
  * behind it — is paid seat by seat: each attendee pays ONE session from their
@@ -18,7 +18,7 @@
  *      `not_a_pt_package`, `package_expired`, `insufficient_pt_credit`,
  *      `package_not_consumable` (Voided with sessions left),
  *      `package_expires_before_session` (it ends before the session starts,
- *      or a Dormant one would by Activating now, #444), and for an
+ *      or a Dormant one would by Activating now), and for an
  *      Instructor `bound_to_other_instructor` — the same binding an Admin is
  *      only warned about (./binding.ts is its scheduling twin).
  *

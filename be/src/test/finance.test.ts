@@ -83,7 +83,7 @@ type Overview = {
 const sum = (values: (number | null)[]) => values.reduce<number>((s, v) => s + Math.round((v ?? 0) * 100), 0) / 100
 
 /**
- * The admin's Finance page over real HTTP (#266): the ledger, the overview and
+ * The admin's Finance page over real HTTP: the ledger, the overview and
  * the CSV export, the pay writes it offers, and the refusals around them —
  * with a second studio's Money Events in the same month throughout, so a read
  * that forgot its Tenant has something to be visibly wrong about.

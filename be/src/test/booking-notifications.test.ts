@@ -13,7 +13,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * The emails a booking and its cancellation send (#359: NTF-08, NTF-09,
+ * The emails a booking and its cancellation send (NTF-08, NTF-09,
  * NTF-10, NTF-11), each from the studio's own template row, read back from a
  * recording transport so every message the action sent is seen: one email per
  * recipient, the right template, the variables it was rendered with, and

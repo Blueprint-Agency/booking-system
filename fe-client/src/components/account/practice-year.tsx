@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * My activity's year (#342): a column per month filled with the sessions
+ * My activity's year: a column per month filled with the sessions
  * attended in it, the count on top, and a dashed cap for what is still booked
  * this month. Months not yet reached keep a faded track and initial, so the
  * rest of the year never reads as a drop to zero.

@@ -16,7 +16,7 @@ test('every staff and client login table is named as never exported', () => {
 })
 
 test('a login table is left out of a studio even when the catalogue says it carries tenant_id', () => {
-  // As the catalogue will answer once the pools are per studio: every table,
+  // As the catalogue answers with the pools per studio: every table,
   // login tables included, has the column.
   const kept = studioTables(schemaTableNames)
   for (const table of LOGIN_TABLES) assert.ok(!kept.includes(table), `${table} would be exported`)

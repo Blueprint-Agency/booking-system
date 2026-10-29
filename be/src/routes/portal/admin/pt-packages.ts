@@ -34,7 +34,7 @@ const createSchema = z.object({
   session_type: sessionTypeEnum,
   num_sessions: numSessionsField,
   validity_days: validityDaysField,
-  // Absent means off (#109) — a studio that has never heard of binding keeps
+  // Absent means off — a studio that has never heard of binding keeps
   // selling open packages without sending the field.
   instructor_bound: instructorBoundField.optional(),
   price_sgd: priceField,

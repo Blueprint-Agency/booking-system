@@ -13,7 +13,7 @@ const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
 
 /**
- * The member's practice summary (#317, "My practice" #340):
+ * The member's practice summary ("My practice"):
  * `GET /me/bookings/attendance`, over real HTTP against both fixture Tenants.
  *
  * Studio two keeps `Australia/Sydney`, which is UTC+10 in August and September,

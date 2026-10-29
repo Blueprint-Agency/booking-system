@@ -63,7 +63,7 @@ const of = (rows: ReturnType<typeof salesByCategory>, c: string) =>
 }
 
 // -- a Complimentary Package is in no category's sales, and the page still adds
-//    up (#176) --------------------------------------------------------------
+//    up --------------------------------------------------------------
 // The tile and the breakdown are the same rows grouped twice, so a comp the
 // headline Gross leaves out and a category Gross counts would be two answers to
 // one question on one screen.

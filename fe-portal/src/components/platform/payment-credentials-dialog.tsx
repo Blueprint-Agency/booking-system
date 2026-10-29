@@ -28,7 +28,7 @@ import {
  * belongs to. That is the check that matters: it catches the one mistake this
  * form can make and nothing else would — pasting the wrong studio's key.
  *
- * One field (#294). The webhook endpoint on the studio's account is created by
+ * One field. The webhook endpoint on the studio's account is created by
  * the platform when the key is saved, so there is no URL to register by hand
  * and no signing secret to copy back.
  */

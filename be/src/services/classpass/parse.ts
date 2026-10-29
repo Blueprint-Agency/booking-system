@@ -1,5 +1,5 @@
 /**
- * Reading a ClassPass booking email (#411): the fields the import needs, each
+ * Reading a ClassPass booking email: the fields the import needs, each
  * found by its label rather than its position, because ClassPass has moved its
  * labels about before (`docs/md/research-classpass-integration.md`).
  *

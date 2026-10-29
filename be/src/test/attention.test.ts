@@ -14,7 +14,7 @@ import {
 import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
- * Staff attention (#476, #477): the bell's numbers and the panel's list, read
+ * Staff attention: the bell's numbers and the panel's list, read
  * over HTTP as a signed-in admin or instructor. This file holds the spine and
  * its first kind, `pt_request_pending`; each later kind adds its own rows.
  *
@@ -268,7 +268,7 @@ describe('Staff attention', { skip: integrationTestsEnabled ? false : SKIP_REASO
     assert.equal((await summary(tara)).total, 1)
 
     await json(await setPermissions(admin, tara.id, ['schedule_classes', 'manage_rosters']), 200)
-    // The change is an Update to Tara now (#491); she reads it so the bubble counts requests only.
+    // The change is an Update to Tara; she reads it so the bubble counts requests only.
     await json(await send('/portal/attention/updates/read-all', tara.headers, 'POST'), 204)
     const after = await summary(tara)
     assert.equal(after.total, 0)
@@ -288,7 +288,7 @@ describe('Staff attention', { skip: integrationTestsEnabled ? false : SKIP_REASO
     const toSchedule = await ptRequest(studio, member)
     const toCancel = await ptRequest(studio, member)
     const toExpire = await ptRequest(studio, member)
-    // Tara joining is an Update to the admin now (#491); read it so the bubble counts requests only.
+    // Tara joining is an Update to the admin; read it so the bubble counts requests only.
     await json(await send('/portal/attention/updates/read-all', admin.headers, 'POST'), 204)
     assert.equal((await summary(admin)).total, 3)
 

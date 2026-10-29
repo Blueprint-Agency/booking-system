@@ -6,7 +6,7 @@ import { env } from '../env'
  * BE-signed grant JWT proving that a /api/v1/me/* call is being made by a
  * studio admin impersonating a specific client. Separate from the member's session
  * (which carries the *target client's* identity): the grant is the proof that an
- * admin is behind it, and names them for the audit log (#118).
+ * admin is behind it, and names them for the audit log.
  *
  *   sub — the impersonated client's `client` pool auth user id (the session's user)
  *   sas — the admin's staff_users.id (UUID) — the actor for audit. The claim's

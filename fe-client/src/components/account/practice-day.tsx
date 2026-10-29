@@ -47,7 +47,7 @@ export function PracticeDayDialog({
   const { refetch: refetchPackages } = useClientPackages();
   const [src, setSrc] = useState<BookingSources | null>(null);
   const [failed, setFailed] = useState(false);
-  // The kinds that could not be read (#500): named above the day, never drawn as none.
+  // The kinds that could not be read: named above the day, never drawn as none.
   const [missing, setMissing] = useState<BookingKind[]>([]);
   const [note, setNote] = useState<string | null>(null);
   const [opened, setOpened] = useState<{ booking: ApiBooking; ongoing: boolean } | null>(null);

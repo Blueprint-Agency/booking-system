@@ -18,7 +18,7 @@ import {
  * moving, so the question "which account is this charge on?" is answered in
  * exactly one place — `providerAccountForTenant` below.
  *
- * That answer is the studio's *own* account, and nothing else (#293). Not a
+ * That answer is the studio's *own* account, and nothing else. Not a
  * connected account: Stripe Connect is unavailable to this platform, so there
  * is no `Stripe-Account` header and no platform account in the middle. A
  * studio's credentials are a whole different API key, and the client is built
@@ -99,14 +99,13 @@ function clientFor(account: ProviderAccount): Stripe {
  * How a Tenant maps to a provider account — the single fact this module owns.
  *
  * A studio that has supplied its own credentials maps to them; one that has not
- * maps to `null`, which means it takes no online payments (#293). There is no
+ * maps to `null`, which means it takes no online payments. There is no
  * platform account behind it any more: `stripeForTenant` refuses rather than
  * build a client for nobody.
  *
  * It **throws** when a studio has credentials that cannot be opened. Treating
  * that as "no credentials" would quietly switch a selling studio's payments off
- * — and before #293 it would have meant taking its members' money onto the
- * platform's account, which is why this was never a fallback.
+ * — which is why this is never a fallback.
  */
 export async function providerAccountForTenant(tenantId: string): Promise<ProviderAccount | null> {
   return loadProviderCredentials(tenantId)
@@ -152,7 +151,7 @@ export function stripeForAccount(account: ProviderAccount): Stripe {
 }
 
 /**
- * The provider, bound to the account a *particular payment* was taken on (#97).
+ * The provider, bound to the account a *particular payment* was taken on.
  *
  * `stripeForTenant` answers "where does this studio sell today?", which is the
  * right question for a charge and the wrong one for a Refund. Money goes back
@@ -160,8 +159,8 @@ export function stripeForAccount(account: ProviderAccount): Stripe {
  * accounts — so the account comes off the payment row, not off the Tenant.
  *
  * `null` on the row is a payment taken on the platform's own account, before
- * studios sold on theirs. This platform holds no key for that account any more
- * (#293), so such a payment cannot be returned from here, and the refusal says
+ * studios sold on theirs. This platform holds no key for that account any more, so
+ * such a payment cannot be returned from here, and the refusal says
  * where it can: the Stripe dashboard. `409 payment_on_platform_account`, not a
  * provider error naming an intent that looks perfectly correct.
  *
@@ -228,7 +227,7 @@ export async function providerAccountForKey(secretKey: string): Promise<string> 
 /**
  * The provider, bound to a key that is not (or not yet, or no longer) the one
  * a studio's calls are made with: a key being onboarded, whose webhook endpoint
- * has to be created before anything is stored (#294), or a key being retired,
+ * has to be created before anything is stored, or a key being retired,
  * whose endpoint has to be deleted after.
  *
  * Built and thrown away rather than cached, for the reason the probe above is.

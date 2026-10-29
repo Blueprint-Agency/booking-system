@@ -31,7 +31,7 @@ import { cn, formatDate } from "@/lib/utils";
 
 /** Where the member stands in this class, in the words the schedule's overlay uses. */
 function standing(b: ApiBooking, ongoing: boolean): { text: string; tone: "ok" | "muted" } | null {
-  // A whole-class cancel, a staff cancel, a Void and a Package rule change are the studio's (#349).
+  // A whole-class cancel, a staff cancel, a Void and a Package rule change are the studio's.
   if (b.state === "cancelled") return { text: cancelledStanding(b.cancelled_by ?? "studio"), tone: "muted" };
   if (b.check_in_state === "attended") return { text: "You checked in to this class", tone: "ok" };
   if (b.check_in_state === "no_show") return { text: "Marked as a no-show", tone: "muted" };

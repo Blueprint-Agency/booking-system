@@ -11,7 +11,7 @@ import {
 } from './harness'
 
 /**
- * Members sign in with email and password (#173), through the routes a browser
+ * Members sign in with email and password, through the routes a browser
  * calls. The form asks for the email first: an address with a password is asked
  * for it; any other member here is mailed a set-password link, and an address
  * that is no member here is told so.
@@ -201,7 +201,7 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     const headers = bearerAt(one, body.token as string)
     const profile = await expectStatus(await me(headers), 200)
     assert.equal(profile.email, email)
-    // The session is this studio's, so another studio cannot even see it (#231).
+    // The session is this studio's, so another studio cannot even see it.
     await expectStatus(await me({ ...headers, ...memberHeaders(two) }), 401, 'invalid_token')
   })
 

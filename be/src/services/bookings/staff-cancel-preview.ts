@@ -1,6 +1,6 @@
 /**
  * What the portal's cancel-booking dialog needs to ask a staff member "Return
- * the credit or keep it?" (#320), carried on the roster rows and the admin
+ * the credit or keep it?", carried on the roster rows and the admin
  * member-booking view so the dialog needs no request of its own.
  *
  * Only facts, no decision: a staff cancel returns or keeps what the booking

@@ -11,7 +11,7 @@ import {
 import { addDays, isoWeekday } from '../services/schedule/series-dates'
 
 /**
- * Class Series (#175), over real HTTP as a studio admin: preview, create,
+ * Class Series, over real HTTP as a studio admin: preview, create,
  * extend, end — and the classes it makes behaving like any class.
  *
  * Every row hangs off a room, a class type and an instructor made here, so no

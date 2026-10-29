@@ -9,7 +9,7 @@ import { clearTelemetryUser, setTelemetryUser } from "@/lib/telemetry";
  * cleared once signed out. Ids only (`lib/telemetry.ts`). Renders nothing.
  *
  * It sits in the root layout, outside the route's error boundary, so it reads
- * the session without throwing: a session the app could not read (#500) is the
+ * the session without throwing: a session the app could not read is the
  * pages' to show as an error, not the whole app's. It identifies nobody then.
  */
 export function TelemetryUser() {

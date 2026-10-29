@@ -82,7 +82,7 @@ export function purchaseLines(args: {
 }
 
 /**
- * The same sale as the Purchase records it (#382): the plan at its List Price
+ * The same sale as the Purchase records it: the plan at its List Price
  * with what came off it, and the Add-On as its months at the studio's rate. A
  * plan line a discount took to zero stays here, unlike the provider's lines:
  * the Receipt says what was bought, and the plan was.
@@ -116,7 +116,7 @@ interface PackageCheckoutInput {
   /** Home Location — required for an Unlimited Plan, refused for anything else (§1). */
   locationId?: string
   /**
-   * The instructor picked for an Instructor-Bound PT package (#109) — required
+   * The instructor picked for an Instructor-Bound PT package — required
    * for one, refused for anything else. It rides provider session metadata to
    * the grant, exactly as `locationId` does.
    */
@@ -124,7 +124,7 @@ interface PackageCheckoutInput {
   /** Buy the Cross-Location Add-On with the plan — one session, two line items (§5). */
   crossLocationAddOn?: boolean
   /**
-   * The member's chosen Billing details, resolved as theirs (#402). A sale
+   * The member's chosen Billing details, resolved as theirs. A sale
    * granted on the spot is billed to them here; a paid one carries them to the
    * Purchase its checkout session opens.
    */
@@ -140,7 +140,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   let appliedPromotionId: string | null = null
   let effectivePriceSgd: string
   let productType: 'class_package' | 'pt_package'
-  /** The Promotion that lowered the price, for the Purchase's line (#382). */
+  /** The Promotion that lowered the price, for the Purchase's line. */
   let promotion: LineReduction | null = null
   /** The Add-On bought alongside the plan — its own line item and its own money. */
   let crossLocation: { months: number; rateSgd: string; priceSgd: string } | null = null
@@ -312,7 +312,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
       locationId: locationId ?? null,
       // The free path carries the pick directly — there is no provider session
       // for it to ride on, and a package bound only when a card was charged is
-      // the drift #109 exists to prevent.
+      // the drift this pick exists to prevent.
       instructorId: instructorId ?? null,
       crossLocationPaidSgd: crossLocationSgd,
     })

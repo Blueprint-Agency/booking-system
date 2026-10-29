@@ -5,7 +5,7 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
- * Staff attention, email (#476, #488): `members_without_email` and
+ * Staff attention, email: `members_without_email` and
  * `email_bouncing`, read over HTTP. Outcomes reach the log the way they do in
  * production, through Resend's webhook handler. Every test makes a studio of
  * its own, so a count says only what it filed.

@@ -1,13 +1,13 @@
 /**
  * A person's access to this studio, as an admin manages it from their detail
- * view (#119): the sessions they hold here, signing them out everywhere, and
+ * view: the sessions they hold here, signing them out everywhere, and
  * resending a staff member's or a member's set-password mail. Blocking and unblocking are the
  * existing acts — `softDeleteClient` / `restoreClient` for a member,
  * `archiveStaff` / `unarchiveStaff` for staff. Every one of them is logged in
  * `auth_events` as the acting staff member's (`recordStaffAct`).
  *
  * **"Everywhere" means every device, at this studio.** A login is one studio's
- * own (#231), so its sessions are this studio's; the same person at another
+ * own, so its sessions are this studio's; the same person at another
  * studio has another login, which studio A cannot sign out or block.
  *
  * **Every lookup starts from this studio's row.** The target is found by its
@@ -66,7 +66,7 @@ export async function signMemberOutEverywhere(input: {
 }
 
 /**
- * Mail a member the link that sets their password (#173) — for a member who
+ * Mail a member the link that sets their password — for a member who
  * never received theirs, or lost it. The same link their own email step or
  * "forgot password" sends, landing on this studio's member app. A blocked
  * member is refused: the link would lead to a sign-in their block refuses.

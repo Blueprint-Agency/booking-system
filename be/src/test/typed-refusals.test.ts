@@ -5,10 +5,10 @@ import { eq } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 
 /**
- * A caller's mistake is a named refusal, never `internal_error` (#165).
+ * A caller's mistake is a named refusal, never `internal_error`.
  *
- * Each of these used to be a bare `throw new Error` a request could reach, so
- * the member or staff member saw a 500 for something that was theirs to fix.
+ * Each of these is reachable by a request, and a bare `throw new Error` there
+ * would show the member or staff member a 500 for something theirs to fix.
  */
 describe('typed refusals', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp

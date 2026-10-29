@@ -1,16 +1,16 @@
 /**
  * A member as a Customer at the payment provider, and the cards kept against
- * them (#185).
+ * them.
  *
- * Every checkout before this carried an email address and nothing else, so no
- * card was ever kept and there was nothing for a member to pick from. Part
- * Payment (#93) is the flow that makes that hurt: it is *designed* to be paid
- * twice, and the second time asked for the same sixteen digits again.
+ * A checkout that carries an email address and nothing else keeps no card, so
+ * there is nothing for a member to pick from. Part Payment is the flow that
+ * makes that hurt: it is *designed* to be paid twice, and the second time
+ * would ask for the same sixteen digits again.
  *
  * ## The one rule
  *
  * **A Customer belongs to an account, not to a member.** A `cus_…` made on the
- * platform's account means nothing on a studio's own one (#100), so every
+ * platform's account means nothing on a studio's own one, so every
  * function here reads the studio's account first and keys everything on
  * `(tenant, member, account)`. That is also, exactly, why a card saved at one
  * studio can never appear at another: the Tenant is in the key, Row-Level
@@ -153,7 +153,7 @@ export async function providerCustomerFor(input: {
 }): Promise<string | null> {
   const { tenantId, clientId } = input
   try {
-    // No account of its own, no online payments (#293) — and so nothing to
+    // No account of its own, no online payments — and so nothing to
     // make the member a Customer on.
     const account = await providerAccountForTenant(tenantId)
     if (!account) return null
@@ -204,7 +204,7 @@ export async function providerCustomerFor(input: {
  * because every attempt sends the same dead id.
  *
  * So the dead pointer is dropped and the session is built **once** more without
- * a Customer. That second attempt is the pre-#185 shape: it takes the money and
+ * a Customer. That second attempt is the card-less shape: it takes the money and
  * keeps no card, which is the right trade at the moment somebody is trying to
  * pay. Their next checkout makes them a Customer again.
  *
@@ -246,7 +246,7 @@ export async function createSessionSurvivingStaleCustomer<T>(
  * the box.
  */
 export async function listSavedCards(tenantId: string, clientId: string): Promise<SavedCard[]> {
-  // A studio taking no online payments (#293) has no cards to offer: any kept
+  // A studio taking no online payments has no cards to offer: any kept
   // on the platform's former account are out of this app's reach.
   const account = await providerAccountForTenant(tenantId)
   if (!account) return []
@@ -323,7 +323,7 @@ export async function removeSavedCard(input: {
   paymentMethodId: string
 }): Promise<void> {
   const { tenantId, clientId, paymentMethodId } = input
-  // A studio taking no online payments (#293) refuses this as it refuses a
+  // A studio taking no online payments refuses this as it refuses a
   // checkout, a resumed payment and a Refund — `409 payments_not_configured` —
   // because the cause is the same: no account of its own to ask. No id is
   // looked at first, so the answer says nothing about any card.
@@ -356,7 +356,7 @@ export async function removeSavedCard(input: {
 }
 
 /**
- * Move the member's address on their Customer, wherever they are one (#185).
+ * Move the member's address on their Customer, wherever they are one.
  *
  * Called when a studio corrects a member's email. A session carrying a Customer
  * does not carry `customer_email`, so the provider reads the address off the
@@ -411,7 +411,7 @@ export async function syncProviderCustomerEmail(
 }
 
 /**
- * Remove the member from the payment provider entirely (#144, #185).
+ * Remove the member from the payment provider entirely.
  *
  * Deleting a Customer takes its saved cards with it, which is the point: a
  * member who asked to be deleted did not ask to stay on file at a third party.

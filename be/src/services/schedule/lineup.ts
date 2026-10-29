@@ -2,10 +2,10 @@
  * The combined instructor list — `[main, ...supporting]` — in one place.
  *
  * Every screen that names who is on an event returns this alongside the two
- * halves, and a dozen call sites used to spell the ternary out inline (each with
- * its own opinion about what an event with no main instructor should produce).
- * Who is actually on the event comes from `./roster.ts`; this is only the shape
- * the API has always returned.
+ * halves, and it is built here so no call site spells the ternary out inline
+ * (each with its own opinion about what an event with no main instructor should
+ * produce). Who is actually on the event comes from `./roster.ts`; this is only
+ * the shape the API returns.
  *
  * Free of runtime imports — the `RosterEntry` import is types-only — so it stays
  * checkable without a DB or a loaded env, same as `./roster-merge.ts`.

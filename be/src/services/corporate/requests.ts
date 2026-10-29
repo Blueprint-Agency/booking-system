@@ -3,7 +3,7 @@
  *
  * A member pays for a corporate package in fe-client → createCorporateRequest() is
  * called from the Stripe webhook to auto-create ONE pending corporate_requests
- * row (#374). Admin negotiates the details over WhatsApp, then scheduleCorporateRequest()
+ * row. Admin negotiates the details over WhatsApp, then scheduleCorporateRequest()
  * mints a corporate_session (reusing the existing services/corporate/sessions.ts)
  * and flips the request to 'scheduled' — the implicit approval. markAttended /
  * cancel close it out. There is no slot/class-type/partner concept (unlike PT).
@@ -45,7 +45,7 @@ export interface HydratedCorporateRequest {
   resolvedAt: Date | null
   /**
    * When it was cancelled; null unless it was. Only the studio cancels one,
-   * and resolving it to `cancelled` is when (#351).
+   * and resolving it to `cancelled` is when.
    */
   cancelledAt: Date | null
   /** A cancelled request's lines, as the member reads them; null unless cancelled. */
@@ -69,7 +69,7 @@ export interface CreateCorporateRequestInput {
 
 /**
  * Create the one pending corporate request a paid corporate package entitles
- * the member to (#374; be-client § Corporate branch). Called from the Stripe
+ * the member to (be-client § Corporate branch). Called from the Stripe
  * webhook once the payment is confirmed — or from checkout for a package with
  * nothing to pay. There is no client form, so no venue and no note: everything
  * is settled over WhatsApp and recorded when the studio schedules it.

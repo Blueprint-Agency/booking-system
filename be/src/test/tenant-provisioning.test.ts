@@ -182,10 +182,10 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
   })
 
   test('a new studio can send email at all: it is created with its own copy', async () => {
-    // The bug this covers: nothing seeded a provisioned studio's templates, and
-    // `sendTemplatedEmail` throws on a missing (tenant, slug) row rather than
-    // reach for another studio's wording — so every staff invitation, booking
-    // confirmation and refund notice the studio ever sent failed.
+    // A provisioned studio is seeded its own templates: `sendTemplatedEmail` throws
+    // on a missing (tenant, slug) row rather than reach for another studio's
+    // wording, so without them every staff invitation, booking confirmation and
+    // refund notice the studio sent would fail.
     const slug = `prov-copy-${Date.now()}`
 
     const created = await provision.provisionTenant({
@@ -211,10 +211,10 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
   }
 
   test('a new studio’s emails link to its own hostnames, never the platform’s', async () => {
-    // The coupled defect: the copy used to bake in `CLIENT_URL` and
-    // `PORTAL_ORIGIN`, two single global values naming one studio's apps. The
-    // second studio's instructor got an "Open the schedule" button pointing at
-    // the first studio's portal.
+    // The copy must not bake in `CLIENT_URL` or `PORTAL_ORIGIN`, two single
+    // global values naming one studio's apps: the second studio's instructor
+    // would get an "Open the schedule" button pointing at the first studio's
+    // portal.
     const slug = `prov-links-${Date.now()}`
 
     const created = await provision.provisionTenant({

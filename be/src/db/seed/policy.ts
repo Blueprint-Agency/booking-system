@@ -11,7 +11,7 @@ const POLICY_SINGLETON_ID = '00000000-0000-0000-0000-000000000001'
 const PT_CONFIG_SINGLETON_ID = '00000000-0000-0000-0000-000000000002'
 
 /**
- * The cancellation policy every studio starts with (#318): the Cancellation Cap
+ * The cancellation policy every studio starts with: the Cancellation Cap
  * on at 10 cancellations per 30 days, 24-hour class and PT windows. Every column
  * not named here takes its schema default. The seeds, the e2e studio and a studio
  * provisioned from the super portal all start here, so what the tests run against

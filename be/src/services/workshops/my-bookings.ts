@@ -124,7 +124,7 @@ export async function listMyWorkshopBookings(
 
   return rows.map(r => {
     const range = r.tierId ? dayRangeByTier.get(r.tierId) ?? null : null
-    // Only the studio cancels a place: with its Workshop, or by refunding it (#351).
+    // Only the studio cancels a place: with its Workshop, or by refunding it.
     const cancellation =
       r.state === 'cancelled'
         ? summarizeCancellation({

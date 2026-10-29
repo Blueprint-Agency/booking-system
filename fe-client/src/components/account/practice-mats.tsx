@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The marks My activity (#340) draws its week and year with, and the legend
+ * The marks My activity draws its week and year with, and the legend
  * under every chart. A column is a faint rounded track with the period's
  * sessions filled up from its foot in the studio's accent — solid for
  * attended, a dashed cap for what is still booked — so every studio's page

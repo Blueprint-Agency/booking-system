@@ -4,20 +4,18 @@ import { tenantIdColumn } from './tenancy'
 import { staffUsers } from './identity'
 
 /**
- * Both tables here used to be *platform* singletons: a `CHECK (id = '<fixed
- * uuid>')` meant exactly one row could ever exist. That is the right constraint
- * for one studio and a data leak for two — a second tenant could not own a
- * policy row, so it would have been served tenant #1's caps and windows.
- *
- * They are now singletons **per tenant**: the check is gone, the id is
- * generated, and a unique index on `tenant_id` is what keeps it to one row each.
+ * Both tables here are singletons **per tenant**: the id is generated, and a
+ * unique index on `tenant_id` is what keeps it to one row each. A *platform*
+ * singleton (a `CHECK (id = '<fixed uuid>')`) is the right constraint for one
+ * studio and a data leak for two — a second tenant could not own a policy row,
+ * so it would be served tenant #1's caps and windows.
  */
 export const globalPolicy = pgTable(
   'global_policy',
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // The **Cancellation Cap** switch (#318). Off, every member cancel made in
+    // The **Cancellation Cap** switch. Off, every member cancel made in
     // time returns the credit however many there are; the count and cycle stay
     // stored but unread. Cancellations are recorded either way, so switching it
     // back on counts the ones already inside the cycle.
@@ -45,12 +43,12 @@ export const globalPolicy = pgTable(
     crossLocationRateSgd: numeric('cross_location_rate_sgd', { precision: 10, scale: 2 })
       .notNull()
       .default('30.00'),
-    // **Part Payment** (#93): may a member split one Purchase across two cards?
+    // **Part Payment**: may a member split one Purchase across two cards?
     // On unless the studio turns it off (migration 0083), and turning it off only
     // hides the choice at checkout — a Purchase already open can still be resumed and finished, since
     // the alternative is money held against a Balance nobody can clear.
     partPaymentEnabled: boolean('part_payment_enabled').notNull().default(true),
-    // The **Check-in Window** (#192): how many minutes before a class or PT
+    // The **Check-in Window**: how many minutes before a class or PT
     // session starts its members may be checked in, by scan or by tick. A
     // no-show is not moved by it — nobody is a no-show before the session begins.
     checkInOpensMinutesBefore: integer('check_in_opens_minutes_before').notNull().default(30),

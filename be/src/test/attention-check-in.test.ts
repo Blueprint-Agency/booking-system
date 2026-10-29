@@ -14,7 +14,7 @@ import {
 import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
- * Staff attention (#476, #481): the `check_in_unfinished` kind. A session that
+ * Staff attention: the `check_in_unfinished` kind. A session that
  * still has people not marked shows in the bell of every Admin and of the
  * session's own Instructor, from an hour after it ends until thirty days after.
  *
@@ -142,7 +142,7 @@ describe('Staff attention: unfinished check-ins', { skip: integrationTestsEnable
         capacityOnline: 10,
         creditCost: 1,
         createdByStaffId: admin.id,
-        // Priced, so the instructor-pay line (#486) stays out of these counts.
+        // Priced, so the instructor-pay line stays out of these counts.
         instructorPaySgd: '30.00',
       })
       .returning({ id: schema.classes.id })
@@ -262,7 +262,7 @@ describe('Staff attention: unfinished check-ins', { skip: integrationTestsEnable
     const [item] = group.items
     assert.equal(item.id, `check_in_unfinished:class:${cls.id}`)
     assert.equal(item.kind, 'check_in_unfinished')
-    // Copy as spec #476 words it: "Finish check-in for {class} on {date}" / "{n} of {m} people not marked · {time} · {location}".
+    // Copy as the spec words it: "Finish check-in for {class} on {date}" / "{n} of {m} people not marked · {time} · {location}".
     assert.match(item.title, /^Finish check-in for Hatha on \w{3} \d{1,2} \w{3}$/)
     assert.match(item.detail, new RegExp(`^2 of 4 people not marked · \\d{1,2}:\\d{2} [ap]m · ${studio.slug} Studio$`))
     assert.equal(item.href, `/admin/check-in?date=2031-06-10&session=class:${cls.id}&location=${studio.locationId}`)

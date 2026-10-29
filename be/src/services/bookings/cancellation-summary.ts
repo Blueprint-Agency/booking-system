@@ -1,6 +1,6 @@
 /**
  * What a cancelled booking says of its cancellation, read the same way
- * wherever it is shown (#349, #351, #352): **when** it was cancelled, **who**
+ * wherever it is shown: **when** it was cancelled, **who**
  * cancelled, **where the credit went** — and the two lines that say so, worded
  * here once for the member and for staff, so neither app words a cancel its own
  * way. Built only from what the cancel recorded: the booking's `refund_outcome`
@@ -9,7 +9,7 @@
  *   - Who: a `cancellations` row with `source='client'` is the member's own;
  *     `system` is the studio's machinery (a Void, a Remove, a Package rule
  *     change) — **automatic**; admin or instructor is the named staff member,
- *     or the studio unnamed for a row written before #350, or no row at all.
+ *     or the studio unnamed for a row written before a cancel recorded who, or no row at all.
  *     Where no row is written to say — a workshop place, a corporate request, a
  *     private-session request ended while pending, a 2on1 partner reading the
  *     host's cancel — the caller says who (`by`).
@@ -106,7 +106,7 @@ function actorOf(f: CancellationFacts): { actor: CancelActor; staffName: string 
   const staffName = f.record?.staffName ?? null
   switch (f.record?.source) {
     case 'client':
-    // Cancelled by the member on ClassPass (#412): theirs, not the studio's.
+    // Cancelled by the member on ClassPass: theirs, not the studio's.
     case 'classpass':
       return { actor: 'member', staffName: null }
     case 'system':
@@ -216,7 +216,7 @@ function outcomeLine(s: Said, whose: 'your' | 'their'): string {
  * member, the named staff member, or the studio's machinery. A system cancel
  * at or past `expires_at` is its expiry; one before it a Complimentary
  * Package's Remove, which names its admin in `resolved_by_staff_id` yet is no
- * staff cancel (#352). A request cancelled before the source was recorded
+ * staff cancel. A request cancelled before the source was recorded
  * falls back to its resolver: a staff member, else expiry once past
  * `expires_at`, else the member.
  */

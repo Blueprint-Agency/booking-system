@@ -6,7 +6,7 @@ import { signOutMember } from "@/lib/member-auth";
 /**
  * The banner's Stop button. Signs the impersonation session out against the
  * backend first — that revokes it, so a sibling tab still showing the member is
- * refused on its next request, and the backend logs the end (#118) — then posts
+ * refused on its next request, and the backend logs the end — then posts
  * to `/stop-impersonating`, which clears the grant cookie and closes the tab.
  *
  * The form still posts if the sign-out fails: `signOutMember` forgets the token

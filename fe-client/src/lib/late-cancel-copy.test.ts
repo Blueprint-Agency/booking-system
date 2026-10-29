@@ -15,7 +15,7 @@ import {
 } from "./cancellation-copy.ts";
 
 /**
- * Late cancellation and the Cancellation Cap switch (#318): a member can
+ * Late cancellation and the Cancellation Cap switch: a member can
  * cancel a class until it starts; inside its window the cancel is late and the
  * credit stays spent; with the cap off every cancel in time returns, and
  * nothing mentions a cap.

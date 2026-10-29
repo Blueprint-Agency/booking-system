@@ -81,7 +81,7 @@ export async function ensureAppRole(sql: Sql, password: string): Promise<void> {
   // answers only for the tenant whose context is open, so the one read the app
   // genuinely needs cannot become a read of every studio's identity.
   //
-  // The Business details (#391, #398) are published too: the Business name,
+  // The Business details are published too: the Business name,
   // prefix, registration number, address and footer are printed on every
   // Receipt the studio hands a member, so the app reads them directly to copy
   // them onto one. They are not served to visitors, so they are not in

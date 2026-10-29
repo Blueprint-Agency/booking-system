@@ -224,8 +224,8 @@ type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
  * whichever handle sent it, but postgres.js records a failed statement on the
  * scope of the handle that sent it and rethrows it when that scope ends. A
  * helper deep inside a retried body that sent its statement on the request's
- * handle would therefore fail the whole request after the retry succeeded
- * (#466). Pointing `db` at the savepoint keeps a failure with the savepoint
+ * handle would therefore fail the whole request after the retry succeeded.
+ * Pointing `db` at the savepoint keeps a failure with the savepoint
  * that rolls it back. The after-commit list stays the request's one list.
  */
 function savepoint(store: TenantScope): Db['transaction'] {

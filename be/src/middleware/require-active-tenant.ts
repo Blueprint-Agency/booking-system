@@ -61,6 +61,6 @@ const OPEN_WHILE_SUSPENDED = [
   `${AUTH_BASE_PATH.client}/reset-password/`,
 ]
 
-/** So nobody signs up, is mailed a code or reads a timetable they cannot book (#250). */
+/** So nobody signs up, is mailed a code or reads a timetable they cannot book. */
 export const requireActiveTenantForMembers: MiddlewareHandler = (c, next) =>
   OPEN_WHILE_SUSPENDED.some(prefix => c.req.path.startsWith(prefix)) ? next() : requireActiveTenant(c, next)

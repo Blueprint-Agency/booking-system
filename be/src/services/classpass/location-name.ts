@@ -1,5 +1,5 @@
 /**
- * A ClassPass location name as it is stored and matched (#410, #411).
+ * A ClassPass location name as it is stored and matched.
  *
  * ClassPass writes a studio's location name in its emails, but not always the
  * same way: `<Studio>-<Location>` in one email, `<Studio> - <Location>` or

@@ -62,7 +62,7 @@ const nextConfig: NextConfig = {
       { source: "/pricing", destination: "/packages", permanent: true },
     ];
   },
-  // Hardening headers and the Content-Security-Policy on every response (#142).
+  // Hardening headers and the Content-Security-Policy on every response.
   async headers() {
     return [
       {

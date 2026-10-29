@@ -1,5 +1,5 @@
 /**
- * What was in a Purchase, line by line, frozen the moment it opens (#382).
+ * What was in a Purchase, line by line, frozen the moment it opens.
  *
  * `item_name` names a sale in one phrase; these say what made up its total — a
  * plan and the Cross-Location Add-On beside it, the List Price of each, and the

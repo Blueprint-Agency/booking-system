@@ -1,5 +1,5 @@
 /**
- * A member's Billing details (#399): the name-and-address sets a Purchase is
+ * A member's Billing details: the name-and-address sets a Purchase is
  * billed to — their own name, or a company's — kept at one studio, as their
  * login is (`docs/adr/0006-per-studio-logins.md`).
  *
@@ -143,9 +143,9 @@ const billingAddressOf = (row: BillingDetails): BillingAddress => ({
 })
 
 /**
- * What a checkout bills (#401): the address of the member's chosen set, ready
+ * What a checkout bills: the address of the member's chosen set, ready
  * to copy onto the Purchase. Every member purchase names one, free ones
- * included (#402), so a checkout that names none is
+ * included, so a checkout that names none is
  * `400 billing_details_required`, and a set that is not the member's own is
  * `404 billing_details_not_found`: both before anything is opened or claimed.
  */

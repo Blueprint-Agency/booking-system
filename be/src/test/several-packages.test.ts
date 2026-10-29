@@ -465,7 +465,7 @@ describe('several packages per Family, the member picks the payer', { skip: inte
     assert.ok((await pkg(bundle)).expiresAt, 'and starts')
   })
 
-  /* ── staff pick the member's package (#333) ─────────────────────────── */
+  /* ── staff pick the member's package ─────────────────────────── */
 
   const staffBook = (as: Staff, role: 'admin' | 'instructor', classId: string, body: Record<string, unknown>) =>
     send('POST', as.headers, `/api/v1/portal/${role}/schedule/classes/${classId}/bookings`, body)

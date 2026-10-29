@@ -6,7 +6,7 @@ import { startTestApp, integrationTestsEnabled, SKIP_REASON, type TestApp } from
 import { withEnv } from './with-env'
 
 /**
- * A Tenant's own payment-provider credentials, against a real Postgres (#100).
+ * A Tenant's own payment-provider credentials, against a real Postgres.
  *
  * The unit tests next to `secret-box.ts` prove the sealing and the ones next to
  * `webhook-verification.ts` prove that one studio's secret cannot verify

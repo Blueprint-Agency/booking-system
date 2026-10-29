@@ -14,7 +14,7 @@ import { normaliseClassPassLocation } from './location-name'
 import { isComplete, type ClassPassBookingFields } from './parse'
 
 /**
- * Placing a ClassPass booking email (#411): what the email says, which class
+ * Placing a ClassPass booking email: what the email says, which class
  * and member it means, and the ClassPass booking it makes.
  *
  * - The location goes through the studio's ClassPass location mapping.
@@ -57,7 +57,7 @@ async function matchClass(tenantId: string, locationId: string, startsAt: Date, 
 /**
  * Which of the classes at one Location and start ClassPass's `className`
  * means: the one active class, or of several the one whose Class Type has that
- * name, ignoring case. The roster check (#415) chooses with it too.
+ * name, ignoring case. The roster check chooses with it too.
  */
 export function pickClass(found: ClassAtTime[], className: string): ClassMatch {
   const active = found.filter(c => c.lifecycle === 'active')
@@ -115,7 +115,7 @@ async function classFor(tenantId: string, fields: { locationName: string; classN
 /**
  * `fields` is what `parseClassPassBooking` read from the email.
  *
- * `classId` is a class an Admin picked in ClassPass review (#413), booked in
+ * `classId` is a class an Admin picked in ClassPass review, booked in
  * place of the one the email's Location and time would match. Then a
  * reservation already booked here is refused `classpass_reservation_taken`
  * rather than taken as the same email again, and a class that is not this

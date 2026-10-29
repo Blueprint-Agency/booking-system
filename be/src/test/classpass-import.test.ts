@@ -24,7 +24,7 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * Importing a ClassPass booking email (#411): a forwarded `ClassPass user
+ * Importing a ClassPass booking email: a forwarded `ClassPass user
  * reservation` email puts the member on the class at the mapped Location and
  * time, as a ClassPass booking; one the importer cannot place is kept with its
  * reason and books nothing.
@@ -813,7 +813,7 @@ describe('importing a ClassPass booking email', { skip: integrationTestsEnabled 
     assert.deepEqual(await roster(one, ours), [])
   })
 
-  /* ── the 2025 plain-text layout (#414) ──────────────────────────────── */
+  /* ── the 2025 plain-text layout ──────────────────────────────── */
 
   test('CPS-70 a 2025-layout booking email books the member as the 2026 layout does: the same class, member, source and reservation ID', async () => {
     const startsAt = nextStart()

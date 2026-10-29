@@ -11,7 +11,7 @@ import type { AttendanceRow, PayrollRow, SaleRow, ScheduledClassRow } from './re
 import { readReports, verifyImport } from './transform'
 
 /**
- * Past workshops and retreats (#225), and the future places dated on their
+ * Past workshops and retreats, and the future places dated on their
  * sale: fixture reports, with a past run of the fixture's Handstand Workshop
  * added in memory, through the transform to archive rows and preflight lines.
  * The studio and its people are invented (`fixtures/`).

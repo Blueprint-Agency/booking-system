@@ -20,7 +20,7 @@ import {
 } from "@/lib/pt-manual";
 
 /**
- * A private session the instructor runs (#338): who is on it and the package
+ * A private session the instructor runs: who is on it and the package
  * paying each seat, with the Admin's page's member actions on a manual one —
  * remove a member, fill a free seat — and cancelling it. No pay, no editing
  * and no type change: those are the admin's page.

@@ -1,4 +1,4 @@
-// A class's **Package rule** (#323): which catalogue class packages may pay for
+// A class's **Package rule**: which catalogue class packages may pay for
 // it — every one (`all`, the default), only those named (`only`), or all but
 // those named (`except`). Exact catalogue packages — Unlimited Plans, Credit
 // Bundles and Trials, archived ones included, since members may still hold one.

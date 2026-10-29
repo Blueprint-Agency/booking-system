@@ -87,7 +87,7 @@ export interface StaffBookClassInput {
   allowClash?: boolean
   /**
    * The package staff picked for the member, as the member would on the Book
-   * sheet (#333): refused with its own reason unless it is Eligible. Absent,
+   * sheet: refused with its own reason unless it is Eligible. Absent,
    * the Default payer pays.
    */
   clientPackageId?: string | null
@@ -194,7 +194,7 @@ export interface ClassPassBookClassInput {
 }
 
 /**
- * A ClassPass booking (#408): a seat ClassPass already sold the member, so it
+ * A ClassPass booking: a seat ClassPass already sold the member, so it
  * is recorded rather than asked for. The same booking as any other — the class
  * lock, the seat count, the roster — with the ClassPass payer in `payAndBook`:
  *
@@ -413,7 +413,7 @@ export async function payAndBook(
     /** The member's or staff's pick; null where nobody picked, and the Default payer pays. */
     clientPackageId: string | null
     /**
-     * The ClassPass payer (#408): ClassPass paid for this seat. No package is
+     * The ClassPass payer: ClassPass paid for this seat. No package is
      * chosen, nothing is debited, and the booking records its source and
      * ClassPass's reservation ID. `clientPackageId` is ignored.
      */
@@ -582,7 +582,7 @@ export async function memberPackagesForClass(
 }
 
 /**
- * The same read for staff about to book a member (#333) — what the roster's
+ * The same read for staff about to book a member — what the roster's
  * package select lists. A member of another studio is `client_not_found`, and
  * an instructor reads only a class they teach, as they book only onto one.
  */

@@ -30,7 +30,7 @@ export type TenantManifest = {
    *
    * Never set by an export, whose rows each name a login; one that names none is
    * still refused. Either way the importer gives every person a login made from
-   * their email, never the one the row names (#229). Optional, so the archive
+   * their email, never the one the row names. Optional, so the archive
    * version is unchanged.
    */
   ensureAccounts?: boolean
@@ -61,7 +61,7 @@ export type TenantArchive = {
 }
 
 /**
- * One member's rows at one studio (#143): the same zip, for reading rather than
+ * One member's rows at one studio: the same zip, for reading rather than
  * restoring — so no write order and nothing deferred, and it names the member.
  */
 export type MemberManifest = {

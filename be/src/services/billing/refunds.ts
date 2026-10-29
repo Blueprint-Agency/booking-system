@@ -5,12 +5,11 @@
  * and hands the Promo Code back.** There is no partial refund and no separate
  * admin revoke.
  *
- * Since #92 a Refund is something done to a **Purchase** rather than to a
- * payment intent. The Purchase owns the money and a payment is evidence of part
- * of it, so issuing a Refund walks the Purchase's payments and returns every
- * one: a purchase settled by two cards is unwound by one admin action rather
- * than two. Today every Purchase holds exactly one payment, so an admin sees no
- * difference — the path is simply ready for the ones that will hold two.
+ * A Refund is something done to a **Purchase** rather than to a payment
+ * intent. The Purchase owns the money and a payment is evidence of part of it,
+ * so issuing a Refund walks the Purchase's payments and returns every one: a
+ * purchase settled by two cards is unwound by one admin action rather than
+ * two.
  *
  * The shape of this module is the decision: `issueRefund` only calls the
  * payment provider and returns, and `unwindRefund` — driven by
@@ -20,7 +19,7 @@
  * construction. Which is also why **every step below is a no-op on a second
  * pass** — the provider retries, and both paths land here.
  *
- * Since #95 a Purchase that granted nothing can be returned too, and it is the
+ * A Purchase that granted nothing can be returned too, and it is the
  * one case where the unwind has nothing to unwind: no plan to Void, no bookings
  * to cancel, no place to give up, because the grant runs on settlement and this
  * sale never settled. It closes as **abandoned** rather than refunded — money
@@ -99,15 +98,14 @@ const accountUrlFor = (tenantId: string) =>
  * Read off the Purchase's own Balance, which is derived from the payment rows
  * and means *money currently held*: a comp grant, a $0 trial and a Promo Code
  * that took the total to zero never reached the provider and hold nothing, and
- * a Purchase already refunded has been zeroed by `markPurchaseRefunded`. It is
- * the same question the payment intent used to answer by being non-null, asked
- * of the record that now owns the money.
+ * a Purchase already refunded has been zeroed by `markPurchaseRefunded`. The
+ * record that owns the money is asked, not the payment intent.
  */
 const holdsMoney = (amountPaidSgd: string | null): boolean =>
   amountPaidSgd != null && toCents(amountPaidSgd) > 0
 
 export interface RefundState {
-  /** The Purchase that paid for the package, which the bell links to (#485). */
+  /** The Purchase that paid for the package, which the bell links to. */
   purchaseId: string | null
   /** There is money at the provider to give back. */
   refundable: boolean
@@ -115,7 +113,7 @@ export interface RefundState {
   /** Null when the purchase is **Untouched** — there is nothing to warn about. */
   notice: string | null
   /**
-   * How many payments the Refund will return (#93).
+   * How many payments the Refund will return.
    *
    * A Purchase settled with two cards is unwound by two provider calls, so two
    * returns appear on the studio's statement and two on the member's. The admin
@@ -128,7 +126,7 @@ export interface RefundState {
   /** What the Refund gives back: the whole Purchase, however many cards it came in on. */
   amountSgd: string
   /**
-   * Whether the Cross-Location Add-On goes back with it (#275). True when it was
+   * Whether the Cross-Location Add-On goes back with it. True when it was
    * bought with the plan, in the same charge; false when it was bought later on
    * a Purchase of its own, which dies with the plan and is not returned; null
    * when the plan has none.
@@ -275,7 +273,7 @@ export async function heldPaymentsFor(
 }
 
 /**
- * A Purchase whose Refund an admin has to look at (#485), read off the same
+ * A Purchase whose Refund an admin has to look at, read off the same
  * payment rows, the same `refundProgress` and the same `REFUND_IN_FLIGHT_MS` as
  * the Refund screens, but across the studio and at `now` (the app clock).
  *
@@ -518,12 +516,12 @@ export async function issueRefund(args: {
 
 /**
  * Every workshop purchase this member holds, with what the portal shows beside
- * its Refund button (§14, issue #36). A workshop's booking **is** the purchase —
+ * its Refund button (§14). A workshop's booking **is** the purchase —
  * there is no `client_packages` row for it — so `refundable`/`notice` are
  * computed straight off the one booking rather than via `refundStatesFor`.
  *
  * Listed: every `confirmed` booking, and every booking cancelled **without its
- * money going back** whose Purchase still holds some (#272) — which is what
+ * money going back** whose Purchase still holds some — which is what
  * cancelling a Workshop leaves behind. The Workshop's cancel refunds nobody, so
  * this card is where the admin returns each member's money; hiding the row the
  * moment the Workshop was cancelled left the provider's dashboard as the only
@@ -533,7 +531,7 @@ export async function issueRefund(args: {
  */
 export interface WorkshopPurchase {
   bookingId: string
-  /** The Purchase that paid for it, which the bell links to (#485); null for a free place. */
+  /** The Purchase that paid for it, which the bell links to; null for a free place. */
   purchaseId: string | null
   workshopName: string
   tierName: string | null
@@ -554,12 +552,12 @@ export interface WorkshopPurchase {
   promoCode: string | null
 }
 
-/** A place in a cancelled Workshop whose money has not come back (#272): the Purchase still holds money. */
+/** A place in a cancelled Workshop whose money has not come back: the Purchase still holds money. */
 const cancelledAndUnrefunded = () =>
   and(eq(bookings.state, 'cancelled'), eq(bookings.refundOutcome, 'n_a'), gt(purchases.amountPaidSgd, '0'))
 
 /**
- * A paid place in a cancelled Workshop that nobody has refunded (#485), one per
+ * A paid place in a cancelled Workshop that nobody has refunded, one per
  * booking. A Refund already asked for is not "hasn't been refunded": it is on
  * its way, or `refund_unconfirmed` once a day old.
  */
@@ -764,12 +762,12 @@ export async function issueWorkshopRefund(args: {
 }
 
 /**
- * The provider call itself, **on the account the money came in on** (#97).
+ * The provider call itself, **on the account the money came in on**.
  *
  * Not the account the studio sells on today — no provider hands a payment
  * intent across accounts — so the account comes off the payment row rather than
  * off the Tenant. `null` there is the platform's own account, which this app no
- * longer holds a key for (#293): such a payment is refused as
+ * longer holds a key for: such a payment is refused as
  * `payment_on_platform_account` and returned from the Stripe dashboard instead.
  *
  * Keyed on the payment intent, which is the money path's only real guard — the
@@ -795,7 +793,7 @@ export async function refundAtProvider(
 }
 
 /**
- * What one press of a Refund button did at the provider (#275).
+ * What one press of a Refund button did at the provider.
  *
  * `complete` is false when the provider refused a payment after taking an
  * earlier one: the Refund is half-issued, and the admin has to be told so
@@ -850,7 +848,7 @@ async function returnEveryPayment(
   if (toReturn.length === 0) throw new ConflictError('refund_processing')
 
   // Before any of them goes back: a payment recorded against the platform
-  // account (#293) cannot be returned from here, and finding that out on the
+  // account cannot be returned from here, and finding that out on the
   // second payment would leave the first already returned — a Refund half-done
   // on purpose. The admin is told where it can be issued instead.
   if (toReturn.some(p => p.providerAccountId == null)) throw paymentOnPlatformAccount()
@@ -961,7 +959,7 @@ async function refundPurchaseAndAudit(args: {
 }
 
 /**
- * Refund a Purchase that was part-paid and **never granted** (#95).
+ * Refund a Purchase that was part-paid and **never granted**.
  *
  * The money's only way out. A member who part-pays and never comes back leaves
  * the studio holding real cash against an entitlement that does not exist, and
@@ -1013,7 +1011,7 @@ export async function issueOpenPurchaseRefund(args: {
 
   const returnedSgd = purchase.amountPaidSgd
   // A part-paid Purchase is exactly the shape that can straddle a studio's move
-  // onto its own account, so each payment goes back where it came in (#97).
+  // onto its own account, so each payment goes back where it came in.
   const issued = await returnEveryPayment(args.tenantId, args.purchaseId, payments)
   const { paymentIntentIds } = issued
   if (paymentIntentIds.length === 0) return { ...issued, returnedSgd }
@@ -1286,7 +1284,7 @@ async function unwindPurchase(tx: Tx, tenantId: string, purchaseId: string): Pro
     await refundPromoCodeRedemption(tenantId, payment.paymentIntentId)
   }
 
-  // A Purchase that granted nothing (#95). It is still `open` at this point,
+  // A Purchase that granted nothing. It is still `open` at this point,
   // which is precisely the statement that nothing was delivered: the grant runs
   // on settlement, and settlement is what moves a Purchase off `open`. So the
   // whole of the unwind below — voiding a plan, cancelling future bookings,
@@ -1310,7 +1308,7 @@ async function unwindPurchase(tx: Tx, tenantId: string, purchaseId: string): Pro
   // package paid for, where returning a credit would be meaningless. Here money
   // genuinely went back for this exact booking, which is what the arm is for.
   //
-  // A booking already cancelled with its Workshop (#272) is caught too: the
+  // A booking already cancelled with its Workshop is caught too: the
   // Workshop's cancel gives nobody their money back and records `n_a`, and a
   // Refund issued afterwards is what does — so this is where its outcome
   // becomes `stripe_refunded`. Its cancel time is the Workshop's, and stays.
@@ -1443,7 +1441,7 @@ async function unwindPurchase(tx: Tx, tenantId: string, purchaseId: string): Pro
 }
 
 /**
- * Close an ungranted Purchase and tell the member their money is back (#95).
+ * Close an ungranted Purchase and tell the member their money is back.
  *
  * Two steps and no third: the status flip, and the email that rides on winning
  * it. There is deliberately nothing to unwind — no plan to Void, no bookings to
@@ -1462,7 +1460,7 @@ async function abandonPurchase(tenantId: string, purchase: PurchaseRow): Promise
   if (!(await markPurchaseAbandoned(tenantId, purchase.id))) return
 
   // The money has gone back and the Purchase is closed; the only thing left is
-  // telling the member, and a member permanently deleted (#144) is not there to
+  // telling the member, and a member permanently deleted is not there to
   // be told. The sale survives them with their identity removed, so there is no
   // address to write to and nothing further to do.
   if (!purchase.clientId) return
@@ -1521,7 +1519,7 @@ async function stampPaymentRefunded(tenantId: string, paymentIntentId: string): 
 
 /**
  * Record that the provider has taken a Refund for this payment and it is on
- * its way (#275). Only ever reached for a payment with no ask in flight, so it
+ * its way. Only ever reached for a payment with no ask in flight, so it
  * overwrites a stale one — the ask being timed is the one just made.
  */
 async function stampRefundRequested(tenantId: string, paymentIntentId: string): Promise<void> {

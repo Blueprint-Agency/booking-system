@@ -13,7 +13,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * Credit history (#353), over real HTTP: every movement of a member's credits
+ * Credit history, over real HTTP: every movement of a member's credits
  * is recorded against the booking that caused it, and the member (My packages)
  * and staff (the profile's per-package history) read it back newest first,
  * each row carrying the balance after it.

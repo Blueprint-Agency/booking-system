@@ -19,7 +19,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * Refunds over real HTTP (#216), with the payment provider replaced by the
+ * Refunds over real HTTP, with the payment provider replaced by the
  * in-process fake at its one seam (`stripe-fake.ts`).
  *
  * A Refund is two halves, and every journey here drives both the way they run
@@ -286,7 +286,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
   /**
    * The provider's `charge.refunded` delivery, as its dashboard or our own
    * refund call triggers it. `refunded` below `captured` is a part-refund.
-   * Delivered to studio one's own endpoint unless a test names another (#293).
+   * Delivered to studio one's own endpoint unless a test names another.
    */
   async function deliverRefund(
     intent: string,
@@ -407,7 +407,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
     // Each studio sells on an account of its own — the only way a studio sells
-    // at all (#293) — and a refund goes back on it.
+    // at all — and a refund goes back on it.
     backOnOwnAccount(one)
     backOnOwnAccount(two)
     adminAtOne = await staff(one, 'owner', 'admin')
@@ -515,7 +515,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
 
   test("RFD-01 a Purchase paid in two payments is returned on each, and voided only once both are back", async () => {
     // Two cards on one Purchase (a Part Payment and its balance, say). A payment
-    // on the platform account refuses the whole Refund instead (#293) — see
+    // on the platform account refuses the whole Refund instead — see
     // own-account-only.test.ts, PAY-27.
     const own = ownAccountId(one)
     try {
@@ -597,7 +597,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(cancelled.state, 'cancelled')
     assert.equal(cancelled.refundOutcome, 'n_a', 'no credit goes back to a voided package')
     const [record] = await cancellationsOf(future.body.booking_id)
-    // The Void cancelled it, not a person (#350).
+    // The Void cancelled it, not a person.
     assert.equal(record?.source, 'system')
     assert.equal(record?.cancelledByStaffId, null)
     assert.equal(record?.refundFired, false)

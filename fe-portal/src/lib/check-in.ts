@@ -1,5 +1,5 @@
 /**
- * The check-in desk (#192): what the backend's check-in surface returns, and
+ * The check-in desk: what the backend's check-in surface returns, and
  * the few decisions the page makes on its own — which session to open on, and
  * whether a QR the camera keeps seeing is a new scan.
  *

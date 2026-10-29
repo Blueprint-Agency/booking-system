@@ -1,5 +1,5 @@
 /**
- * A restricted key is a secret key of its mode too (#294). Whether it may set
+ * A restricted key is a secret key of its mode too. Whether it may set
  * up the studio's webhook is the provider's to answer — a key refused here as
  * the "wrong mode" would never get as far as the refusal that names the
  * permission it lacks.

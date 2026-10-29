@@ -39,9 +39,9 @@ export function slotFromParams(params: URLSearchParams): Slot | null {
 //    detail is the bare body, a corporate session comes wrapped as
 //    `{ corporate_session }` (snake) and its package as `{ corporatePackage }`
 //    (camel). Unwrapping happens here so a screen never has to know which.
-// 2. **Error copy.** The class and PT mappings were byte-identical copies, with
-//    a third inline in the workshop editor and a fourth on the new-class form.
-//    A room clash now reads the same wherever it happens.
+// 2. **Error copy.** One mapping serves the class and PT screens, the workshop
+//    editor and the new-class form, so a room clash reads the same wherever it
+//    happens.
 //
 // What is deliberately NOT unified: the patch payloads. The three kinds differ
 // in ways that fail silently if smoothed over — PT sends `instructor_id` where
@@ -81,11 +81,11 @@ export interface ScheduleClassAttendee {
   check_in_state: "pending" | "attended" | "no_show" | "n_a";
   code: string;
   seat: BookingSeat;
-  /** `classpass` on a ClassPass booking: ClassPass paid, no package did (#408). */
+  /** `classpass` on a ClassPass booking: ClassPass paid, no package did. */
   source: BookingSource;
   /** Booked by a waitlist promotion, automatic or by staff. */
   promoted_from_waitlist: boolean;
-  /** What the cancel dialog asks from; null on a row Cancel is not offered on (#320). */
+  /** What the cancel dialog asks from; null on a row Cancel is not offered on. */
   cancel_preview: StaffCancelPreview | null;
 }
 
@@ -119,7 +119,7 @@ export interface ScheduleClassDetail extends ClassSeats, ClassWaitlist {
   /** Every confirmed booking — the same number as `attending`. */
   booked_count: number;
   attendees: ScheduleClassAttendee[];
-  /** Bookings cancelled off the class, newest first; apart from the roster, never checked in (#352). */
+  /** Bookings cancelled off the class, newest first; apart from the roster, never checked in. */
   cancelled_bookings: ScheduleClassCancelled[];
   created_at: string;
   scheduled_by: NamedRef | null;
@@ -145,7 +145,7 @@ export interface SchedulePtDetail {
    * the member who requested the session was permanently deleted.
    */
   pt_request_id: string | null;
-  /** `portal` for a manual session staff added (#334); null with no request. */
+  /** `portal` for a manual session staff added; null with no request. */
   origin: "member" | "portal" | null;
   lifecycle: "active" | "cancelled";
   starts_at: string;
@@ -213,7 +213,7 @@ export function fetchInstructorClass(api: Api, id: string): Promise<InstructorCl
 
 /**
  * A private session the signed-in instructor runs, as their session page shows
- * it: the admin's read without pay (#338). 403 `not_your_session` otherwise.
+ * it: the admin's read without pay. 403 `not_your_session` otherwise.
  */
 export type InstructorPtDetail = Omit<SchedulePtDetail, "instructor_pay_sgd" | "supporting_instructors">;
 

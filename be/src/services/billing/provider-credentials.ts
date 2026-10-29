@@ -74,7 +74,7 @@ type SealedRow = {
 
 /**
  * A Tenant's credentials, or null when it has none and therefore takes no online
- * payments (#293).
+ * payments.
  *
  * The read goes through `tenant_payment_credentials_for()` (migration 0067) because the
  * callers have no Tenant context to open: a background job has no request, and
@@ -181,7 +181,7 @@ export async function providerAccountStatus(tenantId: string): Promise<ProviderA
 }
 
 /**
- * The webhook endpoint the platform created on a studio's account (#294), or
+ * The webhook endpoint the platform created on a studio's account, or
  * null: no credentials, or credentials saved before the platform created
  * endpoints itself. Read inside `withTenant` rather than through the sealed
  * lookup, because every caller is acting for a studio it already knows.
@@ -211,7 +211,7 @@ export async function saveProviderCredentials(
     accountId: string
     secretKey: string
     webhookSecret: string
-    /** The endpoint the platform created for this secret (#294), when it did. */
+    /** The endpoint the platform created for this secret, when it did. */
     webhookEndpointId?: string | null
   },
 ): Promise<ProviderAccountStatus> {
@@ -251,7 +251,7 @@ export async function saveProviderCredentials(
  * The way out of a mistake, and the only one: credentials that turn out to be
  * the wrong studio's cannot be corrected by looking at them, because nobody can
  * look at them. Afterwards the studio takes no online payments until new ones
- * are entered (#293) — which is where every studio starts.
+ * are entered — which is where every studio starts.
  */
 export async function clearProviderCredentials(tenantId: string): Promise<ProviderAccountStatus> {
   // The `where` is redundant under the policy and written anyway: a delete with

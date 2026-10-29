@@ -16,7 +16,7 @@ const HANDLED_EVENTS = ['charge.refunded', 'checkout.session.async_payment_succe
 
 /**
  * A studio pastes only its secret key; the platform creates its webhook
- * endpoint (#294).
+ * endpoint.
  *
  * Through the super portal's route, with the credentials store left on the real
  * database and the provider replaced by the fake, whose webhook endpoints are
@@ -310,7 +310,7 @@ describe('a studio’s webhook endpoint is created from its secret key', { skip:
     fake.issueKey('sk_test_older', 'acct_older')
     assert.equal((await put(studio.id, { secret_key: 'sk_test_older' })).status, 200)
     const [endpoint] = fake.webhookEndpoints('acct_older')
-    // As the platform created it before this change.
+    // Subscribed to the two events only, without the async-payment one.
     endpoint!.enabled_events = ['checkout.session.completed', 'charge.refunded']
     const secretBefore = endpoint!.secret
     // One for somewhere else on the same account, which is not ours to touch.

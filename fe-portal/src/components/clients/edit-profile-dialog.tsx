@@ -14,7 +14,7 @@ const GENDERS: { value: ClientGender; label: string }[] = [
 export type ProfileEdit = { name?: string; phone?: string; gender?: ClientGender | null };
 
 /**
- * An admin corrects a member's name, gender and phone (#281) — the call to the
+ * An admin corrects a member's name, gender and phone — the call to the
  * front desk about a misspelt name or a new number, in one save.
  *
  * Pre-filled with what the studio holds, and only what the admin changed is

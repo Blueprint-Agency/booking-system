@@ -1,5 +1,5 @@
 /**
- * How a payment was paid (#282), as the provider's charge says it.
+ * How a payment was paid, as the provider's charge says it.
  *
  * Read off the charge the webhook already retrieves for the receipt URL, so
  * recording the method costs no call of its own, and a payment taken before
@@ -36,9 +36,9 @@ export function methodPatch(charge: Stripe.Charge | string | null | undefined): 
 }
 
 /**
- * The intent's latest charge, from the account the intent lives on (#97). An
+ * The intent's latest charge, from the account the intent lives on. An
  * intent recorded against no account was taken on the platform's former
- * account, which no key reaches any more (#293), so it comes back null too.
+ * account, which no key reaches any more, so it comes back null too.
  * Null rather than throwing on any failure: a receipt or a method is never
  * worth failing a delivered purchase over.
  */
@@ -71,8 +71,8 @@ export type MethodBackfillResult = {
   filled: number
   /**
    * Payments taken on a provider account the studio no longer supplies —
-   * including the platform's former account, recorded as no account at all
-   * (#293). Their intents are unreachable with any key the platform holds, so
+   * including the platform's former account, recorded as no account at all.
+   * Their intents are unreachable with any key the platform holds, so
    * they are left alone and counted, never read with the studio's current key.
    */
   skippedRetiredAccount: number
@@ -82,14 +82,14 @@ export type MethodBackfillResult = {
 
 /**
  * Fill the method on this studio's payments that succeeded before capture
- * existed (#282). A one-off, run by an operator — see `method-backfill-cli.ts`.
+ * existed. A one-off, run by an operator — see `method-backfill-cli.ts`.
  *
  * Refunded payments are included: they succeeded first, and a Refund in
  * Finance shows the method of the payment it returned.
  *
  * Each payment is read on the account it was taken on, which must be the
  * studio's current one. A payment on an account it has since replaced, or on
- * the platform's former account (null — no key reaches it since #293), is
+ * the platform's former account (null — no key reaches it), is
  * skipped.
  *
  * Runs inside the studio's Tenant context. Safe to run again: it only reads

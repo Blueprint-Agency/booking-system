@@ -75,10 +75,9 @@ const fields = z.object({
   // be the leftmost label and covers exactly one label — see lib/origin.ts.
   // Exact origins are accepted too, for a host that names no tenant.
   //
-  // Required, and it replaced `PORTAL_ORIGIN` / `CLIENT_ORIGIN`. Those were one
-  // value each for the whole platform and could only ever name one studio's
-  // apps, which is why every link built from them pointed at the first studio
-  // whichever studio the code was acting for. This is now the only statement
+  // Required. A single `PORTAL_ORIGIN` / `CLIENT_ORIGIN` for the whole platform
+  // could only ever name one studio's apps, and every link built from it would
+  // point at the first studio whichever studio the code was acting for. This is the only statement
   // the environment makes about which origins are ours, so an environment that
   // sets none has an empty allowlist and serves nobody — a boot failure is the
   // honest form of that.
@@ -88,15 +87,15 @@ const fields = z.object({
 
   /**
    * A stand-in for Stripe's API, as an origin — `http://127.0.0.1:12111` — for
-   * the browser journeys a pull request runs on the CI runner (#207), so they
+   * the browser journeys a pull request runs on the CI runner, so they
    * reach no real Stripe. Unset (every deployment) is Stripe itself. Refused
    * on production at boot — see `lib/stripe-endpoint.ts`.
    */
   STRIPE_API_URL: z.string().optional(),
   /**
-   * The key that seals a Tenant's own payment-provider credentials (#100).
+   * The key that seals a Tenant's own payment-provider credentials.
    *
-   * Every studio takes payments on its own account and only there (#293), so
+   * Every studio takes payments on its own account and only there, so
    * this is what online payments rest on: without it no studio's credentials
    * can be stored or opened, and no studio can sell. Every deployed environment
    * sets it (`deploy-be.yml`).
@@ -122,7 +121,7 @@ const fields = z.object({
   // Signing secret (`whsec_…`) of the Resend webhook that reports delivery,
   // bounce and complaint outcomes. Unset, that route answers "not configured".
   RESEND_WEBHOOK_SECRET: z.string().optional(),
-  // The domain Resend receives studios' forwarded ClassPass email on (#409): a
+  // The domain Resend receives studios' forwarded ClassPass email on: a
   // studio's ClassPass address is `<token>@` this domain, and the same Resend
   // webhook hears `email.received` for it. Unset, no studio is shown an address
   // and inbound mail is acknowledged and dropped. Read through `currentEnv`.
@@ -177,11 +176,8 @@ export function currentEnv<K extends keyof Env>(name: K): Env[K] {
 }
 
 /*
- * `CLIENT_URL` used to live here — "the one place any link mailed or redirected
- * to a member is built from", built from `CLIENT_ORIGIN`. One place, and one
- * studio: on a platform serving many, it named whichever studio the deployment
- * was configured for, so a member of any other one was mailed and redirected
- * into somebody else's app. A studio's URLs are per studio and are derived from
- * its slug — `services/tenants/urls.ts`. There is no platform-wide equivalent
- * to reach for, deliberately.
+ * There is no platform-wide `CLIENT_URL`. A single URL would name whichever
+ * studio the deployment was configured for, so a member of any other studio
+ * would be mailed and redirected into somebody else's app. A studio's URLs are
+ * per studio and are derived from its slug — `services/tenants/urls.ts`.
  */

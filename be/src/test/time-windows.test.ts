@@ -15,7 +15,7 @@ const DAY = 24 * HOUR
 
 /**
  * The rules that turn on what time it is, over real HTTP, with the app's clock
- * held by the test (#201).
+ * held by the test.
  *
  * Every journey stands the clock at a chosen instant (`harness.clock`), books
  * and cancels through `/api/v1/me/bookings`, then reads the rows the request
@@ -249,7 +249,7 @@ describe('time-window rules over HTTP', { skip: integrationTestsEnabled ? false 
       assert.equal(onTimeCancellation.refundFired, true)
       assert.equal((await packageOf(ana)).creditsOrSessionsRemaining, 8)
 
-      // Past the cutoff a member's cancel is a Late cancel (#318): it goes
+      // Past the cutoff a member's cancel is a Late cancel: it goes
       // through, recorded late, and the credit is kept.
       harness.clock.set(new Date(lateCutoff.getTime() + 1))
       await expectStatus(await cancel(ana, lateBooking), 200)

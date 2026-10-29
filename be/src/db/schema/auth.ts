@@ -126,7 +126,7 @@ export const clientAuthSessions = pgTable(
     tenantId: loginTenantId(),
     claimedTenantId: claimedTenantId(),
     /**
-     * Set on a session a studio admin opened as this member (#118): the
+     * Set on a session a studio admin opened as this member: the
      * admin's `staff` pool auth user id. The admin plugin's field name, and
      * no foreign key — it names a user in another pool's table.
      */
@@ -251,7 +251,7 @@ export const platformAuthTwoFactors = pgTable(
   }),
 )
 
-/* ── auth_events: who signed in as whom, when (#114) ───────────────────── */
+/* ── auth_events: who signed in as whom, when ───────────────────── */
 
 /**
  * The sign-in audit log, written by `services/auth/auth-events.ts` from every
@@ -269,7 +269,7 @@ export const platformAuthTwoFactors = pgTable(
  * has no account has no actor. No foreign key to the pool tables — there are
  * three of them, and the record should outlive the account. The subject is
  * the user acted on, when it is not the actor: the member an impersonation
- * signed in as. An impersonation row is filed under `staff` (#118): its actor is
+ * signed in as. An impersonation row is filed under `staff`: its actor is
  * the studio admin's staff auth user, its subject the member's client auth user.
  */
 export const authEvents = pgTable(

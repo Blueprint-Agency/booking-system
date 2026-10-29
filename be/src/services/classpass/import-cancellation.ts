@@ -7,7 +7,7 @@ import { cancelBooking } from '../bookings/cancel'
 import { textPieces } from './parse'
 
 /**
- * Placing a ClassPass cancellation email (#412): `ClassPass reservation
+ * Placing a ClassPass cancellation email: `ClassPass reservation
  * canceled by user` names the reservation by its key, which is the booking's
  * Reservation ID (`docs/md/research-classpass-integration.md`):
  *

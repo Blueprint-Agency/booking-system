@@ -28,7 +28,7 @@ export const clients = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // The member's `client_auth_users` id: this studio's login for them (#231).
+    // The member's `client_auth_users` id: this studio's login for them.
     // One person may be a member of two studios, and gets an independent record
     // and an independent login at each.
     authUserId: text('auth_user_id').notNull(),
@@ -50,7 +50,7 @@ export const clients = pgTable(
     // Soft-delete (admin-only). When set, the row is filtered out of every
     // admin/client read path, and the member's sessions here end so they can't
     // sign in. Restore clears it. Permanent deletion is separate and removes the
-    // row (`services/clients/member-delete.ts`, #144).
+    // row (`services/clients/member-delete.ts`).
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedByStaffId: uuid('deleted_by_staff_id'),
     referredByClientId: uuid('referred_by_client_id'),
@@ -79,7 +79,7 @@ export const clients = pgTable(
 )
 
 /**
- * A member's Billing details (#399): a name (their own, or a company's) and a
+ * A member's Billing details: a name (their own, or a company's) and a
  * postal address, which a Purchase bills to. At most three per member per
  * studio, a cap the service holds under a lock on the member's row; at most
  * one of them the default, which the partial unique index holds.
@@ -121,7 +121,7 @@ export const staffUsers = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // The `staff_auth_users` id: this studio's login for them (#231). Written by
+    // The `staff_auth_users` id: this studio's login for them. Written by
     // the invitation or seed that made the row, so a pending row has one too. The
     // same person may be an instructor at one studio and an admin at another,
     // with a login at each.

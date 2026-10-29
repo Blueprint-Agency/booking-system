@@ -14,7 +14,7 @@ import { readReports, verifyImport } from './transform'
 import { readXlsxTable } from './xlsx'
 
 /**
- * The live waitlists and their capacity (#311, spec-waitlist.md §12a): decision
+ * The live waitlists and their capacity (spec-waitlist.md §12a): decision
  * 21 in the config, the scraped Class Waitlists file in, `waiting` entries,
  * `capacity_waitlist` and the `waitlist_enabled` flag out. The import and the
  * first promotion after it are `waitlist-import.test.ts`.

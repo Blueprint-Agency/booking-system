@@ -68,7 +68,7 @@ const notFoundCode: Record<RosterEventKind, ErrorCode> = {
 }
 
 /** A transaction handle is the same object at runtime; drizzle just types the
- *  two differently. Same cast the class module used before this existed. */
+ *  two differently. */
 export const exec = (tx?: Tx): typeof db => (tx ? (tx as unknown as typeof db) : db)
 
 /** SGD number → the `numeric(10,2)` text postgres wants. */

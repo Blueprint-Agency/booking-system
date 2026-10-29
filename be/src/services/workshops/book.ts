@@ -145,7 +145,7 @@ export interface BookWorkshopInput {
    * The Purchase that bought the place — the settled S$0.00 one for a free
    * workshop, which reaches no payment provider. A workshop's booking IS the
    * purchase, so this is the pointer a Refund routes on, in place of the
-   * payment intent (#92).
+   * payment intent.
    */
   purchaseId?: string | null
   /** amount paid in SGD as "120.00". "0.00" for free workshops. */
@@ -217,7 +217,7 @@ async function insertWorkshopBooking(
     // because the winner has already done it.
     //
     // Never over a refund: the provider redelivers for days and the
-    // confirmation page can replay the same session by hand, and since #92 this
+    // confirmation page can replay the same session by hand, and this
     // column is what says what a Refund still has to return.
     if (input.paymentIntentId) {
       await db
@@ -307,9 +307,9 @@ export async function bookWorkshopFree(
      * price is allowed to be above zero when one is present.
      */
     appliedPromoCodeId?: string | null
-    /** The place as its Purchase records it (#382), adding up to S$0.00. */
+    /** The place as its Purchase records it, adding up to S$0.00. */
     lines: PurchaseLine[]
-    /** The member's chosen Billing details (#402), copied onto the Purchase. */
+    /** The member's chosen Billing details, copied onto the Purchase. */
     billTo?: BillingAddress | null
   },
 ): Promise<{ bookingId: string; qrToken: string; code: string }> {
@@ -388,7 +388,7 @@ export async function bookWorkshopFree(
   })
 
   // The worst case in the set (§13): a confirmed booking with a QR code and a
-  // date that used to send nothing at all. The Purchase was opened just above,
+  // date, so it must send. The Purchase was opened just above,
   // so this call always inserts the booking and always sends, once the
   // request's transaction has committed (`afterCommit`). The helper cannot throw.
   afterCommit(() => sendWorkshopPurchaseEmail(tenantId, booked.bookingId))

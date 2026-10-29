@@ -9,7 +9,7 @@ import { registerMember } from '../../services/clients/register'
 
 /**
  * Member self-registration and the member sign-in steps that are not Better
- * Auth's own endpoints, on the studio's own member app (#117, #173).
+ * Auth's own endpoints, on the studio's own member app.
  *
  * POST /api/v1/public/members/register { email, otp, first_name, last_name, phone, gender?, password }
  *   → { token }

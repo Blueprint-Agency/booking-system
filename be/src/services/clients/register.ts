@@ -27,14 +27,14 @@ interface RegisterMemberInput {
 
 /**
  * A member joins a studio: the code mailed to their address proves it, and the
- * account is made with the password they chose (#117, #173).
+ * account is made with the password they chose.
  *
  * The `client` pool's auth user, its password and the studio's `clients` row
  * are written together with the session, so there is no moment at which a
  * member is signed in with nothing to be signed in to, and no account exists
  * before its email is proven. One person joining a second studio gets a second,
  * independent login there, with the password they choose there, beside a
- * second, independent row (#231); their login at the first studio is untouched.
+ * second, independent row; their login at the first studio is untouched.
  *
  * In order:
  *

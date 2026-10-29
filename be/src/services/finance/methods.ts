@@ -1,5 +1,5 @@
 /**
- * How a Money Event was paid (#282), and the few categories Finance files every
+ * How a Money Event was paid, and the few categories Finance files every
  * method under.
  *
  * A payment the provider took records the provider's own method name, which

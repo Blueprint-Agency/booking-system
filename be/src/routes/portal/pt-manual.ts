@@ -5,7 +5,7 @@ import { endsAfterStart, endsAfterStartIssue } from './parse'
 
 /**
  * `POST …/manual`: a private session staff create with its members, no member
- * request behind it (#334). One shape for the admin and instructor surfaces;
+ * request behind it. One shape for the admin and instructor surfaces;
  * the instructor route drops `instructor_id` and uses the caller.
  *
  * `members` names every attendee — one for a 1on1, up to two for a 2on1,
@@ -57,7 +57,7 @@ export function manualSessionFields(body: ManualBody) {
 }
 
 /**
- * `POST …/sessions/:id/members`: one more member on a manual session (#337),
+ * `POST …/sessions/:id/members`: one more member on a manual session,
  * with the same seat rule, package pick and `override` as at creation.
  */
 export const addManualMemberSchema = z.object({
@@ -83,8 +83,8 @@ export function addedMemberJson(clientId: string, seat: { bookingId: string; cli
 }
 
 /**
- * `DELETE …/sessions/:id/members/:clientId`: one member off a manual session
- * (#335), their session returned to their own package.
+ * `DELETE …/sessions/:id/members/:clientId`: one member off a manual session,
+ * their session returned to their own package.
  */
 export const removeMemberParam = z.object({ id: z.string().uuid(), clientId: z.string().uuid() })
 

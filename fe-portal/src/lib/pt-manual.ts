@@ -1,4 +1,4 @@
-// A manual private session (#336): one staff put on the Schedule with its
+// A manual private session: one staff put on the Schedule with its
 // members, no member request behind it. This module words the member's
 // packages for a seat, the warnings staff may accept with Add anyway, and a
 // refused create, and builds the create call's body. Shapes mirror
@@ -281,7 +281,7 @@ function seatProblem(s: ManualSeat, remedy = ""): string | null {
   return null;
 }
 
-/* ------------------------ After it exists (#338) ------------------------ */
+/* ------------------------ After it exists ------------------------ */
 
 /** A private session as its detail page holds it, enough to judge what staff may do. */
 export interface ManualSessionState {
@@ -310,7 +310,7 @@ export function ptCancelConfirm(s: Pick<ManualSessionState, "origin">): string {
 
 /**
  * Staff may cancel a private session only before it starts: the backend refuses
- * one that is running or has ended unticked (`session_already_started`, #241).
+ * one that is running or has ended unticked (`session_already_started`).
  */
 export function canCancelSession(
   s: { lifecycle: Lifecycle; starts_at: string },
@@ -411,7 +411,7 @@ function sessionsPath(role: StaffRole): string {
   return role === "admin" ? "/portal/admin/pt-sessions/sessions" : "/portal/instructor/pt-requests/sessions";
 }
 
-// A refused remove, add, type change or cancel, in staff terms (#335, #337).
+// A refused remove, add, type change or cancel, in staff terms.
 const SESSION_ACTION_COPY: Partial<Record<ErrorCode, string>> = {
   booking_attended: "That member has checked in, so their seat can't be given back.",
   session_ended: "This session has ended, so its members can't change.",
@@ -458,7 +458,7 @@ const CREATE_ERROR_COPY: Partial<Record<ErrorCode, string>> = {
   client_package_not_found: "That package can no longer pay for this session.",
 };
 
-// Reading a member's packages refuses them as adding them would (#337).
+// Reading a member's packages refuses them as adding them would.
 const READ_ERROR_COPY: Partial<Record<ErrorCode, string>> = {
   client_not_found: "That member can't be found.",
   client_blocked: "That member's account is blocked.",

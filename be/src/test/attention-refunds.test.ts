@@ -7,7 +7,7 @@ import { connectPayments, usePaymentKey } from './attention-payments'
 import { ownAccountId, stripeWebhookPath, type StripeFake } from './stripe-fake'
 
 /**
- * Staff attention, refunds (#476, #485): three Needs-action items for refunds
+ * Staff attention, refunds: three Needs-action items for refunds
  * that need an admin. `refund_incomplete` (a refund stopped part-way) and
  * `refund_unconfirmed` (Stripe has not confirmed one after a day) read the
  * existing refund-progress and in-flight rules; `workshop_cancelled_unrefunded`
@@ -131,7 +131,7 @@ describe('Staff attention: refunds', { skip: integrationTestsEnabled ? false : S
 
   /**
    * A S$120 place in a Workshop the studio then cancels, bought by `who` through one Purchase
-   * and one payment. Cancelling refunds nobody (#272), so the place is left waiting.
+   * and one payment. Cancelling refunds nobody, so the place is left waiting.
    */
   const cancelledWorkshopPlace = async (studio: Studio, who: Member, workshopName: string) => {
     const [location] = await harness.db

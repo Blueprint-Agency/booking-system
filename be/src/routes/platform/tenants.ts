@@ -73,7 +73,7 @@ function serialize(
     // legitimate step — a studio created to receive an archive starts here — and
     // a terrible resting place, so the list has to be able to say so.
     staff_count: staffCount,
-    // Whether this studio takes its own money, and on which account (#100).
+    // Whether this studio takes its own money, and on which account.
     // Both facts and no third one: the account id names the account, which is
     // what lets a human tell the right account from the wrong one, and the
     // credentials that open it are never readable by anybody — including this
@@ -81,9 +81,9 @@ function serialize(
     payments: {
       configured: payments.configured,
       account_id: payments.accountId,
-      // What the form needs before anything is saved (#276): the kind of key
+      // What the form needs before anything is saved: the kind of key
       // this environment takes. The webhook endpoint is the platform's to set
-      // up since #294, so there is nothing else for the operator to do first.
+      // up, so there is nothing else for the operator to do first.
       setup: { key_prefix: expectedKeyPrefix(env.APP_ENV) },
     },
     urls: {
@@ -137,7 +137,7 @@ const createBody = z.object({
   admin_name: adminName.optional(),
   // How long the first Term runs from today. Omitted leaves it open-ended.
   term_months: termMonths.optional(),
-  // The studio's Business details (#391, #398): the Business name it trades
+  // The studio's Business details: the Business name it trades
   // under (the Domain name, `name`, when blank or omitted), and the Receipt
   // prefix (default `R`), registration number, address and footer. Its admin
   // can change them later on the portal's Business details page.
@@ -175,7 +175,7 @@ const explainTenant = explainInvalid('That studio is not valid.')
 
 /**
  * A studio's own payment-provider credentials, on the way in and never on the
- * way out: its secret key, and nothing else (#294). The webhook signing secret
+ * way out: its secret key, and nothing else. The webhook signing secret
  * is the provider's answer when the platform creates the endpoint, not
  * something anyone types.
  *
@@ -291,7 +291,7 @@ const app = new Hono()
   })
 
   /**
-   * A studio's Business details (#391, #398), as its admin reads them on the
+   * A studio's Business details, as its admin reads them on the
    * portal's Business details page, for the operator to correct from outside
    * it. The same service as that page, inside the studio's context, so both
    * surfaces refuse the same things in the same words. An archived studio is
@@ -442,7 +442,7 @@ const app = new Hono()
   })
 
   /**
-   * Move a studio onto its own payment-provider account (#100).
+   * Move a studio onto its own payment-provider account.
    *
    * The super portal is the only surface that can do this, and after it has
    * been done the super portal can see only that credentials exist and which
@@ -456,7 +456,7 @@ const app = new Hono()
    * comes back from the provider rather than from whoever pasted the key, so
    * "these credentials belong to acct_xxx" is a fact.
    *
-   * The webhook endpoint on the studio's account is created here too (#294),
+   * The webhook endpoint on the studio's account is created here too,
    * at the studio's own URL for exactly the events the handler acts on, and
    * its signing secret is stored alongside the key. Neither is ever returned.
    */

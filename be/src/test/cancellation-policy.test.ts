@@ -16,7 +16,7 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /**
- * The cancellation policy over real HTTP (#214): when a member's cancel returns
+ * The cancellation policy over real HTTP: when a member's cancel returns
  * the credit, when it is refused, when it is recorded but forfeited, and what
  * an Admin's cancel — of one booking or of a whole class — puts back.
  *
@@ -215,7 +215,7 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
   const cancel = (who: Member, bookingId: string) =>
     harness.app.request(`/api/v1/me/bookings/${bookingId}`, { method: 'DELETE', headers: who.headers })
 
-  /** An admin's cancel, choosing Return credit — what every admin cancel did before #320 asked. */
+  /** An admin's cancel, choosing Return credit. */
   const adminCancel = (as: Record<string, string>, bookingId: string) =>
     harness.app.request(`/api/v1/portal/admin/bookings/${bookingId}/cancel`, {
       method: 'POST',
@@ -561,8 +561,8 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     assert.equal(await balanceOf(bundle), 1)
     await assertLedger(bundle)
 
-    // Too late to move the other for free: it is a late cancel like any other
-    // (#318) — the place is freed and the credit stays spent.
+    // Too late to move the other for free — it is a late cancel like any other:
+    // the place is freed and the credit stays spent.
     harness.clock.set(shifted(t0, 5 * DAY - classWindowHours * HOUR + MINUTE))
     const lateCancel = await expectStatus(await cancel(dee, lateBooking), 200)
     assert.equal(lateCancel.refund_outcome, 'forfeited')
@@ -623,7 +623,7 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     assert.equal(record.refundFired, false)
 
     // Late and over the cap: both reasons, and the late cancel goes through
-    // (#318) with nothing — not even part of the two credits — coming back.
+    // with nothing — not even part of the two credits — coming back.
     harness.clock.set(lateAt)
     assert.equal((await judge(lateAt)).reason, 'late_and_over_cap')
     assert.equal((await judge(lateAt)).refund, 'forfeit')
@@ -1256,8 +1256,8 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     const record = await cancellationOf(booking.id)
     assert.ok(record)
     assert.equal(record.kind, 'pt')
-    // Staff-made, so it never counts toward the member's cap. Whether it should
-    // read `instructor` like the class path rather than today's `admin` is #239.
+    // Staff-made, so it never counts toward the member's cap; its `source` is not
+    // pinned beyond being something other than `client`.
     assert.notEqual(record.source, 'client')
     assert.equal(record.refundFired, true)
   })

@@ -65,9 +65,9 @@ export interface FinanceLine {
   discount_sgd: number | null
   promo_code: string | null
   refunded: boolean
-  /** Given by an admin at no charge (#176): shown at 0, counted in no total. */
+  /** Given by an admin at no charge: shown at 0, counted in no total. */
   complimentary: boolean
-  /** How it was paid (#282); empty on money out and wherever none was recorded. */
+  /** How it was paid; empty on money out and wherever none was recorded. */
   methods: FinanceMethod[]
   /** The methods as one cell — "Visa ··4242", "Visa ··4242 + PayNow". Null when there are none. */
   method_label: string | null
@@ -145,7 +145,7 @@ function serialize(e: MoneyEvent): FinanceLine {
     // Money off a sale. A Complimentary Package has none: nobody was charged,
     // so the whole List Price is not a discount somebody granted — and a row
     // saying "S$200 off" beside a Discounts total that excludes it is two
-    // answers to one question (#176).
+    // answers to one question.
     discount_sgd: e.complimentary || list == null || paid == null ? null : fromCents(list - paid),
     promo_code: e.promoCode,
     refunded: e.refunded,

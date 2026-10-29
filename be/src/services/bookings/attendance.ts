@@ -1,5 +1,5 @@
 /**
- * A member's own practice summary (#317, "My practice" #340): the sessions
+ * A member's own practice summary ("My practice"): the sessions
  * they attended in a timeframe — group classes and private sessions — laid out
  * by day, week, month or year, against the timeframe before it, with what they
  * are booked into and not checked in, time on the mat, weeks in a row, their usual slot and

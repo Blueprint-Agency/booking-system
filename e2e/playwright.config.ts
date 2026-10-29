@@ -8,10 +8,10 @@ import {
 } from './src/local-stack'
 
 /**
- * The browser journeys (#145), against one of two stacks:
+ * The browser journeys, against one of two stacks:
  *
  *  - Local (`E2E_STACK=local`): CI — every pull request and every deploy gate
- *    (#207) — the Playwright agents, and a developer. The backend and both
+ *    — the Playwright agents, and a developer. The backend and both
  *    frontends run on this machine, and Stripe is a stub — see src/local-stack.ts.
  *  - Deployed (the default): any deployed stack, by hand. `E2E_STUDIO_CMD`
  *    makes the studio there, and Stripe is Stripe's own test mode. CI no
@@ -40,7 +40,7 @@ export default defineConfig({
   // local stack — and is noise against a deployed stack.
   //
   // The paid journeys (buy-and-book, member-checkout) run only on the local
-  // stack too. A studio takes payments only on its own Stripe account (#293),
+  // stack too. A studio takes payments only on its own Stripe account,
   // and a deployed stack holds no key for a throwaway studio — the only Stripe
   // keys there are studios' own, and a test must not borrow one. CI runs them
   // against the Stripe stub (e2e-local.yml).

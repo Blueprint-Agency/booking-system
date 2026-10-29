@@ -65,8 +65,8 @@ interface ProvisionTenantInput {
    */
   termMonths?: TermMonths
   /**
-   * The studio's Business details from its first Receipt and email (#391,
-   * #398). A blank or omitted Business name is the Domain name (`name`), so a
+   * The studio's Business details from its first Receipt and email. A blank
+   * or omitted Business name is the Domain name (`name`), so a
    * new studio is never nameless; the rest omitted leaves the default prefix
    * and no details, for its admin to set.
    */
@@ -232,7 +232,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       // archive is coming.
       if (adminEmail) await seedEmailTemplates(tx, tenant)
 
-      // Its cancellation policy (#318), held back for the same reason: without
+      // Its cancellation policy, held back for the same reason: without
       // one, cancelling, the waitlist and the Policy page all answer
       // `policy_not_seeded`, and an archive brings the studio's own.
       if (adminEmail) await seedPolicy(tx, tenant)
@@ -351,7 +351,7 @@ export async function inviteFirstAdmin(
         timezone: tenant.timezone,
       })
     }
-    // The default cancellation policy (#318), likewise. A policy an archive
+    // The default cancellation policy, likewise. A policy an archive
     // brought is the studio's own and stays: the seed writes nothing over a row
     // that is there.
     await seedPolicy(db, tenant)

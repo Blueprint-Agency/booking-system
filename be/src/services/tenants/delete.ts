@@ -16,7 +16,7 @@
  * use, so a table added later is included without anyone remembering this file.
  * That includes the studio's `auth_events` rows and its payment-provider
  * credentials. Then its logins — the `staff` and `client` pools' rows, which are
- * this studio's own (#231) and never part of its archive, so not in that order:
+ * this studio's own and never part of its archive, so not in that order:
  * sessions, credentials, second factors and verifications, then the users. A
  * member or staff member of another studio has a login there, which is another
  * row. Then `tenant_settings`, then the `tenants` row itself, which takes with it

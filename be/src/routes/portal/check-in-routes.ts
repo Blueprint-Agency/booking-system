@@ -14,7 +14,7 @@ import { tenantId } from '../../middleware/tenant'
 import { plainDate } from '../../shared/plain-date'
 
 /**
- * The check-in surface (#192), mounted twice: at `/admin/check-in` and at
+ * The check-in surface, mounted twice: at `/admin/check-in` and at
  * `/instructor/check-in`. The two differ only in `source`, and what that
  * changes — an instructor reaches their own sessions only — is decided in the
  * service, so the two mounts cannot drift.

@@ -1,8 +1,8 @@
 import type { ErasedMember } from './member-tables'
 
 /**
- * What permanently deleting a member does to an audit row that named them
- * (#144, #375): the row stays, and nothing in it says who they were.
+ * What permanently deleting a member does to an audit row that named them:
+ * the row stays, and nothing in it says who they were.
  *
  * Audit rows are never deleted (prd §3.9, docs/adr/0008). Erasure is the one
  * edit made to them, and it touches only the member's personal data — their

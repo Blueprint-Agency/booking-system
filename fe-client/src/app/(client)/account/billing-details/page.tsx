@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The member's Billing details (#399): the up-to-three names and addresses
+ * The member's Billing details: the up-to-three names and addresses
  * their receipts are made out to, one of them the default that checkout picks.
  *
  * Add, edit, delete and make-default, each sent to the backend and the list

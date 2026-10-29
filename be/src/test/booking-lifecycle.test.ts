@@ -12,7 +12,7 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /**
- * The booking rules that move credits, over real HTTP (#140).
+ * The booking rules that move credits, over real HTTP.
  *
  * Every journey signs in with `signInAs`, acts through `/api/v1/me/bookings`
  * or the portal's `/admin/bookings`, and then reads the rows the request left
@@ -276,7 +276,7 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
 
   test('CXL-17 a member cannot cancel once the class has started: refused, booking and credit untouched', async () => {
     // Inside the window a member's cancel goes through as a Late cancel
-    // (#318, late-cancel.test.ts); it is the class starting that closes it.
+    // (late-cancel.test.ts); it is the class starting that closes it.
     const cal = await member(one, 'cal')
     const classId = await addClass(one, HOUR)
     const bookingId = await bookOk(cal, classId)
@@ -326,10 +326,9 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
   })
 
   test('CXL-03 a full class refuses the next member, and the seat a cancellation frees is theirs to book', async () => {
-    // Class waitlists are deferred in v1 (backend-architecture.md §8): a full
-    // class refuses outright, nobody is queued, and nothing is promoted. What
-    // the rules do guarantee is that the freed seat is bookable and charged.
-    // Whether to build the waitlist before launch is #152.
+    // A full class refuses a booking outright and queues nobody; the waitlist is
+    // joined through its own route (waitlist.test.ts). What the rules guarantee
+    // here is that the freed seat is bookable and charged.
     const eve = await member(one, 'eve')
     const fay = await member(one, 'fay')
     const classId = await addClass(one, 3 * DAY, 1)
@@ -407,7 +406,7 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
     assert.equal((await bookingsOf(kim, classAtOne)).length, 0)
 
     // Studio two's session carried to studio one's hostname is refused outright:
-    // logins are per studio (#231), so studio one cannot even see it.
+    // logins are per studio, so studio one cannot even see it.
     const kimAtOne = {
       ...kim,
       headers: { ...kim.headers, 'X-Tenant-Slug': one.slug, Origin: frontendOrigin('client', one) },

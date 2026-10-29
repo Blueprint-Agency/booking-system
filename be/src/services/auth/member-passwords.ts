@@ -16,7 +16,7 @@ import {
 import { spendSignInStepBudget } from './rate-limit'
 
 /**
- * Member passwords (#173): the steps of the member sign-in form that are not
+ * Member passwords: the steps of the member sign-in form that are not
  * Better Auth's own endpoints. Signing in with a password and changing one are
  * (`/api/v1/auth/client/sign-in/email`, `/change-password`); these are the
  * email step, "forgot password", and following the mailed link.
@@ -87,7 +87,7 @@ export async function mailLinkOrThrow(from: Headers, email: string, tenantId: st
  * Set a member's password from the mailed link, and sign them in to the studio
  * the page is on.
  *
- * A link is its studio's own (#231): another studio's is not found here at all.
+ * A link is its studio's own: another studio's is not found here at all.
  * Its owner must still be a member here, and not a blocked one, or setting the
  * password would lead to a session that reaches nothing. Checked before the
  * token is spent, so a refusal leaves the link usable.

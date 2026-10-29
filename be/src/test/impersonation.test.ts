@@ -11,7 +11,7 @@ import {
 } from './harness'
 
 /**
- * A studio admin impersonates a member (#118), over real HTTP.
+ * A studio admin impersonates a member, over real HTTP.
  *
  * The portal route creates a real `client` pool session for the member and a
  * BE-signed grant naming the admin behind it. The member app presents both;
@@ -187,7 +187,7 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
     const { grant } = await impersonate(admin.headers, member.id)
 
     // The same person, a member at studio two, impersonated there too. They have
-    // a login at each studio (#231), so the grant names a different subject from
+    // a login at each studio, so the grant names a different subject from
     // studio two's session, and is refused on that before its studio is asked.
     const atTwo = await memberAt(two, adminTwo.headers, member.email)
     assert.notEqual(atTwo.authUserId, member.authUserId, 'two rows, on two logins')

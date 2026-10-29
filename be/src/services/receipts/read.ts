@@ -1,6 +1,6 @@
 /**
- * Receipts read back exactly as they were issued: a member's own (#384), and
- * every one at the studio for its admins (#389).
+ * Receipts read back exactly as they were issued: a member's own, and
+ * every one at the studio for its admins.
  *
  * Every figure comes off the Receipt's own snapshot. Nothing is joined from the
  * Purchase, the catalogue or the member, so what this returns is what the
@@ -82,7 +82,7 @@ export interface StudioReceiptSummary extends ReceiptSummary {
   /** The buyer as the Receipt names them; emptied by a permanent deletion. */
   buyerName: string | null
   buyerEmail: string | null
-  /** Who the sale is billed to (#401), or null where no Billing details were chosen; emptied by a permanent deletion. */
+  /** Who the sale is billed to, or null where no Billing details were chosen; emptied by a permanent deletion. */
   billTo: ReceiptRow['billTo']
 }
 
@@ -147,7 +147,7 @@ const studioSummary = (r: ReceiptRow): StudioReceiptSummary => ({
 
 /**
  * Every Receipt at this studio, newest first, one page of them: the admin's
- * Receipts page (#389). The search reads the Receipt's own snapshot, the
+ * Receipts page. The search reads the Receipt's own snapshot, the
  * number and the buyer it names, as everything else on a Receipt does.
  */
 export async function listStudioReceipts(
@@ -160,7 +160,7 @@ export async function listStudioReceipts(
 
 /**
  * Every Receipt the admin's filters keep, newest first, unpaged: the list as a
- * file for the bookkeeper (#390). The same filters and order as the list, so
+ * file for the bookkeeper. The same filters and order as the list, so
  * the export is the list the admin was looking at, every page of it.
  */
 export async function exportStudioReceipts(tenantId: string, filters: StudioReceiptFilters): Promise<StudioReceiptSummary[]> {
@@ -188,7 +188,7 @@ export async function studioReceipt(tenantId: string, receiptId: string): Promis
 
 /**
  * The Receipt a Purchase was issued, whoever's it is, or null: for the
- * backend's own sends (the confirmation email, #387), never for a member's
+ * backend's own sends (the confirmation email), never for a member's
  * request, which goes through the member-scoped reads above.
  */
 export async function purchaseReceipt(tenantId: string, purchaseId: string | null): Promise<ReceiptRow | null> {

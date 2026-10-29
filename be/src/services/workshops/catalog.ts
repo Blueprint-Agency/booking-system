@@ -254,7 +254,7 @@ export async function listActiveWorkshopCards(tenantId: string): Promise<Worksho
   const cards: WorkshopCardPayload[] = []
   for (const w of ws) {
     // Not on sale until it has a tier: the API builds a workshop in steps, and
-    // one between its basics and its first tier has no price to buy at (#235).
+    // one between its basics and its first tier has no price to buy at.
     if (!tiersByWorkshop.get(w.id)?.length) continue
     cards.push(
       await buildCard(
@@ -291,7 +291,7 @@ export async function getWorkshopDetailPayload(
   const { daysByWorkshop, tiersByWorkshop } = await loadCommon(tenantId, [w.id])
   const days = daysByWorkshop.get(w.id) ?? []
   const tiers = tiersByWorkshop.get(w.id) ?? []
-  // As the card list leaves it out: no tier, nothing a member can buy (#235).
+  // As the card list leaves it out: no tier, nothing a member can buy.
   if (tiers.length === 0) throw new NotFoundError('workshop_not_found')
 
   const [locRow] = await db

@@ -17,10 +17,10 @@ import {
  * (`https://*.reservetoday.app`, `https://*.portal.dev.…`, …), plus any exact
  * origin that names no tenant, such as the bare local `http://localhost:3000`.
  *
- * `PORTAL_ORIGIN` and `CLIENT_ORIGIN` used to be a third source. They named one
- * studio's two apps, which the wildcards already cover, and they were read
- * elsewhere as link bases — which is how a studio's identity got into platform
- * configuration and out again into other studios' emails. An environment that
+ * There is no third source. `PORTAL_ORIGIN` and `CLIENT_ORIGIN` would name one
+ * studio's two apps, which the wildcards already cover, and read elsewhere as
+ * link bases they would get a studio's identity into platform configuration and
+ * out again into other studios' emails. An environment that
  * really does need an extra exact origin puts it in `FRONTEND_URLS`,
  * which has always accepted one.
  */

@@ -27,7 +27,7 @@ export function financeCsv(summary: FinanceSummary): string {
     'discount_sgd',
     'promo_code',
     'money_in_sgd',
-    // How the money in was paid (#282), worded as the screen words it.
+    // How the money in was paid, worded as the screen words it.
     'method',
     'money_out_sgd',
     'refunded',

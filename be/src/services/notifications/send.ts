@@ -41,9 +41,9 @@ export type TemplateSlug =
   // renderer has no conditionals, so the trial pass needs its own slug (§13).
   | 'trial_pass_purchase_confirmed'
   // A corporate package grants no credits: what was bought is a Corporate
-  // Request the studio arranges with the member, so it says that (#374 step 5).
+  // Request the studio arranges with the member, so it says that.
   | 'corporate_purchase_confirmed'
-  // Merch and a standalone Cross-Location Add-On (#388): neither grants a
+  // Merch and a standalone Cross-Location Add-On: neither grants a
   // package or books a place, so neither has a confirmation of its own to
   // carry the Receipt. This one is the Receipt, under the studio's copy.
   | 'purchase_receipt'

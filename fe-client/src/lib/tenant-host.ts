@@ -90,8 +90,8 @@ export function isTenantLabel(label: string): boolean {
  *
  * Null is not an error, but it is a dead end for anything that needs data: the
  * backend refuses a tenant-scoped request carrying no `X-Tenant-Slug` with
- * `tenant_required` (400). It used to answer as Tenant #1, which meant a page on
- * the bare root domain silently rendered one studio's data. Whether a
+ * `tenant_required` (400). It never answers as a default Tenant, which would
+ * silently render one studio's data on the bare root domain. Whether a
  * well-formed slug corresponds to a Tenant that *exists* is not decidable here —
  * that is the resolver's job, over HTTP.
  *

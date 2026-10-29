@@ -12,8 +12,8 @@ import { plainDate } from '../shared/plain-date'
 export const explainReceiptsQuery = explainInvalid('That Receipts filter is not valid.')
 
 /**
- * How a Receipt goes over the wire, to the member (`/me/receipts`, #384) and
- * to the studio's admins (`/portal/admin/receipts`, #389) alike: one shape,
+ * How a Receipt goes over the wire, to the member (`/me/receipts`) and
+ * to the studio's admins (`/portal/admin/receipts`) alike: one shape,
  * one HTML and one PDF, so the two can never show the same Receipt differently.
  */
 
@@ -53,11 +53,11 @@ const receiptView = (r: ReceiptRow) => ({
     registration_number: r.sellerRegistrationNumber,
     address: r.sellerAddress,
     footer: r.sellerFooter,
-    // The studio's contact email as of issue (#403), or null.
+    // The studio's contact email as of issue, or null.
     email: r.sellerEmail,
   },
   buyer: { name: r.buyerName, email: r.buyerEmail },
-  // Who the Purchase was billed to (#401), or null where it chose no Billing details.
+  // Who the Purchase was billed to, or null where it chose no Billing details.
   // Its fields are already the wire's: name, line1, line2, city, state, postcode, country.
   bill_to: r.billTo,
   lines: r.lines.map(l => ({
@@ -90,7 +90,7 @@ export async function receiptDetailView(r: ReceiptRow) {
   return { ...receiptView(r), html: receiptHtmlPage(receiptDocument(r, await receiptStudio(r))) }
 }
 
-/** The Receipt as its PDF (#386), saved under its number. */
+/** The Receipt as its PDF, saved under its number. */
 export async function receiptPdfResponse(c: Context, receipt: ReceiptRow): Promise<Response> {
   const bytes = await receiptPdf(receipt)
   c.header('Content-Type', 'application/pdf')

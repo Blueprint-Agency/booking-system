@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The member's Receipts — `GET /me/receipts` (#384). Newest first, a page at a
+ * The member's Receipts — `GET /me/receipts`. Newest first, a page at a
  * time, with a date range to pull out a year's worth. Each opens the Receipt
  * itself at `/account/receipts/[id]`.
  */

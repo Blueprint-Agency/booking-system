@@ -26,7 +26,7 @@ export async function beginCorporateCheckout(
   tenantId: string,
   clientId: string,
   packageId: string,
-  /** The member's chosen Billing details (#402): a S$0 package is billed to them here. */
+  /** The member's chosen Billing details: a S$0 package is billed to them here. */
   billTo: BillingAddress,
 ): Promise<CorporateCheckout> {
   const [pkg] = await db
@@ -53,7 +53,7 @@ export async function beginCorporateCheckout(
   // Nothing to charge: the provider is skipped, as for any free sale (§10), and
   // the request is made here because there is no webhook coming to make it.
   const cents = toCents(pkg.priceSgd)
-  // No Promotion and no Promo Code: the one line is the package at its price (#382).
+  // No Promotion and no Promo Code: the one line is the package at its price.
   const lines = [saleLine({ description: pkg.name, listPriceSgd: pkg.priceSgd })]
   if (grantsWithoutPaying(cents)) {
     const purchase = await openSettledPurchase({ tenantId, clientId, kind: 'corporate_package', metadata, lines, billTo })

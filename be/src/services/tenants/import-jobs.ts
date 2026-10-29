@@ -11,10 +11,10 @@ import { ArchiveError, unpackArchive } from './transfer-archive'
 /**
  * Restoring a studio archive as a job the server owns.
  *
- * The import used to be one request that held the archive, wrote the studio and
- * answered with the summary. Everything about it lived in that request: a
- * reload lost the answer, a closed tab lost the answer, and nothing could say
- * how far it had got. Now it is three steps, each of which leaves the job row
+ * The import is not one request that holds the archive, writes the studio and
+ * answers with the summary: a reload would lose the answer, a closed tab would
+ * lose the answer, and nothing could say how far it had got. So it is three
+ * steps, each of which leaves the job row
  * (`tenant_imports`, migration 0073) saying where things stand:
  *
  *   1. **Start** — the operator names the file and its size. The row is
@@ -70,7 +70,7 @@ const live = new Set<string>()
 /**
  * What each job this process started was asked to do, and — for a replace —
  * the confirmation to carry into the write. Held here rather than on the row
- * because the job table has no column for it (#339 adds no migration): a job is
+ * because the job table has no column for it: a job is
  * started, uploaded and run by this one process, and a job whose process died
  * is failed by its heartbeat anyway. A succeeded job's mode is on its summary,
  * so its entry goes then; a failed one's stays until it is dismissed, so its

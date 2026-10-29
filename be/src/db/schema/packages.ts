@@ -196,7 +196,7 @@ export const promotions = pgTable(
 export const promoCodes = pgTable(
   'promo_codes',
   {
-    // `NOT NULL` ahead of the contract step (#63), which turns the column on
+    // `NOT NULL` ahead of the contract step, which turns the column on
     // every other table. Here it is load-bearing *now*: uniqueness of a code's
     // text is `(tenant_id, code)`, and Postgres treats NULLs as distinct — so a
     // nullable column would mean two rows could both be `SUMMER` and neither
@@ -289,7 +289,7 @@ export const promoCodeRedemptions = pgTable(
     promoCodeId: uuid('promo_code_id')
       .notNull()
       .references(() => promoCodes.id, { onDelete: 'restrict' }),
-    // Null once the member is permanently deleted (#144); the money taken off stays.
+    // Null once the member is permanently deleted; the money taken off stays.
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
     status: promoCodeRedemptionStatusEnum('status').notNull(),
     /** When the Hold lapses. Set to the payment session's own expiry. */
@@ -323,7 +323,7 @@ export const clientPackages = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // Null once the member is permanently deleted (#144): what was sold, and for
+    // Null once the member is permanently deleted: what was sold, and for
     // how much, stays in the studio's accounts without saying to whom.
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
     kind: clientPackageKindEnum('kind').notNull(),
@@ -406,7 +406,7 @@ export const clientPackages = pgTable(
     // are sales. Finance reads it to keep a comp's List Price out of Gross.
     complimentary: boolean('complimentary').notNull().default(false),
     /**
-     * The sale that bought this plan (#92). A Purchase owns the money and a
+     * The sale that bought this plan. A Purchase owns the money and a
      * payment is evidence of part of it, so a plan settled by two cards has one
      * pointer here rather than one per card — which is exactly what the payment
      * intent it replaces could not express.
@@ -429,8 +429,8 @@ export const clientPackages = pgTable(
     sourcePtPackageIdFkIdx: index('client_packages_source_pt_package_id_fk_idx').on(table.sourcePtPackageId),
     clientKindIdx: index('client_packages_client_kind_idx').on(table.tenantId, table.clientId, table.kind),
     clientExpiryIdx: index('client_packages_client_expiry_idx').on(table.tenantId, table.clientId, table.expiresAt),
-    // One plan per Purchase — the index that decides a redelivery race, in the
-    // place the payment intent's used to. Partial, because a comp grant has no
+    // One plan per Purchase — the index that decides a redelivery race.
+    // Partial, because a comp grant has no
     // Purchase and any number of them may exist.
     purchaseUnique: uniqueIndex('client_packages_purchase_unique')
       .on(table.tenantId, table.purchaseId)
@@ -445,8 +445,7 @@ export const clientPackages = pgTable(
     // run at once in either Family, and the member picks the payer
     // (be/docs/adr/0010; migration 0093 dropped the two partial unique indexes).
     // A comp took no money and never reached the payment provider — so no
-    // Purchase bought it. (Read off the payment intent until #92 took that
-    // column off; migration 0065 re-states the check against `purchase_id`.)
+    // Purchase bought it. The check is against `purchase_id` (migration 0065).
     complimentaryFree: check(
       'client_packages_complimentary_free',
       sql`NOT ${table.complimentary} OR (${table.amountPaidSgd} = 0 AND ${table.purchaseId} IS NULL)`,

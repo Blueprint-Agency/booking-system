@@ -23,7 +23,7 @@ import {
 } from "@/lib/classpass";
 
 /**
- * ClassPass (#407, #409): the studio forwards ClassPass's emails to its
+ * ClassPass: the studio forwards ClassPass's emails to its
  * private ClassPass address, and ClassPass bookings are imported from them.
  * Admins only; the backend refuses instructors.
  */

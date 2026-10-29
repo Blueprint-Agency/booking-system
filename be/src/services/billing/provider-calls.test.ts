@@ -33,7 +33,7 @@ let billing: Billing
  * every backend test file shares one process, where a top-level hook would run
  * around every other file's tests too, and would reset their Stripe fake.
  *
- * No environment is set: since #293 there is no platform key, signing secret or
+ * No environment is set: there is no platform key, signing secret or
  * descriptor prefix to set. A studio's own account is all a call is made on,
  * and each test gives its studio one through the fake.
  */
@@ -64,7 +64,7 @@ function setUp(): void {
     }
   })
 
-  // Both halves of the seam. Since #100 the accessor asks which account a call is
+  // Both halves of the seam. The accessor asks which account a call is
   // on before it makes one, and leaving that on the real lookup would send this
   // file — which deliberately has no database — to Postgres.
   afterEach(() => {
@@ -165,7 +165,7 @@ describe('the refund call', () => {
   })
 
   /**
-   * The migration (#97, #293). The studio is on its own account now; this
+   * The migration. The studio is on its own account now; this
    * payment was taken on the platform's before it moved. Reading the studio's
    * *current* credentials would send the refund to an account where the intent
    * does not exist — the member gets nothing back and the error names an id
@@ -312,7 +312,7 @@ describe('an event that arrived on one studio’s endpoint and names another', (
 })
 
 /**
- * The signature check on a studio's own endpoint (#100, #293), below the route:
+ * The signature check on a studio's own endpoint, below the route:
  * the route's first step is a database lookup of the slug, and this file has no
  * database. Over HTTP, on `/api/v1/webhooks/stripe/:slug`, a forged signature is
  * refused in `src/test/package-purchase.test.ts` (PAY-17).

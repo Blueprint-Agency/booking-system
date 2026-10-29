@@ -1,7 +1,7 @@
 import type { Api } from "./api";
 
 /**
- * A studio's Business details (#391, #398): the Business name it trades under,
+ * A studio's Business details: the Business name it trades under,
  * the prefix its Receipt numbers carry and the details its Receipts print.
  * Saving them reaches only Receipts issued afterwards; the backend copies them
  * onto each one as it is issued.

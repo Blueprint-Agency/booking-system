@@ -1,7 +1,7 @@
 import type { TemplateSlug } from './send'
 
 /**
- * The studio's Business name (#400), filled at send time on every template.
+ * The studio's Business name, filled at send time on every template.
  *
  * Not in any slug's list below, because it is not the sender's to supply:
  * `sendTemplatedEmail` fills it from the studio's mail identity, the same name
@@ -39,7 +39,7 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // scheduled session by instructor and time, else "Your private session
   // request" — and `refund_line` is empty when no session came back.
   pt_request_cancelled: ['client_name', 'session_line', 'refund_line', 'account_url'],
-  // A purchase confirmation is the member's receipt (#370), so it states what
+  // A purchase confirmation is the member's receipt, so it states what
   // was paid: `amount_paid` is the figure with its currency ("S$120.00"),
   // and the zero amount on a free tier. Same variable on the package and trial
   // confirmations below.
@@ -68,7 +68,7 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   admin_cancel_pt: ['client_name', 'instructor_name', 'starts_at', 'refund_line', 'account_url'],
   // `refund_line` is a whole sentence: what the member paid, in the shared money
   // form ("S$120.00", `sgdText`), and that the studio is arranging the refund —
-  // nothing is refunded automatically when a workshop is cancelled (#272) — or,
+  // nothing is refunded automatically when a workshop is cancelled — or,
   // for a place that was free, the amount alone.
   admin_cancel_workshop: ['client_name', 'workshop_name', 'refund_line', 'workshops_url'],
   // Goes to admins, not clients — the instructor cancelled their own class.
@@ -89,7 +89,7 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // some kind whatever the template said around them, so they are out of the
   // allow-list.
   //
-  // #387: on these four `receipt_url` is the member's Receipt in the booking
+  // On these four `receipt_url` is the member's Receipt in the booking
   // app, and `services/receipts/email.ts:withReceipt` also fills
   // `receipt_number` and draws the receipt block under the copy. No default
   // copy shows `receipt_number`, and this list holds what the defaults show
@@ -104,7 +104,7 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // what was bought is the pending Corporate Request the studio now arranges.
   // `amount_paid` in the shared money form, as on the confirmations above.
   corporate_purchase_confirmed: ['client_name', 'package_name', 'amount_paid', 'receipt_url'],
-  // #388: Merch and a standalone Cross-Location Add-On, sent only with a
+  // Merch and a standalone Cross-Location Add-On, sent only with a
   // Receipt to carry, so `receipt_url` is always the member's Receipt and
   // `receipt_number`, which `withReceipt` fills, its number: the default copy
   // shows it. `item_name` is what was bought, in the Receipt's own phrase:
@@ -125,7 +125,7 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // NTF-18: sent to the Instructor and copied to each active Admin, so the copy
   // greets nobody by name; `checkin_url` is the recipient's own check-in desk.
   checkin_nag: ['instructor_name', 'session_label', 'date', 'pending_count', 'checkin_url'],
-  // #411: to every active Admin, when a ClassPass booking took an Overbook
+  // To every active Admin, when a ClassPass booking took an Overbook
   // seat. `client_name` is the ClassPass member; `classpass_url` the
   // studio's ClassPass page.
   classpass_overbooked: ['client_name', 'class_name', 'date', 'classpass_url'],

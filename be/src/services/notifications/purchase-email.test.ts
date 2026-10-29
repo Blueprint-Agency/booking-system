@@ -58,7 +58,7 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
   )
 }
 
-// --- a bound PT package names the instructor in that same line (#109) --------
+// --- a bound PT package names the instructor in that same line --------
 // The renderer has no conditionals, so a variable of its own would leave a
 // dangling label on every open package. Folding it in is what keeps ONE
 // template correct for a bound purchase and an open one.
@@ -137,8 +137,8 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
 }
 
 // --- the receipt URL is the member's Receipt, else the account page ----------
-// Paid or free, a purchase links the member's Receipt in the booking app
-// (#387). An escaped empty value inside an href renders a visible link that
+// Paid or free, a purchase links the member's Receipt in the booking app.
+// An escaped empty value inside an href renders a visible link that
 // goes nowhere, so a grant with no Receipt points at the page that lists what
 // they own.
 {
@@ -155,7 +155,7 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
   )
 }
 
-// --- the amount paid, as a receipt prints it (#370) ---------------------------
+// --- the amount paid, as a receipt prints it ---------------------------
 // The confirmation is the member's receipt. The figure is in the form the
 // studio's other member-facing money is ("S$150.00", as a refund notice and a
 // part payment print it), always shows cents, and a free purchase shows the

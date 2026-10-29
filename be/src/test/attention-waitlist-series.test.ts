@@ -14,7 +14,7 @@ import {
 import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
- * Staff attention (#476, #483): the waitlist and series follow-ups.
+ * Staff attention: the waitlist and series follow-ups.
  *
  *   - `waitlist_seat_free`: inside the Cancellation Window, a free online seat and
  *     people waiting. Admins and the class's main instructor.
@@ -173,7 +173,7 @@ describe('Staff attention: waitlist and series', { skip: integrationTestsEnabled
         capacityWaitlist: 5,
         creditCost: 1,
         createdByStaffId: admin.id,
-        // Priced, so the instructor-pay line (#486) stays out of these counts.
+        // Priced, so the instructor-pay line stays out of these counts.
         instructorPaySgd: '30.00',
         ...(over.lifecycle ? { lifecycle: over.lifecycle } : {}),
       })

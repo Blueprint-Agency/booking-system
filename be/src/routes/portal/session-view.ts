@@ -1,7 +1,7 @@
 import type { SessionAtStudio } from '../../services/auth/auth-users'
 
 /**
- * A session on a member's or staff member's detail view (#119). No token: the
+ * A session on a member's or staff member's detail view. No token: the
  * portal names a session to show it, never to use it.
  */
 export function sessionView(s: SessionAtStudio) {

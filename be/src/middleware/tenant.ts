@@ -136,11 +136,9 @@ export function tenantId(c: Context): string {
  * actually belongs to?
  *
  * Called from the two studio auth middlewares, at the first moment the caller's own
- * row is in hand. A null `rowTenantId` used to be read as tenant #1 — the right
- * reading while the column was still nullable and an un-backfilled row really
- * did belong to the first studio. `tenant_id` is `NOT NULL` on all 55 tables
- * now (`tenantIdColumn`), so null is no longer a pre-tenancy row; it is a row
- * that should not exist. Matching it against a studio would let it through, so
+ * row is in hand. A null `rowTenantId` is not read as tenant #1: `tenant_id` is
+ * `NOT NULL` on every domain table (`tenantIdColumn`), so a null is not a
+ * pre-tenancy row; it is a row that should not exist. Matching it against a studio would let it through, so
  * it matches nothing.
  */
 export function tenantMatches(c: Context, rowTenantId: string | null): boolean {

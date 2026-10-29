@@ -30,7 +30,7 @@ export async function beginMerchCheckout(input: {
   tenantId: string
   clientId: string
   merchId: string
-  /** The member's chosen Billing details (#402): a free item is billed to them here. */
+  /** The member's chosen Billing details: a free item is billed to them here. */
   billTo: BillingAddress
 }): Promise<MerchCheckout> {
   const [item] = await db
@@ -42,7 +42,7 @@ export async function beginMerchCheckout(input: {
   if (item.archivedAt) throw new BadRequestError('merch_not_available')
 
   const totalCents = toCents(item.priceSgd)
-  // One item, no Promotion and no Promo Code: its line is its price (#382).
+  // One item, no Promotion and no Promo Code: its line is its price.
   const lines = [saleLine({ description: item.title, listPriceSgd: item.priceSgd })]
 
   // A free item still becomes an order — it is the line the studio hands it over
@@ -72,7 +72,7 @@ export async function beginMerchCheckout(input: {
       billTo: input.billTo,
     })
     // Its S$0.00 Receipt, which that Purchase was issued, is the member's
-    // email (#388), once the order's transaction has committed. The sender
+    // email, once the order's transaction has committed. The sender
     // reports and swallows, so a failed send cannot undo the order.
     const tenantId = input.tenantId
     afterCommit(() => sendPurchaseReceiptEmail(tenantId, purchase.id))

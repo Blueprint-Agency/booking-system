@@ -70,7 +70,7 @@ export async function receiptUrlPatch(
 
 /**
  * What a succeeded payment learns from its charge: the receipt, and how it was
- * paid (#282). One retrieve for both — the method is on the same charge the
+ * paid. One retrieve for both — the method is on the same charge the
  * receipt is — and best-effort for both: a failed retrieve writes neither and
  * the payment is banked all the same.
  */
@@ -78,7 +78,7 @@ async function chargePatch(
   tenantId: string,
   paymentIntentId: string,
   /**
-   * The account the intent lives on; null is the platform's (#97). Retrieved
+   * The account the intent lives on; null is the platform's. Retrieved
    * from *there* rather than from wherever the studio sells today — a member
    * finishing a checkout begun before their studio moved holds an intent the
    * studio's new key cannot see.
@@ -91,7 +91,7 @@ async function chargePatch(
 }
 
 /**
- * What **this session** actually captured, which since #93 is not always the
+ * What **this session** actually captured, which is not always the
  * price of what was bought.
  *
  * The ledger records money, and a part payment is one card's worth of it; the
@@ -136,7 +136,7 @@ async function tenantForClient(clientId: string): Promise<string> {
 }
 
 /**
- * Which Purchase this payment is evidence of part of. **Never null**: since #92
+ * Which Purchase this payment is evidence of part of. **Never null**:
  * the payment row's `purchase_id` is the only route from money to what the
  * money bought, so there is no shape of this that a payment may take.
  *
@@ -148,7 +148,7 @@ async function tenantForClient(clientId: string): Promise<string> {
  * `amount_paid_sgd` and the ledger that this record exists to prevent.
  *
  * Failing both, one is opened here and closed by the recompute a moment later.
- * That is a session created before #91 shipped and completed after #92 did: one
+ * That is a session created before Purchases existed and completed after they did: one
  * payment for the whole sale, the only shape this system has ever taken, and
  * the same Purchase the backfill would have given it.
  *
@@ -302,7 +302,7 @@ async function settleAndMayGrant(
     return false
   }
 
-  // **At the FIRST payment, not at settlement** (#93). The price a Promo Code
+  // **At the FIRST payment, not at settlement**. The price a Promo Code
   // cut is already frozen on the Purchase, so a member paying with two cards is
   // paying the discounted price whatever happens next; leaving the Redemption
   // Held until the second card would let its Hold lapse and put a capped code's
@@ -377,7 +377,7 @@ async function returnRefusedSale(
  * for days, and the confirmation page's `sync-session` fallback replays it by
  * hand; a session whose charge was refunded still reports itself paid. Without
  * the predicate that replay would flip a refunded payment back to `succeeded`,
- * which since #92 is the column that says what a Refund still has to return —
+ * which is the column that says what a Refund still has to return —
  * so a refunded plan would offer its Refund button again and reach the provider
  * for money already given back.
  */
@@ -533,17 +533,17 @@ export function refuseWrongTenant(
 export async function handleStripeEvent(
   event: Stripe.Event,
   /**
-   * The studio whose endpoint this delivery arrived on (#100) — or, for the
+   * The studio whose endpoint this delivery arrived on — or, for the
    * member's confirmation page, whose own key the session was read back with.
    * Either way the provider has already proved *whose* event this is, and a
    * body that routes to a different studio is not one this may act on.
    *
-   * Required since #293: the platform's shared endpoint, where the body was the
-   * only thing that named a studio, is gone.
+   * Required: there is no platform-wide shared endpoint, where the body was the
+   * only thing that named a studio.
    */
   expectedTenantId: string,
   /**
-   * The account the money in this event is on (#97) — the one that **signed**
+   * The account the money in this event is on — the one that **signed**
    * the delivery, or the one the confirmation page read the session from.
    *
    * It comes from the signature check rather than from a fresh reading of the
@@ -674,9 +674,9 @@ async function dispatchStripeEvent(
 
       const promoCodeId = meta.promo_code_id || null
 
-      // A sale paid in full at the first attempt — every sale before #93 — clears
-      // here and carries on exactly as it did before Purchases existed. A part
-      // payment stops, having banked its money and granted nothing.
+      // A sale paid in full at the first attempt clears here and carries on to
+      // the grant. A part payment stops, having banked its money and granted
+      // nothing.
       //
       // In one savepoint with the grant, so a grant refused for a Trial Pass
       // the member already holds (PKG-43) leaves the Purchase as the settle
@@ -694,11 +694,11 @@ async function dispatchStripeEvent(
             packageId,
             appliedPromotionId: meta.applied_promotion_id || null,
             appliedPromoCodeId: promoCodeId,
-            // Home Location for an Unlimited Plan (§1). The checkout that puts it on
-            // the session is #23; this only carries it through.
+            // Home Location for an Unlimited Plan (§1). Checkout puts it on
+            // the session; this only carries it through.
             locationId: meta.location_id || null,
-            // The instructor the member picked for an Instructor-Bound PT package
-            // (#109). Checkout put it on the session and refused the purchase if it
+            // The instructor the member picked for an Instructor-Bound PT package.
+            // Checkout put it on the session and refused the purchase if it
             // was wrong; this only carries it through.
             instructorId: meta.instructor_id || null,
             crossLocationPaidSgd: crossLocationSgd,
@@ -725,14 +725,14 @@ async function dispatchStripeEvent(
         ...(await chargePatch(tenantId, paymentIntentId, providerAccountId, retry)),
       })
 
-      // The studio's Receipt for the sale (#384, #385), in this same
+      // The studio's Receipt for the sale, in this same
       // transaction, so the sale and its Receipt commit or roll back together.
       // After the payment is banked: the Receipt prints how it was paid —
       // every payment, when a Part Payment is what settled it. Idempotent, so
       // a redelivery or the confirmation page's fallback finds the one issued.
       const { issued } = await issueReceipt(db, tenantId, purchase.id)
 
-      // One confirmation per purchase, carrying its Receipt (#387), however
+      // One confirmation per purchase, carrying its Receipt, however
       // many times the provider retries: only the delivery that issued the
       // Receipt sends, once it has committed (`afterCommit`). The helper
       // cannot throw.
@@ -808,10 +808,10 @@ async function dispatchStripeEvent(
         clientPackageId,
         ...(await chargePatch(tenantId, paymentIntentId, providerAccountId, retry)),
       })
-      // The sale's Receipt (#385), once its payment is banked — as for a plan.
+      // The sale's Receipt, once its payment is banked — as for a plan.
       const { issued } = await issueReceipt(db, tenantId, purchase.id)
       // An Add-On grants no package, so it has no confirmation of its own: its
-      // email is the Receipt (#388), from the delivery that issued it, once
+      // email is the Receipt, from the delivery that issued it, once
       // that delivery has committed. The sender reports and swallows.
       if (issued) afterCommit(() => sendPurchaseReceiptEmail(tenantId, purchase.id))
       return
@@ -868,15 +868,15 @@ async function dispatchStripeEvent(
         paymentIntentId,
         await chargePatch(tenantId, paymentIntentId, providerAccountId, retry),
       )
-      // The sale's Receipt (#385), once its payment is banked — as for a plan.
+      // The sale's Receipt, once its payment is banked — as for a plan.
       const { issued } = await issueReceipt(db, tenantId, purchase.id)
-      // Merch has no confirmation of its own: its email is the Receipt (#388),
+      // Merch has no confirmation of its own: its email is the Receipt,
       // sent as the Add-On's is.
       if (issued) afterCommit(() => sendPurchaseReceiptEmail(tenantId, purchase.id))
       return
     }
 
-    // A corporate package (be-client § Corporate branch, #374). No credits: the
+    // A corporate package (be-client § Corporate branch). No credits: the
     // one pending Corporate Request this makes is the whole of what was bought,
     // and the studio settles the rest with the member over WhatsApp.
     if (kind === 'corporate_package') {
@@ -926,10 +926,10 @@ async function dispatchStripeEvent(
         paymentIntentId,
         await chargePatch(tenantId, paymentIntentId, providerAccountId, retry),
       )
-      // The sale's Receipt (#385), once its payment is banked — as for a plan.
+      // The sale's Receipt, once its payment is banked — as for a plan.
       const { issued } = await issueReceipt(db, tenantId, purchase.id)
 
-      // Step 5: one confirmation, carrying the Receipt (#387), from the
+      // Step 5: one confirmation, carrying the Receipt, from the
       // delivery that issued it — a redelivery stopped at the `succeeded` guard
       // above, and one that got past it finds the Receipt already issued. Sent
       // once the delivery has committed (`afterCommit`); the sender reports
@@ -983,9 +983,9 @@ async function dispatchStripeEvent(
       // deliberately does not re-check it — for a sale paid in one go the money is
       // already captured and the gap is seconds. A part payment stretches that gap
       // to however long the member takes to come back, so a Balance settled weeks
-      // later can book past a workshop that has since filled, silently. #93's
-      // acceptance criteria say only that no place is held and that the member is
-      // told so, which is what ships here. Upgrade path: a capacity check on the
+      // later can book past a workshop that has since filled, silently. The rule
+      // says only that no place is held and that the member is
+      // told so, which is what happens here. Upgrade path: a capacity check on the
       // settling payment that refuses the booking and flags the Purchase for the
       // studio to refund — which needs a way to refund a Purchase that granted
       // nothing, and there is none yet (see `refundStatesFor`).
@@ -1047,11 +1047,11 @@ async function dispatchStripeEvent(
           )
       }
 
-      // The sale's Receipt (#385). The booking banked the payment and the
+      // The sale's Receipt. The booking banked the payment and the
       // write above recorded how it was paid, so the Receipt prints both.
       const { issued } = await issueReceipt(db, tenantId, purchase.id)
 
-      // One confirmation, carrying the Receipt (#387), from the delivery that
+      // One confirmation, carrying the Receipt, from the delivery that
       // issued it, once that delivery has committed (`afterCommit`).
       if (issued) afterCommit(() => sendWorkshopPurchaseEmail(tenantId, booked.bookingId))
       return

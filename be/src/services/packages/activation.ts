@@ -70,7 +70,7 @@ const expiryTime = sgFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour1
 
 /**
  * A Dormant package is judged by the expiry it would get by Activating at
- * `now`, the moment scheduling would start its clock (be/docs/adr/0011, #444).
+ * `now`, the moment scheduling would start its clock (be/docs/adr/0011).
  */
 export function assertPackageCoversSession(
   pkg: Parameters<typeof effectiveExpiry>[0],

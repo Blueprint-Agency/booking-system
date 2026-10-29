@@ -11,7 +11,7 @@ import type { SessionChangedPayload, SessionKind } from './session-update-copy'
 import { recordUpdate } from './updates'
 
 /**
- * The writes behind the instructor's session Updates (#476, #493). Each is called
+ * The writes behind the instructor's session Updates. Each is called
  * from the service that does the act, after the act's own writes and inside its
  * transaction, so the update exists exactly when the act does. None is written
  * for the person who did the act.

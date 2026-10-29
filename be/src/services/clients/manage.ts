@@ -75,8 +75,7 @@ export interface ListClientsPageOptions extends ListClientsOptions {
 
 /**
  * The Trial Funnel over every member the filter matches — not just the page on
- * screen, which is what the old client-side count silently became the moment
- * the list paged.
+ * screen.
  */
 export interface TrialFunnel {
   trials: number
@@ -291,7 +290,7 @@ export interface CreateClientInput {
   phone: string
   /**
    * Allow an empty `phone`: for a member who arrives from somewhere that gives
-   * none (a ClassPass booking, #411), rather than inventing one. Staff adding a
+   * none (a ClassPass booking), rather than inventing one. Staff adding a
    * member must still give one.
    */
   phoneUnknown?: boolean
@@ -310,9 +309,9 @@ export interface CreateClientInput {
 /**
  * Where the new member signs in — their own studio's app.
  *
- * It used to be the platform's single `CLIENT_ORIGIN`, which named one studio,
- * so a member added by the second studio's admin was invited to sign in at the
- * first studio's app: a hostname their bookings are not on.
+ * Never a platform-wide origin: that would name one studio, and a member added
+ * by another studio's admin would be invited to sign in on a hostname their
+ * bookings are not on.
  */
 function buildClientLoginUrl(tenantId: string): Promise<string> {
   return requireTenantUrl('client', tenantId).then(base => `${base}/login`)
@@ -322,9 +321,9 @@ function buildClientLoginUrl(tenantId: string): Promise<string> {
  * Admin-creates a member: the `client` pool's auth user and the clients row in
  * one transaction, then — unless the admin asked not to — a branded "your
  * account is ready" invite. The account has no password either way: the
- * member's first sign-in mails them a link to set one (#173).
+ * member's first sign-in mails them a link to set one.
  *
- * The auth user is this studio's login for the address (#231): a member of
+ * The auth user is this studio's login for the address: a member of
  * another studio has a login there, which this one never touches.
  */
 export async function createClient(input: CreateClientInput): Promise<ClientRow> {
@@ -390,7 +389,7 @@ export interface SoftDeleteClientInput {
   tenantId: string
   targetClientId: string
   actorStaffId: string
-  /** The acting staff member's request, for the `auth_events` row (#119). */
+  /** The acting staff member's request, for the `auth_events` row. */
   from?: Headers
 }
 
@@ -401,7 +400,7 @@ export interface SoftDeleteClientInput {
  * bookings, packages, credit ledger entries, and the auth user are preserved so
  * the action is fully reversible via restoreClient.
  *
- * At this studio only: the login is this studio's (#231), and the same person's
+ * At this studio only: the login is this studio's, and the same person's
  * login at another studio is that studio's to block or not.
  *
  * Idempotent: already-deleted target returns the existing row unchanged.
@@ -442,7 +441,7 @@ export interface RestoreClientInput {
   tenantId: string
   targetClientId: string
   actorStaffId: string
-  /** The acting staff member's request, for the `auth_events` row (#119). */
+  /** The acting staff member's request, for the `auth_events` row. */
   from?: Headers
 }
 

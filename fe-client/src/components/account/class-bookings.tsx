@@ -34,7 +34,7 @@ export interface ApiBooking {
   /** `classpass`: booked on ClassPass, and cancelled there, not here. */
   source?: "direct" | "classpass";
   /**
-   * Only on `GET /me/bookings/cancelled`: the cancellation's summary (#349) —
+   * Only on `GET /me/bookings/cancelled`: the cancellation's summary —
    * when, who, and its two lines as the server words them.
    */
   cancelled_at?: string | null;

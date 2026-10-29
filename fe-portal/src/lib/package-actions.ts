@@ -52,7 +52,7 @@ export function packageActions(p: PackageMenuInput): { action: PackageAction; la
   // Always offered on a purchase that reached Stripe — attendance is a notice
   // inside the dialog, never a reason to hide the button (§14). Withheld only
   // while a Refund is already on its way and there is nothing left to ask
-  // Stripe for (#275); a part-issued one is offered again to return the rest.
+  // Stripe for; a part-issued one is offered again to return the rest.
   if (p.refundable && p.refund_progress !== "processing") {
     out.push({ action: "refund", label: "Refund purchase…" });
   }

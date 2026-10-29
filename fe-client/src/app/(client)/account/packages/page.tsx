@@ -87,7 +87,7 @@ export default function YourPackagesPage() {
         }
       />
 
-      {/* Money paid that has granted nothing yet (#93). */}
+      {/* Money paid that has granted nothing yet. */}
       <div className="mb-6 empty:hidden [&>*:first-child]:mt-0">
         <OpenPurchases purchases={openPurchases} partPayment={partPayment} failed={openPurchasesFailed} />
       </div>

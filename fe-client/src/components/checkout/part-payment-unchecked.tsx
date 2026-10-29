@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Where Part Payment would be offered, when the studio's checkout options could
- * not be read (#500): the app does not know whether this payment can be split,
+ * not be read: the app does not know whether this payment can be split,
  * so it says so and offers no split — and never hides it silently, which would
  * tell a member who meant to split that the studio does not allow it. Paying
  * the whole Balance stays available beside it.

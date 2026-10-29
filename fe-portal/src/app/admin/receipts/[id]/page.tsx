@@ -13,12 +13,12 @@ import { getPortalToken } from "@/lib/portal-auth";
 import { receiptKindLabel, resendRefusal, type Receipt } from "@/lib/receipts";
 
 /**
- * One Receipt (#389), exactly as the member sees it on their own account: the
+ * One Receipt, exactly as the member sees it on their own account: the
  * same payload, the same PDF, and the Receipt itself framed from the same
  * `html` the backend draws for the member's page and the email, so the two
  * pages cannot show it differently. Everything on it is what the studio wrote
  * when the purchase was paid; nothing is worked out here, and nothing on it
- * can be edited. Resend (#390) sends it again, after a confirmation step, in
+ * can be edited. Resend sends it again, after a confirmation step, in
  * the email the purchase sent, to the member's current address.
  */
 export default function AdminReceiptPage({ params }: { params: Promise<{ id: string }> }) {
@@ -61,7 +61,7 @@ export default function AdminReceiptPage({ params }: { params: Promise<{ id: str
   };
 
   // The purchase's own email again, with the Receipt and its PDF, to the
-  // member's current address (#390). The dialog stays open on a refusal.
+  // member's current address. The dialog stays open on a refusal.
   const resend = async (of: Receipt) => {
     if (!api) return;
     try {

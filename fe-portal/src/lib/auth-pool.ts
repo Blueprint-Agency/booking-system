@@ -1,7 +1,7 @@
 import { ROOT_DOMAIN, isSuperPortalHost } from "./tenant-host";
 
 /**
- * Which Better Auth pool a fe-portal page signs in on, by hostname (#116).
+ * Which Better Auth pool a fe-portal page signs in on, by hostname.
  *
  * One deployment serves two products (`lib/super-portal.ts`), and each has its
  * own pool on the backend (`be/src/services/auth/better-auth.ts`):

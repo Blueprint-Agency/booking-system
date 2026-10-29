@@ -1,8 +1,8 @@
 "use client";
 /**
  * The portal's session: a Better Auth session, held as a bearer token — on a
- * studio's portal from the `staff` pool (#115), on the super portal from the
- * `platform` pool (#116). `lib/auth-pool.ts` picks the pool by hostname.
+ * studio's portal from the `staff` pool, on the super portal from the
+ * `platform` pool. `lib/auth-pool.ts` picks the pool by hostname.
  *
  * **A bearer token, per origin.** The API is on another host, so a session
  * cookie would be the API's, shared by every portal in the browser — exactly

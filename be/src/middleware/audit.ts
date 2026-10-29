@@ -57,7 +57,7 @@ export const audit: MiddlewareHandler = async (c, next) => {
   if (!actorStaffId) return
 
   // A handler whose path names someone who must not be named afterwards — a
-  // permanently deleted member (#144) — records the route pattern instead.
+  // permanently deleted member — records the route pattern instead.
   const path = c.get('auditPath') ?? c.req.path
   const target: { table: string; id: string } = c.get('auditTarget') ?? {
     table: path,

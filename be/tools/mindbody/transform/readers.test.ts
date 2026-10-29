@@ -233,7 +233,7 @@ test('a report whose header cannot be found is refused by name, not read as empt
   assert.throws(() => readPhoneBook('<table><tr><td>Something else</td></tr></table>'), /phone book.*Name/i)
 })
 
-/* ── Packages (#178) ──────────────────────────────────────────────────────── */
+/* ── Packages ──────────────────────────────────────────────────────── */
 
 const FIXTURES = path.join(__dirname, 'fixtures')
 
@@ -385,7 +385,7 @@ test('account balances: one row per client, and not the total line', () => {
   assert.deepEqual(balances, [{ clientId: '100000005', balance: -10 }])
 })
 
-/* ── The timetable (#179) ─────────────────────────────────────────────────── */
+/* ── The timetable ─────────────────────────────────────────────────── */
 
 const staffSchedule = () =>
   readStaffSchedule(readFileSync(path.join(FIXTURES, 'reports', 'Staff', '34 Staff Schedule', '34 Staff Schedule - ALL - Scheduled.xls'), 'utf8'))
@@ -489,7 +489,7 @@ test('pay rates: a teacher whose every slot is 0 really is paid 0, which is not 
   ])
 })
 
-/* ── History (#181) ───────────────────────────────────────────────────────── */
+/* ── History ───────────────────────────────────────────────────────── */
 
 test('attendance: one row per past visit, with the pricing option it was taken from', async () => {
   const visits = readAttendance(

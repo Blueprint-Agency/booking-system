@@ -12,7 +12,7 @@ import { issuedRefundView } from './refund-view'
 import { abandonedReturnLine, SILENT_AFTER_DAYS } from '../../../services/billing/refund-notice'
 
 /**
- * Purchases that were part-paid and never granted (#95).
+ * Purchases that were part-paid and never granted.
  *
  * A surface of its own rather than a tab on Finance, because these are not
  * Money Events: the studio is holding cash against a sale that never happened,
@@ -93,7 +93,7 @@ const app = new Hono()
       // the month should not have to work that out from the count alone.
       returned_line: abandonedReturnLine(paymentCount, result.returnedSgd),
       // `complete` false when the provider refused a payment after returning an
-      // earlier one (#275): part of the money went back, and the admin must be told.
+      // earlier one: part of the money went back, and the admin must be told.
       ...issuedRefundView(result),
     })
   })

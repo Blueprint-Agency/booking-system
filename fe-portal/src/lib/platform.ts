@@ -74,7 +74,7 @@ export interface CreateTenantInput {
    *  import refuses a studio that already holds any staff rows. */
   admin_email?: string;
   admin_name?: string;
-  /** The studio's Business details from its first Receipt (#391, #398).
+  /** The studio's Business details from its first Receipt.
    *  Omitted, or a null Business name, trades under the Domain name (`name`);
    *  the rest omitted leaves the default prefix and no details. */
   business_details?: ReceiptDetails;
@@ -280,7 +280,7 @@ export function clearPaymentCredentials(api: Api, id: string) {
 /**
  * `restore` writes an archive into an empty studio. `replace` deletes the
  * studio's rows and writes the archive's in their place, keeping its people's
- * logins, its settings, payment account and status (#339).
+ * logins, its settings, payment account and status.
  */
 export type ImportMode = "restore" | "replace";
 

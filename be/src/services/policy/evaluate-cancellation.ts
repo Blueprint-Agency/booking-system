@@ -8,7 +8,7 @@
  * With the cap switched off every cancel is within it — they are still recorded,
  * so switching it back on counts the ones already inside the cycle.
  *
- * A member's class cancel is decided here (#318): once the class has started it
+ * A member's class cancel is decided here: once the class has started it
  * is refused `class_started`; inside the window it is a **Late cancel** — let
  * through, the credit kept, and counted toward the cap like any other.
  */

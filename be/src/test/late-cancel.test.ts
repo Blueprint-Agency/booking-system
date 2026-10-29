@@ -16,8 +16,8 @@ const DAY = 24 * HOUR
 const WINDOW_HOURS = 24
 
 /**
- * Member late cancellation and the Cancellation Cap switch (#318,
- * be/CONTEXT.md § Late cancel, § Cancellation Cap).
+ * Member late cancellation and the Cancellation Cap switch
+ * (be/CONTEXT.md § Late cancel, § Cancellation Cap).
  *
  * A member can cancel a class until it starts. Inside the class's window the
  * cancel is a **Late cancel**: it goes through, the credit is kept, and it
@@ -392,7 +392,7 @@ describe('member late cancellation and the Cancellation Cap', { skip: integratio
     }
   })
 
-  /* ── The Cancelled tab (#349) ────────────────────────────────────── */
+  /* ── The Cancelled tab ────────────────────────────────────── */
 
   async function list(who: Member, tab: 'upcoming' | 'past' | 'cancelled'): Promise<any[]> {
     const res = await send('GET', `/me/bookings/${tab}`, who.headers)

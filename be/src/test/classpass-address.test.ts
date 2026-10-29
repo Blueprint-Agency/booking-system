@@ -7,7 +7,7 @@ import { classPassEmail, GMAIL_CONFIRMATION_LINK, gmailForwardingConfirmation } 
 import { withEnv } from './with-env'
 
 /**
- * The ClassPass address (#409): a studio's forwarded mail is received and kept,
+ * The ClassPass address: a studio's forwarded mail is received and kept,
  * each email with its outcome, and nothing is imported yet. Driven through the
  * one ClassPass entry point, `receiveClassPassEmail`, and read back through the
  * ClassPass page's own status.

@@ -153,7 +153,7 @@ export default function InstructorSchedulePage() {
         actions={
           canSchedule || canTakePt ? (
             <div className="flex flex-wrap gap-2">
-              {/* A private session agreed outside the app, run by this instructor (#336). */}
+              {/* A private session agreed outside the app, run by this instructor. */}
               {canTakePt && (
                 <Button variant="secondary" onClick={() => setAddingPt(true)}>
                   <UserPlus className="h-4 w-4" /> PT session

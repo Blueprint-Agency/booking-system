@@ -3,11 +3,10 @@ export const config = { runtime: 'edge' }
 /**
  * Asset edge proxy for `cdn.reservetoday.app`.
  *
- * The R2 bucket used to be reachable as a Cloudflare custom domain, which is no
- * longer possible: R2 binds a custom domain through the Cloudflare proxy, and
- * that needs the zone on Cloudflare nameservers. `reservetoday.app` moved to
- * Vercel on 2026-08-31 to get wildcard domains, so the bucket is fronted here
- * instead. See `docs/adr/0001-reservetoday-app-on-vercel-nameservers.md`.
+ * The R2 bucket cannot be reached as a Cloudflare custom domain: R2 binds a
+ * custom domain through the Cloudflare proxy, and that needs the zone on
+ * Cloudflare nameservers. `reservetoday.app` is on Vercel nameservers, for
+ * wildcard domains, so the bucket is fronted here instead. See `docs/adr/0001-reservetoday-app-on-vercel-nameservers.md`.
  *
  * `R2_ORIGIN` is the bucket's `https://pub-<hash>.r2.dev` URL and is never
  * exposed to callers — it is the private origin behind this cache. It is set

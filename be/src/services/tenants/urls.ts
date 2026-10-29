@@ -2,12 +2,12 @@
  * A studio's own URLs, for anything the backend hands to a human.
  *
  * Every link the platform mails, redirects to, or gives Stripe to send a member
- * back to has to name the studio the request is *for*. It used to name whichever
- * studio the deployment's `PORTAL_ORIGIN` / `CLIENT_ORIGIN` happened to be set
- * to — one pair of values for the whole platform, so a staff member invited to
- * the second studio got a link into the first studio's portal, where their token
- * is refused, and a member of the second studio was returned to the first
- * studio's app after paying.
+ * back to has to name the studio the request is *for*. Naming whichever studio
+ * the deployment's `PORTAL_ORIGIN` / `CLIENT_ORIGIN` happened to be set to —
+ * one pair of values for the whole platform — would give a staff member invited
+ * to the second studio a link into the first studio's portal, where their token
+ * is refused, and return a member of the second studio to the first studio's
+ * app after paying.
  *
  * The origins come from the tenant's own slug through `tenantOrigin`, which
  * reads the same `FRONTEND_URLS` wildcards CORS and the auth pools'

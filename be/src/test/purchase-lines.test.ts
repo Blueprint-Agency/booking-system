@@ -16,7 +16,7 @@ const DAY = 24 * HOUR
 const RATE = '20.00'
 
 /**
- * A Purchase freezes what was in it, line by line, the moment it opens (#382):
+ * A Purchase freezes what was in it, line by line, the moment it opens:
  * the lines a Receipt will be built from. Every kind of sale is bought over
  * HTTP — the paid ones as far as the provider's page, the free ones to the
  * grant — and the Purchase it left is read back.
@@ -208,7 +208,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
   const post = (headers: Record<string, string>, path: string, body: unknown) =>
     harness.app.request(path, { method: 'POST', headers: { ...headers, ...json }, body: JSON.stringify(body) })
 
-  /** A member's checkout at `path`, naming their Billing details as every member purchase does (#402). */
+  /** A member's checkout at `path`, naming their Billing details as every member purchase does. */
   const checkout = async (who: Member, path: string, body: Record<string, unknown>) =>
     post(who.headers, path, await billed(harness.app, who.headers, body))
 

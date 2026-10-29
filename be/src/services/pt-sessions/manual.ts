@@ -1,5 +1,5 @@
 /**
- * Manual PT sessions (#334): a private session staff put on the calendar with
+ * Manual PT sessions: a private session staff put on the calendar with
  * no member request behind it — agreed over the phone or at the front desk.
  *
  * Every session still has a request: the portal writes one itself, marked
@@ -18,7 +18,7 @@
  * `override`. A Dormant package Activates on its seat, from that moment
  * (be/docs/adr/0011).
  *
- * Everything after creation is priced per seat too (#335): cancelling the
+ * Everything after creation is priced per seat too: cancelling the
  * session refunds each booking to the package it was paid from, a member
  * cancels their own seat under the PT window, staff remove one member, and
  * the 1on1 ↔ 2on1 change seats or refunds the partner on their own package —
@@ -544,8 +544,8 @@ async function followRoster(
 /**
  * A private session's booking was cancelled on its own (bookings/cancel.ts: a
  * Void, a Remove, a single-booking cancel), already settled on its package.
- * The request and session follow, as cancelling the request would leave them
- * (#350): a member's request is paid whole by its requester, so their booking
+ * The request and session follow, as cancelling the request would leave them:
+ * a member's request is paid whole by its requester, so their booking
  * going takes the session and any partner seat with it (`n_a`), while a
  * partner's going leaves it on; a manual session goes on for whoever is still
  * seated, and is cancelled with the last one — unless staff cancelled it, who
@@ -789,7 +789,7 @@ export interface RemoveManualPtSessionMemberInput {
 }
 
 /**
- * Staff take one member off a manual session (#335): their seat is cancelled
+ * Staff take one member off a manual session: their seat is cancelled
  * and its session returned to their own package, whatever the window; the
  * others stay seated and the session stays on, its seat free to fill again.
  */
@@ -828,7 +828,7 @@ export async function removeManualPtSessionMember(
 /**
  * Switch a manual session between 1on1 and 2on1, inside updatePtSession's
  * transaction with the request and session rows locked, in that order, and
- * the session found still active (#335). Per seat, never through the
+ * the session found still active. Per seat, never through the
  * requester: an upgrade seats the partner on their own package exactly as
  * adding a member does (the seat rule, a named package or the Default payer,
  * warnings needing `override`, a Dormant package Activated); a downgrade
@@ -860,7 +860,7 @@ export async function retypeManualSessionInTx(
   // Neither way once the session is over: its seats were used.
   assertSeatsStillOpen(session, req, leaving, clockNow())
   // Between its start and its end the seats are being used, so a downgrade is
-  // refused as a cancel is (#499). The two refusals above keep their order.
+  // refused as a cancel is. The two refusals above keep their order.
   if (input.to === '1on1') refuseTypeChangeOnceStarted(input.startedAt, clockNow())
 
   if (input.to === '2on1') {

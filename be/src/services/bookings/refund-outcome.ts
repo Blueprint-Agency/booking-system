@@ -5,16 +5,16 @@ export type { RefundOutcome } from '../../db/enums'
 import type { RefundOutcome } from '../../db/enums'
 
 /**
- * Who cancelled: the member, a staff member from the portal (#320), or the
- * studio's machinery — a Void, a Remove, a Package rule change (#350). A
- * `system` cancel settles as a staff one does, and so does a `classpass` one
- * (#412): ClassPass's email saying the member cancelled there.
+ * Who cancelled: the member, a staff member from the portal, or the
+ * studio's machinery — a Void, a Remove, a Package rule change. A
+ * `system` cancel settles as a staff one does, and so does a `classpass` one:
+ * ClassPass's email saying the member cancelled there.
  */
 export type StaffCancelSource = Exclude<CancellationSource, 'client' | 'system' | 'classpass'>
 export type CancelSource = CancellationSource
 
 /**
- * A staff cancel's answer to "Return 1 credit" or "Keep the credit" (#320):
+ * A staff cancel's answer to "Return 1 credit" or "Keep the credit":
  * staff choose every time; the window and the cap never choose for them.
  */
 export type StaffCredit = 'return' | 'keep'
@@ -24,7 +24,7 @@ export type StaffCredit = 'return' | 'keep'
  *
  * NOTE: workshop bookings never reach this function — `cancelBooking` rejects them
  * (`workshop_cancel_unsupported`) and workshop admin-cancel goes through
- * services/workshops/cancel.ts, which refunds nobody automatically (#272). A
+ * services/workshops/cancel.ts, which refunds nobody automatically. A
  * workshop booking is only ever labelled `stripe_refunded` by the refund unwind
  * (`unwindRefund`), once the money has actually gone back, so the branch below is
  * unreachable and no booking is ever falsely labelled refunded.

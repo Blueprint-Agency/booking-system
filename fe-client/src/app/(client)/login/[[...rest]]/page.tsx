@@ -1,6 +1,6 @@
 "use client";
 /**
- * Member sign-in (#173): the email first, then the password — or, for an
+ * Member sign-in: the email first, then the password — or, for an
  * address with no password yet, "check your email" while a set-password link
  * goes out (`POST /public/members/sign-in-step`). The link lands on
  * `/set-password`. "Forgot password?" mails the same link. An address with no

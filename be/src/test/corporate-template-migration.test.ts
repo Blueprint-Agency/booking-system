@@ -10,7 +10,7 @@ const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0109_corporate_
 const SLUG = 'corporate_purchase_confirmed'
 
 /**
- * Migration 0109 (#359): a paid corporate package is confirmed by email, on a
+ * Migration 0109: a paid corporate package is confirmed by email, on a
  * template studios created before it do not have. The migration adds the
  * default wording to every studio without the row, and never touches a row a
  * studio already has.

@@ -176,7 +176,7 @@ function ComingUpTicket({
       // Only the upcoming class bookings are essential. A failed past, PT or
       // workshop read must not blank a confirmed class into "Nothing booked
       // yet" — and is named in `missing`, so the ticket never claims to be the
-      // next booking when it could not check them all (#500).
+      // next booking when it could not check them all.
       const [upcoming, optional] = await Promise.all([
         api.get<{ bookings: ApiBooking[] }>("/me/bookings/upcoming"),
         settleOptional({
@@ -246,7 +246,7 @@ function ComingUpTicket({
 
   // Cancel is offered only where the server would take it: a class until it
   // starts; a PT session the member requested, outside the studio's window.
-  // A workshop is never self-cancelled — the studio arranges that (#272).
+  // A workshop is never self-cancelled — the studio arranges that.
   let onCancel: (() => void) | undefined;
   if (next && "booking" in next && canCancelClass(next.booking.starts_at)) {
     const b = next.booking;

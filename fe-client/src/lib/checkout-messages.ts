@@ -3,7 +3,7 @@ import { NO_ONLINE_PAYMENTS } from "./online-payments-rule.ts";
 import { clashFromBody, clashWhat } from "./clash.ts";
 
 /**
- * A refused checkout, in words (#274).
+ * A refused checkout, in words.
  *
  * The backend writes the sentence itself where only it can — a Part Payment
  * amount checked against a balance it owns — and sends it as `message`. Every

@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Unfinished purchases — a balance the member left outstanding (#93).
+ * Unfinished purchases — a balance the member left outstanding.
  *
  * A purchase paid with two cards sits open between the two, and it **does not
- * expire** — it closes when paid in full, or when the studio refunds it (#274).
+ * expire** — it closes when paid in full, or when the studio refunds it.
  * The member can come back to it from their account page whenever
  * they like, and the backend mints a fresh checkout session for whatever is
  * still owed at that moment.
@@ -83,7 +83,7 @@ export function useOpenPurchases() {
  * keeps the whole payment and says it could not check (`couldntCheck`) — never
  * offering Part Payment on a failed read, and never silently hiding it, which
  * would tell a member who meant to split the payment that the studio does not
- * allow it (#500). The backend still decides what may be charged.
+ * allow it. The backend still decides what may be charged.
  */
 export function usePartPaymentOptions(): PartPaymentOptions & { loading: boolean } {
   const api = useApi();

@@ -257,7 +257,7 @@ export function ClassRoster({
 }
 
 /**
- * The bookings cancelled off the class (#352), collapsed under the roster:
+ * The bookings cancelled off the class, collapsed under the roster:
  * who, when it was cancelled and by whom, and where the credit went, a Late
  * cancel marked. Open from the start on a cancelled class, where it is the
  * whole of who was booked. Never checked in, never cancelled again.
@@ -304,7 +304,7 @@ function CancelledSection({ role, rows, open }: { role: StaffRole; rows: Schedul
 }
 
 /**
- * Which of the member's packages pays, when more than one can (#333). The
+ * Which of the member's packages pays, when more than one can. The
  * Default payer comes chosen; Ineligible packages are listed greyed with their
  * reason so staff can tell the member why.
  */

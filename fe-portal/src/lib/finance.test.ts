@@ -128,7 +128,7 @@ test("a row with no pay kind refuses to be saved", () => {
   );
 });
 
-// ── The Needs-pay filter and the period live in the URL (#486) ──────────────
+// ── The Needs-pay filter and the period live in the URL ──────────────
 const MONTH = { from: "2026-10-01", to: "2026-10-15" };
 
 test("ATN-106 a bell link opens Finance on Needs pay over its date range", () => {

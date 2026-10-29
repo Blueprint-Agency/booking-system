@@ -24,7 +24,7 @@ const at = (days: number, hours = 10) => new Date(BASE + days * DAY + hours * HO
 const PERIOD = { from: at(0, 0).toISOString(), to: at(10, 0).toISOString() }
 
 /**
- * Payroll over real HTTP (#204): the instructor's own Teaching log
+ * Payroll over real HTTP: the instructor's own Teaching log
  * (`GET /portal/instructor/payroll`) and the admin's pay writes on Finance
  * (`PATCH /finance/pay/:kind/:id`, `POST`/`DELETE /finance/manual`), with
  * Finance's per-instructor totals where a PAYR row compares against them.

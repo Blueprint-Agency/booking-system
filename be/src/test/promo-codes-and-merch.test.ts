@@ -13,7 +13,7 @@ const NAME = `PromoMerch ${run}`
 const DAY = 24 * 60 * 60 * 1000
 
 /**
- * What a **member** does with the admin catalogue (#205): a Promo Code typed at
+ * What a **member** does with the admin catalogue: a Promo Code typed at
  * checkout, and merch bought and read back from their purchase history.
  *
  * Every step goes over HTTP the way the two apps send it — the admin makes the
@@ -245,7 +245,7 @@ describe('promo codes and merch, as a member uses them', { skip: integrationTest
     one = await studio(harness.tenants.one)
     two = await studio(harness.tenants.two)
     // Each studio sells on an account of its own — the only way a studio sells
-    // at all (#293) — and its deliveries arrive on its own endpoint.
+    // at all — and its deliveries arrive on its own endpoint.
     fake.ownAccount(one)
     fake.ownAccount(two)
 

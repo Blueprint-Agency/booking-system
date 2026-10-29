@@ -10,7 +10,7 @@
  *                or never ticked) — most recent first, capped.
  *   - cancelled: cancelled, whatever its start time, from the moment it is
  *                cancelled, newest cancellation first, capped; each with the
- *                shared cancellation summary (`cancellation-summary.ts`, #352).
+ *                shared cancellation summary (`cancellation-summary.ts`).
  *                A private-session request withdrawn or expired while pending
  *                had no booking, and is listed here too.
  *
@@ -58,10 +58,10 @@ export interface MemberBookingRow {
   packageName: string | null
   /** That package's kind — `unlimited` spends no credit. Null when no package paid. */
   packageKind: string | null
-  /** What the staff cancel dialog asks from; null where no cancel is offered (#320). */
+  /** What the staff cancel dialog asks from; null where no cancel is offered. */
   cancelPreview: StaffCancelPreview | null
   code: string
-  /** How the booking reached the studio; the profile badges a ClassPass booking (#408). */
+  /** How the booking reached the studio; the profile badges a ClassPass booking. */
   source: BookingSource
   bookedAt: Date
   cancelledAt: Date | null

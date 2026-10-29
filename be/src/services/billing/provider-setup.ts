@@ -1,6 +1,6 @@
 /**
  * What an operator needs to know *before* moving a studio onto its own payment
- * account (#276): which kind of key this environment takes, where the studio's
+ * account: which kind of key this environment takes, where the studio's
  * webhook has to point, and which events it has to send.
  *
  * All three depend only on the environment and the studio's Slug, so they can
@@ -43,7 +43,7 @@ export function expectedKeyPrefix(appEnv: AppEnv): 'sk_live_' | 'sk_test_' {
  * Whether a secret key is of a mode this environment takes: live or test on
  * production, test only elsewhere. A restricted key (`rk_live_…` /
  * `rk_test_…`) is a secret key too, of the same mode as its `sk_` twin; whether
- * it may do enough is the provider's to say (#294).
+ * it may do enough is the provider's to say.
  */
 export function keyModeMatches(secretKey: string, appEnv: AppEnv): boolean {
   const modes = appEnv === 'production' ? ['live_', 'test_'] : ['test_']

@@ -67,7 +67,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
   const [loadingQuote, setLoadingQuote] = useState(Boolean(planId));
   const [error, setError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
-  // Who the Add-On is billed to (#401): one of the member's Billing details.
+  // Who the Add-On is billed to: one of the member's Billing details.
   const [billingDetailsId, setBillingDetailsId] = useState<string | null>(null);
   const [billToStatus, setBillToStatus] = useState<BillToStatus>("loading");
 
@@ -169,7 +169,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
                 whole summary. It already names the item, the rate, the months
                 and the total; a second item row and a second total beside it
                 were a copy of the review page's summary that could only drift
-                from it (§494, #47). */}
+                from it. */}
             {/* Only with a quote or a refusal to state: a failed quote has no
                 months to multiply, and "0 months × S$30 = $0" read as a price. */}
             {(quote || reason) && (
@@ -184,7 +184,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
               />
             )}
 
-            {/* Bill to (#401) — only once there is something to pay for. */}
+            {/* Bill to — only once there is something to pay for. */}
             {quote && (
               <BillingDetailsPicker value={billingDetailsId} onChange={setBillingDetailsId} onStatus={setBillToStatus} />
             )}
@@ -198,7 +198,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
           )}
 
           {quote && blockedByPayments(onlinePayments, quote.price_sgd) ? (
-            // A studio that takes no online payments (#293): a sentence, not a Pay button.
+            // A studio that takes no online payments: a sentence, not a Pay button.
             <p className="text-sm text-muted text-center">{NO_ONLINE_PAYMENTS}</p>
           ) : quote ? (
             <>

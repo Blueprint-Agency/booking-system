@@ -5,7 +5,7 @@ import { clients, staffUsers } from './identity'
 import { staffUpdateKindEnum } from '../enums'
 
 /**
- * Staff Updates (#476, #490): things that happened which a staff member should
+ * Staff Updates: things that happened which a staff member should
  * know but needn't act on. One row per recipient, written in the transaction of
  * the act that caused it, so each person has their own read state.
  *
@@ -42,7 +42,7 @@ export const staffUpdates = pgTable(
 )
 
 /**
- * Dismissals (#476, #482): an admin's studio-wide decision that an Attention
+ * Dismissals: an admin's studio-wide decision that an Attention
  * item of a dismissable kind needs nothing done ("keep waiting", "keep the
  * class"). It is not a read flag: it hides the item for every admin.
  *

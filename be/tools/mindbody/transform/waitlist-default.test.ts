@@ -7,7 +7,7 @@ import { mapStudio } from './mapper'
 import { readReports } from './transform'
 
 /**
- * Decision 21 is never open (#311): every class has a waitlist, and its length,
+ * Decision 21 is never open: every class has a waitlist, and its length,
  * from 0, is a figure staff type in the portal. A config that names no figure
  * transforms with the switch on and every class still to come at 0.
  */

@@ -10,22 +10,22 @@ import { ensureClassPassSettings } from './settings'
 import { currentEnv } from '../../env'
 
 /**
- * The one way into the ClassPass import (#407): every email that reaches a
+ * The one way into the ClassPass import: every email that reaches a
  * studio's ClassPass address comes through `receiveClassPassEmail`, whether the
  * Resend webhook delivered it or a test built it. It decides what the email is,
  * and records it with its outcome, in the caller's Tenant transaction.
  *
  * One that can't be trusted is `refused`, and Gmail's forwarding confirmation
- * gives up its code and its confirmation link to the ClassPass page (#409). With the import on, a
- * booking email books the member (#411, `import-booking.ts`): `imported`, or
+ * gives up its code and its confirmation link to the ClassPass page. With the import on, a
+ * booking email books the member (`import-booking.ts`): `imported`, or
  * `noop` for a reservation already booked, or `review` / `unparsed` with the
  * reason it could not be placed. A cancellation cancels the ClassPass booking
- * it names (#412, `import-cancellation.ts`): `cancelled`, or `noop` when
+ * it names (`import-cancellation.ts`): `cancelled`, or `noop` when
  * there is no live booking for it. With the import off, a trusted booking or
  * cancellation is kept for ClassPass review as `import_off`, for an Admin to
  * decide on; switching the import on later does not place it. Every other
  * ClassPass email is `ignored`; a roster is kept so, and read when the
- * ClassPass page is (#415, `roster.ts`).
+ * ClassPass page is (`roster.ts`).
  *
  * Keeping the email never depends on placing it: placing runs in a savepoint,
  * and one that throws is undone, logged, and the email kept for review as
@@ -102,7 +102,7 @@ function decide(message: InboundEmail): Decision {
   if (from === CLASSPASS_SENDER || isTestSender(from)) {
     const kind = KIND_BY_SUBJECT[message.subject.trim().toLowerCase()] ?? 'marketing'
     if (!signed) return { kind, outcome: 'refused' }
-    // A booking is placed (#411) when the switch is on; anything else trusted
+    // A booking is placed when the switch is on; anything else trusted
     // is kept as it came.
     return { kind, outcome: 'ignored' }
   }

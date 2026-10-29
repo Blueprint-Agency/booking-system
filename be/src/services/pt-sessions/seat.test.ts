@@ -1,7 +1,7 @@
 import assert from 'node:assert'
 import { mayPayForSeat, orderSeatCandidates, type SeatPackage } from './seat'
 
-// The rule a manual PT session (#334) asks of every package offered for a
+// The rule a manual PT session asks of every package offered for a
 // seat: may this one pay for it? A refusal is a package that cannot pay at all;
 // a warning is one staff may still charge, but only after saying so.
 

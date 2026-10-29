@@ -9,7 +9,7 @@ import { logger, setLogContext } from '../../shared/logger'
 /**
  * The payment provider's deliveries: one endpoint per studio,
  * `/stripe/:slug`, on that studio's own account. The platform account's shared
- * `/stripe` endpoint is gone (#293) along with the platform account itself.
+ * `/stripe` endpoint is gone along with the platform account itself.
  *
  * The slug is there because the signature check needs an answer *first*. Each
  * studio's account signs with its own secret, so "which studio is this?" has to
@@ -54,7 +54,7 @@ const app = new Hono()
       // signed body, and a body that routes anywhere else is a delivery this
       // endpoint has no business acting on.
       //
-      // And the account that signed it (#97), which is the account the money is
+      // And the account that signed it, which is the account the money is
       // on — stamped onto every payment this delivery writes, so a Refund years
       // later is issued there and not wherever the studio sells by then.
       //

@@ -5,7 +5,7 @@ import { staffUsers } from '../../db/schema/identity'
 import { recordAuthEvent } from './auth-events'
 import { requestAddress } from './better-auth'
 
-/** What a staff member can do to someone else's account from their detail view (#119, #143, #144). */
+/** What a staff member can do to someone else's account from their detail view. */
 type StaffActKind = Extract<
   AuthEventKind,
   | 'sessions_revoked'
@@ -21,8 +21,8 @@ type StaffActKind = Extract<
  * context is open.
  *
  * Filed under `staff`, the acting staff member's auth user as actor and the
- * person acted on as subject — the shape an impersonation's rows already have
- * (#118). The subject is a `client` pool user when the target is a member.
+ * person acted on as subject — the shape an impersonation's rows already have.
+ * The subject is a `client` pool user when the target is a member.
  *
  * `from` is the acting staff member's request, whose address and user agent the
  * row records. An actor whose row cannot be read is logged with no actor rather
