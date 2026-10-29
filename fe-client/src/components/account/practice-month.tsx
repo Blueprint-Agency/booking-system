@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * My activity's month (#340): a calendar, Monday first, each day a tile. A day
+ * My activity's month: a calendar, Monday first, each day a tile. A day
  * the member attended is solid in the studio's accent, a day with a session
  * still booked is outlined dashed, and either carries a dot per session under
  * its date (up to three) and opens that day's sessions when tapped. A day that

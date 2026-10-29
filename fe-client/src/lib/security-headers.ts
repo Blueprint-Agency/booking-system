@@ -1,5 +1,5 @@
 /**
- * The response headers every page of this app carries (#142), applied from
+ * The response headers every page of this app carries, applied from
  * `next.config.ts`. Kept here, as a pure function of the build's environment,
  * so the policy can be tested without a build.
  *

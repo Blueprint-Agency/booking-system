@@ -7,7 +7,7 @@ import { movementText, type CreditHistory } from "@/lib/credit-history";
 import { cn, formatDate, formatExpiryDate } from "@/lib/utils";
 
 /**
- * "Credit history" on a package in My packages (#353): where its credits (or
+ * "Credit history" on a package in My packages: where its credits (or
  * sessions) went — each booking that spent one, each cancel that returned or
  * kept it, an expiry, a studio adjustment — newest first, with what was left
  * after each. Read when opened, not with the page.

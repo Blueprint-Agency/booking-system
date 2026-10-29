@@ -1,5 +1,5 @@
 /**
- * How a Receipt reads to the member it was issued to (#384): its amounts in
+ * How a Receipt reads to the member it was issued to: its amounts in
  * the studio's one money form, how each payment was made, and the date filter
  * the Receipts page sends.
  */
@@ -41,6 +41,6 @@ test("INV-09 a range that ends before it starts is refused before it is sent", (
 
 test("INV-19 a downloaded Receipt is saved under its number", () => {
   assert.equal(receiptPdfFilename("R-000123"), "R-000123.pdf");
-  // A studio's own prefix (#391) cannot reach outside the file's name.
+  // A studio's own prefix cannot reach outside the file's name.
   assert.equal(receiptPdfFilename("NW/2026 000123"), "NW_2026_000123.pdf");
 });

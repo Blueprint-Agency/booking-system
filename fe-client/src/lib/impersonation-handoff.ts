@@ -1,6 +1,6 @@
 /**
- * What the portal hands the member app when a studio admin impersonates a member
- * (#118): `/impersonate#token=…&grant=…`.
+ * What the portal hands the member app when a studio admin impersonates a member:
+ * `/impersonate#token=…&grant=…`.
  *
  * - `token` is a real session in the backend's `client` pool, opened for the
  *   member. It becomes this hostname's member session, like any sign-in.

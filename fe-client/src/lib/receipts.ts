@@ -1,5 +1,5 @@
 /**
- * A member's Receipts (#384), as `GET /me/receipts` and `GET /me/receipts/:id`
+ * A member's Receipts, as `GET /me/receipts` and `GET /me/receipts/:id`
  * send them, and how they read.
  *
  * Free of React and of the API client: what a Receipt *says* is the part worth

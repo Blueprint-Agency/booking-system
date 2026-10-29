@@ -6,7 +6,7 @@ import { IMPERSONATION_GRANT_COOKIE } from "@/lib/impersonation-handoff";
 /**
  * The last step of stopping an impersonation: clears the grant cookie and
  * closes the tab. The session itself is already gone — the banner's Stop button
- * signs it out against the backend before posting here (#118), because the
+ * signs it out against the backend before posting here, because the
  * token lives in this page's storage, where a server route cannot reach it.
  *
  * We can't reliably window.close() from a server response — return a tiny HTML

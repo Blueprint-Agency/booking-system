@@ -5,8 +5,8 @@ import { adoptMemberSession } from "@/lib/member-auth";
 import { grantCookie, readImpersonationHandoff } from "@/lib/impersonation-handoff";
 
 /**
- * Where a studio admin lands in the member app as the member they impersonate
- * (#118). The portal opens `/impersonate#token=…&grant=…`; this adopts the token
+ * Where a studio admin lands in the member app as the member they impersonate.
+ * The portal opens `/impersonate#token=…&grant=…`; this adopts the token
  * as this hostname's member session, keeps the grant, and goes to the account.
  *
  * A full navigation rather than a router push, so the server layout reads the

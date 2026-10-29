@@ -152,7 +152,7 @@ export function ClassFeed() {
     <BookingSurface>
       <PageHeader title="Schedule" />
       <ScheduleSegments />
-      {/* A signed-in member's next booking, its check-in QR (#192) and its
+      {/* A signed-in member's next booking, its check-in QR and its
           Cancel — the same ticket "Your bookings" leads with. */}
       <ComingUp variant="schedule" onChanged={refresh} />
 

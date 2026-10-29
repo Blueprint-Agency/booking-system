@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { movementText, type CreditMovement } from "./credit-history.ts";
 
-// My packages' Credit history (#353): "where did my credits go", one line per movement.
+// My packages' Credit history: "where did my credits go", one line per movement.
 
 const booked: CreditMovement = {
   id: "m1",

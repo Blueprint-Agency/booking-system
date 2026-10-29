@@ -1,5 +1,5 @@
 /**
- * Whether a studio can take this payment online (#293).
+ * Whether a studio can take this payment online.
  *
  * Every studio takes card payments on its own payment account, and a studio
  * that has not supplied one takes none. The member is told so in words where a

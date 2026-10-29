@@ -7,7 +7,7 @@
  *
  *   - A class can be cancelled until it starts. Inside its window the cancel
  *     is a **late cancellation**: it goes through and the credit is not
- *     returned (#318).
+ *     returned.
  *   - In time, the credit (or PT session) comes back while the member is under
  *     the cap on cancellations per cycle — or always, when the studio has
  *     switched the cap off. Over it, the cancel still goes through and the
@@ -248,7 +248,7 @@ export function classCancelResult(
   return { tone: "ok", text: "Booking cancelled." };
 }
 
-// ── The Cancelled tab (#349, #351) ──────────────────────────────────────────
+// ── The Cancelled tab ──────────────────────────────────────────
 //
 // A cancelled booking's own lines — who and when, where the credit went — are
 // worded once, by the backend's cancellation summary

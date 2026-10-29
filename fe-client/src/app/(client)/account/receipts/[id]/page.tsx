@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * One Receipt — `GET /me/receipts/:id` (#384). The Receipt itself is the
+ * One Receipt — `GET /me/receipts/:id`. The Receipt itself is the
  * `html` the backend draws, the one design the PDF, the confirmation email and
  * the studio portal show too; this page frames it and offers the PDF. Nothing
  * is worked out or laid out here.

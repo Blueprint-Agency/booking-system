@@ -72,7 +72,7 @@ export interface RawPtRequest {
   refund_outcome?: "session_returned" | "forfeited" | "n_a" | null;
   // On a cancelled or expired request (or a seat the member left): when, and
   // who — the member, the studio, or (to a 2on1 partner) the host. Null by
-  // whom when it expired unscheduled. Null while it is live (#351).
+  // whom when it expired unscheduled. Null while it is live.
   cancelled_at?: string | null;
   cancelled_by?: PtCancelledBy | null;
   expired?: boolean;

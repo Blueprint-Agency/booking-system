@@ -35,7 +35,7 @@ const VIEWS: { value: PracticeView; label: string }[] = [
 ];
 
 /**
- * My activity (#340, #342; once "My practice"): what the member attended in a week, month or year
+ * My activity: what the member attended in a week, month or year
  * — group classes and private sessions — as a count over a chart, three
  * figures and the split of what they practised. It opens on this month; ‹ › step back through earlier
  * periods as far as the backend allows (`has_previous`, `has_next`), and

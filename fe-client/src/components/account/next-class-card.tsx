@@ -3,7 +3,7 @@
 /**
  * The ticket for what the member is about to walk into — a class, a PT
  * session or a workshop, each in its own colour — with one tap to a
- * full-screen QR and the typed code for check-in (#192).
+ * full-screen QR and the typed code for check-in.
  *
  * A class already running comes first: a member who arrives late still has
  * something to show the desk, and the desk can still scan it until the day is

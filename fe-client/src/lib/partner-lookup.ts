@@ -1,5 +1,5 @@
 /**
- * What a partner lookup that threw means for the private session form (#500).
+ * What a partner lookup that threw means for the private session form.
  *
  * The backend refuses a badly formed email with a `400` (`GET
  * /me/pt-sessions/partner-lookup` validates it). That is an answer about the

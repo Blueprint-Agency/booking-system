@@ -38,7 +38,7 @@ test("a PT session's cancel button follows the studio's window, not a fixed 24 h
 
 test("the window in every sentence is the studio's", () => {
   // Only a PT session closes to cancelling at its window; a class stays open
-  // until it starts (#318, late-cancel-copy.test.ts).
+  // until it starts (see late-cancel-copy.test.ts).
   assert.equal(cancelClosed(48), "Cancellation closed · within 48 hours of start");
   assert.equal(cancelClosed(1), "Cancellation closed · within 1 hour of start");
   assert.match(windowRefusal("session", 12), /within 12 hours/);
@@ -103,7 +103,7 @@ test("no sentence calls a returned credit or session a refund", () => {
   for (const s of all) assert.doesNotMatch(s, /refund/i, s);
 });
 
-// ── The Cancelled tab (#349) ────────────────────────────────────────────────
+// ── The Cancelled tab ────────────────────────────────────────────────
 // A cancelled card's who and outcome lines are the server's
 // (be/src/services/bookings/cancellation-summary.test.ts, ACC-33 and ACC-35);
 // the class overlay's standing line is this app's.

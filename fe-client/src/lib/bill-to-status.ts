@@ -1,5 +1,5 @@
 /**
- * Where checkout's Bill to stands (#401), and what the Pay button says while
+ * Where checkout's Bill to stands, and what the Pay button says while
  * it waits on it. The picker reports its status; the page holds Pay until a
  * set is chosen and names why, so a member whose saved sets failed to load is
  * told to try again, not to add a set they already have.

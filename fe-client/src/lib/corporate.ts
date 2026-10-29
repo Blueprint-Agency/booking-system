@@ -35,7 +35,7 @@ export interface ApiCorporateRequest {
   created_at: string;
   /** When the studio cancelled it; null unless `status` is `cancelled`. */
   cancelled_at?: string | null;
-  /** A cancelled request's lines, as the server's cancellation summary words them (#351). */
+  /** A cancelled request's lines, as the server's cancellation summary words them. */
   who_line?: string | null;
   outcome_line?: string | null;
   session: ApiCorporateSession | null;
@@ -95,10 +95,9 @@ export function useCorporatePackages(): {
 /**
  * The studio's own WhatsApp number, from `tenant_settings.copy["contact.whatsapp"]`.
  *
- * This used to be a constant — tenant #1's real number, compiled into the
- * bundle every studio serves, so a member of any other studio who tapped
- * "arrange over WhatsApp" messaged tenant #1. There is no sensible fallback for
- * a phone number, which is why these return `null` rather than a platform one:
+ * It is not a constant compiled into the bundle every studio serves: a member
+ * of one studio who tapped "arrange over WhatsApp" would message another. There
+ * is no sensible fallback for a phone number, which is why these return `null` rather than a platform one:
  * a studio that has set none simply does not offer the link.
  *
  * Digits only, country code first and no `+` — WhatsApp's own deep-link format.

@@ -33,8 +33,8 @@ export function formatSgd(price: string | number): string {
 
 /**
  * Human label for a package Duration, which is whole calendar months. The
- * days-based version this replaces guessed at months by dividing by 30, so the
- * catalogue's 365-day "12-Month Unlimited" rendered as "365 days".
+ * label is not derived from days: dividing by 30 guesses at months, and the
+ * catalogue's 365-day "12-Month Unlimited" would render as "365 days".
  */
 export function formatDurationMonths(months: number): string {
   return `${months} month${months === 1 ? "" : "s"}`;

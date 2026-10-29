@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Add or edit one set of Billing details (#399), in the app's bottom sheet.
+ * Add or edit one set of Billing details, in the app's bottom sheet.
  *
  * One form for both, and for every place a member meets it: their account's
- * Billing details page today, and checkout's picker (#401), which adds or edits
+ * Billing details page today, and checkout's picker, which adds or edits
  * a set without leaving the purchase. On save it hands back the set as the
  * backend stored it, so the caller can select it.
  *

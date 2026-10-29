@@ -1,6 +1,6 @@
 "use client";
 /**
- * Where a member's set-password link lands (#173): `?token=` from the link, or
+ * Where a member's set-password link lands: `?token=` from the link, or
  * `?error=INVALID_TOKEN` when the link was used or has expired.
  *
  * The same page sets a first password (an imported member, one an admin added,

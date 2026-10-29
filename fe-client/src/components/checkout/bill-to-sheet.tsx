@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Who a purchase with no review page is billed to (#402): Merch, a S$0
+ * Who a purchase with no review page is billed to: Merch, a S$0
  * package, workshop place or corporate package bought straight from its Buy
  * button, and the trial pass. Every purchase needs Billing details, free ones
  * included, so these paths stop here before they buy.
