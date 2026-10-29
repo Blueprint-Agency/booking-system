@@ -4,6 +4,7 @@ import { Plus, Archive, RotateCcw, MapPin, Phone, ExternalLink, Trash2 } from "l
 import { toast } from "sonner";
 import { Button, PageHeader, Badge, EmptyState, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { LocationFormDialog } from "@/components/locations/location-form-dialog";
+import { LocationsLoadError } from "@/components/locations/locations-load-error";
 import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
@@ -13,7 +14,9 @@ export default function LocationsPage() {
   const {
     role,
     api,
-    locations,
+    manageableLocations: locations,
+    locationsStatus,
+    retryLocations,
     addLocation,
     updateLocation,
     archiveLocation,
@@ -28,7 +31,7 @@ export default function LocationsPage() {
   const archived = locations.filter((l) => l.archivedAt);
 
   async function handleSave(loc: Location) {
-    if (locations.some((l) => l.id === loc.id)) {
+    if (editing) {
       await updateLocation(loc);
       toast.success("Location updated.");
     } else {
@@ -104,7 +107,14 @@ export default function LocationsPage() {
         }
       />
 
-      {active.length + archived.length > 0 && (
+      {locationsStatus === "failed" && (
+        <LocationsLoadError onRetry={() => void retryLocations()} />
+      )}
+      {locationsStatus === "loading" && (
+        <p className="text-sm text-muted">Loading locations…</p>
+      )}
+
+      {locationsStatus === "loaded" && active.length + archived.length > 0 && (
         <Tabs value={view} onValueChange={(v) => setView(v as "active" | "archived")} className="mb-6">
           <TabsList>
             <TabsTrigger value="active">Active ({active.length})</TabsTrigger>
@@ -113,7 +123,7 @@ export default function LocationsPage() {
         </Tabs>
       )}
 
-      {active.length === 0 && archived.length === 0 ? (
+      {locationsStatus !== "loaded" ? null : active.length === 0 && archived.length === 0 ? (
         <EmptyState
           title="No locations yet"
           description="Add your first studio location to start scheduling classes."

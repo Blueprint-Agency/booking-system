@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Dialog, DialogFooter, Button, Input, Label } from "@/components/ui";
-import { refusalMessage } from "@/lib/refusal-message";
+import { locationSaveRefusal } from "@/lib/location-list";
 import type { Location } from "@/types";
 
 export function LocationFormDialog({
@@ -34,7 +34,7 @@ export function LocationFormDialog({
         archivedAt: location?.archivedAt ?? null,
       });
     } catch (err) {
-      setRefusal(refusalMessage(err, "The location could not be saved. Try again."));
+      setRefusal(locationSaveRefusal(err, "The location could not be saved. Try again."));
     } finally {
       setSaving(false);
     }
