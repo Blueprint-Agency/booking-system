@@ -1030,6 +1030,8 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
       starts_at: new Date(Date.now() - DAY).toISOString(),
       ends_at: new Date(Date.now() + DAY).toISOString(),
     })
+    /** Half an hour: a moved day stays clear of the next workshop's slot, which `nextStart` puts three hours on. */
+    const SHIFT = HOUR / 2
     const movedBy = (day: Detail['days'][number], by: number) => ({
       id: day.id,
       ref: day.id,
@@ -1061,7 +1063,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
         editBody(before, {
           name: renamed,
           supporting_instructors: [{ instructor_id: sam.staffId, pay_sgd: 40 }],
-          days: [movedBy(day!, DAY)],
+          days: [movedBy(day!, SHIFT)],
           tiers: [{ id: w.tierIds[1], name: 'Other', regular_price_sgd: '90.00', day_refs: [day!.id] }],
           promotions: [launch()],
         }),
@@ -1076,7 +1078,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
         editBody(before, {
           name: renamed,
           supporting_instructors: [{ instructor_id: sam.staffId, pay_sgd: 40 }],
-          days: [movedBy(day!, DAY)],
+          days: [movedBy(day!, SHIFT)],
           promotions: [launch()],
         }),
       )
@@ -1084,7 +1086,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
       const after = await detailOf(w)
       assert.equal(after.name, renamed)
       assert.deepEqual(after.supporting_instructors.map(s => s.instructor_id), [sam.staffId])
-      assert.deepEqual(after.days.map(d => [d.id, d.starts_at]), [[day!.id, new Date(Date.parse(day!.starts_at) + DAY).toISOString()]])
+      assert.deepEqual(after.days.map(d => [d.id, d.starts_at]), [[day!.id, new Date(Date.parse(day!.starts_at) + SHIFT).toISOString()]])
       assert.deepEqual(after.tiers.map(t => t.id), w.tierIds, 'the tiers were duplicated or dropped')
       assert.deepEqual(after.promotions.map(p => p.label), ['Launch'])
     })
@@ -1113,7 +1115,7 @@ describe('workshops over HTTP', { skip: integrationTestsEnabled ? false : SKIP_R
           w,
           editBody(before, {
             name: `Never saved ${run}`,
-            days: [movedBy(day!, DAY)],
+            days: [movedBy(day!, SHIFT)],
             tiers: [
               { id: w.tierIds[0], name: 'Full', regular_price_sgd: '175.00', day_refs: [day!.id] },
               { name: 'Added', regular_price_sgd: '60.00', day_refs: [day!.id] },
