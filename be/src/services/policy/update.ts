@@ -32,7 +32,7 @@ export async function readPolicy(tenantId: string): Promise<{
 }
 
 /**
- * Does this studio offer Part Payment (#93)?
+ * Does this studio offer Part Payment?
  *
  * Its own read rather than a field off `readPolicy`, because the checkout path
  * asks this on every sale and does not want the PT booking config or a throw
@@ -51,7 +51,7 @@ export async function partPaymentEnabled(tenantId: string): Promise<boolean> {
 }
 
 export interface UpdateGlobalPolicyInput {
-  /** The Cancellation Cap switch (#318); off, every in-time member cancel returns. */
+  /** The Cancellation Cap switch; off, every in-time member cancel returns. */
   cancelCapEnabled?: boolean
   cancelCapCount?: number
   cancelCapCycleDays?: number
@@ -62,7 +62,7 @@ export interface UpdateGlobalPolicyInput {
   /** The Cross-Location Add-On's monthly rate (§5), as "30.00". */
   crossLocationRateSgd?: string
   /**
-   * Whether members may split a purchase across two cards (#93).
+   * Whether members may split a purchase across two cards.
    *
    * Turning it **off** hides the checkbox on new checkouts and nothing else. A
    * Purchase already open keeps its Balance and stays resumable, because the
@@ -70,7 +70,7 @@ export interface UpdateGlobalPolicyInput {
    * forbidden anyone to clear.
    */
   partPaymentEnabled?: boolean
-  /** The Check-in Window (#192), in minutes before a session starts. */
+  /** The Check-in Window, in minutes before a session starts. */
   checkInOpensMinutesBefore?: number
   /** Every declared **Leave Conflict**, as one replacement set. Absent leaves
    *  the declared pairs alone; present replaces them entirely. */

@@ -1,5 +1,5 @@
 /**
- * The studio's logo, fetched to draw on a Receipt PDF (#386).
+ * The studio's logo, fetched to draw on a Receipt PDF.
  *
  * **Never the reason a PDF fails.** Whatever goes wrong — no logo, an address
  * that is not one, a host that refuses, answers late or never, a page that is

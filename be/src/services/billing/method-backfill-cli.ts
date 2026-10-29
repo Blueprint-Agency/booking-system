@@ -1,5 +1,5 @@
 /**
- * Fill in how each past payment was paid (#282) — a one-off, for payments taken
+ * Fill in how each past payment was paid — a one-off, for payments taken
  * before the webhook started recording the method. Run where the database is:
  *
  *   docker compose run --rm -T booking-be npm run -s billing:backfill-methods

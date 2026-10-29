@@ -15,7 +15,7 @@ type Rows = Record<string, Record<string, unknown>[]>
 const ASSIGNED_DAYS = ['annual_leave_days', 'medical_leave_days', 'study_leave_days'] as const
 
 /**
- * Migration 0091 (#315): leave belongs to a staff member. `leave_requests` and
+ * Migration 0091: leave belongs to a staff member. `leave_requests` and
  * `leave_pools` renamed `instructor_id` to `staff_user_id` — the same value,
  * since an instructor's key is its staff user id — and the Assigned Days moved
  * from `instructors` onto `staff_users`, where 0089 gave everyone else 14/14/7.
@@ -65,7 +65,7 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
     )
   }
 
-  // Migration 0115 (#398): the Legal name became the Business name, and a
+  // Migration 0115: the Legal name became the Business name, and a
   // studio named as 0115 named it: its Legal name, else its display name, else
   // the studio's name as the archive recorded it (`tenants.name`). A Receipt's
   // copy is renamed as it is.

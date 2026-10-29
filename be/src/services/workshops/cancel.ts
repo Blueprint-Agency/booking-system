@@ -8,7 +8,7 @@ import { readInstructors, recordSessionCancelledByAdmin, workshopFacts } from '.
 
 /**
  * Cancel a workshop and all confirmed workshop bookings. **Nobody is refunded
- * automatically** (#272): each booking is marked cancelled with
+ * automatically**: each booking is marked cancelled with
  * refund_outcome='n_a' rather than falsely claiming stripe_refunded, and the
  * admin decides, one member at a time, from that member's page — where a paid
  * booking cancelled here stays listed with its Refund action
@@ -52,7 +52,7 @@ export async function cancelWorkshop(
       .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, workshopId)))
       .returning()
 
-    // Everyone teaching it is told (#493).
+    // Everyone teaching it is told.
     // A workshop with no day was never on anyone's schedule: nothing to name.
     const facts = await workshopFacts(tenantId, workshopId)
     if (facts) {

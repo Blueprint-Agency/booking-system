@@ -4,10 +4,10 @@ import { AUDIT_ROW_REWRITES, eraseAuditRow } from './erase-audit-row'
 
 /**
  * Where a member lives in the database: every Tenant-scoped table with a row
- * that names them, and the column that does the naming (#143).
+ * that names them, and the column that does the naming.
  *
  * One list, because two features read it. Member export hands over what the
- * studio holds about someone; member deletion (#144) has to reach exactly the
+ * studio holds about someone; member deletion has to reach exactly the
  * same rows, and a table one knows about and the other does not is either a
  * leak or a member who was not really deleted.
  *
@@ -40,7 +40,7 @@ export type MemberTable = {
   /** The rows in `table` that belong to the member. The caller adds the Tenant. */
   where: (member: MemberKey) => SQL
   /**
-   * What permanently deleting the member does to this table (#144), step by
+   * What permanently deleting the member does to this table, step by
    * step. Left out, the rows `where` finds are deleted — the safe direction, so
    * a table added to the list keeps nothing unless it says why.
    *
@@ -95,14 +95,14 @@ const ACCOUNTS =
 
 export const MEMBER_TABLES: readonly MemberTable[] = [
   { table: 'clients', columns: ['id'], where: m => sql`id = ${m.clientId}` },
-  // Their Billing details (#399): names and addresses they gave the studio to
+  // Their Billing details: names and addresses they gave the studio to
   // bill. Nothing sold points at them — a Purchase keeps its own copy — so
   // they go with the member.
   byClientId('client_billing_details'),
   byClientId('bookings'),
-  // The ClassPass emails about them (#411): the email as it arrived, with the
+  // The ClassPass emails about them: the email as it arrived, with the
   // name and address ClassPass gave for them. One the importer could not place
-  // names them only by that address. A ClassPass Daily Roster (#415) names
+  // names them only by that address. A ClassPass Daily Roster names
   // members by name only, in its text: one whose text or HTML holds the
   // member's full name, ignoring case, is theirs too (and every other member it
   // lists goes with it). After `bookings`, which a placed one points at, so
@@ -131,19 +131,19 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
   // Credit movements with a staff member's free-text reason: no money, and the
   // reason may well name the member.
   byClientId('manual_adjustments'),
-  // Their Credit history (#353): which of their bookings spent or returned
+  // Their Credit history: which of their bookings spent or returned
   // what. No money, and it is about them; it goes with them.
   byClientId('credit_movements'),
-  // What was bought, what it cost and how much of it was paid (#91). It is the
+  // What was bought, what it cost and how much of it was paid. It is the
   // sale itself, so it is kept for the same reason every other accounts row is —
   // including one still open, whose money the studio is holding and may yet have
   // to return. The metadata is dropped with the member: it carries the ids the
-  // webhook granted from, and one of them is theirs. So is the Bill to (#401):
+  // webhook granted from, and one of them is theirs. So is the Bill to:
   // the name and address of the Billing details they chose.
   byClientId('purchases', [
     { keptBecause: ACCOUNTS, set: sql`client_id = NULL, metadata = '{}'::jsonb, bill_to = NULL`, where: clientIdIs },
   ]),
-  // The studio's Receipt for each sale (#380): its record of what was sold and
+  // The studio's Receipt for each sale: its record of what was sold and
   // for how much, so it stays with the Purchase it is for. Who it was issued to
   // goes — the member's id, and the name, email and Bill to copied onto it.
   byClientId('receipts', [
@@ -159,8 +159,8 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
   byClientId('stripe_payments', [
     { keptBecause: ACCOUNTS, set: sql`client_id = NULL, booking_id = NULL, receipt_url = NULL`, where: clientIdIs },
   ]),
-  // Who the member is at the payment provider, and so the cards they kept
-  // (#185). **Deleted, not emptied** — the one row in this neighbourhood that
+  // Who the member is at the payment provider, and so the cards they kept.
+  // **Deleted, not emptied** — the one row in this neighbourhood that
   // is, and deliberately: a payment is the studio's accounts, but this is the
   // member's identity at a third party, which is precisely what permanent
   // deletion is for. Emptying it would also orphan the id, leaving their cards
@@ -228,7 +228,7 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
     columns: ['payload'],
     where: m => sql`payload->>'clientId' = ${m.clientId}`,
   },
-  // A staff Update that names the member (#490). Deleted: it is a notice to a
+  // A staff Update that names the member. Deleted: it is a notice to a
   // staff member, with no accounting value, and its snapshot may hold their name.
   {
     table: 'staff_updates',

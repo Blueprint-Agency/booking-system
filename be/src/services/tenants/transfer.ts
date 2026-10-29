@@ -18,7 +18,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../shared/erro
 import { DEFAULT_RECEIPT_PREFIX } from '../receipts/snapshot'
 import { newAddressToken } from '../classpass/settings'
 
-/** The `tenant_settings` columns that hold the studio's Business details (#391, #398). */
+/** The `tenant_settings` columns that hold the studio's Business details. */
 const RECEIPT_DETAIL_COLUMNS = [
   'business_name',
   'receipt_prefix',
@@ -160,7 +160,7 @@ export async function exportTenant(tenantId: string, options: ExportOptions = {}
       ;[settings] = await db.execute<Record<string, unknown>>(
         sql`SELECT * FROM current_tenant_settings()`,
       )
-      // The receipt details (#391) are columns the app may read directly, so
+      // The receipt details are columns the app may read directly, so
       // they come out beside the reader's row rather than through it.
       if (settings) {
         const [receipt] = await db.execute<Record<string, unknown>>(sql`
@@ -271,7 +271,7 @@ type ImportProgressListener = (progress: ImportProgress) => void
  *  - `replace` — the studio's rows are deleted and the archive's written in
  *    their place, in one transaction. What the archive cannot supply is kept:
  *    its people's logins, its settings, its payment credentials and the Tenant
- *    row itself (#339). The operator repeats the studio's Slug to confirm it.
+ *    row itself. The operator repeats the studio's Slug to confirm it.
  */
 export type ImportMode = 'restore' | 'replace'
 
@@ -389,7 +389,7 @@ const ACCOUNT_TABLES = { clients: 'client', staff_users: 'staff' } as const
  * renumbering is only to references held outside this database, and only a
  * studio being restored in place has any.
  *
- * **A replace (#339) is the other way in, and is not a merge.** Instead of
+ * **A replace is the other way in, and is not a merge.** Instead of
  * refusing a studio that has rows, it deletes them — children first, in the
  * same transaction as the writes, so a failure part-way leaves the studio as it
  * was — and then writes the archive exactly as a restore would, ids kept by the
@@ -438,7 +438,7 @@ export async function importTenant(
     )
   }
   // An export names each person's login on their row, and has since the user
-  // import (#120). A row that names none is from an archive older than that, and
+  // import. A row that names none is from an archive older than that, and
   // is refused by name before anything is written, as it always was — even
   // though the id it would have named is replaced below.
   for (const table of builtOutside ? [] : Object.keys(ACCOUNT_TABLES)) {
@@ -464,7 +464,7 @@ export async function importTenant(
   // current schema first, for an archive taken before a column moved.
   const rows = upgradeArchiveRows(archive.rows, { tenantName: archive.manifest.tenant.name })
   // A ClassPass address is the inbound webhook's routing key, unique across the
-  // platform (#409). A restored studio gets a fresh one, so it never shares an
+  // platform. A restored studio gets a fresh one, so it never shares an
   // address with the studio it came from; Gmail's code and confirmation link
   // belonged to the old address, so they go too.
   if (rows.classpass_settings) {
@@ -537,10 +537,10 @@ export async function importTenant(
     // is one from the platform it came from — or none, when it was built
     // outside one. Either way it is not copied: each person gets a login made
     // from their email, with no password, and signs in through the email-first
-    // step, which mails them a Set-password link (#229) — unless the export was
+    // step, which mails them a Set-password link — unless the export was
     // asked to carry passwords, whose hashes are given to these logins below.
     // The login is the
-    // target studio's own (#231), through the helper every other way in uses;
+    // target studio's own, through the helper every other way in uses;
     // the same person at another studio has a login there, untouched.
     //
     // Inside this transaction, before any row: a failed import leaves neither
@@ -687,7 +687,7 @@ export async function importTenant(
           ${kept('waiver_text')}
         )
       `)
-      // The Business details (#391, #398), written directly: the app role may.
+      // The Business details, written directly: the app role may.
       // An archive exported before they existed does not carry the columns at
       // all, and leaves the details the super portal gave the studio standing.
       // A Business name the archive leaves null is the trigger's to fill
@@ -764,7 +764,7 @@ export async function importTenant(
   // them now, or an imported studio's waitlist would stay off until a restart.
   await withTenant(targetTenantId, loadFeatureFlags)
   // So is the mail identity, and the archive may have written the Business
-  // name that signs the studio's email (#400): forget it now it has committed.
+  // name that signs the studio's email: forget it now it has committed.
   if (settings) forgetCachedMailIdentity(targetTenantId)
 
   return {
@@ -877,7 +877,7 @@ async function removeLoginsNotIn(
         OR right(lower(v.identifier), length(r.email) + 1) IN (':' || r.email, '-' || r.email)
       )
   `)
-  // A member session a removed admin opened as that member (#118) names the
+  // A member session a removed admin opened as that member names the
   // admin's login in another pool, with no key to cascade on.
   if (pool === 'staff') {
     await db.execute(sql`

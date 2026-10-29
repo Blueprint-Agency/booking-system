@@ -1,5 +1,5 @@
 /**
- * The **Complimentary Package** (#176): a catalogue package an admin gives a
+ * The **Complimentary Package**: a catalogue package an admin gives a
  * member at no charge, and the removal of one given by mistake.
  *
  * Giving goes through `grantPackage` — the same service a paid purchase uses —
@@ -332,7 +332,7 @@ async function cancelPtRequestsOn(
   actorStaffId: string,
 ): Promise<void> {
   for (const id of await openPtRequestsOn(tenantId, clientPackageId)) {
-    // A system cancel (#350): the Remove cancelled them, not a person
+    // A system cancel: the Remove cancelled them, not a person
     // cancelling a session. The admin who took the package back is still
     // named on the request and the ledger, like every other row it writes.
     await cancelPtRequest(tenantId, { ptRequestId: id, source: 'system', actorStaffId })

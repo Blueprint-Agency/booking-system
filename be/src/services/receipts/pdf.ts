@@ -1,7 +1,7 @@
 /**
- * A Receipt as a PDF (#380, #386). **The one PDF renderer**: the member's
- * download, the admin's download (#389) and the confirmation email's
- * attachment (#387) all call `receiptPdf`.
+ * A Receipt as a PDF. **The one PDF renderer**: the member's
+ * download, the admin's download and the confirmation email's
+ * attachment all call `receiptPdf`.
  *
  * It lays out `receiptDocument` in `RECEIPT_COLORS`, the same document and
  * colours `html.ts` draws for the email and both apps' Receipt pages, so
@@ -9,7 +9,7 @@
  * never stored. Drawn in-process with PDFKit, pure JavaScript: there is no
  * browser on the host to print with.
  *
- * Laid out as a business receipt (#403): the title with the studio's logo, or
+ * Laid out as a business receipt: the title with the studio's logo, or
  * its Business name, on the right; the facts; the studio and Bill to side by
  * side; what was paid and when; the lines; the totals; the Payment history.
  * The lines and the Payment history break across pages, their headings

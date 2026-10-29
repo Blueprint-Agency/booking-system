@@ -7,13 +7,11 @@
  *     with two of them has a way back in either way.
  *   - Already-archived target is a no-op (idempotent).
  *
- * These used to be keyed on a deploy-time email variable: one address, seeded into the
- * one studio a deployment had, protected from archival and the only account
- * allowed to touch another top-rank account. Studios now arrive by provisioning or
- * restore and carry no seeded address, so that check answered `false` for every
- * real row — which turned "only the main account may archive its peers"
- * into "nobody may, ever". The rule that was actually wanted is the one below:
- * count the admins, and refuse to reach zero.
+ * They are not keyed on a deploy-time email variable. Studios arrive by
+ * provisioning or restore and carry no seeded address, so a check against one
+ * would answer `false` for every real row — which would turn "only the main
+ * account may archive its peers" into "nobody may, ever". The rule is the one
+ * below: count the admins, and refuse to reach zero.
  *
  * After the DB flip the target's Better Auth sessions at this studio are
  * deleted, in the same transaction, so they're booted from the portal
@@ -112,7 +110,7 @@ export interface ArchiveStaffInput {
   tenantId: string
   targetStaffId: string
   actorStaffId: string
-  /** The acting staff member's request, for the `auth_events` row (#119). */
+  /** The acting staff member's request, for the `auth_events` row. */
   from?: Headers
 }
 
@@ -426,7 +424,7 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
     // What they held before this save: their row, or the default of all three.
     const held = await resolveInstructorPermissions({ id: targetStaffId, tenantId, role: 'instructor' })
     await writeInstructorPermissions(db, tenantId, targetStaffId, patch.permissions)
-    // Told what changed, in this transaction (#491); a save that changes
+    // Told what changed, in this transaction; a save that changes
     // nothing, or an admin editing themselves, tells no one.
     const now = new Set(patch.permissions)
     const granted = ALL_INSTRUCTOR_PERMISSIONS.filter(k => now.has(k) && !held.has(k))

@@ -711,7 +711,7 @@ export function checkRequestTakesDocument(
  *  upload a decision overtakes never writes over the file its request already
  *  holds; the upload service deletes whichever file the row stops pointing at.
  *
- *  Under the owning studio's prefix (#63): a Supporting Document is a health
+ *  Under the owning studio's prefix: a Supporting Document is a health
  *  document on a public-read bucket, so the key is the only thing standing
  *  between it and anyone who holds it — and one studio's HR paperwork should not
  *  even share a namespace with another's.

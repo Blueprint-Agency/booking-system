@@ -20,7 +20,7 @@ import { checkClassPassRosters, type RosterCheck } from './roster'
 const CLASSPASS_SENT_KINDS: ClassPassEmailKind[] = ['booking', 'cancellation', 'roster', 'marketing']
 
 /**
- * A studio's ClassPass address and switch (#409), and what has arrived at it.
+ * A studio's ClassPass address and switch, and what has arrived at it.
  *
  * The address is `<token>@<CLASSPASS_INBOUND_DOMAIN>`. The token is random, not
  * the Slug, so the address can't be guessed from the studio's name, and a
@@ -42,8 +42,8 @@ export type ClassPassStatus = {
   lastReceivedAt: Date | null
   counts: Record<ClassPassEmailOutcome, number>
   /**
-   * ClassPass bookings holding an Overbook seat on a class that hasn't ended
-   * (#411): ClassPass sold a seat the class did not have. Gone once the class
+   * ClassPass bookings holding an Overbook seat on a class that hasn't ended:
+   * ClassPass sold a seat the class did not have. Gone once the class
    * ends or the booking is cancelled. Soonest first.
    */
   overbooked: OverbookedClassPassBooking[]
@@ -78,7 +78,7 @@ export type ClassPassSetup = {
 
 /** The ClassPass page as it is read: its status, and the roster check, which only a read works out. */
 export type ClassPassPage = ClassPassStatus & {
-  /** What the ClassPass Daily Rosters of the last week say we hold wrongly (#415). */
+  /** What the ClassPass Daily Rosters of the last week say we hold wrongly. */
   rosterCheck: RosterCheck
 }
 

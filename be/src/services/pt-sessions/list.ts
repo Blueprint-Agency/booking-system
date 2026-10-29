@@ -53,7 +53,7 @@ export interface ClientPtRequestView {
   booking: { qrToken: string; code: string; checkInState: string; refundOutcome: RefundOutcome } | null
   /** Cancellation outcome when the request is terminal; null while active/pending. */
   refundOutcome: RefundOutcome | null
-  /** How it ended, on a cancelled or expired request or a seat the member left; null while live (#351). */
+  /** How it ended, on a cancelled or expired request or a seat the member left; null while live. */
   cancellation: CancellationSummary | null
 }
 
@@ -65,7 +65,7 @@ interface SessionRecord extends CancellationRecord {
 
 /**
  * How a cancelled request (or seat) ended, from what its cancel recorded and
- * nothing else (#351), read through the shared `summarizeCancellation`:
+ * nothing else, read through the shared `summarizeCancellation`:
  *
  *   - Unscheduled: the request's own fields (`pendingRequestEnd`).
  *   - Scheduled: the `cancellations` row on the member's own booking (a
@@ -166,7 +166,7 @@ export async function listClientPtRequests(
     .leftJoin(rooms, eq(rooms.id, ptSessions.roomId))
     // Caller is the requester, the 2on1 partner (co_client_id), or held a seat
     // since cancelled: a manual session's request follows who is still booked,
-    // so a member who left keeps their seat only through its booking (#351).
+    // so a member who left keeps their seat only through its booking.
     .where(
       and(
         eq(ptRequests.tenantId, tenantId),
@@ -273,7 +273,7 @@ export async function listClientPtRequests(
 
   return reqRows.map(r => {
     // On the request no longer, yet listed: a seat they held, paid for and
-    // left (#351). Theirs, as a requester's is: nobody hosted them.
+    // left. Theirs, as a requester's is: nobody hosted them.
     const seatLeft = r.requesterClientId !== clientId && r.coClientId !== clientId
     const role: 'requester' | 'partner' = r.requesterClientId === clientId || seatLeft ? 'requester' : 'partner'
     const booking = r.sessionId ? bookingBySession.get(r.sessionId) ?? null : null

@@ -1,11 +1,11 @@
 /**
- * The calendar behind a member's practice summary (#317, "My practice" #340):
+ * The calendar behind a member's practice summary ("My practice"):
  * which days a timeframe covers, how it is cut into buckets, and which days it
  * is compared against — and the two figures read off the calendar, the weeks
  * in a row and the usual slot.
  *
  * Each timeframe is the one containing a day — today, or an earlier day the
- * member stepped back to (#342):
+ * member stepped back to:
  *
  *   - week:    Monday to Sunday, a bucket per day.
  *   - month:   the calendar month, a bucket per day.

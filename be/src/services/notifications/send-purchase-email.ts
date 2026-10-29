@@ -14,7 +14,7 @@
  * Each confirmation is composed by a function of its own (`packageEmail`,
  * `corporateEmail`, `workshopEmail`), which reads the member as they are at the
  * time of the send. `purchaseEmail` picks the one a Purchase sent, from its
- * Receipt: what an admin's resend sends (#390), so a resent Receipt arrives in
+ * Receipt: what an admin's resend sends, so a resent Receipt arrives in
  * the very email the purchase sent.
  */
 import { and, eq, isNull, sql } from 'drizzle-orm'
@@ -39,10 +39,10 @@ import { sendTemplatedEmail, type SendInput } from './send'
 /**
  * The member's own studio's app, per send.
  *
- * Both pages used to be module constants built from the one platform-wide
- * `CLIENT_URL`, so a member of the second studio was sent to the first studio's
- * account page — a hostname they cannot sign into — to see the purchase they
- * had just made. The origin is the buying studio's own, derived from its slug.
+ * Module constants built from one platform-wide `CLIENT_URL` would send a
+ * member of the second studio to the first studio's account page — a hostname
+ * they cannot sign into — to see the purchase they had just made. The origin is
+ * the buying studio's own, derived from its slug.
  *
  * Both callers already run inside a `try` that reports and swallows, because
  * neither may fail the committed purchase it announces; a studio whose origin
@@ -71,7 +71,7 @@ const SG_DATETIME = sgFormat('en-GB', {
 /**
  * The email a Purchase's confirmation is, carrying its Receipt, composed afresh
  * for the member as they are now: their current email, the package, place or
- * request as it stands. What an admin's resend sends (#390).
+ * request as it stands. What an admin's resend sends.
  *
  * The one place that knows which email each kind of Purchase sends, read off
  * the Receipt's kind and found by the Purchase it names:
@@ -79,7 +79,7 @@ const SG_DATETIME = sgFormat('en-GB', {
  *   - a class or PT package: the package confirmation (`packageEmail`);
  *   - a workshop place: the workshop confirmation;
  *   - a corporate package: the corporate confirmation;
- *   - Merch and a standalone Cross-Location Add-On: `purchase_receipt` (#388),
+ *   - Merch and a standalone Cross-Location Add-On: `purchase_receipt`,
  *     the email that is their Receipt.
  *
  * Throws `409 receipt_email_unavailable` when nothing the Purchase granted is
@@ -128,7 +128,7 @@ export async function purchaseEmail(tenantId: string, receipt: ReceiptRow): Prom
  * the sale names (`metadata.package_id`), bought by no Purchase and given by
  * no admin, whose `purchased_at` is the sale's `created_at`, both being that
  * transaction's `now()`. Every free package sale has carried those since it
- * has had a Purchase at all (#169), so a Receipt of any age resends.
+ * has had a Purchase at all, so a Receipt of any age resends.
  */
 async function packageGrantedBy(tenantId: string, purchaseId: string): Promise<string | null> {
   const [paid] = await db
@@ -168,7 +168,7 @@ async function packageGrantedBy(tenantId: string, purchaseId: string): Promise<s
  * purchase is confirmed" is false, and an admin correcting a record must not
  * mail the member.
  *
- * It carries the Purchase's Receipt (#387): the block, the PDF and the link.
+ * It carries the Purchase's Receipt: the block, the PDF and the link.
  * The Purchase is the package's own; a free package is granted with none on
  * it, beside the settled Purchase its checkout opened, so the free paths name
  * that one (`salePurchaseId`).
@@ -211,7 +211,7 @@ async function packageEmail(tenantId: string, clientPackageId: string, salePurch
     })
     .from(clientPackages)
     .innerJoin(clients, eq(clients.id, clientPackages.clientId))
-    // The Bound Instructor a PT package's sessions are with (#109). Left, and
+    // The Bound Instructor a PT package's sessions are with. Left, and
     // null on every open package and every other kind.
     .leftJoin(staffUsers, eq(staffUsers.id, clientPackages.boundInstructorId))
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
@@ -232,7 +232,7 @@ async function packageEmail(tenantId: string, clientPackageId: string, salePurch
     durationMonths: row.durationMonths,
     validityDays: row.validityDays,
     boundInstructorName: row.boundInstructorName,
-    // The sale's own figure (#370): what the Purchase collected, which is
+    // The sale's own figure: what the Purchase collected, which is
     // the plan and any Cross-Location Add-On bought with it. A free purchase
     // is granted with no Purchase on the package, and the package records
     // what it cost — zero.
@@ -261,7 +261,7 @@ async function packageEmail(tenantId: string, clientPackageId: string, salePurch
  *
  * Called once the delivery that made the Corporate Request has committed, so
  * a delivery that rolled back never mailed anyone. It carries the Receipt of
- * the Purchase the request names (#387).
+ * the Purchase the request names.
  *
  * A package with nothing to pay (`paymentIntentId` null) is confirmed the same
  * way, from the zero-total Purchase the request names, and its S$0.00 Receipt.
@@ -331,7 +331,7 @@ async function corporateEmail(
       variables: {
         client_name: row.clientName,
         package_name: row.packageName,
-        // The sale's figure, as on every other confirmation (#370).
+        // The sale's figure, as on every other confirmation.
         amount_paid: amountPaid(payment.purchasePaidSgd ?? payment.paymentSgd),
         // The member's Receipt (`withReceipt`); where the request is only
         // for a request no Receipt was issued for: an escaped empty href
@@ -344,7 +344,7 @@ async function corporateEmail(
 }
 
 /**
- * Send the Receipt of a sale that has no confirmation of its own (#388):
+ * Send the Receipt of a sale that has no confirmation of its own:
  * Merch, paid or free, and a standalone Cross-Location Add-On. Neither grants
  * a package or books a place, so `purchase_receipt` is the whole email: the
  * studio's copy naming what was bought and what it cost, and under it the
@@ -402,7 +402,7 @@ async function purchaseReceiptEmail(tenantId: string, receipt: ReceiptRow): Prom
  * used to send nothing at all.
  *
  * Fills the workshop template's declared variables and carries the place's
- * Receipt (#387), whose Purchase the booking names, paid or free.
+ * Receipt, whose Purchase the booking names, paid or free.
  */
 export async function sendWorkshopPurchaseEmail(
   tenantId: string,

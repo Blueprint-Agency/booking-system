@@ -9,7 +9,7 @@ import { parseClassPassBooking } from './parse'
 import { isOpen, OPEN_OUTCOMES, recordPlaced } from './review-items'
 
 /**
- * ClassPass review (#413): the ClassPass emails the importer could not place,
+ * ClassPass review: the ClassPass emails the importer could not place,
  * open until an Admin closes each one.
  *
  * An open item is a kept email with an outcome of `review` or `unparsed` and

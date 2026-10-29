@@ -18,7 +18,7 @@ export function notDismissed(tenantId: string, kind: string, subjectId: AnyPgCol
 }
 
 /**
- * The subject ids of `kind` the studio has dismissed (#482): what a dismissable
+ * The subject ids of `kind` the studio has dismissed: what a dismissable
  * kind's provider leaves out of its count and its list. Kept apart from
  * `dismissals.ts` so a provider can import it without a cycle through the registry.
  */

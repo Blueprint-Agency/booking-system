@@ -8,7 +8,7 @@ import { normaliseClassPassLocation } from './location-name'
 import { parseClassPassBooking } from './parse'
 
 /**
- * The open items of ClassPass review (#413), as the importer, the review and
+ * The open items of ClassPass review, as the importer, the review and
  * the ClassPass location mappings all write them.
  *
  * An open item is a kept email with an outcome of `review` or `unparsed` and

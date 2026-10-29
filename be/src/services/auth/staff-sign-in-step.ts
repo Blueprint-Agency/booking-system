@@ -22,7 +22,7 @@ import { spendSignInStepBudget, spendStaffLinkBudget } from './rate-limit'
  *     gets this answer too, and nothing is mailed to it.
  *   - `password` — everyone else: ask for the password and sign in.
  *
- * "Has a password" means at this studio: logins are per studio (#231), so a
+ * "Has a password" means at this studio: logins are per studio, so a
  * password at another studio is not asked for here. The pending case is kept
  * apart all the same, so an invitee is always sent the link that accepts their
  * invitation, never asked for a password that signs in to "this account isn't

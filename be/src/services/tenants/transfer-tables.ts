@@ -7,7 +7,7 @@ import * as schema from '../../db/schema'
 /**
  * The `staff` and `client` pools' tables. A login is never part of a studio's
  * archive: its password hash, 2FA secret, sessions and verifications are
- * secrets, and a restore makes each person a fresh login instead (#229). An
+ * secrets, and a restore makes each person a fresh login instead. An
  * export asked to include passwords carries the hashes alone, by email, beside
  * the tables rather than as their rows (`readPasswords` in `transfer.ts`).
  *

@@ -220,7 +220,7 @@ export async function updateWorkshop(
       }
     }
 
-    // The instructors are told when someone else moved the workshop to another location or changed who teaches it (#493).
+    // The instructors are told when someone else moved the workshop to another location or changed who teaches it.
     // A workshop with no day has no time to move or name, so there is nothing to tell.
     const factsAfter = await workshopFacts(tenantId, id)
     if (factsBefore && factsAfter) {

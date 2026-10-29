@@ -267,7 +267,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
         eq(stripePayments.tenantId, tenantId),
         eq(stripePayments.status, 'refunded'),
         isNotNull(stripePayments.refundedAt),
-        // **A Purchase that never settled produces no Refund event** (#93).
+        // **A Purchase that never settled produces no Refund event**.
         //
         // Every money-in row above is read off what a sale *delivered* — a
         // plan, a booking, a Merch Order — so a Purchase still `open` has
@@ -276,7 +276,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
         // here would subtract from Net a figure Net never contained, quietly
         // understating the month by the refunded amount.
         //
-        // `abandoned` is the same purchase a moment later (#95). An admin
+        // `abandoned` is the same purchase a moment later. An admin
         // refunding an ungranted Purchase closes it as abandoned rather than
         // refunded precisely so the two stay apart here: the row was `open`
         // when the money went back and would be excluded on that ground alone,
@@ -289,7 +289,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
     )
 
   // A Refund of a sale that reached no payment provider: one made before the
-  // studio came to the platform, migrated with its return (#217). There is no
+  // studio came to the platform, migrated with its return. There is no
   // payment row to date it, so the Purchase carries the date itself. A
   // Purchase with a payment behind it is refunded through that payment and
   // read above — never here as well, or the month would lose it twice.
@@ -322,7 +322,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
   // refunded purchase when you look at August.
   //
   // Two keys off one query, because the rows above are keyed two ways: a plan
-  // and a workshop booking name the Purchase (#92), while a corporate payment
+  // and a workshop booking name the Purchase, while a corporate payment
   // and a Merch Order still name the intent. Both come off the same refunded
   // payment rows, so they cannot disagree.
   const refundedPayments = await db

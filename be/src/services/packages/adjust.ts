@@ -55,7 +55,7 @@ async function editablePackage(
  * The most credits or sessions a package may hold after a staff edit: more than
  * a member could use in the ten years a package may run (`MAX_VALIDITY_DAYS`),
  * and far inside the `integer` balance column, which a larger figure overflowed
- * as a 500 (#240).
+ * as a 500.
  */
 export const MAX_PACKAGE_BALANCE = 10_000
 
@@ -308,7 +308,7 @@ export interface SetBoundInstructorInput {
 }
 
 /**
- * Bind, move or clear a purchased PT Package's **Bound Instructor** (#110) —
+ * Bind, move or clear a purchased PT Package's **Bound Instructor** —
  * the admin-side counterpart to the choice a member makes at checkout, for a
  * package sold open, a member changing coach, or a coach who has left.
  *
@@ -418,11 +418,11 @@ const startTime = sgFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour12
  *
  * A date before a class or PT session the package already pays for would
  * leave that booking paid by a package that has ended, so it is refused,
- * naming the earliest date allowed (#444 holds scheduling to the same rule).
+ * naming the earliest date allowed (scheduling is held to the same rule).
  * The row is locked first, so a booking made meanwhile is seen.
  *
  * A blank expiry (back to Dormant) is refused only when the package pays for a
- * booking that a fresh Activation now would not reach (#499).
+ * booking that a fresh Activation now would not reach.
  */
 export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPackageRow> {
   if (!input.reason.trim()) throw new BadRequestError('reason_required')

@@ -5,7 +5,7 @@ type RateLimitStorage = NonNullable<BetterAuthRateLimitOptions['customStorage']>
 type Rule = { window: number; max: number }
 
 /**
- * The two budgets #114 puts on sign-in, per client address, per pool. Windows
+ * The two budgets on sign-in, per client address, per pool. Windows
  * are in seconds, as Better Auth reads them.
  *
  * Sized for a studio's front desk, not for one person: members arriving for a
@@ -19,7 +19,7 @@ export const AUTH_RATE_LIMITS = {
   /** A password, a sign-in code or a second factor offered for checking. */
   signInAttempt: { window: 60, max: 10 },
   /**
-   * A set-password or reset link mailed, on any pool (#173). Tighter than a
+   * A set-password or reset link mailed, on any pool. Tighter than a
    * code because one link is enough and a second covers the one that went
    * astray — and because it is the same figure Better Auth applies to this path
    * by itself, which the staff resend-invitation refusal is written against.
@@ -97,7 +97,7 @@ export function authRateLimit() {
 }
 
 /**
- * The member pool's budgets per **email** (#173), on top of the per-address
+ * The member pool's budgets per **email**, on top of the per-address
  * ones above. An address budget stops one machine; it does nothing against
  * guesses at one member's password spread over many addresses, or against a
  * flood of set-password links to one inbox. These do.
@@ -106,8 +106,8 @@ export function authRateLimit() {
  * astray — and as generous as the address budget for passwords, so a member
  * who mistypes a few times is not locked out of their own account.
  *
- * Every per-email budget is kept per **Tenant** and email (#230): the same
- * address at two studios is two logins (#228), so attempts at one studio must
+ * Every per-email budget is kept per **Tenant** and email: the same
+ * address at two studios is two logins, so attempts at one studio must
  * not spend the other's budget.
  */
 export const AUTH_EMAIL_RATE_LIMITS = {

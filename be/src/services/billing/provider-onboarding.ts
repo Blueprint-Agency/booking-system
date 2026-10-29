@@ -32,11 +32,11 @@ import {
  * module is imported by `lib/stripe.ts`, and validating a key needs a provider
  * client from exactly there. This file is where the two meet.
  *
- * Since #294 the studio supplies its secret key and nothing else. The webhook
+ * The studio supplies its secret key and nothing else. The webhook
  * endpoint on its account is the platform's to create, keep and delete, so the
- * mistake that used to be silent — an endpoint made by hand at the wrong URL,
- * or for the wrong events, and members charged with nothing granted — has no
- * one left to make it.
+ * mistake of an endpoint made by hand at the wrong URL, or for the wrong
+ * events, and members charged with nothing granted, has no one left to make
+ * it.
  */
 
 /**
@@ -154,7 +154,7 @@ export async function configureProviderAccount(
 
   // What is there before this save: the studio's previous account and the
   // endpoint this platform created on it, and anything at the studio's URL on
-  // the new account (an endpoint made by hand before #294, or one a failed
+  // the new account (an endpoint made by hand, or one a failed
   // cleanup left behind). All of it is replaced, never added to.
   const previous = await previousAccount(tenantId)
   const atUrl = await asOnboardingRefusal(tenantId, url, () => endpointsAt(stripe, url))
@@ -241,7 +241,7 @@ export async function releaseProviderAccount(tenantId: string): Promise<Provider
  * (`checkout.session.async_payment_succeeded`). The endpoint and its signing
  * secret are kept, so nothing stored changes.
  *
- * The endpoint the platform stored, or — for credentials saved before #294 —
+ * The endpoint the platform stored, or — for credentials whose endpoint was made by hand —
  * every endpoint at the studio's URL. `none` is a studio with no credentials
  * of its own, or none that can be opened; `unchanged` an endpoint already
  * subscribed to all of them.
@@ -293,7 +293,7 @@ type PreviousAccount = { accountId: string; secretKey: string; endpointId: strin
  * The account the studio's stored credentials open, the key that opens it and
  * the endpoint the platform created there — or null when there is nothing to
  * clean up after: no credentials, or credentials that can no longer be opened.
- * `endpointId` is null for credentials saved before #294, whose endpoint was
+ * `endpointId` is null for credentials whose endpoint was
  * made by hand and is found by its URL instead.
  */
 async function previousAccount(tenantId: string): Promise<PreviousAccount | null> {

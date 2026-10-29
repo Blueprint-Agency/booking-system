@@ -5,7 +5,7 @@
  * Class + PT only (credit/session bookings). Workshops refund via Stripe and are handled
  * elsewhere.
  *
- *   - Staff source (#320): an admin, on any booking, or an instructor, on a class
+ *   - Staff source: an admin, on any booking, or an instructor, on a class
  *     they may work (`not_your_session` otherwise). Staff choose the credit every
  *     time — `return` puts it back, `keep` moves nothing (`forfeited`). The window
  *     and the cap never decide it, and a staff cancel never counts toward the cap;
@@ -85,7 +85,7 @@ export type CancelInput =
     })
   | (CancelBase & {
       /**
-       * The studio's machinery, not a person (#350): a Refund's Void, a
+       * The studio's machinery, not a person: a Refund's Void, a
        * Complimentary Package's Remove, a Package rule change. Settles as a
        * staff cancel does and records no staff member on the cancellation.
        */
@@ -102,8 +102,8 @@ export type CancelInput =
     })
   | (CancelBase & {
       /**
-       * The member cancelled on ClassPass, and ClassPass's email said so
-       * (#412). A ClassPass booking spent nothing, so there is nothing to
+       * The member cancelled on ClassPass, and ClassPass's email said so.
+       * A ClassPass booking spent nothing, so there is nothing to
        * return or keep: `n_a`. Not the member's own cancel here, so never a
        * Late cancel and never toward the Cancellation Cap.
        */
@@ -121,7 +121,7 @@ export async function cancelBooking(
 ): Promise<CancelResult> {
   // A promotion locks the head of the line's time and packages, and an Admin
   // act already holding the canceller's package can reach the same head
-  // further on (#439): Postgres aborts one of the two, and it runs again.
+  // further on: Postgres aborts one of the two, and it runs again.
   const { result, promotions } = await retryingTransaction('booking cancel', tx => cancelBookingInTx(tx, tenantId, input))
   // Once the request's transaction has committed (`afterCommit`), never inside it.
   if (promotions.length) afterCommit(() => sendPromotionEmails(tenantId, promotions))
@@ -174,7 +174,7 @@ export async function cancelBookingInTx(
     throw new ForbiddenError('not_your_booking')
   }
   // A ClassPass booking is the member's to cancel on ClassPass, whose
-  // cancellation email cancels it here (#412); staff can still cancel it.
+  // cancellation email cancels it here; staff can still cancel it.
   if (source === 'client' && bk.bookedVia === 'classpass') {
     throw new ConflictError('classpass_booking_cancel_on_classpass', {
       message: 'This booking was made on ClassPass. Cancel it in the ClassPass app.',
@@ -215,7 +215,7 @@ export async function cancelBookingInTx(
         })
 
   // A member's PT session is a HARD deadline: inside its window — or after it
-  // has started — the cancel is rejected outright. A class is not (#318): inside
+  // has started — the cancel is rejected outright. A class is not: inside
   // its window it goes through as a Late cancel, and only a class that has
   // started is refused, by the evaluation above. Staff bypass both.
   if (source === 'client' && cancelKind === 'pt' && !evaluation!.wasWithinWindow) {
@@ -253,8 +253,8 @@ export async function cancelBookingInTx(
   if (freesOnlineSeat) await lockPromotionHead(tx, tenantId, bk.classId!, bk.clientPackageId, now)
 
   // 4. Return the credit/session to the originating package. The ledger also
-  // re-derives `active`, so a bundle emptied to zero becomes spendable again
-  // (it used to come back with credits but flagged unusable) — and writes the
+  // re-derives `active`, so a bundle emptied to zero becomes spendable again,
+  // and writes the
   // credit-movement audit row (traceability per backend-architecture §4).
   if (refundFired) {
     const { landed } = await refundCredits(tx, {
@@ -328,7 +328,7 @@ export async function cancelBookingInTx(
 
   // 6b. A private session's request and session follow the booking, as a
   // cancel of the request leaves them — never scheduled with nobody paying,
-  // nor completed as attended once its time passes (#350).
+  // nor completed as attended once its time passes.
   if (parent?.kind === 'pt') {
     await settleSessionAfterBookingCancel(tx, tenantId, {
       req: parent.req,
@@ -338,7 +338,7 @@ export async function cancelBookingInTx(
       cancelledByStaffId,
       now,
     })
-    // The session's instructors: told when a member left or an admin ended the session (#493).
+    // The session's instructors: told when a member left or an admin ended the session.
     await recordPtSessionCancelled(tenantId, {
       ptSessionId: bk.ptSessionId!,
       source,

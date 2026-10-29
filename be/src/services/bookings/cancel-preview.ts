@@ -1,6 +1,6 @@
 /**
  * What a member's cancel of one class booking would do, asked before they
- * confirm it (#318) — the `cancel_preview` their cancel dialog reads.
+ * confirm it — the `cancel_preview` their cancel dialog reads.
  *
  * The same evaluation and the same settlement `cancelBooking` runs, without
  * writing: whether it would be a Late cancel, and whether the credit would come

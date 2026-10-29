@@ -1,6 +1,6 @@
 /**
- * The Updates that tell an instructor their session changed under them (#476,
- * #493): `session_changed`, `session_cancelled_by_admin` and
+ * The Updates that tell an instructor their session changed under them:
+ * `session_changed`, `session_cancelled_by_admin` and
  * `pt_session_cancelled_by_member`. Payload shapes and wording only; the writes
  * are in ./session-updates, and this file imports nothing so `updates.ts` can
  * take the composers without a cycle.

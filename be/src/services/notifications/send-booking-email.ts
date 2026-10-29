@@ -1,5 +1,5 @@
 /**
- * Delivery for the booking and cancellation emails (#359: NTF-08..11) — the
+ * Delivery for the booking and cancellation emails (NTF-08..11) — the
  * reads, the send and the swallow. The sentences are composed in
  * ./booking-email.ts, which stays pure.
  *
@@ -433,7 +433,7 @@ async function sendPtRequestCancelledEmails(tenantId: string, notices: readonly 
 
 /**
  * NTF-10: the studio cancelled a workshop — every attendee is told, with what
- * they paid (`admin_cancel_workshop`). Nobody is refunded automatically (#272):
+ * they paid (`admin_cancel_workshop`). Nobody is refunded automatically:
  * the studio refunds each place by hand, so the email states the amount paid
  * and that the refund is being arranged, not that it has happened — and a
  * place that was free, with nothing to refund, is told no refund at all.
@@ -467,7 +467,7 @@ export async function sendWorkshopCancelledEmails(tenantId: string, bookingIds: 
     try {
       const row = shared.rows.get(bookingId)
       if (!row) throw new NotFoundError('workshop_booking_not_found', { bookingId })
-      // The sale's figure, as the purchase confirmation states it (#370).
+      // The sale's figure, as the purchase confirmation states it.
       const paidCents = toCents(row.purchasePaidSgd ?? row.bookingPaidSgd ?? '0.00')
       const paid = toSgd(paidCents)
       await sendTemplatedEmail({

@@ -1,5 +1,5 @@
 /**
- * A studio's Business details (#391, #398): the Business name it trades under,
+ * A studio's Business details: the Business name it trades under,
  * and what its Receipts print beside it — registration number, address, a
  * footer note — with the prefix its Receipt numbers carry. Beside them its
  * Display name, the everyday name its apps and emails call it by, where the
@@ -175,7 +175,7 @@ export async function saveBusinessDetails(tenantId: string, input: BusinessDetai
     .values({ tenantId, ...columns })
     .onConflictDoUpdate({ target: tenantSettings.tenantId, set: columns })
   // The Display name signs every email and the Business name names the studio
-  // on each card charge (#400), so the next one must not wait out the
+  // on each card charge, so the next one must not wait out the
   // identity's cache; nor must the apps, which read the Display name through
   // the tenant lookup. Once committed: forgotten any sooner, a send racing this
   // save could read the old name and cache it again for another minute.

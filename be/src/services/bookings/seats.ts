@@ -1,6 +1,6 @@
 /**
  * Seats: the one place a class's confirmed bookings are counted for capacity
- * (spec-waitlist.md §2, #307).
+ * (spec-waitlist.md §2).
  *
  * A class has `capacity_online` seats members book themselves and
  * `capacity_buffer` seats only staff fill; **attendance capacity** is their sum.

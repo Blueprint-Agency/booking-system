@@ -1,5 +1,5 @@
 /**
- * Unfinished Purchases: reading them, and paying more towards one (#93).
+ * Unfinished Purchases: reading them, and paying more towards one.
  *
  * **An open Purchase does not expire.** A checkout session does — Stripe's
  * expire after a day, and a capped Promo Code's Hold expires sooner — but the
@@ -60,12 +60,12 @@ export interface OpenPurchaseView {
   partPaidAt: Date | null
   createdAt: Date
   /**
-   * How many payments the studio is holding against it (#95) — and so how many
+   * How many payments the studio is holding against it — and so how many
    * returns a refund of it will put on the statement. Zero for a Purchase
    * opened and never paid towards, which is why it is not a count of rows.
    */
   paymentCount: number
-  /** Whether a Refund of it is already on its way (#275) — see `RefundProgress`. */
+  /** Whether a Refund of it is already on its way — see `RefundProgress`. */
   refundProgress: RefundProgress
 }
 
@@ -311,7 +311,7 @@ const isAlreadyFinished = (err: unknown): boolean =>
  * A map rather than a chain of ternaries so that adding a status to the enum
  * without deciding what it says here does not compile — every way a Purchase can
  * be closed is a different sentence, and a member reading the wrong one goes to
- * the front desk. **Abandoned** is the one #95 adds: the studio has given the
+ * the front desk. **Abandoned** is the one where the studio has given the
  * money back, and offering a Resume button beside that would invite a member to
  * start paying again for something already settled.
  */
@@ -343,7 +343,7 @@ export async function resumePurchaseCheckout(args: {
   purchaseId: string
   requestedCents: number | null
   /**
-   * Did the member ask for this card to be kept? (#185)
+   * Did the member ask for this card to be kept?
    *
    * The second instalment is exactly where a saved card earns its keep — the
    * member is here *because* they paid once already — so this path carries the
@@ -400,7 +400,7 @@ export async function resumePurchaseCheckout(args: {
   }
   const charge = chargeableCents(outstanding, args.requestedCents)
   // Before the predecessor is touched: a studio that has stopped taking online
-  // payments (#293) is told so, not handed `checkout_session_busy` because the
+  // payments is told so, not handed `checkout_session_busy` because the
   // expiry it could not make read like a session still in flight.
   await requireProviderAccount(args.tenantId)
 
@@ -430,7 +430,7 @@ export async function resumePurchaseCheckout(args: {
   ])
   // A Customer the provider has forgotten is dropped and the session built
   // again without one, rather than leaving this member unable to finish paying
-  // a Balance the studio is already holding money against (#185).
+  // a Balance the studio is already holding money against.
   const session = await createSessionSurvivingStaleCustomer(
     { tenantId: args.tenantId, clientId: args.clientId, customerId },
     customer =>
@@ -453,7 +453,7 @@ export async function resumePurchaseCheckout(args: {
             partPaymentCents: charge,
             // The Customer, so the hosted page lists the cards this member
             // already kept and the second instalment is a click rather than a
-            // card number (#185). `saveCard` is their answer to our own box.
+            // card number. `saveCard` is their answer to our own box.
             customerId: customer,
             saveCard: args.saveCard,
           },
@@ -536,7 +536,7 @@ export interface SilentPurchaseView extends OpenPurchaseView {
 }
 
 /**
- * Part-paid Purchases nobody has touched for a long time (#95).
+ * Part-paid Purchases nobody has touched for a long time.
  *
  * **Nothing is swept.** This is a list and only a list: money moving back to a
  * member without a person choosing it is not an improvement on money sitting
@@ -603,14 +603,14 @@ export async function listSilentPartPaidPurchases(
     .having(lastPaymentIsSilent(now))
     .orderBy(purchases.createdAt)
 
-  // Whether a Refund of each is already on its way (#275) — the same read the
+  // Whether a Refund of each is already on its way — the same read the
   // member page makes, so both screens withhold the button on the same terms.
   const held = await heldPaymentsFor(tenantId, rows.map(r => r.purchase.id))
 
   const out: SilentPurchaseView[] = []
   for (const row of rows) {
     if (!row.lastPaymentAt) continue
-    // A Purchase whose member was permanently deleted (#144) keeps the sale and
+    // A Purchase whose member was permanently deleted keeps the sale and
     // loses the person — there is nobody left to chase, and the join that names
     // them returns nothing. Skipping it here says so in the one place the type
     // makes it unavoidable, rather than leaving a row with no name on a list

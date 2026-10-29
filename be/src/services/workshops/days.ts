@@ -149,7 +149,7 @@ export async function updateDay(
       })
       .where(and(eq(workshopDays.tenantId, tenantId), eq(workshopDays.id, dayId)))
       .returning()
-    // The instructors are told when someone else moved the day or its room (#493).
+    // The instructors are told when someone else moved the day or its room.
     const instructors = told ?? (await readInstructors(tenantId, 'workshop', workshopId))
     const snapshotOf = (d: { startsAt: Date; endsAt: Date; roomId: string | null }) => ({
       startsAt: d.startsAt,

@@ -26,7 +26,7 @@ interface MintImpersonationResult {
 
 /**
  * Open a real `client` pool session for the target member + a BE-signed grant
- * JWT (#118). The session signs the member app in as the member; the grant
+ * JWT. The session signs the member app in as the member; the grant
  * proves to BE middleware that the resulting /me/* calls are impersonations,
  * and by whom.
  *
@@ -51,10 +51,10 @@ export async function mintClientImpersonation(
     .limit(1)
   if (!row) throw new NotFoundError('client_not_found')
 
-  // This studio's own member app. It used to be the platform's single
-  // `CLIENT_ORIGIN`, so impersonating a member of any studio but the first
-  // opened a session against a hostname that is not theirs — and the `/me/*`
-  // calls that followed would carry the wrong studio's `Origin`.
+  // This studio's own member app, not a platform-wide `CLIENT_ORIGIN`:
+  // impersonating a member of any studio but the first would open a session
+  // against a hostname that is not theirs — and the `/me/*` calls that
+  // followed would carry the wrong studio's `Origin`.
   const base = await tenantUrl('client', input.tenantId)
   if (!base) throw new BadRequestError('client_origin_not_configured')
 

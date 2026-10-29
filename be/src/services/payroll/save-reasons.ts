@@ -2,12 +2,12 @@
  * Why a payroll save didn't happen: the reason, the HTTP status it deserves,
  * and the sentence an admin reads.
  *
- * Why it exists: `updatePayrollAmount` used to answer `{ ok: boolean }` and the
- * route turned every falsy answer into a bare 404. Six distinct failures reached
+ * Why it exists: answering `{ ok: boolean }` would have the route turn every
+ * falsy answer into a bare 404. Six distinct failures would reach
  * the admin as one message — the session was cancelled or deleted, the manual
  * entry was deleted, the instructor was taken off the session, no instructor was
  * named for a workshop (which pays each instructor separately), a manual entry
- * was cleared to no amount, or the amount was negative. "Not found" is a lie for
+ * was cleared to no amount, or the amount was negative. "Not found" would be a lie for
  * four of those, and the admin could not tell which thing to fix.
  *
  * Pure on purpose — no db import — so the status table and the wording can be

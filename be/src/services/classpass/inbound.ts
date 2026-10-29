@@ -7,7 +7,7 @@ import { logger } from '../../shared/logger'
 import { addressOf, receiveClassPassEmail, type InboundEmail } from './receive'
 
 /**
- * Resend's `email.received` webhook, for mail to a ClassPass address (#409).
+ * Resend's `email.received` webhook, for mail to a ClassPass address.
  *
  * The route has verified the Svix signature. This finds the studio from the
  * token in the recipient address, fetches the message (the event carries only

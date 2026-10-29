@@ -1,5 +1,5 @@
 /**
- * Receipts for the sales made before Receipts existed (#394). Run once per
+ * Receipts for the sales made before Receipts existed. Run once per
  * environment by `backfill-cli.ts`, inside each studio's Tenant context.
  *
  * Every Purchase paid in full here with no Receipt — paid, or paid and since
@@ -8,7 +8,7 @@
  * rows too old to have stamped it). So the numbers continue the studio's
  * sequence after any already issued, and on a studio with none its earliest
  * sale is number 1. Each is dated when its sale was paid. A Purchase opened
- * before lines were frozen (#382) gets one line for the whole sale, under its
+ * before lines were frozen gets one line for the whole sale, under its
  * item name, from `receiptLines`. A refunded one is stamped refunded on the
  * day the last of its money went back.
  *

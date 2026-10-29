@@ -70,7 +70,7 @@ export async function tenantMailIdentity(tenantId: string): Promise<TenantMailId
   // `from_email` is in the function's result and is not selected — see the note
   // on `TenantMailIdentity`. The column is not honourable until a domain can be
   // verified, and reading it would make a tenant look configured when it isn't.
-  // Nor is `from_name`: the Business name supersedes it (#400), and is never
+  // Nor is `from_name`: the Business name supersedes it, and is never
   // blank wherever a settings row exists (NOT NULL, trimmed when saved, and a
   // blank one filled by migration 0115's trigger), so it would never be reached.
   const rows = (await db.execute(
@@ -79,7 +79,7 @@ export async function tenantMailIdentity(tenantId: string): Promise<TenantMailId
 
   // The Display name (migration 0120): the everyday name the studio's apps
   // call it by, which its admin sets on Business details. Without one, its
-  // Business name (#400), the formal name it trades under; a studio with no
+  // Business name, the formal name it trades under; a studio with no
   // settings row yet has neither, and is named by its Domain name. No row at
   // all (no Tenant context open) is the platform's name.
   const row = rows[0]

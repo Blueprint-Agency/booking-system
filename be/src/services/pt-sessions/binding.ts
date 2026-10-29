@@ -1,6 +1,6 @@
 /**
  * Who may schedule a PT request, given the **Bound Instructor** of the package
- * it was debited from (#107 §Scheduling rule).
+ * it was debited from.
  *
  * Pure, and the refusal is returned rather than thrown, so the rule is
  * checkable without a database — the same seam the purchase rule uses. The
@@ -19,7 +19,7 @@ export interface MayScheduleInput {
   /**
    * Admins are never in the way: a bound instructor's illness must not block a
    * member, so an admin may put the session with somebody else for that one
-   * session (#107 story 32). The service therefore does NOT force the bound
+   * session. The service therefore does NOT force the bound
    * instructor onto an admin's booking — only the instructor route forces one,
    * and it forces `self`.
    */

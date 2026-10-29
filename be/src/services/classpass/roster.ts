@@ -9,7 +9,7 @@ import { normaliseClassPassLocation } from './location-name'
 import { calendarDate, clock24, monthOf, textPieces } from './parse'
 
 /**
- * The ClassPass Daily Roster check (#415).
+ * The ClassPass Daily Roster check.
  *
  * ClassPass sends a `ClassPass Daily Roster` per listing, about twice a day:
  *
@@ -29,7 +29,7 @@ import { calendarDate, clock24, monthOf, textPieces } from './parse'
  * ClassPass bookings held on that class at the mapped Location, by name,
  * ignoring case and spacing.
  *
- * Nothing is stored for the check: the roster email is kept as it came (#411),
+ * Nothing is stored for the check: the roster email is kept as it came,
  * and the differences are worked out whenever the ClassPass page is read, so a
  * booking email that arrives after the roster settles its difference.
  */

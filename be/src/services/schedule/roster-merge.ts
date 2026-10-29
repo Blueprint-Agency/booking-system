@@ -9,10 +9,10 @@
  * when the caller explicitly supplies `null` (= unpriced).
  *
  * Why it exists: the Payroll screen is where a supporting instructor's pay is
- * priced, and the Schedule screen used to rewrite the whole assignment table
- * with `paySgd: null` on every roster edit — silently wiping it. The merge is
- * the fix, and it lives here so the four scheduling modules can't each get it
- * slightly wrong.
+ * priced, and a Schedule screen that rewrote the whole assignment table with
+ * `paySgd: null` on every roster edit would silently wipe it. The merge
+ * prevents that, and it lives here so the four scheduling modules can't each
+ * get it slightly wrong.
  *
  * Kept free of imports so it stays checkable without a DB or a loaded env
  * (see roster-merge.test.ts). Refusals are returned rather than thrown for the
@@ -69,10 +69,10 @@ type RosterRefusal = 'supporting_instructor_duplicates_main'
 /**
  * Who on this merged roster has newly arrived with no pay on them.
  *
- * Nothing refuses on this any more: joining a roster without pay is allowed and
+ * Nothing refuses on this: joining a roster without pay is allowed and
  * leaves the arrival Unpriced, cleared later through Finance's "Needs pay"
  * filter (be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md, which
- * reverses the required-pay rule of 0002). No production caller reads it now;
+ * reverses the required-pay rule of 0002). No production caller reads it;
  * it stays as the pure statement of what "an unpriced arrival" is.
  *
  * It names ONLY instructors newly joining. Someone already on the event keeps

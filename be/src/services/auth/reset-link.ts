@@ -1,8 +1,8 @@
 import { originAllowed } from '../../lib/allowed-origins'
 
 /**
- * Where a staff or member set-password link opened from an inbox hands over to
- * (#230): `callbackURL` with the link's token attached, or null when the
+ * Where a staff or member set-password link opened from an inbox hands over to:
+ * `callbackURL` with the link's token attached, or null when the
  * callback is not one of our frontends, and nothing may be redirected to.
  *
  * Better Auth's own GET for this link looks the token up first, and turns an

@@ -4,7 +4,7 @@
  * invited through this flow. Instructors share the same email-invite path as
  * admins. See `be-portal.md` §3a.
  *
- * **Invitation-only, in fact (#115).** Nobody signs up. An invitation writes
+ * **Invitation-only, in fact.** Nobody signs up. An invitation writes
  * everything a staff member is, in one transaction:
  *
  *   1. the `staff` pool auth user (Better Auth), with no password
@@ -116,7 +116,7 @@ export interface PendingStaffInput {
  * role needs one, and the invitation. Through `tx`, so a caller's transaction
  * takes all of it or none.
  *
- * The auth user is this studio's login for the address (#231), found when it
+ * The auth user is this studio's login for the address, found when it
  * already exists and made otherwise. Staff at another studio have a login there
  * that this one never touches.
  */
@@ -248,7 +248,7 @@ export interface InvitationLookup {
    * Whether the invitee already has a password **at this studio** — they set
    * one through "Forgot password" before opening the invitation, say — so the
    * page asks them to sign in with it rather than choose one. A password at
-   * another studio is that studio's (#231). Always false unless the invitation
+   * another studio is that studio's. Always false unless the invitation
    * is `valid`.
    */
   passwordSet: boolean
@@ -318,7 +318,7 @@ const ACCEPT_REFUSALS = {
  * A person who already has a password at this studio keeps it: `password` is
  * ignored, and they sign in with the one they have. A token can set a first
  * password; it can never replace one. A password at another studio is that
- * studio's login, not this one's (#231), and asks nothing of it.
+ * studio's login, not this one's, and asks nothing of it.
  *
  * In one transaction, with the invitation claimed first by a conditional update,
  * so two tabs submitting the same link cannot both get through.
@@ -362,7 +362,7 @@ export async function acceptInvitation(input: {
       .returning({ id: staffInvitations.id })
     if (!claimed) throw new ConflictError('invitation_used')
 
-    // An invitation written before invitations made the auth user (#115) is
+    // An invitation written before invitations made the auth user is
     // linked here instead.
     const authUserId =
       staff.authUserId ?? (await ensureAuthUser(tx, 'staff', { tenantId, email: staff.email, name: staff.name }))
@@ -450,7 +450,7 @@ export async function acceptInvitationOnPasswordReset(tenantId: string, authUser
 }
 
 /**
- * The bell's Update for every active admin that someone has joined (#491), in
+ * The bell's Update for every active admin that someone has joined, in
  * the acceptance's transaction. The newcomer is the actor and is never told.
  */
 async function tellAdminsOfJoiner(

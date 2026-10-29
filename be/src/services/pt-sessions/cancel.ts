@@ -27,14 +27,13 @@ import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notif
  *
  *   scheduled → cancelled_after_scheduled
  *               Cascade-cancel the linked pt_sessions row + its bookings.
- *               Refund decision (be-portal.md §3c, superseding the old v1
- *               "always forfeit"): admin → always full refund; client → routed
+ *               Refund decision (be-portal.md §3c): admin → always full refund; client → routed
  *               through evaluateCancellation(kind='pt') so a cancel within the
  *               configured PT window + cap returns the session(s), otherwise the
  *               action is rejected outright (hard deadline, mirroring classes).
  *               Staff cancel only before the session starts
- *               (`session_already_started` after, #241), and nothing
- *               returns to a Voided package (#434).
+ *               (`session_already_started` after), and nothing
+ *               returns to a Voided package.
  *               If this session Activated the package and the cancel is not
  *               late, the package returns to Dormant (be/docs/adr/0011).
  *               A manual session (`origin = 'portal'`) is settled seat by
@@ -47,7 +46,7 @@ import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notif
  * manual_adjustments ledger row for traceability/parity with the class path.
  */
 /**
- * Who cancelled (#350): the member, an admin, the session's instructor, or the
+ * Who cancelled: the member, an admin, the session's instructor, or the
  * studio's machinery — an expiry, a Complimentary Package's Remove. Every
  * source but the member's settles as a staff cancel.
  */
@@ -399,7 +398,7 @@ async function cancelPtRequestInTx(
     .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId, cancelSource: source })
     .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
 
-  // The session's instructors: told when a member left or an admin cancelled (#493).
+  // The session's instructors: told when a member left or an admin cancelled.
   await recordPtSessionCancelled(tenantId, {
     ptSessionId: session.id,
     source,
@@ -429,7 +428,7 @@ async function cancelPtRequestInTx(
 
 /**
  * The bell's Update for every active admin but the instructor, written in the
- * cancel's own transaction (#491). An admin's cancel tells no one.
+ * cancel's own transaction. An admin's cancel tells no one.
  */
 async function tellAdminsOfInstructorCancel(
   tenantId: string,
@@ -471,10 +470,8 @@ export async function expireStaleSessions(): Promise<void> {
 
   for (const row of stale) {
     try {
-      // No fallback: #63 landed and `tenant_id` is `NOT NULL`, so this is a
-      // `string`. It used to read `?? TENANT_ONE_ID`, which was right while the
-      // column was nullable and a row that predated tenancy belonged to the
-      // first studio. Today that would expire one studio's request under
+      // No fallback: `tenant_id` is `NOT NULL`, so this is a `string`. A
+      // fallback to the first studio would expire one studio's request under
       // another's context.
       await cancelPtRequest(row.tenantId, {
         ptRequestId: row.id,

@@ -309,7 +309,7 @@ export async function updateClass(
     if (patch.capacityBuffer !== undefined) set.capacityBuffer = patch.capacityBuffer
     if (patch.creditCost !== undefined) set.creditCost = patch.creditCost
 
-    // Who taught it before the edit, for the Updates it may owe them (#493).
+    // Who taught it before the edit, for the Updates it may owe them.
     const instructorsBefore = await readInstructors(tenantId, 'class', id)
 
     let row = existing
@@ -341,7 +341,7 @@ export async function updateClass(
       row = { ...row, packageRuleMode: rule.mode }
     }
 
-    // The instructors are told when someone else moved the class or changed who teaches it (#493).
+    // The instructors are told when someone else moved the class or changed who teaches it.
     const instructorsAfter = await readInstructors(tenantId, 'class', id)
     await recordSessionChanged(tenantId, {
       actorStaffId,

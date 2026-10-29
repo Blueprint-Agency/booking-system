@@ -18,7 +18,7 @@ import {
 } from './session-update-copy'
 
 /**
- * Updates (#476, #490): events a staff member should know about, stored when
+ * Updates: events a staff member should know about, stored when
  * they happen. One row per recipient; the payload is a snapshot, and the copy is
  * composed from it on read, so the wording lives in one tested place and still
  * reads correctly after the subject changes.

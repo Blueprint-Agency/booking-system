@@ -229,7 +229,7 @@ async function leavePoolsFor(
 
   // Pool and Carried both come back from the row, never recomputed. An admin's
   // adjustment back-solves the Pool from a Remaining, so a stored Pool is
-  // deliberately NOT Assigned + Carried any more; recomputing Carried alongside
+  // deliberately NOT Assigned + Carried; recomputing Carried alongside
   // it would report a number that contradicts the Pool it is meant to explain.
   // Assigned is the profile's live figure either way — it is not part of the
   // freeze, and it is what the adjustment ceiling is measured from.
@@ -1018,11 +1018,9 @@ export interface LeaveCalendarViewer {
 export const leaveViewer = (staff: typeof staffUsers.$inferSelect): LeaveCalendarViewer => ({
   staffUserId: staff.id,
   role: staff.role,
-  // No fallback: #63 landed and `tenant_id` is `NOT NULL` on every table, so
-  // this is a `string`. It used to read `?? TENANT_ONE_ID`, because while the
-  // column was nullable a staff row that predated tenancy really did belong to
-  // the first studio. Naming a studio here now would mean filing an impossible
-  // row under it rather than failing.
+  // No fallback: `tenant_id` is `NOT NULL` on every table, so this is a
+  // `string`. Naming a studio here would mean filing an impossible row under it
+  // rather than failing.
   tenantId: staff.tenantId,
 })
 
@@ -1224,7 +1222,7 @@ export async function decideLeaveRequest(
   // request already knows, and is not emailed about it.
   if (updated.staffUserId !== input.actorStaffId) {
     // The same person gets an Update in the bell, written in this transaction so
-    // it exists exactly when the decision does (#490).
+    // it exists exactly when the decision does.
     await recordUpdate(tenantId, 'leave_decided', [updated.staffUserId], {
       leaveRequestId: updated.id,
       outcome: updated.status === 'approved' ? 'approved' : updated.status === 'revoked' ? 'revoked' : 'rejected',

@@ -501,7 +501,7 @@ export async function createManualPayroll(
 ) {
   // The same gate a class's roster passes: an instructor of THIS studio. Without
   // it the foreign key alone decides, which admits another studio's staff (a row
-  // no studio's Finance then shows, #255) and answers an unknown id with a 500.
+  // no studio's Finance then shows) and answers an unknown id with a 500.
   await ensureInstructors(tenantId, [input.instructorId])
   const rows = await db
     .insert(manualPayrollEntries)

@@ -2,7 +2,7 @@
  * What a Purchase still owes, decided without a database.
  *
  * A Purchase owns the money; a payment is evidence of part of it. The rule the
- * whole of #89 rests on — **nothing is granted until the Balance reaches
+ * whole ledger rests on — **nothing is granted until the Balance reaches
  * zero** — is one comparison, and it lives here so the webhook, the account
  * page and any later part-payment checkout cannot each carry their own
  * arithmetic and disagree about whether a member has finished paying.
@@ -69,8 +69,8 @@ export function amountPaidCents(
  * the money; the flip to `succeeded` waits for the grant on purpose, so a row
  * stuck `pending` is a delivery that died between the two — real money, sitting
  * at the provider. Leaving it out would let the unwind void a plan the studio
- * has been paid for, and would refuse a Refund an admin could have issued
- * before this record existed. Only `refunded` (already back) and `failed`
+ * has been paid for, and would refuse a Refund an admin could have issued.
+ * Only `refunded` (already back) and `failed`
  * (never taken) are out.
  *
  * That makes this a deliberately *wider* set than the one `amountPaidCents`
@@ -89,7 +89,7 @@ export function heldPayments<T extends { status: PaymentEvidence['status'] }>(
 }
 
 /**
- * How far a Refund has got, read off the Purchase's payments (#275).
+ * How far a Refund has got, read off the Purchase's payments.
  *
  * `processing` — the provider has been asked for every payment still held, and
  * the `charge.refunded` that finishes it has not arrived. There is nothing left

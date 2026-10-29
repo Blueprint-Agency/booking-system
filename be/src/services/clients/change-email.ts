@@ -1,5 +1,5 @@
 /**
- * An admin changes a member's email (#176).
+ * An admin changes a member's email.
  *
  * The address is two things at once, and both move together or neither does:
  * the `clients` row's own email, which is what the studio writes to and
@@ -7,15 +7,15 @@
  * the member signs in with. Changing one without the other leaves a member who
  * is written to at one address and signs in at another.
  *
- * The login is this studio's own (#231), so the change replaces it: a login for
+ * The login is this studio's own, so the change replaces it: a login for
  * the new address at this studio, made by the same `ensureAuthUser` helper the
  * invite and the self-registration use, and the old login deleted — its
  * password, and every session it held here, with it. Nothing is left behind,
  * because nothing of it was ever another studio's: the same person's login at
  * another studio is a different row, and untouched.
  *
- * The new login has no password, exactly as an admin-added member's does
- * (#173): the member's first sign-in at the new address mails them the link
+ * The new login has no password, exactly as an admin-added member's does:
+ * the member's first sign-in at the new address mails them the link
  * that sets one. The old password is not carried over, because it was proven
  * only by the old address.
  */
@@ -36,7 +36,7 @@ export interface ChangeClientEmailInput {
   clientId: string
   email: string
   actorStaffId: string
-  /** The acting staff member's request, for the `auth_events` row (#119). */
+  /** The acting staff member's request, for the `auth_events` row. */
   from?: Headers
 }
 
@@ -104,7 +104,7 @@ export async function changeClientEmail(input: ChangeClientEmailInput): Promise<
       throw err
     })
 
-  // The provider's copy of the address moves too (#185).
+  // The provider's copy of the address moves too.
   //
   // Since saved cards, a member with a Customer is sent to checkout as
   // `customer` **instead of** `customer_email`, so the provider stops reading

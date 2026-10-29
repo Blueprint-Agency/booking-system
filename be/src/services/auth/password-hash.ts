@@ -3,7 +3,7 @@ import { verifyPassword } from 'better-auth/crypto'
 
 /**
  * How the staff and platform pools check a password: Better Auth's own scrypt
- * hash, or a bcrypt digest carried over from the previous auth provider (#120).
+ * hash, or a bcrypt digest carried over from the previous auth provider.
  *
  * That provider exported its password digests as bcrypt, and the one-off user
  * import wrote them onto the credential account as they were, so a staff member

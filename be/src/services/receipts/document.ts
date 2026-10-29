@@ -5,7 +5,7 @@
  * the member's and the admin's Receipt pages) only lay this out; neither
  * words, formats or orders anything of its own, so they cannot drift apart.
  *
- * Laid out as a business receipt (#403), top to bottom:
+ * Laid out as a business receipt, top to bottom:
  *
  * - the title, "Receipt", with the studio's logo on the right, or its
  *   Business name in the logo's place;
@@ -154,8 +154,8 @@ export function receiptDocument(receipt: ReceiptRow, studio: ReceiptStudio): Rec
   // The day the last payment, the one that settled it, was made; the day it
   // was issued where none was.
   const paidOn = paid ? day.format(new Date(receipt.payments.at(-1)!.paidAt)) : null
-  // The name it trades under, as issued; a Receipt from before #398 that
-  // carried none names the studio as it then called itself.
+  // The name it trades under, as issued; a Receipt issued before the Business
+  // name existed carries none and names the studio as it then called itself.
   const sellerName = receipt.sellerBusinessName?.trim() || receipt.sellerName
 
   const facts: ReceiptDocument['facts'] = [
@@ -170,7 +170,7 @@ export function receiptDocument(receipt: ReceiptRow, studio: ReceiptStudio): Rec
     ...textLines(receipt.sellerAddress).map(muted),
     ...(receipt.sellerEmail ? [muted(receipt.sellerEmail)] : []),
   ]
-  // Bill to the Billing details the Purchase chose (#401); where it chose
+  // Bill to the Billing details the Purchase chose; where it chose
   // none, the member by their name and email.
   const billed: ReceiptBlockLine[] = receipt.billTo
     ? [{ text: receipt.billTo.name, strong: true }, ...billToAddressLines(receipt.billTo).map(muted)]

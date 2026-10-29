@@ -49,11 +49,11 @@ export async function mailClientCode(email: string, code: string): Promise<void>
 }
 
 /**
- * A member's set-password link (#173) — the same mail whether they have never
+ * A member's set-password link — the same mail whether they have never
  * had a password or forgot theirs, worded by the studio's `password_reset`
  * template.
  *
- * **Only a member of this studio gets one.** The login is this studio's (#231),
+ * **Only a member of this studio gets one.** The login is this studio's,
  * but a login is not a membership: one can outlive its `clients` row, or
  * belong to a member this studio has blocked. So the `clients` row at the
  * Tenant in context is looked up here, and an address with none — or a blocked

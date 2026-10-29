@@ -47,7 +47,7 @@ export function isUntouched(attendedCount: number): boolean {
  * Eligibility is a notice, not a gate: the admin reads this and may refund
  * anyway.
  *
- * "Used", with both halves named (#275): the count includes no-shows, and a
+ * "Used", with both halves named: the count includes no-shows, and a
  * sentence that said "attended" disagreed with the roster whenever one did.
  */
 export function attendedNotice(attendedCount: number, since: Date | null): string | null {
@@ -85,7 +85,7 @@ export function cancelledClassesLine(sessions: CancelledSession[]): string {
 }
 
 /**
- * How long a part-paid Purchase may sit before the portal raises it (#95).
+ * How long a part-paid Purchase may sit before the portal raises it.
  *
  * Fourteen days, and the number is a judgement rather than a derivation: long
  * enough that a member who meant to come back with a second card still can,
@@ -130,7 +130,7 @@ export function silenceNotice(lastActivityAt: Date, now: Date): string {
 }
 
 /**
- * What an abandoned refund put back, in the terms a bank statement uses (#95).
+ * What an abandoned refund put back, in the terms a bank statement uses.
  *
  * The count matters as much as the total: one press of the button becomes one
  * provider call per payment, so a Purchase settled by two cards produces two
@@ -186,7 +186,7 @@ export interface AbandonedRefundEmailInput {
 }
 
 /**
- * The member's email for a Purchase they never finished (#95).
+ * The member's email for a Purchase they never finished.
  *
  * The **same template** as an ordinary Refund, with different sentences in it.
  * A second template would be a second thing for a studio to edit and keep in

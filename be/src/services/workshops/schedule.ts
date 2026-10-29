@@ -60,7 +60,7 @@ export interface WorkshopScheduleInput {
 }
 
 /**
- * The editor's one save of an existing workshop (#502): its basics and roster,
+ * The editor's one save of an existing workshop: its basics and roster,
  * days, tiers and, when sent, promotions, together or not at all. The
  * counterpart of `createWorkshopWithSchedule`, and like it one savepoint of its
  * own: the request's transaction commits even when the answer is a 4xx, so the

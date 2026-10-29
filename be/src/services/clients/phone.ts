@@ -10,7 +10,7 @@ const PHONE_SHAPE = /^\+?[0-9()\- ]+$/
  * by spaces, hyphens or brackets, 7 to 15 digits in all (E.164's most).
  * Looser than the country-aware check the sign-up and Add customer forms run in
  * the browser, so a number already on file in a local format still saves, but
- * text that is not a number at all is refused (#257).
+ * text that is not a number at all is refused.
  */
 export function clientPhone(value: string): string {
   const phone = value.trim()

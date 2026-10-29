@@ -56,7 +56,7 @@ export async function cancelClass(
   input: CancelClassInput,
 ): Promise<CancelClassResult> {
   // A promotion that passes the head of a line by locks the next member's
-  // packages only once it reaches them, after the class's own (#439).
+  // packages only once it reaches them, after the class's own.
   return retryingTransaction('whole-class cancel', tx => cancelClassInTx(tx, tenantId, input))
 }
 
@@ -110,7 +110,7 @@ export async function cancelClassInTx(
     .set({ lifecycle: 'cancelled', cancelledAt: now, cancelledByStaffId: actorStaffId })
     .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
 
-  // Everyone teaching it is told an admin cancelled it (#493). An instructor
+  // Everyone teaching it is told an admin cancelled it. An instructor
   // cancelling their own class tells the admins by email, not the instructors.
   if (source === 'admin') {
     await recordSessionCancelledByAdmin(tenantId, {
@@ -143,7 +143,7 @@ export async function cancelClassInTx(
   await lockPackages(tx, tenantId, { packageIds: confirmed.flatMap(b => (b.clientPackageId ? [b.clientPackageId] : [])) })
 
   // Whether the cancel came before the class window, as a staff cancel of
-  // one booking records it (#350): never acted on, every credit comes back.
+  // one booking records it: never acted on, every credit comes back.
   const wasWithinWindow = await staffCancelInTime(tenantId, 'class', cls.startsAt, now)
 
   let refundedCount = 0
@@ -151,7 +151,7 @@ export async function cancelClassInTx(
   for (const bk of confirmed) {
     const used = bk.used ?? 0
     // Ledger re-derives `active` — an emptied bundle refunded here is
-    // spendable again (it previously came back unusable). Nothing goes back to
+    // spendable again. Nothing goes back to
     // a Voided package, the member has their money: the ledger says so under
     // the package lock, and the booking settles `n_a`.
     let refundFired = false
@@ -209,7 +209,7 @@ export async function cancelClassInTx(
   // Admins first.
   if (source === 'instructor') {
     // The bell's Update, in this transaction so it exists exactly when the
-    // cancel does (#491). The admin who cancelled their own class through the
+    // cancel does. The admin who cancelled their own class through the
     // instructor route is the actor and is left out.
     const [type] = await tx
       .select({ name: classTypes.name })

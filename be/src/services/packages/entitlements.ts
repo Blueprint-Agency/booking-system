@@ -217,7 +217,7 @@ export interface ClientPackageWithSource {
   /** '1on1' | '2on1' for PT packages; null otherwise. */
   sessionType: '1on1' | '2on1' | null
   /**
-   * The **Bound Instructor** this PT package's sessions are with (#109); null
+   * The **Bound Instructor** this PT package's sessions are with; null
    * on an open package and on every other kind. Named here rather than left as
    * a bare id, because every surface that shows a binding shows the person.
    */
@@ -225,7 +225,7 @@ export interface ClientPackageWithSource {
   /** The Promo Code the member typed at purchase, as text; null if none (§11). */
   promoCode: string | null
   /**
-   * A **Complimentary Package** (#176) — given by an admin, never bought. Read
+   * A **Complimentary Package** — given by an admin, never bought. Read
    * from the row rather than worked out from "paid 0", which a $0 catalogue
    * item and a fully discounted sale also are.
    */

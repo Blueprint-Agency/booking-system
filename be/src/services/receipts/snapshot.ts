@@ -1,5 +1,5 @@
 /**
- * What a Receipt says, worked out from what the Purchase froze (#380).
+ * What a Receipt says, worked out from what the Purchase froze.
  *
  * Pure: no database, so the figures a Receipt prints can be checked without
  * one. `issue.ts` reads the rows and writes what this returns.
@@ -20,7 +20,7 @@ export interface ReceiptPayment {
   paidAt: string
 }
 
-/** The prefix every studio's Receipts carry until it sets its own (#391). */
+/** The prefix every studio's Receipts carry until it sets its own. */
 export const DEFAULT_RECEIPT_PREFIX = 'R'
 
 /** `R-000123`: the prefix and the sequence, zero-padded to six. */
@@ -29,7 +29,7 @@ export const displayNumber = (prefix: string, number: number): string =>
 
 /**
  * The lines a Receipt prints. A Purchase opened before its lines were frozen
- * (#382) has none, and gets one line for the whole sale under its name.
+ * has none, and gets one line for the whole sale under its name.
  */
 export function receiptLines(lines: PurchaseLine[], itemName: string, totalSgd: string): PurchaseLine[] {
   if (lines.length > 0) return lines

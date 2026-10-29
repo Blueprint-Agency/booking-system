@@ -30,7 +30,7 @@ import {
 /**
  * Self-hosted auth (Better Auth) — the only issuer. The staff and member
  * middlewares read a `staff` or `client` session from here (`readPoolSession`);
- * the super portal's gate reads a `platform` session (#116). See
+ * the super portal's gate reads a `platform` session. See
  * docs/adr/0004-self-hosted-auth-with-better-auth.md.
  *
  * **Three instances, not one.** Separate user pools are the property being
@@ -40,7 +40,7 @@ import {
  * tables (`db/schema/auth.ts`) on its own base path, and a token one pool
  * issued is a row the other two have never seen.
  *
- *   - `client`   — members, `/api/v1/auth/client`. Email + password (#173);
+ *   - `client`   — members, `/api/v1/auth/client`. Email + password;
  *                  the first password is set through a mailed link. An emailed
  *                  code only proves an address at registration.
  *   - `staff`    — studio portals, `/api/v1/auth/staff`. Email + password, with
@@ -56,7 +56,7 @@ import {
  * resolved to (`services/tenants/session-claim.ts`), so a session issued at
  * studio A is worthless at studio B. `platform` sessions carry no Tenant.
  *
- * **A studio-pool login is one studio's own** (#231). Every `client` and
+ * **A studio-pool login is one studio's own.** Every `client` and
  * `staff` table carries a `tenant_id` that defaults to the open context, and
  * Row-Level Security fences it, so everything Better Auth reads and writes
  * here — users, passwords, second factors, sessions, codes and reset links — is
@@ -110,7 +110,7 @@ const stampTenantClaim = {
 
 /**
  * The client pool's hook: the claim, and one refusal before it is written — a
- * member this studio has blocked gets no session here (#117).
+ * member this studio has blocked gets no session here.
  *
  * Asked of the `clients` row at the Tenant the sign-in named: a block is that
  * studio's decision about its own member. No row at all is not refused — the
@@ -141,11 +141,11 @@ const memberSessionHooks = {
 const CODE_TTL_SECONDS = 5 * 60
 const CODE_DIGITS = 6
 
-/** How long a member's set-password link works: short, and once (#173). */
+/** How long a member's set-password link works: short, and once. */
 const MEMBER_LINK_TTL_SECONDS = 30 * 60
 
 /**
- * Impersonation opens a real member session (#118), so without this the admin
+ * Impersonation opens a real member session, so without this the admin
  * holding it could change the member's password — taking over the account
  * they were only meant to act in. A session with `impersonatedBy` is refused
  * the one endpoint that replaces a password; the reset link is not a session
@@ -215,7 +215,7 @@ function shared(pool: AuthPool) {
     basePath: AUTH_BASE_PATH[pool],
     trustedOrigins,
     telemetry: { enabled: false },
-    // Code requests and sign-in attempts, per address per window (#114).
+    // Code requests and sign-in attempts, per address per window.
     rateLimit: authRateLimit(),
     // Distinct cookie names per pool, so a browser that does hold a cookie from
     // one never presents it to another under the same name.
@@ -245,7 +245,7 @@ const clientAuth = betterAuth({
     modelName: 'clientAuthSessions',
     additionalFields: {
       ...tenantClaimField,
-      // Who opened this session as the member, when a studio admin did (#118).
+      // Who opened this session as the member, when a studio admin did.
       impersonatedBy: { type: 'string', required: false, input: false },
     },
   },
@@ -263,7 +263,7 @@ const clientAuth = betterAuth({
     resetPasswordTokenExpiresIn: MEMBER_LINK_TTL_SECONDS,
     sendResetPassword: async ({ user, url }) => mailClientPasswordReset(user, url),
   },
-  // The emailed code only proves an address at registration now (#173): it no
+  // The emailed code only proves an address at registration now: it no
   // longer signs anyone in, and the plugin's own password reset and email
   // change by code are not ours — a member's password is set through the link.
   disabledPaths: [
@@ -332,11 +332,11 @@ function passwordPool(
     verification: { modelName: model('verifications') },
     emailAndPassword: {
       enabled: true,
-      // Invitation-only (#106): an account exists because a seed or an
+      // Invitation-only: an account exists because a seed or an
       // invitation made it, and its first password is set through the reset.
       disableSignUp: true,
       // Better Auth's hash for every new password; a bcrypt digest carried over
-      // by the user import still verifies, so migrated staff keep theirs (#120).
+      // by the user import still verifies, so migrated staff keep theirs.
       password: { hash: hashPassword, verify: verifyPoolPassword },
       sendResetPassword: async ({ user, url }) => mail.passwordReset(user, url),
       // A reset on a studio's portal where this person is still pending accepts
@@ -434,7 +434,7 @@ export type PoolSession = {
   email: string
   /** The Tenant the session was signed in on; always null on `platform`. */
   claimedTenantId: string | null
-  /** The staff auth user who opened this session as the member; `client` only (#118). */
+  /** The staff auth user who opened this session as the member; `client` only. */
   impersonatedBy: string | null
 }
 
@@ -475,7 +475,7 @@ export async function readPoolSession(pool: AuthPool, bearerToken: string): Prom
 
 /**
  * Open a real `client` pool session for a member on a studio admin's behalf, log
- * its start, and return its bearer token (#118).
+ * its start, and return its bearer token.
  *
  * The admin plugin's impersonation, minus its endpoint: that endpoint wants the
  * caller signed into the *same* pool with an admin role, and nobody in the member
@@ -538,7 +538,7 @@ export async function requestAddress(from: Headers): Promise<{ ip: string | null
 
 /**
  * Mail a staff member the link that sets their password, at the request of an
- * admin (#119) — Better Auth's own reset, which creates the credential when the
+ * admin — Better Auth's own reset, which creates the credential when the
  * account has none.
  *
  * Through the pool's handler, as `mailMemberSetPasswordLink` is, so the origin check
@@ -696,9 +696,9 @@ export async function signInMemberWithPassword(
 
 /**
  * Does this address have a member password **at this studio**? The one thing
- * the email step of the sign-in form reveals (#173) — the accepted cost of an
+ * the email step of the sign-in form reveals — the accepted cost of an
  * email-first form (ADR 0005). Asked in the request's Tenant context, where the
- * pool sees this studio's logins only (#231).
+ * pool sees this studio's logins only.
  */
 export async function memberHasPassword(email: string): Promise<boolean> {
   const context = await clientAuth.$context
@@ -728,7 +728,7 @@ export async function staffHasPassword(email: string): Promise<boolean> {
 }
 
 /**
- * Ask the member pool to mail a set-password link (#173) — Better Auth's own
+ * Ask the member pool to mail a set-password link — Better Auth's own
  * reset, which creates the credential when there is none and replaces it when
  * there is. Whether anything is mailed is `mailClientPasswordReset`'s call:
  * only a member of the studio in context gets one.
@@ -760,7 +760,7 @@ type SetPasswordRefusal = 'invalid_token' | 'password_too_short' | 'password_too
 /**
  * Whose set-password link this is, or null for one that is used, expired, never
  * existed, or was mailed by another studio — whose verification this studio's
- * context cannot see (#231). Read without spending it, so the caller can check
+ * context cannot see. Read without spending it, so the caller can check
  * the member before anything changes.
  */
 export async function memberLinkOwner(token: string): Promise<{ id: string; email: string } | null> {
@@ -772,7 +772,7 @@ export async function memberLinkOwner(token: string): Promise<{ id: string; emai
 }
 
 /**
- * Set a member's password from the mailed link and sign them in (#173): the
+ * Set a member's password from the mailed link and sign them in: the
  * link's first use is their first sign-in, so it ends in a session at the
  * studio the page is on, stamped with its claim like any other. Better Auth's
  * reset spends the token, and refuses a used or expired one. `email` is the

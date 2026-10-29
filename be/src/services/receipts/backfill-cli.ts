@@ -1,5 +1,5 @@
 /**
- * Issue Receipts for the sales made before Receipts existed (#394) — a
+ * Issue Receipts for the sales made before Receipts existed — a
  * one-off, run once per environment after the Receipts migrations. Run where
  * the database is:
  *

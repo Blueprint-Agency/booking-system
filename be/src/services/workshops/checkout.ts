@@ -42,7 +42,7 @@ export async function beginWorkshopCheckout(
     workshopId: string
     workshopTierId: string
     promoCode?: string
-    /** The member's chosen Billing details (#402): a free place is billed to them here. */
+    /** The member's chosen Billing details: a free place is billed to them here. */
     billTo: BillingAddress
   },
 ): Promise<WorkshopCheckout> {
@@ -106,7 +106,7 @@ export async function beginWorkshopCheckout(
   // disagree with the one frozen onto the Redemption.
   const totalCents = toCents(applied?.effectivePriceSgd ?? eff.baseSgd)
 
-  // The place as the Purchase records it (#382): the tier's regular price, then
+  // The place as the Purchase records it: the tier's regular price, then
   // whatever lowered it — a Promotion, or else the early-bird price, which
   // `tierEffectivePrice` lets win while its cutoff is live — then the code.
   const lowered: LineReduction = eff.appliedPromotionId

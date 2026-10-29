@@ -1,10 +1,10 @@
 /**
- * A Receipt in an email (#380, #387): the Receipt under the studio's copy, the
+ * A Receipt in an email: the Receipt under the studio's copy, the
  * PDF attached, and the two template variables that name it.
  *
  * **The one way any email carries a Receipt.** The four purchase confirmations
  * call `withReceipt`, and so do the `purchase_receipt` email for Merch and a
- * standalone Cross-Location Add-On (#388) and an admin's resend (#390), so a
+ * standalone Cross-Location Add-On and an admin's resend, so a
  * Receipt reads the same in every inbox.
  *
  * The block is the Receipt as `html.ts` draws it, the same markup the member's

@@ -1,6 +1,6 @@
 /**
- * The sentences the booking and cancellation emails are made of (#359:
- * NTF-08..11).
+ * The sentences the booking and cancellation emails are made of
+ * (NTF-08..11).
  *
  * The renderer is `{{var}}` substitution with no conditionals, so a fragment
  * that is right for one package kind is wrong for another: "0 credits remain"
@@ -61,7 +61,7 @@ export function sessionsRefundLine(sessionsReturned: number): string {
 
 /**
  * What a cancelled workshop place cost, and what happens to the money (NTF-10).
- * Nothing is refunded automatically (#272), so a paid place is told the studio
+ * Nothing is refunded automatically, so a paid place is told the studio
  * is arranging it; a place that was free gets the amount alone — no refund is
  * coming, and the email must not say one is.
  *

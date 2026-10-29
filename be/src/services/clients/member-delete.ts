@@ -9,7 +9,7 @@ import { getClientById } from './manage'
 import { MEMBER_TABLES, eraseSteps } from './member-tables'
 
 /**
- * Permanently delete a member at this studio, on their request (#144). Beside
+ * Permanently delete a member at this studio, on their request. Beside
  * blocking (`softDeleteClient`), which stays the reversible option.
  *
  * Every row `MEMBER_TABLES` finds for them goes, except the rows each table's
@@ -17,11 +17,11 @@ import { MEMBER_TABLES, eraseSteps } from './member-tables'
  * them, which is never deleted — which stay with the member's identity removed.
  * What is kept, and why, is `docs/md/member-data-retention.md`.
  *
- * **It reaches outside the database too.** Since #185 a member is a Customer at
+ * **It reaches outside the database too.** A member is a Customer at
  * the payment provider, with cards kept against them, and neither is a row this
  * studio owns. Both go, first, for the reason given at the call below.
  *
- * **Their login here goes too.** A login is one studio's own (#231), so this
+ * **Their login here goes too.** A login is one studio's own, so this
  * studio's login for the member is theirs to delete, with its password and
  * sessions. The same person's login at another studio is another row, and is
  * never looked at.
@@ -47,7 +47,7 @@ export async function deleteMemberPermanently(input: {
 
   await endClientSessionsAt(db, tenantId, member.authUserId)
 
-  // Their record at the payment provider, and the cards kept against it (#185).
+  // Their record at the payment provider, and the cards kept against it.
   //
   // **Before the rows go, because the rows are how it is found.** Once
   // `payment_customers` is deleted there is nothing left that knows the member

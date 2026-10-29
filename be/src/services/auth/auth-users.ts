@@ -22,7 +22,7 @@ type NewUser = { email: string; name: string }
 /**
  * Make sure a Better Auth user exists for this address, and return its id.
  *
- * **Per studio in the `staff` and `client` pools** (#231): the same address at
+ * **Per studio in the `staff` and `client` pools**: the same address at
  * two studios is two users, so the studio is named, and the user is found or
  * made at that studio only. Named rather than read from the Tenant context,
  * because the seeds, the e2e studio helper and the test harness write on the
@@ -126,10 +126,10 @@ const loginTenant = (users: typeof schema.staffAuthUsers | typeof schema.clientA
   sql<string>`(select ${users.tenantId} from ${users} where ${users.id} = ${userId})`
 
 /**
- * Give a member auth user the password they chose at registration (#173),
+ * Give a member auth user the password they chose at registration,
  * replacing any they had: registration has just proved the email with a code,
  * which is as much as a reset link proves. The user is this studio's login, so
- * the password is this studio's only (#231).
+ * the password is this studio's only.
  */
 export async function setMemberPassword(
   db: UserWriter & Deleter,
@@ -162,7 +162,7 @@ export async function renameStaffUser(
 /**
  * End a staff user's sessions **at one studio**.
  *
- * A login is one studio's own (#231), so its sessions are all at that studio;
+ * A login is one studio's own, so its sessions are all at that studio;
  * the claim in the query says so out loud rather than leaning on that alone.
  */
 export async function endStaffSessionsAt(db: Deleter, tenantId: string, userId: string): Promise<number> {
@@ -184,7 +184,7 @@ export async function endClientSessionsAt(db: Deleter, tenantId: string, userId:
   return ended.length
 }
 
-/** A session as the portal shows it on a person's detail view (#119). */
+/** A session as the portal shows it on a person's detail view. */
 export type SessionAtStudio = {
   id: string
   signedInAt: Date
@@ -231,7 +231,7 @@ export async function listSessionsAt(
 
 /**
  * Remove the staff login of someone whose pending invitation was revoked. It
- * is this studio's login and nobody else's (#231), so it simply goes, and any
+ * is this studio's login and nobody else's, so it simply goes, and any
  * credential and session with it by cascade.
  */
 export async function deleteStaffLogin(db: Deleter, userId: string): Promise<void> {

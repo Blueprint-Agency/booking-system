@@ -61,7 +61,7 @@ export function addDays(from: Date, days: number): Date {
  * The longest a package may run once Activated: ten years, in either unit. The
  * catalogue refuses a longer length, and Activation caps one frozen before it
  * did, since `validity_days: 2000000000` lands past the last date a `Date` can
- * hold (#245).
+ * hold.
  */
 export const MAX_VALIDITY_DAYS = 3650
 export const MAX_DURATION_MONTHS = 120

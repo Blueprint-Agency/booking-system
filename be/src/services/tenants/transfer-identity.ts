@@ -20,9 +20,8 @@
  *    passes through untouched. The map is built from `id` columns alone.
  *
  * What deliberately does **not** change is anything a member holds: booking
- * references, QR tokens, invitation tokens. Those used to be unique
- * platform-wide, which is what made this impossible; migration 0040 scoped them
- * to the Tenant, where they belong. A copy of a studio is a copy right down to
+ * references, QR tokens, invitation tokens. Those are unique per Tenant rather
+ * than platform-wide (migration 0040), which is what makes this possible. A copy of a studio is a copy right down to
  * what is printed on its members' confirmations.
  *
  * Remapping is not free — the ids in an archive are the ids a Stripe intent's

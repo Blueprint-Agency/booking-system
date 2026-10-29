@@ -10,7 +10,7 @@ import { formatClock, formatDay, formatWeekday, formatWhen } from './format'
 import { recordUpdate, type SessionAssignedPayload } from './updates'
 
 /**
- * `session_assigned` (#476, #492): an instructor is told when someone else
+ * `session_assigned`: an instructor is told when someone else
  * schedules them to teach. The schedule services call this on every create or
  * assign path with the instructors the act ADDED; the actor is never told, and
  * an instructor who was already on the session is not told again.

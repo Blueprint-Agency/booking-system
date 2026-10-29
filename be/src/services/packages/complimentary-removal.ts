@@ -1,5 +1,5 @@
 /**
- * When a **Complimentary Package** may still be taken back (#176).
+ * When a **Complimentary Package** may still be taken back.
  *
  * A comp is removed, not refunded: no money moved, so there is nothing to give
  * back and the row itself goes. That is only honest while the package is

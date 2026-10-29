@@ -54,7 +54,7 @@ function isLiveUnlimited(now: Date) {
 }
 
 /**
- * How many live Unlimited Plans call this Location home (story 133 of #17).
+ * How many live Unlimited Plans call this Location home.
  * Informational only — the admin archiving the Location sees what it strands,
  * archiving is never blocked by it. Same reading of "live" as `liveUnlimited`,
  * because a second one is exactly the drift §6 cannot afford.
@@ -144,7 +144,7 @@ export type BoundInstructorChange =
   | { ok: false; refusal: BoundInstructorRefusal }
 
 /**
- * What an admin may change a purchased package's **Bound Instructor** to (#110)
+ * What an admin may change a purchased package's **Bound Instructor** to
  * — a different question from `instructorForPurchase`, which decides what the
  * studio may sell. Two things are true here that are not true at checkout: an
  * admin may clear the binding, and there is a current value to compare against.
@@ -281,7 +281,7 @@ export async function readCrossLocationRateSgd(tenantId: string): Promise<string
  * Here rather than in the checkout route so the rule cannot drift from the one
  * `quoteCrossLocationAddOn` applies to a plan the member already holds. The
  * months and the rate come back beside the price, which is what a Purchase's
- * Add-On line is made of (#382).
+ * Add-On line is made of.
  */
 export async function priceCrossLocationForNewPlan(
   tenantId: string,
@@ -378,8 +378,8 @@ export interface GrantPackageInput {
   clientId: string
   /**
    * The Purchase that bought this plan — null for a free trial or an admin
-   * grant, which are grants no sale paid for. It replaced the payment intent
-   * in #92: a Purchase settled by two cards is still one sale to point at.
+   * grant, which are grants no sale paid for. A Purchase settled by two cards
+   * is still one sale to point at.
    */
   purchaseId: string | null
   /** amount actually paid in SGD as "120.00" string. "0.00" for free trial. */
@@ -393,8 +393,8 @@ export interface GrantPackageInput {
   appliedPromoCodeId?: string | null
   /**
    * Home Location — the one Location an Unlimited Plan Covers (§1). Required for
-   * `unlimited` and refused for every other kind. Picking it at checkout is #23;
-   * this is the grant path that stores whatever was picked.
+   * `unlimited` and refused for every other kind. This is the grant path that
+   * stores whatever was picked at checkout.
    */
   locationId?: string | null
   /**
@@ -405,13 +405,13 @@ export interface GrantPackageInput {
   crossLocationPaidSgd?: string | null
   /**
    * The instructor the member picked at checkout for an Instructor-Bound PT
-   * package (#109). Required for one, refused for anything else. It reaches
+   * package. Required for one, refused for anything else. It reaches
    * here off the provider's session metadata on a card payment and straight
    * from checkout on a purchase a discount took to zero — one rule, both paths.
    */
   instructorId?: string | null
   /**
-   * A **Complimentary Package** (#176) — given by an admin at no charge rather
+   * A **Complimentary Package** — given by an admin at no charge rather
    * than sold. Stated by the caller, never inferred from `amountSgd` being
    * zero: a $0 catalogue item and a Promo Code that took a sale to zero are
    * paid 0 too, and Finance must keep counting those in Gross.
@@ -452,7 +452,7 @@ export interface GrantPackageInput {
  * `created` says whether THIS call inserted the row (§13). It is what the
  * confirmation email is gated on: the Purchase's unique index already decides
  * who wins a redelivery, and this merely surfaces a fact the function already
- * knows and used to throw away. Using the email log instead would mean a new
+ * knows. Using the email log instead would mean a new
  * column, a migration and an index to answer the same question.
  */
 export async function grantPackage(
@@ -463,7 +463,7 @@ export async function grantPackage(
 
   // Idempotency — if a package was already granted for this sale, return it
   // instead of inserting a duplicate. The webhook and the confirmation-page
-  // sync-session fallback can both fire for one purchase, and since #92 a
+  // sync-session fallback can both fire for one purchase, and a
   // purchase may be settled by more than one payment, so the sale is the key
   // rather than whichever payment happened to arrive last.
   if (input.purchaseId) {

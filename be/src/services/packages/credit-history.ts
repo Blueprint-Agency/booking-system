@@ -1,5 +1,5 @@
 /**
- * A package's Credit history (#353): its Credit movements, newest first, each
+ * A package's Credit history: its Credit movements, newest first, each
  * with the booking it was for and who made it. One read for both readers — the
  * member's My packages and the staff profile — which differ only in what the
  * route lets out (a staff member's name and note are staff-only).

@@ -110,7 +110,7 @@ export interface MoneyEvent {
   /** True on a purchase that has since been refunded. The row stays; it is tagged. */
   refunded: boolean
   /**
-   * A **Complimentary Package** — given by an admin, never sold (#176). Listed
+   * A **Complimentary Package** — given by an admin, never sold. Listed
    * like a purchase, at 0 against its List Price, and counted in no total:
    * Gross is the sum of List Price, and a comp would inflate it by money nobody
    * was ever asked for. Nor is it a discount, which is money given away on a
@@ -120,7 +120,7 @@ export interface MoneyEvent {
   complimentary: boolean
 
   /**
-   * How it was paid (#282) — every method, so a Part Payment paid two ways
+   * How it was paid — every method, so a Part Payment paid two ways
    * lists both. Absent or empty means none was recorded: always so on money
    * out and on a Complimentary Package, which nobody paid.
    */

@@ -7,13 +7,13 @@ import { normaliseClassPassLocation } from './location-name'
 import { rerunOpenReviewAt } from './review-items'
 
 /**
- * ClassPass location mappings (#410): which of the studio's Locations each
+ * ClassPass location mappings: which of the studio's Locations each
  * name ClassPass writes in its emails means. Names are stored normalised
- * (`normaliseClassPassLocation`), so the import (#411) finds a mapping by
+ * (`normaliseClassPassLocation`), so the import finds a mapping by
  * normalising the email's name the same way.
  *
  * Adding or changing a mapping runs the import again on the open ClassPass
- * review items (#413) from the names it touches, so a booking waiting on it is
+ * review items from the names it touches, so a booking waiting on it is
  * placed however the Admin mapped it: from the Locations panel or from the
  * item. `staffId` is who closes the ones that now place.
  */

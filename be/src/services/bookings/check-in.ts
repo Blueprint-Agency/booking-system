@@ -368,7 +368,7 @@ export interface CheckInRosterEntry {
   seat: 'online' | 'buffer' | 'overbook' | null
   /** The booking came from the class's waitlist. */
   promotedFromWaitlist: boolean
-  /** `classpass` for a ClassPass booking, which ClassPass paid for (#408). */
+  /** `classpass` for a ClassPass booking, which ClassPass paid for. */
   bookingSource: BookingSource
 }
 

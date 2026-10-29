@@ -53,7 +53,7 @@ export type CheckoutQuote<Granted> =
       /** What the provider is asked to charge. */
       lines: CheckoutLine[]
       /**
-       * The same sale as the Purchase records it (#382): List Prices and what
+       * The same sale as the Purchase records it: List Prices and what
        * came off them, adding up to the same total as `lines`.
        */
       purchaseLines: PurchaseLine[]
@@ -65,7 +65,7 @@ export interface CheckoutSessionInput {
   /**
    * The studio the sale belongs to. Stamped on the session, the payment intent
    * and so the charge — still stamped now that every studio charges on its own
-   * account (#293), because the payments recorded on the platform's shared one
+   * account, because the payments recorded on the platform's shared one
    * before that are told apart by nothing else, and a dispute or an export is
    * easier to read when every charge names its studio. The webhook does not read
    * it — it routes on `client_id` through the owner-owned resolver (migration
@@ -85,9 +85,9 @@ export interface CheckoutSessionInput {
   successUrl: string
   cancelUrl: string
   /**
-   * Charge this much of the Purchase instead of the whole of it (#93).
+   * Charge this much of the Purchase instead of the whole of it.
    *
-   * Null — the default, and every sale before this existed — charges the lines
+   * Null — the default — charges the lines
    * as they stand. A number replaces them with **one** line naming the part
    * payment, because a split across four line items is arithmetic the member
    * would have to do on a Stripe page to check we had not made it up. What was
@@ -99,7 +99,7 @@ export interface CheckoutSessionInput {
    */
   partPaymentCents?: number | null
   /**
-   * The member as a Customer on the provider account this charge is on (#185),
+   * The member as a Customer on the provider account this charge is on,
    * or null where they are not one yet.
    *
    * It is what makes a second card unnecessary: a session carrying a Customer
@@ -109,12 +109,12 @@ export interface CheckoutSessionInput {
    *
    * **Per account, never per member alone.** A Customer id is meaningless on an
    * account other than the one it was made on, so which id this is depends on
-   * where the studio sells today (#100) — see `providerCustomerFor`, which is
+   * where the studio sells today — see `providerCustomerFor`, which is
    * the only thing allowed to answer that.
    */
   customerId?: string | null
   /**
-   * Did the member tick "save this card"? (#185)
+   * Did the member tick "save this card"?
    *
    * Consent, carried from our own checkout page rather than assumed. This API
    * version has no checkbox of Stripe's own — `saved_payment_method_options`
@@ -171,7 +171,7 @@ export type CheckoutSessionParams = Stripe.Checkout.SessionCreateParams & {
  * lines, its expiry — can be asserted without a provider and without a
  * database.
  *
- * No statement descriptor suffix (#293). Every charge is on the studio's own
+ * No statement descriptor suffix. Every charge is on the studio's own
  * account, whose statement already carries the studio's name, and the
  * 22-character limit would be measured against that account's prefix — which
  * this platform does not know. A suffix could only ever cost a refused charge.
@@ -234,7 +234,7 @@ export function checkoutSessionParams(
     // intent is what a refund, a dispute and a bank statement point at.
     payment_intent_data: {
       metadata: tenantMetadata,
-      // `on_session`, not `off_session` (#185). This platform never charges a
+      // `on_session`, not `off_session`. This platform never charges a
       // saved card with nobody watching — the member picks it on the provider's
       // own page, every time — so the bank is told to authenticate then rather
       // than up front, which is one less challenge on the card that is paying
@@ -321,7 +321,7 @@ export function buyerFor(metadata: Record<string, string>): string {
 export async function createCheckoutSession(
   input: CheckoutSessionInput & {
     /**
-     * What the member typed into the Part Payment box, in cents (#93), or null
+     * What the member typed into the Part Payment box, in cents, or null
      * for the ordinary whole-price checkout every sale before this took.
      *
      * Validated **here**, against the total these lines add up to, and refused
@@ -331,13 +331,13 @@ export async function createCheckoutSession(
      */
     requestedPartPaymentCents?: number | null
     /**
-     * The sale line by line, frozen on the Purchase (#382). The checkout
+     * The sale line by line, frozen on the Purchase. The checkout
      * service built them beside `lines`, from the same prices, and the
      * Purchase refuses them if they add up to anything else.
      */
     purchaseLines: PurchaseLine[]
     /**
-     * Who the sale is billed to (#401): the member's chosen Billing details,
+     * Who the sale is billed to: the member's chosen Billing details,
      * already resolved as theirs (`billToFor`), copied onto the Purchase. Null
      * or absent where the checkout chose none.
      */
@@ -345,7 +345,7 @@ export async function createCheckoutSession(
   },
 ): Promise<string | null> {
   // First, before a Purchase is opened: a studio with no account of its own
-  // takes no card payments (#293), and a refused checkout must leave nothing
+  // takes no card payments, and a refused checkout must leave nothing
   // behind that reads as a sale in progress.
   await requireProviderAccount(input.tenantId)
   const requested = input.requestedPartPaymentCents ?? null
@@ -364,7 +364,7 @@ export async function createCheckoutSession(
     // `item_name` is frozen here rather than asked of the catalogue later: the
     // account page and the portal both have to name an unfinished Purchase, and
     // a plan renamed or deleted in between would otherwise leave a member
-    // looking at a debt for something with no name (#93).
+    // looking at a debt for something with no name.
     metadata: { ...input.metadata, item_name: itemName(input.lines) },
     lines: input.purchaseLines,
     billTo: input.billTo ?? null,
@@ -372,7 +372,7 @@ export async function createCheckoutSession(
 
   const [stripe, customerId] = await Promise.all([
     stripeForTenant(input.tenantId),
-    // Made if they are not one yet, and null if the provider would not (#185).
+    // Made if they are not one yet, and null if the provider would not.
     // Null is not a failure here: the session falls back to `customer_email`,
     // which is the shape every sale took before saved cards existed.
     input.customerId === undefined

@@ -34,7 +34,7 @@ export function contentsLine(
   kind: PurchasedKind,
   creditsOrSessions: number | null,
   /**
-   * The **Bound Instructor** a PT package's sessions are with (#109); null on
+   * The **Bound Instructor** a PT package's sessions are with; null on
    * an open package. It is folded into this sentence rather than given a
    * variable of its own, because a template cannot say two things: a separate
    * `instructor_line` would render a dangling label on every unbound purchase.
@@ -92,7 +92,7 @@ export function validityLine(
 }
 
 /**
- * What the member paid, as a receipt prints it (#370): "S$120.00", the form
+ * What the member paid, as a receipt prints it: "S$120.00", the form
  * the studio's other member-facing money takes (`sgdText`: refund notices,
  * part payments). A free purchase prints the zero amount rather than nothing,
  * because a receipt that leaves the line blank reads as an error.
@@ -136,7 +136,7 @@ export interface PurchaseEmailInput {
    */
   amountPaidSgd: string
   /**
-   * The member's Receipt in the booking app (#387), paid or free; null only
+   * The member's Receipt in the booking app, paid or free; null only
    * for a grant no Receipt was issued for.
    */
   receiptUrl: string | null

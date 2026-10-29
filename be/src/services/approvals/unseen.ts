@@ -43,7 +43,7 @@ export async function listUnseenApprovals(tenantId: string, clientId: string): P
   const now = clockNow()
 
   // Only the requester's own: a 2on1 partner never asked, and a manual session
-  // (#334) is never pending, so it is never approved.
+  // is never pending, so it is never approved.
   const pt = await db
     .select({
       id: ptRequests.id,

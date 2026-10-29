@@ -1,5 +1,5 @@
 /**
- * The **Check-in Window** (#192): when a booking may be checked in.
+ * The **Check-in Window**: when a booking may be checked in.
  *
  * Opens the studio's `check_in_opens_minutes_before` ahead of the start, so a
  * member who arrives early is ticked at the door rather than asked to wait.

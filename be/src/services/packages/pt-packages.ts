@@ -42,7 +42,7 @@ export interface CreatePtPackageInput {
   /** How long a purchase of this package lasts, in days. Required — a PT package always expires. */
   validityDays: number
   /**
-   * Instructor-Bound (#109) — a member buying this package picks one active
+   * Instructor-Bound — a member buying this package picks one active
    * instructor at checkout. Defaults off, so nothing an admin already sells
    * changes shape unless they opt in.
    */

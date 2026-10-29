@@ -1,5 +1,5 @@
 /**
- * A Billing details address (#399, #401): which countries it may be in, and how
+ * A Billing details address: which countries it may be in, and how
  * it reads, a line each. Pure, with no database import, so the Receipts CSV
  * (`receipts/csv.ts`) can read an address as the Receipt (`receipts/document.ts`)
  * does without building a pool.

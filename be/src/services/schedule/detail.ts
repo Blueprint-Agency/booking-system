@@ -47,15 +47,15 @@ export interface ClassAttendee {
   code: string
   /** Which seat the booking holds; the roster tags `buffer` and `overbook`. */
   seat: BookingSeat
-  /** How the booking reached the studio; the roster badges a ClassPass booking (#408). */
+  /** How the booking reached the studio; the roster badges a ClassPass booking. */
   source: BookingSource
   /** The booking was made by a waitlist promotion, automatic or by staff. */
   promotedFromWaitlist: boolean
-  /** What the staff cancel dialog asks from; null on a row it is not offered on (#320). */
+  /** What the staff cancel dialog asks from; null on a row it is not offered on. */
   cancelPreview: StaffCancelPreview | null
 }
 
-/** A booking cancelled off the class: listed apart from the roster, never checked in (#352). */
+/** A booking cancelled off the class: listed apart from the roster, never checked in. */
 export interface ClassCancelledBooking {
   bookingId: string
   client: NamedRef
@@ -345,9 +345,9 @@ export interface PtSessionAttendee {
 
 export interface PtSessionDetail {
   id: string
-  /** Null once the member who requested it is permanently deleted (#144). */
+  /** Null once the member who requested it is permanently deleted. */
   ptRequestId: string | null
-  /** `portal` for a manual session staff created (#334); null with no request. */
+  /** `portal` for a manual session staff created; null with no request. */
   origin: 'member' | 'portal' | null
   lifecycle: 'active' | 'cancelled'
   startsAt: Date
@@ -367,7 +367,7 @@ export interface PtSessionDetail {
   checkInState: SessionCheckInState
 }
 
-/** A private session the caller runs, for the instructor's session page (#338). */
+/** A private session the caller runs, for the instructor's session page. */
 export async function getOwnPtSessionDetail(
   tenantId: string,
   id: string,

@@ -1,8 +1,8 @@
 /**
- * Issuing a Receipt (#380). **The one way anything writes to `receipts`.**
+ * Issuing a Receipt. **The one way anything writes to `receipts`.**
  *
  * Called inside the transaction that settles a Purchase, wherever settlement
- * happens (#385): the webhook, for every kind, once the payment that brings the
+ * happens: the webhook, for every kind, once the payment that brings the
  * Balance to zero is banked, and `openSettledPurchase`, for every free path.
  * Never for a Complimentary Package (not a Purchase), an Open or Abandoned one
  * (not settled), or a migrated one (no settle path writes it). The Refund stamp
@@ -12,7 +12,7 @@
  *
  * Idempotent per Purchase. A webhook redelivery, or the confirmation page's
  * fallback racing the webhook, gets back the Receipt the first one issued —
- * with `issued: false`, so whoever sends the member's email (#387) sends it
+ * with `issued: false`, so whoever sends the member's email sends it
  * from the delivery that issued it and from no other.
  */
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
@@ -53,7 +53,7 @@ async function existingReceipt(tx: ReceiptTx, tenantId: string, purchaseId: stri
  * banked, so the payment it prints is the one that paid.
  *
  * Dated now, the moment of the sale, unless `issuedAt` says otherwise: only
- * the backfill does (#394), dating a Receipt for a sale made before Receipts
+ * the backfill does, dating a Receipt for a sale made before Receipts
  * existed on the day that sale was paid.
  */
 export async function issueReceipt(
@@ -92,7 +92,7 @@ export async function issueReceipt(
   const raced = await existingReceipt(tx, tenantId, purchaseId)
   if (raced) return { receipt: raced, issued: false }
 
-  // The studio's receipt details as they stand now (#391): copied on, so a
+  // The studio's receipt details as they stand now: copied on, so a
   // later edit or prefix change reaches only the Receipts issued after it.
   const [seller] = await tx
     .select({
@@ -103,7 +103,7 @@ export async function issueReceipt(
       registrationNumber: tenantSettings.receiptRegistrationNumber,
       address: tenantSettings.receiptAddress,
       footer: tenantSettings.receiptFooter,
-      // Its contact email (#403): the reply-to address. Read through the mail
+      // Its contact email: the reply-to address. Read through the mail
       // identity function, which answers for the tenant whose context is open:
       // the application role has no SELECT on the mail columns themselves.
       email: sql<string | null>`(SELECT reply_to FROM current_tenant_mail_identity())`,
@@ -168,7 +168,7 @@ export async function issueReceipt(
       displayNumber: displayNumber(seller!.prefix || DEFAULT_RECEIPT_PREFIX, number),
       // What the studio calls itself to members, as of now.
       sellerName: seller!.displayName || seller!.name,
-      // The name it trades under (#398), as of now.
+      // The name it trades under, as of now.
       sellerBusinessName: seller!.businessName ?? seller!.name,
       sellerRegistrationNumber: seller!.registrationNumber,
       sellerAddress: seller!.address,
@@ -176,7 +176,7 @@ export async function issueReceipt(
       sellerEmail: seller!.email?.trim() || null,
       buyerName: buyer?.name ?? null,
       buyerEmail: buyer?.email ?? null,
-      // Bill to (#401), as the Purchase copied it when it opened.
+      // Bill to, as the Purchase copied it when it opened.
       billTo: purchase.billTo,
       kind: purchase.kind,
       lines,
@@ -188,7 +188,7 @@ export async function issueReceipt(
 }
 
 /**
- * Stamp the Purchase's Receipt refunded (#392): the one later change a Receipt
+ * Stamp the Purchase's Receipt refunded: the one later change a Receipt
  * undergoes. Called in the transaction that marks the Purchase refunded
  * (`markPurchaseRefunded`), so the two commit or roll back together, and dated
  * by it. None of the figures move: a Refund is a fact about the money since,
@@ -199,7 +199,7 @@ export async function issueReceipt(
  * Abandoned one never reaches here.
  *
  * Dated now, as the Refund lands, unless `at` says otherwise: only the
- * backfill does (#394), for a Refund that landed before Receipts existed.
+ * backfill does, for a Refund that landed before Receipts existed.
  */
 export async function stampReceiptRefunded(tx: ReceiptTx, tenantId: string, purchaseId: string, at?: Date): Promise<void> {
   await tx
