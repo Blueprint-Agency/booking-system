@@ -44,12 +44,6 @@ export interface ApiPayrollRow {
   instructor_pay_sgd: number | null;
 }
 
-export interface ApiPayrollTotal {
-  instructor_id: string;
-  instructor_name: string;
-  total_sgd: number;
-  session_count: number;
-}
 
 /** The instructor route answers with one flat total instead of a breakdown. */
 export interface ApiInstructorPayrollResponse {
