@@ -148,6 +148,13 @@ export async function updateWorkshop(
   tenantId: string,
   id: string,
   patch: UpdateWorkshopInput,
+  opts: {
+    /**
+     * False when the caller tells the instructors this edit adds, after it has
+     * written the rest of the save and the workshop's first day is final.
+     */
+    announceAdded?: boolean
+  } = {},
 ): Promise<WorkshopRow> {
   const existing = await getWorkshop(tenantId, id)
   if (existing.lifecycle === 'cancelled') {
@@ -205,7 +212,7 @@ export async function updateWorkshop(
             ? { supportingInstructorIds: patch.supportingInstructorIds }
             : {}),
         },
-        patch.actorStaffId ? { actorStaffId: patch.actorStaffId } : undefined,
+        patch.actorStaffId && opts.announceAdded !== false ? { actorStaffId: patch.actorStaffId } : undefined,
       )
       // A workshop with no main row is a broken row, not a state to save into.
       if (!roster.some(r => r.role === 'main')) {

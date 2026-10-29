@@ -2,6 +2,7 @@ import { db } from '../../db'
 import { BadRequestError } from '../../shared/errors'
 import { recordSessionAssigned } from '../attention/session-assigned'
 import { lockOccupancy } from '../schedule/occupancy'
+import { readRoster } from '../schedule/roster'
 import { replacePromotionsForParent, type PromotionWriteInput } from '../packages/promotions'
 import {
   createWorkshop,
@@ -85,9 +86,33 @@ export async function updateWorkshopWithSchedule(
     const existing = await getWorkshop(tenantId, workshopId, { lock: true })
     if (existing.lifecycle === 'cancelled') throw new BadRequestError('workshop_cancelled')
     if (schedule) await claimDayRooms(tx, tenantId, schedule.days)
+    const ref = { kind: 'workshop', id: workshopId } as const
+    const rosterBefore = await readRoster(tenantId, ref, tx)
     // The basics come first, so a day's room is checked against the location this save sets.
-    const row = await updateWorkshop(tenantId, workshopId, { ...basics, actorStaffId })
-    if (schedule) await writeSchedule(tenantId, workshopId, schedule, actorStaffId)
+    // Their added instructors are told below, once the days are final.
+    const row = await updateWorkshop(tenantId, workshopId, { ...basics, actorStaffId }, { announceAdded: false })
+    const rosterAfter = await readRoster(tenantId, ref, tx)
+    if (schedule) {
+      // A day's move is news to the instructors who were on the workshop and still are.
+      const beforeIds = new Set(rosterBefore.map(r => r.instructorId))
+      await writeSchedule(tenantId, workshopId, schedule, actorStaffId, {
+        mainId: rosterAfter.find(r => r.role === 'main')?.instructorId ?? null,
+        instructorIds: rosterAfter.map(r => r.instructorId).filter(id => beforeIds.has(id)),
+      })
+    }
+    // Told last, so the update can name the workshop's first day, as when it is created.
+    const had = new Set(rosterBefore.map(r => `${r.role}:${r.instructorId}`))
+    const added = rosterAfter.filter(r => !had.has(`${r.role}:${r.instructorId}`))
+    await recordSessionAssigned(
+      tenantId,
+      actorStaffId,
+      ref,
+      {
+        main: added.filter(r => r.role === 'main').map(r => r.instructorId),
+        supporting: added.filter(r => r.role === 'supporting').map(r => r.instructorId),
+      },
+      { tx },
+    )
     if (promotions) await replacePromotionsForParent(tenantId, 'workshop', workshopId, promotions, actorStaffId)
     return row
   })
@@ -126,6 +151,8 @@ async function writeSchedule(
   workshopId: string,
   input: WorkshopScheduleInput,
   actorStaffId?: string,
+  /** Who is told a day moved, when the roster changed in the same save (see `updateDay`). */
+  told?: { mainId: string | null; instructorIds: string[] },
 ): Promise<{ days: WorkshopDayRow[]; tiers: TierWithDays[] }> {
   const storedTiers = await listTiers(tenantId, workshopId)
 
@@ -137,7 +164,7 @@ async function writeSchedule(
   const dayIdByRef = new Map<string, string>()
   for (const [i, { id, ref, ...day }] of input.days.entries()) {
     const saved = id
-      ? await updateDay(tenantId, workshopId, id, { ...day, ord: i + 1 }, actorStaffId)
+      ? await updateDay(tenantId, workshopId, id, { ...day, ord: i + 1 }, actorStaffId, told)
       : await createDay(tenantId, workshopId, { ...day, ord: i + 1, basePriceSgd: '0.00' })
     dayIdByRef.set(ref, saved.id)
   }
