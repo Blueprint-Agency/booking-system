@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { LATEST_DATE, todayIso } from "@/lib/formatters";
+import { expiryDay, expiryInstant } from "@/lib/package-expiry";
 import type { ClientPackage } from "@/types";
 
 export function PackageExpiryDialog({
@@ -13,13 +14,13 @@ export function PackageExpiryDialog({
   onSave: (newExpiresAt: string | null, reason: string) => void;
   onClose: () => void;
 }) {
-  const [date, setDate] = useState(pkg.expiresAt?.slice(0, 10) ?? "");
+  const [date, setDate] = useState(expiryDay(pkg.expiresAt));
   const [reason, setReason] = useState("");
   // A blank expiry means "return this package to Dormant" (spec §8). Every
   // kind starts Dormant and Activates on its first booking, so every kind can
   // be sent back there — it is how an admin undoes an Activation the studio
-  // itself caused. Setting a date on a Dormant package Activates it by hand,
-  // which the backend refuses while another in the same family is running.
+  // itself caused. Setting a date on a Dormant package Activates it by hand;
+  // any number of packages in a family may run at once (ADR 0010).
   const isPt = pkg.kind === "pt";
   return (
     <Dialog
@@ -32,12 +33,11 @@ export function PackageExpiryDialog({
         onSubmit={(e) => {
           e.preventDefault();
           if (!reason.trim()) return;
-          // KNOWN DEFECT: this stamps end-of-day in UTC, so a package the admin
-          // set to expire "the 30th" dies at 07:59 on the 31st Singapore time.
-          // Same class as the local-day fix, but NOT the same fix — correcting
-          // it moves when existing packages actually expire, so it needs a call
-          // on the live rows, not just a code change. See lib/local-day.ts.
-          onSave(date ? `${date}T23:59:59.000Z` : null, reason.trim());
+          // The last instant of the picked day on the studio's local clock
+          // (lib/package-expiry.ts). Ends stamped by the old dialog at
+          // 23:59:59 UTC are not rewritten: that would take eight hours from
+          // members, and reopening one saves the later day in their favour.
+          onSave(expiryInstant(date), reason.trim());
         }}
       >
         <div className="space-y-1.5">
@@ -51,10 +51,9 @@ export function PackageExpiryDialog({
             onChange={(e) => setDate(e.target.value)}
           />
           <p className="text-xs text-muted">
-            Leave blank to return this package to Dormant — its clock restarts at
-            the member&apos;s first {isPt ? "session request" : "booking"} this
-            package pays for. Only one {isPt ? "PT" : "class"} package can be
-            running at a time.
+            Leave blank to return this package to Dormant — its clock starts
+            again at the next booking it pays for
+            {isPt ? " (for a private-session package, when its next session is scheduled)" : ""}.
           </p>
         </div>
         <div className="space-y-1.5">

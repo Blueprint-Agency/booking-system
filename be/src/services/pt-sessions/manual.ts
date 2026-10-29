@@ -31,7 +31,7 @@ import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedu
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
-import { actorOfSource, debitCredits, isVoided, recordMovement, refundCredits, type Tx } from '../packages/ledger'
+import { actorOfSource, debitCredits, keepCredit, refundCredits, type Tx } from '../packages/ledger'
 import { activateOnSchedule, assertPackageCoversSession, reverseActivationOnCancel, sweepExpired } from '../packages/activation'
 import { activationExpiry } from '../packages/validity'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
@@ -45,7 +45,7 @@ import { recordSessionAssigned } from '../attention/session-assigned'
 import { ensureInstructors } from '../schedule/roster'
 import { assertMemberFree, lockMemberTime } from '../bookings/member-time'
 import { ptSessionCost, type PtSessionType } from './cost'
-import { refuseOnceStarted } from './started'
+import { refuseOnceStarted, refuseTypeChangeOnceStarted } from './started'
 import {
   mayPayForSeat,
   orderSeatCandidates,
@@ -609,32 +609,35 @@ async function cancelSeat(
 ): Promise<{ refundOutcome: RefundOutcome; refunded: number }> {
   const { seat } = input
   const used = seat.used ?? 0
-  const voided = seat.clientPackageId !== null && (await isVoided(tx, tenantId, seat.clientPackageId))
-  const refunded = input.refund && seat.clientPackageId && used > 0 && !voided ? used : 0
-  if (refunded) {
-    await refundCredits(tx, {
+  // Whether the session goes back, or the credit is kept, is the ledger's
+  // answer under the package lock: a Voided package takes neither, and the
+  // seat settles `n_a`.
+  let refunded = 0
+  let kept = !input.refund && used > 0
+  if (input.refund && seat.clientPackageId && used > 0) {
+    const { landed } = await refundCredits(tx, {
       tenantId,
       clientId: seat.clientId,
-      clientPackageId: seat.clientPackageId!,
-      amount: refunded,
+      clientPackageId: seat.clientPackageId,
+      amount: used,
       reason: input.reason,
       cause: 'returned',
       bookingId: seat.id,
       actor: actorOfSource(input.source),
       actedByStaffId: input.actorStaffId,
     })
+    if (landed) refunded = used
   } else if (!input.refund && seat.clientPackageId && used > 0) {
-    await recordMovement(tx, {
+    kept = await keepCredit(tx, {
       tenantId,
       clientId: seat.clientId,
       clientPackageId: seat.clientPackageId,
-      cause: 'kept',
       bookingId: seat.id,
       actor: actorOfSource(input.source),
       actedByStaffId: input.actorStaffId,
     })
   }
-  if (seat.clientPackageId && !voided) {
+  if (seat.clientPackageId) {
     await reverseActivationOnCancel(tx, {
       tenantId,
       clientId: seat.clientId,
@@ -644,7 +647,7 @@ async function cancelSeat(
       actedByStaffId: input.actorStaffId,
     })
   }
-  const refundOutcome: RefundOutcome = refunded ? 'session_returned' : used > 0 && !input.refund ? 'forfeited' : 'n_a'
+  const refundOutcome: RefundOutcome = refunded ? 'session_returned' : kept ? 'forfeited' : 'n_a'
   await tx
     .update(bookings)
     .set({ state: 'cancelled', refundOutcome, checkInState: 'n_a', cancelledAt: input.now })
@@ -840,6 +843,8 @@ export async function retypeManualSessionInTx(
     session: { id: string; instructorId: string; startsAt: Date; endsAt: Date }
     req: { id: string; status: string; clientId: string; coClientId: string | null }
     to: PtSessionType
+    /** When the session started as it stands, before this edit moves it: a downgrade is refused from then. */
+    startedAt: Date
     partnerClientId?: string
     partnerClientPackageId?: string | null
     actorStaffId: string
@@ -854,6 +859,9 @@ export async function retypeManualSessionInTx(
   const leaving = input.to === '1on1' ? seats.filter(s => s !== keep) : []
   // Neither way once the session is over: its seats were used.
   assertSeatsStillOpen(session, req, leaving, clockNow())
+  // Between its start and its end the seats are being used, so a downgrade is
+  // refused as a cancel is (#499). The two refusals above keep their order.
+  if (input.to === '1on1') refuseTypeChangeOnceStarted(input.startedAt, clockNow())
 
   if (input.to === '2on1') {
     if (!input.partnerClientId) throw new BadRequestError('partner_required')
