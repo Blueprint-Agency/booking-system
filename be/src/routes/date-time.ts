@@ -5,8 +5,10 @@ import { z } from 'zod'
  * (`2026-01-31T09:00:00Z`, `2026-01-31T09:00:00+08:00`): the form
  * `Date.prototype.toISOString()` gives, and the only one every caller sends.
  *
- * It must be on a day that exists (no 30 February, no month 13) and in a year
- * from 0001 to 9999, so it is a value Postgres takes and the JavaScript date
+ * It must be on a day that exists (no 30 February, no month 13), at an offset
+ * the clock has, and in a year from 0001 to 9999 once that offset is applied
+ * (an Invalid Date has a NaN year, which fails the same test), so it is a value
+ * Postgres takes and the JavaScript date
  * parser reads as written. That parser is not a check: `Date.parse` rolls
  * `2026-02-30` forward to 2 March, reads `20260-01-01` as year 20259, and
  * accepts `12/31/99999`; a route that used it saved a session on the wrong day
@@ -24,5 +26,18 @@ export function dateTime(label: string, message = `${label} must be a date and t
   return z
     .string({ message })
     .datetime({ offset: true, message })
-    .refine(v => Number(v.slice(0, 4)) >= 1, { message })
+    .refine(isUsableInstant, { message })
+}
+
+/**
+ * The text names an instant the JavaScript date reads, and that instant falls in
+ * the years 1 to 9999 in UTC. Both are tested on the parsed value, not the
+ * text: `+24:00`, `+99:99` and `-25:00` are offsets the pattern takes and
+ * `new Date` turns into Invalid Date, and `9999-12-31T23:00:00-08:00` and
+ * `0001-01-01T00:00:00+08:00` have a year in range as written and one that
+ * Postgres refuses once the offset is applied.
+ */
+function isUsableInstant(v: string): boolean {
+  const year = new Date(v).getUTCFullYear()
+  return year >= 1 && year <= 9999
 }
