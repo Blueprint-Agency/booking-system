@@ -31,10 +31,17 @@ export interface OpenPurchase {
   created_at: string;
 }
 
-/** Whether this studio offers Part Payment at all, and the smallest instalment. */
+/**
+ * Whether this studio offers Part Payment at all, and the smallest instalment.
+ * `couldntCheck` is a third answer, apart from on and off: the read failed, so
+ * the app does not know. `enabled` is never true then.
+ */
 export interface PartPaymentOptions {
   enabled: boolean;
   floorSgd: string;
+  couldntCheck: boolean;
+  /** Read the options again — what Try again runs. */
+  retry: () => void;
 }
 
 export function useOpenPurchases() {
@@ -71,16 +78,25 @@ export function useOpenPurchases() {
 
 /**
  * What this studio offers at checkout. Off is the answer for a studio that has
- * not turned Part Payment on, and it is also the answer when the call fails —
- * a checkbox that appears because a request errored is worse than none.
+ * not turned Part Payment on. A failed call is not that answer: Part Payment is
+ * an optional way to pay a Balance that can always be paid whole, so the page
+ * keeps the whole payment and says it could not check (`couldntCheck`) — never
+ * offering Part Payment on a failed read, and never silently hiding it, which
+ * would tell a member who meant to split the payment that the studio does not
+ * allow it (#500). The backend still decides what may be charged.
  */
 export function usePartPaymentOptions(): PartPaymentOptions & { loading: boolean } {
   const api = useApi();
-  const [state, setState] = useState<PartPaymentOptions & { loading: boolean }>({
-    enabled: false,
-    floorSgd: "1.00",
-    loading: true,
-  });
+  const [state, setState] = useState<{
+    enabled: boolean;
+    floorSgd: string;
+    couldntCheck: boolean;
+    loading: boolean;
+  }>({ enabled: false, floorSgd: "1.00", couldntCheck: false, loading: true });
+  // Bumped by Try again: a new read, in place of the failed one. The line
+  // stays up until it answers, so the page does not jump under the tap.
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt(n => n + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,20 +109,21 @@ export function usePartPaymentOptions(): PartPaymentOptions & { loading: boolean
           setState({
             enabled: Boolean(res.part_payment?.enabled),
             floorSgd: res.part_payment?.floor_sgd ?? "1.00",
+            couldntCheck: false,
             loading: false,
           });
         }
       } catch (err) {
         reportError(err, { scope: "checkout-options" });
-        if (!cancelled) setState(s => ({ ...s, loading: false }));
+        if (!cancelled) setState(s => ({ ...s, enabled: false, couldntCheck: true, loading: false }));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, attempt]);
 
-  return state;
+  return { ...state, retry };
 }
 
 /**

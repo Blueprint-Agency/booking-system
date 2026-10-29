@@ -349,7 +349,7 @@ export function downgradeConfirm(clients: { name: string; is_requester: boolean 
   const leaving = downgradeLeaving(clients);
   if (leaving.length === 0) return "Change this session to 1-on-1?";
   const names = leaving.map((c) => c.name).join(" and ");
-  return `Change this session to 1-on-1? ${names} ${leaving.length === 1 ? "is" : "are"} taken off it and ${leaving.length === 1 ? "gets their session" : "get their sessions"} back on their own package.`;
+  return `Change this session to 1-on-1? ${names} ${leaving.length === 1 ? "is" : "are"} taken off it and ${leaving.length === 1 ? "gets their session" : "get their sessions"} back on their own package, unless that package has been refunded.`;
 }
 
 export interface RetypeBody {
@@ -431,6 +431,13 @@ const SESSION_ACTION_COPY: Partial<Record<ErrorCode, string>> = {
 /** A refused action on an existing session; the seat rule's codes read as on create. */
 export function sessionActionErrorMessage(err: unknown, fallback: string): string {
   const code = err instanceof ApiError ? errorCode(err) : undefined;
+  // A started session refuses a cancel and a type change alike. The type
+  // change's refusal carries its own sentence, which names what was tried; the
+  // cancel's carries none, and keeps the cancel wording below.
+  if (err instanceof ApiError && code === "session_already_started") {
+    const sentence = (err.body as { message?: unknown } | null)?.message;
+    if (typeof sentence === "string" && sentence) return sentence;
+  }
   return (code && (SESSION_ACTION_COPY[code] ?? CREATE_ERROR_COPY[code])) || scheduleErrorMessage(err, fallback);
 }
 

@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/styles";
 import { useApi } from "@/lib/api";
 import { readBookingSources } from "@/lib/booking-sources";
+import type { BookingKind } from "@/lib/booking-gaps";
+import { MissingBookingsNote } from "@/components/account/missing-bookings-note";
 import { ptCancelResult } from "@/lib/cancellation-copy";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
 import { bookingItems, sessionsOnDay, type BookingSources } from "@/lib/my-bookings";
@@ -45,6 +47,8 @@ export function PracticeDayDialog({
   const { refetch: refetchPackages } = useClientPackages();
   const [src, setSrc] = useState<BookingSources | null>(null);
   const [failed, setFailed] = useState(false);
+  // The kinds that could not be read (#500): named above the day, never drawn as none.
+  const [missing, setMissing] = useState<BookingKind[]>([]);
   const [note, setNote] = useState<string | null>(null);
   const [opened, setOpened] = useState<{ booking: ApiBooking; ongoing: boolean } | null>(null);
   const [cancelTarget, setCancelTarget] = useState<ApiBooking | null>(null);
@@ -52,7 +56,9 @@ export function PracticeDayDialog({
   const load = useCallback(async () => {
     setFailed(false);
     try {
-      setSrc(await readBookingSources(api));
+      const read = await readBookingSources(api);
+      setSrc(read.sources);
+      setMissing(read.missing);
     } catch (err) {
       reportError(err, { scope: "practice-day" });
       setFailed(true);
@@ -102,8 +108,10 @@ export function PracticeDayDialog({
   }
   return (
     <DayPanel date={date} onClose={onClose} failed={failed} loading={items === null} retry={load} note={note}>
+      <MissingBookingsNote missing={missing} onRetry={load} className="mb-4" />
       {items && items.length === 0 ? (
-        <p className="text-sm text-muted">No sessions on this day.</p>
+        // Not while a kind is missing: "no sessions" would be a claim about bookings that were not read.
+        missing.length > 0 ? null : <p className="text-sm text-muted">No sessions on this day.</p>
       ) : (
         <ul className="space-y-3">
           {items?.map((i) => (

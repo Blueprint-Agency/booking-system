@@ -10,7 +10,8 @@ import { listActiveInstructors } from '../schedule/client-catalog'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import type { Tx } from './ledger'
 import { computeActive, crossLocationMonths, crossLocationPriceSgd } from './validity'
-import { classPackageTerms, ptPackageTerms, type SoldTerms } from './sold-terms'
+import { classPackageTerms, ptPackageTerms, soldTermsForKind, type SoldTerms } from './sold-terms'
+import { logger } from '../../shared/logger'
 
 /**
  * The client's live Unlimited Plans. Live means active and either Activated with
@@ -427,14 +428,17 @@ export interface GrantPackageInput {
    * one picked at checkout, kept bound and visibly archived as any other is.
    * The Admin can still refund it.
    *
-   * `terms` are the ones checkout showed, so an Admin edit to the package since
-   * cannot change what the member bought either. Null for a sale checked out
-   * before checkout froze them, granted from the catalogue row.
+   * `metadata` is the Purchase's own copy of what checkout froze, so an Admin
+   * edit to the package since cannot change what the member bought either. It
+   * is read against the package's kind (`soldTermsForKind`): a sale checked out
+   * before checkout froze its terms is granted from the catalogue row, and
+   * terms that are present but incomplete or malformed throw
+   * `CorruptSoldTermsError`, granting nothing.
    *
    * Absent for every grant decided on the spot — a comp, a free trial, a sale
    * a discount took to zero — which refuse exactly as before.
    */
-  alreadySold?: { terms: SoldTerms | null }
+  alreadySold?: { metadata: Record<string, string> }
 }
 
 /**
@@ -510,7 +514,14 @@ export async function grantPackage(
     catalogueTerms = ptPackageTerms(row)
     instructorBound = row.instructorBound
   }
-  const terms = input.alreadySold?.terms ?? catalogueTerms
+  const soldTerms = input.alreadySold ? soldTermsForKind(input.alreadySold.metadata, kind) : null
+  if (input.alreadySold && !soldTerms) {
+    logger.info(
+      { purchaseId: input.purchaseId, packageId: input.packageId },
+      'stripe-webhook: a sale checked out before its terms were frozen is granted from the catalogue row',
+    )
+  }
+  const terms = soldTerms ?? catalogueTerms
   const creditsOrSessionsRemaining = terms.creditsOrSessions
 
   // Only an Unlimited Plan has a Home Location to extend, so only it can carry

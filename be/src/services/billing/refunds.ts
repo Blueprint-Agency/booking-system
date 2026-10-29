@@ -1204,7 +1204,7 @@ export async function unwindRefund(
  */
 export function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
   // One unit: a deadlock in any of its cancels starts the whole unwind over.
-  return retryingTransaction(tx => unwindPayment(tx, paymentIntentId))
+  return retryingTransaction('Refund unwind', tx => unwindPayment(tx, paymentIntentId))
 }
 
 async function unwindPayment(tx: Tx, paymentIntentId: string): Promise<void> {
@@ -1377,6 +1377,18 @@ async function unwindPurchase(tx: Tx, tenantId: string, purchaseId: string): Pro
   }
 
   await lockForCancel(tx, tenantId, { bookingIds: (await futureBookingsOn(tenantId, pkg.id)).map(t => t.id) })
+
+  // The Void holds the package row from here until it commits, whether or not
+  // the package is still active: the update below matches only an active one,
+  // so on a used-up package it would hold nothing. A return that waits for this
+  // finds the Purchase refunded, which is marked last and commits with it, and
+  // takes nothing back; one that ran first landed before the Void and is
+  // Voided with the package.
+  await db
+    .select({ id: clientPackages.id })
+    .from(clientPackages)
+    .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, pkg.id)))
+    .for('update')
 
   // `active` is the same lever the nightly expiry sweep already pulls — no new
   // column, and the payment's status records *why* it went down.

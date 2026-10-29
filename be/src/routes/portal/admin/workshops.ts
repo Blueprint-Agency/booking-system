@@ -181,6 +181,18 @@ const createSchema = createBasicsSchema.extend({
   promotions: z.array(promotionInputSchema).default([]),
 })
 
+// The editor's one save (#502): the basics, plus the schedule and promotions
+// when sent. A half schedule never reaches the schedule rules.
+const saveWorkshopSchema = updateBasicsSchema
+  .extend({
+    days: scheduleSchema.shape.days.optional(),
+    tiers: scheduleSchema.shape.tiers.optional(),
+    promotions: z.array(promotionInputSchema).optional(),
+  })
+  .refine(b => (b.days === undefined) === (b.tiers === undefined), {
+    message: 'days and tiers are saved together: send both or neither',
+  })
+
 // ---------------------------------------------------------------------------
 // Serializers
 // ---------------------------------------------------------------------------
@@ -302,7 +314,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'workshops', id: row.id })
     return c.json(workshopRow(row), 201)
   })
-  .patch('/:id', zValidator('param', idParam), zValidator('json', updateBasicsSchema), async c => {
+  .patch('/:id', zValidator('param', idParam), zValidator('json', saveWorkshopSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     // snake_case → the roster module's shape, and nothing else. An OMITTED
@@ -313,7 +325,7 @@ const app = new Hono()
         instructorId: s.instructor_id,
         ...(s.pay_sgd !== undefined ? { paySgd: s.pay_sgd } : {}),
       }))
-    const row = await publish.updateWorkshop(tenantId(c), id, {
+    const basics: publish.UpdateWorkshopInput = {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
       ...(body.description_html !== undefined ? { descriptionHtml: body.description_html ?? null } : {}),
@@ -329,8 +341,20 @@ const app = new Hono()
         ? { supportingInstructorIds: body.supporting_instructor_ids }
         : {}),
       ...(body.image_r2_keys !== undefined ? { imageR2Keys: body.image_r2_keys } : {}),
-      actorStaffId: c.get('staffUserId'),
-    })
+    }
+    const staffId = c.get('staffUserId')
+    // A basics-only save stays what it was; one carrying a schedule or promotions is the one save.
+    const row =
+      body.days === undefined && body.promotions === undefined
+        ? await publish.updateWorkshop(tenantId(c), id, { ...basics, actorStaffId: staffId })
+        : await scheduleSvc.updateWorkshopWithSchedule(tenantId(c), id, {
+            basics,
+            ...(body.days !== undefined && body.tiers !== undefined
+              ? { schedule: toScheduleInput({ days: body.days, tiers: body.tiers }) }
+              : {}),
+            ...(body.promotions !== undefined ? { promotions: body.promotions.map(toPromotionWriteInput) } : {}),
+            actorStaffId: staffId,
+          })
     c.set('auditTarget' as any, { table: 'workshops', id })
     return c.json(workshopRow(row))
   })
@@ -345,7 +369,7 @@ const app = new Hono()
   .put('/:id/schedule', zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    const saved = await scheduleSvc.saveWorkshopSchedule(tenantId(c), id, toScheduleInput(body))
+    const saved = await scheduleSvc.saveWorkshopSchedule(tenantId(c), id, toScheduleInput(body), c.get('staffUserId'))
     c.set('auditTarget' as any, { table: 'workshops', id })
     return c.json({ days: saved.days.map(dayRow), tiers: saved.tiers.map(tierRow) })
   })

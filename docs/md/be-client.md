@@ -185,7 +185,7 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 | GET | `/pt-sessions/:id` | Detail |
 | GET | `/pt-sessions/partner-lookup?email=<email>` | Exact-match email lookup for 2on1 partner autocomplete. Returns `{ found: false }` OR `{ found: true, client_id, name }`. Used by the request form — leaks nothing beyond presence + display name. |
 | POST | `/pt-sessions/request` | Submit. Body: `{ class_type_id?, location_id, session_type: '1on1'\|'2on1', client_package_id, slots: [{ proposed_date, start_time }, ...], message?, partner?: { kind: 'existing', co_client_id } \| { kind: 'new', name, email } }`. `location_id` is the studio the client wants the session at (required; powers the portal's workspace-scoped triage queue). See §4d. **Debits the source package immediately** — 1 session for 1on1, 2 for 2on1. 422 `insufficient_pt_sessions` if balance < required. 422 `partner_required` if 2on1 without `partner`. |
-| POST | `/pt-sessions/:id/cancel` | Cancel own request. Branches on current status — `pending` → `cancelled_before_scheduled` + refund; `scheduled` → `cancelled_after_scheduled` (the session returned in time under the Cancellation Cap, kept over it, refused `422 cancellation_window_passed` inside the PT window; cascades through linked `pt_sessions` + bookings, or on a manual session cancels only the caller's seat). Calls into the same `services/pt-sessions/cancel.ts:cancelPtRequest` the admin route uses, with `source='client'`. Idempotent on terminal states. |
+| POST | `/pt-sessions/:id/cancel` | Cancel own request. Branches on current status — `pending` → `cancelled_before_scheduled` + refund; `scheduled` → `cancelled_after_scheduled` (the session returned in time under the Cancellation Cap, kept over it, refused `422 cancellation_window_passed` inside the PT window; cascades through linked `pt_sessions` + bookings, or on a manual session cancels only the caller's seat). Calls into the same `services/pt-sessions/cancel.ts:cancelPtRequest` the admin route uses, with `source='client'`. Idempotent on terminal states. Runs again when Postgres aborts it for a deadlock (for instance against a Refund of the package), as the booking cancel's step list does; a request the Refund already cancelled answers `200` `noop`. |
 
 ### `purchases.ts` (verification gate applies)
 | Method | Path | Effect |
@@ -298,7 +298,10 @@ services/billing/create-intent.ts:workshopIntent({ client_id, workshop_id, works
      amount: effective_price * 100,
      currency: 'sgd',
      metadata: { kind: 'workshop', client_id, workshop_id, workshop_tier_id,
-                 applied_promotion_id: promotion?.id ?? null }
+                 applied_promotion_id: promotion?.id ?? null,
+                 list_price_sgd }
+     — the tier's regular price as checkout showed it, frozen here because the tier is admin-editable.
+     The Purchase keeps the same metadata, and the webhook books from the Purchase's copy.
    })
 6. Insert stripe_payments row: status='pending', kind='workshop', client_id, payment_intent_id
    (booking_id stays null until success — created in webhook)
@@ -315,7 +318,13 @@ tx start
    - If status='succeeded': webhook is a retry, no-op (idempotent)
 2. Insert bookings row: kind='workshop', workshop_id, workshop_tier_id, state='confirmed',
    client_package_id=NULL, refund_outcome='n_a', check_in_state='pending',
-   purchase_id=P            — the sale; a Refund routes on it, not on the intent (#92)
+   purchase_id=P            — the sale; a Refund routes on it, not on the intent (#92),
+   list_price_sgd = purchase.metadata.list_price_sgd — the List Price checkout showed, whether the sale
+   was paid in one go or across a Part Payment, and whatever an Admin did to the tier since.
+   (A Purchase from before checkout recorded one carries none, and is booked at the tier's price as it
+   stands, with an info log line. A List Price that is present but not an amount of dollars to the cent
+   is corrupt: the delivery fails and books nothing, so the provider redelivers it, and an error line
+   names the Purchase. The tier must still exist: a payment landing on a removed tier is given back, WSP-27.)
 3. Generate qr_token + code
 4. Update stripe_payments: status='succeeded', receipt_url = paymentIntent.charges.data[0].receipt_url (the provider's, kept as evidence)
 5. issueReceipt; enqueueEmail('workshop_purchase_confirmed', client.email, { workshop_name, date, qr_url, code, amount_paid, receipt_url }) — the member's Receipt, from the delivery that issued it (§13)
@@ -541,8 +550,11 @@ tx start
    credits_or_sessions_remaining = purchase.metadata.credits_or_sessions (NULL for unlimited),
    validity_days = purchase.metadata.validity_days, frozen (every kind but unlimited),
    list_price_sgd = purchase.metadata.list_price_sgd
-   (A Purchase from before checkout froze these terms carries no validity_days or duration_months,
-    and is granted from the catalogue row as it stands, with an info log line.)
+   (A Purchase from before checkout froze these terms carries no credits_or_sessions, validity_days or
+    duration_months, and is granted from the catalogue row as it stands, with an info log line. Terms
+    that are incomplete or malformed for the package's kind are refused, not granted: the delivery fails
+    and grants nothing, so the provider redelivers it, and an error line names the Purchase, the package
+    and the key at fault, for a human to repair the record by hand.)
    expires_at = NULL on every kind — every purchase lands Dormant and Activates on the
                 first booking it pays for (be/docs/adr/0004), whatever else the member
                 holds or has running (be/docs/adr/0010),

@@ -583,6 +583,133 @@ describe('Staff attention: session Updates', { skip: integrationTestsEnabled ? f
     assert.equal(await unread(ben), 0)
   })
 
+  test('ATN-201 an Admin who also teaches a workshop moves its day in the editor\'s one save: the other instructor is told by the Admin\'s name, the Admin is told nothing, and a refused save tells nobody', async () => {
+    const studio = await freshStudio()
+    const owner = await adminAt(studio)
+    const dual = await adminAt(studio, 'dual')
+    await harness.db.insert(schema.instructors).values({ tenantId: studio.id, staffUserId: dual.id })
+    const ada = await instructorAt(studio, owner, 'ada')
+    const w = await workshopOf(studio, owner, ada, [dual])
+    const mia = await memberOf(studio, 'Mia')
+
+    const tierIds: string[] = []
+    for (const [i, name] of ['Full', 'Other'].entries()) {
+      const [tier] = await harness.db
+        .insert(schema.workshopTiers)
+        .values({ tenantId: studio.id, workshopId: w.id, name, regularPriceSgd: '100.00', ord: i + 1 })
+        .returning({ id: schema.workshopTiers.id })
+      await harness.db.insert(schema.workshopTierDays).values({ tenantId: studio.id, workshopTierId: tier!.id, workshopDayId: w.dayId })
+      tierIds.push(tier!.id)
+    }
+
+    const detailPath = `/portal/admin/workshops/${w.id}`
+    const read = async () =>
+      (await json(await send(detailPath, dual.headers), 200)) as {
+        name: string
+        days: { id: string; room_id: string; starts_at: string; ends_at: string; capacity_online: number }[]
+      }
+    const saveWith = async (moveBy: number, keep: string[]) => {
+      const [day] = (await read()).days
+      return send(detailPath, dual.headers, 'PATCH', {
+        days: [
+          {
+            id: day!.id,
+            ref: day!.id,
+            room_id: day!.room_id,
+            starts_at: new Date(Date.parse(day!.starts_at) + moveBy).toISOString(),
+            ends_at: new Date(Date.parse(day!.ends_at) + moveBy).toISOString(),
+            capacity_online: day!.capacity_online,
+          },
+        ],
+        tiers: keep.map(id => ({ id, name: id === tierIds[0] ? 'Full' : 'Other', regular_price_sgd: '100.00', day_refs: [day!.id] })),
+      })
+    }
+
+    await json(await saveWith(DAY, tierIds), 200)
+    const moved = new Date(w.startsAt.getTime() + DAY)
+    const [told] = await updatesOf(ada)
+    assert.equal(told!.title, `dual moved Inversions from ${when(w.startsAt)} to ${when(moved)}`)
+    assert.equal((await updatesOf(ada)).length, 1)
+    assert.deepEqual(await updatesOf(dual), [], 'the Admin who saved was told of their own change')
+
+    // A member is still paying for the first tier, so taking it off is refused.
+    await harness.db.insert(schema.purchases).values({
+      tenantId: studio.id,
+      clientId: mia.clientId,
+      kind: 'workshop',
+      totalSgd: '100.00',
+      metadata: { workshop_tier_id: tierIds[0], workshop_id: w.id },
+    })
+    const refused = await json(await saveWith(DAY, [tierIds[1]!]), 409)
+    assert.equal(refused.error, 'workshop_tier_has_open_purchases')
+    assert.equal((await updatesOf(ada)).length, 1, 'a refused save told the instructor')
+    assert.deepEqual(await updatesOf(dual), [])
+  })
+
+  test('ATN-202 an Admin who adds an instructor and moves the only day in one save: the new instructor is told once that they were scheduled on the new day and never that it moved, and those already on it are told it moved', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    const ada = await instructorAt(studio, admin, 'ada')
+    const ben = await instructorAt(studio, admin, 'ben')
+    const sam = await instructorAt(studio, admin, 'sam')
+    const w = await workshopOf(studio, admin, ada, [ben])
+
+    const detailPath = `/portal/admin/workshops/${w.id}`
+    const moved = new Date(w.startsAt.getTime() + DAY)
+    await json(
+      await send(detailPath, admin.headers, 'PATCH', {
+        supporting_instructors: [{ instructor_id: ben.id }, { instructor_id: sam.id }],
+        days: [
+          {
+            id: w.dayId,
+            ref: w.dayId,
+            room_id: studio.roomId,
+            starts_at: moved.toISOString(),
+            ends_at: new Date(moved.getTime() + 2 * HOUR).toISOString(),
+            capacity_online: 10,
+          },
+        ],
+        tiers: [{ name: 'Full', regular_price_sgd: '100.00', day_refs: [w.dayId] }],
+      }),
+      200,
+    )
+
+    const allOf = async (who: Staff) =>
+      (
+        (await json(await send('/portal/attention', who.headers), 200)).updates.items as Array<Record<string, any>>
+      ).filter(u => u.kind === 'session_assigned' || u.kind === 'session_changed')
+    const samsUpdates = await allOf(sam)
+    assert.deepEqual(
+      samsUpdates.map(u => [u.kind, u.title]),
+      [['session_assigned', `boss scheduled you to teach Inversions on ${when(moved)} as a supporting instructor`]],
+    )
+    for (const who of [ada, ben]) {
+      assert.deepEqual(
+        (await allOf(who)).map(u => [u.kind, u.title]),
+        [['session_changed', `boss moved Inversions from ${when(w.startsAt)} to ${when(moved)}`]],
+      )
+    }
+    assert.deepEqual(await allOf(admin), [])
+  })
+
+  test('ATN-203 editing a workshop that has no days yet tells its instructors nothing, however often it is saved', async () => {
+    const studio = await freshStudio()
+    const admin = await adminAt(studio)
+    const ada = await instructorAt(studio, admin, 'ada')
+    const [w] = await harness.db
+      .insert(schema.workshops)
+      .values({ tenantId: studio.id, name: 'Inversions', locationId: studio.locationId, createdByStaffId: admin.id })
+      .returning({ id: schema.workshops.id })
+    await harness.db
+      .insert(schema.workshopInstructors)
+      .values({ tenantId: studio.id, workshopId: w!.id, instructorId: ada.id, role: 'main' as const })
+
+    for (const name of ['Inversions I', 'Inversions II', 'Inversions III']) {
+      await json(await send(`/portal/admin/workshops/${w!.id}`, admin.headers, 'PATCH', { name }), 200)
+    }
+    assert.deepEqual(await updatesOf(ada), [])
+  })
+
   test('ATN-188 a member cancelling their private session, by the request or by their booking, tells its instructor and names the member', async () => {
     const studio = await freshStudio()
     const admin = await adminAt(studio)
