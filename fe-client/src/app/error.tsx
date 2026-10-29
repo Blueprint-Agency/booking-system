@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
+import { recheckMemberSession } from "@/lib/member-auth";
 import { reportError } from "@/lib/report-error";
 
 /**
@@ -9,6 +10,10 @@ import { reportError } from "@/lib/report-error";
  * any page under the app and shows a recoverable fallback instead of a blank
  * screen. `retry()` re-fetches and re-renders the segment (`reset()` only
  * re-renders, so a page whose server payload failed would fail again).
+ *
+ * A session the app could not read (#500) is held by the session store, not by
+ * the page, so Try again asks the backend about the session first and re-renders
+ * once it has answered; for any other failure that re-read is a no-op.
  */
 export default function Error({
   error,
@@ -35,7 +40,7 @@ export default function Error({
         <div className="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
           <button
             type="button"
-            onClick={() => retry()}
+            onClick={() => void recheckMemberSession().then(retry, retry)}
             className="inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-6 text-sm font-semibold text-white transition-colors hover:bg-accent-deep dark:hover:bg-accent/85"
           >
             Try again
