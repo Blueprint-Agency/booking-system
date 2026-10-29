@@ -2,6 +2,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { classPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { replacePromotionsForParent, type PromotionWriteInput } from './promotions'
 
 export type ClassPackageRow = typeof classPackages.$inferSelect
 export type ClassPackageKind = 'credit_bundle' | 'unlimited' | 'trial'
@@ -95,6 +96,26 @@ export async function createClassPackage(
     })
     .returning()
   return row!
+}
+
+/**
+ * A new package and its Promotions, saved together or not at all: one savepoint,
+ * so a Promotion the database refuses takes the package row with it. The request
+ * around it commits whatever is left when the route answers an error.
+ */
+export async function createClassPackageWithPromotions(
+  tenantId: string,
+  input: CreateClassPackageInput,
+  promotions: PromotionWriteInput[],
+  actorStaffId: string,
+): Promise<ClassPackageRow> {
+  return db.transaction(async () => {
+    const row = await createClassPackage(tenantId, input)
+    if (promotions.length) {
+      await replacePromotionsForParent(tenantId, 'class_package', row.id, promotions, actorStaffId)
+    }
+    return row
+  })
 }
 
 export interface UpdateClassPackageInput {
