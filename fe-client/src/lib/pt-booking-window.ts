@@ -57,9 +57,8 @@ export function shortDate(iso: string): string {
 /** The chip over the times: the rule, and the dates it allows today. */
 export function ptWindowNotice(w: PtBookingWindow, now: number = Date.now()): string {
   const { earliest, latest } = ptWindowDates(w, now);
-  const phrase = ptWindowPhrase(w);
-  const range = earliest === latest ? shortDate(earliest) : `${shortDate(earliest)} – ${shortDate(latest)}`;
-  return `Book ${phrase} (${range}).`;
+  if (earliest === latest) return `Choose a date ${days(w.minDays)} from today (${shortDate(earliest)}).`;
+  return `Choose dates ${w.minDays} to ${days(w.maxDays)} from today (${shortDate(earliest)} – ${shortDate(latest)}).`;
 }
 
 /** What is wrong with one proposed date, or null. `slot` is 1-based, for the message. */

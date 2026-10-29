@@ -19,7 +19,9 @@ import { BTN_BOOK, BTN_SECONDARY, CARD } from "@/components/ui/styles";
 import { ApiError, apiErrorCode as errCode, useApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { reportError } from "@/lib/report-error";
-import { readBookingSources } from "@/lib/booking-sources";
+import { readBookingSources, settleOptional } from "@/lib/booking-sources";
+import type { BookingKind } from "@/lib/booking-gaps";
+import { MissingBookingsNote } from "@/components/account/missing-bookings-note";
 import { leaveWaitlist, listWaitlist, waitlistRefusal, type ApiWaitlistEntry } from "@/lib/waitlist";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
 import { ptCancelResult, ptPolicyNote } from "@/lib/cancellation-copy";
@@ -93,6 +95,8 @@ function YourBookings() {
   const [src, setSrc] = useState<BookingSources | null>(null);
   const [waitlisted, setWaitlisted] = useState<ApiWaitlistEntry[]>([]);
   const [loadError, setLoadError] = useState(false);
+  // The kinds that could not be read (#500): named above the list, never drawn as none.
+  const [missing, setMissing] = useState<BookingKind[]>([]);
   const [banner, setBanner] = useState<Banner | null>(null);
   const [cancelTarget, setCancelTarget] = useState<ApiBooking | null>(null);
   const [opened, setOpened] = useState<{ booking: ApiBooking; ongoing: boolean } | null>(null);
@@ -103,16 +107,15 @@ function YourBookings() {
     setLoadError(false);
     try {
       // A failed waitlist read, like the other optional lists
-      // (`readBookingSources`), must not blank the member's classes.
-      const [sources, waitlist] = await Promise.all([
+      // (`readBookingSources`), must not blank the member's classes — and must
+      // not be drawn as an empty waitlist either: it is named above the list.
+      const [read, waitlist] = await Promise.all([
         readBookingSources(api),
-        listWaitlist(api).catch((err) => {
-          reportError(err, { scope: "bookings-waitlist" });
-          return [] as ApiWaitlistEntry[];
-        }),
+        settleOptional({ waitlist: { scope: "bookings-waitlist", read: listWaitlist(api) } }),
       ]);
-      setSrc(sources);
-      setWaitlisted(waitlist);
+      setSrc(read.sources);
+      setWaitlisted((waitlist.loaded.waitlist as ApiWaitlistEntry[] | undefined) ?? []);
+      setMissing([...read.missing, ...waitlist.missing]);
     } catch (err) {
       reportError(err, { scope: "bookings" });
       setLoadError(true);
@@ -220,7 +223,9 @@ function YourBookings() {
           tabs={PHASES}
           value={phase}
           onChange={setPhase}
-          counts={src ? counts : undefined}
+          // A count is hidden while part of the bookings is missing: a number
+          // that is short, with nothing saying so, reads as the whole.
+          counts={src && missing.length === 0 ? counts : undefined}
           centered
           className="mb-2"
         />
@@ -238,6 +243,7 @@ function YourBookings() {
         </div>
       ) : (
         <>
+          <MissingBookingsNote missing={missing} onRetry={reload} className="mb-4" />
           {showWaitlist && (
             <section aria-labelledby="waitlisted-heading" className="mb-5">
               <h3 id="waitlisted-heading" className="mb-2 text-xs font-bold uppercase tracking-wider text-muted">
@@ -252,7 +258,9 @@ function YourBookings() {
           )}
 
           {rows.length === 0 ? (
-            showWaitlist ? null : (
+            // No empty state while a kind is missing: "nothing here" would be a
+            // claim about bookings that were not read (the note above says so).
+            showWaitlist || missing.length > 0 ? null : (
               <div className={CARD}>
                 <EmptyState icon={CalendarX} {...emptyCopy(type, phase)} />
               </div>

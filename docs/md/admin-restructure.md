@@ -127,6 +127,7 @@ Locations are the workspace boundary — every scoped surface (Schedule, Rooms, 
 - List active locations as cards; archived locations at the bottom with an "Archived" badge + Restore button.
 - "+ Add location" opens the shared `LocationFormDialog`.
 - Cold start (zero active locations): admin sees the "Add your first location" CTA card via `LocationGate`.
+- **Edits wait for the full list.** The signed-in staff payload lists each location without its phone number or Maps link, enough for the workspace switcher; the admin locations read (`include_archived=true`) has every field. The modal and the Locations page list, edit, archive and restore only from that read. While it is loading they say so; if it failed they show an error line with Retry and offer none of those actions (Add stays, and the switcher keeps working from the short list). The update helper also refuses a row the full list did not give, so a blank phone and Maps link can never be saved over the real ones (#496).
 
 **Deletion rules:**
 - **Hard delete** — only if zero linked data exists across all tables (location has never been used).

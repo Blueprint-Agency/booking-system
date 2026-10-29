@@ -20,6 +20,7 @@ import { CrossLocationBlock } from "@/components/checkout/cross-location-block";
 import { AddOnCheckout } from "@/components/checkout/add-on-checkout";
 import { PayButton, StripeFootnote } from "@/components/checkout/pay-button";
 import { PartPaymentBlock } from "@/components/checkout/part-payment-block";
+import { PartPaymentUnchecked } from "@/components/checkout/part-payment-unchecked";
 import { BillingDetailsPicker } from "@/components/checkout/billing-details-picker";
 import { billToPayLabel, type BillToStatus } from "@/lib/bill-to-status";
 import { usePartPaymentOptions } from "@/lib/open-purchases";
@@ -694,6 +695,9 @@ function CheckoutContent() {
                 about how to pay a price the member has already read. Nothing
                 renders where the studio has not turned it on, and a free
                 purchase has nothing to split. */}
+            {grandTotal > 0 && !isCorporate && partPayment.couldntCheck && (
+              <PartPaymentUnchecked onRetry={partPayment.retry} className="mt-4 mb-1" />
+            )}
             {grandTotal > 0 && !isCorporate && (
               <PartPaymentBlock
                 enabled={partPayment.enabled}

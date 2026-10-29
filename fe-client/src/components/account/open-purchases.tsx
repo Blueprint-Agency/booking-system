@@ -24,6 +24,7 @@ import {
   type PartPaymentOptions,
 } from "@/lib/open-purchases";
 import { checkoutErrorMessage, type CheckoutErrorBody } from "@/lib/checkout-messages";
+import { PartPaymentUnchecked } from "@/components/checkout/part-payment-unchecked";
 import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 
 export function OpenPurchases({
@@ -155,7 +156,14 @@ function OpenPurchaseCard({
         // cannot be paid here, and a Pay button would only be refused.
         <p className="mt-4 text-sm text-muted">{NO_ONLINE_PAYMENTS}</p>
       ) : (
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 space-y-3">
+          {partPayment.couldntCheck && !purchase.must_pay_in_full && (
+            // Where "Pay part of it" would be: Part Payment is never offered on
+            // a failed read, and never silently hidden. The whole Balance can
+            // still be paid.
+            <PartPaymentUnchecked onRetry={partPayment.retry} />
+          )}
+          <div className="flex flex-wrap gap-2">
           <button
             type="button"
             disabled={busy || blocked}
@@ -179,6 +187,7 @@ function OpenPurchaseCard({
               {splitting ? "Pay it all instead" : "Pay part of it"}
             </button>
           )}
+          </div>
         </div>
       )}
     </div>
