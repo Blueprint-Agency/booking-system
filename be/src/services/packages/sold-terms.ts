@@ -77,11 +77,15 @@ function countOf(meta: Record<string, string>, key: string): number | null {
   return count
 }
 
-/** A List Price: dollars, not negative, to at most the cent. Null when the copy holds none. */
+/**
+ * A List Price: dollars, not negative, to at most the cent, and within the
+ * `numeric(10,2)` column that keeps it (eight digits before the point). Null
+ * when the copy holds none.
+ */
 export function soldListPriceFromMetadata(meta: Record<string, string>): string | null {
   const value = valueOf(meta, 'list_price_sgd')
   if (value === undefined) return null
-  if (!/^\d+(\.\d{1,2})?$/.test(value)) {
+  if (!/^\d{1,8}(\.\d{1,2})?$/.test(value)) {
     throw new CorruptSoldTermsError('list_price_sgd', value, 'a List Price is an amount of dollars, to at most the cent')
   }
   return value
