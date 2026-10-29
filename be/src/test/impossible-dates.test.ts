@@ -965,7 +965,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
     assert.deepEqual(wrong, [])
   })
 
-  test('ATN-201 the Updates tab refuses a cursor whose time does not exist, 400, instead of a 500', async () => {
+  test('ATN-204 the Updates tab refuses a cursor whose time does not exist, 400, instead of a 500', async () => {
     const id = randomUUID()
     await check(
       [
