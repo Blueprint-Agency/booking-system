@@ -122,7 +122,7 @@ export async function cancelBooking(
   // A promotion locks the head of the line's time and packages, and an Admin
   // act already holding the canceller's package can reach the same head
   // further on (#439): Postgres aborts one of the two, and it runs again.
-  const { result, promotions } = await retryingTransaction(tx => cancelBookingInTx(tx, tenantId, input))
+  const { result, promotions } = await retryingTransaction('booking cancel', tx => cancelBookingInTx(tx, tenantId, input))
   // Once the request's transaction has committed (`afterCommit`), never inside it.
   if (promotions.length) afterCommit(() => sendPromotionEmails(tenantId, promotions))
   // NTF-09: a member who cancelled in time is told what came back. Never throws.

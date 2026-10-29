@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { frontendOrigin, harnessAddress, integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { abortOnce } from './abort-once'
 import { inFlightTogether, type Holder } from './in-flight'
 
 const run = Date.now().toString(36)
@@ -2787,6 +2788,83 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       await expectStatus(await adminAddMember(adminAtOne, sessionId, { client_id: next.clientId }), 201)
       assert.deepEqual(await attendeeIds(sessionId), [second.clientId, next.clientId].sort())
     }
+  })
+
+  /** Attempts a retried path ran again since the logs were cleared, each after Postgres aborted one. */
+  const retriedAttempts = () => harness.logs.lines().filter(l => l.msg === 'transaction aborted by Postgres; retrying')
+
+  const mailsTo = (who: Member, slug: string) =>
+    harness.db
+      .select()
+      .from(schema.emailLog)
+      .where(and(eq(schema.emailLog.recipientEmail, who.email), eq(schema.emailLog.templateSlug, slug)))
+
+  test("PT-161 an Admin cancelling a manual 2on1 when Postgres aborts the cancel once, at the Update it writes for the session's instructor, after both seats are settled: it runs again and answers 200, each seat is paid back and told once, and the instructor gets one Update", async () => {
+    const { first, second, firstPackage, secondPackage, requestId, sessionId } = await fullPair('Una Aborted')
+    harness.logs.clear()
+
+    const { result: cancelled, reached } = await abortOnce(
+      harness.db,
+      {
+        table: 'staff_updates',
+        event: 'INSERT',
+        rowWhen: `NEW.recipient_staff_id = '${coachA.staffId}' AND NEW.payload->>'sessionId' = '${sessionId}'`,
+      },
+      () => adminCancel(adminAtOne, requestId),
+    )
+
+    const res = await expectStatus(cancelled, 200)
+    assert.equal(res.result.status, 'cancelled_after_scheduled')
+    assert.equal(reached, 2, "the first write of the instructor's Update was aborted, and the second went through")
+    assert.equal(retriedAttempts().length, 1, 'the cancel ran exactly one extra attempt')
+    assert.equal(retriedAttempts()[0]!.operation, 'PT request cancel')
+    assert.deepEqual(harness.logs.lines().filter(l => l.level === 'error'), [], 'nothing was reported')
+    assert.equal(await sessionsLeft(firstPackage), 10, 'one session back, on its own package')
+    assert.equal(await sessionsLeft(secondPackage), 10, 'one session back, on its own package')
+    assert.equal((await sessionRow(sessionId)).lifecycle, 'cancelled')
+    assert.equal((await requestRow(requestId)).status, 'cancelled_after_scheduled')
+    for (const who of [first, second]) {
+      assert.equal((await bookingOf(sessionId, who))?.state, 'cancelled', who.name)
+      assert.equal((await cancellationsOf(who)).length, 1, `${who.name}: cancelled once`)
+      assert.equal((await mailsTo(who, 'admin_cancel_pt')).length, 1, `${who.name}: told once`)
+    }
+    const updates = await harness.db
+      .select()
+      .from(schema.staffUpdates)
+      .where(
+        and(
+          eq(schema.staffUpdates.recipientStaffId, coachA.staffId),
+          eq(schema.staffUpdates.kind, 'session_cancelled_by_admin'),
+          sql`${schema.staffUpdates.payload}->>'sessionId' = ${sessionId}`,
+        ),
+      )
+    assert.equal(updates.length, 1, 'the instructor has one Update for one cancel')
+  })
+
+  test('PT-162 an Admin removing one member from a manual 2on1 when Postgres aborts the removal once, at that seat\'s cancel: it runs again and answers 200, the seat is cancelled once with its session back on the member\'s own package, and the other stays seated', async () => {
+    const { first, second, firstPackage, secondPackage, requestId, sessionId } = await fullPair('Gus Aborted')
+    const seat = (await bookingOf(sessionId, first))!
+    harness.logs.clear()
+
+    const { result: removed, reached } = await abortOnce(
+      harness.db,
+      { table: 'bookings', event: 'UPDATE', rowWhen: `OLD.id = '${seat.id}'`, raiseIf: `NEW.state = 'cancelled'` },
+      () => adminRemoveMember(adminAtOne, sessionId, first.clientId),
+    )
+
+    const res = await expectStatus(removed, 200)
+    assert.equal(res.refund_outcome, 'session_returned')
+    assert.equal(reached, 2, "the first cancel of the seat was aborted, and the second went through")
+    assert.equal(retriedAttempts().length, 1, 'the removal ran exactly one extra attempt')
+    assert.equal(retriedAttempts()[0]!.operation, 'manual-session member removal')
+    assert.deepEqual(harness.logs.lines().filter(l => l.level === 'error'), [], 'nothing was reported')
+    assert.equal((await bookingOf(sessionId, first))?.state, 'cancelled')
+    assert.equal(await sessionsLeft(firstPackage), 10, 'the session is back on the member\'s own package, once')
+    assert.equal(await sessionsLeft(secondPackage), 9, 'the other member\'s package is untouched')
+    assert.equal((await cancellationsOf(first)).length, 1, 'cancelled once')
+    assert.equal((await bookingOf(sessionId, second))?.state, 'confirmed', 'the other stays seated')
+    assert.equal((await sessionRow(sessionId)).lifecycle, 'active')
+    assert.equal((await requestRow(requestId)).status, 'scheduled')
   })
 
   test("PT-102 removing someone not on the session, from a member's own request session, a cancelled session, or as an instructor from another coach's session is refused and changes nothing", async () => {

@@ -1204,7 +1204,7 @@ export async function unwindRefund(
  */
 export function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
   // One unit: a deadlock in any of its cancels starts the whole unwind over.
-  return retryingTransaction(tx => unwindPayment(tx, paymentIntentId))
+  return retryingTransaction('Refund unwind', tx => unwindPayment(tx, paymentIntentId))
 }
 
 async function unwindPayment(tx: Tx, paymentIntentId: string): Promise<void> {
