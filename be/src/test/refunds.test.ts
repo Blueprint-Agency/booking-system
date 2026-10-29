@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
+import { abortOnce } from './abort-once'
 import { inFlightTogether } from './in-flight'
 import { ownAccountId, stripeWebhookPath, type StripeFake } from './stripe-fake'
 
@@ -757,39 +758,63 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(booked.status, 201, JSON.stringify(booked.body))
     const bookingId = booked.body.booking_id as string
     // The first cancel of this booking is aborted with Postgres's deadlock
-    // code, as if it lost a deadlock. A sequence counts it, because the abort
-    // rolls back anything the trigger writes.
-    const fault = `rfd36_${run}`
-    await harness.db.execute(sql.raw(`CREATE SEQUENCE ${fault}_seq`))
-    await harness.db.execute(
-      sql.raw(`CREATE FUNCTION ${fault}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
-        BEGIN
-          IF NEW.state = 'cancelled' AND nextval('${fault}_seq') = 1 THEN
-            RAISE EXCEPTION 'deadlock detected' USING ERRCODE = '40P01';
-          END IF;
-          RETURN NEW;
-        END $$`),
+    // code, as if it lost a deadlock.
+    harness.logs.clear()
+    const { result: unwound, reached } = await abortOnce(
+      harness.db,
+      { table: 'bookings', event: 'UPDATE', rowWhen: `OLD.id = '${bookingId}'`, raiseIf: `NEW.state = 'cancelled'` },
+      () => deliverRefund(paid.intents[0]!),
     )
-    await harness.db.execute(
-      sql.raw(`CREATE TRIGGER ${fault} BEFORE UPDATE ON bookings FOR EACH ROW WHEN (OLD.id = '${bookingId}') EXECUTE FUNCTION ${fault}()`),
-    )
-    try {
-      harness.logs.clear()
-      const unwound = await deliverRefund(paid.intents[0]!)
 
-      assert.equal(unwound.status, 200, JSON.stringify(unwound.body))
-      const [fired] = await harness.db.execute<{ n: string }>(sql.raw(`SELECT last_value::text AS n FROM ${fault}_seq`))
-      assert.equal(fired?.n, '2', 'the first cancel was aborted, and the second went through')
-      const errors = harness.logs.lines().filter(l => l.level === 'error')
-      assert.deepEqual(errors, [], 'nothing was reported as left standing')
-      assert.equal((await bookingRow(bookingId)).state, 'cancelled')
-      assert.equal((await cancellationsOf(bookingId)).length, 1, 'cancelled once')
+    assert.equal(unwound.status, 200, JSON.stringify(unwound.body))
+    assert.equal(reached, 2, 'the first cancel was aborted, and the second went through')
+    const errors = harness.logs.lines().filter(l => l.level === 'error')
+    assert.deepEqual(errors, [], 'nothing was reported as left standing')
+    assert.equal((await bookingRow(bookingId)).state, 'cancelled')
+    assert.equal((await cancellationsOf(bookingId)).length, 1, 'cancelled once')
+    await assertRefunded(paid.purchaseId)
+    assert.equal((await packageRow(paid.clientPackageId)).active, false)
+  })
+
+  test("RFD-37 a Refund whose own step Postgres aborts as a deadlock (the payment's stamp, the Void or the Purchase's flip) runs again within the same delivery: it answers 200, not a 500 the provider's redelivery has to finish", async () => {
+    const steps = (paid: Paid) => [
+      {
+        step: "the payment's stamp",
+        at: { table: 'stripe_payments', event: 'UPDATE', rowWhen: `OLD.purchase_id = '${paid.purchaseId}'`, raiseIf: `NEW.status = 'refunded'` },
+      },
+      {
+        step: 'the Void',
+        at: { table: 'client_packages', event: 'UPDATE', rowWhen: `OLD.id = '${paid.clientPackageId}'`, raiseIf: 'OLD.active AND NOT NEW.active' },
+      },
+      {
+        step: "the Purchase's flip",
+        at: { table: 'purchases', event: 'UPDATE', rowWhen: `OLD.id = '${paid.purchaseId}'`, raiseIf: `NEW.status = 'refunded'` },
+      },
+    ] as const
+    for (const [i, name] of ['Rex', 'Sal', 'Ted'].entries()) {
+      const who = await member(one, `${name} Stamped`)
+      const paid = await buy(one, who, 'bundle')
+      const booked = await book(who, await addClass(one, (14 + i) * DAY))
+      assert.equal(booked.status, 201, JSON.stringify(booked.body))
+      const bookingId = booked.body.booking_id as string
+      const { step, at } = steps(paid)[i]!
+      harness.logs.clear()
+
+      const { result: unwound, reached } = await abortOnce(harness.db, { ...at }, () => deliverRefund(paid.intents[0]!))
+
+      assert.equal(unwound.status, 200, `${step}: ${JSON.stringify(unwound.body)}`)
+      assert.equal(reached, 2, `${step} was aborted once, and the unwind's second attempt wrote it`)
+      assert.equal(retriedAttempts().length, 1, `${step}: the unwind ran exactly one extra attempt`)
+      assert.deepEqual(harness.logs.lines().filter(l => l.level === 'error'), [], `${step}: nothing was reported`)
       await assertRefunded(paid.purchaseId)
-      assert.equal((await packageRow(paid.clientPackageId)).active, false)
-    } finally {
-      await harness.db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${fault} ON bookings`))
-      await harness.db.execute(sql.raw(`DROP FUNCTION IF EXISTS ${fault}()`))
-      await harness.db.execute(sql.raw(`DROP SEQUENCE IF EXISTS ${fault}_seq`))
+      assert.equal((await packageRow(paid.clientPackageId)).active, false, step)
+      assert.equal((await bookingRow(bookingId)).state, 'cancelled', step)
+      assert.equal((await cancellationsOf(bookingId)).length, 1, `${step}: cancelled once`)
+      const told = await harness.db
+        .select()
+        .from(schema.emailLog)
+        .where(sql`${schema.emailLog.recipientEmail} = ${emailFor(`${name} Stamped-${one.slug}`)} AND ${schema.emailLog.templateSlug} = 'purchase_refunded'`)
+      assert.equal(told.length, 1, `${step}: one refund email`)
     }
   })
 
