@@ -290,7 +290,7 @@ export default function PrivateSessionsPage() {
           <div>
             <h2 className="text-base font-bold text-ink">Request a private session</h2>
             <p className="mt-0.5 text-sm text-muted">
-              Suggest a few times. We confirm on WhatsApp.
+              Pick a few times that work for you, and we&apos;ll confirm your session on WhatsApp.
             </p>
           </div>
           {!showSessionTypeChoice && (
@@ -349,7 +349,7 @@ export default function PrivateSessionsPage() {
           <div>
             <p className="text-sm font-medium text-ink mb-2">
               Times that suit you
-              <span className="ml-1.5 font-normal text-muted">More options confirm faster</span>
+              <span className="ml-1.5 font-normal text-muted">Provide more options to help us confirm your booking faster.</span>
             </p>
             {bookingWindow && (
               <p className="mb-3 inline-flex items-start gap-1.5 rounded-xl border border-cyan/40 bg-cyan/10 px-3 py-1.5 text-xs font-medium text-cyan-deep">

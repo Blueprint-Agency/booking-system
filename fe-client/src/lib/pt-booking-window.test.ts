@@ -24,9 +24,10 @@ test("PT-122 the window counts Singapore calendar days from today", () => {
 });
 
 test("PT-122 the notice names the rule and the dates it allows today", () => {
-  assert.equal(ptWindowNotice(window, NOW), "Book at least 3 days ahead, up to 7 days ahead (Wed 1 Oct – Sun 5 Oct).");
+  assert.equal(ptWindowNotice(window, NOW), "Choose dates 3 to 7 days from today (Wed 1 Oct – Sun 5 Oct).");
   assert.equal(ptWindowPhrase({ minDays: 1, maxDays: 14 }), "from tomorrow, up to 14 days ahead");
-  assert.equal(ptWindowNotice({ minDays: 2, maxDays: 2 }, NOW), "Book at least 2 days ahead, up to 2 days ahead (Tue 30 Sep).");
+  assert.equal(ptWindowNotice({ minDays: 2, maxDays: 2 }, NOW), "Choose a date 2 days from today (Tue 30 Sep).");
+  assert.equal(ptWindowNotice({ minDays: 1, maxDays: 1 }, NOW), "Choose a date 1 day from today (Mon 29 Sep).");
 });
 
 test("PT-122 a date outside the window is named in the member's words; one inside is fine", () => {
