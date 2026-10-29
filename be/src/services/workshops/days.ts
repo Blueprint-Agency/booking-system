@@ -87,6 +87,13 @@ export async function updateDay(
   patch: Partial<CreateDayInput>,
   /** Who made the edit: the workshop's instructors are told of a change by anyone else. */
   actorStaffId?: string,
+  /**
+   * Who is told of a move: the instructors the day keeps. Left out, it is whoever
+   * is on the workshop now. A save that also changes the roster passes the ones
+   * on both sides of it, so one it adds is not told the day moved (they are told
+   * they were scheduled) and one it removes is told only that they were removed.
+   */
+  told?: { mainId: string | null; instructorIds: string[] },
 ): Promise<WorkshopDayRow> {
   const w = await ensureWorkshop(tenantId, workshopId)
   const [existing] = await db
@@ -143,7 +150,7 @@ export async function updateDay(
       .where(and(eq(workshopDays.tenantId, tenantId), eq(workshopDays.id, dayId)))
       .returning()
     // The instructors are told when someone else moved the day or its room (#493).
-    const instructors = await readInstructors(tenantId, 'workshop', workshopId)
+    const instructors = told ?? (await readInstructors(tenantId, 'workshop', workshopId))
     const snapshotOf = (d: { startsAt: Date; endsAt: Date; roomId: string | null }) => ({
       startsAt: d.startsAt,
       endsAt: d.endsAt,

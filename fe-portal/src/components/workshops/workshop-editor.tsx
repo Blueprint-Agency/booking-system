@@ -355,6 +355,7 @@ export function WorkshopEditor({
     setSaving(true);
     try {
       if (isEdit && initial) {
+        // One request: the API saves every part together or none of them.
         await api.patch(`/portal/admin/workshops/${initial.id}`, {
           name: name.trim(),
           location_id: locationId,
@@ -365,12 +366,7 @@ export function WorkshopEditor({
             instructor_id: iid,
             pay_sgd: payOrNull(supportingPay[iid] ?? ""),
           })),
-        });
-        await api.put(
-          `/portal/admin/workshops/${initial.id}/schedule`,
-          scheduleBody(initial, days, prunedTiers),
-        );
-        await api.put(`/portal/admin/workshops/${initial.id}/promotions`, {
+          ...scheduleBody(initial, days, prunedTiers),
           promotions: promotions.map(promotionToApiPayload),
         });
         toast.success("Workshop saved.");
