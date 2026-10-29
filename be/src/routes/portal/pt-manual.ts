@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { SeatCandidate } from '../../services/pt-sessions/manual'
 import { dateTime } from '../../shared/date-time'
+import { endsAfterStart, endsAfterStartIssue } from './parse'
 
 /**
  * `POST …/manual`: a private session staff create with its members, no member
@@ -31,9 +32,6 @@ const manualFields = {
   // "Book anyway" after `time_clash`: a member holds a booking at an overlapping time.
   allow_clash: z.boolean().optional(),
 }
-
-const endsAfterStart = (v: { starts_at: string; ends_at: string }) => new Date(v.ends_at) > new Date(v.starts_at)
-const endsAfterStartIssue = { message: 'ends_at must be after starts_at', path: ['ends_at'] }
 
 export const adminManualSessionSchema = z
   .object({ ...manualFields, instructor_id: z.string().uuid() })
