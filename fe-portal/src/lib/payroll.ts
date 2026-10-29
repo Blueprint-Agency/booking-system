@@ -51,14 +51,6 @@ export interface ApiPayrollTotal {
   session_count: number;
 }
 
-export interface ApiPayrollResponse {
-  rows: ApiPayrollRow[];
-  /** Per instructor, over the same filtered set as `rows`. */
-  totals: ApiPayrollTotal[];
-  /** Rows with no pay set yet. Counted here, excluded from every total. */
-  unpriced_count: number;
-}
-
 /** The instructor route answers with one flat total instead of a breakdown. */
 export interface ApiInstructorPayrollResponse {
   rows: ApiPayrollRow[];
@@ -66,15 +58,6 @@ export interface ApiInstructorPayrollResponse {
   session_count: number;
   unpriced_count: number;
 }
-
-export type PayrollSortKey =
-  | "instructor"
-  | "label"
-  | "date"
-  | "duration"
-  | "amount";
-
-export type SortDir = "asc" | "desc";
 
 /* --------------------------------- Reads --------------------------------- */
 
@@ -90,13 +73,6 @@ export function fetchInstructorPayroll(
 }
 
 /* ------------------------------- Error copy ------------------------------- */
-
-/** Mirrors `PayrollSaveReason` in be/src/services/payroll/save-reasons.ts. */
-export type PayrollSaveReason =
-  | "record_not_found"
-  | "instructor_not_assigned"
-  | "invalid_amount"
-  | "instructor_required";
 
 // Fallback wording only — the backend sends a `message` naming the KIND of
 // record ("that private session…"), which `payrollErrorMessage` prefers.
