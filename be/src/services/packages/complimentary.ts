@@ -157,7 +157,7 @@ export async function removeComplimentaryPackage(
   if (!reason) throw new BadRequestError('reason_required')
   // One unit: a deadlock in any of its cancels starts the whole Remove over,
   // rather than leaving the cancels before it standing under a refusal.
-  return retryingTransaction(tx => removeUntouched(tx, tenantId, input, reason))
+  return retryingTransaction('Complimentary Remove', tx => removeUntouched(tx, tenantId, input, reason))
 }
 
 async function removeUntouched(

@@ -11,6 +11,7 @@ import {
   type TestApp,
 } from './harness'
 import { isoWeekday, localDateOf } from '../services/schedule/series-dates'
+import { abortOnce } from './abort-once'
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.waitlist.test`
@@ -659,12 +660,29 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     assert.equal(notMine.body.error, 'waitlist_entry_not_found')
   })
 
-  async function untilRowLockWaiters(n: number, stop: () => boolean, events = 'transactionid,tuple'): Promise<void> {
+  /**
+   * Wait until `n` requests are queued on a lock (or `stop()` says the call has answered). Fails
+   * after `deadlineMs`, saying how many queued against how many were expected, so a lock order
+   * that is not reached fails the test instead of hanging the run.
+   */
+  async function untilRowLockWaiters(
+    n: number,
+    stop: () => boolean,
+    events = 'transactionid,tuple',
+    deadlineMs = 10_000,
+  ): Promise<void> {
+    const deadline = Date.now() + deadlineMs
+    let seen = 0
     while (!stop()) {
       const [row] = (await harness.db.execute(sql`
         SELECT count(*)::int AS n FROM pg_stat_activity
         WHERE datname = current_database() AND wait_event_type = 'Lock' AND wait_event = ANY(string_to_array(${events}, ','))`)) as unknown as { n: number }[]
-      if (Number(row?.n ?? 0) >= n) return
+      seen = Number(row?.n ?? 0)
+      if (seen >= n) return
+      assert.ok(
+        Date.now() < deadline,
+        `only ${seen} of ${n} requests queued on a ${events} lock within ${deadlineMs} ms: a request never queued behind the held lock`,
+      )
       await new Promise(resolve => setTimeout(resolve, 20))
     }
   }
@@ -1236,6 +1254,43 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
       assert.equal((await confirmedOn(head, elsewhere)).length + (await confirmedOn(head, second)).length, 2)
     }
     assert.ok(cycled, 'in some round the Remove held the member’s package while both waited on the head’s time')
+  })
+
+  test('WTL-47 a Complimentary Remove that Postgres aborts at its delete of the package, after both its cancels have promoted the members waiting, runs again: each is booked into the freed seat, debited and emailed once, and the removal is audited once', async () => {
+    const pair = [await addClass(one, { online: 1, waitlist: 3 }, 3 * DAY), await addClass(one, { online: 1, waitlist: 3 }, 4 * DAY)]
+    const given = await member(one, false)
+    const comp = await grantOf('class', one.classPackageId, { complimentary: true })(given)
+    for (const c of pair) await booked(given, c)
+    const waiting = [await member(one), await member(one)]
+    const entries = [await joined(waiting[0]!, pair[0]!), await joined(waiting[1]!, pair[1]!)]
+    harness.logs.clear()
+
+    // The abort lands on the one write that comes after every cancel and every
+    // promotion, so the first attempt's promotions (and their emails) are the
+    // ones the second attempt must not leave standing twice.
+    const { result: removal, reached } = await abortOnce(
+      harness.db,
+      { table: 'client_packages', event: 'DELETE', rowWhen: `OLD.id = '${comp}'` },
+      () => send('POST', `/portal/admin/clients/${given.clientId}/packages/${comp}/remove`, one.admin.headers, { reason: 'Given to the wrong member' }),
+    )
+
+    assert.equal(removal.status, 200, JSON.stringify(removal.body))
+    assert.equal(reached, 2, 'the first delete of the package was aborted, and the second went through')
+    const retried = harness.logs.lines().filter(l => l.msg === 'transaction aborted by Postgres; retrying')
+    assert.equal(retried.length, 1, 'the Remove ran exactly one extra attempt')
+    assert.equal(retried[0]!.operation, 'Complimentary Remove')
+    assert.deepEqual(await harness.db.select().from(schema.clientPackages).where(eq(schema.clientPackages.id, comp)), [], 'the package is removed')
+    for (const [i, who] of waiting.entries()) {
+      assert.equal((await confirmedOn(who, pair[i]!)).length, 1, `waiting member ${i + 1} holds the seat the Remove freed, once`)
+      assert.equal((await entryStatus(entries[i]!.entry_id)).status, 'promoted')
+      assert.equal(await creditsLeft(who), 9, `waiting member ${i + 1} was debited once`)
+      assert.equal((await promotedMails(who)).length, 1, `waiting member ${i + 1} was emailed once`)
+    }
+    const audited = await harness.db
+      .select()
+      .from(schema.auditLog)
+      .where(and(eq(schema.auditLog.targetId, comp), eq(schema.auditLog.action, 'complimentary_package_removed')))
+    assert.equal(audited.length, 1, 'one audit row for one Remove')
   })
 
   test('WTL-12 once the class starts the line is over: reads show nothing, and the sweep marks it expired', async () => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
-import { eq, inArray, sql } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { withEnv } from './with-env'
 
@@ -314,10 +314,12 @@ describe('slug rename', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     const tenant = await studio('window')
     await expectStatus(await rename(tenant.id, `ren-window-next-${run}`), 200)
 
-    // Ninety days pass.
+    // Ninety days pass. Written on the app's clock, which the lookup reads it
+    // against (testing.md § Time): the database's own `now()` can run seconds
+    // ahead of this process's, as the Docker VM's does.
     await harness.db
       .update(schema.formerSlugs)
-      .set({ redirectUntil: sql`now() - interval '1 second'` })
+      .set({ redirectUntil: new Date(harness.clock.now().getTime() - 1000) })
       .where(eq(schema.formerSlugs.slug, tenant.slug))
 
     await expectStatus(await lookup(tenant.slug), 404, 'not_found')
@@ -341,9 +343,10 @@ describe('slug rename', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     const tenant = await studio('early')
     const other = await studio('early-other')
     await expectStatus(await rename(tenant.id, `ren-early-next-${run}`), 200)
+    // On the app's clock, as above.
     await harness.db
       .update(schema.formerSlugs)
-      .set({ redirectUntil: sql`now() - interval '1 second'` })
+      .set({ redirectUntil: new Date(harness.clock.now().getTime() - 1000) })
       .where(eq(schema.formerSlugs.slug, tenant.slug))
 
     await expectStatus(await rename(other.id, tenant.slug), 200)

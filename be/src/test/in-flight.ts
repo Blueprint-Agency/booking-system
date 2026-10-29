@@ -10,11 +10,19 @@ export type Holder = Parameters<Parameters<TestApp['db']['transaction']>[0]>[0]
  * selects in a transaction of its own, starts each call only once every call
  * before it shows in Postgres as queued behind that row (directly, or behind a
  * call queued before it), waits for the last the same way, then lets go.
+ *
+ * `holdPastDeadlockTimeout` keeps holding for longer than the server's
+ * `deadlock_timeout` after the last call has queued. Postgres runs a waiting
+ * backend's deadlock check once, that long after its wait began, and aborts the
+ * backend whose check first finds a cycle. A call already waiting by then has
+ * had its one check, with nothing cyclic to find, so a wait that closes a cycle
+ * after the row is let go is the one that is found and aborted.
  */
 export async function inFlightTogether<T>(
   db: TestApp['db'],
   lock: SQL,
   calls: ((holder: Holder) => T | Promise<T>)[],
+  options: { holdPastDeadlockTimeout?: boolean } = {},
 ): Promise<T[]> {
   const pending = await db.transaction(async tx => {
     const held = await tx.execute(sql`${lock} FOR UPDATE`)
@@ -39,6 +47,14 @@ export async function inFlightTogether<T>(
         assert.ok(Date.now() < deadline, `call ${started.length} never queued behind the held row`)
         await new Promise(resolve => setTimeout(resolve, 10))
       }
+    }
+    if (options.holdPastDeadlockTimeout) {
+      // Read from the server, never assumed: it is a setting, in milliseconds here.
+      const [setting] = await tx.execute<{ ms: number }>(
+        sql`SELECT setting::int AS ms FROM pg_settings WHERE name = 'deadlock_timeout' AND unit = 'ms'`,
+      )
+      assert.ok(setting, "the server's deadlock_timeout is read in milliseconds")
+      await new Promise(resolve => setTimeout(resolve, setting.ms + 250))
     }
     return started
   })

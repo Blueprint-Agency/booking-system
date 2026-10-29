@@ -767,6 +767,69 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(granted!.validityDays, 30)
   })
 
+  /** A stored copy of the terms checkout froze, damaged in the way `overwrite` says; null drops the key. */
+  const damageStoredTerms = (purchaseId: string, overwrite: Record<string, string | null>) =>
+    Promise.all(
+      Object.entries(overwrite).map(([key, value]) =>
+        value === null
+          ? harness.db.execute(sql`UPDATE purchases SET metadata = metadata - ${key}::text WHERE id = ${purchaseId}::uuid`)
+          : harness.db.execute(
+              sql`UPDATE purchases SET metadata = jsonb_set(metadata, ARRAY[${key}::text], to_jsonb(${value}::text)) WHERE id = ${purchaseId}::uuid`,
+            ),
+      ),
+    )
+
+  const corruptTerms: Array<[string, Record<string, string | null>]> = [
+    ['a validity but no credits', { credits_or_sessions: null }],
+    ['credits but no validity', { validity_days: null }],
+    ['a validity that is not a number', { validity_days: 'abc' }],
+    ['a credit count of zero', { credits_or_sessions: '0' }],
+    ['a fractional credit count', { credits_or_sessions: '2.5' }],
+    ['a Duration on a Credit Bundle', { duration_months: '3' }],
+    ['a List Price that is not money', { list_price_sgd: 'free' }],
+    ['no List Price', { list_price_sgd: null }],
+  ]
+
+  for (const [what, damage] of corruptTerms) {
+    test(`PAY-74 a Credit Bundle sale whose stored terms carry ${what} fails its delivery and grants nothing, leaving the Purchase and its payments as they were`, async () => {
+      const bundle = await catalogue(one.id, { kind: 'credit_bundle', credits: 10, validityDays: 90, name: `${NAME} corrupt ${what}` })
+      const kit = await member(one)
+      await expectStatus(await buyClass(kit, bundle), 200)
+      const [open] = await purchasesOf(kit)
+      await damageStoredTerms(open!.id, damage)
+      const intent = `pi_${randomUUID()}`
+
+      const res = await deliver({ intent })
+
+      await expectStatus(res, 500)
+      assert.equal((await packagesOf(kit)).length, 0, 'a package was granted on corrupt terms')
+      assert.equal((await paymentsOf(kit)).length, 0, 'a payment was recorded')
+      const [after] = await purchasesOf(kit)
+      assert.equal(after!.status, 'open')
+      assert.equal(after!.amountPaidSgd, open!.amountPaidSgd)
+    })
+  }
+
+  test('PAY-74 an Unlimited Plan sale whose stored terms carry credits, or no Duration, fails its delivery and grants nothing; and a delivery after the record is repaired grants once', async () => {
+    const plan = await catalogue(one.id, { kind: 'unlimited', durationMonths: 3, name: `${NAME} corrupt plan` })
+    const lou = await member(one)
+    await expectStatus(await buyClass(lou, plan, { location_id: one.locationId }), 200)
+    const [open] = await purchasesOf(lou)
+
+    await damageStoredTerms(open!.id, { credits_or_sessions: '5' })
+    await expectStatus(await deliver(), 500)
+    await damageStoredTerms(open!.id, { credits_or_sessions: null, duration_months: null, validity_days: '30' })
+    await expectStatus(await deliver(), 500)
+    assert.equal((await packagesOf(lou)).length, 0)
+    assert.equal((await paymentsOf(lou)).length, 0)
+
+    await damageStoredTerms(open!.id, { validity_days: null, duration_months: '3' })
+    await expectStatus(await deliver(), 200)
+    const [granted, ...more] = await packagesOf(lou)
+    assert.equal(more.length, 0)
+    assert.equal(granted!.durationMonths, 3)
+  })
+
   test('PAY-60 a payment the studio refunded from the provider dashboard before this system recorded it grants nothing when its checkout-completed delivery lands', async () => {
     const ola = await member(one)
     await expectStatus(await buyClass(ola, one.bundleId), 200)

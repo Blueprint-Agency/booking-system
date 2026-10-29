@@ -1,11 +1,11 @@
 import { and, eq, inArray, lt } from 'drizzle-orm'
-import { afterCommit, db } from '../../db'
+import { afterCommit, db, retryingTransaction } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
 import { activeAdminIds, recordUpdate, staffNameFor, studioWhen } from '../attention/updates'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
-import { actorOfSource, isVoided, recordMovement, refundCredits } from '../packages/ledger'
+import { actorOfSource, keepCredit, refundCredits, type Tx } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import { ptSessionCost } from './cost'
 import { cancelManualSessionInTx } from './manual'
@@ -93,11 +93,17 @@ export async function cancelPtRequest(
   tenantId: string,
   input: CancelPtRequestInput,
 ): Promise<CancelPtRequestResult> {
-  // The emails this cancel owes are gathered inside the transaction and sent
-  // only once the request's transaction has committed (`afterCommit`; NTF-09,
-  // NTF-10, NTF-11). Sending never throws.
-  const mail = emptyPtCancelMail()
-  const result = await cancelPtRequestInTx(tenantId, input, mail)
+  // It reaches the member's row, the package a Refund holds the Purchase of and
+  // the Updates staff are told with, so it can deadlock with a Refund's unwind
+  // (RFD-38) or an Admin's act as a booking cancel can, and Postgres aborts one
+  // of the two: it runs again. The emails it owes are gathered by the attempt
+  // that returns, so an aborted attempt adds none (PT-161).
+  const { result, mail } = await retryingTransaction('PT request cancel', async tx => {
+    const mail = emptyPtCancelMail()
+    return { result: await cancelPtRequestInTx(tx, tenantId, input, mail), mail }
+  })
+  // Sent only once the request's transaction has committed (`afterCommit`;
+  // NTF-09, NTF-10, NTF-11). Sending never throws.
   if (mail.studio.length || mail.memberReturned.length || mail.request.length) {
     afterCommit(() => sendPtCancelMail(tenantId, mail))
   }
@@ -105,314 +111,320 @@ export async function cancelPtRequest(
 }
 
 async function cancelPtRequestInTx(
+  tx: Tx,
   tenantId: string,
   input: CancelPtRequestInput,
   mail: PtCancelMail,
 ): Promise<CancelPtRequestResult> {
   const { ptRequestId, source, clientId, actorStaffId } = input
 
-  return db.transaction(async tx => {
-    const [req] = await tx
-      .select()
-      .from(ptRequests)
-      .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
-      .for('update')
-      .limit(1)
-    if (!req) throw new NotFoundError('pt_request_not_found')
+  const [req] = await tx
+    .select()
+    .from(ptRequests)
+    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+    .for('update')
+    .limit(1)
+  if (!req) throw new NotFoundError('pt_request_not_found')
 
-    // Ownership: a client may only cancel their own request — or, on a manual
-    // session, where each attendee holds a seat of their own, their own seat.
-    const mayCancel = req.clientId === clientId || (req.origin === 'portal' && req.coClientId === clientId)
-    if (source === 'client' && clientId && !mayCancel) {
-      throw new ForbiddenError('not_your_request')
-    }
+  // Ownership: a client may only cancel their own request — or, on a manual
+  // session, where each attendee holds a seat of their own, their own seat.
+  const mayCancel = req.clientId === clientId || (req.origin === 'portal' && req.coClientId === clientId)
+  if (source === 'client' && clientId && !mayCancel) {
+    throw new ForbiddenError('not_your_request')
+  }
 
-    const staff = source !== 'client'
-    const byPerson = source === 'admin' || source === 'instructor'
+  const staff = source !== 'client'
+  const byPerson = source === 'admin' || source === 'instructor'
 
-    if (byPerson && req.status === 'attended') throw new AppError(422, 'session_already_started')
-    const terminal =
-      req.status === 'cancelled_before_scheduled' ||
-      req.status === 'cancelled_after_scheduled' ||
-      req.status === 'attended'
-    const scheduledSinceExpirySweep = input.expired && req.status === 'scheduled'
-    if (terminal || scheduledSinceExpirySweep) {
-      return { status: 'noop', refundedSessions: 0, refundOutcome: 'n_a' }
-    }
+  if (byPerson && req.status === 'attended') throw new AppError(422, 'session_already_started')
+  const terminal =
+    req.status === 'cancelled_before_scheduled' ||
+    req.status === 'cancelled_after_scheduled' ||
+    req.status === 'attended'
+  const scheduledSinceExpirySweep = input.expired && req.status === 'scheduled'
+  if (terminal || scheduledSinceExpirySweep) {
+    return { status: 'noop', refundedSessions: 0, refundOutcome: 'n_a' }
+  }
 
-    // Instructors may only cancel sessions they run, and only once scheduled —
-    // triage (pending) is an admin responsibility.
-    if (input.requireOwnInstructorId && req.status !== 'scheduled') {
-      throw new ForbiddenError('not_your_session')
-    }
+  // Instructors may only cancel sessions they run, and only once scheduled —
+  // triage (pending) is an admin responsibility.
+  if (input.requireOwnInstructorId && req.status !== 'scheduled') {
+    throw new ForbiddenError('not_your_session')
+  }
 
-    const cost = ptSessionCost(req.sessionType)
-    const resolvedByStaffId = staff ? (actorStaffId ?? null) : null
-    const voided = req.debitedClientPackageId !== null && (await isVoided(tx, tenantId, req.debitedClientPackageId))
+  const cost = ptSessionCost(req.sessionType)
+  const resolvedByStaffId = staff ? (actorStaffId ?? null) : null
 
-    // Written first, in this transaction, so every branch below — the manual
-    // session's included — carries it, and a refused cancel rolls it back.
-    const cancelNote = byPerson ? input.note?.trim() || null : null
-    if (cancelNote) {
-      await tx
-        .update(ptRequests)
-        .set({ cancelNote })
-        .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
-    }
-
-    // Refund `n` sessions to the exact debited package (ledger locks the row,
-    // re-derives `active` and writes the audit entry).
-    const refundToPackage = async (n: number, reason: string, bookingId: string | null = null) => {
-      if (n <= 0 || !req.debitedClientPackageId) return
-      await refundCredits(tx, {
-        tenantId,
-        clientId: req.clientId,
-        clientPackageId: req.debitedClientPackageId,
-        amount: n,
-        reason,
-        // A pending request has no booking: its debit comes back as the request's.
-        cause: bookingId ? 'returned' : 'pt_returned',
-        bookingId,
-        actor: actorOfSource(source),
-        actedByStaffId: resolvedByStaffId,
-      })
-    }
-
-    // ---- pending → cancelled_before_scheduled (always refund) -------------
-    if (req.status === 'pending') {
-      const returned = voided ? 0 : cost
-      await refundToPackage(
-        returned,
-        input.expired ? 'pt_request_expiry_refund' : 'pt_request_cancel_refund',
-      )
-      await tx
-        .update(ptRequests)
-        // The source is the request's only record of who ended it: a Remove
-        // names the admin who took the package back, yet it is no staff cancel.
-        // On the app clock: the member's history reads an expiry off it
-        // (`resolvedAt >= expiresAt`, bookings/cancellation-summary.ts).
-        .set({ status: 'cancelled_before_scheduled', resolvedAt: clockNow(), resolvedByStaffId, cancelSource: source })
-        .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
-      // NTF-11. An expiry or a Remove is the studio's machinery, not a cancel
-      // anyone made, and tells the member its own way.
-      if (source !== 'system') {
-        mail.request.push({ clientId: req.clientId, sessionsReturned: req.debitedClientPackageId ? returned : 0, ptSessionId: null })
-      }
-      return {
-        status: 'cancelled_before_scheduled',
-        refundedSessions: returned,
-        refundOutcome: voided ? 'n_a' : 'session_returned',
-      }
-    }
-
-    // ---- scheduled → cancelled_after_scheduled (cascade) ------------------
-    if (req.status !== 'scheduled') throw new ConflictError('cannot_cancel')
-
-    const [session] = await tx
-      .select({
-        id: ptSessions.id,
-        startsAt: ptSessions.startsAt,
-        lifecycle: ptSessions.lifecycle,
-        instructorId: ptSessions.instructorId,
-      })
-      .from(ptSessions)
-      .where(
-        and(
-          eq(ptSessions.tenantId, tenantId),
-          eq(ptSessions.id, req.scheduledPtSessionId ?? ''),
-        ),
-      )
-      .for('update')
-      .limit(1)
-    if (!session) throw new NotFoundError('pt_session_not_found')
-
-    // Ownership guard for instructor-initiated cancels.
-    if (input.requireOwnInstructorId && session.instructorId !== input.requireOwnInstructorId) {
-      throw new ForbiddenError('not_your_session')
-    }
-
-    const now = clockNow()
-
-    if (byPerson) refuseOnceStarted(session.startsAt, now)
-
-    // A manual session has no debit on its request: each seat was paid on its
-    // own booking, so each is settled on its own package (./manual.ts).
-    if (req.origin === 'portal') {
-      const settled = await cancelManualSessionInTx(tx, tenantId, {
-        req,
-        session,
-        source,
-        ...(clientId ? { clientId } : {}),
-        actorStaffId: resolvedByStaffId,
-        now,
-        mail,
-      })
-      if (source === 'instructor' && settled.status === 'cancelled_after_scheduled') {
-        await tellAdminsOfInstructorCancel(tenantId, req.clientId, session, resolvedByStaffId)
-      }
-      await recordPtSessionCancelled(tenantId, {
-        ptSessionId: session.id,
-        source,
-        actorStaffId: resolvedByStaffId,
-        memberClientId: clientId ?? req.clientId,
-      })
-      return settled
-    }
-
-    // Refund decision. Staff (and system) bypass window/cap (always full);
-    // client is gated by the PT window + shared cancellation cap.
-    let refundSessions = 0
-    let wasWithinWindow = true
-    let wasWithinCap = true
-    if (staff) {
-      refundSessions = cost
-      // The window never decides a staff cancel's refund, but it is recorded
-      // truthfully, and a late one keeps the package Activated (below).
-      wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, now)
-    } else {
-      const evaluation = await lockMemberAndEvaluateCancellation({
-        tenantId,
-        clientId: req.clientId,
-        kind: 'pt',
-        sessionStartsAt: session.startsAt,
-        now,
-      })
-      wasWithinWindow = evaluation.wasWithinWindow
-      wasWithinCap = evaluation.wasWithinCap
-      // Hard deadline: inside the window (or after start) the cancel is rejected,
-      // not merely forfeited — same contract as the class self-cancel path.
-      if (!evaluation.wasWithinWindow) {
-        throw new AppError(422, 'cancellation_window_passed', { window_hours: evaluation.windowHours })
-      }
-      refundSessions = evaluation.refund === 'full' ? cost : 0
-    }
-
-    const sessionBookings = await tx
-      .select({ id: bookings.id, clientId: bookings.clientId })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.tenantId, tenantId),
-          eq(bookings.ptSessionId, session.id),
-          eq(bookings.state, 'confirmed'),
-        ),
-      )
-      .for('update')
-    // The requester's booking carries the debit (schedule.ts). If it was already
-    // cancelled on its own (services/bookings/cancel.ts), that cancel settled the
-    // session(s) — returned or forfeited — and returning them here would pay twice.
-    const requesterStillBooked = sessionBookings.some(b => b.clientId === req.clientId)
-    const refundOutcome: CancelPtRequestResult['refundOutcome'] = !requesterStillBooked
-      ? 'n_a'
-      : refundSessions === 0
-        ? 'forfeited'
-        : voided
-          ? 'n_a'
-          : 'session_returned'
-    if (refundOutcome !== 'session_returned') refundSessions = 0
-
-    const requesterBookingId = sessionBookings.find(b => b.clientId === req.clientId)?.id ?? null
-    await refundToPackage(refundSessions, staff ? 'pt_admin_cancel_refund' : 'pt_cancel_refund', requesterBookingId)
-    if (refundOutcome === 'forfeited' && req.debitedClientPackageId) {
-      await recordMovement(tx, {
-        tenantId,
-        clientId: req.clientId,
-        clientPackageId: req.debitedClientPackageId,
-        cause: 'kept',
-        bookingId: requesterBookingId,
-        actor: actorOfSource(source),
-        actedByStaffId: resolvedByStaffId,
-      })
-    }
-
-    // The session that Activated the package, cancelled in time, returns it to
-    // Dormant (be/docs/adr/0011). Not when the requester's booking was already
-    // cancelled on its own: that cancel settled it.
-    if (requesterStillBooked && req.debitedClientPackageId && !voided) {
-      await reverseActivationOnCancel(tx, {
-        tenantId,
-        clientId: req.clientId,
-        clientPackageId: req.debitedClientPackageId,
-        ptSessionId: session.id,
-        late: !wasWithinWindow,
-        actedByStaffId: resolvedByStaffId,
-      })
-    }
-
-    // Cancel the session.
-    await tx
-      .update(ptSessions)
-      .set({
-        lifecycle: 'cancelled',
-        cancelledAt: now,
-        cancelledByStaffId: resolvedByStaffId,
-      })
-      .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, session.id)))
-
-    // Cancel every booking still on the session. The requester's booking carries
-    // the refund outcome; co-clients (2on1 partner) only lose their seat (`n_a`).
-    for (const bk of sessionBookings) {
-      await tx
-        .update(bookings)
-        .set({
-          state: 'cancelled',
-          refundOutcome: bk.clientId === req.clientId ? refundOutcome : 'n_a',
-          checkInState: 'n_a',
-          cancelledAt: now,
-        })
-        .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
-    }
-
-    // One cancellation row, attributed to the requester (the actor who owns the
-    // request + the debit). Counts once toward their shared class/PT cap.
-    const requesterBooking = sessionBookings.find(b => b.clientId === req.clientId)
-    if (requesterBooking) {
-      await tx.insert(cancellations).values({
-        tenantId,
-        bookingId: requesterBooking.id,
-        clientId: req.clientId,
-        kind: 'pt',
-        source,
-        cancelledByStaffId: byPerson ? (actorStaffId ?? null) : null,
-        wasWithinWindow,
-        wasWithinCap,
-        refundFired: refundSessions > 0,
-        cancelledAt: now,
-      })
-    }
-
+  // Written first, in this transaction, so every branch below — the manual
+  // session's included — carries it, and a refused cancel rolls it back.
+  const cancelNote = byPerson ? input.note?.trim() || null : null
+  if (cancelNote) {
     await tx
       .update(ptRequests)
-      .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId, cancelSource: source })
+      .set({ cancelNote })
       .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+  }
 
-    // The session's instructors: told when a member left or an admin cancelled (#493).
+  // Refund `n` sessions to the exact debited package (ledger locks the row,
+  // re-derives `active` and writes the audit entry). Whether they landed is the
+  // ledger's answer, read under the package lock: a Voided package takes
+  // nothing back, whatever order the Refund and this cancel ran in. Nothing to
+  // return, or no package to return it to, is not a refusal.
+  const refundToPackage = async (n: number, reason: string, bookingId: string | null = null): Promise<boolean> => {
+    if (n <= 0 || !req.debitedClientPackageId) return true
+    const { landed } = await refundCredits(tx, {
+      tenantId,
+      clientId: req.clientId,
+      clientPackageId: req.debitedClientPackageId,
+      amount: n,
+      reason,
+      // A pending request has no booking: its debit comes back as the request's.
+      cause: bookingId ? 'returned' : 'pt_returned',
+      bookingId,
+      actor: actorOfSource(source),
+      actedByStaffId: resolvedByStaffId,
+    })
+    return landed
+  }
+
+  // ---- pending → cancelled_before_scheduled (always refund) -------------
+  if (req.status === 'pending') {
+    const landed = await refundToPackage(cost, input.expired ? 'pt_request_expiry_refund' : 'pt_request_cancel_refund')
+    const returned = landed ? cost : 0
+    await tx
+      .update(ptRequests)
+      // The source is the request's only record of who ended it: a Remove
+      // names the admin who took the package back, yet it is no staff cancel.
+      // On the app clock: the member's history reads an expiry off it
+      // (`resolvedAt >= expiresAt`, bookings/cancellation-summary.ts).
+      .set({ status: 'cancelled_before_scheduled', resolvedAt: clockNow(), resolvedByStaffId, cancelSource: source })
+      .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+    // NTF-11. An expiry or a Remove is the studio's machinery, not a cancel
+    // anyone made, and tells the member its own way.
+    if (source !== 'system') {
+      mail.request.push({ clientId: req.clientId, sessionsReturned: req.debitedClientPackageId ? returned : 0, ptSessionId: null })
+    }
+    return {
+      status: 'cancelled_before_scheduled',
+      refundedSessions: returned,
+      refundOutcome: landed ? 'session_returned' : 'n_a',
+    }
+  }
+
+  // ---- scheduled → cancelled_after_scheduled (cascade) ------------------
+  if (req.status !== 'scheduled') throw new ConflictError('cannot_cancel')
+
+  const [session] = await tx
+    .select({
+      id: ptSessions.id,
+      startsAt: ptSessions.startsAt,
+      lifecycle: ptSessions.lifecycle,
+      instructorId: ptSessions.instructorId,
+    })
+    .from(ptSessions)
+    .where(
+      and(
+        eq(ptSessions.tenantId, tenantId),
+        eq(ptSessions.id, req.scheduledPtSessionId ?? ''),
+      ),
+    )
+    .for('update')
+    .limit(1)
+  if (!session) throw new NotFoundError('pt_session_not_found')
+
+  // Ownership guard for instructor-initiated cancels.
+  if (input.requireOwnInstructorId && session.instructorId !== input.requireOwnInstructorId) {
+    throw new ForbiddenError('not_your_session')
+  }
+
+  const now = clockNow()
+
+  if (byPerson) refuseOnceStarted(session.startsAt, now)
+
+  // A manual session has no debit on its request: each seat was paid on its
+  // own booking, so each is settled on its own package (./manual.ts).
+  if (req.origin === 'portal') {
+    const settled = await cancelManualSessionInTx(tx, tenantId, {
+      req,
+      session,
+      source,
+      ...(clientId ? { clientId } : {}),
+      actorStaffId: resolvedByStaffId,
+      now,
+      mail,
+    })
+    if (source === 'instructor' && settled.status === 'cancelled_after_scheduled') {
+      await tellAdminsOfInstructorCancel(tenantId, req.clientId, session, resolvedByStaffId)
+    }
     await recordPtSessionCancelled(tenantId, {
       ptSessionId: session.id,
       source,
       actorStaffId: resolvedByStaffId,
       memberClientId: clientId ?? req.clientId,
     })
+    return settled
+  }
 
-    // NTF-11: every member the session booked is told — the requester with the
-    // sessions returned to them, a 2-on-1 partner, who paid nothing, without.
-    // Returned only when there was a package to return them to, as on the
-    // pending path: `refundToPackage` moves nothing without one.
-    if (source !== 'system') {
-      const returned = req.debitedClientPackageId ? refundSessions : 0
-      for (const bk of sessionBookings) {
-        mail.request.push({
-          clientId: bk.clientId,
-          sessionsReturned: bk.clientId === req.clientId ? returned : 0,
-          ptSessionId: session.id,
-        })
-      }
+  // Refund decision. Staff (and system) bypass window/cap (always full);
+  // client is gated by the PT window + shared cancellation cap.
+  let refundSessions = 0
+  let wasWithinWindow = true
+  let wasWithinCap = true
+  if (staff) {
+    refundSessions = cost
+    // The window never decides a staff cancel's refund, but it is recorded
+    // truthfully, and a late one keeps the package Activated (below).
+    wasWithinWindow = await staffCancelInTime(tenantId, 'pt', session.startsAt, now)
+  } else {
+    const evaluation = await lockMemberAndEvaluateCancellation({
+      tenantId,
+      clientId: req.clientId,
+      kind: 'pt',
+      sessionStartsAt: session.startsAt,
+      now,
+    })
+    wasWithinWindow = evaluation.wasWithinWindow
+    wasWithinCap = evaluation.wasWithinCap
+    // Hard deadline: inside the window (or after start) the cancel is rejected,
+    // not merely forfeited — same contract as the class self-cancel path.
+    if (!evaluation.wasWithinWindow) {
+      throw new AppError(422, 'cancellation_window_passed', { window_hours: evaluation.windowHours })
     }
+    refundSessions = evaluation.refund === 'full' ? cost : 0
+  }
 
-    if (source === 'instructor') await tellAdminsOfInstructorCancel(tenantId, req.clientId, session, resolvedByStaffId)
+  const sessionBookings = await tx
+    .select({ id: bookings.id, clientId: bookings.clientId })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        eq(bookings.ptSessionId, session.id),
+        eq(bookings.state, 'confirmed'),
+      ),
+    )
+    .for('update')
+  // The requester's booking carries the debit (schedule.ts). If it was already
+  // cancelled on its own (services/bookings/cancel.ts), that cancel settled the
+  // session(s) — returned or forfeited — and returning them here would pay twice.
+  const requesterStillBooked = sessionBookings.some(b => b.clientId === req.clientId)
+  let refundOutcome: CancelPtRequestResult['refundOutcome'] = !requesterStillBooked
+    ? 'n_a'
+    : refundSessions === 0
+      ? 'forfeited'
+      : 'session_returned'
+  if (refundOutcome !== 'session_returned') refundSessions = 0
 
-    return { status: 'cancelled_after_scheduled', refundedSessions: refundSessions, refundOutcome }
+  const requesterBookingId = sessionBookings.find(b => b.clientId === req.clientId)?.id ?? null
+  // A Voided package takes nothing back and keeps nothing: the ledger says so
+  // under the package lock, and the cancel is settled `n_a`.
+  if (!(await refundToPackage(refundSessions, staff ? 'pt_admin_cancel_refund' : 'pt_cancel_refund', requesterBookingId))) {
+    refundSessions = 0
+    refundOutcome = 'n_a'
+  }
+  if (
+    refundOutcome === 'forfeited' &&
+    req.debitedClientPackageId &&
+    !(await keepCredit(tx, {
+      tenantId,
+      clientId: req.clientId,
+      clientPackageId: req.debitedClientPackageId,
+      bookingId: requesterBookingId,
+      actor: actorOfSource(source),
+      actedByStaffId: resolvedByStaffId,
+    }))
+  ) {
+    refundOutcome = 'n_a'
+  }
+
+  // The session that Activated the package, cancelled in time, returns it to
+  // Dormant (be/docs/adr/0011). Not when the requester's booking was already
+  // cancelled on its own: that cancel settled it. A Voided package is left as
+  // the Void left it, which the reversal judges under the package lock.
+  if (requesterStillBooked && req.debitedClientPackageId) {
+    await reverseActivationOnCancel(tx, {
+      tenantId,
+      clientId: req.clientId,
+      clientPackageId: req.debitedClientPackageId,
+      ptSessionId: session.id,
+      late: !wasWithinWindow,
+      actedByStaffId: resolvedByStaffId,
+    })
+  }
+
+  // Cancel the session.
+  await tx
+    .update(ptSessions)
+    .set({
+      lifecycle: 'cancelled',
+      cancelledAt: now,
+      cancelledByStaffId: resolvedByStaffId,
+    })
+    .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, session.id)))
+
+  // Cancel every booking still on the session. The requester's booking carries
+  // the refund outcome; co-clients (2on1 partner) only lose their seat (`n_a`).
+  for (const bk of sessionBookings) {
+    await tx
+      .update(bookings)
+      .set({
+        state: 'cancelled',
+        refundOutcome: bk.clientId === req.clientId ? refundOutcome : 'n_a',
+        checkInState: 'n_a',
+        cancelledAt: now,
+      })
+      .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
+  }
+
+  // One cancellation row, attributed to the requester (the actor who owns the
+  // request + the debit). Counts once toward their shared class/PT cap.
+  const requesterBooking = sessionBookings.find(b => b.clientId === req.clientId)
+  if (requesterBooking) {
+    await tx.insert(cancellations).values({
+      tenantId,
+      bookingId: requesterBooking.id,
+      clientId: req.clientId,
+      kind: 'pt',
+      source,
+      cancelledByStaffId: byPerson ? (actorStaffId ?? null) : null,
+      wasWithinWindow,
+      wasWithinCap,
+      refundFired: refundSessions > 0,
+      cancelledAt: now,
+    })
+  }
+
+  await tx
+    .update(ptRequests)
+    .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId, cancelSource: source })
+    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+
+  // The session's instructors: told when a member left or an admin cancelled (#493).
+  await recordPtSessionCancelled(tenantId, {
+    ptSessionId: session.id,
+    source,
+    actorStaffId: resolvedByStaffId,
+    memberClientId: clientId ?? req.clientId,
   })
+
+  // NTF-11: every member the session booked is told — the requester with the
+  // sessions returned to them, a 2-on-1 partner, who paid nothing, without.
+  // Returned only when there was a package to return them to, as on the
+  // pending path: `refundToPackage` moves nothing without one.
+  if (source !== 'system') {
+    const returned = req.debitedClientPackageId ? refundSessions : 0
+    for (const bk of sessionBookings) {
+      mail.request.push({
+        clientId: bk.clientId,
+        sessionsReturned: bk.clientId === req.clientId ? returned : 0,
+        ptSessionId: session.id,
+      })
+    }
+  }
+
+  if (source === 'instructor') await tellAdminsOfInstructorCancel(tenantId, req.clientId, session, resolvedByStaffId)
+
+  return { status: 'cancelled_after_scheduled', refundedSessions: refundSessions, refundOutcome }
 }
 
 /**

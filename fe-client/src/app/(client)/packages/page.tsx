@@ -69,7 +69,12 @@ const PACKAGE_GRID = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:ga
 
 export default function PackagesPage() {
   const { data, loading, error, refresh } = usePackagesCatalog();
-  const { data: corporateData } = useCorporatePackages();
+  const {
+    data: corporateData,
+    loading: corporateLoading,
+    error: corporateError,
+    refresh: refreshCorporate,
+  } = useCorporatePackages();
   const api = useApi();
   const [activeTab, setActiveTab] = useState<MainTab>("group");
   const [classSubTab, setClassSubTab] = useState<ClassSubTab>("bundle");
@@ -287,7 +292,13 @@ export default function PackagesPage() {
               )}
 
               {/* ── Corporate tab ───────────────────────────────────── */}
-              {activeTab === "corporate" && <CorporateSection items={corporate} />}
+              {activeTab === "corporate" && (
+                <CorporateSection
+                  items={corporate}
+                  state={corporateError ? "failed" : corporateLoading || corporateData === null ? "loading" : "ready"}
+                  onRetry={() => void refreshCorporate()}
+                />
+              )}
             </>
           )}
       </BookingSurface>
@@ -895,7 +906,20 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
 
 // ── Corporate ─────────────────────────────────────────────────────────────────
 
-function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
+/**
+ * `state` keeps a read that failed (or has not answered) apart from a studio
+ * with none on offer (#500): "none on offer" is a claim a member would repeat
+ * to their employer, so it is made only when the read said so.
+ */
+function CorporateSection({
+  items,
+  state,
+  onRetry,
+}: {
+  items: ApiCorporatePackage[];
+  state: "loading" | "failed" | "ready";
+  onRetry: () => void;
+}) {
   const whatsapp = corporateContactWhatsappHref(useBrandCopy(WHATSAPP_COPY_KEY, ""));
   return (
     <div className="space-y-4">
@@ -904,7 +928,16 @@ function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
         instructor with you on WhatsApp.
       </p>
 
-      {items.length === 0 ? (
+      {state === "failed" ? (
+        <div className={cn(CARD, "px-6 py-10 text-center text-sm text-muted")} role="alert">
+          <p>Couldn&apos;t load corporate packages.</p>
+          <button type="button" onClick={onRetry} className={cn(BTN_SECONDARY, "mt-4 min-h-[44px]")}>
+            Try again
+          </button>
+        </div>
+      ) : state === "loading" ? (
+        <ContentLoading label="Loading corporate packages" className="min-h-32" />
+      ) : items.length === 0 ? (
         <div className={cn(CARD, "px-6 py-10 text-center text-sm text-muted")}>
           No corporate packages on offer right now.
         </div>

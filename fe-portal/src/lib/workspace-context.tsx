@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -17,6 +18,13 @@ import { knownPermissions, mayDo, type InstructorPermission } from "@/lib/instru
 import { runsStudio } from "@/lib/staff-role";
 import { sessionTenantRefusal } from "@/lib/session-tenant";
 import { getPortalToken, signOutPortal, usePortalSession } from "@/lib/portal-auth";
+import {
+  assertLoadedInFull,
+  latestRead,
+  locationsToManage,
+  workspaceLocations,
+  type FullListStatus,
+} from "@/lib/location-list";
 import type { Location, StaffRole, StaffUser } from "@/types";
 
 /**
@@ -68,7 +76,18 @@ interface WorkspaceContextValue {
   permissions: InstructorPermission[];
   /** Whether the signed-in staff member may do what `key` grants (`mayDo`). */
   may: (key: InstructorPermission) => boolean;
-  locations: Location[]; // all locations (incl archived) for admin views
+  /**
+   * What the workspace switcher and read-only screens list: the full list once
+   * it has loaded, the staff payload's short list (names, no phone or Maps link)
+   * until then. Never edit a location from this; use `manageableLocations`.
+   */
+  locations: Location[];
+  /** Every location, archived included, from the full read: empty unless it has loaded. */
+  manageableLocations: Location[];
+  /** Whether the full list has loaded; edit, archive and restore wait for "loaded". */
+  locationsStatus: FullListStatus;
+  /** Reads the full list again after it failed. */
+  retryLocations: () => Promise<void>;
   accessibleLocations: Location[];
   activeLocation: Location | null;
   activeLocationId: string | null;
@@ -125,7 +144,27 @@ export function WorkspaceProvider({
   const [currentStaff, setCurrentStaff] = useState<StaffUser | null>(null);
   // Read on every `me`, so a switch an Admin flipped shows after the next load.
   const [permissions, setPermissions] = useState<InstructorPermission[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
+  // The staff payload's locations: names and addresses only. Kept apart from
+  // the full list, which a failed read must never be replaced by.
+  const [shortLocations, setShortLocations] = useState<Location[]>([]);
+  const [fullLocations, setFullLocations] = useState<Location[] | null>(null);
+  const [fullStatus, setFullStatus] = useState<"loading" | "loaded" | "failed">(
+    "loading",
+  );
+  // Which read of the full list may still land (see `latestRead`).
+  const fullReads = useRef(latestRead());
+  // Forgets the full list: rows gone, status back to loading (a read is due, so
+  // neither "loaded" over no rows nor an old failure stays), and any read still
+  // in flight cancelled so it cannot land on the next session.
+  const resetFullLocations = useCallback(() => {
+    fullReads.current.cancel();
+    setFullLocations(null);
+    setFullStatus("loading");
+  }, []);
+  const locations = useMemo(
+    () => workspaceLocations(shortLocations, fullLocations),
+    [shortLocations, fullLocations],
+  );
   const [activeLocationId, setActiveLocationIdState] = useState<string | null>(
     null,
   );
@@ -181,7 +220,7 @@ export function WorkspaceProvider({
         photoUrl: me.photo_url,
       });
       setPermissions(knownPermissions(me.permissions));
-      setLocations(accessible);
+      setShortLocations(accessible);
       setDenied(null);
     } catch (err) {
       const failure =
@@ -206,7 +245,8 @@ export function WorkspaceProvider({
       if (failure.kind === "denied") {
         setDenied({ reason: failure.reason });
         setCurrentStaff(null);
-        setLocations([]);
+        setShortLocations([]);
+        resetFullLocations();
         return;
       }
       // Network or unexpected — leave staff null so UI shows error/empty
@@ -215,7 +255,7 @@ export function WorkspaceProvider({
     } finally {
       setLoading(false);
     }
-  }, [api, signOutToLogin]);
+  }, [api, signOutToLogin, resetFullLocations]);
 
   // Once the session is known, fetch /auth/me — or send a signed-out visitor to
   // sign in, remembering where they were going.
@@ -224,7 +264,8 @@ export function WorkspaceProvider({
     if (!isSignedIn) {
       setLoading(false);
       setCurrentStaff(null);
-      setLocations([]);
+      setShortLocations([]);
+      resetFullLocations();
       setDenied(null);
       const next = `${pathname ?? ""}${window.location.search}`;
       router.replace(`/login?next=${encodeURIComponent(next)}`);
@@ -233,7 +274,8 @@ export function WorkspaceProvider({
     if (tenantRefusal) {
       setLoading(false);
       setCurrentStaff(null);
-      setLocations([]);
+      setShortLocations([]);
+      resetFullLocations();
       setDenied({ reason: tenantRefusal });
       return;
     }
@@ -241,19 +283,28 @@ export function WorkspaceProvider({
     // `pathname` is read, not watched: moving between pages while signed out is
     // already a redirect, and re-running the load on every navigation is not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, isSignedIn, tenantRefusal, loadMe, router]);
+  }, [isLoaded, isSignedIn, tenantRefusal, loadMe, router, resetFullLocations]);
 
   // For a studio admin, additionally fetch ALL locations (incl. archived) so the
   // Locations page + manage dialog can render archived rows.
   const refreshAllLocations = useCallback(async () => {
     if (!api || !currentStaff || !runsStudio(currentStaff.role)) return;
+    // Reads can overlap (a mutation refreshes while a Retry is in flight): only
+    // the latest one lands, success or failure.
+    const read = fullReads.current.begin();
     try {
       const data = await api.get<{ locations: LocationApiRow[] }>(
         "/portal/admin/locations",
         { include_archived: "true" },
       );
-      setLocations(data.locations.map(locationFromApi));
+      if (!fullReads.current.isCurrent(read)) return;
+      setFullLocations(data.locations.map(locationFromApi));
+      setFullStatus("loaded");
     } catch (err) {
+      if (!fullReads.current.isCurrent(read)) return;
+      // Still reported. The short list keeps the switcher working, but it is
+      // not the full list: edit, archive and restore wait for a read that works.
+      setFullStatus("failed");
       reportError(err, { scope: "workspace-all-locations" });
     }
   }, [api, currentStaff]);
@@ -261,6 +312,18 @@ export function WorkspaceProvider({
   useEffect(() => {
     void refreshAllLocations();
   }, [refreshAllLocations]);
+
+  const retryLocations = useCallback(async () => {
+    setFullStatus("loading");
+    await refreshAllLocations();
+  }, [refreshAllLocations]);
+
+  const locationsStatus: FullListStatus =
+    currentStaff && runsStudio(currentStaff.role) ? fullStatus : "idle";
+  const manageableLocations = useMemo(
+    () => locationsToManage(locationsStatus, fullLocations),
+    [locationsStatus, fullLocations],
+  );
 
   const accessibleLocations = useMemo(() => {
     if (!currentStaff) return [];
@@ -309,6 +372,9 @@ export function WorkspaceProvider({
   const updateLocation = useCallback(
     async (loc: Location) => {
       if (!api) return;
+      // The second guard: a row the full list did not give has a blank phone
+      // and Maps link that would be saved over the real ones.
+      assertLoadedInFull(fullLocations, locationsStatus, loc);
       await api.patch(`/portal/admin/locations/${loc.id}`, {
         name: loc.name,
         address: loc.address || null,
@@ -317,7 +383,7 @@ export function WorkspaceProvider({
       });
       await refreshAllLocations();
     },
-    [api, refreshAllLocations],
+    [api, fullLocations, locationsStatus, refreshAllLocations],
   );
 
   // Story 133: name what archiving strands before it happens. Here rather than
@@ -393,6 +459,9 @@ export function WorkspaceProvider({
     permissions,
     may,
     locations,
+    manageableLocations,
+    locationsStatus,
+    retryLocations,
     accessibleLocations,
     activeLocation,
     activeLocationId,

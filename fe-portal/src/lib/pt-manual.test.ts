@@ -271,7 +271,7 @@ test("PT-112 a downgrade to 1-on-1 names the partner it takes off; the request's
   assert.deepStrictEqual(downgradeLeaving(both).map((c) => c.id), ["c1"]);
   assert.strictEqual(
     downgradeConfirm(both),
-    "Change this session to 1-on-1? Sam is taken off it and gets their session back on their own package.",
+    "Change this session to 1-on-1? Sam is taken off it and gets their session back on their own package, unless that package has been refunded.",
   );
   assert.deepStrictEqual(downgradeLeaving([attendee("c2", true)]), []);
   assert.strictEqual(downgradeConfirm([attendee("c2", true)]), "Change this session to 1-on-1?");
@@ -314,6 +314,18 @@ test("PT-113 a refused remove, add, type change or cancel is worded from its cod
   assert.strictEqual(says(409, "insufficient_pt_credit"), "That package has no sessions left.");
   assert.strictEqual(says(500, "boom"), "Couldn't remove them (HTTP 500).");
   assert.strictEqual(sessionActionErrorMessage(new Error("offline"), "Couldn't remove them"), "Network error");
+});
+
+test("PT-163 a type change the server refuses because the session has started shows its sentence, where a refused cancel keeps the cancel wording", () => {
+  const sentence = "This session has already started, so its type can no longer change.";
+  assert.strictEqual(
+    sessionActionErrorMessage(new ApiError(422, { error: "session_already_started", message: sentence }), "Couldn't change the type"),
+    sentence,
+  );
+  assert.strictEqual(
+    sessionActionErrorMessage(new ApiError(422, { error: "session_already_started" }), "Couldn't cancel"),
+    "This session has already started, so it can no longer be cancelled.",
+  );
 });
 
 test("PT-113 PT-150 cancelling a private session says each member is paid back on their own package, unless it was refunded", () => {
