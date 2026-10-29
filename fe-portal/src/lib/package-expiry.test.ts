@@ -25,4 +25,18 @@ test("PKG-50 the expiry Edit expiry sends is the last instant of the day picked 
   // A blank day returns the package to Dormant; a package with no end opens blank.
   assert.strictEqual(expiryInstant(""), null);
   assert.strictEqual(expiryDay(null), "");
+
+  // The dialog's latest pick (31 Dec 9999) ends in year 10000 UTC west of UTC,
+  // which serialises as "+010000-01-01T..." and the API refuses. It is clamped
+  // to the last instant of 9999 in any zone; run here under a zone west of UTC.
+  const zone = process.env.TZ;
+  process.env.TZ = "America/New_York";
+  try {
+    const latest = expiryInstant("9999-12-31");
+    assert.ok(latest);
+    assert.match(latest, /^9999-12-31T23:59:59\.999Z$/);
+  } finally {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  }
 });
