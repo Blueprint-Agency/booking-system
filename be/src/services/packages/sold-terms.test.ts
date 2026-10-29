@@ -96,6 +96,17 @@ test('PAY-74 the catalogue upper bounds are not applied to terms already sold', 
   assert.deepEqual(soldTermsForKind(soldTermsMetadata(long), 'credit_bundle'), long)
 })
 
+test('PAY-74 a List Price too large for the price column is corrupt terms naming the key, not an overflow at the insert', () => {
+  assert.equal(soldListPriceFromMetadata({ list_price_sgd: '99999999.99' }), '99999999.99')
+  for (const tooBig of ['100000000', '100000000.00', '123456789.50']) {
+    assert.throws(
+      () => soldListPriceFromMetadata({ list_price_sgd: tooBig }),
+      (err: unknown) => err instanceof CorruptSoldTermsError && err.key === 'list_price_sgd',
+      tooBig,
+    )
+  }
+})
+
 test('WSP-34 a workshop place reads its List Price as money to the cent, no value as an old sale, and anything else as corrupt', () => {
   assert.equal(soldListPriceFromMetadata({ list_price_sgd: '150.00' }), '150.00')
   assert.equal(soldListPriceFromMetadata({ list_price_sgd: '0.00' }), '0.00')
