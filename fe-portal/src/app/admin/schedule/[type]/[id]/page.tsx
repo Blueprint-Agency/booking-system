@@ -853,7 +853,10 @@ function PtEditor({
                 onChange={(e) => setSessionType(e.target.value as "1on1" | "2on1")}
                 className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
               >
-                <option value="1on1">1-on-1</option>
+                {/* A started 2-on-1 can't be changed to 1-on-1: the backend refuses it as it does a cancel. */}
+                <option value="1on1" disabled={data.session_type === "2on1" && !canCancelSession(data)}>
+                  1-on-1
+                </option>
                 <option value="2on1">2-on-1</option>
               </select>
             </div>

@@ -14,6 +14,9 @@
  *   - The package row is locked FOR UPDATE inside the movement (re-locking a row the caller
  *     already locked in the same transaction is a no-op), so the read-modify-write is safe.
  *   - Overdraw is refused here, so every caller gets the same typed error.
+ *   - Whether a session or credit lands on a package is decided here and nowhere
+ *     else, after the row is held: a return to a Voided package moves nothing
+ *     and answers `landed: false`, which every caller records (`n_a`).
  *   - Each movement writes a **Credit movement** (`credit_movements`, #353): the cause,
  *     the booking it was for, who did it and the balance after — the history the member
  *     and staff read. A forfeit that leaves the balance alone (Late cancel, Keep credit,

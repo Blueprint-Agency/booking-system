@@ -420,6 +420,9 @@ const startTime = sgFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour12
  * leave that booking paid by a package that has ended, so it is refused,
  * naming the earliest date allowed (#444 holds scheduling to the same rule).
  * The row is locked first, so a booking made meanwhile is seen.
+ *
+ * A blank expiry (back to Dormant) is refused only when the package pays for a
+ * booking that a fresh Activation now would not reach (#499).
  */
 export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPackageRow> {
   if (!input.reason.trim()) throw new BadRequestError('reason_required')
