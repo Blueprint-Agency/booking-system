@@ -12,11 +12,6 @@ export interface ApiLocationLite {
   address: string | null;
 }
 
-export interface ApiClassTypeLite {
-  id: string;
-  name: string;
-}
-
 export interface ApiInstructorLite {
   id: string;
   name: string;

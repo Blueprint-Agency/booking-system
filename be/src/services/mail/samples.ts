@@ -66,7 +66,7 @@ const SAMPLE_VALUES: Record<string, string> = {
 const url = (path: string) => `https://sample.example.test${path}?token=abc&x=1`
 const urlValue = (name: string) => (name.endsWith('_url') ? url(`/${name.replace(/_url$/, '')}`) : undefined)
 
-export function sampleVariables(slug: keyof typeof TEMPLATE_VARIABLES): Record<string, string> {
+function sampleVariables(slug: keyof typeof TEMPLATE_VARIABLES): Record<string, string> {
   return Object.fromEntries(TEMPLATE_VARIABLES[slug].map(v => [v, urlValue(v) ?? SAMPLE_VALUES[v] ?? `[${v}]`]))
 }
 

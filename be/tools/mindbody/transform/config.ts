@@ -236,7 +236,7 @@ const catalogueSchema = z.object({
   location: z.string().nullable().default(null),
 })
 
-export const studioConfigSchema = z.object({
+const studioConfigSchema = z.object({
   studio: z.object({
     slug: open(z.string().min(1)),
     displayName: open(z.string().min(1)),

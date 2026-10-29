@@ -62,7 +62,7 @@ const cache = new Map<string, { at: number; value: TenantProviderCredentials | n
  * for another minute — and so a corrected key takes effect at once rather than
  * after a redeploy.
  */
-export function forgetProviderCredentials(): void {
+function forgetProviderCredentials(): void {
   cache.clear()
 }
 

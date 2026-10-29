@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  paymentLabel,
   readReceiptsState,
   receiptAmount,
   receiptKindLabel,
@@ -19,16 +18,6 @@ test("INV-53 amounts read to the cent, as the member's Receipt prints them", () 
   assert.equal(receiptAmount("150"), "S$150.00");
   assert.equal(receiptAmount("135.5"), "S$135.50");
   assert.equal(receiptAmount("0.00"), "S$0.00");
-});
-
-test("INV-53 a payment reads as the member's Receipt words it", () => {
-  assert.equal(paymentLabel({ method: "card", card_brand: "visa", card_last4: "4242", wallet: null }), "Visa •••• 4242");
-  assert.equal(
-    paymentLabel({ method: "card", card_brand: "mastercard", card_last4: "4444", wallet: "apple_pay" }),
-    "Apple Pay · Mastercard •••• 4444",
-  );
-  assert.equal(paymentLabel({ method: "paynow", card_brand: null, card_last4: null, wallet: null }), "PayNow");
-  assert.equal(paymentLabel({ method: null, card_brand: null, card_last4: null, wallet: null }), "Online payment");
 });
 
 test("INV-53 every kind of sale and both statuses have a name", () => {

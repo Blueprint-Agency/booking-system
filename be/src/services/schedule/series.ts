@@ -61,7 +61,7 @@ import {
 } from './series-dates'
 
 /** "One year" per create or extend: a typo in the last date cannot make hundreds of classes. */
-export const MAX_RANGE_DAYS = 366
+const MAX_RANGE_DAYS = 366
 
 export interface SeriesTemplate {
   classTypeId: string

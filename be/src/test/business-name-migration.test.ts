@@ -12,7 +12,7 @@ const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0115_business_n
  * Migration 0115 (#398): a studio's Business name replaces the Receipt's Legal
  * name. A studio that set a Legal name trades under it; one that did not keeps
  * the name it already has; and a settings row written without a Business name
- * (a restore, `createTenant`) takes the display name, else the Domain name.
+ * (a restore) takes the display name, else the Domain name.
  *
  * Throwaway studios, provisioned today. One is given a Legal name back, as a
  * studio migrated from before would carry, and the migration's own SQL is run

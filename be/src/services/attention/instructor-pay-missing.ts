@@ -17,7 +17,7 @@ import type { AttentionContext, AttentionProvider, ProviderItem } from './types'
 const FINANCE_PAGE = '/admin/finance'
 
 /** The first day of the previous month, and today, as plain dates. */
-export function payWindow(now: Date): { from: string; to: string } {
+function payWindow(now: Date): { from: string; to: string } {
   const to = sgToday(now)
   const [year, month] = to.split('-').map(Number) as [number, number]
   const from = month === 1 ? `${year - 1}-12-01` : `${year}-${String(month - 1).padStart(2, '0')}-01`

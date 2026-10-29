@@ -232,8 +232,7 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'GET /api/v1/me/workshop-bookings': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/workshops': { gate: MEMBER_OF_THE_STUDIO },
   'GET /api/v1/me/workshops/:id': { gate: MEMBER_OF_THE_STUDIO },
-  // Not built yet (they answer 501), and behind the member gate all the same.
-  'GET /api/v1/me/dashboard': { gate: MEMBER_OF_THE_STUDIO },
+  // Not built yet (it answers 501), and behind the member gate all the same.
   'GET /api/v1/me/referral': { gate: MEMBER_OF_THE_STUDIO },
 
   // ── /public ──────────────────────────────────────────────────────────────
@@ -259,8 +258,8 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'POST /api/v1/public/staff-invitation/accept': { gate: STAFF_STEP },
   'GET /api/v1/public/staff-email-change': { gate: STAFF_STEP },
   'POST /api/v1/public/staff-email-change/confirm': { gate: STAFF_STEP },
-  // Not built yet (501).
   'GET /api/v1/public/marketing': { gate: ANYONE_NAMING_A_STUDIO },
+  // Not built yet (501).
   'GET /api/v1/public/referral/by-code/:code': { gate: ANYONE_NAMING_A_STUDIO },
 
   // ── /platform ────────────────────────────────────────────────────────────

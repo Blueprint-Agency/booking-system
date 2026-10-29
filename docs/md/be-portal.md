@@ -292,8 +292,6 @@ The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` d
 ### `bookings.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/bookings` | List with filters (`?session_kind`, `?session_id`, `?client_id`) |
-| GET | `/bookings/:id` | Detail |
 | POST | `/bookings/:id/cancel` | Staff cancel of one member's class booking (#320). Body `{ credit: 'return' \| 'keep' }`, **required** (400 without it). `return` puts what the booking spent back to the package that paid (`credit_returned`); `keep` moves nothing (`forfeited`, a late cancel on the member's history); a booking that spent nothing is `n_a` either way. Never judged by the window or the cap, never counted toward the cap. Refused: `409 booking_attended`, `409 not_cancellable` (not confirmed), `400 workshop_cancel_unsupported`, and on a private session's booking `422 session_already_started` from its start, whichever way `credit` points, as its request's cancel is (#434). `{ refund_outcome, refund_fired }`. Served with the instructor's by one role-parameterised module, `routes/portal/booking-cancel.ts` — see §3b. |
 | POST | `/bookings/:id/no-show` | Mark `state='no_show'`, `check_in_state='no_show'`, fire forfeit logic |
 

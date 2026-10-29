@@ -295,7 +295,7 @@ export interface ScanCheckInResult {
 }
 
 /** Codes are read aloud and typed; case and stray spaces are not meaningful. */
-export const normaliseBookingCode = (code: string) => code.trim().toUpperCase()
+const normaliseBookingCode = (code: string) => code.trim().toUpperCase()
 
 /**
  * A booking's QR or typed code, checked in. The code alone names the member

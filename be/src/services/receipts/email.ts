@@ -29,7 +29,7 @@ export async function receiptPageUrl(tenantId: string, receiptId: string): Promi
 }
 
 /** The Receipt as a file to attach: its PDF, named after its number (`R-000123.pdf`). */
-export async function receiptAttachment(receipt: ReceiptRow, studio?: ReceiptStudio): Promise<MailAttachment> {
+async function receiptAttachment(receipt: ReceiptRow, studio?: ReceiptStudio): Promise<MailAttachment> {
   return { filename: receiptPdfFilename(receipt), contentType: 'application/pdf', content: await receiptPdf(receipt, studio) }
 }
 
@@ -37,7 +37,7 @@ export async function receiptAttachment(receipt: ReceiptRow, studio?: ReceiptStu
  * The Receipt as an email body fragment: the Receipt itself, as every screen
  * shows it, and a line naming the PDF attached to the email.
  */
-export async function receiptEmailBlock(receipt: ReceiptRow, studio?: ReceiptStudio): Promise<string> {
+async function receiptEmailBlock(receipt: ReceiptRow, studio?: ReceiptStudio): Promise<string> {
   const document = receiptDocument(receipt, studio ?? (await receiptStudio(receipt)))
   return `<div style="margin:24px 0 0;">
 ${receiptHtml(document)}
@@ -55,7 +55,7 @@ export interface ReceiptMail {
   attachments: MailAttachment[]
 }
 
-export async function receiptMail(receipt: ReceiptRow): Promise<ReceiptMail> {
+async function receiptMail(receipt: ReceiptRow): Promise<ReceiptMail> {
   // The studio is read once, for the block and the PDF alike.
   const studio = await receiptStudio(receipt)
   const [receiptUrl, blockHtml, attachment] = await Promise.all([

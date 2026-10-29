@@ -18,7 +18,7 @@ import type { PaymentMethod } from './methods'
  * Code and has no catalogue price frozen on it, so its List Price is what was
  * paid and its discount is always zero, same as `corporate`.
  */
-export const MONEY_IN_KINDS = [
+const MONEY_IN_KINDS = [
   'purchase',
   'addon',
   'workshop_ticket',

@@ -77,7 +77,7 @@ export async function readCancellationPolicy(tenantId: string): Promise<Cancella
  * window or its PT window. A staff cancel records it the same way a member's is
  * decided by it.
  */
-export function cancelWindowHoursFor(policy: CancellationPolicy, kind: CancellationKind): number {
+function cancelWindowHoursFor(policy: CancellationPolicy, kind: CancellationKind): number {
   return kind === 'class' ? policy.classWindowHours : policy.ptWindowHours
 }
 

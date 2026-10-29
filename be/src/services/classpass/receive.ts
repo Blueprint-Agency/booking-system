@@ -64,8 +64,8 @@ export type ReceivedClassPassEmail = {
   duplicate: boolean
 }
 
-export const CLASSPASS_SENDER = 'noreply@info.classpass.com'
-export const GMAIL_FORWARDING_SENDER = 'forwarding-noreply@google.com'
+const CLASSPASS_SENDER = 'noreply@info.classpass.com'
+const GMAIL_FORWARDING_SENDER = 'forwarding-noreply@google.com'
 
 const KIND_BY_SUBJECT: Record<string, ClassPassEmailKind> = {
   'classpass user reservation': 'booking',

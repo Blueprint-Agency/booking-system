@@ -95,7 +95,7 @@ export function newAddressToken(): string {
   return randomBytes(16).toString('hex')
 }
 
-export function classPassAddress(token: string): string | null {
+function classPassAddress(token: string): string | null {
   const domain = currentEnv('CLASSPASS_INBOUND_DOMAIN')?.trim().toLowerCase()
   return domain ? `${token}@${domain}` : null
 }

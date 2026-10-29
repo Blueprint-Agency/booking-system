@@ -349,7 +349,7 @@ describe('complimentary package', { skip: integrationTestsEnabled ? false : SKIP
     await give(clientId, { packageId: trialCatalogId })
     await give(clientId)
 
-    const directory = await clientsSvc.listClients(tenantId, {})
+    const { rows: directory } = await clientsSvc.listClientsPage(tenantId, { page: 1, pageSize: 500 })
     const member = directory.find(c => c.id === clientId)
     assert.ok(member)
     assert.equal(member.converted, false, 'the Trial Funnel is not flattered by comps')

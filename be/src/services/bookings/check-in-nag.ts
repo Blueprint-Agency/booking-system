@@ -98,7 +98,7 @@ export async function classRoster(ids: string[]) {
   return rosterBySession(rows.map(r => ({ sessionId: r.sessionId!, checkInState: r.checkInState as RowCheckInState })))
 }
 
-export const classPending = async (ids: string[]) => pendingOnly(await classRoster(ids))
+const classPending = async (ids: string[]) => pendingOnly(await classRoster(ids))
 
 /** A private session's roster, as the check-in desk lists it: every member on it, booked or not (`ptSeats`). */
 export async function ptRoster(ids: string[]) {
@@ -121,7 +121,7 @@ export async function ptRoster(ids: string[]) {
   return rosterBySession(seats.map(s => ({ sessionId: s.sessionId, checkInState: (s.checkInState as RowCheckInState) ?? null })))
 }
 
-export const ptPending = async (ids: string[]) => pendingOnly(await ptRoster(ids))
+const ptPending = async (ids: string[]) => pendingOnly(await ptRoster(ids))
 
 async function claimClasses(endedBy: Date, endedAfter: Date, now: Date): Promise<Claimed[]> {
   const rows = await db

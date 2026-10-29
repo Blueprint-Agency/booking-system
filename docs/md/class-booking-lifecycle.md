@@ -17,7 +17,7 @@ workshops are referenced where they share policy but are not the subject here.
 | Credit-movement ledger on refund (G8) | ✅ done | writes `manual_adjustments` rows in cancel paths |
 | Inbox notifications (§13) | ✖ not being built (#237) | class and booking cancels no longer write `inbox_items`; the admin Inbox routes and `services/inbox.ts` are gone |
 | Waitlist seat-free hook / promotion (G7) | ✅ done | `services/waitlist/promote.ts`, called from `services/bookings/cancel.ts` (`spec-waitlist.md` §5) |
-| Admin bookings list/detail (G9 partial) | ⛔ still 501 | `admin/bookings.ts` `GET /`, `GET /:id` |
+| Admin bookings list/detail (G9 partial) | ✖ not being built | the Admin has no bookings list: a member's bookings are on Customer detail and a class's roster on its session page; `admin/bookings.ts` holds the cancel and no-show routes only |
 
 No DB migration was required — `cancellations`, `manual_adjustments`, `inbox_items`,
 `classes.cancelled_*`, and the `refund_outcome`/`checkin_state` enum values already existed.
@@ -46,7 +46,7 @@ and the build order to complete the lifecycle.
 | Client cancels booking | ❌ 501 stub | `routes/client/bookings.ts:24`, `services/bookings/cancel.ts` |
 | Cancellation policy eval | ❌ mock (always forfeit) | `services/policy/evaluate-cancellation.ts` |
 | Admin cancels class (bulk refund) | ❌ 501 stub | `routes/portal/admin/schedule.ts` `/classes/:id/cancel` |
-| Admin bookings list / force-cancel / no-show | ❌ all 501 | `routes/portal/admin/bookings.ts` |
+| Admin bookings list / force-cancel / no-show | ✖ no list is planned; cancel and no-show are built | `routes/portal/admin/bookings.ts` |
 | Refund outcome decision | ✅ pure fn done | `services/bookings/refund-outcome.ts:decideOutcome` |
 
 ### What already works
