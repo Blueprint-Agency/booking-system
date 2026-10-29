@@ -8,8 +8,6 @@ import { bookingCancelRoutes } from '../booking-cancel'
 const idParam = z.object({ id: z.string().uuid() })
 
 const app = new Hono()
-  .get('/', c => c.json({ todo: 'list bookings with filters' }, 501))
-  .get('/:id', c => c.json({ todo: 'detail' }, 501))
   .route('/', bookingCancelRoutes('admin'))
   .post('/:id/no-show', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
