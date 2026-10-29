@@ -751,6 +751,59 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(request?.status, 'cancelled_after_scheduled')
   })
 
+  test("RFD-38 a member cancelling the session that started a private-session package while its Refund unwinds, when Postgres aborts the member's cancel to break the deadlock: the cancel runs again and both go through", async () => {
+    const quin = await member(one, 'Quin Private Victim')
+    const paid = await buy(one, quin, 'pt')
+    const proposed = new Date(Date.now() + 5 * DAY).toISOString().slice(0, 10)
+    const requested = await post('/api/v1/me/pt-sessions/request', quin.headers, {
+      classTypeId: one.classTypeId,
+      locationId: one.locationId,
+      sessionType: '1on1',
+      clientPackageId: paid.clientPackageId,
+      slots: [{ proposedDate: proposed, startTime: '11:00', endTime: '12:00' }],
+    })
+    assert.equal(requested.status, 201, JSON.stringify(requested.body))
+    const requestId = requested.body.pt_request_id as string
+    const startsAt = new Date(Date.now() + 7 * DAY)
+    const scheduled = await post(`/api/v1/portal/admin/pt-sessions/${requestId}/schedule`, adminAtOne.headers, {
+      instructor_id: teacherAtOne.staffId,
+      location_id: one.locationId,
+      room_id: one.roomId,
+      starts_at: startsAt.toISOString(),
+      ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+    })
+    assert.equal(scheduled.status, 201, JSON.stringify(scheduled.body))
+    assert.equal((await packageRow(paid.clientPackageId)).activatedByPtSessionId, scheduled.body.pt_request.session.id, 'the session started the package')
+    const before = (await packageRow(paid.clientPackageId)).creditsOrSessionsRemaining
+    harness.logs.clear()
+
+    // As RFD-35, but the row is held past the server's deadlock_timeout once both
+    // have queued: the unwind's one deadlock check passes with nothing cyclic to
+    // find, so the member's cancel, whose wait on the Purchase closes the cycle
+    // after the row is let go, is the one Postgres finds and aborts.
+    const [cancelled, unwound] = await inFlightTogether(
+      harness.db,
+      sql`SELECT id FROM clients WHERE id = ${quin.clientId}`,
+      [
+        () => post(`/api/v1/me/pt-sessions/${requestId}/cancel`, quin.headers, {}),
+        () => deliverRefund(paid.intents[0]!),
+      ],
+      { holdPastDeadlockTimeout: true },
+    )
+
+    assert.equal(cancelled!.status, 200, JSON.stringify(cancelled!.body))
+    assert.equal(unwound!.status, 200, JSON.stringify(unwound!.body))
+    assert.equal(retriedAttempts().length, 1, 'one attempt ran again')
+    assert.equal(retriedAttempts()[0]!.operation, 'PT request cancel', "the member's cancel is what ran again")
+    assert.deepEqual(harness.logs.lines().filter(l => l.level === 'error'), [], 'nothing was reported')
+    const [request] = await harness.db.select().from(schema.ptRequests).where(eq(schema.ptRequests.id, requestId))
+    assert.equal(request?.status, 'cancelled_after_scheduled')
+    await assertRefunded(paid.purchaseId)
+    const voided = await packageRow(paid.clientPackageId)
+    assert.equal(voided.active, false)
+    assert.equal(voided.creditsOrSessionsRemaining, before, 'no session was returned to the voided package')
+  })
+
   test('RFD-36 a Refund whose cancel of one of its bookings Postgres aborts as a deadlock runs again from the start: the booking is cancelled, not left confirmed on the voided package', async () => {
     const ola = await member(one, 'Ola Aborted')
     const paid = await buy(one, ola, 'bundle')

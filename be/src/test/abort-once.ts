@@ -35,7 +35,7 @@ export interface AbortOnceAt {
 export async function abortOnce<T>(
   db: TestApp['db'],
   at: AbortOnceAt,
-  run: () => Promise<T>,
+  run: () => T | Promise<T>,
 ): Promise<{ result: T; reached: number }> {
   const fault = `abort_once_${randomUUID().replace(/-/g, '').slice(0, 16)}`
   await db.execute(sql.raw(`CREATE SEQUENCE ${fault}_seq`))
