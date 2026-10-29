@@ -280,13 +280,22 @@ export async function recordMovement(tx: Handle, m: RecordedMovement): Promise<v
  * A forfeit: the credit a cancel kept (a Late cancel, an over-cap one, a staff
  * Keep credit), recorded as a `kept` Credit movement. A Voided package has no
  * credit to keep, so nothing is recorded and the answer is `false`: the caller
- * settles the cancel as `n_a`. Nothing moves, so unlike a return this takes no
- * lock on the package.
+ * settles the cancel as `n_a`. Nothing moves, but the package row is held
+ * before Voided is read, as a return holds it: a Refund's Void holds the row
+ * while it ends the package, so a keep that waited for it finds it Voided and
+ * one that ran first is Voided along with the package. The row is the last lock
+ * a cancel takes, so holding it here changes no lock order.
  */
 export async function keepCredit(
   tx: Handle,
   m: Pick<RecordedMovement, 'tenantId' | 'clientId' | 'clientPackageId' | 'actor' | 'bookingId' | 'actedByStaffId'>,
 ): Promise<boolean> {
+  await tx
+    .select({ id: clientPackages.id })
+    .from(clientPackages)
+    .where(and(eq(clientPackages.tenantId, m.tenantId), eq(clientPackages.id, m.clientPackageId)))
+    .for('update')
+    .limit(1)
   if (await isVoided(tx, m.tenantId, m.clientPackageId)) return false
   await recordMovement(tx, { ...m, cause: 'kept' })
   return true
