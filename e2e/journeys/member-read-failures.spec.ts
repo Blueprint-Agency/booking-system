@@ -159,7 +159,9 @@ test('ACC-65 Up next never says nothing is booked while a read failed, and says 
 test('ACC-65 Up next with nothing to draw and a read that failed says it could not load what is next', async ({ page }) => {
   const { urls, members } = studio()
   await signInMember(page, members.newcomer)
+  await failRead(page, '/me/workshop-bookings')
   await failRead(page, '/me/pt-sessions')
+  await failRead(page, '/me/bookings/past', 'dropped')
 
   await page.goto(`${urls.client}/account`)
   const upNext = page.getByRole('region', { name: 'Up next' })
@@ -218,11 +220,19 @@ test('PT-168 a partner lookup that failed says so, and the request cannot be sen
   await failRead(page, '/me/pt-sessions/partner-lookup')
   const sent: string[] = []
   page.on('request', req => {
-    if (req.method() === 'POST' && new URL(req.url()).pathname.endsWith('/me/pt-sessions')) sent.push(req.url())
+    if (req.method() === 'POST' && new URL(req.url()).pathname.endsWith('/me/pt-sessions/request')) sent.push(req.url())
   })
 
   await page.goto(`${urls.client}/private-sessions`)
   await page.getByRole('button', { name: '2-on-1', exact: true }).click()
+  // A slot the form accepts, so the partner check is the only thing that can
+  // stop the request. The window notice is up once the studio's window has been
+  // read, and its earliest day is the date picker's `min`.
+  await expect(page.getByText(/^Book .*up to \d+ days? ahead/)).toBeVisible()
+  const date = page.getByLabel('Date', { exact: true })
+  const earliest = await date.getAttribute('min')
+  expect(earliest).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  await date.fill(earliest!)
   await page.getByLabel('Partner email').fill('someone@example.com')
   await page.getByRole('button', { name: 'Look up' }).click()
   await expect(page.getByText("Couldn't check that email.")).toBeVisible()
