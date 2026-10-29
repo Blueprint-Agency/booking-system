@@ -954,6 +954,8 @@ Workshops are configured at `/admin/packages/workshops` — **workspace-scoped**
 2. **Days** — date entry (range mode or individual dates) with per-day `start_time`, `end_time`, `base_price_sgd`, and `<CapacityFields />`.
 3. **Tiers** — at least one tier required. Each tier picks which `day_ids` it covers, a name, regular price, and optional early-bird price + cutoff.
 
+*As built:* a new workshop and an edit are each saved in one request (`POST /workshops`, `PATCH /workshops/:id`), and a refused save changes nothing.
+
 ### 18c. Derived tier capacity
 
 Tier capacity is **derived**, never stored:
