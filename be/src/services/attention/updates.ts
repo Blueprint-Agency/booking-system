@@ -6,6 +6,7 @@ import { staffUsers } from '../../db/schema/identity'
 import { loadTenantById } from '../tenants/tenants'
 import { formatWhen } from './format'
 import { now as clockNow } from '../../lib/clock'
+import { dateTime } from '../../shared/date-time'
 import { NotFoundError } from '../../shared/errors'
 import {
   composePtSessionCancelledByMember,
@@ -269,7 +270,12 @@ export const UPDATES_PAGE_SIZE = 20
 
 /** The cursor is the last row's time and id: `2026-10-27T01:02:03.456Z_<uuid>`. */
 const CURSOR = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
-export const isUpdatesCursor = (s: string) => CURSOR.test(s)
+const cursorTime = dateTime('An updates cursor')
+/** The shape, and a time that exists: `2026-02-30T00:00:00Z` has the shape and no day, and Postgres refuses it. */
+export const isUpdatesCursor = (s: string) => {
+  const match = CURSOR.exec(s)
+  return match !== null && cursorTime.safeParse(match[1]).success
+}
 
 /** Unread updates addressed to this staff member. */
 export async function unreadUpdateCount(reader: UpdateReader): Promise<number> {
