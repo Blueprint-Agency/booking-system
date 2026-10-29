@@ -30,7 +30,7 @@ import { forgetCachedTenants } from '../services/tenants/tenants'
 import { tenantTableOrder } from '../services/tenants/transfer'
 
 /**
- * The throwaway studio the browser journeys run in (#145), and its removal.
+ * The throwaway studio the browser journeys run in, and its removal.
  *
  * Staging holds real studios and real members until cutover, so the journeys
  * never touch one: each run makes a studio of its own under the reserved
@@ -153,7 +153,7 @@ export type E2eStudio = {
      */
     holder: { email: string; token: string }
   }
-  /** Every member's password (they choose one at sign-up, #173), made for this run only. */
+  /** Every member's password (they choose one at sign-up), made for this run only. */
   memberPassword: string
 }
 
@@ -186,9 +186,9 @@ function hourFromNow(days: number): Date {
 
 /**
  * The payment account the studio sells on. Every studio takes card payments on
- * its own account or not at all (#293), so without this the buy journey's
+ * its own account or not at all, so without this the buy journey's
  * checkout is refused `payments_not_configured`. Set up the way the super
- * portal sets up a studio's (#294): the key's mode checked against the
+ * portal sets up a studio's: the key's mode checked against the
  * environment, the account id asked of the provider, the studio's webhook
  * endpoint created on that account, and the key and signing secret sealed with
  * `PAYMENT_CREDENTIALS_KEY`.
@@ -401,7 +401,7 @@ export async function createE2eStudio({
     const registered = await app.request('/api/v1/public/members/register', {
       method: 'POST',
       headers,
-      // Members choose a password at sign-up (#173); the code still proves the
+      // Members choose a password at sign-up; the code still proves the
       // address. One password for every member of a run, made for that run.
       body: JSON.stringify({
         email,
@@ -416,7 +416,7 @@ export async function createE2eStudio({
       throw new Error(`registering ${email} failed (${registered.status}): ${await registered.text()}`)
     }
     const { token } = (await registered.json()) as { token: string }
-    // Every member purchase is billed to Billing details (#402): each member
+    // Every member purchase is billed to Billing details: each member
     // keeps one set, their default, so a journey's checkout has it selected.
     const billing = await app.request('/api/v1/me/billing-details', {
       method: 'POST',
@@ -576,7 +576,7 @@ export async function createE2eStudio({
     if (!scheduled.ok) throw new Error(`scheduling the holder's private session failed: ${scheduled.error}`)
   })
   // A pending corporate request, written as the row a purchase leaves: how a
-  // member comes to hold one is changing (#374), and what the journeys check
+  // member comes to hold one is changing, and what the journeys check
   // is only what the member app offers once they do.
   await db.insert(schema.corporateRequests).values({
     tenantId: tenant.id,
@@ -621,7 +621,7 @@ export async function removeE2eStudio({ db, slug }: { db: Db; slug: string }): P
     for (const table of [...order].reverse()) {
       await tx.execute(sql`DELETE FROM ${sql.identifier(table)} WHERE tenant_id = ${tenant.id}`)
     }
-    // Its logins are its own (#231) and outside `order`: what hangs off a user
+    // Its logins are its own and outside `order`: what hangs off a user
     // first, then the users, before the `tenants` row they restrict.
     for (const table of [
       schema.clientAuthSessions,

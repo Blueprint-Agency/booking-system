@@ -5,8 +5,8 @@ import { AsyncResource } from 'node:async_hooks'
  *
  * Resend's rate limit is per *team* — every key, staging and production alike,
  * draws on the same pool — and there is no burst allowance: one request over
- * the limit in a second is refused. A send that retried on its own, as the old
- * mailer did, could not know what the rest of the process was sending, so a
+ * the limit in a second is refused. A send that retried on its own
+ * could not know what the rest of the process was sending, so a
  * burst of admin notifications could be refused alongside the sign-in code a
  * member was standing at the door waiting for.
  *
@@ -26,7 +26,7 @@ import { AsyncResource } from 'node:async_hooks'
  *   moment, and fails at once.
  *
  * Callers still await their send, so `sendTemplatedEmail` files `sent` or
- * `failed` exactly as before. This module knows nothing about env, the database
+ * `failed` from the outcome. This module knows nothing about env, the database
  * or the logger — `lib/mailer.ts` wires those in — which is what lets the tests
  * drive it with a scripted Resend on a virtual clock.
  *

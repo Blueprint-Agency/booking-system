@@ -154,7 +154,7 @@ const TENANT_CONTEXT_EXEMPT = (path: string) =>
   path === '/api/v1/healthz' ||
   path === '/api/v1/webhooks/resend' ||
   // Each studio's own payment account delivers to its own endpoint, whose slug
-  // is the routing key (#100). It resolves its own tenant — the slug selects a
+  // is the routing key. It resolves its own tenant — the slug selects a
   // signing secret and the signature check is what settles it — so no header
   // or Origin is asked to name one first.
   path.startsWith('/api/v1/webhooks/stripe/') ||
@@ -203,7 +203,7 @@ app.route('/api/v1/portal', portalRoutes)
 app.route('/api/v1/platform', platformRoutes)
 app.route('/api/v1/webhooks', webhookRoutes)
 
-// A staff or member set-password link opened from an inbox (#230), answered
+// A staff or member set-password link opened from an inbox, answered
 // ahead of the pool's own GET — which looks the token up, outside any Tenant
 // context, where the pool's tables show it nothing. See `resetLinkRedirect`.
 for (const pool of ['staff', 'client'] as const) {

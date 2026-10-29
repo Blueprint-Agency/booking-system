@@ -14,11 +14,10 @@ declare module 'hono' {
 /**
  * The allowlist, read on every request.
  *
- * `PLATFORM_ADMIN_EMAIL` alone — no studio's staff account is folded in. One
- * used to be, as a bootstrap convenience so that an environment setting nothing
- * new still had one platform admin rather than none. That convenience was the
- * escalation this module's own docstring warns about: it made one studio's
- * staff able to create, list and suspend every other studio on the platform.
+ * `PLATFORM_ADMIN_EMAIL` alone — no studio's staff account is folded in.
+ * Folding one in as a bootstrap convenience would be the escalation this
+ * module's own docstring warns about: it would make one studio's staff able to
+ * create, list and suspend every other studio on the platform.
  * The platform operator is a level above any
  * studio, so it is named explicitly or not at all.
  *
@@ -43,7 +42,7 @@ if (platformAdmins().length === 0) {
 }
 
 /**
- * The gate on the super portal: two locks, in order (#116).
+ * The gate on the super portal: two locks, in order.
  *
  *  1. **A `platform` pool session.** The super portal signs in through its own
  *     Better Auth instance, whose users are rows no studio can write. A studio

@@ -28,8 +28,8 @@ export type YearFigures = { classes: number; attended: number; noShows: number }
 export type RefundFigure = { name: string; cents: number }
 
 /**
- * Which counts arrived with the timetable (#179, #180), history (#181), the
- * money history (#217), Instructor Pay (#218) and payment methods (#284), and so
+ * Which counts arrived with the timetable, history, the
+ * money history, Instructor Pay and payment methods, and so
  * may be missing from an older file.
  */
 type AddedLater =

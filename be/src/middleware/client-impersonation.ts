@@ -6,7 +6,7 @@ import { tenantId } from './tenant'
 
 /**
  * On client routes (/api/v1/me/*), pairs an impersonation session with its
- * x-impersonation-grant header (#118).
+ * x-impersonation-grant header.
  *
  *   - Neither a grant nor an impersonation session → no-op (normal request).
  *   - An impersonation session with no valid grant → 401. The grant is what

@@ -33,7 +33,7 @@ declare module 'hono' {
  *   401 — no bearer token, or no such session in the staff pool at this studio
  *         (a member's or the super portal's session is a row this pool has
  *         never seen, and another studio's is one this studio's context cannot
- *         see, since logins are per studio — #231)
+ *         see, since logins are per studio)
  *   403 — the session's claim names another studio, or this studio has no
  *         staff_users row linked to the user
  *

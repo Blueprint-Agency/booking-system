@@ -3,7 +3,7 @@ import { rateLimiter } from 'hono-rate-limiter'
 import { ERROR_CODES } from '../shared/error-codes'
 
 /**
- * Checkout's own budget (#142): a `/api/v1/me/checkout/*` call that opens or
+ * Checkout's own budget: a `/api/v1/me/checkout/*` call that opens or
  * syncs a payment session with the provider gets far less room than the
  * general signed-in budget in `app.ts`, which it still also counts against.
  */

@@ -2,7 +2,7 @@
  * The e2e studio writes a studio and people into whatever database it is
  * pointed at, and its teardown deletes rows. Production holds real studios and
  * nothing about a real studio is ever a fixture, so it refuses there outright —
- * staging is where the journeys run (#145).
+ * staging is where the journeys run.
  *
  * Its own file, with no imports, so the refusal is checked before `src/env.ts`
  * or a database connection is loaded.

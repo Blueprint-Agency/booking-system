@@ -1,6 +1,6 @@
 /**
  * Where the payment provider is reached: Stripe itself, or — for the browser
- * journeys on a pull request (#207) — a stand-in on the CI runner, so a run
+ * journeys on a pull request — a stand-in on the CI runner, so a run
  * makes no call to real Stripe and needs no Stripe key.
  *
  * `STRIPE_API_URL` is an origin (`http://127.0.0.1:12111`), handed to the SDK

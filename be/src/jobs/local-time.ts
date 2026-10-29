@@ -1,14 +1,13 @@
 /**
  * "Daily at 01:00" — in whose 01:00?
  *
- * The six scheduled jobs used to answer that with a hardcoded UTC offset
- * (`0 17 * * *` = 01:00 SGT), which is right for exactly one studio and wrong
- * for every other one. It is also quietly wrong on the server itself: the
- * Postgres container runs `Asia/Kuala_Lumpur` and the process runs whatever the
- * host says, so "the daily hour" was being inferred from three different clocks
- * that only happen to agree today.
+ * A hardcoded UTC offset (`0 17 * * *` = 01:00 SGT) is right for exactly one
+ * studio and wrong for every other one. It is also quietly wrong on the server
+ * itself: the Postgres container runs `Asia/Kuala_Lumpur` and the process runs
+ * whatever the host says, so "the daily hour" would be inferred from three
+ * different clocks that only happen to agree today.
  *
- * The fix is to stop scheduling in UTC-with-an-offset entirely. Cron ticks on a
+ * So nothing is scheduled in UTC-with-an-offset. Cron ticks on a
  * fixed grid; each tick asks every tenant "is it your hour yet?", answered from
  * that tenant's IANA zone. So a tenant is never configured into a schedule —
  * its `timezone` column is the whole configuration — and adding a tenant needs

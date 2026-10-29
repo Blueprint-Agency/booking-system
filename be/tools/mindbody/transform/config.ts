@@ -283,8 +283,8 @@ const studioConfigSchema = z.object({
   /**
    * Where an Unlimited Plan whose name names no Location is homed. Asked for
    * now, with the Locations, so the config is settled in one sitting; read when
-   * packages arrive (#178), as are `mindbodyIds` and `offSiteVenues` when
-   * classes do (#179).
+   * packages arrive, as are `mindbodyIds` and `offSiteVenues` when
+   * classes do.
    */
   defaultLocation: open(z.string().min(1)),
   /**
