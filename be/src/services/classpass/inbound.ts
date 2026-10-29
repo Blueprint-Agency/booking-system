@@ -86,7 +86,7 @@ export function useInboundFetcher(next: InboundFetcher): () => void {
  * recipient (`received_for`) comes first: Gmail forwarding leaves To: as the
  * studio's own mailbox.
  */
-export function classPassToken(data: ReceivedEventData, domain: string): string | null {
+function classPassToken(data: ReceivedEventData, domain: string): string | null {
   const suffix = `@${domain.trim().toLowerCase()}`
   for (const recipient of [...(data.received_for ?? []), ...(data.to ?? [])]) {
     const address = addressOf(recipient)

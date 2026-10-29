@@ -694,7 +694,7 @@ export function checkSupportingDocument(input: {
   return { ok: true, extension }
 }
 
-export const STATUSES_TAKING_A_DOCUMENT = ['pending', 'approved'] as const satisfies readonly LeaveStatus[]
+const STATUSES_TAKING_A_DOCUMENT = ['pending', 'approved'] as const satisfies readonly LeaveStatus[]
 
 export function checkRequestTakesDocument(
   status: LeaveStatus,

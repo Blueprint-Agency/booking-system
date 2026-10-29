@@ -1,6 +1,6 @@
 import { BadRequestError } from '../../shared/errors'
 
-export const BIO_MAX = 2000
+const BIO_MAX = 2000
 
 /**
  * The one bio limit, on every path that writes a staff member's bio: the

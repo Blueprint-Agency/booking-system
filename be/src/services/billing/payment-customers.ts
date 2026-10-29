@@ -105,7 +105,7 @@ function isMissingAtProvider(err: unknown): boolean {
  * Scoped to the exact row, and never raised: this is housekeeping on the way
  * past, and a failure to tidy up must not become the member's error.
  */
-export async function forgetStaleCustomer(
+async function forgetStaleCustomer(
   tenantId: string,
   clientId: string,
   accountId: string | null,

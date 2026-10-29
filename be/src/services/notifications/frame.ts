@@ -40,7 +40,7 @@ const INVITES: ReadonlySet<string> = new Set(['admin_invite', 'instructor_invite
 const CODES: ReadonlySet<string> = new Set(['sign_in_code', 'staff_two_factor_code'])
 
 /** The footer's "why am I getting this" line. */
-export function reasonLine(slug: string, recipientKind: 'client' | 'staff', studioName: string): string {
+function reasonLine(slug: string, recipientKind: 'client' | 'staff', studioName: string): string {
   if (INVITES.has(slug)) return `You're receiving this because ${studioName} invited this address to an account.`
   if (CODES.has(slug)) return `You're receiving this because someone asked to sign in to ${studioName} with this address.`
   return recipientKind === 'staff'

@@ -13,7 +13,7 @@ import { now as clockNow } from '../../lib/clock'
 export const DEFAULT_TIMEZONE = String(tenants.timezone.default)
 
 /** The durations the operator can pick, in months. */
-export const TERM_MONTHS = [3, 6, 12] as const
+const TERM_MONTHS = [3, 6, 12] as const
 export type TermMonths = (typeof TERM_MONTHS)[number]
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
