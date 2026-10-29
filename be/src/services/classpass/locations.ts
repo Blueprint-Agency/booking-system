@@ -18,8 +18,6 @@ import { rerunOpenReviewAt } from './review-items'
  * item. `staffId` is who closes the ones that now place.
  */
 
-export { normaliseClassPassLocation } from './location-name'
-
 export type ClassPassLocationMapping = {
   id: string
   /** Normalised. */
