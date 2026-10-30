@@ -161,6 +161,28 @@ export async function updateClassPackage(
   return row!
 }
 
+/**
+ * An edit and the Promotions sent with it, saved together or not at all, as
+ * `createClassPackageWithPromotions` does: one savepoint, so a Promotion the
+ * database refuses takes the package's changes with it. No `promotions` leaves
+ * the package's Promotions as they are.
+ */
+export async function updateClassPackageWithPromotions(
+  tenantId: string,
+  id: string,
+  patch: UpdateClassPackageInput,
+  promotions: PromotionWriteInput[] | undefined,
+  actorStaffId: string,
+): Promise<ClassPackageRow> {
+  return db.transaction(async () => {
+    const row = await updateClassPackage(tenantId, id, patch)
+    if (promotions !== undefined) {
+      await replacePromotionsForParent(tenantId, 'class_package', id, promotions, actorStaffId)
+    }
+    return row
+  })
+}
+
 export async function archiveClassPackage(
   tenantId: string,
   id: string,

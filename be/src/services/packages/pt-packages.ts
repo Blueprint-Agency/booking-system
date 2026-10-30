@@ -130,6 +130,28 @@ export async function updatePtPackage(
   return row!
 }
 
+/**
+ * An edit and the Promotions sent with it, saved together or not at all, as
+ * `createPtPackageWithPromotions` does: one savepoint, so a Promotion the
+ * database refuses takes the package's changes with it. No `promotions` leaves
+ * the package's Promotions as they are.
+ */
+export async function updatePtPackageWithPromotions(
+  tenantId: string,
+  id: string,
+  patch: UpdatePtPackageInput,
+  promotions: PromotionWriteInput[] | undefined,
+  actorStaffId: string,
+): Promise<PtPackageRow> {
+  return db.transaction(async () => {
+    const row = await updatePtPackage(tenantId, id, patch)
+    if (promotions !== undefined) {
+      await replacePromotionsForParent(tenantId, 'pt_package', id, promotions, actorStaffId)
+    }
+    return row
+  })
+}
+
 export async function archivePtPackage(tenantId: string, id: string): Promise<PtPackageRow> {
   const existing = await getPtPackage(tenantId, id)
   if (existing.status === 'archived') {
