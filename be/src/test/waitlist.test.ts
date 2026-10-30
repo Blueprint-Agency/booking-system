@@ -1075,9 +1075,16 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
    * `first` queues on the head's member time, then `second` queues there too while holding
    * `heldPackage`. Released, `first` takes the time and waits on the package `second` holds,
    * while `second` waits on the time: Postgres aborts one of them. `cycle` says the interleaving
-   * was reached.
+   * was reached. When it was not, `heldInstead` names which of `otherPackages` the second held
+   * at that moment, for a caller that guessed the wrong package to hold.
    */
-  async function bothQueuedOnTimeOf(head: Member, heldPackage: string, first: () => Promise<Reply>, second: () => Promise<Reply>) {
+  async function bothQueuedOnTimeOf(
+    head: Member,
+    heldPackage: string,
+    first: () => Promise<Reply>,
+    second: () => Promise<Reply>,
+    otherPackages: readonly string[] = [],
+  ) {
     const time = await holdTimeOf(head)
     try {
       let settled = false
@@ -1086,8 +1093,10 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
       const secondCall = second().finally(() => (settled = true))
       await untilRowLockWaiters(2, () => settled, 'advisory')
       const cycle = !settled && (await lockedElsewhere(heldPackage))
+      let heldInstead: string | undefined
+      if (!cycle && !settled) for (const other of otherPackages) if (await lockedElsewhere(other)) heldInstead = other
       await time.release()
-      return { answers: await Promise.all([firstCall, secondCall]), cycle }
+      return { answers: await Promise.all([firstCall, secondCall]), cycle, heldInstead }
     } finally {
       await time.release()
     }
@@ -1135,6 +1144,11 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
   test('WTL-44 an Admin’s Package rule change cancels a member’s booking and then another, promoting further down a line to the head of the line the member frees a seat on: both go through, the head is booked into that seat once, and each credit comes back once', async () => {
     const refused = await classPackagesSvc.createClassPackage(one.id, { name: `Waitlist refused ${run}`, kind: 'credit_bundle', credits: 10, validityDays: 90, priceSgd: '100.00' })
     let cycled = false
+    // The rule change cancels its refused bookings in the order its own read meets them. The
+    // test's read below predicts that order, but a different plan can meet them the other way
+    // round. A round that sees the rule change holding the other member's package says so, and
+    // the next round holds that member's instead.
+    let meetsLast = false
     for (let round = 1; round <= 6 && !cycled; round++) {
       const changed = await addClass(one, { online: 2, waitlist: 3 }, 5 * DAY)
       const full = await addClass(one, { online: 2, waitlist: 3 })
@@ -1150,7 +1164,8 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
         JOIN client_packages cp ON cp.id = b.client_package_id
         LEFT JOIN class_packages p ON p.id = cp.source_class_package_id
         WHERE b.tenant_id = ${one.id} AND b.class_id = ${changed} AND b.state = 'confirmed' AND b.check_in_state <> 'attended'`)
-      const [canceller, other] = (pair[0]!.clientId === firstRefused ? pair : [...pair].reverse()) as [Member, Member]
+      const predicted = pair[0]!.clientId === firstRefused ? pair : [...pair].reverse()
+      const [canceller, other] = (meetsLast ? [...predicted].reverse() : predicted) as [Member, Member]
       const seat = seats.get(canceller)!
       const promotedFirst = await member(one)
       const head = await member(one)
@@ -1159,14 +1174,16 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
       const headEntry = await joined(head, full)
       await joined(await member(one), full)
 
-      const { answers, cycle } = await bothQueuedOnTimeOf(
+      const { answers, cycle, heldInstead } = await bothQueuedOnTimeOf(
         head,
         await packageOf(canceller),
         () => cancel(canceller, seat),
         () => send('PATCH', `/portal/admin/schedule/classes/${changed}`, one.admin.headers, { package_rule: { mode: 'only', package_ids: [one.classPackageId] } }),
+        [await packageOf(other)],
       )
       const [byMember, byAdmin] = answers as [Reply, Reply]
       cycled = cycle
+      if (heldInstead) meetsLast = !meetsLast
 
       assert.equal(byMember.status, 200, `round ${round}: ${JSON.stringify(byMember.body)}`)
       assert.equal(byMember.body.refund_outcome, 'credit_returned')
