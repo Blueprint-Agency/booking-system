@@ -41,6 +41,14 @@ test('every slug the senders know is seeded, and vice versa', () => {
   assert.deepEqual([...seeded].filter(s => !declared.has(s)), [], 'seeded but not declared')
 })
 
+test('NTF-51 a studio is seeded no welcome or referral-credited template, because nothing sends either', () => {
+  const seeded = SEEDED_TEMPLATES.map(t => t.slug)
+  assert.ok(!seeded.includes('welcome'), 'welcome is not seeded')
+  assert.ok(!seeded.includes('referral_credited'), 'referral_credited is not seeded')
+  assert.ok(!('welcome' in TEMPLATE_VARIABLES), 'welcome declares no variables')
+  assert.ok(!('referral_credited' in TEMPLATE_VARIABLES), 'referral_credited declares no variables')
+})
+
 test('each template uses exactly its allow-listed variables', () => {
   for (const t of SEEDED_TEMPLATES) {
     const allowed = new Set(TEMPLATE_VARIABLES[t.slug as keyof typeof TEMPLATE_VARIABLES] ?? [])

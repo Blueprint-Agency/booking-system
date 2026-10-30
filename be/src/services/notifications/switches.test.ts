@@ -3,7 +3,15 @@ import { test } from 'node:test'
 import { STUDIO_EMAILS } from './switches'
 import { TEMPLATE_VARIABLES } from './variables'
 
-const MEMBER_SWITCHABLE = ['class_booking_confirmed', 'class_cancelled_credit_returned', 'pt_cancelled_session_returned', 'credit_expiry_reminder']
+const MEMBER_SWITCHABLE = [
+  'class_booking_confirmed',
+  'class_cancelled_credit_returned',
+  'class_cancelled_forfeited',
+  'pt_cancelled_session_returned',
+  'pt_cancelled_forfeited',
+  'pt_request_submitted',
+  'credit_expiry_reminder',
+]
 const MEMBER_LOCKED = [
   'sign_in_code',
   'password_reset',
@@ -19,22 +27,16 @@ const MEMBER_LOCKED = [
   'admin_cancel_workshop',
   'class_rule_cancelled',
   'pt_request_cancelled',
+  'pt_session_approved',
+  'pt_request_expired',
   'class_waitlist_promoted',
 ]
 const STAFF_SWITCHABLE = ['checkin_nag', 'instructor_cancel_class', 'classpass_overbooked', 'leave_request_submitted', 'leave_approved', 'leave_rejected', 'leave_revoked']
 const STAFF_LOCKED = ['staff_two_factor_code', 'staff_password_reset', 'admin_invite', 'instructor_invite', 'staff_email_change_link', 'staff_email_changed_notice']
 
-const NO_SENDER = [
-  'welcome',
-  'class_cancelled_forfeited',
-  'pt_cancelled_forfeited',
-  'pt_session_approved',
-  'pt_session_declined',
-  'pt_request_expired',
-  'pt_request_submitted',
-  'workshop_waitlist_promoted',
-  'referral_credited',
-]
+// Seeded, and no sender yet: a private-session request is never declined in the
+// app (staff schedule or cancel it), and a workshop has no waitlist to promote from.
+const NO_SENDER = ['pt_session_declined', 'workshop_waitlist_promoted']
 
 const sorted = (slugs: Iterable<string>) => [...slugs].sort()
 
