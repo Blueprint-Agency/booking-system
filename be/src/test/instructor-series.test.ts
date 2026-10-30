@@ -450,6 +450,8 @@ describe('instructor scheduling for themselves', { skip: integrationTestsEnabled
     const preview = await json(
       await call('/admin/schedule/series/preview', admin.headers, 'POST', {
         ...seriesBody(mondayFrom(49), 2),
+        main_instructor_id: tara.id,
+        supporting_instructors: [],
         class_type_id: deleted!.id,
       }),
       404,
