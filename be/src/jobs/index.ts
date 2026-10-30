@@ -6,7 +6,7 @@ import { releaseExpiredFormerSlugs } from '../services/tenants/former-slugs'
 import { suspendEndedTerms } from '../services/tenants/term'
 import { SLOT_CRON, isDailySlot } from './local-time'
 import { expireStaleSessions, completeEndedPtSessions } from '../services/pt-sessions/cancel'
-import { expirePackages, sendLapsingAlerts, sendExpiredNotifications } from '../services/packages/expire'
+import { expirePackages, sendLapsingAlerts } from '../services/packages/expire'
 import { expireWaitlists } from '../services/waitlist/line'
 import { pruneStaffUpdates } from '../services/attention/updates'
 import { sendCheckInNags } from '../services/bookings/check-in-nag'
@@ -142,9 +142,8 @@ export const scheduledJobs = {
   // they are derived.
   pruneStaffUpdates: dailyTenantJob('pruneStaffUpdates', 3, pruneStaffUpdates),
 
-  // Daily 08:00 tenant-local — lapsing + expired notifications
+  // Daily 08:00 tenant-local — lapsing-package reminders
   sendLapsingAlerts: dailyTenantJob('sendLapsingAlerts', 8, sendLapsingAlerts),
-  sendExpiredNotifications: dailyTenantJob('sendExpiredNotifications', 8, sendExpiredNotifications),
 
   // Nightly, platform-wide — release renamed studios' old slugs whose redirect
   // window has ended. Not per tenant: `former_slugs` is platform data with no
@@ -172,7 +171,6 @@ export async function registerJobs() {
   cron.schedule(SLOT_CRON, scheduledJobs.expirePackages)
   cron.schedule(SLOT_CRON, scheduledJobs.pruneStaffUpdates)
   cron.schedule(SLOT_CRON, scheduledJobs.sendLapsingAlerts)
-  cron.schedule(SLOT_CRON, scheduledJobs.sendExpiredNotifications)
   cron.schedule('0 3 * * *', scheduledJobs.releaseExpiredFormerSlugs, { timezone: 'UTC' })
   cron.schedule(SLOT_CRON, scheduledJobs.suspendEndedTerms)
 }
