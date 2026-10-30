@@ -427,7 +427,7 @@ describe('a ClassPass booking', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(attendee(await adminRoster(one, classId), bookingId).source, 'classpass')
   })
 
-  test('CPS-08 a ClassPass booking settles no Waitlist entry and books a member who holds a clashing booking', async () => {
+  test('CPS-08 a ClassPass booking withdraws the member\'s waiting Waitlist entry for that class and books a member who holds a clashing booking', async () => {
     const t0 = aWeekOut()
     harness.clock.set(t0)
     const startsAt = shifted(t0, 2 * DAY)
@@ -444,11 +444,11 @@ describe('a ClassPass booking', { skip: integrationTestsEnabled ? false : SKIP_R
     const { bookingId } = await classPassBook(one, mo, classId)
 
     assert.equal(attendee(await adminRoster(one, classId), bookingId).source, 'classpass')
-    const [still] = await harness.db
-      .select({ status: schema.waitlistEntries.status })
+    const [settled] = await harness.db
+      .select({ status: schema.waitlistEntries.status, resolvedBy: schema.waitlistEntries.resolvedBy })
       .from(schema.waitlistEntries)
       .where(and(eq(schema.waitlistEntries.id, entry!.id)))
-    assert.equal(still!.status, 'waiting')
+    assert.deepEqual(settled, { status: 'withdrawn', resolvedBy: 'client' })
   })
 
   test('CPS-09 a ClassPass booking sends the member no email', async () => {
