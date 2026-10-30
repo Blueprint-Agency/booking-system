@@ -237,13 +237,16 @@ export async function classPassBookClass(tenantId: string, input: ClassPassBookC
       if (!paid.ok) throw new Error('invariant: the ClassPass payer never refuses')
 
       // Booked while waiting in the line: the place in it is spent, as when the
-      // member books the class themselves.
-      await settleWaitingOnBooking(tx, tenantId, {
-        classId: input.classId,
-        clientId: input.clientId,
-        by: 'client',
-        now,
-      })
+      // member books the class themselves. A class that has started is past its
+      // line, which the expiry sweep marks `expired` (spec-waitlist.md §6).
+      if (cls.startsAt > now) {
+        await settleWaitingOnBooking(tx, tenantId, {
+          classId: input.classId,
+          clientId: input.clientId,
+          by: 'client',
+          now,
+        })
+      }
 
       return paid.booking
     })
