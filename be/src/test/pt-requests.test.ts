@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { frontendOrigin, harnessAddress, integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
@@ -2137,6 +2138,39 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
 
     assert.equal(await ptSessionCount(), before)
     assert.equal(await sessionsLeft(awayPackage), 10)
+  })
+
+  test('PT-176 a manual session naming a member id the studio does not have, alone or beside a real member, is refused 404 client_not_found by the Admin and the Instructor, and nothing is made or debited', async () => {
+    const real = await member(one, 'Uma Real Beside')
+    const realPackage = await givePt(one, real, '2on1')
+    const unknown = randomUUID()
+    const requestCount = async () =>
+      (await harness.db.select({ n: sql<number>`count(*)::int` }).from(schema.ptRequests))[0]!.n
+    const sessionsBefore = await ptSessionCount()
+    const requestsBefore = await requestCount()
+
+    const attempts: [string, () => Promise<Response>][] = [
+      ['admin, alone', () => adminManual(adminAtOne, [{ client_id: unknown }], { override: true })],
+      ['instructor, alone', () => instructorManual(coachA, [{ client_id: unknown }], { override: true })],
+      [
+        'admin, second member',
+        () => adminManual(adminAtOne, [{ client_id: real.clientId }, { client_id: unknown }], { sessionType: '2on1', override: true }),
+      ],
+      [
+        'instructor, second member',
+        () => instructorManual(coachA, [{ client_id: real.clientId }, { client_id: unknown }], { sessionType: '2on1', override: true }),
+      ],
+      ['admin, in capitals', () => adminManual(adminAtOne, [{ client_id: unknown.toUpperCase() }], { override: true })],
+    ]
+    for (const [label, attempt] of attempts) {
+      const refused = await expectStatus(await attempt(), 404)
+      assert.equal(refused.error, 'client_not_found', label)
+    }
+
+    assert.equal(await ptSessionCount(), sessionsBefore)
+    assert.equal(await requestCount(), requestsBefore, 'no request is left behind')
+    assert.equal((await requestsOf(real)).length, 0)
+    assert.equal(await sessionsLeft(realPackage), 10)
   })
 
   test('PT-81 the package staff name pays; with none named the Default payer does — matching type, running before Dormant, soonest-ending first', async () => {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { after, afterEach, before, describe, test } from 'node:test'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
@@ -342,6 +343,38 @@ describe('instructor scheduling for themselves', { skip: integrationTestsEnabled
       [0, 0, 1],
       'a refused edit changes nothing',
     )
+  })
+
+  test('SCH-45 a class created with a class type id the studio does not have, well-formed or in capitals, is refused 404 class_type_not_found by the instructor and the admin routes alike, and nothing is written', async () => {
+    const startsAt = at(44)
+    const body = (classType: string) => ({
+      class_type_id: classType,
+      main_instructor_id: tara.id,
+      location_id: locationId,
+      room_id: roomId,
+      starts_at: startsAt.toISOString(),
+      ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+      capacity_online: 5,
+      credit_cost: 1,
+    })
+    const unknown = randomUUID()
+    const startingThen = () =>
+      harness.db.select({ id: schema.classes.id }).from(schema.classes).where(eq(schema.classes.startsAt, startsAt))
+    const before = (await startingThen()).length
+
+    for (const classType of [unknown, unknown.toUpperCase()]) {
+      for (const [route, headers] of [
+        ['/instructor/schedule/classes', tara.headers],
+        ['/admin/schedule/classes', admin.headers],
+      ] as const) {
+        const refused = await json(await call(route, headers, 'POST', body(classType)), 404)
+        assert.equal(refused.error, 'class_type_not_found', `${route}: ${JSON.stringify(refused)}`)
+      }
+    }
+    assert.equal((await startingThen()).length, before, 'a refused class is not created')
+
+    const made = await json(await call('/instructor/schedule/classes', tara.headers, 'POST', body(classTypeId)), 201)
+    assert.equal(made.class_type_id, classTypeId, "the same request with the studio's own class type goes through")
   })
 
   test('SCH-28 an instructor cannot extend or end a series, even one they created', async () => {
