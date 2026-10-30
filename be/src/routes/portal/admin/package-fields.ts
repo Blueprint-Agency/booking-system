@@ -3,6 +3,7 @@ import type { PromotionWriteInput } from '../../../services/packages/promotions'
 import { MAX_VALIDITY_DAYS } from '../../../services/packages/validity'
 import { BadRequestError } from '../../../shared/errors'
 import { dateTime } from '../../../shared/date-time'
+import { endsAfterStart } from '../parse'
 
 /**
  * The fields a class package and a PT package share, each with the sentence
@@ -56,7 +57,7 @@ export const promotionInputSchema = z
     ends_at: promotionDate,
   })
   // The database refuses an end that is not after the start; the form is told which end, in a sentence, instead.
-  .refine(p => Date.parse(p.ends_at) > Date.parse(p.starts_at), { message: PROMOTION_ORDER_MESSAGE, path: ['ends_at'] })
+  .refine(endsAfterStart, { message: PROMOTION_ORDER_MESSAGE, path: ['ends_at'] })
 
 export const promotionsField = z.array(promotionInputSchema, { message: 'Promotions are a list.' })
 

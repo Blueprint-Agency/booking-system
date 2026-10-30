@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { EARLIEST_DATE, LATEST_DATE } from "@/lib/formatters";
+import { EARLIEST_DATE, LATEST_DATE, isFilterDay } from "@/lib/formatters";
 import { localDay, localDayRange } from "@/lib/local-day";
 
 /**
@@ -112,7 +112,7 @@ export function DateRangeFilter({
   // Editing either endpoint keeps the other; falling back to the typed date
   // covers editing while "All time" is selected and there's no range yet.
   function setEndpoint(which: "from" | "to", v: string) {
-    if (!v) return;
+    if (!isFilterDay(v)) return;
     const base = value ?? { from: v, to: v };
     const next = { ...base, [which]: v };
     // Keep the range ordered if the user picks a start after the end.
