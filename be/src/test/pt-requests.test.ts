@@ -2056,6 +2056,19 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal((await requestRow(requestId)).createdByStaffId, coachA.staffId)
   })
 
+  test('PT-180 only an admin sets a manual session\'s pay: an instructor\'s body naming a pay is ignored, and their session is left unpriced as their classes are', async () => {
+    const abe = await member(one, 'Abe Pay Admin')
+    const ben = await member(one, 'Ben Pay Coach')
+    await givePt(one, abe, '1on1')
+    await givePt(one, ben, '1on1')
+
+    const byAdmin = await manualSession(await adminManual(adminAtOne, [{ client_id: abe.clientId }]))
+    assert.equal((await sessionRow(byAdmin.sessionId)).instructorPaySgd, '60.00', 'an admin prices it')
+
+    const byCoach = await manualSession(await instructorManual(coachA, [{ client_id: ben.clientId }]))
+    assert.equal((await sessionRow(byCoach.sessionId)).instructorPaySgd, null, 'an instructor leaves it unpriced')
+  })
+
   test('PT-79 a manual session with nobody, the same member twice, or more members than the type seats is refused, and nothing is made', async () => {
     const pia = await member(one, 'Pia Roster')
     const pax = await member(one, 'Pax Roster')

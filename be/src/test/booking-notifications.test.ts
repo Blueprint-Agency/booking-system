@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import type { MailTransport, OutboundMessage } from '../lib/mailer'
 
@@ -147,8 +147,8 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
   }
 
   let classSlots = 0
-  async function addClass(at: Studio, options: { creditCost?: number } = {}): Promise<string> {
-    const startsAt = new Date(Date.now() + 3 * DAY + classSlots++ * 2 * HOUR)
+  async function addClass(at: Studio, options: { creditCost?: number; startsInHours?: number } = {}): Promise<string> {
+    const startsAt = new Date(Date.now() + (options.startsInHours === undefined ? 3 * DAY : options.startsInHours * HOUR) + classSlots++ * 2 * HOUR)
     const [row] = await harness.db
       .insert(schema.classes)
       .values({
@@ -484,6 +484,138 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
     assert.deepEqual(mail.map(m => [m.to, m.template]), [[leo.email, 'pt_cancelled_session_returned']])
     assert.ok(mail[0]!.text.includes(one.instructor.name), 'the instructor is named')
     assert.match(mail[0]!.text, /1 session has been returned to your package\./)
+  })
+
+  /* ── NTF-52 .. NTF-55: the credit was kept ──────────────────────────── */
+
+  /** Turn the studio's Cancellation Cap to `count` for one test, and put it back. */
+  async function withCancelCap<T>(at: Studio, count: number, run: () => Promise<T>): Promise<T> {
+    const [before] = await harness.db.select().from(schema.globalPolicy).where(eq(schema.globalPolicy.tenantId, at.id))
+    await harness.db
+      .update(schema.globalPolicy)
+      .set({ cancelCapEnabled: true, cancelCapCount: count })
+      .where(eq(schema.globalPolicy.tenantId, at.id))
+    try {
+      return await run()
+    } finally {
+      await harness.db
+        .update(schema.globalPolicy)
+        .set({ cancelCapEnabled: before!.cancelCapEnabled, cancelCapCount: before!.cancelCapCount })
+        .where(eq(schema.globalPolicy.tenantId, at.id))
+    }
+  }
+
+  test('NTF-52 a member cancelling a class inside the window keeps their credit and is emailed why, instead of the credit-returned email', async () => {
+    const mia = await member(one)
+    const pkg = await give(one, mia, 'credit_bundle', 10)
+    const classId = await addClass(one, { startsInHours: 2 })
+    const booked = await expectStatus(await book(mia, classId), 201)
+    drain()
+
+    const res = await expectStatus(await memberCancel(mia, booked.booking_id), 200)
+    assert.equal(res.refund_outcome, 'forfeited')
+    assert.equal(await balance(pkg), 9, 'the credit is not returned')
+
+    const mail = drain()
+    assert.deepEqual(mail.map(m => [m.to, m.template]), [[mia.email, 'class_cancelled_forfeited']])
+    assert.match(mail[0]!.text, new RegExp(`${NAME} Vinyasa`))
+    assert.match(mail[0]!.text, /came inside the 24-hour cancellation window, so the credit for it was not returned\./)
+    assert.match(mail[0]!.html, new RegExp(`href="http://${one.slug}\\.localhost:3000/classes"`), "the link is the studio's own app")
+  })
+
+  test('NTF-52 a member over the cancellation cap who cancels a class in good time is told the cap, not that they were late', async () => {
+    await withCancelCap(one, 0, async () => {
+      const mia = await member(one)
+      await give(one, mia, 'credit_bundle', 10)
+      const booked = await expectStatus(await book(mia, await addClass(one)), 201)
+      drain()
+
+      await expectStatus(await memberCancel(mia, booked.booking_id), 200)
+
+      const mail = drain()
+      assert.deepEqual(mail.map(m => [m.to, m.template]), [[mia.email, 'class_cancelled_forfeited']])
+      assert.match(mail[0]!.text, /past the number of cancellations the studio allows in one cycle/)
+      assert.doesNotMatch(mail[0]!.text, /cancellation window/)
+    })
+  })
+
+  test('NTF-52 a late cancel that spent nothing, on an Unlimited Plan, sends no forfeit email: there is no credit to keep', async () => {
+    const mia = await member(one)
+    await give(one, mia, 'unlimited')
+    const booked = await expectStatus(await book(mia, await addClass(one, { startsInHours: 2 })), 201)
+    drain()
+
+    const res = await expectStatus(await memberCancel(mia, booked.booking_id), 200)
+    assert.equal(res.refund_outcome, 'n_a')
+    assert.deepEqual(drain(), [])
+  })
+
+  test('NTF-53 a member cancelling a private session over the cancellation cap keeps the session and is emailed why, naming the instructor', async () => {
+    await withCancelCap(one, 0, async () => {
+      const leo = await member(one, 'Leo')
+      const pkg = await givePt(one, leo, 4)
+      const { bookingId } = await ptRequest(one, leo, pkg, { scheduled: true })
+      drain()
+
+      const res = await expectStatus(await memberCancel(leo, bookingId!), 200)
+      assert.equal(res.refund_outcome, 'forfeited')
+      assert.equal(await balance(pkg), 4, 'the session is not returned')
+
+      const mail = drain()
+      assert.deepEqual(mail.map(m => [m.to, m.template]), [[leo.email, 'pt_cancelled_forfeited']])
+      assert.ok(mail[0]!.text.includes(one.instructor.name), 'the instructor is named')
+      assert.match(mail[0]!.text, /past the number of cancellations the studio allows in one cycle/)
+    })
+  })
+
+  test('NTF-53 a member leaving their seat on a manual private session over the cap is emailed that the session was kept, and the partner is not mailed', async () => {
+    await withCancelCap(one, 0, async () => {
+      const mia = await member(one)
+      const leo = await member(one, 'Leo')
+      const pkg = await givePt(one, mia, 4)
+      const { requestId } = await ptRequest(one, mia, pkg, { scheduled: true, partner: leo, origin: 'portal' })
+      drain()
+
+      const res = await expectStatus(await memberCancelRequest(mia, requestId), 200)
+      assert.equal(res.refundOutcome, 'forfeited')
+
+      const mail = drain()
+      assert.deepEqual(mail.map(m => [m.to, m.template]), [[mia.email, 'pt_cancelled_forfeited']])
+    })
+  })
+
+  test('NTF-54 with the forfeit emails switched off the member is not mailed and each is logged skipped; a studio that left them on mails', async () => {
+    await harness.db.insert(schema.emailSwitches).values([
+      { tenantId: one.id, slug: 'class_cancelled_forfeited', enabled: false },
+      { tenantId: one.id, slug: 'pt_cancelled_forfeited', enabled: false },
+    ])
+    try {
+      await withCancelCap(one, 0, async () => {
+        const mia = await member(one)
+        await give(one, mia, 'credit_bundle', 10)
+        const booked = await expectStatus(await book(mia, await addClass(one)), 201)
+        const leo = await member(one, 'Leo')
+        const { bookingId } = await ptRequest(one, leo, await givePt(one, leo, 4), { scheduled: true })
+        drain()
+
+        await expectStatus(await memberCancel(mia, booked.booking_id), 200)
+        await expectStatus(await memberCancel(leo, bookingId!), 200)
+        assert.deepEqual(drain(), [])
+
+        const logged = await harness.db
+          .select({ slug: schema.emailLog.templateSlug, status: schema.emailLog.status })
+          .from(schema.emailLog)
+          .where(inArray(schema.emailLog.recipientEmail, [mia.email, leo.email]))
+        assert.deepEqual(
+          logged.map(r => `${r.slug}:${r.status}`).sort(),
+          ['class_cancelled_forfeited:skipped', 'pt_cancelled_forfeited:skipped'],
+        )
+      })
+    } finally {
+      await harness.db
+        .delete(schema.emailSwitches)
+        .where(and(eq(schema.emailSwitches.tenantId, one.id), inArray(schema.emailSwitches.slug, ['class_cancelled_forfeited', 'pt_cancelled_forfeited'])))
+    }
   })
 
   test('NTF-09 a cancel refused to another studio\'s member or to another member sends nothing', async () => {
