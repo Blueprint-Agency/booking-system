@@ -204,7 +204,8 @@ export interface ClassPassBookClassInput {
  *   overbooked (`seat` on the result);
  * - a class that has started still takes it (the email can arrive late), and a
  *   clashing booking of the member's does not stop it;
- * - it settles no Waitlist entry and sends the member nothing.
+ * - it withdraws the member's waiting Waitlist entry for the class, as their
+ *   own booking does, and sends the member nothing.
  *
  * A reservation ID the studio already holds is `classpass_reservation_taken`,
  * decided by the unique index. Inside a Tenant context `db.transaction` is a
@@ -234,6 +235,16 @@ export async function classPassBookClass(tenantId: string, input: ClassPassBookC
         by: 'system',
       })
       if (!paid.ok) throw new Error('invariant: the ClassPass payer never refuses')
+
+      // Booked while waiting in the line: the place in it is spent, as when the
+      // member books the class themselves.
+      await settleWaitingOnBooking(tx, tenantId, {
+        classId: input.classId,
+        clientId: input.clientId,
+        by: 'client',
+        now,
+      })
+
       return paid.booking
     })
   } catch (err) {
