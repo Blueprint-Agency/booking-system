@@ -111,10 +111,3 @@ export async function sendLapsingAlerts(): Promise<void> {
     }
   }
 }
-
-/**
- * Daily cron: notify clients whose packages have just expired.
- */
-export async function sendExpiredNotifications(): Promise<void> {
-  // TODO: notify clients with packages expired in last 24h
-}

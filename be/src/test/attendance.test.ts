@@ -595,13 +595,12 @@ describe('attendance over HTTP', { skip: integrationTestsEnabled ? false : SKIP_
     // Every scheduled job, run for this studio as the scheduler would.
     const { withTenant } = await import('../db')
     const { expireStaleSessions, completeEndedPtSessions } = await import('../services/pt-sessions/cancel')
-    const { expirePackages, sendLapsingAlerts, sendExpiredNotifications } = await import('../services/packages/expire')
+    const { expirePackages, sendLapsingAlerts } = await import('../services/packages/expire')
     for (const job of [
       expireStaleSessions,
       completeEndedPtSessions,
       expirePackages,
       sendLapsingAlerts,
-      sendExpiredNotifications,
     ]) {
       await withTenant(one.id, async () => {
         await job()
