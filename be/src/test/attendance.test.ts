@@ -592,19 +592,34 @@ describe('attendance over HTTP', { skip: integrationTestsEnabled ? false : SKIP_
     const untouched = await snapshot(mo, bookingId)
     assert.equal(untouched.booking.checkInState, 'pending')
 
-    // Every scheduled job, run for this studio as the scheduler would.
-    const { withTenant } = await import('../db')
-    const { expireStaleSessions, completeEndedPtSessions } = await import('../services/pt-sessions/cancel')
-    const { expirePackages, sendLapsingAlerts } = await import('../services/packages/expire')
-    for (const job of [
-      expireStaleSessions,
-      completeEndedPtSessions,
-      expirePackages,
-      sendLapsingAlerts,
-    ]) {
-      await withTenant(one.id, async () => {
-        await job()
-      })
+    // Every scheduled job (`scheduledJobs`), fired as a cron tick fires it. The
+    // clock is pinned to the present and to this studio's own 01:00, 03:00 and
+    // 08:00 (the hours the daily jobs act on), and every job runs at each of
+    // those instants: the 5- and 15-minute jobs act on any tick, a daily job on
+    // the tick that is its studio's hour.
+    const { scheduledJobs } = await import('../jobs')
+    const { isDailySlot } = await import('../jobs/local-time')
+    const [studioRow] = await harness.db
+      .select({ timezone: schema.tenants.timezone })
+      .from(schema.tenants)
+      .where(eq(schema.tenants.id, one.id))
+    assert.ok(studioRow)
+    const { timezone } = studioRow
+    const QUARTER = 15 * MINUTE
+    const slotAt = (localHour: number) => {
+      const from = Date.now()
+      for (let t = Math.ceil(from / QUARTER) * QUARTER; t < from + 2 * DAY; t += QUARTER) {
+        if (isDailySlot(timezone, localHour, new Date(t))) return new Date(t + 5 * MINUTE)
+      }
+      throw new Error(`no ${localHour}:00 slot for ${timezone}`)
+    }
+    try {
+      for (const tick of [new Date(), slotAt(1), slotAt(3), slotAt(8)]) {
+        harness.clock.set(tick)
+        for (const job of Object.values(scheduledJobs)) await job()
+      }
+    } finally {
+      harness.clock.reset()
     }
 
     const now = await snapshot(mo, bookingId)
