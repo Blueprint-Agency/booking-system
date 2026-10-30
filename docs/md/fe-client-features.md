@@ -660,11 +660,13 @@ What the member attended in a week, month or year, from `GET /me/bookings/attend
 - Save → patches user record, returns success toast.
 
 **User journey**
-- Linear form with two sections (Personal info / Password).
+- Linear form with three sections (Personal info / Saved cards / Password).
 - Errors inline, submit disabled until dirty.
 
 **Where admin comes in**
 - Admin can edit any of these fields on a user (including email override) for support cases. Not the Profile picture: only the member sets it.
+
+**Saved cards (as built, #522).** A **Saved cards** card sits between Personal info and Password (`components/account/saved-cards-card.tsx`), listing the cards the member kept while paying, each as brand, last four and expiry (*Expired 04/26* in red once past; a card is good to the end of its month), read fresh on every visit from `GET /me/cards` and never cached. There is no add-a-card button: a card is kept at checkout. **Remove** opens a question in the card's own row, not a browser dialog: *"Remove this card?"* with **Keep card** (focused first) and **Remove card**, which sends `DELETE /me/cards/:id`; the card leaves the list at once. A remove that fails keeps the card and says *"Couldn't remove Visa ending 4242. It's still saved. Please try again."*. While the read loads the card says *"Loading your cards…"*; *"You don't have any saved cards."* is said only once the read succeeded and returned none. A read that failed says *"Couldn't load your saved cards."* with **Try again**, never the empty line (§9.3). Rules in `lib/saved-cards.ts`, the read and remove in `lib/use-saved-cards.ts`.
 
 **Profile picture (as built, #472).** A card above Personal info shows the member's picture, or their initials when they have none, with **Upload picture** (**Replace picture** once they have one) and **Remove** (`components/account/profile-picture-card.tsx`). The picked file opens a crop dialog: the picture in a square box under a circle mask, dragged (or moved with the arrow keys) and zoomed (up to 4×) inside it, never past its edges. **Save picture** draws the square onto a canvas at 512×512 and uploads it (`POST /me/photo`, field `file`): a PNG or WebP stays one, anything else becomes a JPG, so the file sent is always a type the server takes (`lib/square-crop.ts`, `lib/avatar-image.ts`). A file the browser cannot read is refused before upload with *"We couldn't read that picture. Choose a JPG, PNG or WebP."*; an upload the server refuses shows its own sentence. **Remove** sends `DELETE /me/photo`. Either way the top bar and the account header redraw from the answer at once: each upload has a new URL, so no cached old picture shows. An admin impersonating the member sees the picture with no Upload or Remove, and the line *"Only the member can change their own picture."*: the API refuses them anyway.
 
