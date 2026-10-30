@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { after, before } from "node:test";
 import assert from "node:assert";
 import { ApiError } from "./api";
 import { capacityLine } from "./capacity";
@@ -11,6 +11,19 @@ import {
   staffBookingRefusal,
   type StaffMemberPackage,
 } from "./class-seats";
+
+// The dates these tests read are instants written as midday in Singapore, and
+// the page words them in the zone the browser is in. Run in Singapore, so the
+// day they name is the same wherever the runner is.
+let runnerZone: string | undefined;
+before(() => {
+  runnerZone = process.env.TZ;
+  process.env.TZ = "Asia/Singapore";
+});
+after(() => {
+  if (runnerZone === undefined) delete process.env.TZ;
+  else process.env.TZ = runnerZone;
+});
 
 const CLASS = {
   capacity_online: 10,
