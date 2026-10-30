@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { after, before } from "node:test";
 import assert from "node:assert";
 import { ApiError, type Api } from "./api";
 import {
@@ -21,6 +21,19 @@ import {
   type ManualSeat,
   type SeatCandidate,
 } from "./pt-manual";
+
+// The dates these tests read are instants written as midday in Singapore, and
+// the page words them in the zone the browser is in. Run in Singapore, so the
+// day they name is the same wherever the runner is.
+let runnerZone: string | undefined;
+before(() => {
+  runnerZone = process.env.TZ;
+  process.env.TZ = "Asia/Singapore";
+});
+after(() => {
+  if (runnerZone === undefined) delete process.env.TZ;
+  else process.env.TZ = runnerZone;
+});
 
 const cand = (over: Partial<SeatCandidate>): SeatCandidate => ({
   id: "p",
