@@ -1071,7 +1071,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
         {
           label: 'PATCH /portal/admin/class-packages/:id promotions ends_at',
           as: 'admin',
-          send: v => ({ method: 'PATCH', path: portal(`/admin/class-packages/${classPackageId}`), body: { promotions: [promotion(v)] } }),
+          send: v => ({ method: 'PATCH', path: portal(`/admin/class-packages/${classPackageId}`), body: { name: `${TAG} pass`, promotions: [promotion(v)] } }),
           valid: after,
           says: /end after it starts/i,
         },
@@ -1089,7 +1089,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
         {
           label: 'PATCH /portal/admin/pt-packages/:id promotions ends_at',
           as: 'admin',
-          send: v => ({ method: 'PATCH', path: portal(`/admin/pt-packages/${ptPackageId}`), body: { promotions: [promotion(v)] } }),
+          send: v => ({ method: 'PATCH', path: portal(`/admin/pt-packages/${ptPackageId}`), body: { name: `${TAG} sessions`, promotions: [promotion(v)] } }),
           valid: after,
           says: /end after it starts/i,
         },

@@ -31,6 +31,13 @@ export function formatRelative(iso: string): string {
  */
 export const LATEST_DATE = "9999-12-31";
 
+/**
+ * The `min` of a date input that filters or records something that happened:
+ * a browser accepts year 0001, and the API refuses a day whose start falls
+ * before year 1 once the studio's offset is applied.
+ */
+export const EARLIEST_DATE = "1900-01-01";
+
 /** Today's local date as `yyyy-MM-dd`, for use as the `min` of a date input. */
 export function todayIso(): string {
   return localDay();
