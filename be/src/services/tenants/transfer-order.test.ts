@@ -98,7 +98,7 @@ test('TEN-51 a cycle is broken on one nullable edge, and tables that merely depe
   assert.deepEqual(deferred, { pt_requests: ['scheduled_pt_session_id'] })
   assertParentsFirst(
     order,
-    edges.filter(e => !(e.child in deferred && deferred[e.child]!.includes(e.column))),
+    edges.filter(e => e.column !== 'scheduled_pt_session_id'),
   )
 })
 
