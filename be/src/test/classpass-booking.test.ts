@@ -451,6 +451,33 @@ describe('a ClassPass booking', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.deepEqual(settled, { status: 'withdrawn', resolvedBy: 'client' })
   })
 
+  test('CPS-116 a ClassPass booking on a class that has already started leaves the member\'s waiting entry for the expiry sweep', async () => {
+    const t0 = aWeekOut()
+    harness.clock.set(t0)
+    const startsAt = shifted(t0, 2 * DAY)
+    const classId = await addClass(one, startsAt)
+    const mo = await member(one, 'mo-started')
+    const [entry] = await harness.db
+      .insert(schema.waitlistEntries)
+      .values({ tenantId: one.id, clientId: mo.clientId, classId })
+      .returning({ id: schema.waitlistEntries.id })
+    harness.clock.set(shifted(startsAt, 10 * MINUTE))
+
+    const { bookingId } = await classPassBook(one, mo, classId)
+
+    assert.equal(attendee(await adminRoster(one, classId), bookingId).source, 'classpass')
+    const resolution = async () =>
+      (
+        await harness.db
+          .select({ status: schema.waitlistEntries.status, resolvedBy: schema.waitlistEntries.resolvedBy })
+          .from(schema.waitlistEntries)
+          .where(eq(schema.waitlistEntries.id, entry!.id))
+      )[0]!
+    assert.deepEqual(await resolution(), { status: 'waiting', resolvedBy: null }, 'booking leaves a started class\'s line alone')
+    await (await import('../jobs')).scheduledJobs.expireWaitlists()
+    assert.deepEqual(await resolution(), { status: 'expired', resolvedBy: 'system' })
+  })
+
   test('CPS-09 a ClassPass booking sends the member no email', async () => {
     const t0 = aWeekOut()
     harness.clock.set(t0)

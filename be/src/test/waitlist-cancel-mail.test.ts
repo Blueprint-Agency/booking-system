@@ -442,12 +442,14 @@ describe('class-cancelled email to the waitlist', { skip: integrationTestsEnable
     assert.deepEqual(drain(), [], 'the sweep emails nobody')
   })
 
-  test('NTF-36 a member waiting on a class and seated on it by a ClassPass import is emailed once when it is cancelled, about the booking', async () => {
+  test('NTF-36 a member still waiting on a class and seated on it by a ClassPass import is emailed once when it is cancelled, about the booking', async () => {
     const both = await member(one)
     const classId = await addClass(one)
-    await inLine(one, both, classId)
     const { classPassBookClass } = await import('../services/bookings/book')
     await dbModule.withTenant(one.id, () => classPassBookClass(one.id, { clientId: both.clientId, classId, reservationId: `cp-${run}-36` }))
+    // A ClassPass booking withdraws the member's entry, so the entry is seeded
+    // after it: one left from before it did.
+    await inLine(one, both, classId)
     drain()
 
     await expectStatus(await adminCancel(one, classId), 200)
