@@ -605,7 +605,12 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
         const logged = await harness.db
           .select({ slug: schema.emailLog.templateSlug, status: schema.emailLog.status })
           .from(schema.emailLog)
-          .where(inArray(schema.emailLog.recipientEmail, [mia.email, leo.email]))
+          .where(
+            and(
+              inArray(schema.emailLog.recipientEmail, [mia.email, leo.email]),
+              inArray(schema.emailLog.templateSlug, ['class_cancelled_forfeited', 'pt_cancelled_forfeited']),
+            ),
+          )
         assert.deepEqual(
           logged.map(r => `${r.slug}:${r.status}`).sort(),
           ['class_cancelled_forfeited:skipped', 'pt_cancelled_forfeited:skipped'],

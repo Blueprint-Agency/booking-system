@@ -11,7 +11,6 @@ import type { StudioEmailSlug } from './switches'
 import { emailEnabled } from './switch-state'
 
 export type TemplateSlug =
-  | 'welcome'
   | 'password_reset'
   | 'class_booking_confirmed'
   | 'class_waitlist_promoted'
@@ -56,7 +55,6 @@ export type TemplateSlug =
   | 'client_invite'
   | 'checkin_nag'
   | 'classpass_overbooked'
-  | 'referral_credited'
   | 'sign_in_code'
   | 'staff_two_factor_code'
   | 'staff_password_reset'

@@ -15,6 +15,7 @@ import { logger } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
 import { recordPtSessionCancelled } from '../attention/session-updates'
 import { emptyPtCancelMail, sendPtCancelMail, type PtCancelMail } from '../notifications/send-booking-email'
+import { sendPtRequestExpiredEmails } from '../notifications/send-pt-request-email'
 
 /**
  * Cancel a PT request, branching on its current status. Single entry point for
@@ -97,15 +98,21 @@ export async function cancelPtRequest(
   // (RFD-38) or an Admin's act as a booking cancel can, and Postgres aborts one
   // of the two: it runs again. The emails it owes are gathered by the attempt
   // that returns, so an aborted attempt adds none (PT-161).
-  const { result, mail } = await retryingTransaction('PT request cancel', async tx => {
+  const { result, mail, expired } = await retryingTransaction('PT request cancel', async tx => {
     const mail = emptyPtCancelMail()
-    return { result: await cancelPtRequestInTx(tx, tenantId, input, mail), mail }
+    const result = await cancelPtRequestInTx(tx, tenantId, input, mail)
+    // Only the expiry job's own end of a pending request: a Remove, which also
+    // ends one as the studio's machinery, is not a lapse.
+    const expired = input.expired && result.status === 'cancelled_before_scheduled' ? [input.ptRequestId] : []
+    return { result, mail, expired }
   })
   // Sent only once the request's transaction has committed (`afterCommit`;
   // NTF-09, NTF-10, NTF-11). Sending never throws.
-  if (mail.studio.length || mail.memberReturned.length || mail.request.length) {
+  if (mail.studio.length || mail.memberReturned.length || mail.memberForfeited.length || mail.request.length) {
     afterCommit(() => sendPtCancelMail(tenantId, mail))
   }
+  // A pending request that lapsed tells its requester so, its own way.
+  if (expired.length) afterCommit(() => sendPtRequestExpiredEmails(tenantId, expired))
   return result
 }
 

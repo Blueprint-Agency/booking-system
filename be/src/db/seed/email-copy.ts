@@ -137,7 +137,6 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   const ACCOUNT_URL = `${clientUrl}/account`
   const CLASSES_URL = `${clientUrl}/classes`
   const WORKSHOPS_URL = `${clientUrl}/workshops`
-  const PACKAGES_URL = `${clientUrl}/packages`
 
   /* ── Access: the three invitations and the password reset ────────────── */
 
@@ -175,16 +174,6 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       cta: { href: '{{login_url}}', label: 'Sign in to your account' },
       note: 'Your account email is <strong>{{invitee_email}}</strong>. Enter it to sign in and we\'ll email you a link to set your password. If the button doesn\'t work, paste this into your browser: {{login_url}}',
     },
-  )
-
-  const WELCOME_BODY = body(
-    `Welcome to ${STUDIO_HTML}`,
-    [
-      'Hi {{client_name}},',
-      'Your account is ready. You can book classes, reserve a workshop place and request private sessions from the app.',
-      `A class needs credits or a plan — ${link(PACKAGES_URL, 'see what we offer')}.`,
-    ],
-    { cta: { href: CLASSES_URL, label: 'Browse the timetable' } },
   )
 
   // Sent both to set a first password (an imported or invited member signing in
@@ -336,9 +325,11 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
 
   /* ── Private sessions ────────────────────────────────────────────────── */
 
-  // No promise of a decision email: nothing in `be/src` sends
-  // `pt_session_approved` or `pt_session_declined` yet, and copy cannot make a
-  // sender exist. It points at the page that does show the outcome.
+  // It promises no email about the outcome, only the page that shows it: a
+  // request is answered by staff scheduling it (`pt_session_approved`), by a
+  // cancel or by lapsing, and a member's account is where all three are read.
+  // `instructor_name` and `starts_at` are filled from a request that names no
+  // instructor and proposes times (services/notifications/send-pt-request-email.ts).
   const PT_REQUEST_SUBMITTED_BODY = body('Your private session request was received', [
     'Hi {{client_name}},',
     'You asked <strong>{{instructor_name}}</strong> for a private session on <strong>{{starts_at}}</strong>.',
@@ -551,12 +542,6 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     { note: 'Whatever is left does not carry over once it expires.' },
   )
 
-  const REFERRAL_CREDITED_BODY = body('You earned a referral credit', [
-    'Hi {{referrer_name}},',
-    `<strong>{{referee_name}}</strong> joined ${STUDIO_HTML} on your referral — thank you for bringing them in.`,
-    `<strong>{{credits_granted}}</strong> credit(s) have been added to your account. ${link(CLASSES_URL, 'Book a class')}`,
-  ])
-
   /* ── Staff-facing ────────────────────────────────────────────────────── */
 
   /**
@@ -634,7 +619,6 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   ])
 
   return [
-    { slug: 'welcome', subject: `Welcome to ${STUDIO}`, bodyHtml: WELCOME_BODY },
     {
       slug: 'client_invite',
       subject: `Your ${STUDIO} account is ready`,
@@ -785,11 +769,6 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       slug: 'classpass_overbooked',
       subject: 'A ClassPass booking overbooked {{class_name}}',
       bodyHtml: CLASSPASS_OVERBOOKED_BODY,
-    },
-    {
-      slug: 'referral_credited',
-      subject: 'You earned a referral credit',
-      bodyHtml: REFERRAL_CREDITED_BODY,
     },
     {
       slug: 'trial_pass_purchase_confirmed',

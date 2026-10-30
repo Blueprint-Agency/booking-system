@@ -19,7 +19,6 @@ export const STUDIO_NAME_VARIABLE = 'studio_name'
  * use (`db/seed/email-copy.test.ts` holds the seeded copy to it).
  */
 export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
-  welcome: ['client_name'],
   password_reset: ['client_name', 'reset_url'],
   // NTF-08: `credits_line` is a whole composed sentence (./booking-email.ts) —
   // the credits used and what remains, or, on an Unlimited Plan, that it used
@@ -129,7 +128,6 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // seat. `client_name` is the ClassPass member; `classpass_url` the
   // studio's ClassPass page.
   classpass_overbooked: ['client_name', 'class_name', 'date', 'classpass_url'],
-  referral_credited: ['referrer_name', 'referee_name', 'credits_granted'],
   // Sign-in (services/auth/better-auth.ts). `code` and `reset_url` are credentials and
   // are sent as `secretVariables`, so `email_log` keeps them redacted.
   sign_in_code: ['code'],

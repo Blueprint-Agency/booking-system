@@ -1482,14 +1482,14 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     }
 
     // The pair, not the slug, is what a template is found by: editing one
-    // studio's `welcome` must leave the other studio's alone.
+    // studio's `password_reset` must leave the other studio's alone.
     await harness.db
       .update(schema.emailTemplates)
       .set({ subject: 'isolation probe' })
       .where(
         and(
           eq(schema.emailTemplates.tenantId, two.tenantId),
-          eq(schema.emailTemplates.slug, 'welcome'),
+          eq(schema.emailTemplates.slug, 'password_reset'),
         ),
       )
     try {
@@ -1499,10 +1499,11 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
         .where(
           and(
             eq(schema.emailTemplates.tenantId, one.tenantId),
-            eq(schema.emailTemplates.slug, 'welcome'),
+            eq(schema.emailTemplates.slug, 'password_reset'),
           ),
         )
-      assert.notEqual(theirs?.subject, 'isolation probe')
+      assert.ok(theirs, 'the other studio holds the template')
+      assert.notEqual(theirs.subject, 'isolation probe')
     } finally {
       const { seedEmailTemplates } = await import('../db/seed/email-templates')
       await seedEmailTemplates(harness.db, {

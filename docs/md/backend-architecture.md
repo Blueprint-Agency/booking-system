@@ -942,26 +942,25 @@ A studio's **own** payment-provider account: its credentials, so every call on t
 
 #### `email_templates` (§17)
 
-id, slug (text unique per Tenant — 35 seeded values), subject (text), body_html (text), updated_at, updated_by_staff_id (FK).
+id, slug (text unique per Tenant — 33 seeded values), subject (text), body_html (text), updated_at, updated_by_staff_id (FK).
 
-**Slug list (34, plus the three sign-in slugs in `services/auth/sign-in-mail.ts`)** — the seed (`db/seed/email-copy.ts`) and the `TemplateSlug` union (`services/notifications/send.ts`) must agree on every entry, and `db/seed/email-copy.test.ts` fails the build if they drift:
+**Slug list (32, plus the three sign-in slugs in `services/auth/sign-in-mail.ts`)** — the seed (`db/seed/email-copy.ts`) and the `TemplateSlug` union (`services/notifications/send.ts`) must agree on every entry, and `db/seed/email-copy.test.ts` fails the build if they drift. `welcome` and `referral_credited` were retired (nothing sent either; migration 0138 deleted their rows):
 ```
-welcome
 client_invite
 password_reset
 class_booking_confirmed
 class_waitlist_promoted                # sent by services/waitlist/promote.ts when a freed online seat books the head of the line
-pt_request_submitted
-pt_session_approved
-pt_session_declined
-pt_request_expired                     # NEW — sweep job (§5) marks pending requests past expires_at
+pt_request_submitted                   # sent to the requester when a PT Request is made (NTF-55)
+pt_session_approved                    # sent when staff schedule a PT Request, the implicit approval (NTF-57)
+pt_session_declined                    # seeded, no sender: a request is never declined in the app
+pt_request_expired                     # sent by the expiry sweep (§5) when it ends a pending request past expires_at (NTF-59)
 pt_request_cancelled                   # a PT Request cancelled before or after scheduling (#359, NTF-11)
 workshop_purchase_confirmed
 workshop_waitlist_promoted             # NEW — fired when cancellation frees a seat and waitlist promotes (deferred behaviour, slug seeded now)
 class_cancelled_credit_returned
-class_cancelled_forfeited
+class_cancelled_forfeited              # a member's cancel that kept the credit, with `reason_line` from `forfeitLine` (NTF-52)
 pt_cancelled_session_returned
-pt_cancelled_forfeited
+pt_cancelled_forfeited                 # the same, for a private session (NTF-53)
 admin_cancel_class
 admin_cancel_pt
 admin_cancel_workshop
@@ -977,7 +976,6 @@ instructor_invite
 admin_invite
 checkin_nag
 classpass_overbooked                   # to every Admin when a ClassPass booking takes an Overbook seat (#411, migration 0124 for older studios)
-referral_credited
 trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_confirmed; trial copy is friendlier ("welcome to your first 3 classes")
 corporate_purchase_confirmed           # a paid corporate package: no credits, the studio arranges the session (be-client § Corporate branch)
 purchase_receipt                       # Merch (paid or free) and a standalone Cross-Location Add-On: the Receipt is the email (#388, migration 0114 for older studios)
@@ -985,14 +983,12 @@ purchase_receipt                       # Merch (paid or free) and a standalone C
 
 **The unreachable-slug gap is closed.** `pt_request_expired` and `workshop_waitlist_promoted` are now members of `TemplateSlug`, are declared in `TEMPLATE_VARIABLES`, and `db/seed/email-copy.test.ts` asserts slug-for-slug parity in both directions, so the class of gap that left the purchase templates unsent for months cannot reopen silently.
 
-**Templates with no sender (copy ready, wiring outstanding).** Every row now carries real copy, but a template only reaches a member when some service calls it. These have no caller in `be/src`, and the copy is written not to promise otherwise:
+**Templates with no sender.** A template only reaches a member when some service calls it. These two are seeded with real copy and have no caller in `be/src`, so they are not on the Emails page:
 
-| Slug | Where the sender belongs |
+| Slug | Why |
 |---|---|
-| `welcome` | Sign-in mail is the auth pools' own (`services/auth/sign-in-mail.ts`); wire this only if the studio wants its own. (`password_reset` is sent: it is the member's set-password link, #173.) |
-| `class_cancelled_forfeited`, `pt_cancelled_forfeited` | `services/bookings/cancel.ts` — needs `reason_line` from `policy/evaluate-cancellation.ts:forfeitLine`. |
-| `pt_session_approved`, `pt_session_declined`, `pt_request_expired` | `services/pt-sessions/schedule.ts` and `cancel.ts:expireStaleSessions`. |
-| `referral_credited` | `services/referrals.ts`. |
+| `pt_session_declined` | A PT Request is never declined in the app: staff schedule it or cancel it (`admin-restructure.md` §9, `be-portal.md` §3c), and a cancel sends `pt_request_cancelled`. Nothing triggers it. |
+| `workshop_waitlist_promoted` | Workshops have no waitlist (join, queue or promotion) to promote from; `spec-waitlist.md` §12. |
 
 **The booking and cancellation emails (#359).** Sent after the action commits, never able to undo or fail it: a send fault is a failed `email_log` row, and a missing template or a failed read is reported (`shared/logger.ts`) and swallowed — the same contract as the purchase confirmations. Composed sentences live in `services/notifications/booking-email.ts` (pure), the reads and sends in `send-booking-email.ts`. Links are variables built per send from the studio's own origin (`classes_url`, `account_url`, `workshops_url`, `checkin_url`), so the default wording names no origin and migration 0108 could write it into studios created before it (it updates a row only while it is still byte-identical to its old default, adds a missing one, and touches nothing else).
 
@@ -1000,6 +996,10 @@ purchase_receipt                       # Merch (paid or free) and a standalone C
 |---|---|---|---|
 | `class_booking_confirmed` | `services/bookings/book.ts`, member or staff booking (a waitlist promotion sends `class_waitlist_promoted` instead) | the member | `credits_line`: the credits used and what remains, or that an Unlimited Plan covered it |
 | `class_cancelled_credit_returned`, `pt_cancelled_session_returned` | `services/bookings/cancel.ts` (a member's own cancel whose refund fired), and a member leaving a manual session in time (`pt-sessions/manual.ts`) | the member | `refund_line`: what came back |
+| `class_cancelled_forfeited`, `pt_cancelled_forfeited` | `services/bookings/cancel.ts` (a member's own cancel that spent something and kept it, in place of the returned email), and a member leaving a manual session past the cap (`pt-sessions/manual.ts`) | the member | `reason_line`: `policy/evaluate-cancellation.ts:forfeitLine`, the window, the cap or both. A cancel that spent nothing (an Unlimited Plan) sends none |
+| `pt_request_submitted` | `services/pt-sessions/request.ts`, after the request commits (`notifications/send-pt-request-email.ts`) | the requester | `starts_at`: every time the member proposed, as typed; `instructor_name` is "the studio", as a request names none |
+| `pt_session_approved` | `services/pt-sessions/schedule.ts`, after the schedule commits | every member the session booked (the requester and a 2-on-1 partner) | the instructor, the Location, the time and a link to their bookings |
+| `pt_request_expired` | `services/pt-sessions/cancel.ts:cancelPtRequest`, when `expireStaleSessions` ends a pending request (not a Remove, not a member's own cancel) | the requester | the times they had proposed |
 | `admin_cancel_class` | `services/bookings/cancel-class.ts`, admin or main-instructor cancel, and each unbooked class a series end cancels (`services/schedule/series.ts`) | every member booked, and every member still waiting in its line (spec-waitlist §6), once each | `refund_line`: the credits returned, or that the booking used none; to a waiting member, that their place in line took nothing from their package |
 | `admin_cancel_pt` | `services/pt-sessions/cancel.ts` → `manual.ts`, staff cancelling a manual session | every member seated | `refund_line`: the session returned |
 | `admin_cancel_workshop` | `services/workshops/cancel.ts` | every attendee | `amount_paid` in `sgdText` form; nothing is refunded automatically (#272), so it says the refund is being arranged |
@@ -1009,7 +1009,6 @@ purchase_receipt                       # Merch (paid or free) and a standalone C
 | `credit_expiry_reminder` | `services/packages/expire.ts:sendLapsingAlerts` | the member | `remaining_line`, composed with `notifications/purchase-email.ts:contentsLine` |
 
 A staff cancel of one booking (`/bookings/:id/cancel`) sends nothing (#320).
-| `workshop_waitlist_promoted` | deferred with waitlist behaviour itself. |
 
 #### `email_switches` (#467)
 
@@ -1105,7 +1104,7 @@ The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-
 | `email` send | Triggered (not scheduled) — invoked by any service through `services/notifications/send.ts` (`sendTemplatedEmail`, `emailEveryAdmin`, `sendStudioSystemEmail`, all ending in `deliver`), usually after commit | Render template + variables → write `email_log` → `lib/mailer.ts` (Resend, through the send gate). An email the studio switched off (`email_switches`) is written `skipped` and never handed to the mailer; a locked one never reads its switch. Failures are logged and surfaced in `email_log.status='failed'` with `error` from the provider's refusal |
 | `sendCheckInNags` | Every 15 min, per Tenant (`jobs/index.ts`, `services/bookings/check-in-nag.ts`) | An active class or private session that ended at least 24 hours ago (and no more than 72 — older ones, which predate the job, are never nagged), with a roster row still undecided as the check-in desk counts it (`services/bookings/session-check-in.ts`), and no `checkin_nag_sent_at` yet. On a class, a row is undecided when its booking is `confirmed` or `no_show` and still `check_in_state='pending'`. On a private session, it is a member on the session whose seat (their confirmed booking, else their latest) is still `pending`, or who has no booking at all → stamp `checkin_nag_sent_at` (the claim, so each session is nagged once), then send `checkin_nag` to its Instructor (link: `/instructor/check-in`) and to every active Admin of the studio but them (link: `/admin/check-in`). A failed send is a failed `email_log` row, not retried. |
 | `credit-expiry` (`sendLapsingAlerts`) | Daily 08:00 in each Tenant's own `timezone` (`jobs/index.ts`) | Find the Tenant's active Credit Bundles and trials with credits left where `expires_at` between now+6.5d and now+7.5d → send `credit_expiry_reminder` email. The window is one day wide and the job runs once a day, so each package is reminded once. The renderer has no conditionals, so the kind branch happens in code: `remaining_line` is composed with `notifications/purchase-email.ts:contentsLine`, which says "2 classes" for a trial and "2 class credits" for a bundle. |
-| `pt-request-expiry` | Hourly (`node-cron`) | Find `pt_requests WHERE status='pending' AND expires_at < now()` → update `status='expired'`, set `resolved_at=now()`, `resolved_by_staff_id=NULL`, then `enqueueEmail('pt_request_expired', client.email, …)`. Stale requests must not linger in the admin queue. |
+| `pt-request-expiry` (`expireStaleSessions`) | Every 5 min (`node-cron`) | Find `pt_requests WHERE status='pending' AND expires_at < now()` → each through `cancelPtRequest` as `source='system'`, `expired`: `status='cancelled_before_scheduled'`, `resolved_at=now()`, `resolved_by_staff_id=NULL`, the debit refunded, then, after commit, `pt_request_expired` to the requester. Stale requests must not linger in the admin queue. |
 | `promotion-status` | Not a cron — **query-time derivation**. A `promotions` row is "active right now" iff `status='active' AND now() BETWEEN starts_at AND ends_at`. Computed in `services/promotions/resolve.ts:bestPriceFor(parent_type, parent_id)`. No background sweep needed; the windowed predicate is cheap given the `(parent_type, parent_id, status, starts_at, ends_at)` index. | — |
 | Workshop admin-cancel | Triggered (not scheduled) by admin route | `services/workshops/cancel.ts:cancelWorkshop`: each confirmed booking on the workshop → `state='cancelled'`, `refund_outcome='n_a'`. Nobody is refunded automatically (#272): an Admin refunds a paid booking from the member's page. After commit, every attendee is emailed (NTF-10). No Inbox item is written. |
 | Class waitlist promote | Triggered (not scheduled) — `services/bookings/cancel.ts` calls `services/waitlist/promote.ts:promoteFromWaitlist` inside the cancel transaction, under the class row lock, when a confirmed **online** seat is cancelled outside the Cancellation Window. Books the first member in line whose package can pay (same path as a member booking), skips the rest without dropping them, and sends `class_waitlist_promoted` after commit (`spec-waitlist.md` §5). | — |
@@ -1277,7 +1276,7 @@ Per `fe-client-features.md`: when a referee makes their **first paid** booking (
 3. Insert `manual_adjustments` row: `client_id = referrer`, `client_package_id = chosen`, `delta = credits granted`, `reason = 'referral_conversion'`, `acted_by_staff_id = NULL`.
 4. Update referee: `UPDATE clients SET referral_credit_granted_at = now() WHERE id = referee`.
 5. Write `audit_log` row: `actor_type='system'`, `action='referral.converted'`, target = referrer's `clients.id`.
-6. Send referrer an email (template slug `referral_credited` — add to the seeded list in §17b alongside the existing 21).
+6. (Not built.) No email tells the referrer: the `referral_credited` template was retired with the welcome one, and nothing sends either. A referrer who is credited reads it in their balance.
 
 **Idempotency:** the `referral_credit_granted_at` UPDATE in step 4 is inside the webhook transaction. On retry, step 1 short-circuits because the column is now non-null. No double-grant possible.
 

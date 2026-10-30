@@ -842,7 +842,7 @@ The actions on a client's active-package kebab, all written into the same immuta
 - The **Emails** page (`/admin/emails`, Settings group beside Business details and Global Policy, admins only) lists every email the API returns for the studio, in two groups: **To members** and **To staff**, each in the API's order. Each email is a row with a plain-language name (for example "Class booking confirmed", "Check-in reminder to instructor and admins"), which the API gives with each email from the one classification, and one switch for the whole studio.
 - **Flipping a switch saves at once.** The switch moves straight away and stays disabled until the API answers; a refusal puts it back and shows the API's sentence in a toast. There is no Save button.
 - **Every switch starts on**, for new and existing studios, so nothing changes until an admin turns one off.
-- **Some emails are always on.** They are listed greyed out with a disabled switch and no explanation line: sign-in and account mail (sign-in code, password resets, staff 2FA, invitations, the staff email-change link and notice), money (purchase confirmations, receipts, refunds), and anything staff or the system did to a member's booking (the studio cancelled a class, PT session or workshop; an accepted-packages change cancelled a booking; a PT request was cancelled; a waitlist promotion booked and charged the member).
+- **Some emails are always on.** They are listed greyed out with a disabled switch and no explanation line: sign-in and account mail (sign-in code, password resets, staff 2FA, invitations, the staff email-change link and notice), money (purchase confirmations, receipts, refunds), and anything staff or the system did to a member's booking (the studio cancelled a class, PT session or workshop; an accepted-packages change cancelled a booking; a PT request was cancelled, scheduled or lapsed; a waitlist promotion booked and charged the member).
 - **A booking staff made always confirms.** "Class booking confirmed" is switchable for the bookings members make themselves. When an admin or instructor books a member onto a class, the member is sent the confirmation whatever the switch says. It is still one email and one row on the page.
 - **A switched-off email leaves a trace.** It is not sent, and the email log records a `skipped` row, so support can answer "why didn't I get an email?".
 - **Every change is in the studio's audit log** (who, which email, from, to). Instructors cannot see or change the switches: the page and its nav item are admin-only, and the API refuses them. Members never get email settings. The super portal has no controls over a studio's switches in v1.
@@ -853,21 +853,22 @@ The one classification of every email, which the send check, the API and the pag
 
 | Group | Switchable | Locked |
 |---|---|---|
-| To members | `class_booking_confirmed`, `class_cancelled_credit_returned`, `pt_cancelled_session_returned`, `credit_expiry_reminder` | `sign_in_code`, `password_reset`, `client_invite`, `package_purchase_confirmed`, `trial_pass_purchase_confirmed`, `corporate_purchase_confirmed`, `purchase_receipt`, `workshop_purchase_confirmed`, `purchase_refunded`, `admin_cancel_class`, `admin_cancel_pt`, `admin_cancel_workshop`, `class_rule_cancelled`, `pt_request_cancelled`, `class_waitlist_promoted` |
+| To members | `class_booking_confirmed`, `class_cancelled_credit_returned`, `class_cancelled_forfeited`, `pt_cancelled_session_returned`, `pt_cancelled_forfeited`, `pt_request_submitted`, `credit_expiry_reminder` | `sign_in_code`, `password_reset`, `client_invite`, `package_purchase_confirmed`, `trial_pass_purchase_confirmed`, `corporate_purchase_confirmed`, `purchase_receipt`, `workshop_purchase_confirmed`, `purchase_refunded`, `admin_cancel_class`, `admin_cancel_pt`, `admin_cancel_workshop`, `class_rule_cancelled`, `pt_request_cancelled`, `pt_session_approved`, `pt_request_expired`, `class_waitlist_promoted` |
 | To staff | `checkin_nag`, `instructor_cancel_class`, `classpass_overbooked`, `leave_request_submitted`, `leave_approved`, `leave_rejected`, `leave_revoked` | `staff_two_factor_code`, `staff_password_reset`, `admin_invite`, `instructor_invite`, `staff_email_change_link`, `staff_email_changed_notice` |
 
 - `pt_request_cancelled` is one email for a member's and a staff cancel, so it is locked whole. `checkin_nag` goes to the instructor and every admin; one switch covers both.
-- Template slugs no code sends (`welcome`, `class_cancelled_forfeited`, `pt_cancelled_forfeited`, `pt_session_approved`, `pt_session_declined`, `pt_request_expired`, `pt_request_submitted`, `workshop_waitlist_promoted`, `referral_credited`) are not listed. The super portal's own `platform_*` mail is not a studio's and is not listed.
+- `pt_session_approved` (staff scheduling a request is its approval) and `pt_request_expired` (the studio's machinery ended it) are staff or system acts on a member's request, so both are locked. `pt_request_submitted` and the two forfeited cancels answer the member's own act, as their siblings do, so they are switchable.
+- Template slugs no code sends (`pt_session_declined`, `workshop_waitlist_promoted`) are not listed: a request is never declined in the app (§9, staff schedule or cancel it), and a workshop has no waitlist to promote from (`spec-waitlist.md` §12). The super portal's own `platform_*` mail is not a studio's and is not listed. `welcome` and `referral_credited` are no longer templates at all: nothing would have sent either, and migration 0138 removed their rows.
 
 ### 16b. Template List
 
-The emails' triggers and variables, for reference. Some rows below (Welcome, the forfeited cancels, the PT request replies) are templates no code sends today; they are not on the Emails page.
+The emails' triggers and variables, for reference. Some rows below (the PT request declined reply) are templates no code sends today; they are not on the Emails page.
 
 **Auth**
 
 | # | Template | Trigger | Recipient | Key variables |
 |---|---|---|---|---|
-| 1 | Welcome | Client completes registration | New client | `{{client_name}}`, `{{studio_name}}` |
+| 1 | ~~Welcome~~ | Retired: no `welcome` template exists | — | — |
 | 2 | Password reset | Client requests password reset | Client | `{{client_name}}`, `{{reset_link}}`, `{{expiry_time}}` |
 
 **Bookings**
@@ -875,9 +876,10 @@ The emails' triggers and variables, for reference. Some rows below (Welcome, the
 | # | Template | Trigger | Recipient | Key variables |
 |---|---|---|---|---|
 | 3 | Class booking confirmed | Client books a class | Client | `{{client_name}}`, `{{class_name}}`, `{{instructor_name}}`, `{{date}}`, `{{time}}`, `{{location}}`, `{{credits_used}}`, `{{credits_remaining}}` |
-| 4 | PT request submitted | Client submits PT request (§9) | Client | `{{client_name}}`, `{{instructor_name}}`, `{{requested_date}}`, `{{requested_time}}` |
-| 5 | PT session approved | Admin/instructor approves PT request | Client | `{{client_name}}`, `{{instructor_name}}`, `{{date}}`, `{{time}}`, `{{location}}` |
-| 6 | PT session declined | Admin/instructor declines PT request | Client | `{{client_name}}`, `{{instructor_name}}`, `{{requested_date}}`, `{{requested_time}}`, `{{decline_note}}` |
+| 4 | PT request submitted | Client submits PT request (§9) | Client | `{{client_name}}`, `{{instructor_name}}` (the studio: a request names no instructor), `{{starts_at}}` (every time proposed) |
+| 5 | PT session approved | Admin/instructor schedules the PT request (§9, the implicit approval) | Client, and a 2on1 partner | `{{client_name}}`, `{{instructor_name}}`, `{{starts_at}}`, `{{location}}`, `{{qr_url}}` |
+| 6 | PT session declined | Not built: there is no decline in the app, staff schedule or cancel (§9) | — | `{{client_name}}`, `{{instructor_name}}`, `{{decline_note}}` |
+| 6b | PT request expired | The expiry job ends a pending request unanswered | Client | `{{client_name}}`, `{{instructor_name}}` (the studio), `{{starts_at}}` (every time proposed) |
 | 7 | Workshop purchase confirmed | Client purchases a workshop tier | Client | `{{client_name}}`, `{{workshop_name}}`, `{{tier_name}}`, `{{date}}`, `{{location}}`, `{{amount_paid}}` |
 
 **Client-initiated cancellations**
@@ -885,9 +887,9 @@ The emails' triggers and variables, for reference. Some rows below (Welcome, the
 | # | Template | Trigger | Recipient | Key variables |
 |---|---|---|---|---|
 | 8 | Class cancelled — credit returned | Client cancels within cap + within window | Client | `{{client_name}}`, `{{class_name}}`, `{{date}}`, `{{credits_returned}}` |
-| 9 | Class cancelled — forfeited | Client cancels late or over cap | Client | `{{client_name}}`, `{{class_name}}`, `{{date}}`, `{{forfeit_reason}}` |
+| 9 | Class cancelled — forfeited | Client cancels late or over cap and the credit is kept (an Unlimited Plan's cancel spent none, so sends none) | Client | `{{client_name}}`, `{{class_name}}`, `{{date}}`, `{{reason_line}}` (`forfeitLine`) |
 | 10 | PT cancelled — session returned | Client cancels within cap + within window | Client | `{{client_name}}`, `{{instructor_name}}`, `{{date}}`, `{{sessions_returned}}` |
-| 11 | PT cancelled — forfeited | Client cancels late or over cap | Client | `{{client_name}}`, `{{instructor_name}}`, `{{date}}`, `{{forfeit_reason}}` |
+| 11 | PT cancelled — forfeited | A member's cancel of a private session booking, or of their seat on a manual session, keeps the session (past the cap; inside the window it is refused) | Client | `{{client_name}}`, `{{instructor_name}}`, `{{starts_at}}`, `{{reason_line}}` (`forfeitLine`) |
 
 **Admin-initiated cancellations**
 
