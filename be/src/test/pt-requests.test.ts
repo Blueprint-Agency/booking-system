@@ -2149,7 +2149,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const sessionsBefore = await ptSessionCount()
     const requestsBefore = await requestCount()
 
-    const attempts: [string, () => Promise<Response>][] = [
+    const attempts: [string, () => Response | Promise<Response>][] = [
       ['admin, alone', () => adminManual(adminAtOne, [{ client_id: unknown }], { override: true })],
       ['instructor, alone', () => instructorManual(coachA, [{ client_id: unknown }], { override: true })],
       [
