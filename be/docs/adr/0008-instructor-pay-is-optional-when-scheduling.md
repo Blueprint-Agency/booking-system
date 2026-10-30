@@ -25,5 +25,4 @@ The roster module's single gate (`instructor_pay_required`) is removed and the c
 - Unpriced sessions are ordinary again, not rare. The Unpriced warning on Net is load-bearing, and so is the Needs pay filter.
 - The pay fields say they are optional ("· optional", with "Leave blank to set it later in Finance."), and a cleared field is sent as `null`, never `0`.
 - The instructor paths are unchanged: an instructor scheduling their own class or PT session is never shown or asked for pay, and it lands Unpriced as before.
-- `unpricedArrivals` in `services/schedule/roster-merge.ts` has no production caller any more; it stays as the pure statement of who newly joined a roster unpriced.
 - Existing Unpriced sessions are still never backfilled.

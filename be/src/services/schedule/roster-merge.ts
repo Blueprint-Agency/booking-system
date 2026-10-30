@@ -66,26 +66,6 @@ export interface RosterPatch {
 
 type RosterRefusal = 'supporting_instructor_duplicates_main'
 
-/**
- * Who on this merged roster has newly arrived with no pay on them.
- *
- * Nothing refuses on this: joining a roster without pay is allowed and
- * leaves the arrival Unpriced, cleared later through Finance's "Needs pay"
- * filter (be/docs/adr/0008-instructor-pay-is-optional-when-scheduling.md, which
- * reverses the required-pay rule of 0002). No production caller reads it;
- * it stays as the pure statement of what "an unpriced arrival" is.
- *
- * It names ONLY instructors newly joining. Someone already on the event keeps
- * whatever is recorded for them, Unpriced included — never an invented figure.
- */
-export function unpricedArrivals(
-  existing: RosterEntry[],
-  roster: RosterEntry[],
-): RosterEntry[] {
-  const already = new Set(existing.map(e => e.instructorId))
-  return roster.filter(r => r.paySgd == null && !already.has(r.instructorId))
-}
-
 const uuidKey = (id: string): string => id.toLowerCase()
 
 type RosterMergeResult =
