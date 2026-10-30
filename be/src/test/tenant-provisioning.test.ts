@@ -301,7 +301,7 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
 
     await harness.db.insert(schema.emailTemplates).values({
       tenantId: created.tenant.id,
-      slug: 'welcome',
+      slug: 'password_reset',
       subject: 'the studio’s own words',
       bodyHtml: '<p>theirs</p>',
     })

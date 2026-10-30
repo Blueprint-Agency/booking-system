@@ -10,7 +10,7 @@
  */
 
 import { and, eq, isNull, sql } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import { classTypes, locations } from '../../db/schema/catalog'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
@@ -23,6 +23,7 @@ import { debitCredits, type Tx } from '../packages/ledger'
 import { ptSessionCost } from './cost'
 import { daysBetween, sgInstant, sgToday } from '../../lib/time'
 import { now as clockNow } from '../../lib/clock'
+import { sendPtRequestSubmittedEmail } from '../notifications/send-pt-request-email'
 
 /** The days after today, in Singapore, a member may propose a private session on. */
 export interface PtBookingWindow {
@@ -113,7 +114,7 @@ export async function submitPtRequest(
   if (input.sessionType === '2on1' && !input.partner) throw new BadRequestError('partner_required')
   if (input.sessionType === '1on1' && input.partner) throw new BadRequestError('partner_not_allowed')
 
-  return db.transaction(async tx => {
+  const submitted = await db.transaction(async tx => {
     // The same clock the window above was read on, so a request's expiry, the
     // expiry sweep and the dates it was allowed agree.
     const now = clockNow()
@@ -209,6 +210,9 @@ export async function submitPtRequest(
 
     return { ptRequestId: req!.id }
   })
+  // Once the request has committed: the requester is told it was received.
+  afterCommit(() => sendPtRequestSubmittedEmail(tenantId, submitted.ptRequestId))
+  return submitted
 }
 
 /**

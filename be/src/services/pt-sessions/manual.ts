@@ -745,6 +745,9 @@ export async function cancelManualSessionInTx(
       now,
     })
     if (refunded > 0) input.mail?.memberReturned.push(mine.id)
+    else if (refundOutcome === 'forfeited') {
+      input.mail?.memberForfeited.push({ bookingId: mine.id, reason: evaluation.reason, windowHours: evaluation.windowHours })
+    }
     const last = seats.length === 1
     if (last) await endSession()
     else await followRoster(tx, tenantId, session.id, req)

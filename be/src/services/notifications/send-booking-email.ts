@@ -26,6 +26,7 @@ import { reportError } from '../../shared/logger'
 import { NotFoundError } from '../../shared/errors'
 import { WAITLIST_CANCEL_LINE, bookingCreditsLine, classRefundLine, privateSessionLine, sessionsRefundLine, workshopRefundLine } from './booking-email'
 import { sendTemplatedEmail } from './send'
+import { forfeitLine, type EvaluateResult } from '../policy/evaluate-cancellation'
 import type { PurchasedKind } from './purchase-email'
 
 /**
@@ -48,7 +49,7 @@ export async function sessionTimeFormat(tenantId: string): Promise<Intl.DateTime
 }
 
 /** The member's own studio's app, per send — never a platform-wide origin. */
-const clientUrl = (tenantId: string, path: string) => requireTenantUrl('client', tenantId).then(base => `${base}${path}`)
+export const clientUrl = (tenantId: string, path: string) => requireTenantUrl('client', tenantId).then(base => `${base}${path}`)
 
 /** A package as the member reads it: its catalogue name, or its kind when it has none. */
 const KIND_NAME: Record<PurchasedKind, string> = {
@@ -207,6 +208,57 @@ export async function sendMemberCancelReturnedEmail(tenantId: string, bookingId:
   }
 }
 
+/** A member's cancel that kept what the booking spent, and why (`forfeitLine`). */
+export interface ForfeitNotice {
+  bookingId: string
+  reason: EvaluateResult['reason']
+  /** The cancellation window the cancel was judged by, in hours. */
+  windowHours: number
+}
+
+/**
+ * A member cancelled and the credit or session was kept, not returned —
+ * `class_cancelled_forfeited` for a class, `pt_cancelled_forfeited` for a
+ * private session. Its counterpart is `sendMemberCancelReturnedEmail`: a
+ * cancel sends one or the other, never both. The caller sends it only when
+ * something was spent and kept.
+ */
+export async function sendMemberCancelForfeitedEmail(tenantId: string, notice: ForfeitNotice): Promise<void> {
+  try {
+    const row = found(await readCancelledBookings(tenantId, [notice.bookingId]), notice.bookingId)
+    const when = await sessionTimeFormat(tenantId)
+    const recipient = { email: row.clientEmail, userId: row.clientId, userKind: 'client' as const }
+    const reasonLine = forfeitLine(notice.reason, notice.windowHours)
+    if (row.kind === 'class') {
+      await sendTemplatedEmail({
+        tenantId,
+        slug: 'class_cancelled_forfeited',
+        recipient,
+        variables: {
+          client_name: row.clientName,
+          class_name: row.className ?? 'Your class',
+          date: row.classStartsAt ? when.format(row.classStartsAt) : '',
+          reason_line: reasonLine,
+        },
+      })
+    } else if (row.kind === 'pt') {
+      await sendTemplatedEmail({
+        tenantId,
+        slug: 'pt_cancelled_forfeited',
+        recipient,
+        variables: {
+          client_name: row.clientName,
+          instructor_name: row.ptInstructorName || 'your instructor',
+          starts_at: row.ptStartsAt ? when.format(row.ptStartsAt) : '',
+          reason_line: reasonLine,
+        },
+      })
+    }
+  } catch (err) {
+    reportError(err, 'cancellation email failed', { scope: 'booking-email', tenantId, bookingId: notice.bookingId })
+  }
+}
+
 /** One member's booking a studio cancelled, and what came back to their package. */
 export interface StudioCancelNotice {
   bookingId: string
@@ -353,6 +405,8 @@ export interface PtCancelMail {
   studio: StudioCancelNotice[]
   /** NTF-09: a member cancelled their own seat in time and got its session back. */
   memberReturned: string[]
+  /** A member cancelled their own seat and the session was kept, past the Cancellation Cap. */
+  memberForfeited: ForfeitNotice[]
   /** NTF-11: a PT Request was cancelled — each member it booked, and what they got back. */
   request: PtRequestCancelNotice[]
 }
@@ -364,12 +418,13 @@ export interface PtRequestCancelNotice {
   ptSessionId: string | null
 }
 
-export const emptyPtCancelMail = (): PtCancelMail => ({ studio: [], memberReturned: [], request: [] })
+export const emptyPtCancelMail = (): PtCancelMail => ({ studio: [], memberReturned: [], memberForfeited: [], request: [] })
 
 /** Send what a private-session cancel gathered. Never throws. */
 export async function sendPtCancelMail(tenantId: string, mail: PtCancelMail): Promise<void> {
   await sendPtCancelledByStudioEmails(tenantId, mail.studio)
   for (const bookingId of mail.memberReturned) await sendMemberCancelReturnedEmail(tenantId, bookingId)
+  for (const notice of mail.memberForfeited) await sendMemberCancelForfeitedEmail(tenantId, notice)
   await sendPtRequestCancelledEmails(tenantId, mail.request)
 }
 

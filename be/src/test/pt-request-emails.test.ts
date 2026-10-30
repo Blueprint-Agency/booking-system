@@ -180,6 +180,19 @@ describe('private session request emails over HTTP', { skip: integrationTestsEna
   const memberCancelRequest = (who: Member, requestId: string) =>
     harness.app.request(`/api/v1/me/pt-sessions/${requestId}/cancel`, { method: 'POST', headers: who.headers })
 
+  /**
+   * Move the clock a minute past the request's expiry and run the expiry job,
+   * which ends every request that has lapsed by then, this file's others
+   * included. Returns the mail the job sent to `watching`, and forgets the rest.
+   */
+  async function expireAfter(requestId: string, watching: Member[]) {
+    const [row] = await harness.db.select().from(schema.ptRequests).where(eq(schema.ptRequests.id, requestId))
+    harness.clock.set(new Date(row!.expiresAt!.getTime() + MINUTE))
+    await jobs.scheduledJobs.expireStaleSessions()
+    const emails = watching.map(w => w.email)
+    return drain().filter(m => emails.includes(m.to))
+  }
+
   const logRows = (email: string) =>
     harness.db
       .select({ slug: schema.emailLog.templateSlug, status: schema.emailLog.status })
@@ -365,11 +378,7 @@ describe('private session request emails over HTTP', { skip: integrationTestsEna
     const requestId = await request(one, jon, '2on1', pair, kim)
     drain()
 
-    const [row] = await harness.db.select().from(schema.ptRequests).where(eq(schema.ptRequests.id, requestId))
-    harness.clock.set(new Date(row!.expiresAt!.getTime() + MINUTE))
-    await jobs.scheduledJobs.expireStaleSessions()
-
-    const mail = drain()
+    const mail = await expireAfter(requestId, [jon, kim])
     assert.deepEqual(pairs(mail), [[jon.email, 'pt_request_expired']])
     assert.equal(mail[0]!.subject, 'Your private session request expired')
     assert.match(mail[0]!.text, /Hi Jon,/)
@@ -390,10 +399,7 @@ describe('private session request emails over HTTP', { skip: integrationTestsEna
       await expectStatus(await memberCancelRequest(mia, miaRequest), 200)
       assert.deepEqual(pairs(drain()), [[mia.email, 'pt_request_cancelled']])
 
-      const [row] = await harness.db.select().from(schema.ptRequests).where(eq(schema.ptRequests.id, leeRequest))
-      harness.clock.set(new Date(row!.expiresAt!.getTime() + MINUTE))
-      await jobs.scheduledJobs.expireStaleSessions()
-      assert.deepEqual(pairs(drain()), [[lee.email, 'pt_request_expired']])
+      assert.deepEqual(pairs(await expireAfter(leeRequest, [lee, mia])), [[lee.email, 'pt_request_expired']])
     } finally {
       await restore()
       harness.clock.reset()
@@ -408,10 +414,7 @@ describe('private session request emails over HTTP', { skip: integrationTestsEna
     await expectStatus(await adminSchedule(one, requestId, startsAt), 201)
     drain()
 
-    const [row] = await harness.db.select().from(schema.ptRequests).where(eq(schema.ptRequests.id, requestId))
-    harness.clock.set(new Date(row!.expiresAt!.getTime() + MINUTE))
-    await jobs.scheduledJobs.expireStaleSessions()
-    assert.deepEqual(drain(), [])
+    assert.deepEqual(await expireAfter(requestId, [nat]), [])
     harness.clock.reset()
   })
 })
