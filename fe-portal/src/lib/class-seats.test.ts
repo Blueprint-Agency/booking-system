@@ -1,4 +1,4 @@
-import test, { after, before } from "node:test";
+import test from "node:test";
 import assert from "node:assert";
 import { ApiError } from "./api";
 import { capacityLine } from "./capacity";
@@ -13,18 +13,21 @@ import {
   type StaffMemberPackage,
 } from "./class-seats";
 
-// The dates these tests read are instants written as midday in Singapore, and
-// the page words them in the zone the browser is in. Run in Singapore, so the
-// day they name is the same wherever the runner is.
-let runnerZone: string | undefined;
-before(() => {
-  runnerZone = process.env.TZ;
+// The dates these tests read are instants that fall on Singapore calendar days,
+// and the page words them in the zone the browser is in. The tests that read a
+// date run in Singapore, so the day they name is the same wherever the runner
+// is. The zone is set inside the test and restored after it, so it can't leak
+// into other files when they share a process.
+const inSingapore = (run: () => void) => (): void => {
+  const zone = process.env.TZ;
   process.env.TZ = "Asia/Singapore";
-});
-after(() => {
-  if (runnerZone === undefined) delete process.env.TZ;
-  else process.env.TZ = runnerZone;
-});
+  try {
+    run();
+  } finally {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  }
+};
 
 const CLASS = {
   capacity_online: 10,
@@ -117,7 +120,7 @@ test("BKG-36 one or no Eligible package books straight away, with no select", ()
   assert.strictEqual(packagePick({ default_client_package_id: null, packages: [] }), null);
 });
 
-test("BKG-36 more than one Eligible package offers a select, the Default payer chosen and Ineligible ones greyed with their reason", () => {
+test("BKG-36 more than one Eligible package offers a select, the Default payer chosen and Ineligible ones greyed with their reason", inSingapore(() => {
   const pick = packagePick({
     default_client_package_id: "run",
     packages: [
@@ -144,7 +147,7 @@ test("BKG-36 more than one Eligible package offers a select, the Default payer c
   );
   assert.strictEqual(pick.options[1]!.label, "10 Class Pass · 4 credits left");
   assert.strictEqual(pick.options[2]!.label, "Monthly Unlimited · Unlimited");
-});
+}));
 
 test("SCH-04 the capacity fields read attendance capacity and the waitlist apart", () => {
   assert.strictEqual(capacityLine({ waitlist: 5, onlineBooking: 10, buffer: 2 }), "Attendance capacity: 12 · Waitlist: 5");
