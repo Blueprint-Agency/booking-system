@@ -43,14 +43,17 @@ export async function getClassType(tenantId: string, id: string): Promise<ClassT
 
 /**
  * The id names one of this studio's class types, or `class_type_not_found`: an
- * id nobody has and another studio's are refused alike, before anything is
- * written, so a schedule never reaches the foreign key.
+ * id nobody has, another studio's and a deleted one are refused alike, before
+ * anything is written, so a schedule never reaches the foreign key. An archived
+ * type is still schedulable.
  */
 export async function assertClassTypeInStudio(tenantId: string, id: string): Promise<void> {
   const [row] = await db
     .select({ id: classTypes.id })
     .from(classTypes)
-    .where(and(eq(classTypes.tenantId, tenantId), eq(classTypes.id, id)))
+    .where(
+      and(eq(classTypes.tenantId, tenantId), eq(classTypes.id, id), isNull(classTypes.deletedAt)),
+    )
     .limit(1)
   if (!row) throw new NotFoundError('class_type_not_found')
 }

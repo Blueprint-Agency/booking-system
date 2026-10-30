@@ -215,6 +215,10 @@ export async function updateClass(
       .limit(1)
     if (!existing) throw new NotFoundError('class_not_found')
 
+    // A foreign key ignores row-level security, so another studio's class type
+    // would pass it: the id has to be this studio's before anything is written.
+    if (patch.classTypeId !== undefined) await assertClassTypeInStudio(tenantId, patch.classTypeId)
+
     // Once a class has started it is a record of what happened, not a plan — moving,
     // repricing or resizing it rewrites history under the people who already sat in it.
     // Same predicate every read path uses (policy/event-state.ts).
