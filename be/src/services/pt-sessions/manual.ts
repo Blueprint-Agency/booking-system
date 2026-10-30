@@ -328,6 +328,9 @@ export async function createManualPtSession(
       endsAt: input.endsAt,
     })
     await ensureInstructors(tenantId, [input.instructorId], tx)
+    // Before the request row, whose client foreign key an unknown id would
+    // otherwise reach: every member is this studio's, or none is seated.
+    for (const member of input.members) await assertMember(tx, tenantId, member.clientId)
 
     const at = clockNow()
     // The request the session hangs off: the first member as its client, the

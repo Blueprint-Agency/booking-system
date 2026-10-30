@@ -28,7 +28,7 @@ import {
   classSeries,
   classSeriesSupportingInstructors,
 } from '../../db/schema/schedule'
-import { classTypes } from '../../db/schema/catalog'
+import { assertClassTypeInStudio } from '../catalog/class-types'
 import { bookings } from '../../db/schema/bookings'
 import { loadTenantById } from '../tenants/tenants'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -617,12 +617,7 @@ function assertTemplate(t: SeriesTemplate): void {
 /** The room, location and class type are this studio's and in use. */
 async function assertTemplateRefs(tenantId: string, t: SeriesTemplate): Promise<void> {
   await assertRoomInLocation(tenantId, t.roomId, t.locationId)
-  const [type] = await db
-    .select({ id: classTypes.id })
-    .from(classTypes)
-    .where(and(eq(classTypes.tenantId, tenantId), eq(classTypes.id, t.classTypeId)))
-    .limit(1)
-  if (!type) throw new NotFoundError('class_type_not_found')
+  await assertClassTypeInStudio(tenantId, t.classTypeId)
 }
 
 function assertWithinYear(from: PlainDate, to: PlainDate): void {
