@@ -967,6 +967,20 @@
       "when": 1793213974123,
       "tag": "0137_corporate_requests_purchase_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1793360069689,
+      "tag": "0138_drop_unused_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1793360103317,
+      "tag": "0139_pt_requests_scheduled_session_fk",
+      "breakpoints": true
     }
   ]
 }

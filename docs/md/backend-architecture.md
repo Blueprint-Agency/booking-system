@@ -69,14 +69,12 @@ be/
     │   │   ├── # availability.ts      # REMOVED in v1 — see §4f (replaced by pt_requests)
     │   │   ├── bookings.ts            # bookings, cancellations, check_ins
     │   │   ├── ledger.ts              # manual_adjustments, credit_movements, audit_log, audit_log_archive, stripe_payments
-    │   │   ├── content.ts             # email_templates, email_switches, email_log, waiver, waiver_signatures, marketing_content
-    │   │   ├── inbox.ts               # inbox_items
+    │   │   ├── content.ts             # email_templates, email_switches, email_log, marketing_content
     │   │   ├── ops.ts                 # feature_flags
     │   │   └── relations.ts           # All Drizzle `relations()` declarations
     │   ├── seed/
     │   │   ├── run.ts                 # Orchestrator (idempotent)
     │   │   ├── email-templates.ts     # Seed 22 default templates per §17b
-    │   │   ├── waiver.ts              # Seed placeholder waiver body per §18a
     │   │   ├── marketing.ts           # Seed marketing_content singleton with placeholder copy
     │   │   └── policy.ts              # Seed defaults: global_policy, pt_booking_config
     │   └── migrations/                # drizzle-kit-generated SQL
@@ -674,7 +672,7 @@ The simplified v1 flow has **no in-app back-and-forth** — all negotiation is o
 | message | text | nullable — free-form note from client |
 | status | enum `pt_request_status` | not null, default `'pending'` — `pending`, `scheduled`, `cancelled_before_scheduled`, `cancelled_after_scheduled`, `attended` (mirrored from booking check-in) |
 | expires_at | timestamptz | not null — `created_at + ttl` from `pt_booking_config` (sweep job, §5) |
-| scheduled_pt_session_id | uuid | FK → pt_sessions.id, nullable — set when status=`scheduled` |
+| scheduled_pt_session_id | uuid | FK → pt_sessions.id, nullable, `ON DELETE restrict` (migration `0139`, #508) — set when status=`scheduled`. A session a request names is cancelled, never deleted |
 | resolved_at, resolved_by_staff_id | | nullable — set on scheduled or either cancellation; staff id NULL for client-initiated / system (expiry) |
 | cancel_source | `cancellation_source` | nullable — who cancelled it: `client`, `admin`, `instructor` or `system` (an expiry, a Complimentary Package's Remove). A pending request has no `cancellations` row, so this is how its reads tell a Remove — which names its admin in `resolved_by_staff_id` — from a staff cancel (#352, migration 0103). Null while live and on requests cancelled before it |
 | created_at | timestamptz | not null |
@@ -1023,15 +1021,7 @@ id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nulla
 
 **Indexes:** `(recipient_user_id, queued_at desc)`, `(status)`, `(template_slug, queued_at desc)`.
 
-#### `waiver` (singleton — §18)
-
-id, body_html (text), updated_at, updated_by_staff_id (FK).
-
-#### `waiver_signatures`
-
-id, client_id (FK, **unique** — one signature per client), signed_at.
-
-**Waivers are not being built** (#233): no route reads or writes either table. They stay until a migration drops them, which needs both backend devs' review.
+**Waivers are not being built** (#233), and the `waiver` and `waiver_signatures` tables are gone (#508, migration `0138`). `tenant_settings.waiver_text` is a different thing and is not touched.
 
 #### `marketing_content` (singleton)
 
@@ -1067,30 +1057,11 @@ The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-
 
 **Read pattern:** `lib/feature-flags-cache.ts` loads all rows at boot into an in-memory map; admin toggle (`PATCH /api/v1/portal/admin/feature-flags/:key`) updates DB + invalidates cache (process-local — multi-instance deploys would need a pub/sub trigger, deferred).
 
-**Subsumed tables (drop during reshape).** The existing `/be` scaffolding had `cancellation_requests` and `refund_requests` tables modelling an admin-approval workflow. These are not used in v1 — the spec's automated cancellation flow + `inbox_items` (for any actionable cases) cover the same surface area without introducing an admin-resolution queue. Drop both tables when reshaping the schema.
+**Subsumed tables (drop during reshape).** The existing `/be` scaffolding had `cancellation_requests` and `refund_requests` tables modelling an admin-approval workflow. These are not used in v1 — the spec's automated cancellation flow covers the same surface area without introducing an admin-resolution queue. Drop both tables when reshaping the schema.
 
 ### 4l. Inbox (§13)
 
-**The admin Inbox is not being built** (#237): its routes are gone and nothing reads `inbox_items`. No cancel writes one any more (#434). The table itself stays until a migration both backend devs review drops it.
-
-#### `inbox_items`
-
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid | PK |
-| type | enum | `client_cancellation`, `admin_cancel_class_pt`, `admin_cancel_workshop` |
-| payload | jsonb | denormalised display data — keys vary by type, validated by Zod at insert time |
-| read_at, read_by_staff_id | | nullable |
-| created_at | timestamptz | not null |
-
-**Indexes:** `(type, read_at, created_at desc)` for filter + unread count.
-
-**PT requests are no longer Inbox items.** Per `admin-restructure.md` §13, PT request triage moved to its own dedicated page (`/admin/pt-requests`) backed by the `pt_requests` table (§4e). The Inbox is now purely a read-only notification feed — the `action_taken` / `action_at` / `action_by_staff_id` / `source_pt_session_id` columns were dropped along with the `pt_request` type value.
-
-**Payload schemas (Zod, validated at write):**
-- `client_cancellation` → `{ client_id, client_name, session_kind, session_id, session_label, cancelled_at, refund_result }`
-- `admin_cancel_class_pt` → `{ actor_staff_id, actor_name, session_kind, session_id, session_label, cancelled_at, clients_refunded }`
-- `admin_cancel_workshop` → `{ actor_staff_id, actor_name, workshop_id, workshop_name, cancelled_at, total_refunded_sgd, attendees_refunded }`
+**The admin Inbox is not being built** (#237): its routes are gone, no cancel writes to it (#434), and the `inbox_items` table and its `inbox_item_type` enum are dropped (#508, migration `0138`). PT request triage lives on its own page (`/admin/pt-requests`) backed by the `pt_requests` table (§4e). What staff are told is the bell's Needs action and Updates (`be/docs/adr/0015`).
 
 ---
 
@@ -1291,7 +1262,6 @@ The "first paid" gate is implicit: the referee's first successful Stripe payment
 
 Run idempotently on fresh deployment:
 - **email-templates.ts** — inserts the 22 templates with default subject + body
-- **waiver.ts** — inserts the singleton waiver row with placeholder body
 - **policy.ts** — inserts singleton `global_policy` and `pt_booking_config` with sensible defaults
 
 ---
@@ -1321,7 +1291,7 @@ Run idempotently on fresh deployment:
 - ~~Typed promo codes at checkout.~~ **Superseded — Promo Codes ship.** See `spec-pre-launch-batch.md` §9–§11 and migration `0016`. The model built is **not** the one sketched here: there is no used-count on the code row (a second source of truth that drifts) and no valid-from window (a code does nothing until someone hands it out; `archived` covers "made, not yet running"). Three tables — `promo_codes`, `promo_code_products` (scope, no FK on `product_id`), `promo_code_redemptions` (the ledger, one row per member per code) — with the rules in `services/packages/promo-codes.ts` and admin CRUD in `services/packages/promo-code-admin.ts`. A Promo Code is typed and crosses products; a **Promotion** (§4d) applies itself to one product inside a window. The two are distinct mechanisms and `be/CONTEXT.md` § Discounts is the glossary. Redeeming a code at checkout is wired separately.
 - ~~**Class waitlist.**~~ **Superseded — the class waitlist ships** (see "This phase" above and `spec-waitlist.md`). Promotion books the member directly rather than offering a time-bound claim, so `waitlist_entries` has no offer columns. Workshop and PT waitlists stay out of v1 (`spec-waitlist.md` §12).
 - **WhatsApp / SMS / push notifications.** Email-only in v1.
-- ~~**Multi-tenant SaaS surface.** This backend serves one studio exclusively; no tenant scoping.~~ **Superseded — multi-tenancy shipped.** `tenant_id` on all 64 domain tables, Row-Level Security as the fail-closed backstop, hostname-resolved Tenants, and no studio named anywhere in the repo. See `multi-tenancy-plan.md`, `spec-tenant-resolution.md` and `docs/adr/0002-shared-schema-row-level-security.md`. What is still out of scope is the **plan/billing** layer for studios.
+- ~~**Multi-tenant SaaS surface.** This backend serves one studio exclusively; no tenant scoping.~~ **Superseded — multi-tenancy shipped.** `tenant_id` on all 65 domain tables, Row-Level Security as the fail-closed backstop, hostname-resolved Tenants, and no studio named anywhere in the repo. See `multi-tenancy-plan.md`, `spec-tenant-resolution.md` and `docs/adr/0002-shared-schema-row-level-security.md`. What is still out of scope is the **plan/billing** layer for studios.
 
 ---
 
