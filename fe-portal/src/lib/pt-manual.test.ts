@@ -22,6 +22,22 @@ import {
   type SeatCandidate,
 } from "./pt-manual";
 
+// The dates these tests read are instants that fall on Singapore calendar days,
+// and the page words them in the zone the browser is in. The tests that read a
+// date run in Singapore, so the day they name is the same wherever the runner
+// is. The zone is set inside the test and restored after it, so it can't leak
+// into other files when they share a process.
+const inSingapore = (run: () => void | Promise<void>) => async (): Promise<void> => {
+  const zone = process.env.TZ;
+  process.env.TZ = "Asia/Singapore";
+  try {
+    await run();
+  } finally {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  }
+};
+
 const cand = (over: Partial<SeatCandidate>): SeatCandidate => ({
   id: "p",
   name: "10 Private Sessions",
@@ -58,7 +74,7 @@ test("PT-105 one Eligible package is pre-selected with no select; none says why 
   assert.strictEqual(empty.refusal, "This member holds no PT package.");
 });
 
-test("PT-105 more than one Eligible package offers a select naming each, Ineligible ones greyed with their reason", () => {
+test("PT-105 more than one Eligible package offers a select naming each, Ineligible ones greyed with their reason", inSingapore(() => {
   const choice = seatChoice({
     default_client_package_id: "run",
     packages: [
@@ -98,7 +114,7 @@ test("PT-105 more than one Eligible package offers a select naming each, Ineligi
       ],
     ],
   );
-});
+}));
 
 test("PT-105 a 1on1 seats one member and a 2on1 two", () => {
   assert.strictEqual(seatLimit("1on1"), 1);
@@ -353,7 +369,7 @@ test("PT-151 staff are offered Cancel session only before the session starts", (
   );
 });
 
-test("PT-159 the package read sends the chosen start, and a package that ends before it is greyed with its end", async () => {
+test("PT-159 the package read sends the chosen start, and a package that ends before it is greyed with its end", inSingapore(async () => {
   const startsAt = sessionStartIso("2031-05-02", "09:00");
   assert.strictEqual(startsAt, new Date("2031-05-02T09:00:00").toISOString());
   assert.strictEqual(sessionStartIso("", "09:00"), null);
@@ -399,4 +415,4 @@ test("PT-159 the package read sends the chosen start, and a package that ends be
       ["long", false, "Starts today, runs until 29 Jul 2031"],
     ],
   );
-});
+}));
