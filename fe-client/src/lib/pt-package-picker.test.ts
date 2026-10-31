@@ -92,7 +92,7 @@ test("TEN-91 a Sydney studio's proposed time and package end are read on Sydney'
   const running = pt({ id: "r", dormant: false, expiresAt: expiry });
   const [late] = ptPickRows([running], "1on1", 1, SYDNEY, ptSlotStart({ proposedDate: "2026-11-24", startTime: "09:30" }, SYDNEY), NOW);
   assert.equal(late!.reason, "Runs until 9:00 am on Tue 24 Nov, before one of your times");
-  const latestEnd = ptLatestEnd([running], SYDNEY, NOW);
+  const latestEnd = ptLatestEnd([running], NOW);
   assert.equal(
     ptSlotEndProblem({ proposedDate: "2026-11-24", startTime: "09:30" }, 1, latestEnd, SYDNEY),
     "Time 1: no package of yours runs past 9:00 am on Tue 24 Nov. Pick a time by then.",
@@ -102,15 +102,38 @@ test("TEN-91 a Sydney studio's proposed time and package end are read on Sydney'
   assert.equal(ptLatestDate(undefined, latestEnd, "UTC"), "2026-11-23");
 });
 
-test("TEN-92 a Dormant package's end counts its validity in calendar days on the studio's clock, across a daylight-saving start", () => {
-  // 20:00 on Sat 3 Oct 2026 in Sydney; three days on is 20:00 on the 6th, 71 hours later.
+test("TEN-92 a Dormant package's end is the server's: its validity in 24-hour days from now, so across a Sydney daylight-saving start it ends an hour later on the wall clock", () => {
+  // 20:00 on Sat 3 Oct 2026 in Sydney (UTC+10). The server adds 3 x 24 hours (activationExpiry),
+  // which is 72 hours on: 21:00 on the 6th, once the clocks have gone forward.
   const now = Date.parse("2026-10-03T10:00:00.000Z");
-  const [row] = ptPickRows([pt({ validityDays: 3 })], "1on1", 1, SYDNEY, Date.parse("2026-10-06T09:30:00.000Z"), now);
-  assert.equal(row!.reason, "Runs until 8:00 pm on Tue 6 Oct, before one of your times");
+  const [late] = ptPickRows([pt({ validityDays: 3 })], "1on1", 1, SYDNEY, Date.parse("2026-10-06T10:30:00.000Z"), now);
+  assert.equal(late!.reason, "Runs until 9:00 pm on Tue 6 Oct, before one of your times");
+  // A time at 21:00 itself is in time, and 20:30 would be too.
+  const [onTheDot] = ptPickRows([pt({ validityDays: 3 })], "1on1", 1, SYDNEY, Date.parse("2026-10-06T10:00:00.000Z"), now);
+  assert.equal(onTheDot!.eligible, true);
+});
+
+test("TEN-109 a 7-day Dormant package started on the morning of 1 April 2027 in Sydney ends at 08:00 on the 8th, an hour earlier than the wall clock says, and a slot at 08:30 is refused", () => {
+  // 09:00 on Thu 1 Apr 2027 in Sydney (UTC+11); daylight saving ends on the 4th. The server adds 7 x 24
+  // hours, which lands at 08:00 on the 8th (UTC+10).
+  const now = Date.parse("2027-03-31T22:00:00.000Z");
+  const slot = (startTime: string) => ptSlotStart({ proposedDate: "2027-04-08", startTime }, SYDNEY);
+  const [refused] = ptPickRows([pt({ validityDays: 7 })], "1on1", 1, SYDNEY, slot("08:30"), now);
+  assert.equal(refused!.eligible, false);
+  assert.equal(refused!.reason, "Runs until 8:00 am on Thu 8 Apr, before one of your times");
+  const [kept] = ptPickRows([pt({ validityDays: 7 })], "1on1", 1, SYDNEY, slot("08:00"), now);
+  assert.equal(kept!.eligible, true);
+  const latestEnd = ptLatestEnd([pt({ validityDays: 7 })], now);
+  assert.equal(
+    ptSlotEndProblem({ proposedDate: "2027-04-08", startTime: "08:30" }, 1, latestEnd, SYDNEY),
+    "Time 1: no package of yours runs past 8:00 am on Thu 8 Apr. Pick a time by then.",
+  );
+  // The server caps a length at ten years (MAX_VALIDITY_DAYS).
+  assert.equal(ptLatestEnd([pt({ validityDays: 2_000_000_000 })], now), now + 3650 * 86_400_000);
 });
 
 test("PT-144 a time after the furthest any package runs is named before sending, and the date picker stops at that day or the window's last, whichever is sooner", () => {
-  const latestEnd = ptLatestEnd([pt({ dormant: false, expiresAt: "2026-11-24T01:00:00.000Z" }), pt({ validityDays: 3 })], SG, NOW);
+  const latestEnd = ptLatestEnd([pt({ dormant: false, expiresAt: "2026-11-24T01:00:00.000Z" }), pt({ validityDays: 3 })], NOW);
   assert.equal(latestEnd, Date.parse("2026-11-24T01:00:00.000Z"));
   assert.equal(
     ptSlotEndProblem({ proposedDate: "2026-11-24", startTime: "09:30" }, 2, latestEnd, SG),

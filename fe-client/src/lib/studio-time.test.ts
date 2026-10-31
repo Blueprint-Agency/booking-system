@@ -12,11 +12,13 @@ import {
   formatExpiryDate,
   formatPlainDate,
   instantAt,
+  isKnownZone,
   isoWeekday,
   localClock,
   localDate,
   plusCalendarDays,
   plusCalendarMonths,
+  requireStudioZone,
   wholeDaysBetween,
   zoneFormat,
 } from "./studio-time.ts";
@@ -127,15 +129,15 @@ test("TEN-86 months are calendar months on the studio's clock, clamped to the mo
 test("TEN-87 every date and time a member reads is formatted on the studio's clock", () => {
   // 00:30 on Wednesday 1 July in Sydney, 22:30 on Tuesday 30 June in Singapore.
   const at = "2026-06-30T14:30:00.000Z";
-  assert.equal(formatDate(at, SYDNEY), "Wed, 1 Jul");
-  assert.equal(formatDate(at, SINGAPORE), "Tue, 30 Jun");
-  assert.equal(formatExpiryDate(at, SYDNEY), "Wed, 1 Jul 2026");
-  assert.equal(formatDayMonth(at, SYDNEY), "1 Jul");
-  assert.equal(formatDayMonth(at, SINGAPORE), "30 Jun");
-  assert.equal(formatDayAndTime(at, SYDNEY), "Wed, 1 Jul, 12:30 am");
-  assert.equal(formatDayAndTime(at, SINGAPORE), "Tue, 30 Jun, 10:30 pm");
-  assert.equal(formatClassTime(at, SYDNEY), "12:30 am");
-  assert.equal(formatClassTime(at, SINGAPORE), "10:30 pm");
+  assert.equal(formatDate(SYDNEY, at), "Wed, 1 Jul");
+  assert.equal(formatDate(SINGAPORE, at), "Tue, 30 Jun");
+  assert.equal(formatExpiryDate(SYDNEY, at), "Wed, 1 Jul 2026");
+  assert.equal(formatDayMonth(SYDNEY, at), "1 Jul");
+  assert.equal(formatDayMonth(SINGAPORE, at), "30 Jun");
+  assert.equal(formatDayAndTime(SYDNEY, at), "Wed, 1 Jul, 12:30 am");
+  assert.equal(formatDayAndTime(SINGAPORE, at), "Tue, 30 Jun, 10:30 pm");
+  assert.equal(formatClassTime(SYDNEY, at), "12:30 am");
+  assert.equal(formatClassTime(SINGAPORE, at), "10:30 pm");
   // A plain date has no clock to convert: it reads as the day it names, whatever the zone.
   assert.equal(formatPlainDate("2026-10-01"), "Thu, 1 Oct");
   assert.equal(formatPlainDate("2026-10-01T00:00:00.000Z"), "Thu, 1 Oct");
@@ -148,5 +150,28 @@ test("TEN-88 a formatter is fixed to the studio's zone and cached; a zone the ru
   assert.equal(zoneFormat(SINGAPORE, "en-GB", layout).format(at), "11 Aug 2026");
   assert.equal(zoneFormat(SYDNEY, "en-GB", layout), zoneFormat(SYDNEY, "en-GB", layout));
   assert.throws(() => localDate("Not/AZone", at), RangeError);
-  assert.throws(() => formatDate(at.toISOString(), "Not/AZone"), RangeError);
+  assert.throws(() => formatDate("Not/AZone", at.toISOString()), RangeError);
+});
+
+test("TEN-115 whole days between two instants keep their seconds: a day short by a second is not yet whole", () => {
+  const from = instantAt(SYDNEY, "2026-10-03", "09:00") + 30_000; // 09:00:30 on the 3rd
+  // 09:00:15 on the 6th is 15 seconds short of three days, which a minute-level comparison reads as whole.
+  const shortOfThree = instantAt(SYDNEY, "2026-10-06", "09:00") + 15_000;
+  assert.equal(wholeDaysBetween(SYDNEY, from, shortOfThree), 2);
+  assert.equal(wholeDaysBetween(SYDNEY, from, instantAt(SYDNEY, "2026-10-06", "09:00") + 30_000), 3);
+  // The same to the day after: 09:00:15 on the 4th is 15 seconds short of one day.
+  assert.equal(wholeDaysBetween(SYDNEY, from, instantAt(SYDNEY, "2026-10-04", "09:00") + 15_000), 0);
+  assert.equal(wholeDaysBetween(SYDNEY, from, instantAt(SYDNEY, "2026-10-04", "09:00") + 30_000), 1);
+  // Backwards is the same count, negated.
+  assert.equal(wholeDaysBetween(SYDNEY, shortOfThree, from), -2);
+});
+
+test("TEN-116 a studio's zone is required, and a zone this device does not know is told apart before anything formats", () => {
+  assert.equal(requireStudioZone(SYDNEY), SYDNEY);
+  // Outside a studio there is no zone, and nothing quietly formats in UTC.
+  assert.throws(() => requireStudioZone(null), /studio/i);
+  assert.equal(isKnownZone(SYDNEY), true);
+  assert.equal(isKnownZone("UTC"), true);
+  assert.equal(isKnownZone("Not/AZone"), false);
+  assert.equal(isKnownZone(""), false);
 });
