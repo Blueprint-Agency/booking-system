@@ -74,6 +74,31 @@ export function workshopRefundLine(amountPaid: string, paidCents: number): strin
 }
 
 /**
+ * The times a member proposed on a private session request, in the order of
+ * the calendar: "Thu, 8 Oct 2026, 9:00 am or Thu, 8 Oct 2026, 2:30 pm".
+ *
+ * A slot is a date and a time of day the member typed, a wall-clock reading in
+ * the studio's own day, so it is written back as typed rather than moved
+ * through a time zone. `startTime` is `HH:mm` or `HH:mm:ss`.
+ */
+export function proposedTimesLine(slots: ReadonlyArray<{ proposedDate: string; startTime: string }>): string {
+  const format = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+  return [...slots]
+    .sort((a, b) => `${a.proposedDate}T${a.startTime}`.localeCompare(`${b.proposedDate}T${b.startTime}`))
+    .map(s => format.format(new Date(`${s.proposedDate}T${s.startTime.slice(0, 5)}:00Z`)))
+    .join(' or ')
+}
+
+/**
  * The private session a cancellation is about, as the subject and the first
  * sentence name it: a scheduled one by its instructor and time, a request that
  * was never scheduled as just that.

@@ -19,7 +19,6 @@ export const STUDIO_NAME_VARIABLE = 'studio_name'
  * use (`db/seed/email-copy.test.ts` holds the seeded copy to it).
  */
 export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
-  welcome: ['client_name'],
   password_reset: ['client_name', 'reset_url'],
   // NTF-08: `credits_line` is a whole composed sentence (./booking-email.ts) —
   // the credits used and what remains, or, on an Unlimited Plan, that it used
@@ -32,8 +31,9 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   class_waitlist_promoted: ['client_name', 'class_name', 'date', 'time', 'location_name', 'instructor_name', 'cancel_by'],
   pt_request_submitted: ['client_name', 'instructor_name', 'starts_at'],
   pt_session_approved: ['client_name', 'instructor_name', 'starts_at', 'location', 'qr_url'],
-  pt_session_declined: ['client_name', 'instructor_name', 'decline_note'],
-  pt_request_expired: ['client_name', 'instructor_name', 'starts_at'],
+  // `refund_line` is a whole sentence (./booking-email.ts: `sessionsRefundLine`),
+  // empty when no session went back: a package a Refund has Voided takes none.
+  pt_request_expired: ['client_name', 'instructor_name', 'starts_at', 'refund_line'],
   // NTF-11 (admin-restructure §9e): one email whether the request was
   // cancelled before or after it was scheduled. `session_line` names it — a
   // scheduled session by instructor and time, else "Your private session
@@ -44,9 +44,6 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // and the zero amount on a free tier. Same variable on the package and trial
   // confirmations below.
   workshop_purchase_confirmed: ['client_name', 'workshop_name', 'date', 'qr_url', 'code', 'amount_paid', 'receipt_url'],
-  // The waitlist offer is time-bound (fe-client §4.1): the place goes to the
-  // next person if it is not claimed, so the deadline is part of the email.
-  workshop_waitlist_promoted: ['client_name', 'workshop_name', 'date', 'claim_url', 'claim_deadline'],
   // NTF-09/10: `refund_line` is a composed sentence (./booking-email.ts), and a
   // link is a variable (`classes_url`, `account_url`, `workshops_url`,
   // `checkin_url`) built per send from the studio's own origin, so the default
@@ -129,7 +126,6 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // seat. `client_name` is the ClassPass member; `classpass_url` the
   // studio's ClassPass page.
   classpass_overbooked: ['client_name', 'class_name', 'date', 'classpass_url'],
-  referral_credited: ['referrer_name', 'referee_name', 'credits_granted'],
   // Sign-in (services/auth/better-auth.ts). `code` and `reset_url` are credentials and
   // are sent as `secretVariables`, so `email_log` keeps them redacted.
   sign_in_code: ['code'],

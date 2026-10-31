@@ -44,7 +44,7 @@ import { settleSessionAfterBookingCancel, type LockedSessionRequest } from '../p
 import { refuseOnceStarted } from '../pt-sessions/started'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
-import { sendMemberCancelReturnedEmail } from '../notifications/send-booking-email'
+import { sendMemberCancelForfeitedEmail, sendMemberCancelReturnedEmail, type ForfeitNotice } from '../notifications/send-booking-email'
 import { recordPtSessionCancelled } from '../attention/session-updates'
 
 export type { CancelSource, StaffCancelSource, StaffCredit }
@@ -122,13 +122,15 @@ export async function cancelBooking(
   // A promotion locks the head of the line's time and packages, and an Admin
   // act already holding the canceller's package can reach the same head
   // further on: Postgres aborts one of the two, and it runs again.
-  const { result, promotions } = await retryingTransaction('booking cancel', tx => cancelBookingInTx(tx, tenantId, input))
+  const { result, promotions, forfeit } = await retryingTransaction('booking cancel', tx => cancelBookingInTx(tx, tenantId, input))
   // Once the request's transaction has committed (`afterCommit`), never inside it.
   if (promotions.length) afterCommit(() => sendPromotionEmails(tenantId, promotions))
   // NTF-09: a member who cancelled in time is told what came back. Never throws.
   if (input.source === 'client' && result.refundFired) {
     afterCommit(() => sendMemberCancelReturnedEmail(tenantId, input.bookingId))
   }
+  // A member whose cancel kept what the booking spent is told why, instead.
+  if (forfeit) afterCommit(() => sendMemberCancelForfeitedEmail(tenantId, forfeit))
   return result
 }
 
@@ -141,7 +143,7 @@ export async function cancelBookingInTx(
   tx: Tx,
   tenantId: string,
   input: CancelInput,
-): Promise<{ result: CancelResult; promotions: Promotion[] }> {
+): Promise<{ result: CancelResult; promotions: Promotion[]; forfeit: ForfeitNotice | null }> {
   const { bookingId, source, packageVoided, studioReason } = input
   const clientId = input.source === 'client' ? input.clientId : undefined
   const actorStaffId = 'actorStaffId' in input ? input.actorStaffId : undefined
@@ -349,7 +351,15 @@ export async function cancelBookingInTx(
 
   const promotions = freesOnlineSeat ? await promoteFromWaitlist(tx, tenantId, bk.classId!, now) : []
 
-  return { result: { refundOutcome, refundFired }, promotions }
+  // A member's cancel that spent something and kept it: told why, by the
+  // caller, once this has committed. A cancel that spent nothing has nothing to
+  // keep, and a staff cancel's credit is the staff member's choice.
+  const forfeit: ForfeitNotice | null =
+    source === 'client' && refundOutcome === 'forfeited' && used > 0 && evaluation
+      ? { bookingId: bk.id, reason: evaluation.reason, windowHours: evaluation.windowHours }
+      : null
+
+  return { result: { refundOutcome, refundFired }, promotions, forfeit }
 }
 
 type LockedParent =

@@ -95,7 +95,7 @@ test("STF-50 an archive from before #471 restores each instructor's photo as the
   assert.deepEqual(upgradeArchiveRows(current).staff_users, current.staff_users, 'a picture of their own is kept')
 })
 
-test('TEN-52 an archive from before migration 0139 restores a request whose session is not in it as one with no session, and leaves every real one', () => {
+test('TEN-52 an archive from before migration 0140 restores a request whose session is not in it as one with no session, and leaves every real one', () => {
   const SESSION = '33333333-3333-4333-8333-333333333333'
   const GONE = '44444444-4444-4444-8444-444444444444'
   const rows = upgradeArchiveRows({

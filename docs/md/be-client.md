@@ -398,10 +398,13 @@ tx commit
 12. refund fired (an in-time cancel that returned what the booking used): 'class_cancelled_credit_returned'
     (class) or 'pt_cancelled_session_returned' (private session) to the member, after commit and
     best-effort, with a composed refund_line ("2 credits have been returned to your package.") — NTF-09.
-    A late or over-cap cancel sends nothing yet: the forfeited pair is not wired.
+    A cancel that kept what the booking spent (a late or over-cap one) sends
+    'class_cancelled_forfeited' / 'pt_cancelled_forfeited' instead, with a `reason_line` from
+    `policy/evaluate-cancellation.ts:forfeitLine` naming the window, the cap or both — NTF-52, NTF-53.
+    One that spent nothing (an Unlimited Plan) has nothing to keep and sends neither.
 ```
 
-`POST /pt-sessions/:id/cancel` emails `pt_request_cancelled` to the requester (and to a 2-on-1 partner whose seat went with it) after commit — the same email before and after scheduling, its `refund_line` present only when sessions came back (NTF-11). Leaving a manual session in time sends `pt_cancelled_session_returned`.
+`POST /pt-sessions/:id/cancel` emails `pt_request_cancelled` to the requester (and to a 2-on-1 partner whose seat went with it) after commit — the same email before and after scheduling, its `refund_line` present only when sessions came back (NTF-11). Leaving a manual session in time sends `pt_cancelled_session_returned`, or `pt_cancelled_forfeited` when the cap kept the session (NTF-53). A scheduled member request cancelled by its own member past the cap sends the requester `pt_cancelled_forfeited` instead, naming the cap, and not also `pt_request_cancelled`; a 2-on-1 partner, who kept nothing, still gets `pt_request_cancelled` (NTF-60).
 
 Every cancel of a class booking goes through this service — admin single-cancel, and the Refund and complimentary-removal unwinds (`packageVoided`) — so each promotes the same way. Those two unwinds lock every PT request, session, class and booking they will cancel, each kind in id order, before the package (be-portal §3b), so a member's cancel of one of those bookings at the same moment waits at its class or request, or the unwind waits for it (RFD-24, PKG-42).
 
@@ -462,9 +465,12 @@ tx start
    co_client_id | co_client_name + co_client_email (depending on partner.kind),
    message, expires_at = now() + pt_request_ttl (see spine §5).
 7. Insert pt_request_slots rows for each entry in slots[].
-8. enqueueEmail('pt_request_submitted', client.email, { class_type_name, slots, partner_label }).
-9. enqueueEmail('pt_request_submitted_admin', studio_inbox, ...) — admin gets a heads-up email
-   so the WhatsApp follow-up can start without polling /admin/pt-requests.
+8. After commit: 'pt_request_submitted' to the requester alone (a switchable email; NTF-55,
+   NTF-56), best-effort. A request names no instructor, so its `instructor_name` reads "the
+   studio", and `starts_at` is every time the member proposed ("Thu, 8 Oct 2026, 9:00 am or …"),
+   as typed. A 2-on-1 partner is not mailed: they have not been asked and may have no account.
+9. (Not built.) A heads-up email to the studio's inbox, so the WhatsApp follow-up can start
+   without polling /admin/pt-requests. Admins read the queue.
 tx commit
 ```
 

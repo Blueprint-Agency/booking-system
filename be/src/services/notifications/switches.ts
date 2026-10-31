@@ -16,7 +16,10 @@ export type EmailAudience = 'member' | 'staff'
 export const STUDIO_EMAILS = {
   class_booking_confirmed: { name: 'Class booking confirmed', audience: 'member', locked: false },
   class_cancelled_credit_returned: { name: 'Member cancelled a class, credit returned', audience: 'member', locked: false },
+  class_cancelled_forfeited: { name: 'Member cancelled a class, credit kept', audience: 'member', locked: false },
   pt_cancelled_session_returned: { name: 'Member cancelled a private session, session returned', audience: 'member', locked: false },
+  pt_cancelled_forfeited: { name: 'Member cancelled a private session, session kept', audience: 'member', locked: false },
+  pt_request_submitted: { name: 'Private session request received', audience: 'member', locked: false },
   credit_expiry_reminder: { name: 'Package about to expire', audience: 'member', locked: false },
   sign_in_code: { name: 'Sign-in code', audience: 'member', locked: true },
   password_reset: { name: 'Password reset', audience: 'member', locked: true },
@@ -33,6 +36,10 @@ export const STUDIO_EMAILS = {
   class_rule_cancelled: { name: "Booking cancelled by a change to a class's accepted packages", audience: 'member', locked: true },
   // One slug for a member's cancel and a staff cancel, so locked whole.
   pt_request_cancelled: { name: 'Private session request cancelled', audience: 'member', locked: true },
+  // Staff scheduling a request is its approval, and a lapse is the studio's
+  // machinery ending it: both are done to the member's request, so both are locked.
+  pt_session_approved: { name: 'Private session request confirmed', audience: 'member', locked: true },
+  pt_request_expired: { name: 'Private session request expired', audience: 'member', locked: true },
   class_waitlist_promoted: { name: 'Booked off the waitlist', audience: 'member', locked: true },
   // To the instructor and every admin: one switch covers both.
   checkin_nag: { name: 'Check-in reminder to instructor and admins', audience: 'staff', locked: false },

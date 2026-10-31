@@ -85,7 +85,7 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
     )
   }
 
-  // Migration 0139: a request's `scheduled_pt_session_id` is a foreign key to
+  // Migration 0140: a request's `scheduled_pt_session_id` is a foreign key to
   // `pt_sessions`. Before it, a request could name a session that was no
   // longer there, and the migration cleared those ids; an archive taken before
   // it still holds them, and the key would refuse them. A request is brought

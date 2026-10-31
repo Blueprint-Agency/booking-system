@@ -17,7 +17,8 @@
  * See docs/md/be-portal.md §3c for the full contract.
  */
 import { and, eq, ne } from 'drizzle-orm'
-import { db } from '../../db'
+import { afterCommit, db } from '../../db'
+import { sendPtSessionApprovedEmail } from '../notifications/send-pt-request-email'
 import { recordSessionAssigned } from '../attention/session-assigned'
 import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
@@ -270,8 +271,9 @@ export async function schedulePtRequest(
   })
   if (!ptSessionId) return { ok: false, error: 'not_pending' }
 
-  // NOTE(email): pt_session_approved is sent out-of-band, consistent with the
-  // class booking path which is inbox/in-app only in v1.
+  // Scheduling is the request's approval: once it has committed, every member
+  // the session booked is told it is confirmed.
+  afterCommit(() => sendPtSessionApprovedEmail(tenantId, ptSessionId))
 
   return { ok: true, ptSessionId }
 }
