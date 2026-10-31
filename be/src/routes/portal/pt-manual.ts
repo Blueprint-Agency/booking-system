@@ -19,7 +19,6 @@ const manualFields = {
   room_id: z.string().uuid(),
   starts_at: dateTime('A start time'),
   ends_at: dateTime('An end time'),
-  instructor_pay_sgd: z.number().min(0).nullable().optional(),
   members: z
     .array(
       z.object({
@@ -33,13 +32,20 @@ const manualFields = {
   allow_clash: z.boolean().optional(),
 }
 
+// Only an Admin sets pay: blank leaves the session Unpriced and an Admin prices
+// it later from Finance. The Instructor's body has no such field, so one sent is
+// ignored and their session is left unpriced, as their classes are.
 export const adminManualSessionSchema = z
-  .object({ ...manualFields, instructor_id: z.string().uuid() })
+  .object({
+    ...manualFields,
+    instructor_id: z.string().uuid(),
+    instructor_pay_sgd: z.number().min(0).nullable().optional(),
+  })
   .refine(endsAfterStart, endsAfterStartIssue)
 
 export const instructorManualSessionSchema = z.object(manualFields).refine(endsAfterStart, endsAfterStartIssue)
 
-type ManualBody = z.infer<typeof instructorManualSessionSchema>
+type ManualBody = z.infer<typeof adminManualSessionSchema> | z.infer<typeof instructorManualSessionSchema>
 
 /** The body's fields in the service's shape, bar the instructor and the actor. */
 export function manualSessionFields(body: ManualBody) {
@@ -49,7 +55,7 @@ export function manualSessionFields(body: ManualBody) {
     roomId: body.room_id,
     startsAt: new Date(body.starts_at),
     endsAt: new Date(body.ends_at),
-    instructorPaySgd: body.instructor_pay_sgd ?? null,
+    instructorPaySgd: ('instructor_pay_sgd' in body ? body.instructor_pay_sgd : null) ?? null,
     members: body.members.map(m => ({ clientId: m.client_id, clientPackageId: m.client_package_id ?? null })),
     override: body.override === true,
     allowClash: body.allow_clash === true,

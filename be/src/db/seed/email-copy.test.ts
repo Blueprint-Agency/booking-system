@@ -41,6 +41,37 @@ test('every slug the senders know is seeded, and vice versa', () => {
   assert.deepEqual([...seeded].filter(s => !declared.has(s)), [], 'seeded but not declared')
 })
 
+test('NTF-51 a studio is seeded no welcome, referral-credited, declined-request or workshop-waitlist template, because nothing sends any of them', () => {
+  const seeded = SEEDED_TEMPLATES.map(t => t.slug)
+  for (const slug of ['welcome', 'referral_credited', 'pt_session_declined', 'workshop_waitlist_promoted']) {
+    assert.ok(!seeded.includes(slug), `${slug} is not seeded`)
+    assert.ok(!(slug in TEMPLATE_VARIABLES), `${slug} declares no variables`)
+  }
+})
+
+/** What a member reads of a seeded template, with its variables filled from `vars`. */
+const readAs = (slug: string, vars: Record<string, string>) => {
+  const t = SEEDED_TEMPLATES.find(s => s.slug === slug)!
+  const filled = t.bodyHtml.replace(/\{\{(\w+)\}\}/g, (_, name: string) => vars[name] ?? '')
+  return filled.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+test('NTF-61 the request-received email says the session is held from the package, because submitting debits it, and not that nothing was deducted', () => {
+  const text = readAs('pt_request_submitted', { client_name: 'Ana', instructor_name: 'the studio', starts_at: 'Mon 9:00 am' })
+  assert.match(text, /The session for this request is held from your package until it is answered\./)
+  assert.doesNotMatch(text, /no session has been deducted/i)
+})
+
+test('NTF-61 the request-expired email states the refund as its own sentence, so it is silent where the package took nothing back, and never says nothing was deducted', () => {
+  assert.ok(TEMPLATE_VARIABLES.pt_request_expired.includes('refund_line'), 'refund_line is allow-listed')
+  const vars = { client_name: 'Ana', instructor_name: 'the studio', starts_at: 'Mon 9:00 am' }
+  const returned = readAs('pt_request_expired', { ...vars, refund_line: '1 session has been returned to your package.' })
+  assert.match(returned, /so it has expired\. 1 session has been returned to your package\. Request another time/)
+  const kept = readAs('pt_request_expired', { ...vars, refund_line: '' })
+  assert.doesNotMatch(kept, /returned|deducted/i, 'with nothing returned it claims nothing either way')
+  assert.doesNotMatch(returned, /deducted/i)
+})
+
 test('each template uses exactly its allow-listed variables', () => {
   for (const t of SEEDED_TEMPLATES) {
     const allowed = new Set(TEMPLATE_VARIABLES[t.slug as keyof typeof TEMPLATE_VARIABLES] ?? [])
