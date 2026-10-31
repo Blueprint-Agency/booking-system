@@ -41,10 +41,10 @@ describe('moving a studio between deployments', () => {
     err.code === 'import_refused' && reason.test(String(err.details?.message))
 
   /** A third, empty Tenant to restore into — never one of the fixture pair. */
-  async function emptyTenant(slug: string) {
+  async function emptyTenant(slug: string, timezone = 'Asia/Singapore') {
     const [row] = await harness.db.execute<{ id: string }>(sql`
     INSERT INTO tenants (slug, name, timezone, status)
-    VALUES (${slug}, ${`Restored ${slug}`}, 'Asia/Singapore', 'active')
+    VALUES (${slug}, ${`Restored ${slug}`}, ${timezone}, 'active')
     RETURNING id
   `)
     return row!.id
@@ -327,6 +327,35 @@ describe('moving a studio between deployments', () => {
       refusedFor(/already has rows/),
       'importing over a live studio must be refused',
     )
+  })
+
+  test('TEN-108 an archive is refused 409 archive_timezone_mismatch, naming both zones, by a studio on another zone, and writes nothing; one on the archive’s own zone restores', options, async () => {
+    const source = await studioWithData(`tzsrc-${Date.now()}`)
+    const archive = await transfer.exportTenant(source)
+    assert.equal(archive.manifest.tenant.timezone, 'Asia/Singapore')
+
+    // A studio's zone is fixed at creation, so a restore cannot move it: the
+    // archive's classes and leave days were written on the other clock.
+    const sydney = await emptyTenant(`tzsydney-${Date.now()}`, 'Australia/Sydney')
+    await assert.rejects(
+      () => transfer.importTenant(sydney, archive),
+      (err: { status?: number; code?: string; details?: { message?: string } }) =>
+        err.status === 409 &&
+        err.code === 'archive_timezone_mismatch' &&
+        /Asia\/Singapore/.test(String(err.details?.message)) &&
+        /Australia\/Sydney/.test(String(err.details?.message)),
+    )
+    const [after] = await harness.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM clients WHERE tenant_id = ${sydney}`,
+    )
+    assert.equal(after!.n, 0, 'nothing was written')
+
+    const singapore = await emptyTenant(`tzsg-${Date.now()}`)
+    await transfer.importTenant(singapore, archive)
+    const [restored] = await harness.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM clients WHERE tenant_id = ${singapore}`,
+    )
+    assert.equal(restored!.n, 2, 'the studio on the archive’s own zone gets its members')
   })
 
   test('a studio copies into a second one beside it', options, async () => {

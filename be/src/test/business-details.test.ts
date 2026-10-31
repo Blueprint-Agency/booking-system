@@ -61,7 +61,7 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
       await harness.app.request('/api/v1/platform/tenants', {
         method: 'POST',
         headers: { ...operator, ...json },
-        body: JSON.stringify({ slug, name: domainName, admin_email: adminEmail, ...extra }),
+        body: JSON.stringify({ slug, name: domainName, timezone: 'Asia/Singapore', admin_email: adminEmail, ...extra }),
       }),
       201,
     )
@@ -187,7 +187,7 @@ describe('a studio’s Business name', { skip: integrationTestsEnabled ? false :
       await harness.app.request('/api/v1/platform/tenants', {
         method: 'POST',
         headers: { ...operator, ...json },
-        body: JSON.stringify({ slug, name: 'Refused studio', business_details: { business_name: 'x'.repeat(201) } }),
+        body: JSON.stringify({ slug, name: 'Refused studio', timezone: 'Asia/Singapore', business_details: { business_name:'x'.repeat(201) } }),
       }),
       400,
     )

@@ -163,7 +163,7 @@ describe('tenant term', { skip: integrationTestsEnabled ? false : SKIP_REASON },
       // 23:30 UTC on the 14th is already the 15th in Singapore.
       harness.clock.set(new Date('2031-03-14T23:30:00.000Z'))
       const created = await expectStatus(
-        await platform('/tenants', 'POST', { slug: `term-clock-new-${run}`, name: 'Term Clock New', term_months: 6 }),
+        await platform('/tenants', 'POST', { slug: `term-clock-new-${run}`, name: 'Term Clock New', timezone: 'Asia/Singapore', term_months: 6 }),
         201,
       )
       assert.deepEqual(created.tenant.term, { start_date: '2031-03-15', end_date: '2031-09-15', ended: false })
