@@ -281,6 +281,11 @@ export const UNEXPORTED_MEMBER_COLUMNS: readonly { table: string; column: string
     column: 'client_name',
     why: 'The corporate client’s name as staff typed it, not a member.',
   },
+  {
+    table: 'waiver_signatures',
+    column: 'client_id',
+    why: 'Nothing writes this table (waivers are not being built, #233) and the next deploy drops it, so it is neither exported nor erased in the meantime.',
+  },
 ]
 
 /**

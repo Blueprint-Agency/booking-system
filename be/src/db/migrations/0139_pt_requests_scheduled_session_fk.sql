@@ -1,15 +1,3 @@
--- Three tables nothing reads or writes are dropped: the admin Inbox (#237) and
--- waivers (#233) are not being built. `inbox_items` takes its enum with it. Their
--- rows are not archived anywhere else; the pre-migrate snapshot every deploy takes
--- (docs/md/deployment.md) is the way back.
-DROP TABLE IF EXISTS "waiver" CASCADE;
---> statement-breakpoint
-DROP TABLE IF EXISTS "waiver_signatures" CASCADE;
---> statement-breakpoint
-DROP TABLE IF EXISTS "inbox_items" CASCADE;
---> statement-breakpoint
-DROP TYPE IF EXISTS "public"."inbox_item_type";
---> statement-breakpoint
 -- A request names the session it was scheduled as, and now the database holds it
 -- to a session that exists. Nothing ever added the foreign key, so a request can
 -- already name an id that is no session. Adding the constraint would refuse the
@@ -19,26 +7,33 @@ DROP TYPE IF EXISTS "public"."inbox_item_type";
 -- changes nothing anyone sees. The request keeps its row, its status and its
 -- debit. Each cleared id is printed as a NOTICE (request, studio, status, the id
 -- it named) so the deploy log keeps what the column no longer does.
+--
+-- `pt_requests` is under forced Row-Level Security. A migration role that
+-- bypasses it (the superuser the deploy migrates as) sees every studio's rows;
+-- one that does not would see none, and the UPDATE would silently clear
+-- nothing before the key refused the rest. With `row_security = off` such a
+-- role fails here instead, loudly.
+SET LOCAL row_security = off;
+--> statement-breakpoint
 DO $$
 DECLARE
-  "dangling" record;
+  "cleared" record;
 BEGIN
-  FOR "dangling" IN
-    SELECT "r"."id", "r"."tenant_id", "r"."status", "r"."scheduled_pt_session_id" AS "gone"
-    FROM "pt_requests" AS "r"
-    WHERE "r"."scheduled_pt_session_id" IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM "pt_sessions" AS "s" WHERE "s"."id" = "r"."scheduled_pt_session_id")
-    ORDER BY "r"."tenant_id", "r"."id"
+  FOR "cleared" IN
+    UPDATE "pt_requests" AS "r"
+    SET "scheduled_pt_session_id" = NULL
+    FROM (
+      SELECT "id", "scheduled_pt_session_id" AS "gone" FROM "pt_requests"
+    ) AS "before"
+    WHERE "before"."id" = "r"."id"
+      AND "before"."gone" IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM "pt_sessions" AS "s" WHERE "s"."id" = "before"."gone")
+    RETURNING "r"."id", "r"."tenant_id", "r"."status", "before"."gone"
   LOOP
     RAISE NOTICE 'pt_requests % (studio %, status %) named pt_session % which does not exist; cleared',
-      "dangling"."id", "dangling"."tenant_id", "dangling"."status", "dangling"."gone";
+      "cleared"."id", "cleared"."tenant_id", "cleared"."status", "cleared"."gone";
   END LOOP;
 END $$;
---> statement-breakpoint
-UPDATE "pt_requests" AS "r"
-SET "scheduled_pt_session_id" = NULL
-WHERE "r"."scheduled_pt_session_id" IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM "pt_sessions" AS "s" WHERE "s"."id" = "r"."scheduled_pt_session_id");
 --> statement-breakpoint
 DO $$ BEGIN
   IF NOT EXISTS (
