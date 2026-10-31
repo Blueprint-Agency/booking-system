@@ -5,6 +5,7 @@ import { tenantOrigin } from '../../lib/allowed-origins'
 import { checkSlug } from '../../services/tenants/slug'
 import { inviteFirstAdmin, provisionTenant, slugConflictFor } from '../../services/tenants/provision'
 import { renameTenant } from '../../services/tenants/rename'
+import { requireStudioTimeZone } from '../../services/tenants/time-zone'
 import { deleteTenant } from '../../services/tenants/delete'
 import { setTenantTerm } from '../../services/tenants/term'
 import { isIsoDate, termEnded } from '../../services/tenants/term-dates'
@@ -112,24 +113,11 @@ const createBody = z.object({
     .string({ message: 'A studio name must be text.' })
     .min(1, 'A studio name is required.')
     .max(200, 'A studio name can be at most 200 characters.'),
-  // IANA zone. Validated against the runtime's own database rather than a list
-  // we would have to maintain — a zone this process cannot resolve would make
-  // every scheduled job for the studio fire at the wrong hour.
-  timezone: z
-    .string()
-    .optional()
-    .refine(
-      value => {
-        if (!value) return true
-        try {
-          new Intl.DateTimeFormat('en-US', { timeZone: value })
-          return true
-        } catch {
-          return false
-        }
-      },
-      { message: 'A time zone must be an IANA zone, like Asia/Singapore.' },
-    ),
+  // The studio's IANA zone, required and fixed at creation. Any value passes
+  // this shape, so that a missing or unknown zone is `timezone_required` /
+  // `timezone_invalid`, the form's own reasons, rather than a validation error
+  // it has no words for; `requireStudioTimeZone` says which.
+  timezone: z.unknown().optional(),
   // Optional, and an empty string means "none" rather than "invalid": a studio
   // created to receive an archive must be left with no `staff_users` rows at
   // all, because the archive brings its own and the import refuses to merge.
@@ -243,10 +231,11 @@ const app = new Hono()
 
   .post('/tenants', zValidator('json', createBody, explainTenant), async c => {
     const body = c.req.valid('json')
+    const timezone = requireStudioTimeZone(body.timezone)
     const result = await provisionTenant({
       slug: body.slug,
       name: body.name,
-      timezone: body.timezone,
+      timezone,
       adminEmail: body.admin_email,
       adminName: body.admin_name,
       termMonths: body.term_months,

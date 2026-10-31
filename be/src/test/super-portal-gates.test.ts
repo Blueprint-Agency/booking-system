@@ -320,7 +320,7 @@ describe('super portal gates', { skip: integrationTestsEnabled ? false : SKIP_RE
 
     // A request that would do something if it were let through.
     const valid: Record<string, { body?: unknown; query?: string }> = {
-      'POST /api/v1/platform/tenants': { body: { slug: `gates-new-${run}`, name: 'Gates New' } },
+      'POST /api/v1/platform/tenants': { body: { slug: `gates-new-${run}`, name: 'Gates New', timezone: 'Asia/Singapore' } },
       'PATCH /api/v1/platform/tenants/:id/status': { body: { status: 'suspended' } },
       'PUT /api/v1/platform/tenants/:id/term': { body: { start_date: '2026-01-01', months: 3 } },
       'POST /api/v1/platform/tenants/:id/slug': { body: { slug: `gates-moved-${run}` } },

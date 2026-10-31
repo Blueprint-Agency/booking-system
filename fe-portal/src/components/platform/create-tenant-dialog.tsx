@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button, Dialog, DialogFooter, Input, Label, Select, Textarea } from "@/components/ui";
@@ -22,6 +22,7 @@ import {
   type SlugVerdict,
   type TermMonths,
 } from "@/lib/platform";
+import { browserTimeZone, studioZoneChoices } from "@/lib/studio-time-zones";
 
 /**
  * Onboarding a studio, as one form.
@@ -48,10 +49,6 @@ export interface CreateTenantDialogProps {
   onCreated: () => void;
 }
 
-/** The platform's home zone. Every job a studio runs fires in its own zone, so a
- *  studio elsewhere must have this changed at creation, not afterwards. */
-const DEFAULT_TIMEZONE = "Asia/Singapore";
-
 /** The first Term's length unless the operator picks another. */
 const DEFAULT_TERM = "12";
 
@@ -61,7 +58,9 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
   /** True once the operator edits the slug themselves — after that the name
    *  stops overwriting it, or their edit would vanish on the next keystroke. */
   const [slugTouched, setSlugTouched] = useState(false);
-  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
+  /** The studio's zone, fixed once it is created. Starts on the administrator's
+   *  own browser zone when the form opens, never on a platform default. */
+  const [pickedZone, setPickedZone] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminName, setAdminName] = useState("");
   /** Months of the first Term, or "" for open-ended. */
@@ -72,6 +71,11 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Read in the browser when the form opens: the server has a zone of its own,
+  // which is not the administrator's.
+  const zoneChoices = useMemo(() => studioZoneChoices(open ? browserTimeZone() : ""), [open]);
+  const timezone = pickedZone || zoneChoices.initial;
+
   useEffect(() => {
     if (open) return;
     // Reset on close, so a cancelled create does not leave half a studio in the
@@ -79,7 +83,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
     setName("");
     setSlug("");
     setSlugTouched(false);
-    setTimezone(DEFAULT_TIMEZONE);
+    setPickedZone("");
     setAdminEmail("");
     setAdminName("");
     setTermMonths(DEFAULT_TERM);
@@ -126,7 +130,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
   // the import refuses to merge into rows that are already there.
   const prefixError = receiptPrefixProblem(receipt.prefix);
   const canSubmit =
-    !submitting && name.trim() && slug && verdict?.available === true && !prefixError;
+    !submitting && name.trim() && slug && timezone && verdict?.available === true && !prefixError;
   const receiptField = (key: keyof ReceiptDetailsDraft) => ({
     value: receipt[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -170,9 +174,11 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
           ? SLUG_REASONS[code]
           : code === "admin_email_invalid"
             ? "That admin email doesn’t look like an address."
-            : code === "invalid_request" && message
-              ? message
-              : "Could not create the studio. Nothing was left half-created — try again.",
+            : code === "timezone_required" || code === "timezone_invalid"
+              ? "Choose the studio’s time zone from the list."
+              : code === "invalid_request" && message
+                ? message
+                : "Could not create the studio. Nothing was left half-created — try again.",
       );
     } finally {
       setSubmitting(false);
@@ -260,15 +266,22 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="tenant-timezone">Time zone</Label>
-          <Input
+          <Select
             id="tenant-timezone"
             value={timezone}
-            onChange={e => setTimezone(e.target.value.trim())}
-            placeholder={DEFAULT_TIMEZONE}
+            onChange={e => setPickedZone(e.target.value)}
             required
-          />
+          >
+            {!timezone && <option value="">Choose a time zone</option>}
+            {zoneChoices.zones.map(zone => (
+              <option key={zone} value={zone}>
+                {zone}
+              </option>
+            ))}
+          </Select>
           <p className="text-xs text-muted">
-            IANA zone. Every scheduled job for this studio fires in it.
+            Starts on your browser’s zone. It is the studio’s clock for every class, leave day and
+            scheduled job, and it cannot be changed once the studio is created.
           </p>
         </div>
 
