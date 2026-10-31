@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Save, Ban, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { Button, Input, Label, PageHeader, Badge } from "@/components/ui";
+import { Button, Input, Label, LoadFailure, PageHeader, Badge } from "@/components/ui";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { WorkshopDaysEditor, newDay } from "./workshop-days-editor";
 import { WorkshopTiersEditor } from "./workshop-tiers-editor";
 import { PromotionsEditor } from "@/components/packages/promotions-editor";
@@ -272,8 +273,13 @@ export function WorkshopEditor({
 
   const isEdit = !!initial;
 
+  // The locations, instructors or rooms could not be read: the form says so
+  // instead of drawing empty selects, "Unknown" coaches and "No rooms".
+  const [catalogFailed, setCatalogFailed] = useState(false);
+
   const loadCatalog = useCallback(async () => {
     if (!api) return;
+    setCatalogFailed(false);
     try {
       const [loc, ins, rm] = await Promise.all([
         fetchActiveLocations(api),
@@ -282,8 +288,8 @@ export function WorkshopEditor({
       ]);
       setCatalog({ locations: loc, instructors: ins, rooms: rm });
       if (!locationId && loc[0]) setLocationId(loc[0].id);
-    } catch {
-      // surfaced via the form's general error display when save fails
+    } catch (err) {
+      if (!answeredElsewhere(err)) setCatalogFailed(true);
     }
   }, [api, locationId]);
 
@@ -437,6 +443,13 @@ export function WorkshopEditor({
       </div>
 
       <Section title="Basics" step="1">
+        {catalogFailed && (
+          <LoadFailure
+            what="the locations, instructors and rooms"
+            className="rounded-md border border-error/30 bg-error/5 py-3"
+            onRetry={loadCatalog}
+          />
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="ws-name">Name</Label>
           <Input
@@ -514,7 +527,7 @@ export function WorkshopEditor({
                   className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-paper px-3 py-2"
                 >
                   <span className="min-w-0 flex-1 break-words text-sm text-ink">
-                    {ins?.name ?? "Unknown"}
+                    {ins?.name ?? (catalogFailed ? "Couldn't load this instructor" : "Unknown")}
                   </span>
                   <Input
                     type="number"
@@ -595,6 +608,7 @@ export function WorkshopEditor({
             .filter((r) => r.location_id === locationId)
             .map((r) => ({ id: r.id, name: r.name }))}
           locationChosen={!!locationId}
+          roomsUnknown={catalogFailed}
         />
       </Section>
 
@@ -629,7 +643,7 @@ export function WorkshopEditor({
         <Button variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={saving}>
+        <Button onClick={handleSave} disabled={saving || catalogFailed}>
           {saving ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" /> Saving…

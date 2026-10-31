@@ -14,10 +14,13 @@ import { cn } from "@/lib/utils";
 export function LoadFailure({
   what,
   onRetry,
+  detail,
   className,
 }: {
   what: string;
   onRetry: () => Promise<unknown> | void;
+  /** Why, when the backend said (a switch turned off, say). */
+  detail?: string;
   className?: string;
 }) {
   const [retrying, setRetrying] = useState(false);
@@ -38,6 +41,7 @@ export function LoadFailure({
     >
       <AlertCircle className="h-4 w-4 shrink-0 text-error" aria-hidden />
       <span>{loadFailureSentence(what)}</span>
+      {detail && <span className="text-muted">{detail}</span>}
       <button
         type="button"
         onClick={() => void retry()}
