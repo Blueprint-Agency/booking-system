@@ -460,7 +460,7 @@ Admin-side **inbox surfaces** (refund / cancellation / private-session) are dash
 | `private-request-expired` | 12h SLA elapses | Client | ✓ |
 | `package-purchased` | Package purchase confirmed | Client | ✓ |
 | `package-lapsing-soon` | Package validity ≤ 7 days remaining | Client | ✓ |
-| `package-expired` | Package validity reached zero | Client | ✓ |
+| `package-expired` | **Not built.** Package validity reached zero | Client | — |
 | `referral-earned` | Referral attribution confirmed | Referrer | ✓ |
 | `refund-request-received` | Client submits refund request | Studio admin | ✓ |
 | `cancellation-request-received` | Client submits membership cancellation/pause | Studio admin | ✓ |
