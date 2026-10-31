@@ -967,6 +967,20 @@
       "when": 1793213974123,
       "tag": "0137_corporate_requests_purchase_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1793360613419,
+      "tag": "0138_retire_unsent_email_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1793426580922,
+      "tag": "0139_drop_unused_tables_and_session_fk",
+      "breakpoints": true
     }
   ]
 }

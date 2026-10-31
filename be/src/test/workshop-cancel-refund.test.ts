@@ -178,7 +178,6 @@ describe('refunding a cancelled Workshop', { skip: integrationTestsEnabled ? fal
     try {
       if (workshopId) {
         const workshop = sql`${workshopId}::uuid`
-        await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'workshopId' = ${workshopId}`)
         if (clientIds.length > 0) {
           const clients = sql.join(clientIds.map(id => sql`${id}::uuid`), sql`, `)
           await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)

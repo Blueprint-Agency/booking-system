@@ -308,6 +308,55 @@ describe('moving a studio between deployments', () => {
     assert.deepEqual([...rows].map(r => r.permissions), ['{schedule_classes,take_pt_bookings,manage_rosters}'])
   })
 
+  test('TEN-48 an archive taken while inbox_items, waiver and waiver_signatures existed restores without them, and the rest of the studio comes across', options, async () => {
+    // Those three tables were dropped (#508). A backup taken the day before still
+    // lists them in its manifest and carries their rows; it must restore as a
+    // studio without them rather than be refused, and nothing is written for them.
+    const source = await studioWithData(`droppedtablessrc-${Date.now()}`)
+    const archive = await transfer.exportTenant(source)
+    const memberId = archive.rows.clients![0]!.id
+    const now = new Date().toISOString()
+    archive.rows.inbox_items = [
+      {
+        id: randomUUID(),
+        tenant_id: source,
+        type: 'client_cancellation',
+        payload: { clientId: memberId },
+        read_at: null,
+        read_by_staff_id: null,
+        created_at: now,
+      },
+    ]
+    archive.rows.waiver = [
+      { id: randomUUID(), tenant_id: source, body_html: '<p>Old waiver</p>', updated_at: now, updated_by_staff_id: null },
+    ]
+    archive.rows.waiver_signatures = [
+      { id: randomUUID(), tenant_id: source, client_id: memberId, signed_at: now },
+    ]
+    archive.manifest.tables.push('inbox_items', 'waiver', 'waiver_signatures')
+    archive.manifest.counts.inbox_items = 1
+    archive.manifest.counts.waiver = 1
+    archive.manifest.counts.waiver_signatures = 1
+
+    const old = await unpackArchive(await packArchive(archive))
+    assert.equal(old.rows.waiver_signatures?.length, 1, 'the archive on disk does carry the dropped tables')
+
+    const target = await emptyTenant(`droppedtablesdst-${Date.now()}`)
+    const summary = await transfer.importTenant(target, old)
+
+    assert.equal(summary.written.clients, archive.rows.clients!.length)
+    assert.equal(summary.written.locations, archive.rows.locations!.length)
+    for (const table of ['inbox_items', 'waiver', 'waiver_signatures']) {
+      assert.ok(!(table in summary.written), `${table} is not written`)
+    }
+    const [dropped] = await harness.db.execute<{ gone: boolean }>(sql`
+      SELECT to_regclass('public.inbox_items') IS NULL
+         AND to_regclass('public.waiver') IS NULL
+         AND to_regclass('public.waiver_signatures') IS NULL AS gone
+    `)
+    assert.equal(dropped?.gone, true, 'the three tables no longer exist')
+  })
+
   test('an archive row with no auth_user_id is refused by name', options, async () => {
     const source = await studioWithData(`noauthsrc-${Date.now()}`)
     const archive = await transfer.exportTenant(source)

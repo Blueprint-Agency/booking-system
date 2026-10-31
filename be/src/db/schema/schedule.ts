@@ -524,8 +524,12 @@ export const workshopTierDays = pgTable(
 // scheduling, matching live availability and class type expertise.
 // ----------------------------------------------------------------------------
 // Circular-FK note: pt_requests.scheduled_pt_session_id → pt_sessions.id, while
-// pt_sessions.pt_request_id → pt_requests.id. The reverse FK is declared on
-// pt_sessions below; the pt_requests side is left as a plain uuid column.
+// pt_sessions.pt_request_id → pt_requests.id. Each side is nullable, which is
+// what lets a studio be written back (`transfer-order.ts` defers both columns)
+// and lets a member's request go while the instructor's session stays. The
+// pt_sessions side is declared on pt_sessions below; this one names its
+// column through `AnyPgColumn`, which is how drizzle declares a reference to a
+// table not yet defined.
 // ============================================================================
 
 export const ptRequests = pgTable(
@@ -564,9 +568,13 @@ export const ptRequests = pgTable(
     }),
     // When a pending request lapses. Null on a `portal` request, which is never pending.
     expiresAt: timestamp('expires_at', { withTimezone: true }),
-    // FK to pt_sessions.id added via a separate foreignKey() declaration below to break the
-    // circular reference at TS-declaration time.
-    scheduledPtSessionId: uuid('scheduled_pt_session_id'),
+    // The session this request was scheduled as. `restrict`, like every reference
+    // that is not a row's own child: nothing deletes a session (a cancel flips
+    // its lifecycle), so a delete that would leave a request naming nothing is
+    // refused rather than quietly clearing the request's pointer.
+    scheduledPtSessionId: uuid('scheduled_pt_session_id').references((): AnyPgColumn => ptSessions.id, {
+      onDelete: 'restrict',
+    }),
     // The client_packages row debited at submit, so a cancel-while-pending refunds the exact package.
     debitedClientPackageId: uuid('debited_client_package_id').references(() => clientPackages.id, {
       onDelete: 'restrict',
@@ -602,6 +610,7 @@ export const ptRequests = pgTable(
     debitedClientPackageIdFkIdx: index('pt_requests_debited_client_package_id_fk_idx').on(table.debitedClientPackageId),
     locationIdFkIdx: index('pt_requests_location_id_fk_idx').on(table.locationId),
     resolvedByStaffIdFkIdx: index('pt_requests_resolved_by_staff_id_fk_idx').on(table.resolvedByStaffId),
+    scheduledPtSessionIdFkIdx: index('pt_requests_scheduled_pt_session_id_fk_idx').on(table.scheduledPtSessionId),
     statusCreatedIdx: index('pt_requests_status_created_idx').on(table.tenantId, table.status, table.createdAt),
     clientStatusIdx: index('pt_requests_client_status_idx').on(table.tenantId, table.clientId, table.status),
     // Backs the portal's location-scoped pending-request list.
@@ -734,15 +743,6 @@ export const ptSessions = pgTable(
     ),
   }),
 )
-
-// NOTE: The reverse FK from pt_requests.scheduled_pt_session_id → pt_sessions.id is NOT
-// declarable inside the `ptRequests` pgTable builder (the `ptSessions` symbol is not yet
-// resolved at that point and forward declaration in JS module scope is messy). drizzle-kit
-// 0.31.x does not currently emit an "add FK" follow-up SQL for table-level foreignKey() refs
-// that are declared on the OTHER table.
-//
-// No such constraint exists in the database: `pt_requests.scheduled_pt_session_id` has no
-// foreign key to `pt_sessions.id` (no `pt_requests_scheduled_pt_session_fk`).
 
 // ============================================================================
 // pt_session_clients — unchanged (M:N supports 2-on-1)

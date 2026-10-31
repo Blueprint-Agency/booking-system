@@ -153,7 +153,6 @@ describe('PT request preferences over HTTP', { skip: integrationTestsEnabled ? f
     const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
     const requests = sql`SELECT id FROM pt_requests WHERE client_id IN (${clients})`
     const run = (q: ReturnType<typeof sql>) => harness.db.execute(q)
-    await run(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
     await run(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
     await run(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id IN (${requests})`)
     await run(sql`DELETE FROM pt_sessions WHERE pt_request_id IN (${requests})`)

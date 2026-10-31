@@ -46,9 +46,10 @@ type TableOrder = {
  * Sort tables parents-first, breaking cycles by deferring nullable references.
  *
  * Kahn's algorithm, with one addition: when nothing is left with zero
- * dependencies but tables remain, the graph has a cycle. Rather than fail, the
- * nullable edges in that cycle are removed and recorded as deferred — which is
- * exactly what a self-reference is, a cycle of length one.
+ * dependencies but tables remain, the graph has a cycle. Rather than fail, a
+ * nullable edge in that cycle is removed and recorded as deferred, one at a
+ * time until the order resolves — which is exactly what a self-reference is, a
+ * cycle of length one.
  */
 export function orderTables(tables: readonly string[], foreignKeys: readonly ForeignKey[]): TableOrder {
   const remaining = new Set(tables);
@@ -96,12 +97,20 @@ export function orderTables(tables: readonly string[], foreignKeys: readonly For
       continue;
     }
 
-    // Everything left depends on something else left. Break the knot on its
-    // nullable edges; if it has none, the schema cannot be restored in any
-    // order and saying so is the only honest answer.
+    // Everything left depends on something else left. Break the knot on one
+    // nullable edge that sits on a cycle, then look again; if no such edge
+    // exists, the schema cannot be restored in any order and saying so is the
+    // only honest answer. One edge, and only a cycle's: tables that merely
+    // wait on the cycle (everything written after `pt_sessions`, say) are
+    // also still "remaining" here, and deferring their nullable references
+    // too would mean clearing and refilling those columns on every row of
+    // some of the largest tables for a cycle that is none of their business.
     const knot = [...remaining].sort();
-    const breakable = edges.filter(fk => !fk.required);
-    if (breakable.length === 0) {
+    const breakable = edges
+      .filter(fk => !fk.required && reaches(edges, fk.parent, fk.child))
+      .sort((a, b) => (a.child < b.child ? -1 : a.child > b.child ? 1 : a.column < b.column ? -1 : a.column > b.column ? 1 : 0));
+    const [cut] = breakable;
+    if (!cut) {
       unbreakable.push(knot);
       for (const table of knot) {
         order.push(table);
@@ -110,9 +119,23 @@ export function orderTables(tables: readonly string[], foreignKeys: readonly For
       edges = [];
       break;
     }
-    for (const fk of breakable) defer(fk);
-    edges = edges.filter(fk => fk.required);
+    defer(cut);
+    edges = edges.filter(fk => fk !== cut);
   }
 
   return { order, deferred, unbreakable };
+}
+
+/** Whether `from` depends, directly or through other tables, on `to`. */
+function reaches(edges: readonly ForeignKey[], from: string, to: string): boolean {
+  const seen = new Set<string>();
+  const stack = [from];
+  while (stack.length > 0) {
+    const table = stack.pop()!;
+    if (table === to) return true;
+    if (seen.has(table)) continue;
+    seen.add(table);
+    for (const fk of edges) if (fk.child === table) stack.push(fk.parent);
+  }
+  return false;
 }

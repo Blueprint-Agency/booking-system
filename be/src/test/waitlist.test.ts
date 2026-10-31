@@ -289,8 +289,6 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     const staff = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
     await harness.db.execute(sql`DELETE FROM feature_flags WHERE key = ${FLAG} AND updated_by_staff_id IN (${staff})`)
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staff})`)
-    await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM clients WHERE email LIKE ${ours})`)
-    await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'cancelledByStaffId' IN (SELECT id::text FROM staff_users WHERE email LIKE ${ours})`)
     await harness.db.execute(sql`DELETE FROM waitlist_entries WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)
@@ -299,6 +297,7 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     const sessions = sql`SELECT id FROM pt_sessions WHERE pt_request_id IN (${requests})`
     await harness.db.execute(sql`DELETE FROM pt_session_clients WHERE pt_session_id IN (${sessions})`)
     await harness.db.execute(sql`DELETE FROM pt_session_supporting_instructors WHERE pt_session_id IN (${sessions})`)
+    await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id IN (${requests})`)
     await harness.db.execute(sql`DELETE FROM pt_sessions WHERE id IN (${sessions})`)
     await harness.db.execute(sql`DELETE FROM pt_request_slots WHERE pt_request_id IN (${requests})`)
     await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
@@ -649,8 +648,6 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
       .from(schema.cancellations)
       .where(eq(schema.cancellations.clientId, waiter.clientId))
     assert.equal(cancellations.length, 0)
-    const inbox = await harness.db.execute(sql`SELECT id FROM inbox_items WHERE payload->>'clientId' = ${waiter.clientId}`)
-    assert.equal(inbox.length, 0)
 
     // Twice, or someone else's, is not found.
     assert.equal((await leaveLine(waiter, entry.entry_id)).status, 404)

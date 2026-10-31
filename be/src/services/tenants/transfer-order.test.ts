@@ -77,6 +77,31 @@ test('a cycle between two tables is broken on its nullable edge', () => {
   assert.deepEqual(order, ['b', 'a'])
 })
 
+test('TEN-51 a cycle is broken on one nullable edge, and tables that merely depend on it keep their references', () => {
+  // The real case: pt_requests.scheduled_pt_session_id and
+  // pt_sessions.pt_request_id point at each other, both nullable, and bookings
+  // (with a nullable pt_session_id of its own) is written after both. Deferring
+  // every nullable edge among the tables left would clear and refill
+  // bookings.pt_session_id — and every table hanging off bookings — for a
+  // cycle that has nothing to do with them.
+  const edges = [
+    fk('pt_requests', 'pt_sessions', 'scheduled_pt_session_id'),
+    fk('pt_sessions', 'pt_requests', 'pt_request_id'),
+    fk('bookings', 'pt_sessions', 'pt_session_id'),
+    fk('credit_movements', 'bookings', 'booking_id'),
+  ]
+  const { order, deferred, unbreakable } = orderTables(
+    ['bookings', 'credit_movements', 'pt_requests', 'pt_sessions'],
+    edges,
+  )
+  assert.deepEqual(unbreakable, [])
+  assert.deepEqual(deferred, { pt_requests: ['scheduled_pt_session_id'] })
+  assertParentsFirst(
+    order,
+    edges.filter(e => e.column !== 'scheduled_pt_session_id'),
+  )
+})
+
 test('a cycle with no nullable edge is reported, not silently mis-ordered', () => {
   const { order, unbreakable } = orderTables(
     ['a', 'b'],
